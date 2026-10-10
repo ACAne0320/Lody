@@ -3,6 +3,7 @@
 Date: 2026-10-11
 Status: implemented
 Translation: current
+PR: [#1417](https://github.com/LodyAI/Lody/pull/1417)
 
 [English](2026-10-11-e2ee-content-crypto.md)
 
