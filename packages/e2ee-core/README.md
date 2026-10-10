@@ -1,7 +1,7 @@
 # E2EE foundations
 
-An independently testable extraction, with no production consumers. The only
-package entry is `@lody/e2ee-core`; it uses the root Effect 4.0.2 catalog.
+An independently testable extraction, with no production consumers. The root
+foundation entry is `@lody/e2ee-core`; it uses the root Effect 4.0.2 catalog.
 
 | Entry | Responsibility |
 | --- | --- |
@@ -47,3 +47,9 @@ This fixture tests signatures, not AEAD. Both frames are fixed and native-checke
 See the [Spec](../../specs/e2ee-foundations.md) and
 [extraction decision](../../.agents/notes/implemented/architecture/2026-10-10-e2ee-foundations.md)
 for trust boundaries, failure ownership and validation limits.
+
+The separate [`@lody/e2ee-core/ledger`](src/ledger/README.md) subentry now
+provides strict records, signature/chain verification and deterministic permission
+replay from caller-pinned trust. It has no snapshot, CAS, journal or production
+consumer. The root exports and crypto modules remain unchanged. Ledger extraction
+fingerprints are [separate](src/ledger/provenance.json).

@@ -22,7 +22,7 @@ Byte wrappers copy public material. Canonical CBOR rejects alternate encodings,
 trailing input and unsupported types, with size/depth/array limits. Strict Ed25519
 rejects invalid signatures and noncanonical or mixed-torsion signing keys.
 
-Signature validity is only one prerequisite. This package does not verify current
+Signature validity is only one prerequisite. The root foundation entry does not verify current
 membership, freshness, write permission, AEAD tags, snapshot history or server
 admission. It does not expose a signer, private-key export, platform storage,
 transport or production feature switch. Platform custody and full content opening
