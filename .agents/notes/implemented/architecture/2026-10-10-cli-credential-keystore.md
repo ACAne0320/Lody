@@ -20,10 +20,13 @@ read-back of the same token. A missing store leaves the file login working.
 ## Decision
 
 `credentials.json` remains version 3. Profile, machine id, and any unknown
-fields stay in the file. The token is written to a `Lody CLI` / `cloud-token`
-entry whose target is the data directory, so two installs do not share one
-entry. Linux entries require Secret Service. The kernel keyring is not used,
-and this path does not add a second encryption key.
+fields stay in the file. The token is written with the binding's `Entry`
+constructor, service `Lody CLI`, and a username of `cloud-token.` plus a
+SHA-256 of the resolved data directory, so two installs do not share an entry.
+A `target` is not used: on macOS it selects a keychain domain, and on Windows
+constructing an entry with a target writes an empty password. Linux entries
+require Secret Service. The kernel keyring is not used, and this path does not
+add a second encryption key.
 
 Reads prefer the file token when it is present, including when it differs from
 the store, and otherwise use the store. A file token is copied into the store
@@ -68,8 +71,12 @@ downgrade can set `LODY_CLI_DROP_FILE_TOKEN=1`.
 
 Unit tests cover read precedence, a verified removal, a store that throws or
 returns a different value, a read during the removal window, a newer file token
-left in place, logout of both locations, and POSIX modes. Windows ACL behavior
-is covered by a failing restrict callback. Tests do not open a real OS store.
-A Linux bus that exists but never answers can still stall one synchronous
-store call; `LODY_CLI_DISABLE_KEYSTORE=1` skips it. The desktop session store
-is unchanged.
+left in place, logout of both locations, and POSIX modes. They also construct
+two plain entries for the same install and check that the second still reads
+the password, and they reproduce an empty password written by a targeted
+constructor. Windows ACL behavior is covered by a failing restrict callback.
+A separate CI job writes, reads from another process, and deletes a real
+entry on macOS and Windows. The Linux job does the same when Secret Service
+is available and otherwise skips. A Linux bus that exists but never answers
+can still stall one synchronous store call; `LODY_CLI_DISABLE_KEYSTORE=1`
+skips it. The desktop session store is unchanged.

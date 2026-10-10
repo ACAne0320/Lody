@@ -11,7 +11,8 @@ import {
   KeystoreUnavailableError,
   clearCliCredentials,
   cliCredentialFileTokenRemovalEnabled,
-  cliTokenKeyringRequest,
+  cliTokenKeyringIdentity,
+  openCliTokenKeyringEntry,
   createSystemCliTokenKeystore,
   linuxSecretServiceLooksAvailable,
   loadCliCredentials,
@@ -413,7 +414,7 @@ describe('OS credential store availability', () => {
       env: {},
       pathExists: () => false,
       uid: 1000,
-      target: dataDir,
+      dataDir,
       entryFactory,
     });
 
@@ -425,7 +426,7 @@ describe('OS credential store availability', () => {
       env: {},
       pathExists: () => false,
       uid: 1000,
-      target: dataDir,
+      dataDir,
       entryFactory,
     });
     expect(() => fresh.read()).toThrow(KeystoreUnavailableError);
@@ -434,13 +435,15 @@ describe('OS credential store availability', () => {
     expect(entryFactory).not.toHaveBeenCalled();
   });
 
-  it('pins Linux entries to Secret Service and the data directory', () => {
-    expect(cliTokenKeyringRequest(dataDir)).toEqual({
-      target: dataDir,
-      service: 'Lody CLI',
-      username: 'cloud-token',
-      options: { linux: { store: 'secret-service' } },
-    });
+  it('pins Linux entries to Secret Service and isolates each data directory', () => {
+    const identity = cliTokenKeyringIdentity(dataDir);
+    const other = cliTokenKeyringIdentity(path.join(dataDir, 'other-install'));
+    expect(identity.service).toBe('Lody CLI');
+    expect(identity.username.startsWith('cloud-token.')).toBe(true);
+    expect(identity.options).toEqual({ linux: { store: 'secret-service' } });
+    expect(identity.username).not.toBe(other.username);
+    expect(cliTokenKeyringIdentity(`${dataDir}${path.sep}`)).toEqual(identity);
+    expect(identity).not.toHaveProperty('target');
 
     const entry: KeyringEntry = {
       getPassword: () => 'stored-token',
@@ -451,7 +454,7 @@ describe('OS credential store availability', () => {
     const store = createSystemCliTokenKeystore({
       platform: 'linux',
       env: { DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus' },
-      target: dataDir,
+      dataDir,
       entryFactory,
     });
 
@@ -469,12 +472,80 @@ describe('OS credential store availability', () => {
     });
     const store = createSystemCliTokenKeystore({
       platform: 'darwin',
-      target: dataDir,
+      dataDir,
       entryFactory,
     });
 
     expect(() => store.read()).toThrow(/locked/);
     expect(store.read()).toBeNull();
     expect(entryFactory).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads a password from a newly constructed entry', () => {
+    const secrets = new Map<string, string>();
+    class PlainEntry {
+      private readonly key: string;
+      constructor(
+        service: string,
+        username: string,
+        options?: { linux: { store: 'secret-service' } }
+      ) {
+        expect(options).toEqual({ linux: { store: 'secret-service' } });
+        this.key = `${service}\0${username}`;
+      }
+      getPassword(): string | null {
+        return secrets.get(this.key) ?? null;
+      }
+      setPassword(password: string): void {
+        secrets.set(this.key, password);
+      }
+      deleteCredential(): boolean {
+        return secrets.delete(this.key);
+      }
+    }
+
+    const saved = openCliTokenKeyringEntry({ Entry: PlainEntry }, dataDir);
+    saved.setPassword('kept-token');
+    expect(openCliTokenKeyringEntry({ Entry: PlainEntry }, dataDir).getPassword()).toBe(
+      'kept-token'
+    );
+    expect(
+      openCliTokenKeyringEntry(
+        { Entry: PlainEntry },
+        path.join(dataDir, 'other-install')
+      ).getPassword()
+    ).toBeNull();
+  });
+
+  it('loses a password when construction writes an empty secret', () => {
+    const secrets = new Map<string, string>();
+    const keyFor = (service: string, username: string) => `${service}\0${username}`;
+    class TargetedEntry {
+      static withTarget(_target: string, service: string, username: string): TargetedEntry {
+        secrets.set(keyFor(service, username), '');
+        return new TargetedEntry(service, username);
+      }
+      constructor(
+        private readonly service: string,
+        private readonly username: string
+      ) {}
+      getPassword(): string | null {
+        const value = secrets.get(keyFor(this.service, this.username));
+        return value && value.length > 0 ? value : null;
+      }
+      setPassword(password: string): void {
+        secrets.set(keyFor(this.service, this.username), password);
+      }
+      deleteCredential(): boolean {
+        return secrets.delete(keyFor(this.service, this.username));
+      }
+    }
+
+    const identity = cliTokenKeyringIdentity(dataDir);
+    const written = TargetedEntry.withTarget(dataDir, identity.service, identity.username);
+    written.setPassword('wiped-token');
+    expect(
+      TargetedEntry.withTarget(dataDir, identity.service, identity.username).getPassword()
+    ).toBeNull();
   });
 });

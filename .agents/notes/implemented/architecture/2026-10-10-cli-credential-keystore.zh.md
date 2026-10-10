@@ -18,9 +18,11 @@ Secret Service 时，用 `@napi-rs/keyring` 再把令牌写入操作系统凭据
 ## 决定
 
 `credentials.json` 仍是版本 3。用户资料、机器标识和未知字段留在文件里。令牌
-写入 `Lody CLI` / `cloud-token` 条目，target 是数据目录，因此两次安装不会共用
-一条记录。Linux 条目要求 Secret Service，不使用内核密钥环，也不另设一把加密
-密钥。
+通过绑定的 `Entry` 构造函数写入，service 是 `Lody CLI`，username 是
+`cloud-token.` 加上解析后数据目录的 SHA-256，因此两次安装不会共用一条记录。
+这里不使用 `target`：在 macOS 上它选择钥匙串域，在 Windows 上带 target 构造
+条目会写入空密码。Linux 条目要求 Secret Service，不使用内核密钥环，也不另设
+一把加密密钥。
 
 读取时，只要文件里有令牌就使用文件中的值，包括它与凭据库不同的情况；文件没有
 令牌时才使用凭据库。保存和读取都会尝试把文件令牌复制进凭据库，并且只有随后读
@@ -54,7 +56,10 @@ Secret Service 时，用 `@napi-rs/keyring` 再把令牌写入操作系统凭据
 ## 验证与限制
 
 单元测试覆盖读取顺序、校验成功后的删除、凭据库抛错或返回不同值、删除窗口期间
-的读取、更新的文件令牌被保留、同时清理两个位置，以及 POSIX 权限。Windows
-访问控制由失败的限制回调覆盖。测试不打开真实的操作系统凭据库。Linux 总线存在
-但不响应时，一次同步凭据库调用仍可能停住；`LODY_CLI_DISABLE_KEYSTORE=1` 会跳过
-它。桌面会话存储没有改动。
+的读取、更新的文件令牌被保留、同时清理两个位置，以及 POSIX 权限。它们还会为
+同一次安装构造两个普通条目，并确认第二次仍能读到密码；同时复现带 target 的
+构造函数写入空密码的情况。Windows 访问控制由失败的限制回调覆盖。单独的 CI
+任务在 macOS 和 Windows 上用真实凭据库写入、从另一个进程读回并删除。Linux
+任务在 Secret Service 可用时做同样的事，否则跳过。Linux 总线存在但不响应时，
+一次同步凭据库调用仍可能停住；`LODY_CLI_DISABLE_KEYSTORE=1` 会跳过它。桌面
+会话存储没有改动。

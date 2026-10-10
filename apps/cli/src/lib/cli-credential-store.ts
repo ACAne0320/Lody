@@ -7,6 +7,10 @@ import { runCommandTextSyncLegacy } from '@lody/shared/node/process';
 import { z } from 'zod';
 import { getConfigPath } from '@/utils';
 import { getLogger, type Logger } from '@/utils/logger';
+import {
+  cliTokenKeyringIdentity,
+  type CliTokenKeyringIdentity,
+} from './cli-credential-keyring-identity';
 
 /**
  * CLI cloud login persistence.
@@ -19,8 +23,6 @@ import { getLogger, type Logger } from '@/utils/logger';
  * read here; startup exchanges that session through the existing bootstrap.
  */
 
-const KEYRING_SERVICE = 'Lody CLI';
-const KEYRING_USERNAME = 'cloud-token';
 const SECRET_FILE_MODE = 0o600;
 const PRIVATE_DIR_MODE = 0o700;
 
@@ -81,22 +83,7 @@ export interface KeyringEntry {
   deleteCredential(): boolean;
 }
 
-export interface CliTokenKeyringRequest {
-  target: string;
-  service: string;
-  username: string;
-  options: { linux: { store: 'secret-service' } };
-}
-
-/** Stable keystore identity. The target is the data directory so installs do not share an entry. */
-export function cliTokenKeyringRequest(target: string): CliTokenKeyringRequest {
-  return {
-    target,
-    service: KEYRING_SERVICE,
-    username: KEYRING_USERNAME,
-    options: { linux: { store: 'secret-service' } },
-  };
-}
+export { cliTokenKeyringIdentity, type CliTokenKeyringIdentity };
 
 export function linuxSecretServiceLooksAvailable(input: {
   env: NodeJS.ProcessEnv;
@@ -213,28 +200,25 @@ export function createDisabledCliTokenKeystore(): CliTokenKeystore {
   };
 }
 
-function loadNativeKeyringEntry(target: string): KeyringEntry {
-  const require = createRequire(import.meta.url);
-  const loaded: unknown = require('@napi-rs/keyring');
-  if (typeof loaded !== 'object' || loaded === null || !('Entry' in loaded)) {
-    throw new KeystoreUnavailableError('OS credential store binding is unavailable');
-  }
-  const entry = loaded.Entry;
-  if (
-    (typeof entry !== 'function' && (typeof entry !== 'object' || entry === null)) ||
-    !('withTarget' in entry) ||
-    typeof entry.withTarget !== 'function'
-  ) {
-    throw new KeystoreUnavailableError('OS credential store binding is unavailable');
-  }
-  const request = cliTokenKeyringRequest(target);
-  const withTarget = entry.withTarget as (
-    target: string,
+export interface CliTokenKeyringBinding {
+  Entry: new (
     service: string,
     username: string,
-    options: CliTokenKeyringRequest['options']
-  ) => unknown;
-  const created = withTarget(request.target, request.service, request.username, request.options);
+    options?: CliTokenKeyringIdentity['options']
+  ) => {
+    getPassword(): string | null;
+    setPassword(password: string): void;
+    deleteCredential(): boolean;
+  };
+}
+
+/** Opens one entry with `new Entry(service, username)`. Construction does not write a password. */
+export function openCliTokenKeyringEntry(
+  binding: CliTokenKeyringBinding,
+  dataDir: string
+): KeyringEntry {
+  const identity = cliTokenKeyringIdentity(dataDir);
+  const created = new binding.Entry(identity.service, identity.username, identity.options);
   if (!isRecord(created)) {
     throw new KeystoreUnavailableError('OS credential store binding is unavailable');
   }
@@ -253,9 +237,22 @@ function loadNativeKeyringEntry(target: string): KeyringEntry {
   };
 }
 
+function loadNativeKeyringEntry(dataDir: string): KeyringEntry {
+  const require = createRequire(import.meta.url);
+  const loaded: unknown = require('@napi-rs/keyring');
+  if (typeof loaded !== 'object' || loaded === null || !('Entry' in loaded)) {
+    throw new KeystoreUnavailableError('OS credential store binding is unavailable');
+  }
+  const Entry = loaded.Entry;
+  if (typeof Entry !== 'function') {
+    throw new KeystoreUnavailableError('OS credential store binding is unavailable');
+  }
+  return openCliTokenKeyringEntry({ Entry: Entry as CliTokenKeyringBinding['Entry'] }, dataDir);
+}
+
 export function createSystemCliTokenKeystore(options?: {
-  target?: string | (() => string);
-  entryFactory?: (target: string) => KeyringEntry;
+  dataDir?: string | (() => string);
+  entryFactory?: (dataDir: string) => KeyringEntry;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   pathExists?: (candidate: string) => boolean;
@@ -266,10 +263,10 @@ export function createSystemCliTokenKeystore(options?: {
   const pathExists = options?.pathExists ?? ((candidate) => fs.existsSync(candidate));
   const uid = options && 'uid' in options ? options.uid : process.getuid?.();
   const entryFactory = options?.entryFactory ?? loadNativeKeyringEntry;
-  const resolveTarget = (): string =>
-    typeof options?.target === 'function'
-      ? options.target()
-      : (options?.target ?? path.dirname(getConfigPath()));
+  const resolveDataDir = (): string =>
+    typeof options?.dataDir === 'function'
+      ? options.dataDir()
+      : (options?.dataDir ?? path.dirname(getConfigPath()));
   let failed = false;
 
   const secretServiceMissing = (): boolean =>
@@ -288,7 +285,7 @@ export function createSystemCliTokenKeystore(options?: {
         throw new KeystoreUnavailableError('Linux Secret Service is not available');
       }
       try {
-        const value = entryFactory(resolveTarget()).getPassword();
+        const value = entryFactory(resolveDataDir()).getPassword();
         if (typeof value !== 'string') return null;
         const trimmed = value.trim();
         return trimmed.length > 0 ? trimmed : null;
@@ -307,7 +304,7 @@ export function createSystemCliTokenKeystore(options?: {
         throw new KeystoreUnavailableError('Linux Secret Service is not available');
       }
       try {
-        entryFactory(resolveTarget()).setPassword(token);
+        entryFactory(resolveDataDir()).setPassword(token);
       } catch (error) {
         failed = true;
         if (error instanceof KeystoreUnavailableError) throw error;
@@ -320,7 +317,7 @@ export function createSystemCliTokenKeystore(options?: {
         return;
       }
       try {
-        entryFactory(resolveTarget()).deleteCredential();
+        entryFactory(resolveDataDir()).deleteCredential();
       } catch (error) {
         failed = true;
         throw error;
