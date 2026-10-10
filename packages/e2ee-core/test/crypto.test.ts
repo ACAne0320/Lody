@@ -51,6 +51,48 @@ function code(result: Result.Result<unknown, { code: string }>) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('public scoped content crypto', () => {
+  it('wipes temporary copies after random-source and authentication failure, retaining the leaf', () => {
+    const key = keyFor();
+    const expectedKey = nativeKey(header);
+    const NativeBytes = Uint8Array;
+    const copies: Array<{ before: Uint8Array; after: Uint8Array }> = [];
+    vi.stubGlobal(
+      'Uint8Array',
+      new Proxy(NativeBytes, {
+        construct(target, args) {
+          const output = Reflect.construct(target, args) as Uint8Array;
+          const input: unknown = args[0];
+          if (input instanceof NativeBytes)
+            copies.push({ before: new NativeBytes(input), after: output });
+          return output;
+        },
+      })
+    );
+    const plaintext = new NativeBytes([1, 2, 3]);
+    vi.stubGlobal('crypto', {
+      getRandomValues: () => {
+        throw new Error('synthetic failure');
+      },
+    });
+    expect(code(sealContentAead(key, header, plaintext))).toBe('content-random-unavailable');
+    const secret = copies.find(({ before }) => Buffer.compare(before, expectedKey) === 0)!;
+    const owned = copies.find(({ before }) => Buffer.compare(before, plaintext) === 0)!;
+    expect(secret.after).toEqual(new NativeBytes(32));
+    expect(owned.after).toEqual(new NativeBytes(plaintext.length));
+    expect(plaintext).toEqual(new NativeBytes([1, 2, 3]));
+    fixedRandom();
+    const sealed = read(sealContentAead(key, header, plaintext));
+    copies.length = 0;
+    const damaged = sealed.ciphertext.slice();
+    damaged[0] ^= 1;
+    expect(code(openContentAead(key, header, sealed.nonce, damaged))).toBe(
+      'content-authentication-failed'
+    );
+    const openingSecret = copies.find(({ before }) => Buffer.compare(before, expectedKey) === 0)!;
+    expect(openingSecret.after).toEqual(new NativeBytes(32));
+    expect(read(openContentAead(key, header, sealed.nonce, sealed.ciphertext))).toEqual(plaintext);
+  });
+
   it('composes with native Ed25519 and rejects legitimately re-signed ciphertext under another binding', () => {
     fixedRandom();
     const key = keyFor();

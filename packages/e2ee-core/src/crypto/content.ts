@@ -25,6 +25,19 @@ export interface ContentKey {
 const keys = new WeakMap<ContentKey, { bytes: Uint8Array; info: Uint8Array }>();
 const fail = (code: string) => Result.fail(new ContentError({ code }));
 
+// Result.gen short-circuits without closing the iterator. Cleanup must complete
+// in an ordinary call before its returned Result is yielded.
+function usingKey<A>(
+  secret: Uint8Array,
+  operation: () => Result.Result<A, ContentError>
+): Result.Result<A, ContentError> {
+  try {
+    return operation();
+  } finally {
+    secret.fill(0);
+  }
+}
+
 /** Four document purposes share a leaf; other purposes derive separate keys. */
 export function deriveContentKey(
   epochKey: EpochKey,
@@ -37,18 +50,24 @@ export function deriveContentKey(
       try: () => copyEpochKeyBytes(epochKey),
       catch: () => new ContentError({ code: 'invalid-content-key' }),
     });
-    let prk: Uint8Array | undefined;
-    try {
-      if (secret.byteLength !== 32) return yield* fail('invalid-content-key');
-      prk = extract(sha256, secret, contentHkdfSalt());
-      const bytes = expand(sha256, prk, info, 32);
-      const key = Object.freeze({}) as ContentKey;
-      keys.set(key, { bytes, info });
-      return key;
-    } finally {
-      secret.fill(0);
-      prk?.fill(0);
-    }
+    return yield* usingKey(secret, () =>
+      Result.try({
+        try: () => {
+          let prk: Uint8Array | undefined;
+          try {
+            if (secret.byteLength !== 32) throw new ContentError({ code: 'invalid-content-key' });
+            prk = extract(sha256, secret, contentHkdfSalt());
+            const bytes = expand(sha256, prk, info, 32);
+            const key = Object.freeze({}) as ContentKey;
+            keys.set(key, { bytes, info });
+            return key;
+          } finally {
+            prk?.fill(0);
+          }
+        },
+        catch: () => new ContentError({ code: 'invalid-content-key' }),
+      })
+    );
   });
 }
 
@@ -85,25 +104,32 @@ export function sealContentAead(
     const prefix = yield* encodeContentHeader(trustedHeader);
     const aad = yield* contentAad(trustedHeader, prefix, additionalData);
     const secret = yield* keyForScope(key, trustedHeader);
-    // Capture before calling the host: even a reentrant host cannot change inputs.
-    const owned = new Uint8Array(plaintext);
-    try {
-      const nonce = yield* Result.try({
-        try: () => {
-          const bytes = new Uint8Array(CONTENT_NONCE_BYTES);
-          globalThis.crypto.getRandomValues(bytes);
-          return bytes;
-        },
-        catch: () => new ContentError({ code: 'content-random-unavailable' }),
-      });
-      return yield* Result.try({
-        try: () => ({ nonce, ciphertext: xchacha20poly1305(secret, nonce, aad).encrypt(owned) }),
-        catch: () => new ContentError({ code: 'invalid-content-key' }),
-      });
-    } finally {
-      secret.fill(0);
-      owned.fill(0);
-    }
+    return yield* usingKey(secret, () => {
+      // Capture before calling the host, including on failure paths.
+      const owned = new Uint8Array(plaintext);
+      try {
+        return Result.flatMap(
+          Result.try({
+            try: () => {
+              const bytes = new Uint8Array(CONTENT_NONCE_BYTES);
+              globalThis.crypto.getRandomValues(bytes);
+              return bytes;
+            },
+            catch: () => new ContentError({ code: 'content-random-unavailable' }),
+          }),
+          (nonce) =>
+            Result.try({
+              try: () => ({
+                nonce,
+                ciphertext: xchacha20poly1305(secret, nonce, aad).encrypt(owned),
+              }),
+              catch: () => new ContentError({ code: 'invalid-content-key' }),
+            })
+        );
+      } finally {
+        owned.fill(0);
+      }
+    });
   });
 }
 
@@ -128,13 +154,11 @@ export function openContentAead(
     const prefix = yield* encodeContentHeader(trustedHeader);
     const aad = yield* contentAad(trustedHeader, prefix, additionalData);
     const secret = yield* keyForScope(key, trustedHeader);
-    try {
-      return yield* Result.try({
+    return yield* usingKey(secret, () =>
+      Result.try({
         try: () => xchacha20poly1305(secret, nonce, aad).decrypt(ciphertext),
         catch: () => new ContentError({ code: 'content-authentication-failed' }),
-      });
-    } finally {
-      secret.fill(0);
-    }
+      })
+    );
   });
 }

@@ -60,7 +60,7 @@ object reachability. JavaScript cleanup does not guarantee runtime memory erasur
 
 ## Evidence and limits
 
-- Public entry: 63/63 tests, 46 inherited and 17 crypto; typecheck passes. Eight
+- Public entry: 64/64 tests, 46 inherited and 18 crypto; typecheck passes. Eight
   independently encoded Python HMAC/libsodium fixed vectors, native HKDF, nine
   purposes, wrong context/key/header/binding, tampering, exact 16 MiB/1024-byte
   limits, randomness failure and input ownership are covered. Generator is checked in.
@@ -85,3 +85,14 @@ full rerun permits local sockets. Other queued suites are not declared complete.
 One CI round is recorded in the PR. No real keys, global
 settings, design directory or other agent workspace changed. No release,
 deployment, Ready transition or merge is included.
+
+## Correction: temporary copies on typed failure
+
+Installed Effect 4.0.2 Result.gen returns Failure without closing the iterator.
+Yielding a failed Result inside generator try/finally therefore bypassed cleanup
+on randomness/tag failure in the initial commit. Cleanup now completes inside
+an ordinary call before its Result is yielded, without changing wire bytes/codes.
+The regression retains actual copied-buffer references and checks wiped key/plaintext
+after randomness failure, wiped key after authentication failure and a reusable leaf.
+It fails against a disposable 9abee347f source copy. It asserts resulting buffer
+state, not mock-call counts.
