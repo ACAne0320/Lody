@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+PR: [#1418](https://github.com/LodyAI/Lody/pull/1418)
+
 [中文](2026-10-11-e2ee-ledger-records.zh.md)
 
 ## Abstract
