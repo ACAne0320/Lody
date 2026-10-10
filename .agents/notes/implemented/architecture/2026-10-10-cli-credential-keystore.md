@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1421](https://github.com/LodyAI/Lody/pull/1421)
 
 [中文](2026-10-10-cli-credential-keystore.zh.md)
 
