@@ -40,6 +40,13 @@ six published macOS, Windows MSVC, or Linux GNU arm64/x64 binaries per artifact.
 Unsupported targets fail during packaging. Linux musl is not supported; the
 published Linux builds require glibc 2.35 or newer.
 
+The Lody native runtime boundary resolves the SDK with Node's
+`import.meta.resolve` and loads that URL on first use. Type-only SDK imports
+preserve the contract without allowing a composing bundler to inline the client
+and relocate its Worker URL. Keep the existing bundle external rules and package
+staging. There is no Worker-path override, SDK patch, or history-backend fallback;
+resolution and initialization failures propagate through the existing owner lease.
+
 Web and iOS reusing shared components never import this Node package. The existing
 remote history bridge reads and writes through the owning machine's advertised
 `sessionHistory: 2` RPC contract. The machine must be available. Browser Roost
@@ -219,6 +226,55 @@ churn. Logs: `/private/tmp/lody-roost-repair-bench.json`,
 `/private/tmp/lody-roost-native-contract.log`, `/private/tmp/lody-roost-repair-check.log`
 and `/private/tmp/lody-roost-repair-published-bundle.log`.
 This repair uses the existing 0.1.1 runtime; no new npm publication is required.
+
+### Installed Nightly Worker failure (2026-10-11)
+
+The owned, unmodified signed Nightly `0.105.0-nightly.2` reproduced a local
+Roost start-session failure through the real UI. Its CLI inlines the native SDK
+client into `resources/cli/index.js`, relocating the SDK's
+`new URL('./worker.mjs', import.meta.url)` to the CLI directory. That directory
+has no Worker; the intact SDK Worker and binding are correctly staged under
+`resources/cli/node_modules/@loro-dev/roost-node/`. A debugger attached only to
+the owned CLI captured the actual Worker error: `MODULE_NOT_FOUND` for
+`resources/cli/worker.mjs`. The SDK then replaces it with `workerFailed`.
+This confirms a client/Worker packaging fault, rather than an inference from the
+generic UI message. Two fresh local sessions passed the ownership check and still
+failed with `workerFailed`, including one after the owned CLI restarted with a
+mismatch-only conditional breakpoint. The initial metadata-ownership error
+remains unresolved. Backend selection still follows the existing
+[feature gate](../feature/2026-10-08-roost-history-feature-gate.md).
+
+The current public CLI Vite configuration already externalizes the package.
+A production build using that actual configuration, changing only the entry and
+output to an isolated synthetic probe, retained the external SDK import. Running
+that artifact with the installed signed Helper, Node 24.21.0, and the same intact
+SDK `0.1.1` passed Worker initialization and SQLite write/seal/close/reopen/read.
+Only synthetic identities and databases were used. This is a focused packaging
+verification, not a complete rebuilt Nightly UI acceptance or a diagnosis of the
+private release pipeline that produced the installed bundle.
+
+The evidence requires the Nightly CLI artifact to preserve this external-package
+layout and the rebuilt application to pass the real local Roost creation flow.
+Publishing SDK diagnostics alone cannot correct the installed client's relocated
+Worker URL. The diagnostics release remains useful for preserving original
+Worker exceptions, but was not required to identify this failure. Neither the
+installed bundle nor product source was patched during this investigation.
+
+The separate Lody repair loads the SDK through the runtime boundary described
+above. The owning local-owner suite builds that actual boundary with esbuild's
+dependency bundling enabled and no SDK external rule, then runs the artifact in
+Node and proves real Worker initialization, sealing, close, and verified SQLite
+reopen. Replacing the runtime load with the previous static SDK import makes the
+same test fail with `workerFailed`; restoring the load passes. Synthetic identity
+and database options are supplied directly, without keychain or network access.
+The focused owner/history contracts pass 29 cases, and `pnpm check`, formatting,
+and documentation checks pass. The complete production CLI build passes under the
+2 GiB heap and emits the runtime package load. The production-config probe of this
+actual Lody boundary also passes Worker/SQLite reopen under the installed signed
+Nightly Helper, Node 24.21.0, with the existing SDK 0.1.1. No dependency or binary
+version changes are needed. The installed Nightly remains unchanged; full
+acceptance on a newly released signed Nightly and non-host desktop packages
+remains a release validation limit.
 
 ### Published runtime and packaging checkpoint
 

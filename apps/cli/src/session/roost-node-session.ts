@@ -60,7 +60,7 @@ import {
   type HistoryBatchCommand,
 } from '@loro-dev/roost/lody-history';
 import { Identity, decodeJson } from '@loro-dev/roost';
-import { RoostNativeClient } from '@loro-dev/roost-node';
+import type { RoostNativeClient } from '@loro-dev/roost-node';
 import type { SessionDocument } from '@/lib/loro/doc';
 import type { SessionAgentWrites } from '@/lib/loro/session-agent-writes';
 import { latestSessionModel } from '@/lib/loro/session-model-summary';
@@ -75,6 +75,7 @@ import {
   encodeRoostContent,
 } from './roost-history-port';
 import { registerSessionBackendFactory } from './session-backend';
+import { createRoostNativeClient } from './roost-native-runtime';
 import { RoostHistoryGeneration } from './roost-history-generation';
 import {
   projectLatestGoal,
@@ -164,7 +165,7 @@ const acquireOwnerUnlocked = async (options: RoostNativeOptions): Promise<OwnerL
   if (ownerPool) await releaseOwnerUnlocked(ownerPool.key, true);
   await mkdir(dirname(dbPath), { recursive: true });
   const owner = Identity.fromSeed(seed).owner();
-  const client = new RoostNativeClient({
+  const client = await createRoostNativeClient({
     dbPath,
     seed,
     allowedOwners: [owner],

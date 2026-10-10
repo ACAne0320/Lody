@@ -32,6 +32,12 @@ Electron 将其放在 `resources/cli/node_modules`，签名前复制到 `app.asa
 每份桌面产物只携带已发布的 macOS、Windows MSVC、Linux GNU 的 arm64/x64 六种绑定中的一种。
 不支持的目标在打包时失败。Linux musl 不受支持，已发布的 Linux 构建要求 glibc 2.35 或更新版本。
 
+Lody 的原生运行时边界通过 Node 的 `import.meta.resolve` 解析 SDK，并在首次
+使用时加载该 URL。SDK 的 type-only import 保留类型契约，同时让组合构建器无法
+内联客户端并迁移其 Worker URL。保留既有 bundle external 规则和包暂存流程。
+不覆盖 Worker 路径、不 patch SDK、不回退历史后端；解析及初始化错误沿用现有
+owner lease 的错误传播。
+
 复用共享组件的 Web/iOS 不导入 Node 原生包。现有远程历史桥通过所属电脑公布的
 `sessionHistory: 2` RPC 契约读写，因此电脑必须在线。浏览器包提供 Roost 存储实现，
 但本仓库没有组装 IndexedDB 副本，也不因此新增同步调度器。
@@ -173,6 +179,45 @@ branch page。基准不覆盖 RPC、renderer 绘制、IndexedDB、真实 Provide
 `/private/tmp/lody-roost-native-contract.log`、`/private/tmp/lody-roost-repair-check.log`
 及 `/private/tmp/lody-roost-repair-published-bundle.log`。
 本次继续使用现有 0.1.1 运行时，不需要重新 npm 发布。
+
+### 已安装 Nightly 的 Worker 故障（2026-10-11）
+
+测试实例使用未经修改、签名完整的 Nightly `0.105.0-nightly.2`，通过真实 UI
+复现了本机 Roost 开启会话失败。其 CLI 将原生 SDK 客户端内联到
+`resources/cli/index.js`，使 SDK 的
+`new URL('./worker.mjs', import.meta.url)` 改为相对于 CLI 目录解析。该目录
+没有 Worker；完整的 SDK Worker 和绑定已正确暂存在
+`resources/cli/node_modules/@loro-dev/roost-node/`。仅连接测试实例自己拥有的
+CLI 的调试器捕获了实际 Worker 异常：`MODULE_NOT_FOUND`，缺少的是
+`resources/cli/worker.mjs`，随后 SDK 将其替换为 `workerFailed`。
+这确认了客户端与 Worker 的打包故障，并非仅从通用界面报错推测。两个全新的本机
+会话通过归属检查后仍报 `workerFailed`，其中一次在重启测试实例 CLI 后进行，
+使用仅在归属不匹配时暂停的条件断点。首次 metadata 归属错误仍未查明。
+后端选择继续遵循既有的[功能开关](../feature/2026-10-08-roost-history-feature-gate.zh.md)。
+
+当前公开 CLI 的 Vite 配置已将这个包保持外置。探针使用该实际正式构建配置，
+仅将入口与输出改为独立的合成探针，构建产物保留了外部 SDK import。用已安装的
+签名 Helper、Node 24.21.0 和同一份完整 SDK `0.1.1` 执行该产物，Worker
+初始化以及 SQLite 写入、seal、关闭、重开和读取均通过。身份与数据库均为合成
+测试数据。这是针对打包的验证，不是完整重建 Nightly 后的 UI 验收，也不能确定
+生成已安装程序包的私有发布流水线具体出了什么问题。
+
+证据要求 Nightly CLI 产物保留上述外部包布局，并在重建应用后验证真实本机 Roost
+创建流程。单独发布 SDK 诊断版不能修正已安装客户端被迁移的 Worker URL。
+诊断版仍有助于保留 Worker 原始异常，但查明本次故障并不依赖它。本次调查未
+patch 已安装程序包或产品源码。
+
+独立的 Lody 修复通过上述运行时边界加载 SDK。所属 local-owner 测试用 esbuild
+编译这个实际入口，开启依赖内联且不配置 SDK external 规则，再用 Node 执行
+产物，验证真实 Worker 初始化、seal、关闭，以及 SQLite 重开后的校验读取。
+将运行时加载替换成此前的 SDK 静态 import 后，同一测试报 `workerFailed`；
+恢复修复后通过。身份和数据库选项均由合成测试显式提供，不访问钥匙串或网络。
+所属 owner/history 契约的 29 个测试通过，`pnpm check`、格式及文档检查均通过。
+完整正式 CLI 构建在 2 GiB heap 下通过，并保留运行时包加载。使用正式配置编译
+这个实际 Lody 入口的探针，也在已安装的签名 Nightly Helper、Node 24.21.0 和
+现有 SDK 0.1.1 下通过 Worker/SQLite 重开验证，无须更改依赖或二进制版本。
+已安装的 Nightly 保持原样；新发布的签名 Nightly 完整验收及非本机构架的桌面包
+仍是发布验证边界。
 
 ### 已发布运行时与打包检查点
 

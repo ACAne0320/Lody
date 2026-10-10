@@ -26,7 +26,9 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
   is the authoritative doc for edge cases (stale pointers, history/meta sync races).
 - `session-dispatch-logic.ts` — pure decision functions for the watcher (testable).
 - `roost-node-session.ts` — owns Roost history reads/writes and its bounded active-branch
-  page cache; `roost-session-backend.ts` joins it to the existing Loro control plane.
+  page cache; `roost-native-runtime.ts` loads the intact installed SDK at runtime so
+  composing bundles cannot relocate its Worker. `roost-session-backend.ts` joins it
+  to the existing Loro control plane.
 - `roost-history-generation.ts` — stages structural replacements privately and
   atomically activates them, fencing writes through superseded handles.
 - `roost-rpc-session.ts` — one-shot Cloud CLI history services backed by owner RPC;
