@@ -7,7 +7,7 @@ remediation. It does not include exploit procedures, payloads, or live secrets.
 | --- | --- |
 | Scope commit | `2768e033` on `main` (public repository checkout) |
 | Review date | 2026-10-10 |
-| Method | Static reading of apps, packages, specs, and GitHub Actions. No offensive tooling, no production login, no secret extraction. |
+| Method | Static reading of apps, packages, specs, and GitHub Actions, plus operator facts supplied by the team. Those facts are labeled as such. They were not re-checked against Cloudflare, the private release repository, or a live daemon. No offensive tooling, no production login, no secret extraction. |
 | Overall | No Critical issue was evidenced in this tree. The shipped OSS desktop is a local agent with a deliberately narrow cloud boundary. The highest practical risks are a network-reachable Git credential broker, plaintext CLI cloud credentials, and trust boundaries that live in hosted services this repository does not contain. |
 | Location | Repository root `SECURITY_AUDIT.md`. A root `docs/` directory is rejected by the public-boundary check, so this assessment does not live under that path. |
 
@@ -25,7 +25,19 @@ Severity here combines impact and how often the precondition is realistic. Likel
 
 ### Out of scope (not in this tree)
 
-Hosted account, billing, share-storage, machine-lifecycle, and Streams-token services; organization settings; production headers and WAF; secret stores; installer signing material; the private desktop release repository notified by the nightly workflow. Findings about those systems are residual risks, not confirmed defects.
+Hosted account, billing, share-storage, machine-lifecycle, and Streams-token services; organization settings; production headers and WAF; secret stores; installer signing, notarization, and object-storage credentials. Those live with the private release repository, not in this public tree. Findings about them are residual risks, not confirmed defects.
+
+### Operator context (team-supplied, not re-verified here)
+
+These points came from the team's ops notes. This review treats them as architecture facts, not as a vulnerability list.
+
+- Public product source is `https://github.com/LodyAI/Lody`. The homepage is `https://lody.ai`.
+- Nightly and Stable packaging and signing run in the private release repository `https://github.com/loro-dev/lody`. This public repo is the notify and submodule source only. It intentionally does not hold signing or object-storage credentials (`.github/AGENTS.md`).
+- The OSS nightly job dispatches with repository variables `NIGHTLY_DISPATCH_*` and the secret `NIGHTLY_DISPATCH_APP_PRIVATE_KEY`.
+- The marketing site is Cloudflare Pages built from that private repo's `lody-oss` submodule. It is not live-synced to public `main`.
+- Update feeds are `https://updates.lody.ai/production/` and `https://nightly-updates.lody.ai/production/nightly/`.
+- Clients are Electron Stable and Nightly (separate app ids), the CLI/daemon, and MCP.
+- Vulnerability reports go through GitHub Security Advisories only (`SECURITY.md`).
 
 ### Sketch
 
@@ -111,25 +123,27 @@ Electron cloud cookies go through `safeStorage` (`apps/electron/src/main/auth-st
 
 **Remediation.** Store the CLI token with the OS keystore (or encrypt it with a key the OS holds). Create the file with mode `0600` in the write itself, and set a restrictive ACL on Windows. Fail closed if the permission change fails. Keep the data directory `0700`.
 
-#### M2. Workspace Machine RPC does not authenticate the claimed requester
+#### M2. Machine access trusts a requester id the transport does not prove
 
 | | |
 | --- | --- |
-| Where | `packages/loro-streams-rpc` package rules; `apps/cli/src/session/AGENTS.md` ("Never send an untrusted requester through workspace Machine RPC"); preview and lifecycle checks in `apps/cli/src/preview/preview-control-authority.ts` and `apps/cli/src/lib/machine-lifecycle.ts` |
-| Impact | A handler that trusts `requesterUserId` (or a similar field) on an RPC body can act for another member. That is an IDOR-class bug if any sensitive method skips the upstream check. |
-| Likelihood | Hypothesis. This review did not exhaust every RPC method. Sensitive paths that were read (machine lifecycle, remote preview control, MCP delegation) do call a hosted verify step or require the active turn user to match the CLI account. The transport itself still does not prove the field. |
+| Where | `apps/cli/src/lib/message-handler.ts` `verifyMachineAccess`; `packages/platform/src/local.ts` `createLocalCloudPort`; `apps/cli/src/commands/session.ts` `readDelegatedMachineAccess`; `apps/cli/src/session/AGENTS.md` |
+| Impact | If the claimed `requesterUserId` equals the daemon's user id, the daemon allows the call and does not ask the hosted checker. On the local platform the same comparison is the entire check: the catalog user is allowed and everyone else is `requester_not_member`. A peer who can submit that field as the owner skips membership and project checks. Session rules already say not to send an untrusted requester on workspace Machine RPC, because the stream does not authenticate the field. |
+| Likelihood | Evidenced in the client. Whether a remote workspace member can place that field on a Machine RPC is a **hypothesis**: the gateway is not in this tree. Same-user local sockets can, which matches the desktop trust model. Delegated MCP checks both the CLI account and the driving human, and denies the cross-user case when the hosted combined query is missing. Preview control and machine lifecycle still call hosted verify on the paths that were read. |
 
-**Remediation.** Keep the invariant, and add a single allowlist of RPC methods that may run without a source-side identity check. Reject the rest in one place. On the hosted issuer, bind the Streams JWT subject to the workspace member and ignore client-supplied user ids. That issuer is not in this repository; confirm it there.
+**Remediation.** Treat the owner short-circuit as safe only for requests that already ran on the daemon's own authenticated turn. For Streams-delivered RPC, ignore the body user id and use the subject the gateway put on the stream. Keep one allowlist of methods that may run without that binding. Confirm the hosted checker does not accept a client-supplied owner id either.
 
 #### M3. A published share link is a bearer for plaintext content, and agents receive the full URL
 
 | | |
 | --- | --- |
-| Where | `specs/session-sharing.md`; client in `packages/shared/src/session-share-client.ts` and `packages/shared/src/session-share-delivery.ts` |
-| Impact | Anyone with the link secret can read the published package. The spec states there is no sharing E2EE format in this version, and that MCP delivery returns the complete bearer URL to the requesting agent after a human approval. An agent log, transcript, or later tool call can disclose the link. |
-| Likelihood | By design once a user approves publication. The approval card is required to say the agent receives the URL. Cross-account MCP delivery is specified to fail. |
+| Where | `specs/session-sharing.md` (status: draft, no linked human approval); `packages/shared/src/session-share-credentials.ts`; `packages/components/src/lib/session-share-secrets.ts`; `packages/cloud-api/src/session-sharing.ts` |
+| Impact | Anyone with the link secret can read the published package. The bearer is an access credential, not a decryption key, and this version has no sharing E2EE format. After a human approval, MCP delivery returns the complete URL to the requesting agent. An agent log or later tool call can disclose it. Revoke and reset cannot recall bytes already downloaded. |
+| Likelihood | By design once a user approves publication. The approval card must say the agent receives the URL. Cross-account MCP delivery is specified to fail. The spec calls the feature an in-progress cutover: portable client and management UI exist; hosted deployment acceptance is not established by this repository. Sharing rules say not to deploy until the anonymous reader, MCP confirmation, GC, and integration fixtures switch together. |
 
-**Remediation.** Keep the approval copy. Prefer returning a handle the agent cannot dereference, and show the URL only in the authenticated app. Confirm the hosted object store has no public bucket URLs (the spec requires that; this tree cannot prove the deployment).
+The lifecycle the client and spec implement is in section 3. The control-plane DTOs do not return the credential or its hash. The raw secret is stored on the device and sent to the share API only as an Authorization header.
+
+**Remediation.** Keep the approval copy. Prefer a handle the agent cannot dereference, and show the URL only in the authenticated app. Confirm hosted object storage has no public bucket URLs, that revoke overrides the retired-deployment grace interval, and that the 24-hour agent-link lifetime is enforced on the server. Do not describe this path as encrypted.
 
 #### M4. Most GitHub Actions are version tags, not commit SHAs
 
@@ -255,7 +269,59 @@ Secret-shaped strings that turned up are synthetic fixtures (redaction tests, St
 
 Agents run tools, shell, and git inside a workspace the user opened. MCP rules require the active turn user to match the CLI account, forbid echoing MCP credentials, and limit feedback uploads to suggestion text plus version and platform. Those are strong controls. A malicious repository can still try to steer an agent that the user has authorized to act. Treat workspace content as untrusted input to the agent, which the product already documents in the MCP configure rule.
 
-## 3. Positive controls already in place
+## 3. Deepened boundaries
+
+### Session-share bearer
+
+| Step | What the public client and spec say |
+| --- | --- |
+| Create | A workspace writer publishes conversations they can read. A human action in the authenticated app freezes the package, then uploads and commits. There is no publication preview. MCP may request a share and must not approve it. |
+| Secret | The client draws 32 random bytes (`createSessionShareSecret`). The link is `/s/<shareId>#access=v1.<64 hex>`. The parser accepts that fragment only, not a query parameter. The control plane is specified to store a hash, and recipient-encrypted ciphertext for approved MCP delivery. It must not receive the raw secret. |
+| Scope | One static copy. Later source edits do not change it. Update replaces the deployment and keeps the same secret. The set of conversations is explicit and capped (32 children on the client). Future children do not join. Sharing does not authorize the source workspace, original stream, or agent runtime. Typed files are omitted while the attachment switch defaults off; images are copied, with a 64-image / 20 MB each cap on new shares. Known share-capability fragments in captured history are rewritten to `#access=omitted`. That is not general secret detection. History text is published as-is. |
+| Where the secret lives | Device `localStorage` key `lody:session-share-secret:v1:` plus user, workspace, and share id, with a credential version. It is plaintext. Ordinary cache clear keeps it. It is not written to Flock. A missing local secret requires reset; the cloud copy is not a recovery path. Upload secrets stay in the editor and are not persisted. The anonymous reader keeps the opened deployment in memory and must not write the share to durable storage or open a workspace Repo. |
+| Reset | Rotates the secret. Does not rebind ownership. |
+| Revoke | Publisher may revoke their own share. Administrators and owners may revoke others' shares and may not read those link secrets or take over publication. Revoke disables every deployment and overrides the grace interval for a retired deployment. Cancellation of an unfinished MCP request does not revoke a published share. Removing the publisher's membership, account, or workspace disables access. A replacement membership does not revive it. Source deletion does not delete the published copy. |
+| Expiry | The share link itself has no client-side TTL; it lasts until revoke, reset, or membership loss. Copy Agent Prompt issues a separate read-only link that the spec says expires within 24 hours, cannot outlive the deployment or a revoke/reset, and cannot renew, publish, or read source resources. MCP approval renews a 24-hour upload window; publication starts a 24-hour result window. Those clocks are specified for the service. This tree cannot show they are enforced. |
+| Agent delivery | The CLI creates a recipient key before intent. The app encrypts the reader secret to that key, bound to the request and origin. The CLI decrypts locally and returns the full URL. Same-account only: CLI owner, turn requester, and approver must match. Loss of the local recipient key cannot be repaired by the server. |
+
+Residual: a holder of the fragment can read the published plaintext until revoke, and can keep what they already downloaded. The publisher's browser profile holds the long-lived secret in `localStorage`. Hosting must rate-limit agent-link issuance and omit capability URLs from logs; that requirement is not implemented in this repo.
+
+### Daemon machine access
+
+- Cloud `verifyMachineAccess` calls `canUseMachineForCliToken` with the daemon token, workspace, machine, requester, and optional local project (`apps/cli/src/lib/cloud-cli-port.ts`). The decision itself is hosted.
+- Before that call, `MessageHandler.verifyMachineAccess` returns allowed when `requesterUserId` equals the daemon user, unless `forceBackendVerification` is set. Owner dispatch still schedules a backend recheck on a separate path (`fireOwnerAccessRecheck` in the session rules). A definitive deny fails the turn. `indeterminate` (network or auth error) does not become a deny; the turn stays pending. That fail-open is intentional for availability and is also a window if the hosted check cannot be reached.
+- Local OSS never calls a service. Only the injected catalog user is allowed (`packages/platform/src/local.ts`).
+- Delegated use (an agent on someone else's machine) must pass for both the token user and the driving human. If the hosted combined query is absent, a different human on a machine the owner does not own is denied (`readDelegatedMachineAccess`).
+- MCP requires the active turn user to equal the CLI account. Resource discovery uses `canAccess`. Role dispatch checks both the executing machine owner and the driving human, and must not trust a synced `MachineMeta.ownerUserId` alone.
+
+### Streams and Flock
+
+Ordinary workspace sync is plaintext. `specs/workspace-streams-content.md` is a seam for a future protected mode. Omitted config and explicit `plaintext` keep the current transport. `protected` fails closed unless every Meta room, Loro document, and named Flock room selects protection, but the factory does not fetch keys and the spec says this seam does not enable E2EE. Persisted mode discovery, legacy-client exclusion, and server snapshot admission are open.
+
+Trust boundary that is implemented:
+
+- The Streams JWT is the room credential. It is cached in renderer storage under a key derived from the auth token (`packages/shared/src/loro-streams-auth.ts`). The streams-token spec says that storage is an optimization, not an XSS or revocation boundary. A provider is bound to one endpoint and workspace; a credential change must not return the previous user's token.
+- Flock is a CRDT. A peer who can write the room can merge. Field-level ACLs are not a second layer in this client. Workspace MCP catalogs and agent roles live in the workspace Flock document. Role rows must not hold secrets, API keys, or MCP connection values. Capability-cache rows live in the Machine Flock document, which syncs, and must not store environment values (`specs/acp-capability-refresh-cache.md`).
+- Dual author: the renderer writes user and UI state on its own Streams connection; the CLI writes agent-produced data. The old write-intent proxy is removed and must not return.
+- Meta and Flock checkpoints stay on the replica that loaded them. Local presence for an origin is authoritative over a lagging cloud replica. The local Loro data-plane socket has no application bearer (finding L1).
+- Renderer joins must not open a cloud session room. Local and cloud room health are not interchangeable.
+
+### Client-exposed secrets
+
+| Item | Exposure |
+| --- | --- |
+| Share reader secret | Plaintext `localStorage`, survives ordinary cache clear. Same origin as the app. |
+| Streams JWT cache | AES-GCM in `localStorage`, key derived from the auth token already in the renderer. |
+| CLI `credentials.json` | Plaintext on disk (M1). Not used by the local OSS port. |
+| Git broker bearer | Process environment and `broker.json` (H1). |
+| `lody agent-config show --show-secrets` | Prints raw provider env values. Default output is key names only (`agent-config-output.ts`). |
+| `VITE_PUBLIC_POSTHOG_KEY`, `VITE_VIBELOFT_WEB_AUTH_KEY` | Build-time public client keys for analytics and the docs site. Local composition deletes the PostHog key and must not start telemetry. They are not server credentials, and they are visible to anyone who can read the bundle if a cloud or site build inlines them. |
+| Electron cloud session | `safeStorage`, not the renderer. |
+| Share and control-plane DTOs | Must not return the share secret or its hash. |
+
+No additional hardcoded live credential was found while reading these paths.
+
+## 4. Positive controls already in place
 
 - **Public/local boundary.** OSS desktop and CLI default to local. Platform rules hard-disable local telemetry. `scripts/check-public-boundary.mjs` rejects closed product paths, private workspace dependencies, and a list of hosted deployment hostnames in publishable text.
 - **Electron IPC.** No `window.api` mega-bridge. Preload is allowlisted. Product-window senders are checked. Zod at foreign boundaries. Renderer CSP is tested (`apps/electron/src/renderer/renderer-csp.test.mjs`).
@@ -267,32 +333,33 @@ Agents run tools, shell, and git inside a workspace the user opened. MCP rules r
 - **Supply chain.** `pnpm-lock.yaml` installs with `--frozen-lockfile` in CI. New npm releases wait seven days (`minimumReleaseAge`). CI permissions are read-only. Checkout does not persist credentials. `pull_request_target` workflows are documented in `.github/workflow-security.md`; `pr-scope.yml` does not check out the PR. Managed runtime archives are hash- and size-checked against in-repo manifests. The E2E reporter verifies the `gh` binary hash. Release workflow in this repo publishes notes, not installers.
 - **Disclosure.** `SECURITY.md` routes vulnerability reports to private GitHub Security Advisories and forbids public issues.
 
-## 4. Priority 30-day fix plan
+## 5. Priority 30-day fix plan
 
 Ordered for risk reduction in the code this repository can change. Hosted confirmation items are called out so they are not mistaken for local patches.
 
 1. **Git broker (H1).** Loopback or socket by default; remove the daemon-wide env copy; constant-time compare; stop publishing the token in the shared state file. Add a regression test that the listen address is loopback unless the operator flag is set.
 2. **CLI token file (M1).** OS-backed encryption and atomic restrictive permissions, including Windows. Align the behavior with Electron `safeStorage`.
 3. **Action pinning (M4).** SHA-pin third-party actions. Add a dependency update bot for Actions and npm. Re-read `e2e-pr-reconcile.yml` permissions (L7) in the same change.
-4. **RPC identity checklist (M2).** Inventory Machine RPC methods in this repo and mark which ones verify the caller. Fix any sensitive method that trusts a body field. File a matching task for the hosted issuer, which this tree cannot patch.
-5. **Share-link handling (M3).** Confirm hosted object ACLs. Change MCP delivery so the agent does not receive a dereferenceable bearer if product still wants agent-initiated publish.
+4. **RPC identity checklist (M2).** Stop treating a body `requesterUserId` that matches the daemon user as proof on Streams-delivered calls. Inventory methods that skip `forceBackendVerification`. Confirm the hosted checker binds the stream subject. Keep the local catalog comparison for OSS, where there is no other user.
+5. **Share-link handling (M3).** Confirm hash-only storage, no public object URLs, revoke-over-grace, and the 24-hour agent-link clock on the service. Keep MCP from receiving a dereferenceable URL if that is still acceptable to the product. Move the device copy of the reader secret out of plaintext `localStorage`, or accept that any same-origin script can read it. Do not ship the cutover until the spec's deploy gate is met.
 6. **Runtime mirror and preview roots (L5, L8).** Reject cleartext mirrors except an explicit dev flag. Warn on `LODY_FILE_PREVIEW_EXTRA_ROOTS`.
 7. **Electron sandbox decision (M6).** Either enable the Chromium sandbox or record the preload constraint in the window module so it is not copied into new windows by accident. Devbar (M8) stays default-off.
 8. **MCP URL guard (M7).** Reject metadata and link-local targets unless opted in.
-9. **Operational.** Confirm fork-PR secret isolation, branch protection, and the nightly App installation scope (M5). Set production CSP and HSTS for the docs site (L9). Confirm inbound webhook signature checks in the hosted service (I5).
+9. **Operational.** Confirm fork-PR secret isolation, branch protection, and that `NIGHTLY_DISPATCH_APP_PRIVATE_KEY` can dispatch only the intended private repository (M5). Signing keys, notarization material, and object-storage credentials stay in that private release repo; this public tree should continue to lack them. Confirm the Stable and Nightly update feeds (`https://updates.lody.ai/production/` and `https://nightly-updates.lody.ai/production/nightly/`) serve only signed artifacts. Set production CSP and HSTS for `https://lody.ai` (L9). Confirm inbound webhook signature checks in the hosted service (I5).
 
-## 5. Residual risks and what was not verified
+## 6. Residual risks and what was not verified
 
-- **Hosted authorization.** Account sessions, Streams JWT issuance, share-object ACLs, machine-lifecycle verify, preview verify, billing, and webhook receivers are outside this repository. Client code can be careful and still be wrong if the service trusts a client-supplied id.
-- **Production configuration.** Cloudflare or other edge headers, WAF, CORS on public APIs, cookie `Secure` / `SameSite` / `HttpOnly` flags as actually set, and secret-manager contents were not visible.
+- **Hosted authorization.** Account sessions, Streams JWT issuance, share-object ACLs, the 24-hour agent-link clock, machine-lifecycle verify, preview verify, billing, and webhook receivers are outside this repository. Client code can be careful and still be wrong if the service trusts a client-supplied id.
+- **Private release and signing.** Packaging, notarization, signing keys, and object-storage credentials for Stable and Nightly are in `https://github.com/loro-dev/lody`, not here. This review did not read that repository. A leak there can ship a signed desktop even if this public tree is clean. The public nightly workflow only holds a GitHub App key that dispatches into that repo.
+- **Site and update channels.** Cloudflare Pages is built from the private repo's submodule and is not the same commit as public `main`. Response headers, WAF, and the contents of `https://updates.lody.ai/production/` and `https://nightly-updates.lody.ai/production/nightly/` were not fetched. Cookie `Secure` / `SameSite` / `HttpOnly` flags as actually set were not visible.
 - **GitHub organization settings.** Branch protection, required reviews, Actions allowlists, fork PR approval, and who can read `NIGHTLY_DISPATCH_APP_PRIVATE_KEY` were not visible.
-- **Signing and updates.** This repo's tag workflow does not build installers. macOS signing, notarization, Sparkle feeds, and Windows/Linux updater channels are operational. A compromised update channel would bypass the hash pins in the git tree.
+- **Signing and updates.** This repo's tag workflow does not build installers. A compromised update feed would bypass the hash pins in the git tree. Electron Stable and Nightly are separate app ids; which feed each build trusts was not confirmed from a packaged artifact.
 - **Artifact host.** Clients verify sha256 against manifests shipped in the app. They do not prove the host's TLS configuration or that an already-released manifest was the one operators intended.
 - **Submodules.** ACP extension checkouts follow gitlinks. Trust depends on review at each bump.
 - **Git history and developer machines.** This pass did not scan full history, private forks, or laptops for leaked tokens.
 - **Runtime behavior.** Bind addresses, file modes, and CSP were read from source. They were not observed on a packaged build, on Windows ACLs, or against a live daemon.
 - **Agent autonomy.** Even with the controls above, an authorized agent can read and modify the workspace, talk to configured MCP servers, and use Git credentials the session was given. That is the product's power, and it is the main residual risk for a user who opens an untrusted repository.
 
-## 6. How this review was done
+## 7. How this review was done
 
-Searches and reads covered Electron `webPreferences` and CSP, IPC preload policy, daemon sockets, credential storage, the Git broker, MCP HTTP, preview and file-preview policy, markdown and HTML sinks, auth redirects, managed-runtime hashing, workflow permissions, and secret-shaped literals. Hypotheses are labeled. No finding depends on a live secret, and none should be copied into a public issue with reproduction detail. Use `SECURITY.md` for anything that is exploitable.
+The first pass covered Electron `webPreferences` and CSP, IPC preload policy, daemon sockets, credential storage, the Git broker, MCP HTTP, preview and file-preview policy, markdown and HTML sinks, auth redirects, managed-runtime hashing, workflow permissions, and secret-shaped literals. The follow-up read the session-share spec and credential helpers, daemon `verifyMachineAccess` and the local access oracle, Streams content and token-refresh specs, Flock role/catalog rules, and client env flags that can print or bundle keys. Operator notes about the private release repo, Pages, and update feeds are quoted as team context and were not independently verified. Hypotheses are labeled. No finding depends on a live secret, and none should be copied into a public issue with reproduction detail. Use `SECURITY.md` for anything that is exploitable.
