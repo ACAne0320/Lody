@@ -1,16 +1,11 @@
-import {
-  getWorkspaceFlockDocId,
-  getWorkspaceMcpCatalog,
-  readWorkspaceFlockRowsFromFlock,
-  resolveSessionMcpServers,
-  type McpServerId,
-  type ResolveSessionMcpServersResult,
-  type ResolveSessionMcpServersInput,
-  type SessionId,
-  type WorkspaceFlockReadableFlock,
-  type WorkspaceId,
+import type {
+  McpServerId,
+  ResolveSessionMcpServersInput,
+  ResolveSessionMcpServersResult,
+  SessionId,
+  WorkspaceFlockReadableFlock,
+  WorkspaceId,
 } from '@lody/shared';
-import { formatErrorMessage } from '@/utils/format-error';
 
 /**
  * Applies the agent's advertised capabilities to an already-loaded catalog.
@@ -32,49 +27,31 @@ export type LoadSessionMcpCatalogInput = {
   env?: Readonly<Record<string, string | undefined>>;
 };
 
-const CATALOG_SYNC_TIMEOUT_MS = 5_000;
-
 const EMPTY_SELECTION: SessionMcpCatalogSelector = () => ({ servers: [], problems: [] });
+const UNTRUSTED_WORKSPACE_CATALOG: SessionMcpCatalogSelector = () => ({
+  servers: [],
+  problems: [
+    {
+      kind: 'catalog_unavailable',
+      reason: 'workspace MCP execution requires approval on the target machine',
+    },
+  ],
+});
 
 /**
  * Loads the workspace MCP catalog for an ACP session start.
  *
- * Deliberately split from selection: the only thing selection needs from the
- * agent is its advertised `http` capability, so this — a remote catalog sync
- * plus a document read — can overlap process spawn and the ACP handshake
- * instead of adding a round trip between `initialize` and `newSession`.
- *
- * Best effort. Configuration failures come back as problems on the selector so
- * the agent still starts with its built-in MCP.
+ * Workspace rows are replicated peer-authored data, not target-machine
+ * execution consent. Until a machine-local, content-pinned approval store is
+ * available, fail closed without reading or resolving the catalog. In
+ * particular, never interpolate the daemon environment or forward a stdio
+ * command from this document to an ACP provider.
  */
-export const loadSessionMcpCatalog = async (
+export const loadSessionMcpCatalog = (
   input: LoadSessionMcpCatalogInput
 ): Promise<SessionMcpCatalogSelector> => {
-  const { logger, selectedIds, sessionId } = input;
-  if (selectedIds.length === 0) {
-    return EMPTY_SELECTION;
+  if (input.selectedIds.length === 0) {
+    return Promise.resolve(EMPTY_SELECTION);
   }
-
-  const docId = getWorkspaceFlockDocId(input.workspaceId);
-  if (input.syncFlockDoc) {
-    try {
-      await input.syncFlockDoc(docId, { timeoutMs: CATALOG_SYNC_TIMEOUT_MS });
-    } catch (error) {
-      logger.debug(
-        `[${sessionId}] Workspace MCP catalog refresh failed; using local rows: ${formatErrorMessage(error)}`
-      );
-    }
-  }
-
-  try {
-    const handle = await input.repo.openFlockDoc(docId);
-    const catalog = getWorkspaceMcpCatalog(readWorkspaceFlockRowsFromFlock(handle.flock));
-    const env = input.env ?? process.env;
-    return (agentCapabilities) =>
-      resolveSessionMcpServers({ catalog, selectedIds, agentCapabilities, env });
-  } catch (error) {
-    const reason = formatErrorMessage(error);
-    logger.debug(`[${sessionId}] Workspace MCP catalog read failed: ${reason}`);
-    return () => ({ servers: [], problems: [{ kind: 'catalog_unavailable', reason }] });
-  }
+  return Promise.resolve(UNTRUSTED_WORKSPACE_CATALOG);
 };

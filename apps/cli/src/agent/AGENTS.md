@@ -34,8 +34,7 @@ context/acp-agent-edit-evidence.md; adapter repos: [apps/cli/AGENTS.md](../../AG
   `LODY_SERVER_URL` so cloud MCP orchestration uses the daemon's deployment, let local platform
   assembly clear them before agent startup, and never add CLI credentials or secrets.
 - Pass the same MCP config on initial and replacement DeepSeek Harness sessions.
-- Workspace MCP resolution stays TWO phases: call `loadExternalMcpServers` BEFORE `initialize`,
-  never between `initialize` and `newSession`.
+- Workspace MCP is peer-authored, not consent. Fail closed until machine-local content-pinned approval. Load stays before `initialize`.
 - Acknowledged steer ends `applied`, `not-applied`, or `unknown`. Only adapter proof maps
   `not-applied`; transport/process ambiguity stays `unknown`. Await the request answer even
   after the turn response; Session execution never classifies provider errors.

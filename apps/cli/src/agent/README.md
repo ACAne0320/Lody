@@ -106,13 +106,14 @@ Builtin DeepSeek Harness mounts the stdio server per ACP session through the ext
 native `dsh-mcp-client` bridge; the bridge owns namespace collision handling and releases
 the MCP child with `session/close` or Agent teardown.
 
-### Workspace MCP resolution is two phases
+### Workspace MCP execution fails closed
 
-`loadExternalMcpServers` (catalog sync + document read) runs BEFORE `initialize` so its
-remote round trip overlaps spawn and the handshake, and the selector it resolves to applies
-the agent's advertised `http` capability at `newSession`. Awaiting the load between
-`initialize` and `newSession` would put a remote sync — up to its 5s budget — on the
-critical path of every session establishment while the agent process sits idle.
+Catalog rows are peer-authored replicated data, not target-machine execution consent.
+`loadSessionMcpCatalog` returns no servers and `catalog_unavailable` for a non-empty
+selection, without syncing, opening, or interpolating the workspace document. Built-in
+MCP servers stay available. When a machine-local, content-pinned approval store exists,
+that load must still start before `initialize` and must not run between `initialize` and
+`newSession`.
 
 ### Steer delivery classification
 

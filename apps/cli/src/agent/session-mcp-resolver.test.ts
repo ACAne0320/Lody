@@ -53,65 +53,9 @@ describe('loadSessionMcpCatalog', () => {
     expect(syncFlockDoc).not.toHaveBeenCalled();
   });
 
-  it('reads the catalog and expands target-daemon environment variables', async () => {
-    const select = await loadSessionMcpCatalog({
-      repo: { openFlockDoc: vi.fn(async () => ({ flock: catalogFlock })) },
-      workspaceId,
-      sessionId,
-      selectedIds: [selectedId],
-      logger: { debug: vi.fn() },
-      env: { NODE_BIN: 'node', ENTRYPOINT: 'server.js' },
-    });
-    expect(select(undefined)).toEqual({
-      servers: [{ name: 'filesystem', command: 'node', args: ['server.js'], env: [] }],
-      problems: [],
-    });
-  });
-
-  it('finishes every read before the agent capabilities are known', async () => {
+  it('does not execute selected peer-authored workspace configuration', async () => {
     const openFlockDoc = vi.fn(async () => ({ flock: catalogFlock }));
-    const select = await loadSessionMcpCatalog({
-      repo: { openFlockDoc },
-      workspaceId,
-      sessionId,
-      selectedIds: [selectedId],
-      logger: { debug: vi.fn() },
-      env: { NODE_BIN: 'node', ENTRYPOINT: 'server.js' },
-    });
-    expect(openFlockDoc).toHaveBeenCalledTimes(1);
-
-    // Selecting twice with different capabilities must not touch the document
-    // again: the load phase is what ACP startup overlaps with its handshake.
-    expect(select({ http: true }).servers).toHaveLength(1);
-    expect(select({ http: false }).servers).toHaveLength(1);
-    expect(openFlockDoc).toHaveBeenCalledTimes(1);
-  });
-
-  it('turns catalog read failures into catalog_unavailable', async () => {
-    const select = await loadSessionMcpCatalog({
-      repo: { openFlockDoc: vi.fn(async () => Promise.reject(new Error('database unavailable'))) },
-      workspaceId,
-      sessionId,
-      selectedIds: [selectedId],
-      logger: { debug: vi.fn() },
-    });
-    const result = select(undefined);
-    expect(result.servers).toEqual([]);
-    expect(result.problems).toEqual([
-      { kind: 'catalog_unavailable', reason: 'database unavailable' },
-    ]);
-  });
-
-  it('refreshes first and falls back to local rows if refresh fails', async () => {
-    const order: string[] = [];
-    const syncFlockDoc = vi.fn(async () => {
-      order.push('sync');
-      throw new Error('offline');
-    });
-    const openFlockDoc = vi.fn(async () => {
-      order.push('open');
-      return { flock: catalogFlock };
-    });
+    const syncFlockDoc = vi.fn(async () => undefined);
     const select = await loadSessionMcpCatalog({
       repo: { openFlockDoc },
       syncFlockDoc,
@@ -121,8 +65,16 @@ describe('loadSessionMcpCatalog', () => {
       logger: { debug: vi.fn() },
       env: { NODE_BIN: 'node', ENTRYPOINT: 'server.js' },
     });
-    expect(order).toEqual(['sync', 'open']);
-    expect(syncFlockDoc).toHaveBeenCalledWith('workspace-1:wf:workspace', { timeoutMs: 5_000 });
-    expect(select(undefined).servers).toHaveLength(1);
+    expect(select(undefined)).toEqual({
+      servers: [],
+      problems: [
+        {
+          kind: 'catalog_unavailable',
+          reason: 'workspace MCP execution requires approval on the target machine',
+        },
+      ],
+    });
+    expect(openFlockDoc).not.toHaveBeenCalled();
+    expect(syncFlockDoc).not.toHaveBeenCalled();
   });
 });
