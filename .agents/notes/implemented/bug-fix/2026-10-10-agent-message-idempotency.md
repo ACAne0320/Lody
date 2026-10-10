@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+PR: [#1422](https://github.com/LodyAI/Lody/pull/1422)
+
 [中文](2026-10-10-agent-message-idempotency.zh.md)
 
 ## Abstract
