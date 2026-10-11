@@ -2,6 +2,7 @@
 
 Status: proposed
 Translation: current
+PR: [#1497](https://github.com/LodyAI/Lody/pull/1497)
 
 [中文](2026-10-12-missing-pr-association.zh.md)
 
