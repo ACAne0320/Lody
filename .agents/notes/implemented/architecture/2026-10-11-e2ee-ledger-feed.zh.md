@@ -26,3 +26,7 @@ Owning12 覆盖原帧、真实签名、初始绑定、重复／回退、独立�
 未修改 P09／HPKE，未定义新 wire/tag/header、全局最新证明、权限快照启动、原生存钥、恢复格式、D12 或生产开关。[逐项 manifest](../../../docs/e2ee-migration-manifest.json)保留部分覆盖与未完成归属。所有层保持 Draft，独立审查由主协调安排。早期原型的 ES2022 Promise helper／Fiber poll API 错误作为 harness 失败单列，修正 API 后保留原取消断言。
 
 作者最终检查：owning12/core246、package typecheck、完整 root `pnpm check`、format/docs/public boundary 通过。早期静态检查的控制字符 regex 与测试变量遮蔽已修正，旧失败日志保留，不放松测试。实际 SDK／HTTP／子进程脚本和日志由作者证据目录单独保留；不是独立审查或完整 Lab 验收。
+
+作者扩展存储故障测试后发现 13ce5dac 漏查记录 INSERT：忽略或改写记录时，元数据仍可成功写入并推进位置。旧 head 两项失败保留；修复逐条实际 changes／原字节读回，并在同事务检查实际记录总数与 bytes，不只检查元数据。14 项拥有测试包含新增 IGNORE/TAMPER 原件回归，失败回滚记录和位置。另同步继承的 receive 目标指纹为原审查 4134109a 的实际源码 hash，保留初次提取 hash；其运行源码未改，不沿用旧 fingerprint 为当前匹配。
+
+本次修复最终作者检查：owning14/core248、package typecheck、完整 root `pnpm check`、format/docs/public boundary 通过。原 13ce5dac 两项失败与修复后通过分列保存，尚待新 head 的独立增量与准确 CI，不关闭原 Lab2。

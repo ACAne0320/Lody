@@ -317,6 +317,71 @@ describe('durable full-history feed boundary', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  it.each(['IGNORE', 'TAMPER'] as const)(
+    'does not commit a cursor when actual record insertion is %s',
+    async (fault) => {
+      const f = envelopeFixture(),
+        dir = mkdtempSync(path.join(tmpdir(), 'ledger-record-')),
+        file = path.join(dir, 'feed.sqlite');
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const feed = yield* makeSqliteLedgerFeed({
+                path: file,
+                mode: 'create',
+                genesis: f.context.genesis,
+                genesisRecord: f.genesisRecord,
+                expected: { head: hashRecordBytes(f.genesisRecord), length: 1 },
+                budget: { maxRecords: 100, maxBytes: 100000 },
+              });
+              const disk = new Database(file);
+              try {
+                disk.exec(
+                  fault === 'IGNORE'
+                    ? 'CREATE TRIGGER corrupt_record BEFORE INSERT ON ledger_feed_records BEGIN SELECT RAISE(IGNORE); END;'
+                    : "CREATE TRIGGER corrupt_record AFTER INSERT ON ledger_feed_records BEGIN UPDATE ledger_feed_records SET record=x'00' WHERE position=NEW.position; END;"
+                );
+              } finally {
+                disk.close();
+              }
+              const endpoint = { head: f.view().head, length: f.view().length };
+              expect(
+                Result.isFailure(
+                  yield* Effect.result(
+                    feed.accept(
+                      {
+                        requestOffset: '-1',
+                        nextOffset: 'opaque/2',
+                        records: f.records(),
+                        upToDate: true,
+                      },
+                      endpoint
+                    )
+                  )
+                )
+              ).toBe(true);
+              expect((yield* feed.current()).offset).toBe('-1');
+              const check = new Database(file);
+              try {
+                expect(
+                  check.prepare('SELECT COUNT(*) AS n FROM ledger_feed_records').get()
+                ).toEqual({ n: 1 });
+                expect(check.prepare('SELECT offset,count FROM ledger_feed_meta').get()).toEqual({
+                  offset: '-1',
+                  count: 1,
+                });
+              } finally {
+                check.close();
+              }
+            })
+          )
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
   it.each(['ABORT', 'IGNORE'] as const)(
     'rolls back actual appended records and position when metadata write is %s',
     async (failure) => {

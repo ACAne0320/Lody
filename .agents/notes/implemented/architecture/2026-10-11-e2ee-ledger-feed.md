@@ -65,3 +65,7 @@ harness failures remain separate; corrected APIs preserve the original cancellat
 assertion and release the borrowed test promise before assertions can fail.
 
 Author final checks: owning12/core246, package typecheck, full root `pnpm check`, format/docs/public boundary passed. Early control-character regex/test shadow static errors were fixed, with old failed logs retained and no test weakening. Actual SDK/HTTP/process scripts and logs remain separate author evidence, not independent review or complete Lab acceptance.
+
+Author-expanded storage fault tests exposed missing record-insert checks at 13ce5dac: ignored or altered record writes could still commit metadata/position. Both old-head failures remain retained. The increment checks actual insertion changes, exact original readback and aggregate retained count/bytes inside the same transaction. Owning14 includes new IGNORE/TAMPER original-record regressions; failures roll back records and position. Inherited receive destination metadata is also synchronized to the actual reviewed 4134109a source hash while retaining the extraction hash. Its runtime source is unchanged; old destination metadata is not claimed current.
+
+Increment final author checks: owning14/core248, package typecheck, full root `pnpm check`, format/docs/public boundary passed. Both original 13ce5dac failures and new passing runs remain separate. Accurate new CI and independent increment remain pending; original Lab2 is not closed.

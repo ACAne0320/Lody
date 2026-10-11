@@ -3,6 +3,7 @@ import { closeSync, openSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { Effect, Result } from 'effect';
 import * as Bytes from '../bytes';
+import { bytesEqual } from '../cbor';
 import { verifyLedger, hashRecordBytes, type LedgerCheckpoint } from './index';
 import {
   LedgerFeedError,
@@ -233,9 +234,23 @@ export function makeSqliteLedgerFeed(input: {
               const insert = db.prepare(
                 'INSERT INTO ledger_feed_records(position,record) VALUES(?,?)'
               );
-              additions.forEach((record, index) =>
-                insert.run(state.view.length + index + 1, record)
+              const readOriginal = db.prepare(
+                'SELECT CASE WHEN length(record) BETWEEN 1 AND 8192 THEN record ELSE NULL END AS record FROM ledger_feed_records WHERE position=?'
               );
+              additions.forEach((record, index) => {
+                const position = state.view.length + index + 1;
+                if (insert.run(position, record).changes !== 1) throw fail('corrupt');
+                const saved = readOriginal.get(position) as { record: unknown } | undefined;
+                if (!(saved?.record instanceof Uint8Array) || !bytesEqual(saved.record, record))
+                  throw fail('corrupt');
+              });
+              const aggregate = db
+                .prepare(
+                  'SELECT COUNT(*) AS count,COALESCE(SUM(length(record)),0) AS bytes FROM ledger_feed_records'
+                )
+                .get() as { count: number; bytes: number };
+              if (aggregate.count !== next.view.length || aggregate.bytes !== bytes)
+                throw fail('corrupt');
               const changed = db
                 .prepare(
                   'UPDATE ledger_feed_meta SET head=?,count=?,offset=?,bootstrap=?,bytes=? WHERE id=1'

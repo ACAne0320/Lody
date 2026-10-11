@@ -53,3 +53,5 @@ the actual registry SDK over a synthetic local HTTP server and another OS proces
 reopening the same database. This is not a deployed Streams/backend or original
 Lab2 acceptance result. The source Lab2 old failures remain open until its real
 session/SDK/SQLite path consumes these entries and is rerun.
+
+Accept also checks each actual insertion changes one row, reads back its exact original bytes and checks the retained record count/byte total in the same transaction. Ignored or trigger-altered record writes cannot stand in for durable history or advance the position.
