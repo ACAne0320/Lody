@@ -89,9 +89,15 @@ export function makeLedgerStreamReader(stream: LedgerStreamReader) {
           let position = offset,
             tail = new Uint8Array(0),
             total = 0;
-          const records: Uint8Array[] = [];
+          const records: Uint8Array[] = [],
+            visited = new Set([offset]);
           for (let pages = 0; pages < 4096; pages++) {
             const page = yield* fetch(position);
+            if (page.body.length === 0 && page.nextOffset !== position)
+              return yield* fail('invalid-offset');
+            if (page.body.length > 0 && visited.has(page.nextOffset))
+              return yield* fail('invalid-offset');
+            visited.add(page.nextOffset);
             total += page.body.length;
             if (total > 16 * 1024 * 1024) return yield* fail('read-too-large');
             if (page.body.length > 0 && page.nextOffset === position)
