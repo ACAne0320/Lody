@@ -9,18 +9,21 @@
     "src/schedule.ts": "760cc54684912e06f582bb015a2efe7ddd2d37c51e8c4043e593c70f54bf7a4f",
     "src/runtime.ts": "51e26c9eaf96b10a875f5f951eaf6fa200748d6221d7fcf52f8975ddd5351e63",
     "src/services/run.ts": "d05a7592b08dda18ae5f2a0be9602d6554a978fb16b6fd1d65ea8fbc782294f7",
-    "src/driver.ts": "1e8cedca5dfece6fdc37d70b2eb91969829e48e2b10b807329c741e10e7a0bbd"
+    "src/driver.ts": "1e8cedca5dfece6fdc37d70b2eb91969829e48e2b10b807329c741e10e7a0bbd",
+    "src/judge.ts": "5d0c6b6c152e2aeb87c9e604c5d02ec8f9158563dc5f79a5b1cc9561b0949c18",
+    "src/content-trace.ts": "edf7216dc561dc9b615f9804205c001fe0764fc040ba49f06903e57838aa69e0"
   },
   "implementation": "Public core/released SDK consumers with partial actual loopback credentials/control/mailbox/joins routes. HPKE installation and signed join metadata use real possession/bearer HTTP; synthetic identity/wrapping and full Lab remaining explicit. No copied core.",
   "originalFailures": "Immutable original Lab2 baseline is retained. New consumer probes pass; full original host/actor scenarios are not closed.",
   "targetFingerprints": {
     "AGENTS.md": "599262b8331ef7d882f13614796a0b288ca0011eccc47c8130da223a8c535018",
     "CLAUDE.md": "599262b8331ef7d882f13614796a0b288ca0011eccc47c8130da223a8c535018",
-    "README.md": "737fc98474b29925598b040eac3951dc060ca98d58655685d1e941dfb7f2bc5d",
-    "README.zh.md": "a9209d81e2a5cb3106abf53b95b299f6b15d8252ed4a31e562074e8083da1549",
-    "package.json": "7833d623738f6e453cc71ce24a685c5817b4c13fe9442e237d1f5709dc8a34c6",
+    "README.md": "c22d9684018f7a394c0eadd193190995563444977c37b4f26b01ecf47d0bae5a",
+    "README.zh.md": "54132c0d2f4b4cdc162d2ba1d08495272dbbb1ca4a5aab4c0067de9278061cc7",
+    "package.json": "ac8c0488dbde8ec1db729420e0a9ef961643767661e122b4b5750144b00a3083",
     "src/platform/content-provider.ts": "b4be8bfceb43a591097015499c10aefbd4ab870105d3569dddd7fa951ff9501d",
     "src/platform/content-session.ts": "7c22e34f85f2eabd79b472b861681127e7bb6b2ced687da3bc47c8eb415e6dfe",
+    "src/platform/content-trace.ts": "acb459c5e159d7b3b6688a3b8f0bdcff57339f61dff2093f4e5c7ac2a6202aa6",
     "src/platform/control-gateway.ts": "22f65b8c1d9b9a096d679985bbac788d36016ce0952c65c9e6ebae90945c20ce",
     "src/platform/credentials.ts": "96ffc2c035d655b91676875970563189440a658a1fdf4d951d7eb33850fb478a",
     "src/platform/document-sqlite.ts": "241f28ece61d4f84cb60268721f9ba165ac86786baaf306344cd782b211303a2",
@@ -38,6 +41,7 @@
     "src/platform/sdk-owner.ts": "b28fd9895c95b85b9126c66c1df92a32e85fcb29bb5f7fbca3e27fff872bd058",
     "src/platform/stream-read.ts": "7d1742d6905fcf31e5a1e0def276f9b38afc04a0be08763ecb24cfdbbdb4dc61",
     "src/platform/workspace-registry.ts": "6f9b3602dc53c7b190c2b08fcbd8435cf9aa36908d04e1ec9d785e7cef965559",
+    "src/pure/judge.ts": "d32ab4efb965dec58f5224e7d3b6fe0260f4fba309f36b30d8c20cd880951f6f",
     "src/pure/multipart.ts": "be0d5332da2294ec63691f4e9c31a3b5d6b8fd05684b02adb5110f9386ae71a3",
     "src/pure/replay.ts": "6630b9c338d9459620b338ee9098e94dbf62d46d8cf7ab162e252a53bc706722",
     "src/pure/schedule.ts": "dac314f901d288c7cb433eca78fe7952b8e2adfb793e2fe0bbf1c85b9167bd0e",
@@ -46,11 +50,13 @@
     "test/content-fixture.ts": "c935423ea80720f6cbb583bee35ce0e16599caba063eca0463d998764bca80ef",
     "test/content-provider.test.ts": "3acb99485e13aa494cf2dbc880664d4e2cd76d1b7bcd69c6f229e84e264269ee",
     "test/content-reopen.mts": "17515ba140c32c660cdd66c3188c2a8c1e2b8e83e009c4872ba17765aa107474",
+    "test/content-trace.test.ts": "c5c9a81c40f0cf5c0baf498725708b18519b5fd394661f6c1950810eb146066f",
     "test/credentials.test.ts": "dd695c6db6234d020baafc5892f82f0a7e89219e9e4b9b9be11dcc03bb46782e",
     "test/driver.test.ts": "e8fd4e1d7986da517ca9cac3c0461195107fb97b035a229edc2287f0566f7d96",
     "test/gateway.test.ts": "20948f66cc48fd959223733b0a5663d82e4c6c690e1e73c08252cfcd9eb44df2",
     "test/host.test.ts": "fdfb43111d5b931566bdde290c9c3f7f6a13bb50e7e5bf917fc4ecc8a640f687",
     "test/join-mailbox.test.ts": "e446dd1c1836fbf6093a54c2649cd659855556c710cee0e77b52f728f7db7386",
+    "test/judge.test.ts": "d3054dcb2a5dc52790b8d30343d33b5adab0099cb86dc880a01dfc277c1e2ce7",
     "test/key-distribution.test.ts": "9cbf960815171ce08f229d46bb09bbf6a4178892a42a17096106ed94978a3f31",
     "test/key-mailbox.test.ts": "94ec488d11ccd80a751edc039c2e9ae29894d4aaf985ede0750529702bf346fb",
     "test/key-reopen.mts": "48574d59d56e86f4f52bd4ddd3d1558fae533397e7cb6aa72c52d62785f2d6f2",
@@ -432,6 +438,7 @@
     "originalHarness": "driver/attack/replay/CLI and original host scenarios pending",
     "gateway": "Bounded authenticated GET/HEAD control/loro/flock/bootstrap/latest/specific snapshot routes; fixed loopback upstream, canonical same-origin/Org/stream redirect, actual response-body retention and before/after genuine permission. Real machine revoke keeps durable feed cursor. Lab52 plus five SHA overlays passes; three direct behavioral negatives/no timeout/restored. Unprotected snapshot fixture only; content writes/live/fullhost/CLI and protected snapshot contract pending.",
     "mailbox": "Actual SQLite ignored protected-key insert retains original Install task/no terminal/no key; after closing parent receiver owners actual OS child reopens syntheticX25519/device/publicgenuine2records, realHPKEopens/saves/readbacks and reports through fresh challenge/bearer HTTP. Parent actualSQLite taskReported/frame bytecompare, original Recovery no-send/repair coverage retained. Synthetic device file0600 only, importedprivate handle nonextractable/publicextractable needed lockedHPKEserialize binding. Original nonextractable-public open-failed log retained, noalgorithm/corechange. Affected13/type + fresh e574/3SHA Lab52 pass, skipping actualinstall/report gives noReported directfail/nontimeout/restored. Full epochrotation/host/originalLab2/nativecustody pending.",
-    "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work."
+    "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work.",
+    "judgeAndTrace": "WIP pure verdict18 exports ported: missing measurements/default baseline/mixed unavailable not all-pass, count-only history unavailable, measured new unauthorized acceptance violation with lawful admitted-history semantics unchanged, explicit insider freshness scope. Source4 old pure FAIL/new same probe PASS retained; new observer old original alias FAIL retained. Typed run-scoped bounded private synthetic trace provides original record/read/clear as methods, owned fields before budget/no returned alias/no cross-run clear/close and closed observation fails. No global plaintext registry, no attacker access or authority inference. Owning9/type pass; Root core302/Lab67, format/docs/publicboundary7017/27 pass; all59Lab inputSHA unchanged. Fixedhead and real actor/attack observation integration pending."
   }
 }

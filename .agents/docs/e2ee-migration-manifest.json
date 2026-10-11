@@ -5590,10 +5590,10 @@
         "core": "edf7216dc561dc9b615f9804205c001fe0764fc040ba49f06903e57838aa69e0",
         "candidate": "edf7216dc561dc9b615f9804205c001fe0764fc040ba49f06903e57838aa69e0"
       },
-      "targetPath": "packages/e2ee-lab/src/content-trace.ts",
+      "targetPath": "packages/e2ee-lab/src/platform/content-trace.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Measured content-write facts used by confidentiality judging; replace process-global accumulation with run-owned trace state.",
+      "reason": "Run-owned bounded private synthetic write facts replace process-global plaintext array. Original recordContentWrite/contentWritesFor/clearContentWrites survive as scoped owner methods; caller fields captured once before budget/validation, immutable snapshots, closed admission/read/clear refuses, separate runs unaffected. Old original alias failure and owning3 tests retained; actual actor/attack record integration remains pending. No new writer eligibility decision, undefined reference decision stays unmeasured, not attacker authority.",
       "sourceDeclaredExports": {
         "core": [
           "ContentWriteFact",
@@ -5608,7 +5608,12 @@
           "clearContentWrites"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created-functional-integration-pending",
+      "targetDeclaredExports": [
+        "ContentWriteFact",
+        "LabTraceError",
+        "makeLabContentTrace"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/defects.ts",
@@ -5860,10 +5865,10 @@
         "core": "5d0c6b6c152e2aeb87c9e604c5d02ec8f9158563dc5f79a5b1cc9561b0949c18",
         "candidate": "5d0c6b6c152e2aeb87c9e604c5d02ec8f9158563dc5f79a5b1cc9561b0949c18"
       },
-      "targetPath": "packages/e2ee-lab/src/judge.ts",
+      "targetPath": "packages/e2ee-lab/src/pure/judge.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Independent measured verdict composition for imports, cursor durability, leakage, authorization and forks; missing observations must never pass.",
+      "reason": "All 18 typed pure verdict exports ported/repaired: unmeasured baseline/undefined facts and mixed unavailable never all-pass; count-only imports cannot prove history; measured unauthorized new content is violation, admitted historical content remains valid after revocation; explicit insider freshness assumptions separate. Four old pure failures/new same probe passes and owning6 tests retained. Actual honest/attacker measurement integration remains pending; pure pass is not protocol/whole fault acceptance.",
       "sourceDeclaredExports": {
         "core": [
           "JudgeVerdict",
@@ -5906,7 +5911,7 @@
           "defectiveAcceptInvalid"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created-functional-integration-pending"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/minimize.ts",
@@ -7008,8 +7013,11 @@
       "targetPath": "packages/e2ee-lab/test/attacks.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Port observable coverage for actual control signature tamper and independent judge distinction. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable coverage for actual control signature tamper and independent judge distinction. Consolidate into the owning suite only after each behavior has an evidence-backed destination. Pure judge subset now covered in test/judge.test.ts; real control tamper/full attack helpers remain pending, no original attack suite closure claimed.",
+      "targetPathState": "proposed-path-not-created",
+      "partialTargets": [
+        "packages/e2ee-lab/test/judge.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/test/central-key-delivery.test.ts",
@@ -8309,6 +8317,7 @@
     "flockProcess": "Actual OS child reopens signed-genesis/protected epoch SQLite/native Flock file/exact cursor without usable signer, preserves prior field and decrypts independent new update. Actual released Loro SDK same-Org/resource different-model wire is refused by reopened Flock, actual durable file/cursor unchanged. Existing owning4/child script extended, no copied core/public native free claim. Fresh285289+2SHA Lab52 passes; removing Flock restore loses old field direct assertion, disabling reopened key yields actual missing_read_key child failure; no timeouts/restored pass. Full Flock session/recovery/live/entropy and original host still incomplete.",
     "genesisControlLayoutDecision": "Proposed awaiting human: original createSpace stores genesis in metadata and empty control, loadControl prepends metadata genesis; merged public SDK submission adapter requires full signed history. Option A initialize control with verified original genesis (agent/coordinator recommendation, not approval), with idempotent create/lostACK/crash recovery; option B Lab-only metadata-prefix transport with explicit cursor/retry verification. No P09 change or dependent createSpace implementation before selection.",
     "keyProcess": "Actual SQLite ignored protected-key insert retains original Install task/no terminal/no key; after closing parent receiver owners actual OS child reopens syntheticX25519/device/publicgenuine2records, realHPKEopens/saves/readbacks and reports through fresh challenge/bearer HTTP. Parent actualSQLite taskReported/frame bytecompare, original Recovery no-send/repair coverage retained. Synthetic device file0600 only, importedprivate handle nonextractable/publicextractable needed lockedHPKEserialize binding. Original nonextractable-public open-failed log retained, noalgorithm/corechange. Affected13/type + fresh e574/3SHA Lab52 pass, skipping actualinstall/report gives noReported directfail/nontimeout/restored. Full epochrotation/host/originalLab2/nativecustody pending.",
-    "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work."
+    "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work.",
+    "judgeAndTrace": "WIP pure verdict18 exports ported: missing measurements/default baseline/mixed unavailable not all-pass, count-only history unavailable, measured new unauthorized acceptance violation with lawful admitted-history semantics unchanged, explicit insider freshness scope. Source4 old pure FAIL/new same probe PASS retained; new observer old original alias FAIL retained. Typed run-scoped bounded private synthetic trace provides original record/read/clear as methods, owned fields before budget/no returned alias/no cross-run clear/close and closed observation fails. No global plaintext registry, no attacker access or authority inference. Owning9/type pass; Root core302/Lab67, format/docs/publicboundary7017/27 pass; all59Lab inputSHA unchanged. Fixedhead and real actor/attack observation integration pending."
   }
 }

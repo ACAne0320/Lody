@@ -46,6 +46,14 @@ verified original genesis (recommended), or B a Lab-only metadata-prefix transpo
 with explicit cursor/lost-ACK acceptance. Coordinator recommends A, not approval.
 Do not change merged P09 or implement dependent createSpace before human selection.
 
+Pure verdicts require measurements: unmeasured baseline and partially unavailable
+coverage never pass; counts do not authenticate history. Unauthorized new writes
+violate the public contract; legitimate admitted history survives author revocation.
+Insider freshness assumptions stay explicit. Run-owned bounded synthetic traces
+capture fields before checking budget, refuse closed operations and return immutable
+observations; no process-global plaintext log. Actual actor/attack observations and
+permanently unsettled native-owner recovery remain unfinished.
+
 ## Resource ownership
 
 Scoped operations reject new work, propagate abort and await raw request/body,

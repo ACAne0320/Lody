@@ -34,6 +34,11 @@ loadControl prepend metadata genesis。公开 submission 要完整签名历史�
 control 写已验证原 genesis（建议），或 B仅 Lab metadata-prefix 传输并明确 cursor/lostACK
 验证。协调推荐 A 不是批准；不改 merge P09，不在确认前实现依赖布局的 createSpace。
 
+纯 verdict 要测量：未测基线/部分 unavailable 不能 pass，记录数量不认证历史。
+新越权写入违反公开契约，合法已接纳历史不因作者撤权失效；insider freshness 假设明确。
+每轮有界合成 trace 在预算检查前拥有字段，关闭后拒绝操作，返回不可变观察，不用全局
+明文日志。真实 actor/attack 观察和永久不结算 native 的资源保留/恢复仍未完成。
+
 ## 资源归属
 
 Scope 拒绝新操作、传 abort，等待实际 request/body、有限 ledger lookup 和原生 phase

@@ -106,7 +106,7 @@ observed in an explicit abort-ignoring lease test. Full host composition is pend
 The original full host/gateway, honest actors, key delivery/rotation composition,
 Flock recovery/live sessions, full schedule executor, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
-58 tests do not close the original Lab2 failures or the complete original fault
+67 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
 D12 and permanent publisher loss remain explicit decisions. Native custody,
 production E2EE, independent whole-stack review, CI and product acceptance are
@@ -148,3 +148,13 @@ internal JSON tuple without changing recorded parent strings. Labels containing
 `|` are refused here to avoid ambiguous parent triples: this is an explicit
 compatibility limit. Start/attack/persist/crash actions, full ancestry/entropy
 format and captured executor remain unfinished; this is not full replay acceptance.
+
+The pure judge keeps missing observations and partial coverage distinct from pass.
+Default baseline is unmeasured; record counts alone never authenticate history.
+Measured unauthorized new content is a violation; valid admitted historical content
+is retained after revocation. Explicit insider freshness assumptions remain separate.
+`makeLabContentTrace` provides run-scoped, bounded private synthetic write facts,
+owned before budget checks and returned as immutable snapshots. Clear/close cannot
+change another run, and closed traces refuse both writes and observations. These
+are typed harness observations, not an attacker-visible log, authorization service
+or native custody. Full real measured actors/attack composition is still pending.

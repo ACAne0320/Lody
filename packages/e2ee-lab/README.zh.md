@@ -117,3 +117,10 @@ occurrence 都匹配的记录。预算在每次放行前检查。完成或调用
 不改；此入口拒绝带 `|` 的标签，避免不同父事件三元组混淆，这是明确兼容限制。
 start/attack/persist/crash 动作、完整祖先/entropy 格式及 captured executor 仍未完成，
 不能算完整 replay 验收。
+
+纯 judge 区分缺测、部分覆盖和 pass。默认基线未测，记录数量不能认证历史。真正无写权
+者的新内容被接受判 violation；合法已接纳历史在作者撤权后仍可读，明确的 insider
+freshness 模型假设另列。`makeLabContentTrace` 为每轮 Scope 提供有界的私有合成写入
+事实，先拥有字段再检查预算，返回不可变快照；clear/close 不影响另一轮，关闭后拒绝写入
+和观察。它是有类型的测试观察，不是攻击者可见日志、权限服务或原生存钥。真实 actors/
+attack 测量组合仍待迁入。

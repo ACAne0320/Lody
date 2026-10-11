@@ -19,7 +19,9 @@
     "./joins": "./src/platform/join-mailbox.ts",
     "./workspaces": "./src/platform/workspace-registry.ts",
     "./stream-read": "./src/platform/stream-read.ts",
-    "./driver": "./src/platform/driver.ts"
+    "./driver": "./src/platform/driver.ts",
+    "./judge": "./src/pure/judge.ts",
+    "./content-trace": "./src/platform/content-trace.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
