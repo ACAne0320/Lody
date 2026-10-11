@@ -1,5 +1,62 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { measureTextareaScrollHeight } from '../../src/components/chat/textarea-measurement';
+
+test('composer measurement preserves the conversation layout and reading offset', async ({
+  page,
+}) => {
+  await page.setContent(`
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      .page { height: 720px; display: flex; flex-direction: column; }
+      .view { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; }
+      .content { height: 4000px; }
+      textarea { width: 360px; padding: 0; border: 0; font: 16px/24px monospace;
+                 height: 240px; resize: none; }
+    </style>
+    <div class="page"><div class="view"><div class="content"></div></div>
+      <textarea rows="1"></textarea></div>
+  `);
+  // Execute the production DOM helper in the browser, with actual wrapping
+  // and flex sizing rather than jsdom's zero-valued layout properties.
+  await page.addScriptTag({ content: measureTextareaScrollHeight.toString() });
+  const result = await page.evaluate(() => {
+    const viewport = document.querySelector<HTMLElement>('.view')!;
+    const textarea = document.querySelector('textarea')!;
+    const measure = (
+      window as unknown as {
+        measureTextareaScrollHeight: typeof measureTextareaScrollHeight;
+      }
+    ).measureTextareaScrollHeight;
+    const values = [
+      Array.from({ length: 10 }, (_, i) => `synthetic ${i}`).join('\n'),
+      'wrapped words '.repeat(80),
+      '中英文 mixed text '.repeat(60) + '\n',
+    ];
+    const samples = values.map((value) => {
+      textarea.style.height = '240px';
+      textarea.value = value;
+      viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight - 80;
+      const before = { top: viewport.scrollTop, height: viewport.clientHeight };
+      const measured = measure(textarea, getComputedStyle(textarea));
+      const after = { top: viewport.scrollTop, height: viewport.clientHeight };
+      // Reference height, sampled only after asserting the mirror's unchanged
+      // geometry. This live reset reproduces the old layout/clamp defect.
+      textarea.style.height = 'auto';
+      const reference = textarea.scrollHeight;
+      const clamped = viewport.scrollTop;
+      return { before, after, measured, reference, clamped };
+    });
+    return { samples, textareas: document.querySelectorAll('textarea').length };
+  });
+  for (const sample of result.samples) {
+    expect(sample.after).toEqual(sample.before);
+    expect(sample.measured).toBe(sample.reference);
+    expect(sample.clamped).toBeLessThan(sample.before.top);
+  }
+  expect(result.textareas).toBe(1);
+});
 
 // Load the real rules without imports that require Storybook's CSS pipeline.
 const markdownStyles = readFileSync(
@@ -42,7 +99,9 @@ for (const active of [false, true]) {
       await diagram.hover();
       if (tall) {
         await page.mouse.wheel(0, 80);
-        await expect.poll(() => diagram.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+        await expect
+          .poll(() => diagram.evaluate((element) => element.scrollTop))
+          .toBeGreaterThan(0);
         expect(await scrollTop()).toBe(550);
       }
 
@@ -50,12 +109,9 @@ for (const active of [false, true]) {
         await conversation.evaluate((element) => {
           element.scrollTop = 550;
         });
-        await diagram.evaluate(
-          (element, down) => {
-            element.scrollTop = down ? element.scrollHeight : 0;
-          },
-          direction > 0
-        );
+        await diagram.evaluate((element, down) => {
+          element.scrollTop = down ? element.scrollHeight : 0;
+        }, direction > 0);
         await diagram.hover();
         await page.mouse.wheel(0, direction * 80);
         await expect.poll(async () => ((await scrollTop()) - 550) * direction).toBeGreaterThan(0);

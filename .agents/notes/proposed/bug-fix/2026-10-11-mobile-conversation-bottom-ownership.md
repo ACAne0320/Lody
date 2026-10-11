@@ -17,6 +17,10 @@ intent; product code is unchanged and native iOS verification remains open.
 
 ## Findings and evidence
 
+The subsequent [implementation and verification](../../implemented/bug-fix/2026-10-11-mobile-conversation-bottom-ownership.md)
+in PR #1445 records the completed controller/composer work and browser evidence;
+this proposal retains the original diagnosis and native-device acceptance work.
+
 This extends the [scroll engine decision](../../implemented/architecture/2026-09-27-conversation-scroll-engine.md),
 especially its October 7 delayed-touch fix and invariant I8, and targets the existing
 [scroll intent](../../../../specs/conversation-scroll.md) rather than changing it.

@@ -11,6 +11,10 @@ Translation: current
 
 ## 发现与证据
 
+后续[实现与验证](../../implemented/bug-fix/2026-10-11-mobile-conversation-bottom-ownership.zh.md)
+在 PR #1445 中记录了已完成的控制器、composer 修复和浏览器证据；
+本提案保留原始定位及真机验收工作。
+
 本提案延续[滚动引擎决策](../../implemented/architecture/2026-09-27-conversation-scroll-engine.zh.md)，尤其是 10 月 7 日的延迟触摸修复与 I8 不变量，以已有[滚动意图](../../../../specs/conversation-scroll.zh.md)为目标，不修改其产品约定。
 
 - `controller.ts` 的 `onScrollEvent` 对任意向下位移，在距底部 4px 内恢复 follow，没有检查 `movement` 或有效对话输入。随后非 read 分支启动校正事务。`setIntent(follow)` 立即清空 momentum，原生序列却可能仍在运行。

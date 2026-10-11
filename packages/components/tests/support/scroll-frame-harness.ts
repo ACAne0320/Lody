@@ -29,7 +29,7 @@ export interface FrameHarness {
   readonly scrollTop: number;
   /** Every value assigned to scrollTop, in order (before clamping). */
   readonly writes: number[];
-  /** Run one frame: scroll steps, then ResizeObserver delivery. Returns true if anything was delivered. */
+  /** Run scroll steps, animation callbacks, then ResizeObserver. True if anything was delivered. */
   frame(): boolean;
   /** Hold ResizeObserver deliveries for targets matching `predicate`. */
   hold(predicate: ((target: Element) => boolean) | null): void;
@@ -61,6 +61,14 @@ export function createFrameHarness({
   let top = 0;
   let pendingScroll = false;
   const writes: number[] = [];
+  const frames = new Map<number, FrameRequestCallback>();
+  let frameId = 0;
+  let frameTime = 0;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frames.set(++frameId, callback);
+    return frameId;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (handle: number) => frames.delete(handle));
 
   class FakeResizeObserver {
     private readonly observation: Observation;
@@ -148,6 +156,10 @@ export function createFrameHarness({
         viewport.dispatchEvent(new Event('scroll'));
         delivered = true;
       }
+      frameTime += 16;
+      const callbacks = [...frames.values()];
+      frames.clear();
+      for (const callback of callbacks) callback(frameTime);
       for (const observation of observations) {
         const entries: ResizeObserverEntry[] = [];
         for (const [target, last] of observation.targets) {
@@ -169,7 +181,7 @@ export function createFrameHarness({
           observation.callback(entries, observation.observer);
         }
       }
-      return delivered;
+      return delivered || callbacks.length > 0;
     },
     hold(predicate) {
       heldPredicate = predicate;
