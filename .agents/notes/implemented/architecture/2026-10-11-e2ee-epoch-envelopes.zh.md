@@ -22,3 +22,5 @@ Effect acquireUseRelease 在解密后的检查期间拥有新密钥。失败或�
 现有 HPKE 套件通过公共子入口运行真实 X25519/HPKE、原生 Ed25519 及规范账本。覆盖 personal/machine/Recovery 接收并安装到 Scope 临时缓存、machine 转发及 Recovery 发送拒绝、伪视图、错误预期路由、坏签名结果、有合法签名但 AEAD 失败或解密 commitment 错误、异步 frame 修改、签名/解密期间撤销，以及解密后权限等待期间的确定性取消。失败/取消的操作密钥不可再使用，原调用者密钥保持可用。包 161/161 及类型检查通过。不代表持久 mailbox、进程重开 Lab、发布设备永久丢失备份或生产 E2EE；清单继续记录来源修改及未完成责任。
 
 最终 161 项测试代码树通过原生 Git/本地 IPC 环境的完整根检查、格式、文档和公共边界检查。首次根检查停在四处测试变量遮蔽 lint 错误；修正后重新完整检查通过，不用旧树结果替代最终树证据。
+
+Draft: [#1448](https://github.com/LodyAI/Lody/pull/1448).
