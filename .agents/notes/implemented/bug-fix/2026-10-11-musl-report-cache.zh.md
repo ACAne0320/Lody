@@ -32,3 +32,5 @@ Discord `#feature-or-bug` 的 “Daemon Stall” 讨论（Leynos）报告：Linu
 ## 验证与限制
 
 单元测试预设 musl 与 glibc，并检查 Claude、Codex、Grok、Kimi、darwin 和 win32 的归档名。在 Linux 宿主上还检查成功的报告只读一次、不会进行第二次读取，以及抛出的报告不会被记住。本环境里一次空闲的 `getReport()` 大约 11 毫秒，与报告中的单次开销相符，并不是对 24.5 秒守护进程卡顿的复现。Loro 文档加载、历史写入、用量扫描和 worker 线程压缩不在这次改动内。
+
+PR: https://github.com/LodyAI/Lody/pull/1436

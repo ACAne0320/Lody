@@ -32,3 +32,5 @@ A cheaper libc probe was not required. The validated fix is to read this stable 
 ## Verification and limits
 
 Unit coverage presets musl and glibc and checks Claude, Codex, Grok, Kimi, darwin, and win32 archive names. On a Linux host it also checks that a successful report is read once, that a second read is not performed, and that a thrown report is not remembered. An idle call of `getReport()` in this environment took about 11 ms, which matches the reported per-call cost and is not a reproduction of the 24.5-second daemon stall. Loro document loading, history writing, usage scans, and worker-thread compression stay out of this change.
+
+PR: https://github.com/LodyAI/Lody/pull/1436
