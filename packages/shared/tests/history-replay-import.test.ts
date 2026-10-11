@@ -16,7 +16,7 @@ const codexProvider = { cliType: 'builtin', agentType: 'codex' } as const;
 const claudeProvider = { cliType: 'builtin', agentType: 'claude' } as const;
 
 describe('buildHistoryReplayImport', () => {
-  it('drops tool binary payloads from imported history without dropping tool state or text', () => {
+  it('drops tool images from imported history without dropping tool state or text', () => {
     const result = buildHistoryReplayImport(
       [
         makeNotification({
@@ -30,17 +30,6 @@ describe('buildHistoryReplayImport', () => {
           kind: 'other',
           status: 'completed',
           content: [
-            {
-              type: 'content',
-              content: { type: 'audio', mimeType: 'audio/wav', data: 'DROP_IMPORT_AUDIO' },
-            },
-            {
-              type: 'content',
-              content: {
-                type: 'resource',
-                resource: { uri: 'synthetic://binary', blob: 'DROP_IMPORT_BINARY' },
-              },
-            },
             {
               type: 'content',
               content: { type: 'image', mimeType: 'image/png', data: 'DROP_IMPORT_IMAGE' },
@@ -57,6 +46,18 @@ describe('buildHistoryReplayImport', () => {
               },
             },
             { type: 'content', content: { type: 'text', text: 'Page inspected' } },
+            { type: 'content', content: { type: 'audio', mimeType: 'audio/wav', data: 'AUDIO' } },
+            {
+              type: 'content',
+              content: {
+                type: 'resource',
+                resource: {
+                  uri: 'https://example.invalid/report.pdf',
+                  mimeType: 'application/pdf',
+                  blob: 'DROP_IMPORT_PDF',
+                },
+              },
+            },
           ],
         }),
       ],
@@ -70,7 +71,21 @@ describe('buildHistoryReplayImport', () => {
         toolCallId: 'screenshot',
         title: 'Screenshot',
         status: 'completed',
-        content: [{ type: 'content', content: { type: 'text', text: 'Page inspected' } }],
+        content: [
+          { type: 'content', content: { type: 'text', text: 'Page inspected' } },
+          { type: 'content', content: { type: 'audio', mimeType: 'audio/wav', data: 'AUDIO' } },
+          {
+            type: 'content',
+            content: {
+              type: 'resource',
+              resource: {
+                uri: 'https://example.invalid/report.pdf',
+                mimeType: 'application/pdf',
+                blob: '',
+              },
+            },
+          },
+        ],
       },
     ]);
     expect(JSON.stringify(result.history)).not.toContain('DROP_IMPORT');

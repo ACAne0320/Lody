@@ -16,12 +16,7 @@ import {
   deriveLocationsFromRawInput,
   deriveLocationsFromToolCallContent,
   stripToolCallContentForHistory,
-  stripToolCallBinaryForHistory,
-  sanitizeToolHistoryJson,
-  sanitizeToolHistoryRecord,
-  sanitizeToolHistoryText,
-  sanitizeToolHistoryLocations,
-  stripToolHistoryBinaryText,
+  stripToolCallPayloadsForHistory,
 } from './tool-call-history';
 import {
   parseLodyTaskMeta,
@@ -58,30 +53,6 @@ const SCHEDULING_TOOL_NAMES = new Set<string>([
   'CronList',
   'ScheduleWakeup',
 ]);
-
-const schedulingInputForHistory = (value: unknown): Record<string, unknown> | undefined => {
-  const input = asRecordOrUndefined(value);
-  if (!input) return undefined;
-  // Only fields the scheduled-tasks panel actually reads belong in history.
-  return sanitizeToolHistoryRecord(
-    Object.fromEntries(
-      ['cron', 'prompt', 'reason', 'recurring', 'delaySeconds', 'id']
-        .filter((key) => input[key] !== undefined)
-        .map((key) => [key, input[key]])
-    )
-  );
-};
-
-// Direct canonical tool items must cross the same storage boundary as ACP events.
-// Only supplied fields are projected; sparse updates do not rewrite old payloads.
-const sanitizeIncomingToolFields = (tool: ToolCallMessage): ToolCallMessage => ({
-  ...tool,
-  title: typeof tool.title === 'string' ? sanitizeToolHistoryText(tool.title) : tool.title,
-  rawInput: sanitizeToolHistoryRecord(tool.rawInput),
-  rawOutput: sanitizeToolHistoryRecord(tool.rawOutput),
-  _meta: sanitizeToolHistoryRecord(tool._meta),
-  locations: sanitizeToolHistoryLocations(tool.locations),
-});
 
 /**
  * The canonical tool name behind a `tool_call` update. ACP `title` is
@@ -234,7 +205,7 @@ const normalizeTerminalOutputsForHistory = (
   for (let index = outputs.length - 1; index >= 0; index -= 1) {
     const block = outputs[index];
     if (!block?.output) continue;
-    const blockTail = truncateTerminalOutputForHistory(stripToolHistoryBinaryText(block.output));
+    const blockTail = truncateTerminalOutputForHistory(block.output);
     didTruncate ||= blockTail.didTruncate;
     const next = outputTail ? `${blockTail.output}\n${outputTail}` : blockTail.output;
     const nextTail = truncateTerminalOutputForHistory(next);
@@ -674,9 +645,6 @@ const compactToolCallContentForHistory = (
     }
   }
 
-  // Take the actual terminal tail before the generic display-text budget can
-  // truncate a large snapshot's prefix.
-  compacted = normalizeTerminalOutputsForHistory(compacted);
   compacted = stripToolCallContentForHistory(opts.kind, compacted);
 
   compacted = stripDuplicateFencedToolContent(compacted);
@@ -986,7 +954,6 @@ const mergeToolCallMessage = (
     // whichever update carried each (see SCHEDULING_TOOL_NAMES).
     rawInput: incoming.rawInput !== undefined ? incoming.rawInput : prev.rawInput,
     rawOutput: incoming.rawOutput !== undefined ? incoming.rawOutput : prev.rawOutput,
-    _meta: incoming._meta !== undefined ? incoming._meta : prev._meta,
     schedulingTimeZone:
       incoming.schedulingTimeZone !== undefined
         ? incoming.schedulingTimeZone
@@ -1296,8 +1263,8 @@ export const buildMessageContentFromNotification = (
           locations,
           // Generic ACP rawInput/rawOutput is excluded because it is unstructured by spec;
           // scheduling tools keep theirs (see SCHEDULING_TOOL_NAMES).
-          rawInput: isSchedulingTool ? schedulingInputForHistory(update.rawInput) : undefined,
-          rawOutput: isSchedulingTool ? sanitizeToolHistoryRecord(update.rawOutput) : undefined,
+          rawInput: isSchedulingTool ? asRecordOrUndefined(update.rawInput) : undefined,
+          rawOutput: isSchedulingTool ? asRecordOrUndefined(update.rawOutput) : undefined,
           // Cron is local-time to this machine — record its zone so the panel resolves the
           // fire time in the right timezone regardless of where it is later viewed.
           schedulingTimeZone: isSchedulingTool ? resolveMachineTimeZone() : undefined,
@@ -1625,8 +1592,9 @@ class NotificationOnHistoryApplier {
         );
         const previous = run.items[index];
         const tool = previous?.type === 'tool_call' ? previous : undefined;
-        // Preserve useful child read/diff output, with the same binary and size
-        // policy as root tools. Raw input is never displayed or needed by replay.
+        const input = asRecordOrUndefined(update.rawInput);
+        // Keep child diffs and read results for the detail view, but discard tool
+        // images just as the parent history does.
         const content: Extract<SubagentRunItem, { type: 'tool_call' }> = {
           ...tool,
           ...(identity.nativeTurnId !== undefined ? { nativeTurnId: identity.nativeTurnId } : {}),
@@ -1634,37 +1602,31 @@ class NotificationOnHistoryApplier {
           type: 'tool_call',
           toolCallId: update.toolCallId,
           status: update.status ?? tool?.status ?? 'pending',
-          title:
-            typeof update.title === 'string' ? sanitizeToolHistoryText(update.title) : tool?.title,
+          title: update.title ?? tool?.title,
           kind: update.kind ?? tool?.kind,
           content:
             update.content != null
-              ? stripToolCallBinaryForHistory(normalizeTerminalOutputsForHistory(update.content))
+              ? stripToolCallPayloadsForHistory(update.content)
               : tool?.content,
-          locations:
-            update.locations != null
-              ? sanitizeToolHistoryLocations(update.locations)
-              : tool?.locations,
-          rawInput: undefined,
-          rawOutput:
-            update.rawOutput != null
-              ? sanitizeToolHistoryRecord(update.rawOutput)
-              : tool?.rawOutput,
+          locations: update.locations ?? tool?.locations,
+          // Plan approval is the UI's sole child raw-input consumer.
+          rawInput:
+            update.rawInput != null
+              ? typeof input?.plan === 'string'
+                ? { plan: input.plan }
+                : undefined
+              : tool?.rawInput,
+          rawOutput: asRecordOrUndefined(update.rawOutput) ?? tool?.rawOutput,
           toolName: resolveAcpToolName(update._meta) ?? tool?.toolName,
-          _meta: update._meta != null ? sanitizeToolHistoryRecord(update._meta) : tool?._meta,
+          _meta: update._meta ?? tool?._meta,
         };
         const value = update.rawOutput;
         if (value != null && !asRecordOrUndefined(value)) {
-          // Scalar/array output has one bounded readable copy, never a second
-          // opaque copy in _meta.lody.subagentRaw.
-          const clean = sanitizeToolHistoryJson(value);
-          const text =
-            clean === undefined
-              ? ''
-              : sanitizeToolHistoryText(typeof clean === 'string' ? clean : JSON.stringify(clean));
+          // Keep the readable copy; the old _meta.lody.subagentRaw duplicate
+          // had no consumer. Preserve full text and arrays, without new limits.
+          const text = typeof value === 'string' ? value : JSON.stringify(value);
           const blocks = content.content ?? [];
           if (
-            text &&
             !blocks.some(
               (block) =>
                 block.type === 'content' &&
@@ -1675,11 +1637,6 @@ class NotificationOnHistoryApplier {
             content.content = [...blocks, { type: 'content', content: { type: 'text', text } }];
           }
         }
-        if (
-          content.content &&
-          (update.content != null || (value != null && !asRecordOrUndefined(value)))
-        )
-          content.content = stripToolCallBinaryForHistory(content.content);
         if (index >= 0) run.items[index] = content;
         else run.items.push(content);
       }
@@ -2014,7 +1971,6 @@ class NotificationOnHistoryApplier {
   }
 
   private upsertToolCall(entryIndex: number, incoming: ToolCallMessage, replaceContent = false) {
-    incoming = sanitizeIncomingToolFields(incoming);
     const entry = this.history[entryIndex];
     if (!entry) return;
 
@@ -2318,7 +2274,6 @@ export const applyMessageContentsBatch = (
   };
 
   const upsertToolCall = (entryIndex: number, incoming: ToolCallMessage) => {
-    incoming = sanitizeIncomingToolFields(incoming);
     const state = entryStates[entryIndex];
     if (!state) return;
 

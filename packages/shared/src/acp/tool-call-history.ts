@@ -1,5 +1,4 @@
 import type { MessageContent } from '../ai';
-import { ToolCallContentSchema, ToolCallLocationSchema } from '../message-schemas';
 
 type ToolCallMessage = Extract<MessageContent, { type: 'tool_call' }>;
 type ToolCallContent = NonNullable<ToolCallMessage['content']>;
@@ -73,131 +72,52 @@ export const deriveLocationsFromRawInput = (rawInput: unknown): ToolCallLocation
   return Array.from(unique).map((path) => ({ path }));
 };
 
-export const MAX_TOOL_HISTORY_TEXT_BYTES = 16 * 1024;
-export const MAX_TOOL_HISTORY_JSON_BYTES = 32 * 1024;
-export const MAX_TOOL_HISTORY_CONTENT_BYTES = 64 * 1024;
-const OMITTED = '[Binary data omitted]';
-const TRUNCATED = '\n[Tool history truncated]';
-const encoder = new TextEncoder();
-
-/** Remove encoded binary before terminal tail selection can discard its header. */
-export const stripToolHistoryBinaryText = (text: string): string => {
-  const cleaned = text
-    .replace(/data:[\w.+-]+\/[\w.+-]+(?:;[^,\s]*)?,[^\s"'<>)]*/gi, OMITTED)
-    .replace(/[A-Za-z0-9+/_=-]+/g, (token) => (token.length >= 4096 ? OMITTED : token));
-  // Wrapped base64 has no spaces and long, regularly wrapped lines.
-  if (
-    cleaned.length >= 4096 &&
-    /^(?:[A-Za-z0-9+/_=-]{64,}\r?\n)+[A-Za-z0-9+/_=-]*$/.test(cleaned.trim())
-  )
-    return OMITTED;
-  return cleaned;
-};
-
-/** Bound display text without decoding binary data or splitting UTF-8 characters. */
-export const sanitizeToolHistoryText = (text: string): string => {
-  const cleaned = stripToolHistoryBinaryText(text);
-  if (
-    cleaned.length <= MAX_TOOL_HISTORY_TEXT_BYTES &&
-    encoder.encode(cleaned).byteLength <= MAX_TOOL_HISTORY_TEXT_BYTES
-  )
-    return cleaned;
-  let end = 0;
-  let bytes = 0;
-  const budget = MAX_TOOL_HISTORY_TEXT_BYTES - encoder.encode(TRUNCATED).byteLength;
-  for (const point of cleaned) {
-    const size = encoder.encode(point).byteLength;
-    if (bytes + size > budget) break;
-    bytes += size;
-    end += point.length;
-  }
-  return cleaned.slice(0, end) + TRUNCATED;
-};
-
-/** Small opaque JSON survives; binary fields and oversized/deep extensions do not. */
-export const sanitizeToolHistoryJson = (value: unknown): unknown => {
-  let nodes = 0;
-  const visit = (input: unknown, depth: number): unknown => {
-    if (++nodes > 256 || depth > 8) return undefined;
-    if (typeof input === 'string') return sanitizeToolHistoryText(input);
-    if (input === null || typeof input === 'boolean') return input;
-    if (typeof input === 'number') return Number.isFinite(input) ? input : undefined;
-    if (!input || typeof input !== 'object') return undefined;
-    if (Array.isArray(input))
-      return input.slice(0, 128).flatMap((item) => {
-        const next = visit(item, depth + 1);
-        return next === undefined ? [] : [next];
-      });
-    const record = input as Record<string, unknown>;
-    if (record.type === 'image' || record.type === 'audio') return undefined;
-    return Object.fromEntries(
-      Object.entries(record)
-        .slice(0, 128)
-        .flatMap(([key, item]) => {
-          if (key.length > 128 || key === 'base64' || key === 'blob') return [];
-          const next = visit(item, depth + 1);
-          return next === undefined ? [] : [[key, next]];
-        })
-    );
-  };
-  const result = visit(value, 0);
-  return result !== undefined &&
-    encoder.encode(JSON.stringify(result)).byteLength <= MAX_TOOL_HISTORY_JSON_BYTES
-    ? result
-    : undefined;
-};
-
-export const sanitizeToolHistoryRecord = (value: unknown): Record<string, unknown> | undefined => {
-  const result = sanitizeToolHistoryJson(value);
-  return result && typeof result === 'object' && !Array.isArray(result)
-    ? (result as Record<string, unknown>)
-    : undefined;
-};
-
-export const sanitizeToolHistoryLocations = (
-  locations: ToolCallMessage['locations']
-): ToolCallMessage['locations'] => {
-  if (locations === undefined) return undefined;
-  const cleaned = sanitizeToolHistoryJson(locations);
-  if (!Array.isArray(cleaned)) return [];
-  return cleaned.flatMap((location) => {
-    const parsed = ToolCallLocationSchema.safeParse(location);
-    return parsed.success ? [parsed.data] : [];
-  });
-};
-
-/** Binary execution artifacts never become durable conversation attachments. */
-export const stripToolCallBinaryForHistory = (content: ToolCallContent): ToolCallContent => {
-  const result: ToolCallContent = [];
-  let bytes = 2; // JSON array brackets, plus commas counted below.
-  for (const block of content.slice(0, 128)) {
-    // A partial old/new pair would invent a different diff. Omit an oversized
-    // or binary diff instead; location/status remain on the owning tool.
-    if (
-      block.type === 'diff' &&
-      [block.oldText, block.newText].some(
-        (text) => typeof text === 'string' && sanitizeToolHistoryText(text) !== text
-      )
-    )
-      continue;
-    if (block.type === 'content') {
-      if (block.content.type === 'image' || block.content.type === 'audio') continue;
-      if (block.content.type === 'resource' && 'blob' in block.content.resource) continue;
-      if (
-        (block.content.type === 'resource_link' && /^\s*data:/i.test(block.content.uri)) ||
-        (block.content.type === 'resource' && /^\s*data:/i.test(block.content.resource.uri))
-      )
-        continue;
-    }
-    const parsed = ToolCallContentSchema.safeParse(sanitizeToolHistoryJson(block));
-    if (!parsed.success) continue;
-    const size = encoder.encode(JSON.stringify(parsed.data)).byteLength + (result.length ? 1 : 0);
-    if (bytes + size > MAX_TOOL_HISTORY_CONTENT_BYTES) break;
-    bytes += size;
-    result.push(parsed.data as ToolCallContent[number]);
-  }
-  return result;
-};
+/** Tool images are execution output, not durable conversation attachments. */
+export const stripToolCallPayloadsForHistory = (content: ToolCallContent): ToolCallContent =>
+  content
+    .filter((block) => {
+      if (block.type !== 'content') return true;
+      if (block.content.type === 'image') return false;
+      if (block.content.type !== 'resource') return true;
+      const resource = block.content.resource;
+      if (!('blob' in resource)) return true;
+      return !(
+        (typeof resource.mimeType === 'string' &&
+          resource.mimeType.trim().toLowerCase().startsWith('image/')) ||
+        (typeof resource.uri === 'string' &&
+          resource.uri.trim().toLowerCase().startsWith('data:image/'))
+      );
+    })
+    .map((block) => {
+      if (block.type !== 'content') return block;
+      const value = block.content;
+      // The detail view downloads resources through their URI; it never reads
+      // non-image blob bytes. Keep the resource and link instead of dropping it.
+      if (value.type === 'resource') {
+        const resource = value.resource;
+        const clearBlob =
+          'blob' in resource && typeof resource.blob === 'string' && resource.blob !== '';
+        const clearUri = typeof resource.uri === 'string' && /^\s*data:/i.test(resource.uri);
+        if (!clearBlob && !clearUri) return block;
+        return {
+          ...block,
+          content: {
+            ...value,
+            resource: {
+              ...resource,
+              ...(clearBlob ? { blob: '' } : {}),
+              ...(clearUri ? { uri: '' } : {}),
+            },
+          },
+        };
+      }
+      // data: links already render only their label under the UI's URL policy.
+      if (value.type === 'resource_link' && /^\s*data:/i.test(value.uri))
+        return { ...block, content: { ...value, uri: '' } };
+      // Do not parse, truncate or "repair" other blocks here. New malformed
+      // values must reach writer validation; unchanged legacy content must survive.
+      return block;
+    });
 
 /**
  * Removes large data payloads from tool call blocks before persisting to session history.
@@ -213,16 +133,12 @@ export const stripToolCallContentForHistory = (
 ): ToolCallContent => {
   if (kind === 'read') {
     // Reading a file often returns the full file text. We keep only the command and the path.
-    return stripToolCallBinaryForHistory(
-      content.filter((block) => block.type === 'terminal_command')
-    );
+    return content.filter((block) => block.type === 'terminal_command');
   }
   if (kind === 'edit') {
     // Edits often include full old/new text in `diff` blocks; don't persist that.
     // Some agents also emit a human-readable success `content` block; keep history lean by dropping it.
-    return stripToolCallBinaryForHistory(
-      content.filter((block) => block.type !== 'diff' && block.type !== 'content')
-    );
+    return content.filter((block) => block.type !== 'diff' && block.type !== 'content');
   }
-  return stripToolCallBinaryForHistory(content);
+  return stripToolCallPayloadsForHistory(content);
 };

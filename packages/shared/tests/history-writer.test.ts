@@ -9,14 +9,10 @@ import { createSessionMirror } from '../src/session-mirror';
 import { sessionDocSchema, type SessionHistory } from '../src/schema';
 import type { SessionId } from '../src/ids';
 import { createHistoryWriter, type StoredHistorySnapshot } from '../src/history-writer';
-import { applyNotificationOnHistory, applyMessageContentsBatch } from '../src/acp/history-apply';
+import { applyNotificationOnHistory } from '../src/acp/history-apply';
 import { parseSessionNotification } from '../src/acp/schema';
 import type { LodySubagentEvent, LodySubagentSnapshot } from 'acp-extension-core';
 import type { MessageContent } from '../src/ai';
-import {
-  MAX_TOOL_HISTORY_CONTENT_BYTES,
-  MAX_TOOL_HISTORY_TEXT_BYTES,
-} from '../src/acp/tool-call-history';
 
 const id = 'synthetic-session' as SessionId;
 const entry = (turnId = 'turn'): SessionHistory => ({
@@ -30,126 +26,8 @@ const open = (doc: Loro) =>
   createSessionMirror({ doc, initialState: { session: { id }, history: [] } });
 
 describe('single history writer', () => {
-  it('bounds tool text, opaque extensions and aggregate content before storage', () => {
-    const doc = new Loro();
-    const writer = open(doc).historyWriter;
-    writer.append({ ...entry('first'), role: 'assistant', items: [] });
-    const binary = 'QUJD'.repeat(64 * 1024);
-    const unicode = '有用的输出。'.repeat(6000);
-    const contents = [
-      {
-        type: 'content',
-        content: { type: 'text', text: `Result: data:audio/wav;base64,${binary}` },
-      },
-      { type: 'content', content: { type: 'text', text: ('QUJD'.repeat(16) + '\n').repeat(100) } },
-      {
-        type: 'content',
-        content: {
-          type: 'text',
-          text: 'Small useful text',
-          _meta: { payload: binary, useful: 'small extension' },
-        },
-      },
-      ...Array.from({ length: 20 }, () => ({
-        type: 'content',
-        content: { type: 'text', text: unicode },
-      })),
-    ];
-    const notification = parseSessionNotification({
-      sessionId: 'root',
-      update: {
-        sessionUpdate: 'tool_call',
-        toolCallId: 'bounded',
-        title: 'Fetch',
-        kind: 'fetch',
-        status: 'completed',
-        content: contents,
-      },
-    });
-    writer.updateEntry(
-      'first',
-      (turn) =>
-        applyNotificationOnHistory([turn], [notification], undefined, {
-          targetAssistantEntryId: 'first',
-        })[0]!
-    );
-    const tool = writer.read('first')!.items[0] as Extract<MessageContent, { type: 'tool_call' }>;
-    expect(tool.status).toBe('completed');
-    const stored = JSON.stringify(tool.content);
-    expect(stored).not.toContain(binary.slice(0, 4096));
-    expect(stored).not.toContain('data:audio/');
-    expect(stored).toContain('[Binary data omitted]');
-    expect(new TextEncoder().encode(stored).byteLength).toBeLessThan(
-      MAX_TOOL_HISTORY_CONTENT_BYTES
-    );
-    for (const block of tool.content ?? []) {
-      if (block.type === 'content' && block.content.type === 'text') {
-        expect(new TextEncoder().encode(block.content.text).byteLength).toBeLessThanOrEqual(
-          MAX_TOOL_HISTORY_TEXT_BYTES
-        );
-        expect(block.content.text).not.toContain('\ufffd');
-      }
-    }
-    const fork = open(new Loro()).historyWriter;
-    const snapshot = writer.capture();
-    fork.copyFrom(snapshot, snapshot.history);
-    expect(fork.read('first')).toEqual(writer.read('first'));
-  });
-
-  it('bounds raw records and metadata on directly authored canonical tools', () => {
-    const writer = open(new Loro()).historyWriter;
-    writer.append({ ...entry('first'), role: 'assistant', items: [] });
-    const binary = 'QUJD'.repeat(64 * 1024);
-    writer.updateEntry(
-      'first',
-      (turn) =>
-        applyMessageContentsBatch(
-          [turn],
-          [
-            {
-              type: 'tool_call',
-              toolCallId: 'direct',
-              status: 'completed',
-              title: 'Fetch',
-              rawInput: { query: 'useful', blob: binary },
-              rawOutput: { ok: true, result: { type: 'audio', data: binary } },
-              _meta: { provider: 'useful', payload: binary },
-              locations: [
-                { path: 'synthetic.txt', line: 5, _meta: { blob: binary, useful: 'location' } },
-              ],
-              content: [
-                { type: 'provider_extension', useful: 'small', blob: binary } as never,
-                {
-                  type: 'terminal_output',
-                  output:
-                    'Earlier output. '.repeat(5000) +
-                    `data:audio/wav;base64,${binary}\nACTUAL_TAIL`,
-                },
-              ],
-            },
-          ]
-        )[0]!
-    );
-    const tool = writer.read('first')!.items[0];
-    expect(tool).toMatchObject({
-      status: 'completed',
-      rawInput: { query: 'useful' },
-      rawOutput: { ok: true },
-      locations: [{ path: 'synthetic.txt', line: 5, _meta: { useful: 'location' } }],
-      _meta: { provider: 'useful' },
-    });
-    expect(JSON.stringify(tool)).not.toContain(binary.slice(0, 4096));
-    if (tool.type !== 'tool_call') throw new Error('Missing canonical tool');
-    expect(tool.content?.[0]).toEqual({ type: 'provider_extension', useful: 'small' });
-    const terminal = tool.content?.find((block) => block.type === 'terminal_output');
-    if (terminal?.type !== 'terminal_output') throw new Error('Missing terminal output');
-    expect(terminal.output).toContain('[Binary data omitted]');
-    expect(terminal.output.endsWith('ACTUAL_TAIL')).toBe(true);
-    expect(new TextEncoder().encode(terminal.output).byteLength).toBeLessThanOrEqual(1024);
-  });
-
   it.each(['other', 'execute', 'search', 'fetch', undefined] as const)(
-    'drops tool binary content for kind %s before persistence and fork copying',
+    'drops unused tool bytes for kind %s while preserving audio and download references',
     (kind) => {
       const doc = new Loro();
       const writer = open(doc).historyWriter;
@@ -159,22 +37,6 @@ describe('single history writer', () => {
       };
       writer.append({ ...entry('first'), role: 'assistant', items: [attachment] });
       const images = [
-        { type: 'content', content: { type: 'audio', mimeType: 'audio/wav', data: 'DROP_AUDIO' } },
-        {
-          type: 'content',
-          content: {
-            type: 'resource',
-            resource: { uri: 'synthetic://pdf', mimeType: 'application/pdf', blob: 'DROP_PDF' },
-          },
-        },
-        {
-          type: 'content',
-          content: {
-            type: 'resource_link',
-            uri: 'data:application/octet-stream;base64,DROP_LINK',
-            name: 'binary',
-          },
-        },
         { type: 'content', content: { type: 'image', mimeType: 'image/png', data: 'DROP_IMAGE' } },
         {
           type: 'content',
@@ -192,7 +54,19 @@ describe('single history writer', () => {
         },
       ];
       const retained = [
-        { type: 'content', content: { type: 'text', text: 'Tool result' } },
+        { type: 'content', content: { type: 'text', text: 'Tool result. '.repeat(6000) } },
+        { type: 'content', content: { type: 'audio', mimeType: 'audio/wav', data: 'AUDIO' } },
+        {
+          type: 'content',
+          content: {
+            type: 'resource',
+            resource: {
+              uri: 'https://example.invalid/download.pdf',
+              mimeType: 'application/pdf',
+              blob: '',
+            },
+          },
+        },
         {
           type: 'content',
           content: {
@@ -208,7 +82,21 @@ describe('single history writer', () => {
             name: 'Image link',
           },
         },
+        { type: 'content', content: { type: 'resource_link', uri: '', name: 'Binary label' } },
       ];
+      const binary = 'QUJD'.repeat(128 * 1024);
+      const incoming = retained.map((block) => {
+        if (block.content.type === 'resource_link' && block.content.uri === '')
+          return {
+            ...block,
+            content: { ...block.content, uri: `data:application/octet-stream;base64,${binary}` },
+          };
+        if (block.content.type !== 'resource' || !('blob' in block.content.resource)) return block;
+        return {
+          ...block,
+          content: { ...block.content, resource: { ...block.content.resource, blob: binary } },
+        };
+      });
       const emit = (update: Record<string, unknown>) =>
         writer.updateEntry(
           'first',
@@ -226,7 +114,7 @@ describe('single history writer', () => {
         title: 'Screenshot tool',
         kind,
         status: 'in_progress',
-        content: [images[0], retained[0], ...images.slice(1), ...retained.slice(1)],
+        content: [images[0], incoming[0], ...images.slice(1), ...incoming.slice(1)],
       });
       emit({ sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'completed' });
       const stored = writer.read('first')!;
@@ -241,6 +129,7 @@ describe('single history writer', () => {
         },
       ]);
       expect(JSON.stringify(doc.toJSON())).not.toContain('DROP_');
+      expect(JSON.stringify(doc.toJSON())).not.toContain(binary);
       const fork = open(new Loro()).historyWriter;
       const snapshot = writer.capture();
       fork.copyFrom(snapshot, snapshot.history);
@@ -288,24 +177,26 @@ describe('single history writer', () => {
     });
     const retained = [
       { type: 'content', content: { type: 'text', text: 'Read result' } },
-      { type: 'diff', path: 'synthetic.txt', oldText: 'before', newText: 'after' },
-    ];
-    const images = [
       {
-        type: 'content',
-        content: { type: 'audio', mimeType: 'audio/wav', data: 'DROP_CHILD_AUDIO' },
+        type: 'diff',
+        path: 'synthetic.txt',
+        oldText: 'before',
+        newText: 'Readable diff. '.repeat(6000),
       },
+      { type: 'content', content: { type: 'audio', mimeType: 'audio/wav', data: 'AUDIO' } },
       {
         type: 'content',
         content: {
           type: 'resource',
           resource: {
-            uri: 'synthetic://bin',
-            mimeType: 'application/octet-stream',
-            blob: 'DROP_CHILD_BINARY',
+            uri: 'https://example.invalid/tool.zip',
+            mimeType: 'application/zip',
+            blob: '',
           },
         },
       },
+    ];
+    const images = [
       { type: 'content', content: { type: 'image', mimeType: 'image/png', data: 'DROP_CHILD' } },
       {
         type: 'content',
@@ -322,17 +213,21 @@ describe('single history writer', () => {
         toolCallId: 'child-tool',
         title: 'Child read',
         kind: 'read',
-        content: [...retained, ...images],
-        rawInput: { image: 'DROP_CHILD_RAW_INPUT' },
-        rawOutput: {
-          ok: true,
-          blob: 'DROP_CHILD_RAW_BLOB',
-          nested: { type: 'image', data: 'DROP_CHILD_RAW_IMAGE' },
-        },
-        _meta: {
-          useful: 'small extension',
-          nested: { type: 'audio', data: 'DROP_CHILD_META_AUDIO' },
-        },
+        content: [
+          ...retained.map((block) =>
+            block.type === 'content' && block.content.type === 'resource'
+              ? {
+                  ...block,
+                  content: {
+                    ...block.content,
+                    resource: { ...block.content.resource, blob: 'DROP_CHILD_BINARY' },
+                  },
+                }
+              : block
+          ),
+          ...images,
+        ],
+        rawInput: { unusedBinary: 'DROP_CHILD_RAW_INPUT' },
       },
     });
     emit({
@@ -344,14 +239,7 @@ describe('single history writer', () => {
       { type: 'subagent_task' }
     >;
     expect(task.run?.items).toMatchObject([
-      {
-        toolCallId: 'child-tool',
-        kind: 'read',
-        status: 'completed',
-        content: retained,
-        rawOutput: { ok: true },
-        _meta: { useful: 'small extension' },
-      },
+      { toolCallId: 'child-tool', kind: 'read', status: 'completed', content: retained },
     ]);
     expect(JSON.stringify(doc.toJSON())).not.toContain('DROP_CHILD');
     expect(task.run?.items[0]).not.toHaveProperty('rawInput');
@@ -366,6 +254,27 @@ describe('single history writer', () => {
     expect(replaced.run?.items).toMatchObject([
       { toolCallId: 'child-tool', status: 'completed', content: [] },
     ]);
+    const plan = 'Useful approval plan. '.repeat(6000);
+    emit({
+      type: 'output',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'plan',
+        title: 'Plan approval',
+        kind: 'switch_mode',
+        rawInput: { plan, unusedBinary: 'DROP_CHILD_PLAN_INPUT' },
+        rawOutput: { summary: 'Readable JSON. '.repeat(6000) },
+      },
+    });
+    const planned = writer.read('first')!.items[0] as Extract<
+      MessageContent,
+      { type: 'subagent_task' }
+    >;
+    expect(planned.run?.items.at(-1)).toMatchObject({
+      rawInput: { plan },
+      rawOutput: { summary: 'Readable JSON. '.repeat(6000) },
+    });
+    expect(JSON.stringify(doc.toJSON())).not.toContain('DROP_CHILD_PLAN_INPUT');
   });
 
   it('freezes the same default emoji displayed by the Role catalog', () => {
@@ -495,7 +404,6 @@ describe('single history writer', () => {
         content: [{ type: 'content', content: { type: 'text', text: 'file contents' } }],
       },
     ]);
-    expect(task.run?.items.at(-1)).not.toHaveProperty('rawInput');
     expect(task.run?.items.at(-1)).not.toHaveProperty('_meta.lody.subagentRaw');
   });
   it('persists isolated child transcripts on their original turn across parent completion and reopening', () => {

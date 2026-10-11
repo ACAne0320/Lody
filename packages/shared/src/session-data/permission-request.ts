@@ -3,9 +3,6 @@ import type { RequestPermissionRequest } from '@agentclientprotocol/sdk';
 import {
   deriveLocationsFromToolCallContent,
   stripToolCallContentForHistory,
-  sanitizeToolHistoryRecord,
-  sanitizeToolHistoryText,
-  sanitizeToolHistoryLocations,
 } from '../acp/tool-call-history';
 type ToolCallMessageContent = Extract<MessageContent, { type: 'tool_call' }>;
 const sanitizeToolCallContentForHistory = (
@@ -26,34 +23,28 @@ export const mergeToolCallWithPermission = (
   const kind = (toolCall.kind ?? tool.kind ?? undefined) as
     | ToolCallMessageContent['kind']
     | undefined;
-  const content = sanitizeToolCallContentForHistory(
-    toolCall.content ?? tool.content ?? undefined,
-    kind
-  );
+  // Permission enrichment must not project or reparse an existing stored list.
+  const content =
+    toolCall.content ?? sanitizeToolCallContentForHistory(tool.content ?? undefined, kind);
   const locations =
     toolCall.locations ??
     (Array.isArray(tool.locations) && tool.locations.length > 0 ? tool.locations : undefined) ??
     deriveLocationsFromToolCallContent(tool.content);
   const requestMeta = (request as { _meta?: unknown })._meta;
-  const permissionMeta = sanitizeToolHistoryRecord(requestMeta);
+  const permissionMeta =
+    typeof requestMeta === 'object' && requestMeta !== null && !Array.isArray(requestMeta)
+      ? (requestMeta as Record<string, unknown>)
+      : undefined;
   return {
     ...toolCall,
-    title:
-      typeof (toolCall.title ?? tool.title) === 'string'
-        ? sanitizeToolHistoryText((toolCall.title ?? tool.title)!)
-        : null,
+    title: toolCall.title ?? tool.title ?? null,
     kind,
     status: toolCall.status ?? tool.status ?? 'pending',
     content,
-    locations: sanitizeToolHistoryLocations(locations),
+    locations,
     permissionRequest: {
       requestId,
-      options: request.options.map((option) => ({
-        optionId: option.optionId,
-        name: sanitizeToolHistoryText(option.name),
-        kind: option.kind,
-        _meta: sanitizeToolHistoryRecord(option._meta),
-      })),
+      options: request.options,
       ...(permissionMeta ? { _meta: permissionMeta } : {}),
       outcome: toolCall.permissionRequest?.outcome,
     },

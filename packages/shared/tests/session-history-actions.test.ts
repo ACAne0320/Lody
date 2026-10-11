@@ -9,11 +9,6 @@ import {
   type SessionTurnStatus,
 } from '../src/session-data';
 import type { SessionId } from '../src/ids';
-import {
-  parseAskUserQuestionPermissionMeta,
-  createAskUserQuestionPermissionOutcome,
-  extractAskUserQuestionAnswersFromOutcome,
-} from '../src/acp/ask-user-question';
 const sid = 'actions' as SessionId;
 const row = (id: string, role: SessionTurn['role'] = 'assistant'): SessionEntry => ({
   id,
@@ -93,73 +88,6 @@ for (const backend of ['loro'] as const)
         title: 'existing',
         permissionRequest: { requestId: 'new', outcome: { outcome: 'cancelled' } },
       });
-    });
-    it('filters permission binary extensions while retaining question answers', async () => {
-      const data = create();
-      await data.commands.appendTurn(row('a'));
-      const binary = 'QUJD'.repeat(64 * 1024);
-      const metadata = {
-        lody: {
-          elicitation: {
-            version: 1,
-            questions: [
-              {
-                id: 'choice',
-                header: 'Choice',
-                question: 'Choose an option',
-                options: [{ label: 'A' }],
-                multiSelect: false,
-              },
-            ],
-          },
-        },
-        debug: { type: 'audio', data: binary },
-      };
-      await data.commands.applyHistoryAction({
-        kind: 'permission-request',
-        requestId: 'request',
-        request: {
-          sessionId: 'acp',
-          toolCall: {
-            toolCallId: 'question',
-            title: 'Ask',
-            content: [
-              { type: 'content', content: { type: 'audio', mimeType: 'audio/wav', data: binary } },
-            ],
-          },
-          options: [
-            {
-              optionId: 'allow',
-              name: 'Allow',
-              kind: 'allow_once',
-              _meta: { blob: binary, useful: true },
-            },
-          ],
-          _meta: metadata,
-        },
-      });
-      const findTool = async () => {
-        const tool = (await data.history.readAll())[0]!.items!.find(
-          (item) => item.type === 'tool_call'
-        );
-        if (!tool || tool.type !== 'tool_call') throw new Error('Missing permission tool');
-        return tool;
-      };
-      const tool = await findTool();
-      const question = parseAskUserQuestionPermissionMeta(tool.permissionRequest?._meta)!;
-      expect(question.questions).toEqual(metadata.lody.elicitation.questions);
-      expect(tool.permissionRequest?.options[0]?._meta).toEqual({ useful: true });
-      const outcome = createAskUserQuestionPermissionOutcome('allow', { choice: 'A' }, question);
-      await data.commands.respondPermission('request', {
-        ...outcome,
-        _meta: { ...outcome._meta, blob: binary },
-      });
-      const answered = await findTool();
-      expect(
-        extractAskUserQuestionAnswersFromOutcome(question, answered.permissionRequest?.outcome)
-      ).toEqual({ choice: 'A' });
-      expect(JSON.stringify(await data.history.readAll())).not.toContain(binary.slice(0, 4096));
-      data.dispose();
     });
     it('finishes only the requested assistant and preserves its original end time', async () => {
       const data = create();
