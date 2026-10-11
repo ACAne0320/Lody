@@ -156,10 +156,17 @@ does not finish its children. Preserve each provider's existing prompt-completio
 contract; this proposal does not create a background scheduler.
 
 Persist received task state and content through the existing SessionMirror /
-HistoryWriter owner. As in root tool history, discard ACP image blocks and embedded
-image blob resources from child tool content; retain non-image content and tool
-state. This storage projection does not change the provider's execution output or
-ordinary conversation image attachments. Model per-run transcripts within the owning Lody
+HistoryWriter owner. As in root tool history, discard ACP image/audio blocks, all
+embedded resource blobs and data-URI resources from child tool content. Bound tool
+display strings to 16 KiB UTF-8, each opaque JSON projection to 32 KiB and each
+content list to 64 KiB. Remove binary fields and large base64-like strings from
+opaque extensions; omit diffs requiring text truncation rather than inventing a
+partial diff. Keep small readable output, status and locations; terminal snapshots
+retain a combined 1 KiB tail. Do not persist child raw input or duplicate scalar/array
+raw output in metadata; retain one bounded readable copy. Small metadata required by
+permission questions and root scheduling remains available. This storage projection
+does not change provider execution output, ordinary conversation attachments or
+rewrite stored history when opening it. Model per-run transcripts within the owning Lody
 session; native grandchildren can nest there without creating extra Lody child
 Sessions or changing their one-level creation rule. Store the transcript in an
 optional `subagent_task.run` containing the root `sessionId`, snapshot, latest

@@ -3,6 +3,9 @@ import type { RequestPermissionRequest } from '@agentclientprotocol/sdk';
 import {
   deriveLocationsFromToolCallContent,
   stripToolCallContentForHistory,
+  sanitizeToolHistoryRecord,
+  sanitizeToolHistoryText,
+  sanitizeToolHistoryLocations,
 } from '../acp/tool-call-history';
 type ToolCallMessageContent = Extract<MessageContent, { type: 'tool_call' }>;
 const sanitizeToolCallContentForHistory = (
@@ -32,20 +35,25 @@ export const mergeToolCallWithPermission = (
     (Array.isArray(tool.locations) && tool.locations.length > 0 ? tool.locations : undefined) ??
     deriveLocationsFromToolCallContent(tool.content);
   const requestMeta = (request as { _meta?: unknown })._meta;
-  const permissionMeta =
-    typeof requestMeta === 'object' && requestMeta !== null && !Array.isArray(requestMeta)
-      ? (requestMeta as Record<string, unknown>)
-      : undefined;
+  const permissionMeta = sanitizeToolHistoryRecord(requestMeta);
   return {
     ...toolCall,
-    title: toolCall.title ?? tool.title ?? null,
+    title:
+      typeof (toolCall.title ?? tool.title) === 'string'
+        ? sanitizeToolHistoryText((toolCall.title ?? tool.title)!)
+        : null,
     kind,
     status: toolCall.status ?? tool.status ?? 'pending',
     content,
-    locations,
+    locations: sanitizeToolHistoryLocations(locations),
     permissionRequest: {
       requestId,
-      options: request.options,
+      options: request.options.map((option) => ({
+        optionId: option.optionId,
+        name: sanitizeToolHistoryText(option.name),
+        kind: option.kind,
+        _meta: sanitizeToolHistoryRecord(option._meta),
+      })),
       ...(permissionMeta ? { _meta: permissionMeta } : {}),
       outcome: toolCall.permissionRequest?.outcome,
     },

@@ -42,9 +42,9 @@ Exact deletion bypasses discovery: [relations](../../specs/session-relations.md)
   authored blocks; tool identity changes still use the complete item parser.
 - Normalize legacy built-in CLI selectors on new history input only. Independent stored
   input-config metadata edits validate changed fields, not untouched historical values.
-- ACP tool blocks and locations are explicit JSON extension boundaries. Unknown block
-  types must not bypass validation of malformed known variants. Preserve declared `_meta`
-  and extension keys; closed execution configuration still selects declared fields.
+- ACP tool blocks/locations are JSON extension boundaries. Reject malformed known
+  variants; keep small `_meta`/extensions under `src/acp/tool-call-history.ts` limits.
+  Closed execution config selects declared fields. Never bulk sanitize old history.
 - Steer provenance is a declared history input-config field, not an unknown extension.
   Both new writes and read normalization must retain it for edit-and-resend checks.
 - Scalar/fileDiff writes read and diff only the requested field, never the turn's items.

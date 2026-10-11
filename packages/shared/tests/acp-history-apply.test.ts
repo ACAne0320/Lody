@@ -4,6 +4,7 @@ import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import type { MessageContent } from '../src/ai';
+import { collectPendingScheduledTasksFromHistory } from '../src/scheduled-tasks-from-history';
 import {
   MAX_STORED_TERMINAL_OUTPUT_BYTES,
   applyMessageContentsBatch,
@@ -165,18 +166,23 @@ describe('acp history apply', () => {
           kind: 'other',
           status: 'in_progress',
           _meta: { lody: { toolName: 'CronCreate' } },
-          rawInput: { cron: '* * * * *', prompt: 'synthetic reminder' },
+          rawInput: {
+            cron: '* * * * *',
+            prompt: 'synthetic reminder',
+            unused: 'DROP_SCHEDULE_INPUT',
+          },
         }),
         makeNotification({
           sessionUpdate: 'tool_call_update',
           toolCallId: 'cron',
           status: 'completed',
-          rawOutput: { id: 'job' },
+          rawOutput: { id: 'job', blob: 'DROP_SCHEDULE_BLOB' },
         }),
       ],
       [1]
     );
     expect(JSON.stringify(history)).not.toContain('private file body');
+    expect(JSON.stringify(history)).not.toContain('DROP_SCHEDULE');
     expect(history[0]?.items).toEqual([
       expect.objectContaining({ toolCallId: 'read', kind: 'read', status: 'completed' }),
       expect.objectContaining({
@@ -186,33 +192,64 @@ describe('acp history apply', () => {
         rawOutput: { id: 'job' },
       }),
     ]);
+    expect(collectPendingScheduledTasksFromHistory(history)).toMatchObject([
+      { id: 'cron', humanSchedule: '* * * * *', summary: 'synthetic reminder' },
+    ]);
+    const deleted = applyNotificationOnHistory(history, [
+      makeNotification({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'delete',
+        title: 'CronDelete',
+        status: 'completed',
+        _meta: { lody: { toolName: 'CronDelete' } },
+        rawInput: { id: 'job', unused: 'DROP_DELETE_INPUT' },
+      }),
+    ]);
+    expect(collectPendingScheduledTasksFromHistory(deleted)).toEqual([]);
+    expect(JSON.stringify(deleted)).not.toContain('DROP_DELETE');
   });
 
   it('stores ACP markdown plans beside their mode-switch card without duplicating updates', () => {
-    const plan = (content: string) => makeNotification({
-      sessionUpdate: 'plan_update',
-      plan: { type: 'markdown', planId: '1:submit_plan', content },
-      _meta: { lody: { turnId: '0' } },
-    });
-    const history = applyNotificationOnHistory([], [
+    const plan = (content: string) =>
       makeNotification({
-        sessionUpdate: 'tool_call', toolCallId: '1:submit_plan',
-        title: 'ExitPlanMode', kind: 'switch_mode', status: 'in_progress',
-      }),
-      plan('# Draft'),
-      plan('# Final plan\n\n- Verify the adapter.'),
-      makeNotification({
-        sessionUpdate: 'tool_call_update', toolCallId: '1:submit_plan', status: 'completed',
-      }),
-    ]);
+        sessionUpdate: 'plan_update',
+        plan: { type: 'markdown', planId: '1:submit_plan', content },
+        _meta: { lody: { turnId: '0' } },
+      });
+    const history = applyNotificationOnHistory(
+      [],
+      [
+        makeNotification({
+          sessionUpdate: 'tool_call',
+          toolCallId: '1:submit_plan',
+          title: 'ExitPlanMode',
+          kind: 'switch_mode',
+          status: 'in_progress',
+        }),
+        plan('# Draft'),
+        plan('# Final plan\n\n- Verify the adapter.'),
+        makeNotification({
+          sessionUpdate: 'tool_call_update',
+          toolCallId: '1:submit_plan',
+          status: 'completed',
+        }),
+      ]
+    );
     expect(history).toHaveLength(1);
     const items = history[0]!.items as unknown as MessageContent[];
-    expect(items.filter((item) => item.type === 'proposed_plan')).toEqual([{
-      type: 'proposed_plan', turnId: '1:submit_plan',
-      markdown: '# Final plan\n\n- Verify the adapter.', status: 'delta', isLatest: true,
-    }]);
+    expect(items.filter((item) => item.type === 'proposed_plan')).toEqual([
+      {
+        type: 'proposed_plan',
+        turnId: '1:submit_plan',
+        markdown: '# Final plan\n\n- Verify the adapter.',
+        status: 'delta',
+        isLatest: true,
+      },
+    ]);
     expect(items.find((item) => item.type === 'tool_call')).toMatchObject({
-      toolCallId: '1:submit_plan', kind: 'switch_mode', status: 'completed',
+      toolCallId: '1:submit_plan',
+      kind: 'switch_mode',
+      status: 'completed',
     });
   });
 

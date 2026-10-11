@@ -1,5 +1,6 @@
 import { isSessionGoalActive, resolveLatestSessionGoalFromHistory } from '../goal';
 import type { PermissionOutcome } from '../message';
+import { sanitizeToolHistoryRecord } from '../acp/tool-call-history';
 import type {
   OpenAssistantTurnInput,
   ReplaceEditableTailInput,
@@ -108,7 +109,14 @@ export function applyRespondPermission(
     // A permission request is single-assignment. A later automatic outcome
     // must never overwrite a decision that another client already persisted.
     if (request.outcome !== undefined) return false;
-    record.permissionRequest = { ...request, outcome };
+    record.permissionRequest = {
+      ...request,
+      outcome: {
+        outcome: outcome.outcome,
+        ...(outcome.outcome === 'selected' ? { optionId: outcome.optionId } : {}),
+        _meta: sanitizeToolHistoryRecord(outcome._meta),
+      },
+    };
     return true;
   }
   return false;
