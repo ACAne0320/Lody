@@ -404,4 +404,39 @@ describe('authenticated SQLite key mailbox', () => {
     expect(Result.isFailure(result)).toBe(true);
     expect(readFileSync(dbPath)).toEqual(before);
   });
+  it('continues 101 real envelopes in 100/1 pages without loading a lookahead ciphertext', async () => {
+    const f = envelopeFixture();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* makeSqliteKeyMailbox({
+            path: file(),
+            mode: 'create',
+            genesis: f.context.genesis,
+            ledger: f.ledger,
+          });
+          const sender = ok(host.bind(f.owner.publicKey)),
+            recipient = ok(host.bind(f.phone.publicKey));
+          const expected: Uint8Array[] = [];
+          for (let n = 0; n < 101; n++) {
+            const frame = yield* f.prepare();
+            expected.push(frame);
+            yield* sender.put(n.toString(16).padStart(32, '0'), frame);
+          }
+          const first = yield* recipient.fetch(0, null, 100);
+          expect(first.items).toHaveLength(100);
+          expect(first.next).toBe('100');
+          const second = yield* recipient.fetch(0, first.next, 100);
+          expect(second.items).toHaveLength(1);
+          expect(second.next).toBe(null);
+          const observed = [...first.items, ...second.items]
+            .map((row) => Reports.mailboxDigest(row.frame))
+            .sort();
+          expect(observed).toEqual(expected.map(Reports.mailboxDigest).sort());
+          expect(yield* recipient.fetch(0, '101', 100)).toEqual({ items: [], next: null });
+          expect(Result.isFailure(yield* Effect.result(recipient.fetch(0, '102', 100)))).toBe(true);
+        })
+      )
+    );
+  }, 30_000);
 });

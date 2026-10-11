@@ -28,3 +28,7 @@ Final 196-test code tree passed full root check with native Git/local IPC, root 
 Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472).
 
 After syncing the parent count fix, combined core 197/197, typecheck and full root check passed. Exact Draft head/base are handed off for independent review; no code changed after that combined validation.
+
+Incremental SQL page fix: independent review of ad4aed943928be69b0013445c2a38d86c7907fbe observed LIMIT 101/load 101 for a 100-item request. The ciphertext query now uses exactly the requested limit; a separate indexed scalar EXISTS after the last sender/digest determines continuation without loading a lookahead frame. Owning real-crypto pagination verifies 101 envelopes across 100/1 pages, exact frame identity, empty terminal cursor and out-of-range rejection. Original reviewer artifacts remain untouched; separate copied-fixture reproduction preserves old load101 failure/new load100 pass and its initial ESM harness error. No trust/wire/repair policy changes.
+
+Final page-fix tree passed core 198/198, typecheck and full root check with native Git/local IPC, format/docs/public boundary. The prior NOT READY evidence remains unchanged; independent incremental recheck is still required for the new head.

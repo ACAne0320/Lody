@@ -15,11 +15,12 @@
     "Caller-authenticated principal binding, actual stored source/current repair revision checks; signed reports are claims only.",
     "Per-recipient SQLite LIMIT/OFFSET reads, exact ciphertext digest deduplication, retained history and distinct indexed schema app ID.",
     "Persist exact known public ledger observation independent of content/transport cursor; reject unknown historical prefix.",
-    "Application Scope owns storage; no Runtime/fiber, caller structures/cancels/awaits borrowed async work."
+    "Application Scope owns storage; no Runtime/fiber, caller structures/cancels/awaits borrowed async work.",
+    "Incremental page fix keeps actual ciphertext LIMIT at requested \u2264100; next hint uses indexed scalar existence, not a loaded/copied lookahead frame."
   ],
   "destinationFingerprints": {
     "src/keys/reports.ts": "fb936b0646d737f62f142f768e594ce330c706b92c527336e47839aec968c7d4",
-    "src/keys/mailbox-sqlite.ts": "8ddbc8a4cf5baaab2e32554616fd35cb9520d2fcc7b344c686c0d35541a4155e",
+    "src/keys/mailbox-sqlite.ts": "c64b776650f1ecba5d2280ef04d3bb137e71f868c27ebffd1eff04f3d2ee28e5",
     "src/ledger/replay.ts": "4a63d8fa7e7a6ee579d8bee62ae11d98a6fc6ae3836311ece49b3d1c7e02ef8a",
     "src/ledger/index.ts": "accc5c6374ffa734ad0391a4e4244da540bd8beba0f1849b272a2db7e5c74753"
   }
