@@ -6180,7 +6180,7 @@
       "targetPath": "packages/e2ee-lab/src/platform/credentials.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Partial credentials and joins migrated to public APIs: real device proofs, SQLite mint/consume/invalidate and two-row join/first-label binding readback. Original credential/nonce and join/account SQL failures reproduced. Same-ID signer, revalidated stored signatures/bindings and real reopen. No product identity/JWT/new deadline. Workspace/genesis/checkpoint persistence, notes/harness metadata remain incomplete. Original genesis registry/signatures/readback/actual OS-child reopen and authenticated discovery now partial; full create-space publication/current checkpoint/binding still incomplete.",
+      "reason": "Partial credentials and joins migrated to public APIs: real device proofs, SQLite mint/consume/invalidate and two-row join/first-label binding readback. Original credential/nonce and join/account SQL failures reproduced. Same-ID signer, revalidated stored signatures/bindings and real reopen. No product identity/JWT/new deadline. Workspace/genesis/checkpoint persistence, notes/harness metadata remain incomplete. Original genesis registry/signatures/readback/actual OS-child reopen and authenticated discovery now partial; full create-space publication/current checkpoint/binding still incomplete. Original bind-once token API now migrated with no renewal and real ignored-update refusal; host create-space composition still incomplete.",
       "sourceDeclaredExports": {
         "core": [
           "HostMeta",
@@ -8261,12 +8261,12 @@
     "branch": "e2ee-lab-integration",
     "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
     "draftPr": null,
-    "consumerTests": 45,
+    "consumerTests": 47,
     "originalLabFailuresClosed": false,
     "remaining": "Full honest host/gateway/actors, Flock process/recovery/live session, key mailbox/rotation composition, schedule driver, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Current workspace increment full root core302/Lab45 passes with child-process GIT_EXEC_PATH removed and /usr/bin Git preferred, public boundary7008files/27manifests. Prior CLI failure preserved separately. Root format/docs pass; all50 Lab input SHA unchanged throughout check/format. Fixedhead/CI/independent pending.",
+    "authorRootCheck": "Current credential binding root core302/Lab47 passes, public boundary7008files27manifests; child-process Git path isolation unchanged. Root format/docs pass; all50 Lab input SHA unchanged throughout root check/format. Fixed-head/CI/independent pending.",
     "lastFetchedMain": {
       "head": "987962e77022df6a800f4e889f124b51f6eb8056",
       "tree": "4601a3f2b65d122c5b314cab79dc275fba9af636",
@@ -8286,6 +8286,7 @@
     "operationOwnership": "Shared parent-owned child scopes close admission, abort native capabilities and interrupt/await every child before earlier owners; defective child finalizer cannot skip other children or hide cause. Real SQLite/SDK lifetimes tested; fault injection boundary explicit.",
     "joins": "WIP public signed requests and real authenticated unbound-outsider submit/member read, same-ID original signer/first synthetic account binding, one-transaction two-row readback; original two SQL failures repaired with real signature/SQL/reopen tests. No ledger admission or production identity/new expiry; R cannot submit. Abort signal plus actual borrowed lookup retention and SQLite/nativeRiverrun close order tested. Current5/associated7/type/static pass; Fresh fba88 +6 declared overlays full42 pass; native-retain/SQL-readback negative controls hit actual direct assertions, no timeout, restored pass. Root core302/Lab42 passes; fixedhead/CI/independent pending.",
     "workspaces": "WIP original public-signature genesis/original signer SQLite registry with transaction readback, copy-owned records, corrupted-row refusal and actual OS-child reopen; stored-bearer GET genesis permits original unbound discovery. Private harness registration only; create-space stream publication/current independent checkpoint/crash gap/credential binding remain incomplete. Owning3+associated10/type pass; Fresh77485 +6 declared overlays45 pass; readback/original-signer mutants direct assertion failure, no timeout, restored pass. Root core302/Lab45 passes; fixed-head/CI/independent pending.",
-    "comparisonPublicationDecision": "Proposed, awaiting human: old Lab notes permits current machine/R, current public comparisonNote only personal. Option A preserve current personal contract and inert host observations; option B separate machine observation DTO, never R send, needs explicit eligibility contract. Host notes cannot automatically become independent confirmation. No core/spec change made. Coordinator recommends A; this is not recorded as human approval."
+    "comparisonPublicationDecision": "Proposed, awaiting human: old Lab notes permits current machine/R, current public comparisonNote only personal. Option A preserve current personal contract and inert host observations; option B separate machine observation DTO, never R send, needs explicit eligibility contract. Host notes cannot automatically become independent confirmation. No core/spec change made. Coordinator recommends A; this is not recorded as human approval.",
+    "credentialBinding": "WIP original bind-once synthetic bearer after genuine current membership; stored identity, invalidation and original expiry rechecked after borrowed lookup; real SQL UPDATE readback, same-target idempotent, other-Org rejected, no new token/renewal. New finite ledger callback receives abort and actual completion is retained before SQLite/SDK close. Existing native-owner test parameterized for join/credential without removing original join behavior. Owning credential4/join6/host1 associated11/type/static pass; Fresh349fd +3 declared overlays47 pass; native retain/readback negatives actual direct assertions, no timeout, restored pass. Root core302/Lab47 passes; fixedhead/CI/independent pending. Not completed HTTP create-space binding flow; no JWT/strictB change."
   }
 }

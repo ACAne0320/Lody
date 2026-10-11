@@ -256,3 +256,16 @@ current machines/R to post notes, while public comparisonNote admits only person
 devices. Proposed options are preserve the public personal-only contract with
 unconfirmed host observations, or separately define inert machine observations;
 R cannot send in either. No core/Spec change or implicit independent confirmation.
+
+## Credential binding (current WIP)
+
+Keep the original bind-once token, unchanged TTL and per-route current authority.
+A genuine ledger lookup precedes binding; recheck stored identity, expiry and
+invalidation after it, with actual SQL UPDATE readback. Foreign-Org rebinding is
+refused; same-Org retry returns the original token/expiry. Real ignored UPDATE,
+lookup-time expiry/invalidation, counterfeit views and file reopen are covered.
+The finite lookup receives abort and is retained to actual completion. Extend the
+existing real SQLite/Riverrun close-order probe for join and credential paths;
+no copied test or removed original behavior. Associated11/type/static and full root core302/Lab47 pass; fixed-head/CI/independent
+acceptance pending. Original HostMeta ignored binding UPDATE silently returns
+without binding; read-only SQL-only reproduction and source SHA are retained. HTTP create-space binding remains incomplete.

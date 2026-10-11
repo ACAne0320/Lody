@@ -53,7 +53,10 @@ export function makeLabCredentials(input: {
   readonly path: string;
   readonly mode: 'create' | 'open';
   readonly now: () => number;
-  readonly ledger: (genesis: Bytes.GenesisHash) => Effect.Effect<LedgerView, unknown>;
+  readonly ledger: (
+    genesis: Bytes.GenesisHash,
+    signal: AbortSignal
+  ) => Effect.Effect<LedgerView, unknown>;
 }) {
   return Effect.gen(function* () {
     const { path, mode, now, ledger } = input;
@@ -146,9 +149,19 @@ export function makeLabCredentials(input: {
         expiresAt: value.expires_at,
       };
     };
+    const lookup = (token: string) => {
+      guard();
+      if (!hashValid(token)) throw fail('unauthorized');
+      const row = db.prepare('SELECT * FROM credentials WHERE token=?').get(token);
+      if (!row) throw fail('unauthorized');
+      const value = parse(row);
+      if ((row as { invalidated: number }).invalidated !== 0 || time() >= value.expiresAt)
+        throw fail('unauthorized');
+      return Object.freeze(value);
+    };
     const member = (device: Bytes.SigningPublicKey, genesis: Bytes.GenesisHash) =>
       Effect.gen(function* () {
-        const view = yield* ledger(genesis);
+        const view = yield* Effect.uninterruptible(ledger(genesis, operations.signal));
         // Genuine public query first, never request-supplied structural state.
         yield* Effect.fromResult(contentPermissions(view, device));
         const state = view.inspectState(),
@@ -281,17 +294,55 @@ export function makeLabCredentials(input: {
             });
           })
         ),
-      authenticate: (token: string) =>
-        sql(() => {
-          guard();
-          if (!hashValid(token)) throw fail('unauthorized');
-          const row = db.prepare('SELECT * FROM credentials WHERE token=?').get(token);
-          if (!row) throw fail('unauthorized');
-          const value = parse(row);
-          if ((row as { invalidated: number }).invalidated !== 0 || time() >= value.expiresAt)
-            throw fail('unauthorized');
-          return Object.freeze(value);
-        }),
+      authenticate: (token: string) => sql(() => lookup(token)),
+      /** Original bind-once synthetic token behavior. Revalidates stored identity,
+       * invalidation and unchanged TTL after borrowed current-ledger lookup.
+       * Binding never grants membership; each actual route still authorizes current state. */
+      bind: (token: string, genesis: Bytes.GenesisHash) =>
+        operations.run(
+          Effect.gen(function* () {
+            const captured = yield* sql(() => ({
+              credential: lookup(token),
+              anchor: Result.getOrThrow(Bytes.genesisHash(genesis.toBytes())),
+            }));
+            if (
+              captured.credential.genesis !== null &&
+              !captured.credential.genesis.equals(captured.anchor)
+            )
+              return yield* fail('unauthorized');
+            yield* member(captured.credential.device, captured.anchor);
+            return yield* sql(() => {
+              guard();
+              return db
+                .transaction(() => {
+                  const current = lookup(token),
+                    earlier = captured.credential;
+                  if (
+                    current.account !== earlier.account ||
+                    !current.device.equals(earlier.device) ||
+                    current.issuedAt !== earlier.issuedAt ||
+                    current.expiresAt !== earlier.expiresAt ||
+                    (current.genesis !== null && !current.genesis.equals(captured.anchor))
+                  )
+                    throw fail('unauthorized');
+                  db.prepare(
+                    'UPDATE credentials SET genesis_hex=? WHERE token=? AND genesis_hex IS NULL'
+                  ).run(hex(captured.anchor.toBytes()), token);
+                  const saved = lookup(token);
+                  if (
+                    !saved.genesis?.equals(captured.anchor) ||
+                    saved.account !== current.account ||
+                    !saved.device.equals(current.device) ||
+                    saved.issuedAt !== current.issuedAt ||
+                    saved.expiresAt !== current.expiresAt
+                  )
+                    throw fail('storage');
+                  return saved;
+                })
+                .immediate();
+            });
+          })
+        ),
       invalidate: (token: string) =>
         sql(() => {
           guard();

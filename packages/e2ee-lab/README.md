@@ -98,7 +98,7 @@ observed in an explicit abort-ignoring lease test. Full host composition is pend
 The original full host/gateway, honest actors, key delivery/rotation composition,
 Flock process/recovery/live sessions, schedule driver, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
-45 tests do not close the original Lab2 failures or the complete original fault
+47 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
 D12 and permanent publisher loss remain explicit decisions. Native custody,
 production E2EE, independent whole-stack review, CI and product acceptance are
@@ -111,3 +111,9 @@ stored rows fail closed; another OS process reopens and verifies the actual file
 Authenticated genesis discovery preserves unbound-joiner access to genesis only.
 This metadata API is private-harness registration, not completed HTTP create-space
 publication, a current trusted endpoint, key custody or crash-gap recovery.
+
+Credential binding preserves the original bind-once token and its exact original
+lease; it never renews or grants membership. It rechecks stored identity, expiry
+and invalidation after finite current-ledger lookup, then verifies the actual
+SQLite UPDATE. The lookup receives abort and remains retained until settlement.
+Host create-space/stream publication integration remains unfinished.

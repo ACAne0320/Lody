@@ -9,6 +9,7 @@ import { Bytes } from '@lody/e2ee-core';
 import { prepareJoinRequest } from '@lody/e2ee-core/ledger/admission';
 import type { LedgerView } from '@lody/e2ee-core/ledger';
 import { makeLabJoinMailbox, labJoinWire } from '../src/platform/join-mailbox';
+import { makeLabCredentials, labPossessionMessage } from '../src/platform/credentials';
 import { history, fixture } from './ledger-fixture';
 import { makeAuthenticatedLabMailbox } from './authenticated-mailbox-fixture';
 const ok = Result.getOrThrow;
@@ -303,50 +304,48 @@ describe('public signed Lab join metadata, synthetic account labels only', () =>
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  it('aborts admission and waits an abort-ignoring borrowed native read phase before the real Riverrun owner closes', async () => {
-    const f = await fixture(),
-      outsider = signer(143);
-    let release!: () => void,
-      rawSettled = false,
-      closedEarly = false,
-      disposed = false;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const metadataPath = join(f.dir, 'joins.sqlite');
-    const nativeClose = Database.prototype.close;
-    let sqliteClosedEarly = false,
-      sqliteClosed = false;
-    let nativeLease: Promise<LedgerView> | undefined;
-    // Observe actual native close/open state; never replace native SQLite behavior
-    // with a successful mock or assert a mock call count. Finally restores it.
-    Database.prototype.close = function () {
-      if (this.name !== metadataPath) return nativeClose.call(this);
-      sqliteClosedEarly = !rawSettled;
-      const result = nativeClose.call(this);
-      sqliteClosed = !this.open;
-      return result;
-    };
-    try {
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const child = Scope.makeUnsafe(),
-              entered = yield* Deferred.make<void>(),
-              aborted = yield* Deferred.make<void>();
-            yield* Scope.addFinalizer(
-              child,
-              Effect.promise(async () => {
-                closedEarly = !rawSettled;
-                disposed = true;
-                await f.close();
-              })
-            );
-            const mailbox = yield* makeLabJoinMailbox({
-              path: metadataPath,
-              mode: 'create',
-              genesis: f.anchor,
-              ledger: (signal) =>
+  it.each(['join', 'credential'] as const)(
+    'aborts admission and waits an abort-ignoring borrowed native read phase before the real Riverrun owner closes (%s)',
+    async (kind) => {
+      const f = await fixture(),
+        outsider = signer(143);
+      let release!: () => void,
+        rawSettled = false,
+        closedEarly = false,
+        disposed = false;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const metadataPath = join(f.dir, 'joins.sqlite');
+      const nativeClose = Database.prototype.close;
+      let sqliteClosedEarly = false,
+        sqliteClosed = false;
+      let nativeLease: Promise<LedgerView> | undefined;
+      // Observe actual native close/open state; never replace native SQLite behavior
+      // with a successful mock or assert a mock call count. Finally restores it.
+      Database.prototype.close = function () {
+        if (this.name !== metadataPath) return nativeClose.call(this);
+        sqliteClosedEarly = !rawSettled;
+        const result = nativeClose.call(this);
+        sqliteClosed = !this.open;
+        return result;
+      };
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const child = Scope.makeUnsafe(),
+                entered = yield* Deferred.make<void>(),
+                aborted = yield* Deferred.make<void>();
+              yield* Scope.addFinalizer(
+                child,
+                Effect.promise(async () => {
+                  closedEarly = !rawSettled;
+                  disposed = true;
+                  await f.close();
+                })
+              );
+              const readLedger = (signal: AbortSignal) =>
                 Effect.gen(function* () {
                   signal.addEventListener('abort', () => Deferred.doneUnsafe(aborted, Exit.void), {
                     once: true,
@@ -367,49 +366,81 @@ describe('public signed Lab join metadata, synthetic account labels only', () =>
                         }
                       })())
                   );
-                }),
-            }).pipe(Effect.provideService(Scope.Scope, child));
-            const request = yield* prepareJoinRequest({
-              genesis: f.anchor,
-              requestId: ok(Bytes.requestId(new Uint8Array(16).fill(144))),
-              userId: ok(Bytes.userId(new Uint8Array(32).fill(145))),
-              encryptionPublicKey: ok(Bytes.encryptionPublicKey(new Uint8Array(32).fill(146))),
-              expiresAt: null,
-              signer: outsider,
-            });
-            const identity = { account: 'synthetic', device: outsider.publicKey, genesis: null };
-            const worker = yield* mailbox.put(identity, request).pipe(Effect.forkChild);
-            yield* Effect.addFinalizer(() =>
-              Effect.gen(function* () {
-                release();
-                yield* Scope.close(child, Exit.void);
-              })
-            );
-            yield* Deferred.await(entered);
-            const closing = yield* Effect.forkChild(Scope.close(child, Exit.void), {
-              startImmediately: true,
-            });
-            yield* Deferred.await(aborted);
-            expect(Result.isFailure(yield* Effect.result(mailbox.put(identity, request)))).toBe(
-              true
-            );
-            release();
-            yield* Fiber.join(closing);
-            // Actual earlier owner's recorded close order, not a timeout/mock call count.
-            expect(closedEarly).toBe(false);
-            expect(sqliteClosedEarly).toBe(false);
-            expect(sqliteClosed).toBe(true);
-            expect(rawSettled).toBe(true);
-            expect(disposed).toBe(true);
-            expect(Exit.isFailure(yield* Fiber.await(worker))).toBe(true);
-          })
-        )
-      );
-    } finally {
-      release();
-      await nativeLease?.catch(() => undefined);
-      Database.prototype.close = nativeClose;
-      if (!disposed) await f.close();
+                });
+              let submit: () => Effect.Effect<unknown, unknown>;
+              if (kind === 'join') {
+                const mailbox = yield* makeLabJoinMailbox({
+                  path: metadataPath,
+                  mode: 'create',
+                  genesis: f.anchor,
+                  ledger: readLedger,
+                }).pipe(Effect.provideService(Scope.Scope, child));
+                const request = yield* prepareJoinRequest({
+                  genesis: f.anchor,
+                  requestId: ok(Bytes.requestId(new Uint8Array(16).fill(144))),
+                  userId: ok(Bytes.userId(new Uint8Array(32).fill(145))),
+                  encryptionPublicKey: ok(Bytes.encryptionPublicKey(new Uint8Array(32).fill(146))),
+                  expiresAt: null,
+                  signer: outsider,
+                });
+                const identity = {
+                  account: 'synthetic',
+                  device: outsider.publicKey,
+                  genesis: null,
+                };
+                submit = () => mailbox.put(identity, request);
+              } else {
+                const credentials = yield* makeLabCredentials({
+                  path: metadataPath,
+                  mode: 'create',
+                  now: () => 0,
+                  ledger: (_anchor, signal) => readLedger(signal),
+                }).pipe(Effect.provideService(Scope.Scope, child));
+                const account = 'synthetic-owner',
+                  nonce = yield* credentials.issueChallenge(account, f.owner.publicKey);
+                const proof = yield* f.owner.sign(
+                  ok(labPossessionMessage(account, f.owner.publicKey, nonce))
+                );
+                const credential = yield* credentials.completeChallenge({
+                  account,
+                  nonce,
+                  device: f.owner.publicKey,
+                  signature: proof,
+                  genesis: null,
+                });
+                submit = () => credentials.bind(credential.token, f.anchor);
+              }
+              const worker = yield* submit().pipe(Effect.forkChild);
+              yield* Effect.addFinalizer(() =>
+                Effect.gen(function* () {
+                  release();
+                  yield* Scope.close(child, Exit.void);
+                })
+              );
+              yield* Deferred.await(entered);
+              const closing = yield* Effect.forkChild(Scope.close(child, Exit.void), {
+                startImmediately: true,
+              });
+              yield* Deferred.await(aborted);
+              expect(Result.isFailure(yield* Effect.result(submit()))).toBe(true);
+              release();
+              yield* Fiber.join(closing);
+              // Actual earlier owner's recorded close order, not a timeout/mock call count.
+              expect(closedEarly).toBe(false);
+              expect(sqliteClosedEarly).toBe(false);
+              expect(sqliteClosed).toBe(true);
+              expect(rawSettled).toBe(true);
+              expect(disposed).toBe(true);
+              expect(Exit.isFailure(yield* Fiber.await(worker))).toBe(true);
+            })
+          )
+        );
+      } finally {
+        release();
+        await nativeLease?.catch(() => undefined);
+        Database.prototype.close = nativeClose;
+        if (!disposed) await f.close();
+      }
     }
-  });
+  );
 });

@@ -74,7 +74,7 @@ join mailbox 消费公开请求签名/验证。真实 unbound 外来设备可提
 
 原完整 host/gateway、诚实 actors、密钥投递/轮换组合、Flock 进程重开/恢复/live
 session、schedule driver、攻击能力、捕获 replay、原 fixtures 和 CLI/启动流程
-尚未完成。当前 45 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
+尚未完成。当前 47 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
 快照 wire/offset、replay 熵、严格期限 B、恢复库、D12、发布设备永久丢失仍是待决项。
 原生存钥、生产 E2EE、整栈独立审查、CI 和产品验收各自独立。
 参见[完整清单](../../.agents/docs/e2ee-migration-manifest.json)和
@@ -85,3 +85,7 @@ workspace registry 只保存实际公开签名验证过的原始 genesis 与原 
 认证 genesis 发现保留 unbound joiner 的访问，仅返回原始 genesis。metadata API
 是私有 harness 注册，不代表完成 HTTP create-space 发布、当前可信端点、存钥或
 crash-gap 恢复。
+
+凭证绑定保持原 bind-once token 与原到期时间，不续期、不授予成员资格。有限
+当前账本查询之后重核已存身份/到期/失效，再读回真实 SQLite UPDATE。借用查询
+收到 abort 并保留至实际结束。宿主 create-space/stream 发布组合仍未完成。

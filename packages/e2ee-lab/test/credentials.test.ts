@@ -256,4 +256,140 @@ describe('synthetic Lab device credentials, not product identity or strict deadl
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  it('binds once after current genuine membership, detects ignored updates, reopens and never renews its original lease', async () => {
+    const f = history(),
+      dir = directory(),
+      path = join(dir, 'binding.sqlite');
+    let now = 0,
+      token = '';
+    let view: LedgerView = f.view;
+    let duringLookup: () => void = () => undefined;
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const host = yield* makeLabCredentials({
+              path,
+              mode: 'create',
+              now: () => now,
+              ledger: () =>
+                Effect.sync(() => {
+                  duringLookup();
+                  return view;
+                }),
+            });
+            const nonce = yield* host.issueChallenge('synthetic-alice', f.owner.publicKey);
+            const initial = yield* host.completeChallenge({
+              account: 'synthetic-alice',
+              device: f.owner.publicKey,
+              nonce,
+              signature: yield* f.owner.sign(
+                ok(labPossessionMessage('synthetic-alice', f.owner.publicKey, nonce))
+              ),
+              genesis: null,
+              ttlMs: 100,
+            });
+            token = initial.token;
+            view = {
+              genesis: f.anchor,
+              inspectState: () => f.view.inspectState(),
+            } as unknown as LedgerView;
+            expect(Result.isFailure(yield* Effect.result(host.bind(token, f.anchor)))).toBe(true);
+            expect((yield* host.authenticate(token)).genesis).toBeNull();
+            view = f.view;
+            const db = new Database(path);
+            try {
+              db.exec(
+                'CREATE TRIGGER ignore_binding BEFORE UPDATE OF genesis_hex ON credentials BEGIN SELECT RAISE(IGNORE); END;'
+              );
+              expect(Result.isFailure(yield* Effect.result(host.bind(token, f.anchor)))).toBe(true);
+              expect((yield* host.authenticate(token)).genesis).toBeNull();
+              expect(db.prepare('SELECT count(*) AS n FROM credentials').get()).toEqual({ n: 1 });
+              db.exec('DROP TRIGGER ignore_binding');
+              const bound = yield* host.bind(token, f.anchor);
+              expect(bound.genesis?.equals(f.anchor)).toBe(true);
+              expect(bound.issuedAt).toBe(initial.issuedAt);
+              expect(bound.expiresAt).toBe(initial.expiresAt);
+              expect(bound.token).toBe(token);
+              now = 50;
+              expect((yield* host.bind(token, f.anchor)).expiresAt).toBe(100);
+              expect(
+                Result.isFailure(
+                  yield* Effect.result(
+                    host.bind(token, ok(Bytes.genesisHash(new Uint8Array(32).fill(211))))
+                  )
+                )
+              ).toBe(true);
+              const fresh = () =>
+                Effect.gen(function* () {
+                  const nextNonce = yield* host.issueChallenge(
+                    'synthetic-alice',
+                    f.owner.publicKey
+                  );
+                  return yield* host.completeChallenge({
+                    account: 'synthetic-alice',
+                    nonce: nextNonce,
+                    device: f.owner.publicKey,
+                    signature: yield* f.owner.sign(
+                      ok(labPossessionMessage('synthetic-alice', f.owner.publicKey, nextNonce))
+                    ),
+                    genesis: null,
+                    ttlMs: 50,
+                  });
+                });
+              const expiring = yield* fresh();
+              duringLookup = () => {
+                now = 100;
+              };
+              expect(
+                Result.isFailure(yield* Effect.result(host.bind(expiring.token, f.anchor)))
+              ).toBe(true);
+              expect(
+                db
+                  .prepare('SELECT genesis_hex,invalidated FROM credentials WHERE token=?')
+                  .get(expiring.token)
+              ).toEqual({ genesis_hex: null, invalidated: 0 });
+              duringLookup = () => undefined;
+              now = 50;
+              const invalidating = yield* fresh();
+              duringLookup = () => {
+                db.prepare('UPDATE credentials SET invalidated=1 WHERE token=?').run(
+                  invalidating.token
+                );
+              };
+              expect(
+                Result.isFailure(yield* Effect.result(host.bind(invalidating.token, f.anchor)))
+              ).toBe(true);
+              expect(
+                db
+                  .prepare('SELECT genesis_hex,invalidated FROM credentials WHERE token=?')
+                  .get(invalidating.token)
+              ).toEqual({ genesis_hex: null, invalidated: 1 });
+            } finally {
+              duringLookup = () => undefined;
+              db.close();
+            }
+          })
+        )
+      );
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const host = yield* makeLabCredentials({
+              path,
+              mode: 'open',
+              now: () => now,
+              ledger: () => Effect.succeed(f.view),
+            });
+            expect((yield* host.authenticate(token)).genesis?.equals(f.anchor)).toBe(true);
+            now = 100;
+            expect(Result.isFailure(yield* Effect.result(host.bind(token, f.anchor)))).toBe(true);
+            expect(Result.isFailure(yield* Effect.result(host.authenticate(token)))).toBe(true);
+          })
+        )
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

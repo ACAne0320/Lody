@@ -189,3 +189,13 @@ driver、攻击能力、捕获 replay、fixtures 和 CLI 尚未完成，再独�
 comparisonNote 仅 personal。提案选项为沿当前 personal 契约且宿主观察仍未确认，
 或另行明确 machine 的无权威观察契约；两者都不允许 R 发送。未改 core/Spec，
 不自动把宿主记录变成独立确认。
+
+## 凭证绑定（当前 WIP）
+
+保持原 bind-once token、TTL 及每路由当前鉴权。genuine 账本查询后重核已存
+身份、到期和失效，真实 SQL UPDATE 读回确认。异 Org 重绑拒绝，同 Org 重试
+保留原 token/到期。实际 ignored UPDATE、查询中到期/失效、假 view 与文件重开
+已有覆盖。有限查询收到 abort 并保留到实际结束；扩展现有真实 SQLite/Riverrun
+关闭顺序测试覆盖 join 和 credential，未复制新测试或移除原行为。关联11/type/
+static及完整 root core302/Lab47 通过；固定head/CI/独立验收待完成。原 HostMeta
+ignored binding UPDATE 静默返回但未绑定，只读 SQL-only 复现和 source SHA 保留。HTTP create-space 绑定组合仍未完成。
