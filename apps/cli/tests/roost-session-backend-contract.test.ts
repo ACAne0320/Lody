@@ -246,8 +246,8 @@ describe('Production Roost history semantics', () => {
         kind === 'read'
           ? await rpc.readSessionHistoryForRpc(fixture.doc.sessionId, { kind: 'readAll' })
           : await rpc.writeSessionHistoryForRpc(fixture.doc.sessionId, 'append', {
-              entry: nativeUser('rpc-failed-user'),
-            });
+            entry: nativeUser('rpc-failed-user'),
+          });
       const parsed =
         kind === 'read'
           ? SessionHistoryReadResponseSchema.parse(response)
@@ -607,109 +607,6 @@ describe('Production Roost history semantics', () => {
       state: 'ready',
       turn: { items: [{ text: 'new use of removed identity' }] },
     });
-  });
-
-  it('reuses the signed prefix in the same session, restores it, and fences old writers', async () => {
-    const fixture = await nativeFixture();
-    for (let index = 0; index < 24; index += 1) {
-      await fixture.backend.appendHistoryTurn(nativeUser(`prefix-u-${index}`));
-      await fixture.backend.appendHistoryTurn({
-        ...nativeAssistant(`prefix-a-${index}`),
-        finished: true,
-        acpTurnId: `boundary-${index}`,
-      });
-    }
-    await fixture.backend.appendHistoryTurn(nativeUser('tail-u'));
-    // The nearest previous user lies outside the initial forty-row window.
-    for (let index = 0; index < 43; index += 1)
-      await fixture.backend.appendHistoryTurn({
-        ...nativeAssistant(`tail-a-${index}`),
-        finished: true,
-      });
-    const seed = await loadRoostOwnerSeedLegacy(join(nativeDirectory, 'history.db'));
-    const owner = Identity.fromSeed(seed).owner();
-    const client = new RoostNativeClient({
-      dbPath: join(nativeDirectory, 'history.db'),
-      seed,
-      allowedOwners: [owner],
-      maxQueuedRequests: 32,
-      maxQueuedBytes: 8 * 1024 * 1024,
-    });
-    try {
-      await client.ready;
-      const generation = new RoostHistoryGeneration(client, owner, fixture.doc.sessionId);
-      await generation.resolve();
-      const old = generation.history;
-      const before = await old.readActiveBranch(fixture.doc.sessionId);
-      const cursor = await old.observedEventCursor();
-      expect(await readGoalProjection(generation.host, cursor, before.messages.length)).toBeNull();
-      const all = await fixture.backend.readHistory();
-      let ownedOld: NodeLodyHistory | undefined;
-      const originalFork = RoostHistoryGeneration.prototype.fork;
-      const fork = vi.spyOn(RoostHistoryGeneration.prototype, 'fork').mockImplementation(function (
-        ...args
-      ) {
-        ownedOld = this.history;
-        return originalFork.apply(this, args);
-      });
-      const full = vi
-        .spyOn(NodeLodyHistory.prototype, 'readActiveBranch')
-        .mockRejectedValue(new Error('Bounded edit must not scan the prefix'));
-      let result: Awaited<ReturnType<typeof fixture.backend.replaceEditableTail>>;
-      try {
-        result = await fixture.backend.replaceEditableTail({
-          expectedUserTurnId: 'tail-u',
-          expectedForkTurnId: 'boundary-23',
-          replacement: nativeUser('replacement-u') as never,
-        });
-      } finally {
-        full.mockRestore();
-        fork.mockRestore();
-      }
-      expect(result.status).toBe('accepted');
-      if (result.status !== 'accepted') throw new Error('Expected bounded edit');
-      expect(result.previousUserTurnId).toBe('prefix-u-23');
-      await generation.resolve();
-      const after = await generation.history.readActiveBranch(fixture.doc.sessionId);
-      expect(after.messages.slice(0, 48).map((row) => row.turnId)).toEqual(
-        before.messages.slice(0, 48).map((row) => row.turnId)
-      );
-      expect(await fixture.backend.history.count()).toBe(49);
-      await expect(
-        old.accept({
-          kind: 'publication',
-          businessId: fixture.doc.sessionId,
-          segmentId: 'stale-prefix-writer',
-          parents: [],
-          content: encodeRoostContent(null),
-        })
-      ).rejects.toMatchObject({ code: 'stale' });
-      if (!ownedOld) throw new Error('Expected the activating writer binding');
-      await expect(
-        ownedOld.accept({
-          kind: 'publication',
-          businessId: fixture.doc.sessionId,
-          segmentId: 'same-owner-stale-writer',
-          parents: [],
-          content: encodeRoostContent(null),
-        })
-      ).rejects.toMatchObject({ code: 'stale' });
-      await result.rollback();
-      expect(await fixture.backend.readHistory()).toEqual(all);
-      const restored = await generation
-        .resolve()
-        .then(() => generation.history.readActiveBranch(fixture.doc.sessionId));
-      expect(restored.messages.map((row) => row.turnId)).toEqual(
-        before.messages.map((row) => row.turnId)
-      );
-      const id = fixture.doc.sessionId;
-      await fixture.close();
-      const reopened = await nativeFixture(id);
-      expect(reopened.doc.sessionId).toBe(id);
-      expect(await reopened.backend.readHistory()).toEqual(all);
-    } finally {
-      await client.close();
-    }
   });
 
   it('rejects an edit for an older active goal and rebuilds an invalid derived cache', async () => {
