@@ -24,3 +24,5 @@ The existing crypto suite exercises real Node/WebCrypto signing and crypto, copi
 Tests do not prove product enablement, real secure-platform key custody, durable content retry, permanent-device-loss recovery or the final stack/Lab acceptance. Validation and CI remain tied to this layer's exact Draft head.
 
 Validation: package 140/140 and typecheck pass. Full `env -u GIT_EXEC_PATH PATH="/usr/bin:$PATH" pnpm check` passes, plus root format/docs against direct parent and public boundary. Preserve earlier lint/native-Git failure logs: the unchanged native Git suite passed 6/6 with native PATH; no source/expectation was altered. The real SDK 0.16.2 provider has no AbortSignal parameter; its future bridge must own in-flight Effect/native work and awaited close. Snapshot offset host-admission binding needs a separate format decision, not the old encrypted-only-offset provider.
+
+Draft: [#1442](https://github.com/LodyAI/Lody/pull/1442).

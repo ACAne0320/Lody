@@ -24,3 +24,5 @@ Translation: current
 这些测试不代表产品启用、真实平台安全存钥、内容持久重试、永久设备丢失恢复或最终整栈/Lab 验收。验证与 CI 只对应本层精确 Draft head。
 
 验证：包测试 140/140、类型检查通过；完整 `env -u GIT_EXEC_PATH PATH="/usr/bin:$PATH" pnpm check`、根格式、相对直接父层的文档检查及公开边界通过。保留早期 lint/native Git 失败日志；未改 Git 测试源码/断言，仅用系统 Git 环境后该套 6/6 通过。实际 SDK 0.16.2 的 provider 没有 AbortSignal 参数，后续桥接须拥有进行中的 Effect/native 操作并等待关闭。快照 offset 的服务端接纳绑定需独立格式决定，不能沿用只把 offset 藏在密文的方案。
+
+Draft: [#1442](https://github.com/LodyAI/Lody/pull/1442).
