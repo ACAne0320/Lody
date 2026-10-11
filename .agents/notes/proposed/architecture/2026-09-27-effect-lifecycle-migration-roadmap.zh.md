@@ -14,7 +14,7 @@ Lody 的生命周期缺陷集中在少数几类手写机制上：定时器驱动
 自己的 Promise 模块必须重写，只有真正的第三方 I/O 边界允许包装一次。按这一原则，Loro 同步
 栈的生命周期应在库内部解决：loro-repo 与 streams-crdt 在 Flock 持久化迁移之后改为 Effect
 内核，同时提供 Effect 与 Promise 两个入口。第一步是平台层与进程叶子层。排序依据是 fix 提交与
-issue 分类，不是运行时测量；各单元开工时需要各自的详细计划。
+issue 分类，不是运行时测量；较大单元需要各自的详细计划，小型任务相关迁移按下文的有界选择推进。
 
 ## 运行时修订
 
@@ -80,6 +80,21 @@ issue 分类，不是运行时测量；各单元开工时需要各自的详细�
   迁移时删除。
 - 当依赖属于另一个仓库且尚未完成时，允许在本仓库先定义与其未来 Effect 接口一致的 Tag，
   用临时 Layer 适配现有 Promise 版本；上游完成后只替换该 Layer。
+
+### 随功能与修复推进的小型迁移
+
+专门的迁移系列与日常功能/修复工作都可以交付原生叶子模块。只依靠系列推进，会让已经
+具备条件的模块继续累积 Promise 机制；触及模块就全部重写，则会把任务扩展到尚未完成的
+依赖链。因此，根 [Effect 规则](../../../../AGENTS.md#effect-reference) 要求评估迁移机会，
+并在真实依赖与验证范围就绪时优先完成一个直接服务当前需求的完整单元。
+[选择指南](../../../docs/cli-effect-ts.md#small-migrations-during-feature-and-fix-work)
+负责具体流程和约 500 行的规模参考。
+
+这个参考衡量额外评审范围，不按文件净增长计算，也不新增审批门槛。迁移必须改善当前
+需求涉及的行为，接入真实消费路径，并用行为回归覆盖满足既有完成标准。较大或被依赖
+阻塞的工作仍作为独立单元安排；纯计算保持普通代码。减少复杂度、改善生命周期行为是
+需要验证的目标，选择 Effect 本身不提供这些保证。这项工作方式建议不改变产品契约，
+不需要新增 Spec 文档。
 
 ### 边界规则（使用指南已由基础 PR #1070 提供，生命周期层补充以下要求）
 
@@ -256,8 +271,8 @@ preview 代理、`packages/loro-streams-rpc`、PR poller、Electron updater：�
 
 ## 交付依赖图
 
-箭头表示前置依赖，不是全局串行顺序。文件锁是第一份新 PR；后续单元从最新 main 或
-明确的新依赖分支开始。
+箭头表示前置依赖，不是全局串行顺序。文件锁、Git 叶子、worktree 观察/本地准备与
+应用 shell 缓存已是合并后的基础；后续单元从最新 main 或新的依赖分支开始。
 
 ```mermaid
 flowchart TD
@@ -299,7 +314,8 @@ flowchart TD
 #1385 已合并，仅提供运行实例凭据租约和预热 TTL/控制；底层 ACP/worktree 启动及完整会话所有权仍未完成。
 有限[本地源准备单元](../../implemented/architecture/2026-10-10-effect-local-worktree-preparation.zh.md) 依赖文件系统/Git，借用既有变更租约。评审 base 包含观察单元，因为管理器边界共享；原生内核并不互相依赖。
 库侧前置核对：本集成消费 Flock 0.4.3、streams-crdt 0.16.1 和 loro-repo 0.21.1。公开 npm registry 现已发布 streams-crdt 0.16.2 和 loro-repo 0.21.2，Flock 仍为 0.4.3；这不是已消费的升级，也不证明 Effect 内核完成。库侧迁移前仍须读取各自规则并核对当前源码/检查点契约。
-这些后续迁移单元仍是 draft PR，不能标为已合并。
+下文的七单元基础 stack 已于 2026-10-11 合入 main。Worktree 变更/setup/GC、runtime
+安装、ACP 和 Loro 内核仍未完成。
 
 接入首个真正长生命周期服务时建立统一 daemon ManagedRuntime 与根 Scope，随单元迁移扩展；
 最终集成继续保留两阶段关停。已登记删除条件的临时上游适配可解除 Lody 集成阻塞，但不能
@@ -344,12 +360,12 @@ flowchart LR
 有限探测保留 CLI 三秒 pending 等待，同时保留实际失败；它不迁移 runtime 下载或启动
 闸门。Loro 库主线保持独立；Turn 等待真实两边依赖，而非按层号全局串行。
 
-### 当前评审 stack
+### 已合并的基础 stack
 
-七个 draft 评审组成一条线性 stack：
+下列七份评审已于 2026-10-11 合入 main：
 
 ```text
 main → #1379 → #1377 → #1381 → #1389 → #1392 → #1394 → #1397
 ```
 
-每份 PR 以其前一份 PR 的 head 分支为 base，并包含该前置分支，替代临时 worktree/shell 整合 base。这是评审与合并顺序：LocalProjects 不获取 FileLocks，Git 执行内核不要求 LocalProjects，有限 shell 探测依赖进程所有权，不依赖 worktree 准备。后续规划继续保留上面的真实依赖图。进程获取错误转换现已保留配置失败和全部未解决的恢复租约。这些 PR 仍是 draft，stack 不代表后续 daemon 阶段完成。
+评审时每份 PR 以前一份的 head 分支为 base，并包含该前置分支，替代临时 worktree/shell 整合 base。这是评审与合并顺序：LocalProjects 不获取 FileLocks，Git 执行内核不要求 LocalProjects，有限 shell 探测依赖进程所有权，不依赖 worktree 准备。后续规划继续保留上面的真实依赖图。进程获取错误转换现已保留配置失败和全部未解决的恢复租约。这些 PR 已成为小型任务相关单元和后续专门迁移的基础；stack 不代表后续 daemon 阶段完成。
