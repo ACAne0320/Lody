@@ -31,11 +31,22 @@ Repository map and entry points: [README.md](README.md#repository).
 
 ## Effect reference
 
-Before Effect work, read the [Effect skill](.agents/skills/effect-ts/SKILL.md) and
-consuming package's resolved `effect/AGENTS.md` completely, following required
-links. Preserve locked versions and Lody's behavioral acceptance rules.
+Before assessing a native migration or doing any Effect work, read the
+[Effect skill](.agents/skills/effect-ts/SKILL.md) and the consuming package's
+resolved `effect/AGENTS.md` completely, following required links. Preserve locked
+versions and Lody's behavioral acceptance rules.
 Explicit v3 migrations also use the
 [migration skill](.agents/skills/effect-v3-to-v4/SKILL.md).
+
+Lody is migrating lifecycle code to native Effect v4. For feature/fix work touching
+effectful modules, assess a small native migration; prefer it in the same PR when
+it directly helps the task, actual dependencies are ready, and the unit can be
+completed and behavior-tested within a small reviewable scope. About 500 additional
+changed lines is a sizing guide, not an acceptance or approval gate. Keep pure
+computation ordinary and preserve behavior outside the requested change. Do not
+extend the migration into unfinished dependency chains.
+Before choosing the scope, read the [selection guide](.agents/docs/cli-effect-ts.md#small-migrations-during-feature-and-fix-work)
+and apply the roadmap's completion criteria.
 
 ## Repository boundary
 

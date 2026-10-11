@@ -29,8 +29,8 @@ This roadmap sets a bottom-up migration rule:
 Under that rule, the Loro sync stack's lifecycle is fixed inside the libraries. After the Flock
 persistence migration, loro-repo and streams-crdt move to an Effect core that exposes both an
 Effect entry and a Promise entry. The first step is the platform and process leaf layers. The
-ranking comes from classifying fix commits and issues, not runtime measurement, and each unit
-needs its own detailed plan when work starts.
+ranking comes from classifying fix commits and issues, not runtime measurement. Larger units
+need their own detailed plans; small task-related migrations use the bounded selection below.
 
 ## Runtime revision
 
@@ -120,6 +120,25 @@ A module is fully Effect-ified only when every one of these holds:
   1. first define a Tag matching that dependency's future Effect interface;
   2. adapt the current Promise version with a temporary Layer;
   3. replace only that Layer once upstream is done.
+
+### Small migrations alongside features and fixes
+
+The dedicated series and ordinary feature/fix work can both deliver native leaves.
+Limiting migration to the series would leave ready modules accumulating new Promise
+mechanisms; rewriting every touched module would expand tasks into unfinished
+dependency chains. The root [Effect rule](../../../../AGENTS.md#effect-reference)
+therefore requires assessment and prefers a complete, task-related migration when
+its actual dependencies and verification scope are ready. The
+[selection guide](../../../docs/cli-effect-ts.md#small-migrations-during-feature-and-fix-work)
+owns the practical process and the roughly 500-line sizing reference.
+
+This reference measures extra review scope rather than net file growth and creates
+no approval gate. The migration must improve the requested behavior and meet the
+existing completion criteria with real consumers and behavioral regression coverage.
+Larger or blocked work remains a separately scoped unit. Pure computation stays
+ordinary code. Reduced complexity and stronger lifecycle behavior are goals to
+verify, not guarantees provided merely by choosing Effect. This workflow guidance
+changes no product contract; it does not need a new Spec document.
 
 ### Boundary rules
 
@@ -379,8 +398,9 @@ Migrate these only when touched:
 
 ## Delivery dependency graph
 
-Arrows mean prerequisites, not a global serial ordering. File locks are the first
-new PR; later units start from latest main or an explicit new dependent branch.
+Arrows mean prerequisites, not a global serial ordering. File locks, Git leaves,
+worktree observations/local preparation and the application shell cache are now
+merged foundations; subsequent units start from latest main or a new dependent branch.
 
 ```mermaid
 flowchart TD
@@ -433,7 +453,8 @@ runtime credential leases and preparation TTL/control only; raw ACP/worktree
 startup and full session ownership remain unfinished.
 The finite [local-source preparation unit](../../implemented/architecture/2026-10-10-effect-local-worktree-preparation.md) depends on filesystem/Git and borrows the existing mutation lease. Its review base includes observations because their manager boundary is shared; the native kernels are independent.
 Library-side prerequisite verification: this integration consumes Flock 0.4.3, streams-crdt 0.16.1 and loro-repo 0.21.1. The public npm registry now publishes streams-crdt 0.16.2 and loro-repo 0.21.2 (Flock remains 0.4.3); these are not consumed upgrades or proof of an Effect kernel. Re-read the upstream rules and reconcile current source/checkpoint contracts before library migration.
-These subsequent migration units are draft PRs, not merged work.
+The seven-unit foundation stack below merged into main on 2026-10-11. Worktree
+mutations/setup/GC, runtime installation, ACP and the Loro kernels remain unfinished.
 
 Introduce one daemon ManagedRuntime and root Scope when the first real long-lived
 services enter composition; extend it as units migrate. The final integration
@@ -492,19 +513,20 @@ actual failures. It does not migrate runtime downloads or the startup gate. The
 Loro library mainline remains independent; Turn waits for both actual dependency
 paths, not a global sequence of layer numbers.
 
-### Current review stack
+### Merged foundation stack
 
-The seven draft reviews form one linear stack:
+The seven reviews below merged into main on 2026-10-11:
 
 ```text
 main → #1379 → #1377 → #1381 → #1389 → #1392 → #1394 → #1397
 ```
 
-Each PR targets the preceding PR's head branch and contains that predecessor.
-This replaces the temporary worktree/shell integration bases. The order is a
+Each PR targeted the preceding PR's head branch and contained that predecessor.
+This replaced the temporary worktree/shell integration bases. The order was a
 review and merge sequence: LocalProjects does not acquire FileLocks, the Git
 execution kernel does not require LocalProjects, and the finite shell probe
 requires process ownership rather than worktree preparation. Preserve the actual
 dependency diagrams above when planning the next units. Process acquisition error
 conversion now retains setup failure and every unresolved recovery lease. These
-PRs remain drafts; this stack does not mark any subsequent daemon phase complete.
+PRs are merged foundations for small task-related units and the next dedicated
+migrations; this stack does not mark any subsequent daemon phase complete.

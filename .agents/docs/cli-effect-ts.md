@@ -37,6 +37,46 @@ Raw `async`/`await` remains fine for thin glue at process entry points,
 synchronous code without error handling, and hot paths where a measurement shows
 Effect overhead matters (the per-token ACP update path, CRDT import/export).
 
+## Small migrations during feature and fix work
+
+The root [Effect rule](../../AGENTS.md#effect-reference) requires assessing a small
+native migration when a feature or fix touches an effectful module. Prefer it in
+the same PR when it directly improves the requested behavior: for example,
+replacing the Promise queue or timer lifecycle responsible for a cancellation bug.
+Before assessing that scope, read the [Effect skill](../skills/effect-ts/SKILL.md)
+and the consuming package's resolved `effect/AGENTS.md` completely; explicit v3
+migrations also use the [migration skill](../skills/effect-v3-to-v4/SKILL.md).
+Use existing Effect primitives for ownership, coordination, retry and local
+observability where they simplify that work. Preserve existing telemetry policy.
+
+Choose a complete unit using the [actual dependency graph](../notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#delivery-dependency-graph).
+Its dependencies must already offer native Effect capabilities, or be genuine
+external I/O boundaries adapted once. Independent leaves can migrate without
+waiting for unrelated layers. Wrapping Lody's unfinished Promise orchestration
+does not complete a native unit; registered upstream adapters retain their existing
+deletion conditions and incomplete status.
+
+Estimate the extra migration diff as additions plus deletions, including necessary
+callers, tests and documentation. Around 500 changed lines is a useful budget,
+not a hard limit or permission threshold. Dependency breadth, lifecycle complexity
+and verification effort matter more than line count. Keep meaningful coverage;
+an oversized rewrite split into partial kernels does not meet this budget's purpose.
+
+Acceptance follows the roadmap's [definition of done](../notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#definition-of-done):
+connect real consumers, provide dependencies through services/Layers, own resources
+and background work, await cancellation and bounded cleanup, and preserve failures.
+Use one explicitly deprecated Legacy facade if callers still need it, recording
+its consumers and deletion condition. Extend the owning behavioral suite for
+failure, interruption and release paths with explicit signals and injected clocks.
+Pure reducers, CRDT codecs and synchronous calculations remain ordinary functions.
+
+When migration would pull in unfinished dependencies or substantially expand the
+task, complete the requested feature/fix and schedule that migration separately.
+Record the chosen boundary and remaining work in the owning Note when updating it;
+follow existing Spec selection rules rather than creating a Spec for each migration.
+The [roadmap decision](../notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#small-migrations-alongside-features-and-fixes)
+explains why this selection complements the dedicated migration series.
+
 ## Rules at the Promise boundary
 
 - Never call `Effect.run*` inside an Effect. Run programs only at an entry point
