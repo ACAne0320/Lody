@@ -32,10 +32,6 @@
 
 `package.json`、root lock/catalog、导出、README/AGENTS 由首次消费的层逐步更新。Node 存储独立子入口，不从 portable root 偷带原生存钥或 runtime。fixtures 属于行为测试的模块；Lab 管合成存储和进程资源，core 管协议。
 
-初次远端核验时，[#1433](https://github.com/LodyAI/Lody/pull/1433) SDK 准备为 `08aec8c69f4e0cffbfb8be9e9f67d27b0a30062f`，[#1434](https://github.com/LodyAI/Lody/pull/1434) submission 为 `f11f1451c095e47a10226ca1824c1b8b66e7a087`，两项仍开放。继续由原作者负责，依赖部分等实际 main，不复制未合代码；开始相关实现前再核状态。
-
-文档 Draft 前再次核验：#1433 已合入 `37cadfbcb0fa2183a98ccf041ba3820a8945b28e`，main 为上面的实际基线，#1434 仍开放且 head 为 `54b16340c28a59e29bade3bf4d275d812f549c21`。文档底层跟随实际 main；依赖 submission 的实现仍等落地。
-
 平台存钥、私有云端账本/投影/JWT/信箱、Web/手机组合、上游发布和生产期限执行分别列关联工作线，不能表示为一个公共 Git 栈。
 
 ```mermaid
@@ -100,12 +96,24 @@ Lab 使用真实 HTTP/SQLite 持久化、进程重开、双端 Loro/Flock/Repo S
 
 ## 当前已实施的栈
 
-已实施 Draft 链为 L0 [#1438](https://github.com/LodyAI/Lody/pull/1438) → 历史事实 [#1439](https://github.com/LodyAI/Lody/pull/1439) → 文档工作流 [#1442](https://github.com/LodyAI/Lody/pull/1442) → epoch 历史 [#1446](https://github.com/LodyAI/Lody/pull/1446) → 普通签名 [#1447](https://github.com/LodyAI/Lody/pull/1447) → epoch 信封 [#1448](https://github.com/LodyAI/Lody/pull/1448) → 原字节投递 [#1450](https://github.com/LodyAI/Lody/pull/1450) → 认证账本快照 [#1464](https://github.com/LodyAI/Lody/pull/1464)。索引式本地 mailbox 接在 #1464 后；[所属 note](../notes/implemented/architecture/2026-10-11-e2ee-key-mailbox.zh.md) 记录来源、适配与证据。每张 PR 只对直接父分支。规范历史／分发不等待无关格式决策；普通签名前 #1434 已落地，本栈未改其实现。
+以下是本层发布前核对的 Draft 栈快照；精确父 head 指本栈选定的直接基准。main 会继续变化，底层固定祖先不等于远端最新 main。每层仍按 PR 当前 head/base 独立复核。
 
-快照 A 必须有独立来源的精确管理资格；B 从真正同点 view 派生信任；C 仅为签名证据。背书状态来源与未知历史前缀明确区分。mailbox reference 提供已认证主机 composition 绑定、固定准入、重复包去重、有界逐接收者读取、签名声明／修复；持久接收安装、分发调度、完整 engine／SDK／transport 恢复和 Lab 均未完。旧重复 stream 失败仍保留，仅新 mailbox 路径证据不能关闭全部旧路径／Lab 投递覆盖。
+| PR | Branch | Head | Parent head |
+| --- | --- | --- | --- |
+| [#1438](https://github.com/LodyAI/Lody/pull/1438) | `e2ee-migration-baseline` | `59c3840b0165ce8a6637418c1e2b2095b13f6b88` | `984c35c5b30600d68abec1ec3e585eca73bcd4f0` |
+| [#1439](https://github.com/LodyAI/Lody/pull/1439) | `e2ee-ledger-content-facts` | `946965a7fd3ccc10c6a18f41f8f54a38c74232a3` | `59c3840b0165ce8a6637418c1e2b2095b13f6b88` |
+| [#1442](https://github.com/LodyAI/Lody/pull/1442) | `e2ee-document-workflows` | `543f82d1c4f4470436d4ad183f0f53259faddf49` | `946965a7fd3ccc10c6a18f41f8f54a38c74232a3` |
+| [#1446](https://github.com/LodyAI/Lody/pull/1446) | `e2ee-epoch-history` | `b67e0c062c667046d8c90b7a2512dbbd0834be40` | `543f82d1c4f4470436d4ad183f0f53259faddf49` |
+| [#1447](https://github.com/LodyAI/Lody/pull/1447) | `e2ee-ledger-signing` | `d87ee2d444a60079ae1adf84565a7bd53faf905e` | `b67e0c062c667046d8c90b7a2512dbbd0834be40` |
+| [#1448](https://github.com/LodyAI/Lody/pull/1448) | `e2ee-epoch-envelopes` | `0a73d464b5c93fab4b4e0f7ce704778ba437ac94` | `d87ee2d444a60079ae1adf84565a7bd53faf905e` |
+| [#1450](https://github.com/LodyAI/Lody/pull/1450) | `e2ee-key-delivery` | `34b918367fe23f6bf9c2ff1cea31b154de298cb2` | `0a73d464b5c93fab4b4e0f7ce704778ba437ac94` |
+| [#1464](https://github.com/LodyAI/Lody/pull/1464) | `e2ee-ledger-snapshots` | `5d3967ec94e3b10fdec76220937e9fcfe2623590` | `34b918367fe23f6bf9c2ff1cea31b154de298cb2` |
+| [#1472](https://github.com/LodyAI/Lody/pull/1472) | `e2ee-key-mailbox` | `58cbd49c6869f28d09efb60d3b9a7ec10243e93a` | `5d3967ec94e3b10fdec76220937e9fcfe2623590` |
+| [#1474](https://github.com/LodyAI/Lody/pull/1474) | `e2ee-content-snapshot-auth` | `f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08` | `58cbd49c6869f28d09efb60d3b9a7ec10243e93a` |
+| [#1479](https://github.com/LodyAI/Lody/pull/1479) | `e2ee-ledger-admission` | `f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b` | `f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08` |
+| [#1480](https://github.com/LodyAI/Lody/pull/1480) | `e2ee-host-epoch-protection` | `ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee` | `f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b` |
+| [#1482](https://github.com/LodyAI/Lody/pull/1482) | `e2ee-epoch-receive-reports` | `4134109a76739d8b36ff5a8a1209e37e16518703` | `ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee` |
 
-Mailbox Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472), direct parent #1464 at `5d3967ec94e3b10fdec76220937e9fcfe2623590`.
+SDK 准备 #1433 与 submission #1434 已落地，后者 merge 为 `7c58cabe1d05f132b7133a52b45a16b79274ea6a`；本栈未改其实现。A 保护方向已明确：可信组合一次初始化 protect/unprotect，绑定用途／Org／接收者／epoch／commitment，真实保存重载后才报告。synthetic protector 不等于原生平台存钥。
 
-Document snapshot-identity/input follow-up Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474), direct parent #1472 at `ad4aed943928be69b0013445c2a38d86c7907fbe`.
-
-Host-only epoch 保护方向已定：可信 composition 仅初始化一次 protect/unprotect，完整绑定用途／Org／接收者／epoch／commitment，普通消费者仍用 opaque key；保存／回读／commitment 校验后才能报告。L4e 安装密钥库采用独立本地保护 payload，不是恢复文件格式或新 mailbox wire。原生适配器和报告队列仍分开；合成保护器不证明平台存钥。
+下一层 L1d 的[全历史 feed](../../packages/e2ee-core/src/ledger/FEED.md)直接基于 #1482 `4134109a…`。原 Lab2 失败仍待实际迁移消费路径复验；旧整块 JSON journal 淘汰、不隐式导入。sender discovery、持久 repair／fetch、snapshot SDK 与 Lab／恢复未决项仍继续实施或保留明确决策归属。
