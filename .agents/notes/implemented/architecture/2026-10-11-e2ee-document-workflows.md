@@ -38,3 +38,5 @@ Final L2c code tree: core 201/201 and typecheck, full root check with native Git
 L2c Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474).
 
 Parent page-limit fix synchronized from #1472 at 6ed759f1c9081d2758311fde9bd5147e650e5df2. Combined core 202/202 and typecheck passed; content implementation and its four regression tests are unchanged. Earlier independent READY applies only to its recorded 4319f6c0 head; the new combination requires scoped recheck.
+
+Parent consistency repair sync: directly incorporate mailbox 58cbd49c6869f28d09efb60d3b9a7ec10243e93a. Content implementation and its four behavior regressions remain unchanged. The exact resulting combination passes core203/typecheck/full root check and root format; the independent review of the prior b270 combination is not rebound to this new head.

@@ -32,3 +32,7 @@ Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472).
 SQL 单页增量修复：独立审查 ad4aed943928be69b0013445c2a38d86c7907fbe 发现请求 100 项实际 LIMIT／加载 101 行。密文查询现使用精确请求上限；从最后 sender／digest 后作索引 scalar EXISTS 判断继续，不加载额外 frame。所属真实密码分页覆盖 101 包分为 100／1 页、精确包一致、末尾空游标及越界拒绝。原 reviewer 证据不改，另用复制 fixture 保留旧 load101 失败／新 load100 通过及首轮 ESM 脚本错误；信任／wire／修复策略未变。
 
 单页修复最终树通过 core 198/198、typecheck 与 native Git／本地 IPC 完整 root check、格式／文档／公共边界。原 NOT READY 证据不改，新 head 仍交独立增量复验。
+
+同页一致性增量修复：payload、空页 offset 校验与 scalar continuation seek 共用一个 deferred WAL 读事务。真实 Worker 在两次查询之间执行两次认证后的公开 repair；该页仍是原投影，后续 fetch 看到两次已提交修复。原失败证据另行保留。密文读取上限仍是 100；不新增生产或跨请求快照承诺。
+
+作者验证：mailbox 11/11、完整 core 199/199、typecheck、根 format／docs check 与完整根 check 通过。首次 Worker fixture 对不同 digest 重用 repair ID，触发 replay；该 fixture 错误及 lint 命名失败单独保留，不混入产品 old-fail/new-pass。
