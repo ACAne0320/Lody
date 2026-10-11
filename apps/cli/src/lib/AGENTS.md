@@ -114,3 +114,8 @@ never pushed to renderers as local room health.
   tokens, or raw provider output.
 - **A `file-preview/` preview must never activate Code Collab**: no workspace watch, no
   All Changes recompute, no Flock publish.
+
+## Live Activities
+
+Summaries use live presence, never durable heartbeat TTL. Explicit idle overrides
+finalization presence.

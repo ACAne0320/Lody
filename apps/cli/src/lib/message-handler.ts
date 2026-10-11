@@ -156,6 +156,7 @@ import {
   type MachineFlockRow,
   type MachineFlockRowMap,
   buildLiveActivityConversationItems,
+  findFreshSessionPresenceState,
   countLiveActivityConversationCandidates,
   countLiveActivityConversationStatuses,
   findLiveActivityPermissionAlertCandidate,
@@ -9815,9 +9816,35 @@ export class MessageHandler {
       )
     ).filter((meta): meta is SessionMeta => meta !== undefined);
     const nowMs = getServerNow();
+    // Durable timestamps are transition markers, not heartbeats. Local turn
+    // ownership stays authoritative even while the presence transport is offline.
+    const liveSessionStatuses = new Map<string, SessionStatus>();
+    const peers = sessionMetas.some(
+      (meta) =>
+        meta.machineId !== this.machineId &&
+        meta.userId === userId &&
+        !meta.isArchived &&
+        meta.status?.type !== 'idle'
+    )
+      ? this.workspaceDocument.getPresenceStates()
+      : {};
+    if (peers === null) throw new Error('Live Activity presence unavailable');
+    for (const meta of sessionMetas) {
+      if (meta.isArchived || meta.userId !== userId || meta.status?.type === 'idle') continue;
+      let status: SessionStatus | undefined | null;
+      if (meta.machineId === this.machineId) {
+        status = this.sessionActivePresence.getStatus(meta.id);
+      } else {
+        status = findFreshSessionPresenceState(peers, meta.id, nowMs)?.status;
+      }
+      if (status && status.type !== 'idle') liveSessionStatuses.set(meta.id, status);
+    }
+    // Prompt completion persists idle before the finalization scope releases its
+    // presence. Keep that task completed rather than reviving it as running.
     const items = buildLiveActivityConversationItems({
       sessions: sessionMetas,
       currentUserId: userId,
+      liveSessionStatuses,
       defaultTitle: 'New Task',
       statusLabels: {
         permission: 'Permission',
@@ -9831,6 +9858,7 @@ export class MessageHandler {
       ? findLiveActivityPermissionAlertCandidate({
           sessions: sessionMetas,
           currentUserId: userId,
+          liveSessionStatuses,
           defaultTitle: 'New Task',
         })
       : null;
@@ -9844,10 +9872,12 @@ export class MessageHandler {
       totalCount: countLiveActivityConversationCandidates({
         sessions: sessionMetas,
         currentUserId: userId,
+        liveSessionStatuses,
       }),
       statusCounts: countLiveActivityConversationStatuses({
         sessions: sessionMetas,
         currentUserId: userId,
+        liveSessionStatuses,
       }),
       items,
       updatedAt: nowMs,

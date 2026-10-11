@@ -1,7 +1,15 @@
 import { withHistoryPort } from './history-port-fixture';
 import { describe, expect, it, vi } from 'vitest';
 
-import { SessionStatusFactory, type SessionId, type WorkspaceId } from '@lody/shared';
+import {
+  SessionStatusFactory,
+  type SessionId,
+  type WorkspaceId,
+  type SessionMeta,
+  type MachineId,
+  type LodyPresenceStateMap,
+} from '@lody/shared';
+import { SessionActivePresenceController } from '../src/lib/loro/session-active-presence';
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk';
 
 import { MessageHandler } from '../src/lib/message-handler';
@@ -10,6 +18,11 @@ import type { SessionManager } from '../src/session/session-manager';
 import type { Logger } from '../src/utils/logger';
 import type { CloudNotificationsPort } from '@lody/platform';
 import { createTestCloudPort } from './test-cloud-port';
+
+type LiveActivitySummary = Omit<
+  Parameters<CloudNotificationsPort['syncLiveActivitySummary']>[0],
+  'workspaceId' | 'userId'
+>;
 
 /**
  * Mark a session as having active presence so permission resolution is allowed
@@ -720,5 +733,110 @@ describe('MessageHandler permission notifications', () => {
     expect(sessionDoc.setStatus).not.toHaveBeenCalled();
     expect(notifyPermissionRequested).not.toHaveBeenCalled();
     expect(sessionDoc.mirror.subscribe).not.toHaveBeenCalled();
+  });
+});
+
+describe('MessageHandler Live Activity lifetime', () => {
+  it('keeps a long prompt and permission pause active, then ends at prompt completion', async () => {
+    vi.useFakeTimers();
+    const started = Date.parse('2026-10-11T00:00:00Z');
+    vi.setSystemTime(started);
+    const session: SessionMeta = {
+      id: 'long-task' as SessionId,
+      machineId: 'machine-1' as MachineId,
+      userId: 'user-1',
+      cliType: 'builtin',
+      agentType: 'codex',
+      createdAt: new Date(started).toISOString(),
+      status: { type: 'running' },
+      lastRunningSeen: started,
+    };
+    let peers: LodyPresenceStateMap | null = {};
+    const sessions = new Map([[session.id, { getMetaState: async () => session }]]);
+    const document = {
+      sessions,
+      publishSessionPresence: () => {},
+      clearSessionPresence: () => {},
+      getPresenceStates: () => peers,
+    } as unknown as LoroDocumentManager;
+    const presence = new SessionActivePresenceController(
+      document,
+      session.machineId,
+      createSilentLogger()
+    );
+    const handler = Object.assign(Object.create(MessageHandler.prototype), {
+      workspaceDocument: document,
+      sessionActivePresence: presence,
+      machineId: session.machineId,
+      workspaceId: 'workspace-1',
+    }) as {
+      buildLiveActivitySummary(
+        userId: string,
+        options?: { permissionAlert?: boolean }
+      ): Promise<LiveActivitySummary>;
+    };
+    try {
+      presence.start(session.id, 'thinking');
+      for (const elapsed of [180_000, 31 * 60_000]) {
+        vi.setSystemTime(started + elapsed);
+        const summary = await handler.buildLiveActivitySummary('user-1');
+        expect(summary.statusCounts.running).toBe(1);
+        expect(summary.items.map((item) => item.id)).toEqual([session.id]);
+        expect(session.lastRunningSeen).toBe(started);
+      }
+      // Completion of another task triggers a summary without ending this long prompt.
+      const finished: SessionMeta = {
+        ...session,
+        id: 'finished-task' as SessionId,
+        status: { type: 'idle' },
+        lastMessageAt: Date.now(),
+      };
+      sessions.set(finished.id, { getMetaState: async () => finished });
+      const overlapping = await handler.buildLiveActivitySummary('user-1');
+      expect(overlapping.statusCounts).toEqual({
+        running: 1,
+        permission: 0,
+        question: 0,
+        unread: 1,
+      });
+      sessions.delete(finished.id);
+      presence.setPhase(session.id, 'requestPermission');
+      const waiting = await handler.buildLiveActivitySummary('user-1', { permissionAlert: true });
+      expect(waiting.statusCounts.permission).toBe(1);
+      expect(waiting.permissionAlert?.title).toBe('Permission Required');
+      presence.setPhase(session.id, 'finalizing');
+      session.status = { type: 'idle' };
+      session.lastMessageAt = Date.now();
+      const completed = await handler.buildLiveActivitySummary('user-1');
+      expect(completed.statusCounts).toEqual({ running: 0, permission: 0, question: 0, unread: 1 });
+      presence.clear(session.id);
+      session.status = { type: 'running' };
+      session.lastMessageAt = undefined;
+      expect((await handler.buildLiveActivitySummary('user-1')).totalCount).toBe(0);
+
+      // Peers use fresh workspace presence; old metadata never revives them.
+      session.machineId = 'peer-machine' as MachineId;
+      expect((await handler.buildLiveActivitySummary('user-1')).totalCount).toBe(0);
+      peers = {
+        peer: {
+          kind: 'session',
+          sessionId: session.id,
+          machineId: session.machineId,
+          instanceId: 'peer-instance',
+          status: { type: 'running' },
+          updatedAt: Date.now(),
+        },
+      };
+      expect((await handler.buildLiveActivitySummary('user-1')).statusCounts.running).toBe(1);
+      vi.setSystemTime(Date.now() + 90_000);
+      expect((await handler.buildLiveActivitySummary('user-1')).totalCount).toBe(0);
+      peers = null;
+      await expect(handler.buildLiveActivitySummary('user-1')).rejects.toThrow(
+        'presence unavailable'
+      );
+    } finally {
+      presence.clearAll();
+      vi.useRealTimers();
+    }
   });
 });
