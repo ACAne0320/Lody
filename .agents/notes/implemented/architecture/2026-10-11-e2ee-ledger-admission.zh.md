@@ -11,7 +11,7 @@ Translation: current
 
 ## 归属与边界
 
-直接父为内容补齐 #1474，b270bc8594f764b11b5dff99cc698973b8cdc4ca。[入组契约](../../../../packages/e2ee-core/src/ledger/ADMISSION.md) 与 [provenance](../../../../packages/e2ee-core/src/ledger/admission-provenance.json) 记录来源和责任。入组同意保留 nullable expiry 与原 user／device／request 绑定，可信 host 仍须认证账户归属、检查到期。设备持钥证明绑定精确 Org／member／kind，不能替代准入权限；不接收可注入成功的 verifier。
+直接父为内容补齐 #1474，f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08。[入组契约](../../../../packages/e2ee-core/src/ledger/ADMISSION.md) 与 [provenance](../../../../packages/e2ee-core/src/ledger/admission-provenance.json) 记录来源和责任。入组同意保留 nullable expiry 与原 user／device／request 绑定，可信 host 仍须认证账户归属、检查到期。设备持钥证明绑定精确 Org／member／kind，不能替代准入权限；不接收可注入成功的 verifier。
 
 普通命令转换复用现有私有 prepared registry 和真实前序状态策略，覆盖已定五类命令；运行时拒绝旧 RemoveMember，不恢复 tag2。原文始终相对父点：只签一次，既有持久 submission 重试原字节。不顺带增加换代调度／存钥、D12 新格式、期限 B 或恢复库决定。
 
@@ -24,3 +24,5 @@ Translation: current
 这是创立／同意／命令的库行为，不是完整 LedgerClient transport 重开、远端发布、平台存钥、备份、SDK 或 Lab 验收。原 core7／Lab2 证据及所有决策门由 [manifest](../../../docs/e2ee-migration-manifest.json) 保留；未改既有 submission／HPKE，整栈保持 Draft。
 
 作者验证的直接父组合：core 210/210、包 typecheck、使用本机 Git 与本地 IPC 的完整根 `pnpm check`、根 format 与 docs check 均通过。前次 209 项运行在父邮箱回归测试之前，另行保留；两次均非独立审查或 Lab 验收。
+
+父同页一致性修复同步：直接父 f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08 包含 mailbox58c。admission 实现／八项新增回归未变；准确组合 core211／typecheck／完整根 check／format／docs 通过。此前209／210证据及旧精确 head 审查另行保留。

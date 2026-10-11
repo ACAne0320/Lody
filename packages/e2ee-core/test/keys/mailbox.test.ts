@@ -1,3 +1,4 @@
+import { Worker } from 'node:worker_threads';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -43,6 +44,97 @@ const signedReport = (f: ReturnType<typeof envelopeFixture>, frame: Uint8Array, 
   );
 };
 describe('authenticated SQLite key mailbox', () => {
+  it('reads payload and continuation from one WAL snapshot during two public cross-worker repairs', async () => {
+    const f = envelopeFixture(),
+      dbPath = file();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* makeSqliteKeyMailbox({
+            path: dbPath,
+            mode: 'create',
+            genesis: f.context.genesis,
+            ledger: f.ledger,
+          });
+          const sender = ok(host.bind(f.owner.publicKey)),
+            recipient = ok(host.bind(f.phone.publicKey));
+          const expected: string[] = [];
+          for (let n = 0; n < 101; n++) {
+            const frame = yield* f.prepare();
+            expected.push(Reports.mailboxDigest(frame));
+            yield* sender.put(n.toString(16).padStart(32, '0'), frame);
+          }
+          expected.sort();
+          const signal = new SharedArrayBuffer(8),
+            state = new Int32Array(signal);
+          const worker = yield* Effect.acquireRelease(
+            Effect.sync(
+              () =>
+                new Worker(new URL('./mailbox-repair.mts', import.meta.url), {
+                  execArgv: ['--import', 'tsx'],
+                  workerData: {
+                    file: dbPath,
+                    signal,
+                    target: target(f),
+                    digests: [expected[0], expected[100]],
+                  },
+                })
+            ),
+            (ownedWorker) => Effect.promise(() => ownedWorker.terminate())
+          );
+          const wait = (index: number) => {
+            if (Atomics.load(state, index) === 0) Atomics.wait(state, index, 0, 20_000);
+            expect(Atomics.load(state, index)).toBe(1);
+          };
+          const native = Database.prototype.prepare;
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              Database.prototype.prepare = native;
+            })
+          );
+          let fired = false;
+          try {
+            wait(0);
+            // The shim pauses after a real payload SELECT; it never changes SQL or rows.
+            Object.defineProperty(Database.prototype, 'prepare', {
+              configurable: true,
+              writable: true,
+              value: function (query: string) {
+                const statement = native.call(this, query) as Database.Statement<unknown[]>;
+                if (query.includes('ORDER BY sender,digest LIMIT')) {
+                  const all = statement.all;
+                  statement.all = function (...args: unknown[]) {
+                    const rows = all.apply(this, args);
+                    if (!fired) {
+                      fired = true;
+                      worker.postMessage('repair-now');
+                      wait(1);
+                    }
+                    return rows;
+                  };
+                }
+                return statement;
+              },
+            });
+            const page = yield* recipient.fetch(0, null, 100);
+            expect(page.items.map((item) => Reports.mailboxDigest(item.frame))).toEqual(
+              expected.slice(0, 100)
+            );
+            expect(page.next).toBe('100');
+            // Both repairs committed concurrently; a later request sees the new projection.
+            const after = yield* recipient.fetch(0, null, 100);
+            expect(after.items.map((item) => Reports.mailboxDigest(item.frame))).toEqual(
+              expected.slice(1, -1)
+            );
+            expect(after.next).toBeNull();
+          } finally {
+            Database.prototype.prepare = native;
+          }
+        })
+      )
+    );
+  }, 30_000);
+
   it('persists ciphertext and signed claims, reopens, and repairs without deleting history', async () => {
     const f = envelopeFixture(),
       dbPath = file(),

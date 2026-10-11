@@ -38,3 +38,5 @@ L2c 最终代码树：core 201/201 与 typecheck、native Git／本地 IPC 完�
 L2c Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474).
 
 已同步 #1472 的 6ed759f1c9081d2758311fde9bd5147e650e5df2 单页修复；组合 core 202/202 与 typecheck 通过，内容实现及四项回归未改。先前独立 READY 仅绑定其记录的 4319f6c0 head，新组合须限定复核。
+
+父同页一致性修复同步：直接纳入 mailbox 58cbd49c6869f28d09efb60d3b9a7ec10243e93a。content 实现和四项行为回归未变。准确组合 core203／typecheck／完整根 check 及根 format 通过；前 b270 组合的独立审查不改绑到此新 head。

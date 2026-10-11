@@ -291,46 +291,50 @@ export function makeSqliteKeyMailbox<E, R>(input: {
                 const view = yield* session();
                 if (epoch !== view.inspectState().epoch.number)
                   return yield* new MailboxError({ code: 'unauthorized' });
-                return yield* sql(() => {
-                  guard();
-                  const rows = db
-                    .prepare(
-                      'SELECT sender,digest,CASE WHEN length(frame)<=512 THEN frame ELSE NULL END AS frame FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest) ORDER BY sender,digest LIMIT ? OFFSET ?'
-                    )
-                    .all(epoch, self, limit, start) as {
-                    sender: unknown;
-                    digest: unknown;
-                    frame: unknown;
-                  }[];
-                  if (start > 0 && rows.length === 0) {
-                    const count = db
-                      .prepare(
-                        'SELECT count(*) AS n FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest)'
-                      )
-                      .get(epoch, self) as { n: number };
-                    if (start > count.n) throw new MailboxError({ code: 'invalid-page' });
-                  }
-                  const parsed = rows.map((row) => {
-                    if (
-                      !isHash(row.sender) ||
-                      !isHash(row.digest) ||
-                      !(row.frame instanceof Uint8Array) ||
-                      row.frame.length < 1
-                    )
-                      throw new MailboxError({ code: 'corrupt' });
-                    return { sender: row.sender, frame: new Uint8Array(row.frame) };
-                  });
-                  // Seek only a scalar existence bit; never load/copy a lookahead ciphertext.
-                  const last = rows.at(-1);
-                  const more =
-                    last &&
-                    db
-                      .prepare(
-                        'SELECT 1 FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND (sender,digest)>(?,?) AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest) LIMIT 1'
-                      )
-                      .get(epoch, self, last.sender, last.digest);
-                  return { items: parsed, next: more ? String(start + rows.length) : null };
-                });
+                return yield* sql(() =>
+                  db
+                    .transaction(() => {
+                      guard();
+                      const rows = db
+                        .prepare(
+                          'SELECT sender,digest,CASE WHEN length(frame)<=512 THEN frame ELSE NULL END AS frame FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest) ORDER BY sender,digest LIMIT ? OFFSET ?'
+                        )
+                        .all(epoch, self, limit, start) as {
+                        sender: unknown;
+                        digest: unknown;
+                        frame: unknown;
+                      }[];
+                      if (start > 0 && rows.length === 0) {
+                        const count = db
+                          .prepare(
+                            'SELECT count(*) AS n FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest)'
+                          )
+                          .get(epoch, self) as { n: number };
+                        if (start > count.n) throw new MailboxError({ code: 'invalid-page' });
+                      }
+                      const parsed = rows.map((row) => {
+                        if (
+                          !isHash(row.sender) ||
+                          !isHash(row.digest) ||
+                          !(row.frame instanceof Uint8Array) ||
+                          row.frame.length < 1
+                        )
+                          throw new MailboxError({ code: 'corrupt' });
+                        return { sender: row.sender, frame: new Uint8Array(row.frame) };
+                      });
+                      // Seek only a scalar existence bit; never load/copy a lookahead ciphertext.
+                      const last = rows.at(-1);
+                      const more =
+                        last &&
+                        db
+                          .prepare(
+                            'SELECT 1 FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND (sender,digest)>(?,?) AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest) LIMIT 1'
+                          )
+                          .get(epoch, self, last.sender, last.digest);
+                      return { items: parsed, next: more ? String(start + rows.length) : null };
+                    })
+                    .deferred()
+                );
               }),
             status: (inputTarget: MailboxSlot) =>
               Effect.gen(function* () {
