@@ -248,8 +248,10 @@ from the creating Operation's target Turn, not later Session activity. Completio
 rows linked by `progressMessageId` show a summary without creating a second set of
 cards. Older histories without progress rows retain successful-target cards.
 
-`created-session-list.tsx` caps the default viewport at five cards, with internal
-scrolling and an expand/collapse button reporting the total when there are more.
+`created-session-list.tsx` uses the Subagent Task panel surface and ruled rows,
+with leading status marks and no repeated “Session created” labels. The header
+reports the total and expands/collapses lists longer than five rows; the default
+viewport holds five compact rows with internal scrolling. Controls use `@lody/ui`.
 `buildChatVirtualRows` combines consecutive pure creation records (including
 separate MCP calls) under the first record's key; a different message or an
 unhydrated turn ends the group. The row retains its final turn index so visible

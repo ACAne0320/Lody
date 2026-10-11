@@ -1,8 +1,9 @@
 import { useId, useState } from 'react';
 import * as stylex from '@stylexjs/stylex';
 import { Button } from '@lody/ui/button';
-import { space } from '@lody/ui/tokens/scales.stylex';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { control } from '@lody/ui/tokens/scales.stylex';
+import { styles as taskStyles } from './subagent-task-panel.stylex';
+import { ChevronRight, GitBranchPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ComponentProps } from 'react';
 import type { SessionHistoryParsed } from '@lody/shared';
@@ -51,16 +52,16 @@ export function getCreatedSessionCards(message: SessionHistoryParsed): Card[] | 
 }
 
 const styles = stylex.create({
-  root: { display: 'flex', flexDirection: 'column', minWidth: 0, gap: space[2] },
-  list: { display: 'flex', flexDirection: 'column', minWidth: 0, gap: space[2] },
+  header: { display: 'grid', minWidth: 0 },
+  headerLabel: { flexGrow: 1, textAlign: 'start' },
+  list: { display: 'flex', flexDirection: 'column', minWidth: 0, marginTop: '2px' },
   bounded: {
-    // The relation card is 32px tall; four gaps leave exactly five cards visible.
-    maxHeight: `calc(160px + 4 * ${space[2]})`,
+    // Five compact control rows, with four separators.
+    maxHeight: `calc(5 * ${control.small} + 4px)`,
     overflowY: 'auto',
     scrollbarGutter: 'stable',
     overscrollBehaviorY: 'contain',
   },
-  toggle: { alignSelf: 'flex-start' },
 });
 
 export function CreatedSessionList({
@@ -76,7 +77,38 @@ export function CreatedSessionList({
   const overflowing = cards.length > 5;
   if (cards.length === 0) return null;
   return (
-    <div {...stylex.props(styles.root)} data-created-session-list="">
+    <div {...stylex.props(taskStyles.panel)} data-created-session-list="">
+      {overflowing ? (
+        <div {...stylex.props(styles.header)}>
+          <Button
+            variant="ghost"
+            size="small"
+            aria-expanded={expanded}
+            aria-controls={id}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            <span {...stylex.props(taskStyles.line)}>
+              <ChevronRight
+                aria-hidden="true"
+                {...stylex.props(taskStyles.chevron, expanded && taskStyles.chevronOpen)}
+              />
+              <span {...stylex.props(styles.headerLabel)}>
+                {t(
+                  expanded
+                    ? 'sessions.openedBy.collapseChildren'
+                    : 'sessions.openedBy.expandChildren',
+                  { count: cards.length }
+                )}
+              </span>
+            </span>
+          </Button>
+        </div>
+      ) : (
+        <div {...stylex.props(taskStyles.header)}>
+          <GitBranchPlus aria-hidden="true" {...stylex.props(taskStyles.glyph)} />
+          <span>{t('sessions.openedBy.childCount', { count: cards.length })}</span>
+        </div>
+      )}
       <div
         id={id}
         {...withClassName(
@@ -89,30 +121,14 @@ export function CreatedSessionList({
         aria-label={t('sessions.openedBy.childCount', { count: cards.length })}
       >
         {cards.map((card, index) => (
-          <CreatedSessionOperationCard
+          <div
             key={`${card.sessionId}-${index}`}
-            {...card}
-            onNavigateSession={onNavigateSession}
-          />
+            {...stylex.props(index > 0 && taskStyles.rowRuled)}
+          >
+            <CreatedSessionOperationCard {...card} onNavigateSession={onNavigateSession} />
+          </div>
         ))}
       </div>
-      {overflowing ? (
-        <div {...stylex.props(styles.toggle)}>
-          <Button
-            variant="ghost"
-            size="small"
-            aria-expanded={expanded}
-            aria-controls={id}
-            onClick={() => setExpanded((value) => !value)}
-          >
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            {t(
-              expanded ? 'sessions.openedBy.collapseChildren' : 'sessions.openedBy.expandChildren',
-              { count: cards.length }
-            )}
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }

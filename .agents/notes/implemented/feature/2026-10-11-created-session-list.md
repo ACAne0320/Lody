@@ -8,12 +8,20 @@ Translation: current
 ## Abstract
 
 Many MCP session creations filled the conversation with navigation cards. Consecutive
-pure creation records now share a scrollable viewport showing at most five cards
-by default, with an expand/collapse control and total count. Both batch and separate
+pure creation records now share a Subagent Task-style panel with ruled compact rows,
+leading status marks, and a header containing the count and expand/collapse control.
+Its scrollable viewport shows at most five rows by default. Both batch and separate
 creation calls use the same presentation; live titles, statuses and navigation remain
 available. Grouping stops at other messages or unhydrated turns, preserving their order.
 
 ## Decision and boundaries
+
+The user requested the existing Subagent Task UI. Reuse its panel, separators and
+status-mark styles while keeping navigation controls in `@lody/ui`. State belongs
+to the creating Operation; clicking a row still opens the child Session. The header
+disclosure controls the five-row cap, rather than adopting the task panel's automatic
+fold-on-completion behavior. Repeated creation labels and individual card outlines
+are removed.
 
 The render layer groups records; stored history and Operation protocols are unchanged.
 The first record supplies the stable row key, and the full turn range remains leased
@@ -33,7 +41,7 @@ and preserves the [scroll engine's ownership](../architecture/2026-09-27-convers
 The relation-card suite covers grouping, turn range, threshold, disclosure and navigation,
 alongside existing live status and duplicate-completion coverage. Storybook's
 `ManyCreatedSessions` uses twelve synthetic independent creation records for browser
-checks and screenshots. Chromium at 430px width verified a 192px viewport with five
+checks and screenshots. Chromium at 375px and 1280px widths verified a 144px viewport with five
 visible cards, internal wheel scrolling, and both disclosure states.
 [Collapsed](../../assets/created-session-list/collapsed.png) / [expanded](../../assets/created-session-list/expanded.png).
 Message-selection mode preserves original rows so selected ids still match exported records.
