@@ -174,6 +174,31 @@ const listPublishedToolNames = async (): Promise<string[]> => {
 };
 
 describe('Lody MCP tool catalog', () => {
+  it('publishes bounded catalog retry guidance on every create/chat tool', async () => {
+    const server = buildLodyMcpServer();
+    const client = new Client({ name: 'retry-guidance-test-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const { tools } = await client.listTools();
+      for (const name of [
+        'lody_session_create',
+        'lody_session_create_many',
+        'lody_session_chat',
+        'lody_session_chat_many',
+      ]) {
+        const description = tools.find((tool) => tool.name === name)?.description;
+        expect(description).toContain('wait at least 5 seconds between attempts');
+        expect(description).toContain('at most 3 total attempts (the initial call plus 2 retries)');
+        expect(description).toContain('reuse the identical request and operationId');
+        expect(description).toContain('do not create a new operationId to retry');
+        expect(description).toContain('let the daemon recover it and await automatic completion');
+      }
+    } finally {
+      await Promise.all([client.close(), server.close()]);
+    }
+  });
+
   it('publishes session tools and never advertises a Task family', async () => {
     const names = await listPublishedToolNames();
     expect(names).toContain('lody_feedback');

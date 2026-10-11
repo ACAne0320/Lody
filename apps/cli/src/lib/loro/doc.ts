@@ -85,7 +85,9 @@ import WebSocketOriginal from 'ws';
 import {
   LoroRepo,
   RepoDocHandle,
+  RepoSyncError,
   RepoWatchHandle,
+  type RepoSyncReport,
   type TransportConnectionStatus,
   type RepoRoomSubscription,
   type RepoTransportRoomStatus,
@@ -296,7 +298,8 @@ class ProxiedWebSocket extends WebSocketOriginal {
 
 (globalThis as unknown as GlobalWithWebSocket).WebSocket = ProxiedWebSocket;
 
-import { readTimeoutEnv, withTimeout } from './timeout-utils';
+import { FlockSyncTimeoutError, readTimeoutEnv, withTimeout } from './timeout-utils';
+import { FlockSyncUnavailableError } from './flock-sync-errors';
 import { ConcurrentQueue } from '../concurrent-queue';
 import type { CliSqliteRepoStore } from './sqlite-repo-store';
 import type { CloudBillingPort, CloudStreamsTokenPort } from '@lody/platform';
@@ -366,7 +369,10 @@ export class LoroDocumentManager {
   private readonly connectionRecovery: LoroConnectionRecoveryController;
   private readonly machineFlockSync: MachineFlockSyncCoordinator;
   /** In-flight `syncFlockDocOrThrow` attempts, keyed by Flock document id. */
-  private readonly activeFlockDocSyncs = new Map<string, Promise<unknown>>();
+  private readonly activeFlockDocSyncs = new Map<
+    string,
+    { generation: number; promise: Promise<RepoSyncReport> }
+  >();
   private detachMachineFlockMetaRoomSyncedListener: (() => void) | null = null;
   private initialMetaSyncCompleted = false;
   private readonly initialMetaSyncPromise: Promise<boolean>;
@@ -944,7 +950,12 @@ export class LoroDocumentManager {
    */
   async syncFlockDocOrThrow(
     flockDocId: string,
-    options: { timeoutMs?: number; reason?: string } = {}
+    options: {
+      timeoutMs?: number;
+      reason?: string;
+      /** Require evidence for catalog-dependent validation, not ordinary local-cache reads. */
+      requireRemoteConfirmation?: boolean;
+    } = {}
   ): Promise<void> {
     const reason = options.reason ?? 'explicit-sync';
     const timeoutMs =
@@ -953,19 +964,53 @@ export class LoroDocumentManager {
 
     let activeSync = this.activeFlockDocSyncs.get(flockDocId);
     if (!activeSync) {
-      const started: Promise<unknown> = this.repo
+      const generation = this.remoteStreamsGeneration;
+      const started: Promise<RepoSyncReport> = this.repo
         .sync({ scope: 'doc', flockDocIds: [flockDocId] })
         .finally(() => {
-          if (this.activeFlockDocSyncs.get(flockDocId) === started) {
+          if (this.activeFlockDocSyncs.get(flockDocId)?.promise === started) {
             this.activeFlockDocSyncs.delete(flockDocId);
           }
         });
-      this.activeFlockDocSyncs.set(flockDocId, started);
-      activeSync = started;
+      activeSync = { generation, promise: started };
+      this.activeFlockDocSyncs.set(flockDocId, activeSync);
     }
 
     try {
-      await withTimeout(activeSync, timeoutMs, timeoutMessage);
+      const report = await withTimeout(
+        activeSync.promise,
+        timeoutMs,
+        new FlockSyncTimeoutError(timeoutMessage)
+      );
+      if (options.requireRemoteConfirmation) {
+        // Validation belongs to each waiter: strict and ordinary reads can share
+        // the round trip without changing each other's local-cache behavior.
+        if (!report.ok) throw new RepoSyncError(report);
+        // A local-only repo is authoritative without a remote route. A manager
+        // with the cloud capability (or a previously attached remote) must prove
+        // that Streams participated in this attempt and has not been replaced.
+        if (this.streamsTokens !== null || this.remoteStreamsGeneration > 0) {
+          if (
+            !report.transports.some(
+              (transport) => transport.transportId === 'streams' && transport.ok
+            )
+          ) {
+            throw new FlockSyncUnavailableError({
+              message: 'No remote Streams route confirmed Flock synchronization',
+              reason: 'no-route',
+            });
+          }
+          if (
+            !this.remoteStreamsAttached ||
+            this.remoteStreamsGeneration !== activeSync.generation
+          ) {
+            throw new FlockSyncUnavailableError({
+              message: 'Remote Streams transport changed during Flock synchronization',
+              reason: 'transport-changed',
+            });
+          }
+        }
+      }
     } catch (error) {
       throw new Error(
         `Flock document sync failed for ${flockDocId} (${reason}): ${formatErrorMessage(error)}`,
