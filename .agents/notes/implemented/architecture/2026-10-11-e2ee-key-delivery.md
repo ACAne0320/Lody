@@ -26,3 +26,5 @@ The isolated unchanged candidate's focused 4096-envelope test fails 0/1 with Val
 The owning suite also verifies first-write immutability across handles, copies, Scope close, wrong/forged current views, locally observed revocation rollback against a deliberately permissive malicious host, bad saved ciphertext, cancellation without Pending conversion, foreign/missing file preservation and per-row corruption isolation. Shared synthetic epoch fixtures are extracted from the existing HPKE suite without removing its behavioral coverage. Package tests 172/172, typecheck and root lint pass; full root check and exact Draft CI are recorded separately. Earlier fixture-only type/lint corrections remain in evidence.
 
 Final 172-test code tree passed full root check with native Git/local IPC. Format, docs and public boundary pass. No final code change followed that validation; exact-head remote CI is reported independently.
+
+Draft: [#1450](https://github.com/LodyAI/Lody/pull/1450).
