@@ -36,3 +36,5 @@ An independent fixed 13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf clone reproduces t
 Final L2c code tree: core 201/201 and typecheck, full root check with native Git/local IPC, format/docs/public boundary pass. The new author union is explicit and existing full-history assertions now narrow its member case. No production consumer or wire change.
 
 L2c Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474).
+
+Parent page-limit fix synchronized from #1472 at 6ed759f1c9081d2758311fde9bd5147e650e5df2. Combined core 202/202 and typecheck passed; content implementation and its four regression tests are unchanged. Earlier independent READY applies only to its recorded 4319f6c0 head; the new combination requires scoped recheck.
