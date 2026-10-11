@@ -174,6 +174,12 @@ defines locale-specific spacing for these labels.
   valid range, so overshoot/rebound does not fight a programmatic bottom reset.
   Only conversation input can re-arm follow. An exact-edge arrival retains native
   input; the 4px near-edge and remembered stale-bottom cases snap on `scrollend`.
+  Unconfirmed wheel/key evidence expires 100ms after the first animation callback,
+  allowing compositor-driven motion to start. Body keys require actual viewport
+  movement before releasing follow.
+  Boundary inputs, button Space and prevented bubbling keys cannot arm a new
+  sequence. Relative layout compensation uses the raw
+  elastic offset as its write baseline, while intent and anchors use bounded offsets.
   Focus, pointer input or editing outside the viewport clears previous evidence,
   including when the composer already has focus. Hosts without `scrollend` still
   follow at the exact edge; near-edge recovery needs that native signal.

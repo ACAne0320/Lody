@@ -414,6 +414,7 @@ export function EngineConversationScroller({
       if (element.scrollHeight <= element.clientHeight) return;
       // A code block or terminal scrolling inside a row is not the conversation.
       if (inputScrollsNestedElement(event.target, element, event.deltaY < 0)) return;
+      if (!canScroll(event.deltaY < 0)) return;
       controller.onReaderInput(event.deltaY < 0);
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -421,10 +422,28 @@ export function EngineConversationScroller({
         return;
       const target = event.target;
       if (!(target instanceof Node)) return;
+      if (
+        event.key === ' ' &&
+        target instanceof Element &&
+        target.closest('button, [role="button"]')
+      )
+        return;
+      // Observe bubbling keys after row controls can prevent default. A body
+      // key can scroll this viewport after a click, but needs actual movement
+      // to confirm which scroll container the browser chose.
       if (target !== ownerDocument.body && !element.contains(target)) return;
       const upward = isUpwardNavigationKey(event);
       if (inputScrollsNestedElement(target, element, upward)) return;
-      controller.onReaderInput(upward);
+      if (!canScroll(upward)) return;
+      controller.onReaderInput(upward, { confirmOnly: target === ownerDocument.body });
+    };
+    const canScroll = (upward: boolean) => {
+      // Passive wheel delivery can follow its native offset change. Accept
+      // either the last observed position or the live position as its origin.
+      const observed = controller.scrollOffset;
+      return upward
+        ? Math.max(observed, element.scrollTop) > 0
+        : Math.min(observed, element.scrollTop) < element.scrollHeight - element.clientHeight;
     };
     const onPointerDown = (event: PointerEvent) => {
       if (event.button === 0 && event.pointerType !== 'touch') controller.setPointerHeld(true);
@@ -488,7 +507,7 @@ export function EngineConversationScroller({
     element.addEventListener('touchcancel', cancelTouch, { passive: true });
     ownerDocument.addEventListener('pointerup', onPointerUp, true);
     ownerDocument.addEventListener('pointercancel', onPointerUp, true);
-    ownerDocument.addEventListener('keydown', onKeyDown, true);
+    ownerDocument.addEventListener('keydown', onKeyDown);
     ownerDocument.addEventListener('focusin', onOutsideInput, true);
     ownerDocument.addEventListener('pointerdown', onOutsideInput, true);
     ownerDocument.addEventListener('beforeinput', onOutsideInput, true);
@@ -503,7 +522,7 @@ export function EngineConversationScroller({
       element.removeEventListener('touchcancel', cancelTouch);
       ownerDocument.removeEventListener('pointerup', onPointerUp, true);
       ownerDocument.removeEventListener('pointercancel', onPointerUp, true);
-      ownerDocument.removeEventListener('keydown', onKeyDown, true);
+      ownerDocument.removeEventListener('keydown', onKeyDown);
       ownerDocument.removeEventListener('focusin', onOutsideInput, true);
       ownerDocument.removeEventListener('pointerdown', onOutsideInput, true);
       ownerDocument.removeEventListener('beforeinput', onOutsideInput, true);

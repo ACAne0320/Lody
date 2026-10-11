@@ -804,12 +804,9 @@ describe('momentum diagnostics', () => {
     sim.nativeScroll(sim.maxTop());
     sim.settle();
     expect(sim.controller.mode).toBe('follow');
-    const read = sim.readScrollTop.bind(sim);
-    let elastic = 0;
-    sim.readScrollTop = () => read() + elastic;
     sim.writes = [];
     for (const sample of [24, 18, 12, 6, 0]) {
-      elastic = sample;
+      sim.elasticOffset = sample;
       sim.task(() => sim.controller.onScrollEvent());
       sim.render();
       sim.settle();
@@ -822,6 +819,68 @@ describe('momentum diagnostics', () => {
     sim.settle();
     expect(sim.controller.mode).toBe('read');
     expect(sim.readScrollTop()).toBe(sim.maxTop() - 60);
+    expectHealthy(sim);
+  });
+
+  it.each([0, 40])(
+    'compensates %ipx row growth above an elastic read anchor without drifting it',
+    (growth) => {
+      const sim = new ScrollSim(
+        turnRows(
+          40,
+          () => 100,
+          () => 100
+        ),
+        V
+      );
+      sim.render();
+      sim.settle();
+      sim.controller.release('reader-up');
+      const before = sim.readScrollTop();
+      const anchor = sim.controller.savedIntent();
+      const rowTop = sim.screenTop('t35');
+      sim.elasticOffset = 24;
+      // Growth above the reading anchor needs compensation. Additional
+      // growth below it leaves room for an incorrect +24px write to escape clamp.
+      sim.rows[33]!.height += growth;
+      sim.rows[39]!.height += 100;
+      sim.task(() =>
+        sim.controller.onRowsResized([
+          { key: 't33', height: 100 + growth },
+          { key: 't39', height: 200 },
+        ])
+      );
+      sim.settle();
+      expect(sim.readScrollTop()).toBe(before + growth);
+      expect(sim.screenTop('t35')).toBe(rowTop);
+      expect(sim.controller.savedIntent()).toEqual(anchor);
+      expectHealthy(sim);
+    }
+  );
+
+  it('preserves the top reading anchor when content inset changes during negative overscroll', () => {
+    const sim = new ScrollSim(
+      turnRows(
+        40,
+        () => 100,
+        () => 100
+      ),
+      V
+    );
+    sim.render();
+    sim.settle();
+    sim.controller.release('reader-up');
+    sim.nativeScroll(0);
+    sim.settle();
+    const anchor = sim.controller.savedIntent();
+    const rowTop = sim.screenTop('t0');
+    sim.elasticOffset = -24;
+    sim.contentTop += 40;
+    sim.task(() => sim.controller.onViewportResized());
+    sim.settle();
+    expect(sim.readScrollTop()).toBe(40);
+    expect(sim.screenTop('t0')).toBe(rowTop);
+    expect(sim.controller.savedIntent()).toEqual(anchor);
     expectHealthy(sim);
   });
 
