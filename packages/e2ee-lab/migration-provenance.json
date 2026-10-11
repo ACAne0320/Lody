@@ -15,8 +15,8 @@
   "targetFingerprints": {
     "AGENTS.md": "599262b8331ef7d882f13614796a0b288ca0011eccc47c8130da223a8c535018",
     "CLAUDE.md": "599262b8331ef7d882f13614796a0b288ca0011eccc47c8130da223a8c535018",
-    "README.md": "6b98354d0489de550b91939a0e7e5ed7af432e93e1218bd1826e177f0018c988",
-    "README.zh.md": "f73c835aa009130895d61085e8373773e13e391ad7ff8101374c6bdbcb4af952",
+    "README.md": "fcf79ff9aed28b61b15608d92ceb35d820797fb5fea8b4809772ac43d1562070",
+    "README.zh.md": "98d4cbe6c933a7c39ec1dec6de860b58f972d71569688c5421cd5a95227de4b6",
     "package.json": "9478748fe812ff8f51efb07d33f043d65c4a184703f4439d73cf5195f913d44d",
     "src/platform/content-provider.ts": "b4be8bfceb43a591097015499c10aefbd4ab870105d3569dddd7fa951ff9501d",
     "src/platform/content-session.ts": "7c22e34f85f2eabd79b472b861681127e7bb6b2ced687da3bc47c8eb415e6dfe",
@@ -39,7 +39,7 @@
     "src/pure/replay.ts": "6630b9c338d9459620b338ee9098e94dbf62d46d8cf7ab162e252a53bc706722",
     "src/pure/schedule.ts": "760cc54684912e06f582bb015a2efe7ddd2d37c51e8c4043e593c70f54bf7a4f",
     "src/pure/scheduler.ts": "2e9d62e9a39a6b92ea78dbf2d59650f1366ea8921bf81af385826e164b037240",
-    "test/authenticated-mailbox-fixture.ts": "ca9d7d934af9d1fd6efc214bff7187cdbc87e9d27182af4fbd0ab0c3ebb55cc7",
+    "test/authenticated-mailbox-fixture.ts": "bce3c51c34507bb89f43cfa21a10306ae45c99e0578b28e0a8ef1161302d57c4",
     "test/content-fixture.ts": "c935423ea80720f6cbb583bee35ce0e16599caba063eca0463d998764bca80ef",
     "test/content-provider.test.ts": "3acb99485e13aa494cf2dbc880664d4e2cd76d1b7bcd69c6f229e84e264269ee",
     "test/content-reopen.mts": "17515ba140c32c660cdd66c3188c2a8c1e2b8e83e009c4872ba17765aa107474",
@@ -47,7 +47,7 @@
     "test/gateway.test.ts": "20948f66cc48fd959223733b0a5663d82e4c6c690e1e73c08252cfcd9eb44df2",
     "test/host.test.ts": "fdfb43111d5b931566bdde290c9c3f7f6a13bb50e7e5bf917fc4ecc8a640f687",
     "test/join-mailbox.test.ts": "e446dd1c1836fbf6093a54c2649cd659855556c710cee0e77b52f728f7db7386",
-    "test/key-distribution.test.ts": "4ef5964d5f3a902d7edec8b6d1bd8d2fa81d3a2fc995ccb5f7e1aa1d51681ddc",
+    "test/key-distribution.test.ts": "9cbf960815171ce08f229d46bb09bbf6a4178892a42a17096106ed94978a3f31",
     "test/key-mailbox.test.ts": "94ec488d11ccd80a751edc039c2e9ae29894d4aaf985ede0750529702bf346fb",
     "test/ledger-actor-reopen.mts": "760fd376ac9a624ccb5e5ab7601358e5d508d320905c1c8fda7fb235044b9cce",
     "test/ledger-actor.test.ts": "b2fc73f027dd25d122eb38cbd938e38a185283ab930950f78c6356e2970ae546",
@@ -64,7 +64,8 @@
     "test/workspace-registry.test.ts": "a46d8be2875822c0206ba04d18be19a7acfa092c82e5cab6b35adaead7c64115",
     "tsconfig.json": "b88fb9865d3be1692d2db141b9f4bac2ceebfa4eaf31027ffa2991da2a6a756d",
     "src/platform/stream-read.ts": "7d1742d6905fcf31e5a1e0def276f9b38afc04a0be08763ecb24cfdbbdb4dc61",
-    "test/stream-read.test.ts": "86d6a4f3a92b920a9aa06b38c7c88403cbe21799678ad8cce85452c23d632a4a"
+    "test/stream-read.test.ts": "86d6a4f3a92b920a9aa06b38c7c88403cbe21799678ad8cce85452c23d632a4a",
+    "test/key-reopen.mts": "48574d59d56e86f4f52bd4ddd3d1558fae533397e7cb6aa72c52d62785f2d6f2"
   },
   "sourceSpecificFingerprints": {
     ".gitignore": {
@@ -427,6 +428,6 @@
     "recovery": "readable encrypted history only; Riverrun nonzero snapshot history gap remains undecided",
     "originalHarness": "driver/attack/replay/CLI and original host scenarios pending",
     "gateway": "Bounded authenticated GET/HEAD control/loro/flock/bootstrap/latest/specific snapshot routes; fixed loopback upstream, canonical same-origin/Org/stream redirect, actual response-body retention and before/after genuine permission. Real machine revoke keeps durable feed cursor. Lab52 plus five SHA overlays passes; three direct behavioral negatives/no timeout/restored. Unprotected snapshot fixture only; content writes/live/fullhost/CLI and protected snapshot contract pending.",
-    "mailbox": "Scoped bounded HTTP remote with public real HPKE/SQLite receiver/distributor round, tampered frame no-install/no-report, actual response-body wait, same-process Recovery reopen no-send; synthetic pre-authenticated HTTP and wrapping boundaries explicit. Full repair/rotation/host/process composition pending. Explicit optional owned native transport lease is closed after actual settlement; initial body no-wait mutant escaped, revised actual close-order assertion fails without timeout and restored passes."
+    "mailbox": "Actual SQLite ignored protected-key insert retains original Install task/no terminal/no key; after closing parent receiver owners actual OS child reopens syntheticX25519/device/publicgenuine2records, realHPKEopens/saves/readbacks and reports through fresh challenge/bearer HTTP. Parent actualSQLite taskReported/frame bytecompare, original Recovery no-send/repair coverage retained. Synthetic device file0600 only, importedprivate handle nonextractable/publicextractable needed lockedHPKEserialize binding. Original nonextractable-public open-failed log retained, noalgorithm/corechange. Affected13/type + fresh e574/3SHA Lab52 pass, skipping actualinstall/report gives noReported directfail/nontimeout/restored. Full epochrotation/host/originalLab2/nativecustody pending."
   }
 }

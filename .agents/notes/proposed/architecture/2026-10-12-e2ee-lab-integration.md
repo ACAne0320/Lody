@@ -121,8 +121,20 @@ and do not report; original frames install and report. Recovery cannot send afte
 reopen and own-slot repair revision advances once, same-ID retry is idempotent.
 Preserve512-byte envelope/report,8192-byte publication and existing1–256-char
 repair-ID bounds. Fixture AES wrapping and test accounts are synthetic; some
-transport-only units explicitly use pre-authenticated fixtures. The key-round
-reopen remains same-process, not full cross-process delivery/rotation/native custody.
+transport-only units explicitly use pre-authenticated fixtures. The finite key-round now keeps a real ignored-install task in phase Install, with
+empty protected-key storage and no terminal result, then closes parent receiver
+owners. An actual OS child reopens the original task/device, decrypts HPKE,
+saves/readbacks and flushes a signed report through fresh challenge/bearer HTTP.
+Parent compares actual SQLite original frame bytes and Reported state, then retains
+the prior R no-send/own-slot repair coverage. This is not full epoch rotation or
+native custody. Device export is synthetic file0600, not a recovery-vault format.
+Initial child open failed because its public CryptoKey was non-extractable; locked
+HPKE serializes it for recipient binding. Import the public handle extractable,
+keep the private handle non-extractable; no algorithm/core change. Failed log stays.
+Owning/affected13/type and fresh e574+3 SHA-overlay Lab52 pass. Skipping real
+HPKE install or report causes a direct missing Reported assertion, no timeout;
+restoration passes. Current full root core302/Lab52, format/docs and public boundary7011files/27manifests
+pass, with all53 Lab inputs unchanged. Fixed-head/CI/independent evidence remain pending.
 The earlier duplicate X25519 key fixture was rejected, then corrected without
 changing public admission.
 

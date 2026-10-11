@@ -55,7 +55,7 @@ mailbox 宿主当前通过真实 challenge/bearer HTTP 提供原七项操作，�
 report 保留公开 512 字节限制，local-publication 记录保留 8192 字节，repair ID
 保留已有 1–256 字符契约，不发明新 ID 格式。真实 HPKE 轮次经过此路由，包括 R
 不能发送、修复自身接收 slot 的重试幂等。账户身份与 AES 包装仍是合成 fixture；
-部分传输单元 fixture 仍明确预认证。这不代表完整 host/rotation 组合或跨进程密钥轮次验收。
+部分传输单元 fixture 仍明确预认证。这不代表完整 host/rotation 组合或跨进程 epoch 轮换验收。
 
 scoped 凭证 owner 保留冻结 Lab v2 持有消息、60 秒单次 nonce 和最多 15 分钟
 合成 token TTL。真实 Ed25519 证明、genuine 当前 Org 成员和 SQLite 事务读回
@@ -103,3 +103,8 @@ opaque token。完整受保护快照发布/恢复仍未完成。
 Flock 子进程没有可用 signer，保留旧字段并用落盘保护密钥解密新的独立更新；实际 Loro SDK
 生成同 Org/resource 的不同 model 保护帧写入 Flock 后，子进程拒绝、原 native file/游标
 不变。这是有限进程重开证据，完整 Flock session/recovery/live 未完成。
+
+有限密钥轮次现在保留真实安装失败的 Install 任务，关父 receiver owner 后由 OS 子进程重开：
+导入合成 X25519 设备、解密原 HPKE frame、保护 epoch 保存/读回，用新真实 challenge/bearer
+发送报告。父端验证实际 Reported、原 frame bytes 和 R 不发送。此重开私钥句柄不可导出，
+HPKE recipient 绑定需序列化的公钥可导出；不是生产 custody/恢复库格式/完整 epoch 轮换。

@@ -42,8 +42,19 @@ export function makeAuthenticatedLabMailbox(input: {
       mailbox: (anchor) => (anchor.equals(genesis) ? mailbox : undefined),
       joins: (anchor) => (anchor.equals(genesis) ? joins : undefined),
     });
+    return yield* makeLabHttpIdentity({ baseUrl: host.baseUrl, genesis });
+  });
+}
+/** Same real challenge/bearer fixture on an already running local host, including
+ * an OS child. Own native credential request/body; no pre-issued token bypass. */
+export function makeLabHttpIdentity(input: {
+  readonly baseUrl: string;
+  readonly genesis: Bytes.GenesisHash;
+}) {
+  return Effect.gen(function* () {
+    const { baseUrl, genesis } = input;
     const owner = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
-    const url = `${host.baseUrl}/v1/spaces/${hex(genesis.toBytes())}/key-mailbox`;
+    const url = `${baseUrl}/v1/spaces/${hex(genesis.toBytes())}/key-mailbox`;
     return {
       url,
       authenticate: (signer: DeviceSigner, binding: 'workspace' | 'unbound' = 'workspace') =>
@@ -51,7 +62,7 @@ export function makeAuthenticatedLabMailbox(input: {
           const account = `synthetic-${hex(signer.publicKey.toBytes())}`;
           const post = (path: string, value: unknown) =>
             owner.invoke(async () => {
-              const response = await fetch(host.baseUrl + path, {
+              const response = await fetch(baseUrl + path, {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 signal: owner.signal,

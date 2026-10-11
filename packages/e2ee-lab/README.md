@@ -63,8 +63,12 @@ HPKE delivery and SQLite save/readback/report rounds run through this adapter;
 tampered frames install nothing and do not report, and Recovery cannot send after
 stores reopen. Transport unit fixtures use explicit pre-authenticated synthetic sessions; AES
 wrapping is an explicit mock boundary. Full host route authentication and
-rotation/actor composition remain pending. Reopen in this key-round test is within
-one OS process; it does not establish cross-process key-round acceptance.
+rotation/actor composition remain pending. The finite key-round now retains an
+actual failed Install task, closes parent receiver owners and reopens in an OS child.
+The child imports its synthetic X25519 device, opens the original HPKE frame,
+saves/readbacks the protected epoch and sends the report through fresh real
+challenge/bearer HTTP; parent verifies actual Reported/frame bytes and R no-send.
+This is not full cross-process epoch rotation or platform custody.
 
 The mailbox host now exposes the seven original operations through the actual
 challenge/bearer HTTP composition, binds only the stored device and bound Org, and
@@ -74,7 +78,7 @@ bytes and repair IDs retain the existing 1–256-character contract. No new ID f
 is introduced. The real HPKE round uses this route, including Recovery no-send and
 idempotent own-slot repair. Account identity and AES wrapping remain synthetic;
 some transport unit fixtures are still explicitly pre-authenticated. This is not
-full host/rotation composition or cross-process key-round acceptance.
+full host/rotation composition or cross-process epoch-rotation acceptance.
 
 The scoped credential owner retains the frozen Lab v2 possession domain, 60-second
 single-use nonce and at most 15-minute synthetic token TTL. Real Ed25519 proofs,

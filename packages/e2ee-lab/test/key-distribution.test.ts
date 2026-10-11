@@ -1,5 +1,7 @@
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { runOwnedChild } from './native-child';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Effect, Result } from 'effect';
@@ -67,6 +69,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
       membershipId = ok(Bytes.membershipId(new Uint8Array(16).fill(103)));
     const key = ok(Bytes.epochKey(new Uint8Array(32).fill(104)));
     const file = (name: string) => join(dir, `${name}.sqlite`);
+    let expectedFrame: Uint8Array | undefined;
     try {
       const genesis = await Effect.runPromise(
         signGenesisRecord({
@@ -99,6 +102,24 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
         await Effect.runPromise(
           signLedgerRecord(ok(prepareLedgerCommand(view(), owner.publicKey, command)), owner)
         )
+      );
+      // Explicit synthetic device export for this OS-child fixture only, file0600.
+      // No real key/custody path or recorded user data is read or committed.
+      writeFileSync(
+        join(dir, 'recovery-device.json'),
+        JSON.stringify({
+          genesis: Buffer.from(genesis.genesis.toBytes()).toString('hex'),
+          records: records.map((record) => Buffer.from(record).toString('hex')),
+          checkpoint: {
+            head: Buffer.from(hashRecordBytes(records.at(-1)!).toBytes()).toString('hex'),
+            length: records.length,
+          },
+          privateKey: Buffer.from(await crypto.subtle.exportKey('pkcs8', pair.privateKey)).toString(
+            'hex'
+          ),
+          publicKey: Buffer.from(encryptionPublicKey.toBytes()).toString('hex'),
+        }),
+        { mode: 0o600 }
       );
       const ledger = () => Effect.sync(view);
       const slot = {
@@ -209,6 +230,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
             expect((yield* remote.status(slot)).status).toBe('EnvelopeStored');
             const before = yield* receiverRemote.fetch(0, null, 100);
             expect(before.items).toHaveLength(1);
+            expectedFrame = new Uint8Array(before.items[0]!.frame);
             // A real owner-signed HPKE frame does not let a Recovery bearer choose
             // the sender via hostile JSON. Server binds only the stored principal.
             const forged = yield* Effect.promise(() =>
@@ -254,11 +276,34 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               db.close();
             }
             tamper = false;
-            expect(yield* receiver.fetchAndInstall()).toEqual({ processed: 1, next: null });
-            yield* receiver.flushReports();
-            expect((yield* remote.status(slot)).status).toBe('InstallationReported');
-
-            expect((yield* receiver.results()).map((item) => item.outcome)).toEqual(['Reported']);
+            const blocker = new Database(file('recovery-keys'), { fileMustExist: true });
+            try {
+              blocker.exec(
+                'CREATE TRIGGER reject_pending_install BEFORE INSERT ON protected_epoch_keys BEGIN SELECT RAISE(IGNORE); END'
+              );
+            } finally {
+              blocker.close();
+            }
+            expect(Result.isFailure(yield* Effect.result(receiver.fetchAndInstall()))).toBe(true);
+            expect((yield* remote.status(slot)).status).toBe('EnvelopeStored');
+            const pending = new Database(file('recovery-receive'), { fileMustExist: true });
+            try {
+              expect(pending.prepare('SELECT phase FROM receive_tasks').all()).toEqual([
+                { phase: 'Install' },
+              ]);
+            } finally {
+              pending.close();
+            }
+            const repair = new Database(file('recovery-keys'), { fileMustExist: true });
+            try {
+              expect(
+                repair.prepare('SELECT count(*) AS n FROM protected_epoch_keys').get()
+              ).toEqual({ n: 0 });
+              repair.exec('DROP TRIGGER reject_pending_install');
+            } finally {
+              repair.close();
+            }
+            expect(yield* receiver.results()).toEqual([]);
             expect((yield* distributor.reconcileCurrentEpoch()).scheduled).toBe(0);
             expect((yield* receiverRemote.fetch(0, null, 100)).items[0]!.frame).toEqual(
               before.items[0]!.frame
@@ -284,6 +329,31 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
             });
             const receiverSession = yield* http.authenticate(recovery);
             const remote = yield* makeLabMailboxRemote(receiverSession);
+            const child = yield* runOwnedChild([
+              '--import',
+              'tsx',
+              fileURLToPath(new URL('./key-reopen.mts', import.meta.url)),
+              dir,
+              http.url.replace(`/v1/spaces/${slot.genesis}/key-mailbox`, ''),
+            ]);
+            const completed = JSON.parse(child.trim()) as {
+              installed: { processed: number; next: string | null };
+              outcomes: string[];
+            };
+            expect(completed.installed).toEqual({ processed: 1, next: null });
+            expect(completed.outcomes).toEqual(['Reported']);
+            expect((yield* remote.status(slot)).status).toBe('InstallationReported');
+            const retained = new Database(file('recovery-receive'), { fileMustExist: true });
+            try {
+              const row = retained.prepare('SELECT phase,frame FROM receive_tasks').get() as {
+                phase: string;
+                frame: Uint8Array;
+              };
+              expect(row.phase).toBe('Reported');
+              expect(new Uint8Array(row.frame)).toEqual(expectedFrame);
+            } finally {
+              retained.close();
+            }
             const reopened = yield* makeSqliteKeyDistribution({
               path: file('recovery-receive'),
               mode: 'open',

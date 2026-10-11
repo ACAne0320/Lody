@@ -89,8 +89,15 @@ R 不发送。协调者推荐 A 不等于 human approval，也不自动独立确
 真实公开 HPKE/distributor/receiver、SQLite install/readback/report 与实际 challenge/bearer
 mailbox 组合。坏帧不安装/不报告，原帧安装报告；重开后 Recovery 不发送，own-slot repair
 revision 只进一次，同 ID 幂等。保留512字节 envelope/report、8192 publication、原1–256字符
-repairID。AES wrapping/account 合成，部分纯传输单元明确预认证；密钥轮次重开仍同进程，
-不是完整跨进程轮换/原生 custody。旧 fixture 重用 X25519 被公开 admission 拒绝，修成
+repairID。AES wrapping/account 合成，部分纯传输单元明确预认证；有限密钥轮次把真实被忽略的安装保留在 Install，保护 key 表为空、无终态，关父 receiver
+owner。实际 OS 子进程重开原 task/合成设备、解密 HPKE、保存读回，用新 challenge/bearer
+报告；父端比实际 SQLite 原 frame bytes/Reported，保留原 R不发送/own-slot repair 覆盖。
+不是完整 epoch 轮换/原生custody；device 导出只是合成 file0600，不是恢复库格式。
+首次 child open 因公钥不可导出失败：锁 HPKE 序列化公钥绑定 recipient，修正公钥可导出、
+私钥仍不可导出，不改算法/core，旧失败保留。owning/交集13/type 与 freshe574+三SHAoverlay
+Lab52通过；跳过实际 install/report 都命中缺 Reported 直接断言，无Timeout，恢复通过。
+本次整树 core302/Lab52、format/docs/public boundary7011files/27manifests通过，
+53Lab输入SHA不变；fixed-head/CI/独立证据待完成。旧 fixture 重用 X25519 被公开 admission 拒绝，修成
 不同 pair，不改协议。
 
 公开 header3 update binding 消费实际 Loro/Flock SDK；每文档 SQLite 原子保存 native
