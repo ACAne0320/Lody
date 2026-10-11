@@ -30,6 +30,12 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
 
 ## Message hub and transports
 
+- `github-git-transport.ts` — generated Git wrapper and HTTP credential adapters.
+  HTTP helper redispatch preserves the parent operation's read/write context;
+  independent commands classify themselves, and missing/invalid helper context
+  conservatively requires write access. Credential probes precede the single
+  native transfer.
+
 - `gh-pr-create-script.ts` — REST creation for managed `gh pr create/new` with
   explicit title and body/body-file; retains the selected credential for metadata.
   Infers a current head only when its SHA is already published in the target repo,
