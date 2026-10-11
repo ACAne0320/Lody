@@ -52,7 +52,7 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   device key handles stay external; no key generation, storage or delivery here.
   Await non-cancellable native work and temporary-buffer cleanup on interruption.
 
-- Document workflows accept only real verified ledger views and bound document keys.
+- Document workflows accept only genuine full/qualified-endorsed views and bound document keys.
   Current write/rotation checks precede encryption and repeat after signing; the
   fixed verifier checks signer output. Historical signature evidence is neither
   current permission nor AEAD validity. Host admission remains independent.
@@ -96,3 +96,8 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   Reports are signed claims, not custody proof. Repair retains history and invalidates
   prior report revision. Separate indexed schema rejects old JSON files without import.
   Scope closes storage; callers cancel/await their own borrowed async resources.
+
+- Content author identity preserves full member mapping when known; endorsed retired
+  devices may authenticate only device identity, never a guessed user or current write
+  right. Capture seal inputs/capabilities before waiting, wipe owned plaintext through
+  a real resource bracket, and reject later views outside the known verified prefix.

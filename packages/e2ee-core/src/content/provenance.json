@@ -24,11 +24,13 @@
     "Document keys have private registry provenance; exported/imported symmetric leaf bytes are copied.",
     "Check current seal permission before encryption and after signing; historical author authentication never grants publication rights.",
     "Native signer borrows a CryptoKey, awaits native completion on interruption, cleans scratch with ordinary finally, and creates no runtime/key/store.",
-    "Operations read inputs on Effect execution; input stability is an explicit caller contract.",
-    "Generic non-document scopes, ledger command signing, key installation/commitment checks and SDK workflows remain separately owned, not silently removed."
+    "Generic non-document scopes, ledger command signing, key installation/commitment checks and SDK workflows remain separately owned, not silently removed.",
+    "L2c captures bounded plaintext, scope, binding, signer and lookup before async work; acquireUseRelease wipes owned plaintext on all exits.",
+    "L2c final view must continue the initially observed real prefix; unknown prefix, rollback/fork and lost current permission fail.",
+    "L2c consumes genuine snapshot historical identity: member attribution when known, explicit retired device-only identity otherwise; no guessed user/write upgrade."
   ],
   "destinationFingerprints": {
-    "src/content/index.ts": "f64a806f9657dc88bae170649d4f8c7410bc0f91d16635221d8fb41c76a9016f",
+    "src/content/index.ts": "0255359c2464c299b8ba9153c0c382ddf78fdbcd472599abd0dace9c33d5390e",
     "src/content/document-key.ts": "2dfa7c391b18f8ee74bcef9f8f951673821c2104a12a452c69ef27d76d6f0de2",
     "src/signing.ts": "5752345fb3376b02cbd15d0ff57861707858ce36d6d5c87ffa47498d0b0c2d81",
     "src/crypto/content.ts": "a6f9fc5ea2defb18bd941828575e7f9e13614e8d5a5e174ff01b2e2fc5476687"

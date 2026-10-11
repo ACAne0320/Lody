@@ -26,3 +26,11 @@ Tests do not prove product enablement, real secure-platform key custody, durable
 Validation: package 140/140 and typecheck pass. Full `env -u GIT_EXEC_PATH PATH="/usr/bin:$PATH" pnpm check` passes, plus root format/docs against direct parent and public boundary. Preserve earlier lint/native-Git failure logs: the unchanged native Git suite passed 6/6 with native PATH; no source/expectation was altered. The real SDK 0.16.2 provider has no AbortSignal parameter; its future bridge must own in-flight Effect/native work and awaited close. Snapshot offset host-admission binding needs a separate format decision, not the old encrypted-only-offset provider.
 
 Draft: [#1442](https://github.com/LodyAI/Lody/pull/1442).
+
+## Snapshot author and async input follow-up
+
+The L1b identity query is now consumed by document authentication/opening: genuine full history retains actor/member identity; retired-device facts in a qualified endorsed snapshot return explicit device-only/missing-history-context. New sealing still needs current permission and never restores a revoked writer. Seal captures scope/plaintext/additional data/signer/lookup before awaiting, wipes its owned plaintext using acquireUseRelease and requires the final genuine view to continue the first known prefix. Existing v0 wire/algorithms are unchanged. Direct parent is mailbox #1472 ad4aed943928be69b0013445c2a38d86c7907fbe.
+
+An independent fixed 13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf clone reproduces three failures: retired snapshot author cannot open old document, mutation while lookup waits changes encrypted plaintext, and later prefix rollback still seals. Original source/review artifacts remain untouched; separate old-fail/new-pass evidence covers actual signed snapshot + Ed25519/AEAD, revoked seal rejection, bad signature, Deferred-controlled input and capability mutation, and genuine rollback. This is library document behavior, not SDK/host admission, production trust sourcing or Lab acceptance.
+
+Final L2c code tree: core 201/201 and typecheck, full root check with native Git/local IPC, format/docs/public boundary pass. The new author union is explicit and existing full-history assertions now narrow its member case. No production consumer or wire change.
