@@ -3777,6 +3777,419 @@
       "status": "关联仓保留",
       "layer": "linked-private-docs",
       "reason": "Current private constraint records stay read-only in their owning repository; they are not obsolete. Public guide carries shareable constraints without copying internal plans or records."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-09-14-e2ee-content-snapshot-admission.md",
+      "fingerprints": {
+        "core": "a4afb9fc0f8de7ea64b18495655cb5d43597bb6b7b22ebf90f7f101f51fcf8c1",
+        "candidate": "a4afb9fc0f8de7ea64b18495655cb5d43597bb6b7b22ebf90f7f101f51fcf8c1"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "status": "需迁并修复",
+      "layer": "L2",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-09-14-e2ee-content-snapshot-admission.zh.md",
+      "fingerprints": {
+        "core": "1689b92843488c4cb44b664cb14fc7e7a4888ed97a8936d4f59c33501ac7d8b1",
+        "candidate": "1689b92843488c4cb44b664cb14fc7e7a4888ed97a8936d4f59c33501ac7d8b1"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "status": "需迁并修复",
+      "layer": "L2",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-09-18-e2ee-host-gateway.md",
+      "fingerprints": {
+        "core": "7c0504206655cd27ac2fe186b563421f0f79bc4d5c43dbd2c36f777c2274de87",
+        "candidate": "7c0504206655cd27ac2fe186b563421f0f79bc4d5c43dbd2c36f777c2274de87"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-lab-integration.md",
+      "status": "需迁并修复",
+      "layer": "L6",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-09-18-e2ee-host-gateway.zh.md",
+      "fingerprints": {
+        "core": "7d2212c3241404a476b6809af6b9a79fa79ee6537235354607f0a4a38204871e",
+        "candidate": "7d2212c3241404a476b6809af6b9a79fa79ee6537235354607f0a4a38204871e"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-lab-integration.md",
+      "status": "需迁并修复",
+      "layer": "L6",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-10-09-e2ee-content-v2.md",
+      "fingerprints": {
+        "core": "9f08fb01f6eb6a24f4bdd20031b1255036837f3fe0a46cdc84c30c6ef937359a",
+        "candidate": "9f08fb01f6eb6a24f4bdd20031b1255036837f3fe0a46cdc84c30c6ef937359a"
+      },
+      "targetPath": null,
+      "status": "旧方案淘汰",
+      "layer": "L2",
+      "reason": "Superseded JSON/hex/content-v2/deleted demo or unimplemented UI plan is pinned history. Actual demo host/session coverage moved to e2ee-lab; do not reconstruct its deleted UI or obsolete protocols as migrated functionality."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-10-09-e2ee-content-v2.zh.md",
+      "fingerprints": {
+        "core": "1ed3cd4415cdb8355764329c0723fbadb681509ffe97aa7c671963a19dbba6a6",
+        "candidate": "1ed3cd4415cdb8355764329c0723fbadb681509ffe97aa7c671963a19dbba6a6"
+      },
+      "targetPath": null,
+      "status": "旧方案淘汰",
+      "layer": "L2",
+      "reason": "Superseded JSON/hex/content-v2/deleted demo or unimplemented UI plan is pinned history. Actual demo host/session coverage moved to e2ee-lab; do not reconstruct its deleted UI or obsolete protocols as migrated functionality."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-10-09-e2ee-effect-v4.md",
+      "fingerprints": {
+        "core": "d95e945d7b56a73f6ec507c877e48a415a2a5c7ed46cdc7b3cac681778cce2f8",
+        "candidate": "d95e945d7b56a73f6ec507c877e48a415a2a5c7ed46cdc7b3cac681778cce2f8"
+      },
+      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "status": "需迁并修复",
+      "layer": "shared",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-10-09-e2ee-effect-v4.zh.md",
+      "fingerprints": {
+        "core": "76e4283773a7282e0a82d10bfbfffa15bd44293779d44faee3c58b94cf8648e2",
+        "candidate": "76e4283773a7282e0a82d10bfbfffa15bd44293779d44faee3c58b94cf8648e2"
+      },
+      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "status": "需迁并修复",
+      "layer": "shared",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/bug-fix/2026-09-14-e2ee-snapshot-suffix-bound.md",
+      "fingerprints": {
+        "core": "52f15594c24d8115635ab2b2db4873f34e76575db113adf15d36f7b4de8fe5ae",
+        "candidate": "52f15594c24d8115635ab2b2db4873f34e76575db113adf15d36f7b4de8fe5ae"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-ledger-snapshot.md",
+      "status": "需迁并修复",
+      "layer": "L1",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/bug-fix/2026-09-14-e2ee-snapshot-suffix-bound.zh.md",
+      "fingerprints": {
+        "core": "8dfdcd7b087b136c19cda3312efb4ea1cfd89a346aac9ab855f9e956f8770947",
+        "candidate": "8dfdcd7b087b136c19cda3312efb4ea1cfd89a346aac9ab855f9e956f8770947"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-ledger-snapshot.md",
+      "status": "需迁并修复",
+      "layer": "L1",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/feature/2026-09-14-e2ee-content-snapshot.md",
+      "fingerprints": {
+        "core": "a5c0d9ffa2ee0bd1ab497d1ea42d7cec039971258ca2c269aa7312ba65124350",
+        "candidate": "a5c0d9ffa2ee0bd1ab497d1ea42d7cec039971258ca2c269aa7312ba65124350"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "status": "需迁并修复",
+      "layer": "L2",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/feature/2026-09-14-e2ee-content-snapshot.zh.md",
+      "fingerprints": {
+        "core": "4c2cd085f2d924db6a7a21374b2369d7743051d08c9e4bf959a0e63a4cc7530f",
+        "candidate": "4c2cd085f2d924db6a7a21374b2369d7743051d08c9e4bf959a0e63a4cc7530f"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "status": "需迁并修复",
+      "layer": "L2",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/architecture/2026-09-12-e2ee-control-log.zh.md",
+      "fingerprints": {
+        "core": "27c1f1e1e1e357e23148bab3020fcd9decabfd3157823c37f38688185bdcd58d",
+        "candidate": "27c1f1e1e1e357e23148bab3020fcd9decabfd3157823c37f38688185bdcd58d"
+      },
+      "targetPath": null,
+      "status": "旧方案淘汰",
+      "layer": "shared",
+      "reason": "Superseded JSON/hex/content-v2/deleted demo or unimplemented UI plan is pinned history. Actual demo host/session coverage moved to e2ee-lab; do not reconstruct its deleted UI or obsolete protocols as migrated functionality."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/architecture/2026-09-14-e2ee-signed-snapshot.zh.md",
+      "fingerprints": {
+        "core": "67015724c2c7561407871759bb01b4add7140d82b6b838f0e23dfa2638d30c4a",
+        "candidate": "67015724c2c7561407871759bb01b4add7140d82b6b838f0e23dfa2638d30c4a"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-ledger-snapshot.md",
+      "status": "需迁并修复",
+      "layer": "L1",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/architecture/2026-09-16-e2ee-independent-demo.md",
+      "fingerprints": {
+        "core": "ab93c86fe5b4e3f1936f4a32dac0c8d96d0d8414191f3d6e4f0a658782326026",
+        "candidate": "ab93c86fe5b4e3f1936f4a32dac0c8d96d0d8414191f3d6e4f0a658782326026"
+      },
+      "targetPath": null,
+      "status": "旧方案淘汰",
+      "layer": "L6",
+      "reason": "Superseded JSON/hex/content-v2/deleted demo or unimplemented UI plan is pinned history. Actual demo host/session coverage moved to e2ee-lab; do not reconstruct its deleted UI or obsolete protocols as migrated functionality."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/architecture/2026-09-16-e2ee-independent-demo.zh.md",
+      "fingerprints": {
+        "core": "52c52f2354c64562287a2725e36e2a79874ae8e1fc551b97352abfdf452b698c",
+        "candidate": "52c52f2354c64562287a2725e36e2a79874ae8e1fc551b97352abfdf452b698c"
+      },
+      "targetPath": null,
+      "status": "旧方案淘汰",
+      "layer": "L6",
+      "reason": "Superseded JSON/hex/content-v2/deleted demo or unimplemented UI plan is pinned history. Actual demo host/session coverage moved to e2ee-lab; do not reconstruct its deleted UI or obsolete protocols as migrated functionality."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/architecture/2026-09-22-e2ee-effect-api.md",
+      "fingerprints": {
+        "core": "a128bef6ec1985cded72f19846500d2674a6cb245a53b3c49ce92cb44dddaa66",
+        "candidate": "a128bef6ec1985cded72f19846500d2674a6cb245a53b3c49ce92cb44dddaa66"
+      },
+      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "status": "需迁并修复",
+      "layer": "shared",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/architecture/2026-09-22-e2ee-effect-api.zh.md",
+      "fingerprints": {
+        "core": "370fc85f8556cada89c3a93a718c1edcd6a314e65fc5f1f7ff5683674cff513a",
+        "candidate": "370fc85f8556cada89c3a93a718c1edcd6a314e65fc5f1f7ff5683674cff513a"
+      },
+      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "status": "需迁并修复",
+      "layer": "shared",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/architecture/2026-10-09-e2ee-central-key-delivery.md",
+      "fingerprints": {
+        "core": "65e8fdcbe688c765990f05d7723c29eee27664c0aac1c7ff3a99715429317d7e",
+        "candidate": "65e8fdcbe688c765990f05d7723c29eee27664c0aac1c7ff3a99715429317d7e"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-key-distribution.md",
+      "status": "需迁并修复",
+      "layer": "L4",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/architecture/2026-10-09-e2ee-central-key-delivery.zh.md",
+      "fingerprints": {
+        "core": "d2f961a4a61f37f80fc670c82186a05ed33d78efca57c044fd0eddb8b44da62b",
+        "candidate": "d2f961a4a61f37f80fc670c82186a05ed33d78efca57c044fd0eddb8b44da62b"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-key-distribution.md",
+      "status": "需迁并修复",
+      "layer": "L4",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/feature/2026-09-16-e2ee-playable-tutorial.md",
+      "fingerprints": {
+        "core": "552b31088d478afde0a148353b1a2defdc7030a877d257b7c251518f22f0699a",
+        "candidate": "552b31088d478afde0a148353b1a2defdc7030a877d257b7c251518f22f0699a"
+      },
+      "targetPath": null,
+      "status": "旧方案淘汰",
+      "layer": "L6",
+      "reason": "Superseded JSON/hex/content-v2/deleted demo or unimplemented UI plan is pinned history. Actual demo host/session coverage moved to e2ee-lab; do not reconstruct its deleted UI or obsolete protocols as migrated functionality."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/feature/2026-09-16-e2ee-playable-tutorial.zh.md",
+      "fingerprints": {
+        "core": "adad8ab0566fb175121834b3307c79f52f323586436e7cfbd90239a56bb126d9",
+        "candidate": "adad8ab0566fb175121834b3307c79f52f323586436e7cfbd90239a56bb126d9"
+      },
+      "targetPath": null,
+      "status": "旧方案淘汰",
+      "layer": "L6",
+      "reason": "Superseded JSON/hex/content-v2/deleted demo or unimplemented UI plan is pinned history. Actual demo host/session coverage moved to e2ee-lab; do not reconstruct its deleted UI or obsolete protocols as migrated functionality."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/testing/2026-09-16-e2ee-adversarial-lab.md",
+      "fingerprints": {
+        "core": "f374099a39ec33701264168a8c2d8824cc87f3051b26559c4bcbd202cde2c1c5",
+        "candidate": "f374099a39ec33701264168a8c2d8824cc87f3051b26559c4bcbd202cde2c1c5"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-lab-integration.md",
+      "status": "需迁并修复",
+      "layer": "L6",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/proposed/testing/2026-09-16-e2ee-adversarial-lab.zh.md",
+      "fingerprints": {
+        "core": "adc5de67c9b3700470cb3a8d6f30edbd4a6bf880943680b1ff2430106d527d74",
+        "candidate": "adc5de67c9b3700470cb3a8d6f30edbd4a6bf880943680b1ff2430106d527d74"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-lab-integration.md",
+      "status": "需迁并修复",
+      "layer": "L6",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": "apps/electron/src/main/index.ts",
+      "fingerprints": {
+        "core": "5588368e6f3707a18af8d6d1ae763b6fb70bf7b1cecfd214f7922fbca1fcb460",
+        "candidate": "5588368e6f3707a18af8d6d1ae763b6fb70bf7b1cecfd214f7922fbca1fcb460"
+      },
+      "targetPath": "apps/electron/src/main/index.ts",
+      "status": "待明确决定",
+      "layer": "linked-platform",
+      "reason": "Existing product composition references the old recovery/device identity model. Coordinate platform custody and per-workspace recovery before wiring; do not copy whole product files into a library/Lab stack."
+    },
+    {
+      "sourcePath": "apps/electron/src/main/ipc/ipc-service-deps.ts",
+      "fingerprints": {
+        "core": "db3066583d8d571bdddb805d38c2d1eefea6025f1c87c17631e3b2097659fe63",
+        "candidate": "db3066583d8d571bdddb805d38c2d1eefea6025f1c87c17631e3b2097659fe63"
+      },
+      "targetPath": "apps/electron/src/main/ipc/ipc-service-deps.ts",
+      "status": "待明确决定",
+      "layer": "linked-platform",
+      "reason": "Existing product composition references the old recovery/device identity model. Coordinate platform custody and per-workspace recovery before wiring; do not copy whole product files into a library/Lab stack."
+    },
+    {
+      "sourcePath": "apps/electron/src/main/ipc/services/auth-ipc.ts",
+      "fingerprints": {
+        "core": "83e6e10e30f2625e41415de438356e79453a6cf172459ddc8de8b004a439b033",
+        "candidate": "83e6e10e30f2625e41415de438356e79453a6cf172459ddc8de8b004a439b033"
+      },
+      "targetPath": "apps/electron/src/main/ipc/services/auth-ipc.ts",
+      "status": "待明确决定",
+      "layer": "linked-platform",
+      "reason": "Existing product composition references the old recovery/device identity model. Coordinate platform custody and per-workspace recovery before wiring; do not copy whole product files into a library/Lab stack."
+    },
+    {
+      "sourcePath": "apps/electron/src/main/services/auth-service.ts",
+      "fingerprints": {
+        "core": "320f917d5b79c330096b7363265a03a4e13a0949e15d5d155aef33a4df3b6033",
+        "candidate": "320f917d5b79c330096b7363265a03a4e13a0949e15d5d155aef33a4df3b6033"
+      },
+      "targetPath": "apps/electron/src/main/services/auth-service.ts",
+      "status": "待明确决定",
+      "layer": "linked-platform",
+      "reason": "Existing product composition references the old recovery/device identity model. Coordinate platform custody and per-workspace recovery before wiring; do not copy whole product files into a library/Lab stack."
+    },
+    {
+      "sourcePath": "apps/electron/src/renderer/src/device-identity-initializer.tsx",
+      "fingerprints": {
+        "core": "cd0007c7a189f16469816977ef01a0e2dfa69a9f2524376aff91bc37fbf1bf02",
+        "candidate": "cd0007c7a189f16469816977ef01a0e2dfa69a9f2524376aff91bc37fbf1bf02"
+      },
+      "targetPath": "apps/electron/src/renderer/src/device-identity-initializer.tsx",
+      "status": "待明确决定",
+      "layer": "linked-platform",
+      "reason": "Existing product composition references the old recovery/device identity model. Coordinate platform custody and per-workspace recovery before wiring; do not copy whole product files into a library/Lab stack."
+    },
+    {
+      "sourcePath": "packages/components/src/lib/cloud-api-operations.ts",
+      "fingerprints": {
+        "core": "54667327e11330f09c25189c54cceb2c47d82e254541f5d211e6e1854258a71c",
+        "candidate": "54667327e11330f09c25189c54cceb2c47d82e254541f5d211e6e1854258a71c"
+      },
+      "targetPath": "packages/components/src/lib/cloud-api-operations.ts",
+      "status": "待明确决定",
+      "layer": "linked-platform",
+      "reason": "Existing product composition references the old recovery/device identity model. Coordinate platform custody and per-workspace recovery before wiring; do not copy whole product files into a library/Lab stack."
+    },
+    {
+      "sourcePath": "packages/components/src/components/settings/account-setting.tsx",
+      "fingerprints": {
+        "core": "2a798ce8c29e7f70e6d9fc8c3976b9907977debd12e4f97cfeb81cc12409d328",
+        "candidate": "2a798ce8c29e7f70e6d9fc8c3976b9907977debd12e4f97cfeb81cc12409d328"
+      },
+      "targetPath": "packages/components/src/components/settings/account-setting.tsx",
+      "status": "待明确决定",
+      "layer": "linked-platform",
+      "reason": "Existing product composition references the old recovery/device identity model. Coordinate platform custody and per-workspace recovery before wiring; do not copy whole product files into a library/Lab stack."
+    },
+    {
+      "sourcePath": "pnpm-workspace.yaml",
+      "fingerprints": {
+        "core": "58d18e9d92bd1924d0b968df344c217b03ed2cc4cb2d9ff7f13dbd6c97d6a2c5",
+        "candidate": "c4d2b55cfaabaab12f429cadc85d92d172197d4c9eb9c85b8450716c04fb9c96"
+      },
+      "targetPath": "pnpm-workspace.yaml",
+      "status": "需迁并修复",
+      "layer": "shared",
+      "reason": "Preserve the public main catalog/lock as owner. Apply only dependencies required by each migrated layer, never transplant the prototype root graph, default v3 catalog, old SDK patch or vendor package."
+    },
+    {
+      "sourcePath": "pnpm-lock.yaml",
+      "fingerprints": {
+        "core": "8dff6a48272c5e63c6ed50503e28051831953b99f7f7dced29ac6ebcf144e9ab",
+        "candidate": "36c05f67ec3d5823992e221fe5d45b03a85a1bb60a544ee69c5e4cfb397c7a97"
+      },
+      "targetPath": "pnpm-lock.yaml",
+      "status": "需迁并修复",
+      "layer": "shared",
+      "reason": "Preserve the public main catalog/lock as owner. Apply only dependencies required by each migrated layer, never transplant the prototype root graph, default v3 catalog, old SDK patch or vendor package."
+    },
+    {
+      "sourcePath": "patches/loro-repo.patch",
+      "fingerprints": {
+        "core": "74be8ab90bed65c9ce8b0d7cb32f8cafdbd0ecda6d9b7c8048836600d116d357"
+      },
+      "targetPath": null,
+      "status": "旧方案淘汰",
+      "layer": "shared",
+      "reason": "Preserve the public main catalog/lock as owner. Apply only dependencies required by each migrated layer, never transplant the prototype root graph, default v3 catalog, old SDK patch or vendor package."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-10-09-e2ee-document-key-v0.md",
+      "fingerprints": {
+        "candidate": "82b0009580b4390383a0cb9c7295d7e6c7a902a282ba772133158c3f297c9c45"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "status": "需迁并修复",
+      "layer": "L2",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/architecture/2026-10-09-e2ee-document-key-v0.zh.md",
+      "fingerprints": {
+        "candidate": "d249b1f6d8446c5b2e17c4558f1ebe33e30a935f9f80946a29ce594cee5bed3f"
+      },
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "status": "需迁并修复",
+      "layer": "L2",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/bug-fix/2026-10-10-e2ee-sdk-compatibility.md",
+      "fingerprints": {
+        "candidate": "6ae3572856bf7e14b904da12bb4df523e6348ceaf7edb4fd396e45bb252054a1"
+      },
+      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "status": "需迁并修复",
+      "layer": "shared",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
+    },
+    {
+      "sourcePath": ".agents/notes/implemented/bug-fix/2026-10-10-e2ee-sdk-compatibility.zh.md",
+      "fingerprints": {
+        "candidate": "1ac0b47d011db67f0f6e6822ff13c2e54be325122a6cb6764310a5652e87405b"
+      },
+      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "status": "需迁并修复",
+      "layer": "shared",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
     }
   ],
   "constraintFingerprints": [

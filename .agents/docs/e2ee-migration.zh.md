@@ -12,7 +12,7 @@
 - 原 core：`f1bc0c52649c21d2e9b620fe3558874c40545e38`。
 - 候选：`bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8`；暂存补丁 SHA-256 `4c36a1e507f2e7bcc55e9e88906ffe2b617e9d9c9aed55ab5e76745bd4d7ee71`；未暂存 diff 为空。原仓和候选只读。
 - 公共包实际解析的 Effect 是 **4.0.2**，与 root lock/catalog 一致。原型另设 v4 catalog，不是升级或新增另一套 runtime 的理由。
-- 实际 Lab 为 `packages/e2ee-lab`：本地 HTTP/SQLite Riverrun 宿主、诚实 Loro/Flock 客户端、调度、攻击能力入口、重放包、合成 fixtures 和崩溃子进程。两份固定来源都有该包。“可玩教程”有草案，但两份固定树都未找到相应应用源码。
+- 实际 Lab 为 `packages/e2ee-lab`：本地 HTTP/SQLite Riverrun 宿主、诚实 Loro/Flock 客户端、调度、攻击能力入口、重放包、合成 fixtures 和崩溃子进程。两份固定来源都有该包。“可玩教程”有草案，但两份固定树都未找到相应应用源码。来源 independent-demo note 明确记录：`packages/e2ee-demo` 在宿主/session 覆盖迁到 Lab 后已删除；旧启动命令不是可运行的迁移命令。
 
 仅迁设计源中明确适合公开的白皮书和权限文本，移除内部计划与证据链接。私有决策记录、实施计划、生产配置和对话不复制；指纹只标识约束版本。
 

@@ -12,7 +12,7 @@ The [per-file manifest](e2ee-migration-manifest.json) records source SHA-256, ta
 - Original core: `f1bc0c52649c21d2e9b620fe3558874c40545e38`.
 - Candidate: `bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8`; staged patch SHA-256 `4c36a1e507f2e7bcc55e9e88906ffe2b617e9d9c9aed55ab5e76745bd4d7ee71`; unstaged diff empty. Original source and candidate stay read-only.
 - Public Effect resolves from `packages/e2ee-core` to **4.0.2**, matching the root lock/catalog. The prototype's separate v4 catalog does not justify upgrading or adding another Effect runtime.
-- Actual Lab source is `packages/e2ee-lab`: local HTTP/SQLite Riverrun host, honest Loro/Flock clients, scheduling, attack capability, replay packs, synthetic fixtures and crash subprocesses. Both pinned sources contain this package. The playable tutorial has drafts but no corresponding application source in either pinned tree.
+- Actual Lab source is `packages/e2ee-lab`: local HTTP/SQLite Riverrun host, honest Loro/Flock clients, scheduling, attack capability, replay packs, synthetic fixtures and crash subprocesses. Both pinned sources contain this package. The playable tutorial has drafts but no corresponding application source in either pinned tree. The source independent-demo note explicitly records removal of `packages/e2ee-demo` after host/session coverage moved to `packages/e2ee-lab`; its obsolete startup commands are not runnable migration commands.
 
 The design source's public whitepaper and permission text are carried here with internal plan/evidence links removed. Private decision records, implementation plans, production configuration and transcripts remain in their owning repository. Their fingerprints identify the constraints without publishing their contents.
 

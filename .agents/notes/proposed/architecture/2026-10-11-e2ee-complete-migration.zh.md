@@ -24,3 +24,5 @@ submission #1434 仍归原作者，SDK 准备 #1433 此后已合入。新底层�
 文档检查与旧失败复现不证明整栈 CI、生产 E2EE、原生存钥、断电/永久丢失恢复或全平台验收。允许 Draft，不自动 Ready、merge、deploy 或 publish。
 
 验证：公共 core 113 项测试与类型通过，docs check、public/platform boundary 通过，root format 通过且无无关改动。root check 完成类型/lint 后停在未改的 CLI native Git fixture（`context_unreadable`）；CLI 3723 过、1 败、4 跳过。不宣称余下 root 阶段全绿。
+
+文档底层：[Draft PR #1438](https://github.com/LodyAI/Lody/pull/1438)。

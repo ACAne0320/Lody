@@ -24,3 +24,5 @@ The baseline documents and complete source inventory are implemented; remaining 
 Document checks and selected old-failure reproduction do not establish full-stack CI, production E2EE, native custody, power-loss/device-loss recovery or all-platform acceptance. Draft creation is authorized; Ready, merge, deployment and publication are not.
 
 Validation: public core 113 tests and typecheck pass, docs check and public/platform boundaries pass, root format passes with no unrelated edits. Root check completed typechecks/lint but stopped on the unchanged CLI native Git fixture (`context_unreadable`); 3723 CLI tests passed, one failed and four skipped. Remaining root stages were not reported green.
+
+Draft baseline: [PR #1438](https://github.com/LodyAI/Lody/pull/1438).
