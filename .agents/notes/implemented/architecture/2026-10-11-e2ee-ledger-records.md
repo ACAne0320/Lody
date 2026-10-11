@@ -41,3 +41,14 @@ Native Node Ed25519 signs fixed synthetic keys independently of the production v
 Final package: 67/67 tests and typecheck pass. Full `env -u GIT_EXEC_PATH pnpm check`, format/format check, docs and public-boundary checks pass on the pinned base. The sandbox IPC failure passed unchanged with local sockets allowed; the injected Git exec-path failure reproduced at pristine main and passed with native Git. Only the test process environment changed. Default skipped integration/Keychain tests remain unverified.
 
 This core slice is not product security acceptance, all-platform Beta, snapshot recovery, deployment or release approval.
+
+
+## Integration with content crypto
+
+The #1417/#1418 integration resolves only overlapping package instructions, README
+and draft Spec wording. It retains both content HKDF/AEAD and the separate ledger
+subentry, with no protocol or source/dependency revision. Reviewed ledger source
+remains byte-identical to `b273f844`; crypto remains byte-identical to `53c9e985`.
+The combined package has 85 passing tests, plus passing type and format checks.
+The existing independent reviews remain evidence for those source commits, not
+a new-head review; integration and final-main CI are separate acceptance.
