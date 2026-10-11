@@ -49,3 +49,11 @@ the SDK type dependency adds only three importer lock lines and upgrades no pins
 Fresh-clone checks initially lacked ACP dependencies/build output and then found a
 new test variable shadow; retain failures and corrected full check. Branch CI and
 independent review remain separate and unclaimed.
+
+Evidence correction after the first Draft: the original no-wait negative-control
+log was a timeout, not the release-order assertion previously reported. Its failed
+assertion entered cleanup that still waited on the unreleased test gate. Retain
+that log as insufficient evidence. Own the child Scope and release each gate from
+a failure-path finalizer registered after its worker. The revised no-wait control
+fails at `ownerReleased` before gate release, and finishes through actual cleanup.
+No production code, algorithm, wire, API or dependency changes in this increment.

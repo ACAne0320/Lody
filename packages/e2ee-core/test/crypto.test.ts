@@ -601,7 +601,9 @@ describe('ledger-bound signed document workflows', () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const scope = yield* Scope.make();
+          const scope = yield* Effect.acquireRelease(Scope.make(), (ownedScope) =>
+            Scope.close(ownedScope, Exit.void)
+          );
           const entered = yield* Deferred.make<void>(),
             release = yield* Deferred.make<void>();
           yield* Effect.addFinalizer(() =>
@@ -620,6 +622,7 @@ describe('ledger-bound signed document workflows', () => {
               }),
           }).pipe(Effect.provideService(Scope.Scope, scope));
           const sealing = yield* Effect.forkChild(Effect.result(binding.seal(updateInput)));
+          yield* Effect.addFinalizer(() => Deferred.succeed(release, undefined));
           yield* Deferred.await(entered);
           // Start close synchronously to its explicit in-flight lease wait, before releasing the borrowed read.
           const closing = yield* Effect.sync(() => Effect.runFork(Scope.close(scope, Exit.void)));
@@ -663,6 +666,7 @@ describe('ledger-bound signed document workflows', () => {
             },
           });
           const sealing = yield* Effect.forkChild(binding.seal(updateInput));
+          yield* Effect.addFinalizer(() => Deferred.succeed(release, undefined));
           yield* Deferred.await(entered);
           sealing.interruptUnsafe();
           expect(sealing.pollUnsafe()).toBeUndefined();
