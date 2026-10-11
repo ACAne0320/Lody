@@ -40,7 +40,10 @@ Scope 拒绝新操作、传 abort，等待实际 request/body、有限 ledger lo
 结束，再关闭此前 SQLite/SDK。一个清理失败也必须等待其他子操作，失败原因保留。受控
 忽略 abort gate 包裹真实工作，不是成功 mock SDK。旧 Promise bridge 仅用于 SDK/harness
 回调。纯 scheduler 用类型化 Result、明确 logical permit 父链/time/mode/fetch，不默默
-跳过缺失身份或提前放行后续 permit。
+跳过缺失身份或提前放行后续 permit。有限 driver 按下一条身份/parent/occurrence
+匹配、放行前检查预算。stop/interrupt 先关 gate 再中断，等待实际 native 结算，缺失/
+多余记录明确失败。内部 JSON 计数不改 parent wire；拒绝分隔符标签是兼容限制，完整
+动作/祖先/entropy replay 和 executor 待迁。
 
 StreamsClient.close() 发布协议 EOF，不是 dispose；HTTP facade 无原生 dispose，Scope
 只 abort 并等待请求，不发布 EOF。CRDT SyncClient.close() 是生命周期清理，但不会自动

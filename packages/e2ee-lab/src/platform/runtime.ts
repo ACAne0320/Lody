@@ -89,6 +89,9 @@ export class LegacyLabRuntime {
     ready: Deferred.Deferred<void, Error>;
   }> = [];
   private readonly gateContext = new AsyncLocalStorage<string>();
+  get schedulingMode(): 'auto' | 'manual' {
+    return this.mode;
+  }
   private readonly mode: 'auto' | 'manual';
   private readonly fetchImpl: typeof globalThis.fetch;
   private closed = false;

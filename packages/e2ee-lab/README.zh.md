@@ -75,7 +75,7 @@ join mailbox 消费公开请求签名/验证。真实 unbound 外来设备可提
 真实 SQLite close/open 与 Riverrun 关闭顺序。完整宿主组合仍未完成。
 
 原完整 host/gateway、诚实 actors、密钥投递/轮换组合、Flock 完整恢复/live
-session、schedule driver、攻击能力、捕获 replay、原 fixtures 和 CLI/启动流程
+session、完整 schedule executor、攻击能力、捕获 replay、原 fixtures 和 CLI/启动流程
 尚未完成。当前 52 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
 快照 wire/offset、replay 熵、严格期限 B、恢复库、D12、发布设备永久丢失仍是待决项。
 原生存钥、生产 E2EE、整栈独立审查、CI 和产品验收各自独立。
@@ -108,3 +108,12 @@ Flock 子进程没有可用 signer，保留旧字段并用落盘保护密钥解�
 导入合成 X25519 设备、解密原 HPKE frame、保护 epoch 保存/读回，用新真实 challenge/bearer
 发送报告。父端验证实际 Reported、原 frame bytes 和 R 不发送。此重开私钥句柄不可导出，
 HPKE recipient 绑定需序列化的公钥可导出；不是生产 custody/恢复库格式/完整 epoch 轮换。
+
+`driveLabPermits` 消费有 Scope 的 manual runtime，拥有一次有限 permit 执行的取消和
+实际 native 结算。record 放行最早可运行请求；replay 只放行下一条身份、父事件和
+occurrence 都匹配的记录。预算在每次放行前检查。完成或调用者明确 stop 时报告缺失/
+多余事件，等待不提前消费后面的记录。调用者取消先关闭 gate，再中断不可中断借用。
+不引入默认 watchdog 或协议期限。内部计数键用 JSON tuple，记录中的 parent 字符串
+不改；此入口拒绝带 `|` 的标签，避免不同父事件三元组混淆，这是明确兼容限制。
+start/attack/persist/crash 动作、完整祖先/entropy 格式及 captured executor 仍未完成，
+不能算完整 replay 验收。

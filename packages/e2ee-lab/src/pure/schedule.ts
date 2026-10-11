@@ -35,7 +35,13 @@ export function eventIdentity(
 }
 
 export function identityKey(identity: EventIdentity): string {
-  return `${identity.actor}|${identity.operation}|${identity.phase}|${identity.parent ?? ''}`;
+  // Internal counter key, not a new captured schedule/parent wire format.
+  return JSON.stringify([
+    identity.actor,
+    identity.operation,
+    identity.phase,
+    identity.parent ?? null,
+  ]);
 }
 
 export function identitiesEqual(left: EventIdentity, right: EventIdentity): boolean {

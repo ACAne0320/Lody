@@ -104,9 +104,9 @@ retained until actual completion; actual SQLite close/open and Riverrun order ar
 observed in an explicit abort-ignoring lease test. Full host composition is pending.
 
 The original full host/gateway, honest actors, key delivery/rotation composition,
-Flock recovery/live sessions, schedule driver, attacker capabilities,
+Flock recovery/live sessions, full schedule executor, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
-52 tests do not close the original Lab2 failures or the complete original fault
+58 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
 D12 and permanent publisher loss remain explicit decisions. Native custody,
 production E2EE, independent whole-stack review, CI and product acceptance are
@@ -136,3 +136,15 @@ signed revocation during read retains the public feed's durable cursor. Snapshot
 fixtures here are opaque unprotected bytes, not a protected snapshot contract.
 SDK0.9 putSnapshot echoes its supplied offset; tests use the server-returned
 opaque HEAD token. Full protected snapshot publication/recovery remains pending.
+
+`driveLabPermits` consumes the scoped manual runtime and owns cancellation and
+actual native settlement for one finite permit-only run. Record mode grants the
+oldest runnable request; replay grants only the next recorded identity, parent
+and occurrence. Budget is checked before each permit. Missing/extra entries fail
+on completion or explicit caller stop; waiting never pulls a later choice forward.
+Caller cancellation closes gates before interrupting an uninterruptible borrower.
+No implicit watchdog or protocol deadline is introduced. Counter keys use an
+internal JSON tuple without changing recorded parent strings. Labels containing
+`|` are refused here to avoid ambiguous parent triples: this is an explicit
+compatibility limit. Start/attack/persist/crash actions, full ancestry/entropy
+format and captured executor remain unfinished; this is not full replay acceptance.

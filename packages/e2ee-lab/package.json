@@ -18,7 +18,8 @@
     "./host": "./src/platform/host.ts",
     "./joins": "./src/platform/join-mailbox.ts",
     "./workspaces": "./src/platform/workspace-registry.ts",
-    "./stream-read": "./src/platform/stream-read.ts"
+    "./stream-read": "./src/platform/stream-read.ts",
+    "./driver": "./src/platform/driver.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

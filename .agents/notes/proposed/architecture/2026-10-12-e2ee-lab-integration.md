@@ -54,7 +54,11 @@ close. Every child is awaited even if another cleanup defects; failures remain
 visible. Controlled abort-ignoring gates wrap real work, not successful mock SDKs.
 SDK/harness callbacks alone use the deprecated Promise bridge. Pure scheduler
 uses typed Results and explicit logical permit parent chains/time/mode/fetch.
-Missing identities and future permits are not silently skipped.
+Finite permit driver matches the next identity/parent/occurrence and checks budget
+before granting. Caller stop and interruption close gates before interrupting,
+then await actual native settlement. Missing/extra records remain explicit errors.
+Counter JSON tuples do not change parent wire; delimiter labels are refused as a
+compatibility limit. Full actions, ancestry/entropy replay and executor are pending.
 
 StreamsClient.close() publishes protocol EOF, not disposal. Its HTTP facade has
 no native dispose: Scope aborts and awaits requests without publishing EOF.

@@ -5650,10 +5650,10 @@
         "core": "1e8cedca5dfece6fdc37d70b2eb91969829e48e2b10b807329c741e10e7a0bbd",
         "candidate": "1e8cedca5dfece6fdc37d70b2eb91969829e48e2b10b807329c741e10e7a0bbd"
       },
-      "targetPath": "packages/e2ee-lab/src/driver.ts",
+      "targetPath": "packages/e2ee-lab/src/platform/driver.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Bounded logical schedule execution and leftover requested events; compose current pure scheduler and runtime with honest/attacker actors. Original replay driver pulls later permits forward and skips a missing scheduled identity while releasing another live gate; do not copy these heuristics as exact replay. New bounded driver must preserve stable occurrence/parent identity, report divergence and own cancellation/actual native settlement.",
+      "reason": "Partial finite Effect permit driver owns scoped manual-runtime record/replay, exact identity/parent/occurrence and pre-permit budget, explicit stop/interruption/raw native settlement. Original ScheduleDriver Promise facade replaced by driveLabPermits; leftoverRequested retained, divergence is typed failure and permit count is the actual runtime log. Source pull-later/skip-missing heuristics rejected. No implicit watchdog/deadline; parent wire unchanged, delimiter labels explicitly refused for ambiguity. Full start/attack/persist/crash action executor, captured ancestry/entropy compatibility and whole-host replay remain pending, so this item is not migration-complete.",
       "sourceDeclaredExports": {
         "core": [
           "DriverOptions",
@@ -5666,7 +5666,13 @@
           "leftoverRequested"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created-partial",
+      "targetDeclaredExports": [
+        "LabDriverError",
+        "DriverOptions",
+        "leftoverRequested",
+        "driveLabPermits"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/entropy.ts",
@@ -8274,7 +8280,7 @@
     "draftPr": null,
     "consumerTests": 52,
     "originalLabFailuresClosed": false,
-    "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, schedule driver, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
+    "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
     "authorRootCheck": "Current real OS-child HPKE install/report full root core302/Lab52/format/docs/publicboundary7011files27manifests pass, all53 Lab input SHA unchanged. Original public-handle nonextractable HPKE open failure retained, fixed fixture only. Fixedhead/CI/independent pending; previouse574 Flock root and fixed nooverlay controls separate.",
@@ -8302,6 +8308,7 @@
     "finiteReads": "Bounded authenticated GET/HEAD control/loro/flock/bootstrap/latest/specific snapshot routes; fixed loopback upstream, canonical same-origin/Org/stream redirect, actual response-body retention and before/after genuine permission. Real machine revoke keeps durable feed cursor. Lab52 plus five SHA overlays passes; three direct behavioral negatives/no timeout/restored. Unprotected snapshot fixture only; content writes/live/fullhost/CLI and protected snapshot contract pending.",
     "flockProcess": "Actual OS child reopens signed-genesis/protected epoch SQLite/native Flock file/exact cursor without usable signer, preserves prior field and decrypts independent new update. Actual released Loro SDK same-Org/resource different-model wire is refused by reopened Flock, actual durable file/cursor unchanged. Existing owning4/child script extended, no copied core/public native free claim. Fresh285289+2SHA Lab52 passes; removing Flock restore loses old field direct assertion, disabling reopened key yields actual missing_read_key child failure; no timeouts/restored pass. Full Flock session/recovery/live/entropy and original host still incomplete.",
     "genesisControlLayoutDecision": "Proposed awaiting human: original createSpace stores genesis in metadata and empty control, loadControl prepends metadata genesis; merged public SDK submission adapter requires full signed history. Option A initialize control with verified original genesis (agent/coordinator recommendation, not approval), with idempotent create/lostACK/crash recovery; option B Lab-only metadata-prefix transport with explicit cursor/retry verification. No P09 change or dependent createSpace implementation before selection.",
-    "keyProcess": "Actual SQLite ignored protected-key insert retains original Install task/no terminal/no key; after closing parent receiver owners actual OS child reopens syntheticX25519/device/publicgenuine2records, realHPKEopens/saves/readbacks and reports through fresh challenge/bearer HTTP. Parent actualSQLite taskReported/frame bytecompare, original Recovery no-send/repair coverage retained. Synthetic device file0600 only, importedprivate handle nonextractable/publicextractable needed lockedHPKEserialize binding. Original nonextractable-public open-failed log retained, noalgorithm/corechange. Affected13/type + fresh e574/3SHA Lab52 pass, skipping actualinstall/report gives noReported directfail/nontimeout/restored. Full epochrotation/host/originalLab2/nativecustody pending."
+    "keyProcess": "Actual SQLite ignored protected-key insert retains original Install task/no terminal/no key; after closing parent receiver owners actual OS child reopens syntheticX25519/device/publicgenuine2records, realHPKEopens/saves/readbacks and reports through fresh challenge/bearer HTTP. Parent actualSQLite taskReported/frame bytecompare, original Recovery no-send/repair coverage retained. Synthetic device file0600 only, importedprivate handle nonextractable/publicextractable needed lockedHPKEserialize binding. Original nonextractable-public open-failed log retained, noalgorithm/corechange. Affected13/type + fresh e574/3SHA Lab52 pass, skipping actualinstall/report gives noReported directfail/nontimeout/restored. Full epochrotation/host/originalLab2/nativecustody pending.",
+    "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work."
   }
 }
