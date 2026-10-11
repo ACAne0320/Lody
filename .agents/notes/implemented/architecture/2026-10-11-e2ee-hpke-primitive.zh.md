@@ -3,6 +3,7 @@
 Date: 2026-10-11
 Status: implemented
 Translation: current
+PR: [#1432](https://github.com/LodyAI/Lody/pull/1432)
 
 [English](2026-10-11-e2ee-hpke-primitive.md)
 
