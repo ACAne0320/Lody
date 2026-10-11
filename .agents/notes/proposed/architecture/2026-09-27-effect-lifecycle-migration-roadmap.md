@@ -90,9 +90,11 @@ A native kernel meets all of these criteria:
   are verified; unresolved resources retain their owner and report failure.
 - Failure, timeout, interruption and release failure remain observable, including
   combined Causes. Local cancellation does not imply that a remote request ended.
-- The native kernel contains no internal `run*`, Legacy calls or hand-written
-  Promise/timer lifecycle. Execution stays at registered application/compatibility
-  entries. Real SDK/platform adapters may bridge callbacks and cancellation once.
+- The native kernel contains no internal program launches through `Effect.run*`
+  or `ManagedRuntime.run*`, Legacy calls or hand-written Promise/timer lifecycle.
+  Execution stays at registered application/compatibility entries. Effect-returning
+  operators such as `Stream.runCollect` remain valid composition. Real SDK/platform
+  adapters may bridge callbacks and cancellation once.
 - Behavioral tests exercise the actual boundary: ordering, cancellation, retries,
   replacement and failure paths as applicable. Clock-driven workflow tests use
   injected clocks; real platform regressions complement test Layers.
@@ -153,8 +155,9 @@ changes no product contract; it does not need a new Spec document.
 The base PR #1070 provides `.agents/docs/cli-effect-ts.md`; the proposed lifecycle layers
 add these boundary requirements:
 
-- never call `run*` inside an Effect;
-- use `tryPromise` with the signal for any promise that can reject;
+- keep `Effect.run*`/`ManagedRuntime.run*` program launches at registered entries;
+- construct rejecting Promises inside `tryPromise` and forward its signal; when raw
+  work ignores cancellation, retain ownership until completion or confirmed termination;
 - every interrupt is owned by a scope or awaited;
 - timeouts go on the waiter;
 - every wait inside a finalizer has a clock/deferred bound that works while uninterruptible;
@@ -413,12 +416,23 @@ owners have migrated. The unit ledger below separates those facts. It groups
 responsibilities that can be independently accepted, rather than requiring one
 row per file or a global sequence of layer numbers.
 
-The [Effect skill](../../../skills/effect-ts/SKILL.md) drives implementation:
-start from behavioral contracts, prefer official primitives and check their
-installed-version semantics before choosing custom coordination. This charter
+The [Effect skill](../../../skills/effect-ts/SKILL.md) first selects review, debug,
+feature/fix or dedicated migration mode. Review investigates changed behavior;
+debugging isolates the cause. Neither initiates a migration. Feature/fix work may
+defer migration when dependencies or verification do not fit its scope. For
+implementation, start from behavioral contracts, prefer official primitives and
+check installed-version semantics before choosing custom coordination. This charter
 owns prerequisites and completion criteria; the [guide](../../../docs/cli-effect-ts.md)
 owns conventions/testing; each unit's Note records decisions, evidence and limits.
-The root AGENTS.md routes implementers to all three before selecting a migration.
+The root AGENTS.md routes implementers to the relevant sections and ledger rows.
+Read the resolved release's Effect guide fully once in the current context, then
+load task-specific references; re-read when the version or context is lost.
+
+The guide's [five contract questions](../../../docs/cli-effect-ts.md#behavior-contract)
+make trigger, resource owner, cancellation, handoff and failure recovery explicit
+in the owning Note. Apply only relevant questions. This replaces an unconditional
+migration checklist with a behavior-based choice; it adds no per-task document or
+mandatory Service for ordinary inputs and pure helpers.
 
 Small cohesive modules stay together. Only large modules mixing calculation,
 domain coordination and platform implementation should consider a pure/workflow/
@@ -440,6 +454,31 @@ guard gaps rather than claiming existing process checks cover all workflows. Do 
 estimate repository progress from PR counts, removed Promises or a global percentage.
 Older Effect islands remain unverified until assessed against these criteria.
 
+Keep implementation state separate from verification evidence. The kernel,
+consumer and ownership columns describe delivered boundaries; the evidence column
+and linked Note record the tested revision, environment, scenarios and limits.
+An untested platform is a verification gap, not by itself proof of unfinished
+implementation. Conversely, passing a leaf suite cannot complete its consumers.
+Update changed facts without recertifying unchanged rows on every PR.
+
+### Guidance evaluation cases
+
+Use these synthetic tasks when evaluating a guidance revision. Judge the agent's
+scope decision and proposed observable checks, not whether it repeats keywords.
+
+| Task | Expected decision and evidence |
+| --- | --- |
+| Fix a timeout in a module whose dependencies still use Promise orchestration | Deliver the fix; explain why migration is deferred without traversing and rewriting the whole dependency chain. |
+| Cancel an Effect waiting on an abort-ignoring Promise | Distinguish wait cancellation from raw work; retain the lease and test a controlled late completion. |
+| Cancel one reader of a shared producer | Preserve other leases; verify the producer remains usable and last-owner cleanup is awaited. |
+| Body and release fail together | Preserve both failures and recovery ownership through the Promise boundary; do not rely on plain squash. |
+| Extract a pure helper and collect a Stream in an existing workflow | Keep the helper ordinary; allow Effect-returning Stream operators without creating a runtime or unnecessary Service. |
+| Review a diff near a pre-existing lifecycle defect | Compare base/head, distinguish introduced breakage from baseline, and follow P0/P1 reporting rules without starting a rewrite. |
+
+These are evaluation inputs and expected outcomes, not completed independent agent
+runs. A future evaluation should record the prompt/guidance revision, resulting
+diff or findings, behavioral checks and deviations using synthetic fixtures only.
+
 This guidance revision changes no product guarantees or Specs. Document/skill checks
 verify structure and references; no independent agent-use benchmark has established
 that the guidance improves implementation quality.
@@ -449,7 +488,8 @@ that the guidance improves implementation quality.
 Snapshot: main `bcb1aa8712b2d040912d735f1ae6ef2fc832ab35`, 2026-10-11.
 “Native” below records merged kernel evidence, not fresh certification on every
 platform. “Pending” is unfinished migration; “partial” names completed leaves within
-an unfinished unit; “unverified” means existing islands have not been fully assessed.
+an unfinished unit. Unassessed islands and untested environments are recorded as
+evidence limits rather than mixed into the implementation status.
 Ownership describes the actual lease/Scope boundary and remaining application work.
 Pure calculation is outside this ledger. This is the known lifecycle work queue,
 not an exhaustive inventory of the repository.
@@ -472,10 +512,10 @@ not an exhaustive inventory of the repository.
 | ACP transport and domain operations                  | Process, SDK adapter; raw request tracking                           | Pending                     | Promise requests                     | Connection/raw-work owner pending                    | Can migrate independently of worktree/install; preserve unknown steer outcome                                                                                                                                                                        |
 | AgentSession and pool                                | Worktree/startup, install, shell, gate, ACP, credential leaves       | Partial                     | Promise orchestration                | Complete instance/replacement owner pending          | Credential/preparation leaves are native; full Session cancellation is unfinished                                                                                                                                                                    |
 | streams-crdt / loro-repo lifecycle                   | Flock persistence, published/consumed contracts; separate repo rules | Pending                     | Promise library APIs                 | Library persistence/room/reconnect scopes pending    | Verify releases/source before work; single-kernel compatibility only                                                                                                                                                                                 |
-| Documents, history and presence                      | Native Loro lifecycle; existing history reducer                      | Pending; islands unverified | Mixed/Promise orchestration          | Document, writer and presence leases pending         | Preserve unload-before-invalidate and existing writer/read responsibilities                                                                                                                                                                          |
+| Documents, history and presence                      | Native Loro lifecycle; existing history reducer                      | Pending | Mixed/Promise orchestration          | Document, writer and presence leases pending         | Existing islands unassessed; preserve unload-before-invalidate and existing writer/read responsibilities                                                                                                                                                                          |
 | Turn, steer, stop and finalization                   | Session owners and document/history/presence owners                  | Pending                     | Promise orchestration                | Turn tasks/presence lease pending                    | Both dependency paths required; preserve typed stop and pending-input behavior                                                                                                                                                                       |
 | dispatch, MessageHandler and daemon integration      | Turn, delivery and document flush                                    | Pending                     | Promise orchestration                | Shell root runtime exists; broader ownership pending | Stop sessions → flush final writes → tear down documents; report external release failures                                                                                                                                                           |
-| Renderer / Electron / supervisor upper orchestration | Actual per-unit platform and sync dependencies                       | Unverified / pending        | Existing islands and process callers | Upper resource/task owners pending                   | Process caller unification is not upper workflow completion; refine into units before delivery                                                                                                                                                       |
+| Renderer / Electron / supervisor upper orchestration | Actual per-unit platform and sync dependencies                       | Pending        | Existing islands and process callers | Upper resource/task owners pending                   | Existing islands unassessed; process caller unification is not upper workflow completion; refine into units before delivery                                                                                                                                                       |
 
 ## Delivery dependency graph
 

@@ -56,7 +56,7 @@ Lody 的生命周期缺陷集中在手写定时器、Promise 链、取消标志�
 - 所需能力经 Service/Layer 提供。构建依赖可由 Layer 满足，不要求同时出现在每个方法的 `R` 中；普通输入值和纯 helper 不必成为 Service。
 - 每项资源和后台任务通过 Scope、acquire/release 或验证过的原生资源容器获得明确拥有者。取消传到下层，调用方能等待清理；验证释放顺序与有界等待，无法确认释放时保留拥有者并报告失败。
 - 失败、超时、中断及释放失败保持可观察，包括组合 Cause。本地等待取消不意味着远端请求已结束。
-- 原生内核不包含内部 `run*`、Legacy 调用或手写 Promise/定时器生命周期；仅已登记的应用/兼容入口执行。真实 SDK/平台适配器可以在边界桥接一次回调与取消。
+- 原生内核不通过内部 `Effect.run*` 或 `ManagedRuntime.run*` 启动程序，不包含 Legacy 调用或手写 Promise/定时器生命周期；仅已登记的应用/兼容入口执行。返回 Effect 的 `Stream.runCollect` 等算子仍可组合。真实 SDK/平台适配器可以在边界桥接一次回调与取消。
 - 行为测试覆盖真实边界中适用的排队、取消、重试、替换和失败路径；依赖时钟的 workflow 使用注入时钟，真实平台回归补充测试 Layer。
 
 分别记录**内核、消费者、应用所有权**。单一内核的明确 deprecated Legacy 门面可以暂留，但必须记录具体消费者与删除条件，此时消费者迁移尚未完成。操作级 Scope 是有效拥有者，但不证明 daemon 整体关停完成。只有消费者与所需应用拥有者也完成，才算完整集成；任一维度改变都更新台账和 owning 证据。
@@ -95,7 +95,7 @@ Lody 的生命周期缺陷集中在手写定时器、Promise 链、取消标志�
 
 ### 边界规则（使用指南已由基础 PR #1070 提供，生命周期层补充以下要求）
 
-不在 Effect 内调用 `run*`；可拒绝的 promise 用带 signal 的 `tryPromise`；中断必须被某个作用域
+`Effect.run*`/`ManagedRuntime.run*` 仅在已登记入口启动程序；可拒绝的 Promise 在 `tryPromise` 内创建并传递 signal，底层忽略取消时保留拥有者直到完成或确认终止；中断必须被某个作用域
 持有或被等待；超时放在等待者上；finalizer 内的等待必须有上限；`FiberMap` 替换不等待旧 fiber；
 作用域关闭必须记忆化，因为第二次 `Scope.close` 不等待第一次的 finalizer。finalizer 内采用在
 不可中断区域也能结束的时钟/Deferred 上限；ACP 关停由协调器先显式终止/关闭、再 join 原始
@@ -272,7 +272,9 @@ preview 代理、`packages/loro-streams-rpc`、PR poller、Electron updater：�
 
 叶子 PR 合并或代码导入 Effect，不能说明消费者与最终拥有者也已迁移。下面的单元台账分别记录这些事实；按可独立验收的职责组织，不要求一个文件一行，也不按层号全局串行。
 
-[Effect skill](../../../skills/effect-ts/SKILL.md)指导实现：先明确行为合同，优先官方原语，再核对已安装版本的语义，最后决定是否需要自定义协调。本纲领负责依赖与完成标准，[指南](../../../docs/cli-effect-ts.md)负责惯例与测试，每个单元的 Note 负责决策、证据与局限。根 AGENTS.md 要求实现者在选迁移范围前阅读这些入口。
+[Effect skill](../../../skills/effect-ts/SKILL.md)先区分 review、debug、feature/fix 与专门迁移。Review 检查变化的行为，debug 定位原因，二者都不主动启动迁移。功能/修复可在依赖或验证超出范围时推迟迁移。实现时先明确行为合同，优先官方原语，再核对已安装版本语义，最后决定是否需要自定义协调。本纲领负责依赖与完成标准，[指南](../../../docs/cli-effect-ts.md)负责惯例与测试，每个单元的 Note 负责决策、证据与局限。根 AGENTS.md 将实现者引向相关章节与台账行。当前上下文中首次完整阅读所解析版本的 Effect 指南，之后按任务加载资料；版本变化或上下文丢失时重读。
+
+指南的[五问行为合同](../../../docs/cli-effect-ts.md#behavior-contract)要求在 owning Note 中明确触发、资源拥有者、取消、交接和失败恢复，仅回答适用的问题。这用行为判断替代无条件迁移清单，不增加每任务文档，也不要求普通输入与纯 helper 成为 Service。
 
 小而内聚的模块保持在一起。只有混合计算、领域编排和平台实现的大模块，才考虑 pure/workflow/platform 职责拆分。Workflow 可依赖抽象 Service，执行时可以发生 I/O；Layer 构建不天然属于平台适配。这是与[版本一致的 Effect 资料](../../../docs/cli-effect-ts.md#version-matched-reference)中 Service/Layer 模型一致的 Lody 惯例，不是上游强制的三个目录或固定行数门槛。
 
@@ -280,12 +282,29 @@ preview 代理、`packages/loro-streams-rpc`、PR poller、Electron updater：�
 
 台账是人工维护的证据，不是自动纯化证明。最近的 scoped 规则、行为测试和适用边界守卫保护已完成边界；记录守卫缺口，不能声称现有进程检查覆盖全部 workflow。不按 PR 数量、移除 Promise 数或全仓百分比估算进度。旧 Effect 孤岛未经这些标准核对，保持未核验。
 
+实现状态与验证证据分开记录。内核、消费者、所有权列描述已交付边界；证据列及链接的 Note 记录测试 revision、环境、场景与局限。未测试平台是验证缺口，本身不证明实现未完成；反过来，叶子测试通过也不代表消费者完成。只更新变化的事实，不要求每个 PR 重新认证未变的行。
+
+### 引导评估场景
+
+评估引导修订时使用以下合成任务，判断 agent 的范围选择和拟验证的可观察行为，不检查它是否复述关键词。
+
+| 任务 | 预期选择与证据 |
+| --- | --- |
+| 修复依赖仍使用 Promise 编排的模块中的超时 | 完成修复，解释推迟迁移的原因，不遍历重写整条依赖链。 |
+| 取消正在等待忽略 abort 的 Promise 的 Effect | 区分等待取消与原始工作，保留租约，用可控的迟到完成验证。 |
+| 取消共享生产者的一个读者 | 保留其他租约，验证生产者仍可用且最后拥有者等待清理。 |
+| 主体与释放同时失败 | 在 Promise 边界保留两类失败和恢复所有权，不依赖普通 squash。 |
+| 提取纯 helper，并在既有 workflow 收集 Stream | helper 保持普通函数；允许返回 Effect 的 Stream 算子，不创建 runtime 或无必要的 Service。 |
+| Review 涉及既有生命周期缺陷附近的 diff | 比较 base/head，区分新增破坏与基线，遵守 P0/P1 报告规则，不启动重写。 |
+
+这些是评估输入与预期结果，不是已经完成的独立 agent 实验。后续评估应记录 prompt/指引 revision、产出 diff 或 findings、行为检查和偏差，仅使用合成 fixture。
+
 本次引导修订不改变产品保证或 Specs。文档/skill 检查只验证结构与引用；尚未通过独立 agent 使用实验确认引导能改善实现质量。
 
 ## 单元台账
 
 快照：main `bcb1aa8712b2d040912d735f1ae6ef2fc832ab35`，2026-10-11。
-“原生”记录已合并的内核证据，不代表重新验证了所有平台；“待迁移”表示尚未完成；“部分”明确已完成的叶子；“未核验”表示已有孤岛尚未完整评估。所有权列说明实际租约/Scope 边界与应用集成余项。纯计算不计入台账；这是已知生命周期工作队列，不是全仓完整清单。
+“原生”记录已合并的内核证据，不代表重新验证了所有平台；“待迁移”表示尚未完成；“部分”明确已完成的叶子。尚未评估的孤岛和未测试的环境记在证据局限中，不混入实现状态。所有权列说明实际租约/Scope 边界与应用集成余项。纯计算不计入台账；这是已知生命周期工作队列，不是全仓完整清单。
 
 | 职责单元                                  | 真实前置依赖                                          | 内核               | 消费者                          | 所有权 / 集成                           | 证据与余项                                                                                                                                                                                                       |
 | ----------------------------------------- | ----------------------------------------------------- | ------------------ | ------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -305,10 +324,10 @@ preview 代理、`packages/loro-streams-rpc`、PR poller、Electron updater：�
 | ACP transport 与领域操作                  | 进程、SDK 适配、原始请求跟踪                          | 待迁移             | Promise 请求                    | 连接/原始工作拥有者待完成               | 可独立于 worktree/install；保留 unknown steer 结果                                                                                                                                                               |
 | AgentSession 与池                         | Worktree/startup、install、shell、闸门、ACP、凭据叶子 | 部分               | Promise 编排                    | 完整实例/替换拥有者待完成               | 凭据/preparation 叶子原生，完整 Session 取消仍未完成                                                                                                                                                             |
 | streams-crdt / loro-repo 生命周期         | Flock 持久化、发布/消费合同、各仓库规则               | 待迁移             | Promise 库 API                  | 库持久化/room/重连 Scope 待完成         | 开始前核对发布与源码；兼容仅使用单一内核                                                                                                                                                                         |
-| 文档、历史、presence                      | 原生 Loro 生命周期、既有历史 reducer                  | 待迁移；孤岛未核验 | 混合/Promise 编排               | 文档、writer、presence 租约待完成       | 保留 unload→invalidate 与既有写入/读取职责                                                                                                                                                                       |
+| 文档、历史、presence                      | 原生 Loro 生命周期、既有历史 reducer                  | 待迁移 | 混合/Promise 编排               | 文档、writer、presence 租约待完成       | 既有孤岛未评估；保留 unload→invalidate 与既有写入/读取职责                                                                                                                                                                       |
 | Turn、steer、stop、收尾                   | Session 与文档/历史/presence 拥有者                   | 待迁移             | Promise 编排                    | Turn 任务/presence 租约待完成           | 两条依赖链都就绪；保留类型化停止与 pending-input 行为                                                                                                                                                            |
 | dispatch、MessageHandler、daemon 集成     | Turn、投递、文档 flush                                | 待迁移             | Promise 编排                    | 已有 shell 根 runtime；其余所有权待完成 | 停会话→最终写入 flush→拆文档，报告外部释放失败                                                                                                                                                                   |
-| Renderer / Electron / supervisor 上层编排 | 各单元真实的平台与同步依赖                            | 未核验 / 待迁移    | 既有孤岛与进程调用方            | 上层资源/任务拥有者待完成               | 统一进程调用不代表上层 workflow 完成，交付前继续拆单元                                                                                                                                                           |
+| Renderer / Electron / supervisor 上层编排 | 各单元真实的平台与同步依赖                            | 待迁移    | 既有孤岛与进程调用方            | 上层资源/任务拥有者待完成               | 既有孤岛未评估；统一进程调用不代表上层 workflow 完成，交付前继续拆单元                                                                                                                                                           |
 
 ## 交付依赖图
 

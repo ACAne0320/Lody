@@ -7,8 +7,10 @@ The upstream MIT license is preserved in [LICENSE.effect-skills](LICENSE.effect-
 
 Local changes: effect-ts is a Lody lifecycle workflow derived from the upstream
 reference entrypoint; it replaces upstream installation steps with version-matched
-lookup, contract-based primitive selection and behavioral acceptance. The explicit
-v3-to-v4 skill retains its upstream body with Lody overrides. On refresh, review
+lookup, task-mode selection, progressive reading, contract-based primitive selection
+and behavioral acceptance. Review/debug do not initiate migration; implementation
+uses the guide's five contract questions and precise runtime execution boundary.
+The explicit v3-to-v4 skill retains its upstream body with Lody overrides. On refresh, review
 the upstream diff and preserve these adaptations; do not overwrite them blindly.
 The [charter decision](../notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#migration-guidance-and-progress)
 records the later guidance revision; the recorded source and license stay unchanged.

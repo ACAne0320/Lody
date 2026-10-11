@@ -14,17 +14,25 @@ explains version selection and the preserved lifecycle behavior.
 
 Use the repository [Effect skill](../skills/effect-ts/SKILL.md) before Effect work.
 Resolve the dependency from the consuming package, read its `effect/AGENTS.md`
-completely, then follow its required links and search `ai-docs`/`src` as needed.
+completely once per resolved version in the current context, then follow task-relevant
+links and search `ai-docs`/`src` as needed. Re-read when the version or context is lost.
 A root `node_modules/effect` path is not guaranteed in this pnpm workspace.
 Use the [migration skill](../skills/effect-v3-to-v4/SKILL.md) for an explicit v3
 migration. Both retain Lody's locked-version and behavioral acceptance rules.
 The [reference decision](../notes/implemented/process/2026-10-11-effect-reference-skills.md)
 explains why a tracked Effect subtree is not currently recommended.
 
+Use applicable Specs/scoped rules for intended behavior, installed source and
+behavioral evidence for actual API semantics. If they disagree, identify a bug,
+stale explanation or unimplemented intent; do not change a Spec to fit the code.
+Read the relevant guide sections, ledger rows and owning Notes for the task rather
+than repeatedly loading the entire migration roadmap.
+
 ## When to use Effect
 
-- New effectful capabilities: a `Context.Service` for the capability, a `Layer` for
-  each implementation, `Effect.provide` at the composition point.
+- Injectable capabilities and shared resources: `Context.Service` contracts and
+  `Layer` implementations, with `Effect.provide` at the composition point.
+  Ordinary arguments and local Effect composition need no new Service.
 - Errors: `Data.TaggedError` values and `Effect.catchTag`, not `try`/`catch`
   on unknown exceptions.
 - Resources with a lifetime: `Effect.acquireRelease`, `Scope`, `RcMap`.
@@ -43,9 +51,10 @@ The root [Effect rule](../../AGENTS.md#effect-reference) requires assessing a sm
 native migration when a feature or fix touches an effectful module. Prefer it in
 the same PR when it directly improves the requested behavior: for example,
 replacing the Promise queue or timer lifecycle responsible for a cancellation bug.
-Before assessing that scope, read the [Effect skill](../skills/effect-ts/SKILL.md)
-and the consuming package's resolved `effect/AGENTS.md` completely; explicit v3
-migrations also use the [migration skill](../skills/effect-v3-to-v4/SKILL.md).
+Select feature/fix mode in the [Effect skill](../skills/effect-ts/SKILL.md) and follow
+the version-matched reading policy above. Review and diagnosis do not initiate a
+migration; an explicit v3 migration additionally uses the
+[migration skill](../skills/effect-v3-to-v4/SKILL.md).
 Use existing Effect primitives for ownership, coordination, retry and local
 observability where they simplify that work. Preserve existing telemetry policy.
 
@@ -76,6 +85,25 @@ Record the chosen boundary and remaining work in the owning Note when updating i
 follow existing Spec selection rules rather than creating a Spec for each migration.
 The [roadmap decision](../notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#small-migrations-alongside-features-and-fixes)
 explains why this selection complements the dedicated migration series.
+
+## Behavior contract
+
+For a lifecycle change, answer these questions briefly in the existing owning Note
+before choosing primitives. Omit inapplicable questions and link existing contracts
+instead of creating a new checklist document for every edit.
+
+| Question | Observable contract |
+| --- | --- |
+| Trigger | Which input/state starts work, and what ordering or reentry is allowed? |
+| Owner | Who owns each resource/producer, and who may release it? |
+| Cancellation | Does cancellation end one wait, the producer, or raw external work? How is actual termination confirmed? |
+| Handoff | What observable release condition allows a successor or replacement to start? |
+| Failure recovery | Who retains unresolved resources and the complete failure, and who can retry cleanup? |
+
+Map applicable answers to behavioral acceptance cases. A cancelled reader must not
+stop a shared producer needed by other readers; a cleanup timeout must not permit
+replacement while the old resource is still owned. Review/debug can use the same
+questions to assess existing evidence without editing the Note.
 
 ## Choosing a native unit and its structure
 
@@ -118,8 +146,9 @@ Preserve existing scoped file-layout constraints, including the single process m
 For a completed unit, keep its nearest AGENTS.md boundary, behavioral suite and
 applicable checks together. Update the ledger row only when migration facts change;
 ordinary unrelated work does not need a ledger edit. Native consumers compose the
-core service, with no Legacy import or internal `run*`. Remove a compatibility door
-when its recorded consumers migrate; any new unfinished dependency changes the status.
+core service, with no Legacy import or internal runtime execution. Remove a
+compatibility door when its recorded consumers migrate; any new unfinished
+dependency changes the status.
 
 Use static import/execution checks for boundaries that can be expressed accurately,
 with explicit adapter/entry exceptions. They complement lifecycle behavior tests.
@@ -131,16 +160,22 @@ Promise or callback in adapters and unmigrated code.
 
 ## Rules at the Promise boundary
 
-- Never call `Effect.run*` inside an Effect. Run programs only at an entry point
-  or in a temporary facade (below).
+- Launch programs with `Effect.run*` or `ManagedRuntime.run*` only at registered
+  application entries or temporary facades (below), never inside native composition.
+  `yield* Stream.runCollect(stream)` and `Stream.runDrain` return Effects and remain
+  valid composition; the restriction is not a ban on every name starting with `run`.
 - Wrap promises that can reject with `Effect.tryPromise({ try: (signal) => ...,
-catch })` and pass the signal on, so interruption aborts the work.
+catch })`. Construct the Promise inside the thunk and pass the signal to the I/O.
+  Interruption stops raw work only if the implementation cooperates; otherwise it
+  stops the Effect wait while raw work can continue. Retain the raw-work owner
+  until completion or confirmed termination; do not release its lease prematurely.
   `Effect.promise` turns a rejection into a defect.
-- Surface failures to Promise callers as the typed error itself: run with
-  `Effect.runPromiseExit` and throw `Cause.squash(exit.cause)`, not the
-  `FiberFailure` wrapper `Effect.runPromise` rejects with. For programs owning
-  processes, use `squashProcessFailure`: plain `Cause.squash` can discard a
-  simultaneous release defect and its recovery lease.
+- In pinned v4.0.2, `Effect.runPromise` already rejects with `Cause.squash(cause)`;
+  a single typed failure is the original error, not a `FiberFailure` wrapper.
+  Use `runPromiseExit` when the adapter must inspect the complete Cause before
+  projection. Squashing can discard simultaneous failures and recovery ownership.
+  Process-owning programs use `squashProcessFailure`; retain other domains' existing
+  recovery-aware projections instead of replacing them with plain `Cause.squash`.
 - An interrupt is owned by a scope or awaited. `void Effect.runPromise(Fiber.interrupt(f))`
   returns before the fiber's finalizers run.
 - Put a timeout on the waiter, not on uninterruptible work:
