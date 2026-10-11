@@ -22,3 +22,7 @@ Translation: current
 发送者发现／当前 epoch 分发、持久 requestRepair 协调及 fetch 装配仍归原来源，不把整模块标已迁。SDK／HTTP／Lab 和九项原 core／Lab 失败去向仍由[manifest](../../../docs/e2ee-migration-manifest.json)分别拥有。不改 HPKE／P09，不开启生产，不访问真实 keychain，不加入恢复文件／包装策略或 D12 格式。全部保持 Draft。
 
 作者最终直接父组合：receive11／core230、包 typecheck、根 format／docs 与使用本机 Git／本地 IPC 的完整根 `pnpm check` 通过。早期 MTS generic／fixture 类型／lint 错误及一次 Buffer／Uint8Array 表示差异断言失败另行保留；修正同字节比较，不改实现、不删撤销覆盖。作者结果非独立审查或完整 Lab／产品验收。
+
+8af3d3e 的独立审查发现：篡改终态后，两次 UPDATE 都没有写入，入口却返回 Installed。增量拒绝终态重入、检查实际变更行数并读回新排队原件。回归覆盖两个终态及两个转换上的真实 SQLite RAISE(IGNORE)，旧审查证据保持只读。101 行分页测试保留所有真实信封、安装、签名报告及分页断言，只复用已真正验证的不可变账本 fixture，去掉每次未变化读取的重复全历史重放。旧 head 的 CI 超时仍记失败，不改成基线或通过。
+
+本次增量作者检查：receive15/core234、完整 root `pnpm check`、format/docs/public boundary 通过。原终态反例复制到作者证据目录，仅重定向 imports 后，返回 Failure/context-changed，保留 Revoked/report=NULL，初次安装与重开合计只签一次。旧独立失败证据未改。这仍是作者结果，待原 reviewer 增量与新 head 的准确 CI。

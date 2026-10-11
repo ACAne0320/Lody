@@ -423,6 +423,88 @@ describe('durable finite epoch receive and original-report queue', () => {
       )
     );
   });
+  it.each([
+    { phase: 'Revoked', suppress: null },
+    { phase: 'Obsolete', suppress: null },
+    { phase: 'Verify', suppress: 'Install' },
+    { phase: 'Install', suppress: 'Report' },
+  ])(
+    'rejects tampered $phase or suppressed $suppress transition after reopen without claiming an unqueued installation',
+    async ({ phase, suppress }) => {
+      const f = envelopeFixture(),
+        native = synthetic(),
+        dir = directory(),
+        pair = await recipientPair();
+      const journal = path.join(dir, 'receive.sqlite'),
+        keyFile = path.join(dir, 'keys.sqlite');
+      const frame = await Effect.runPromise(f.prepare());
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const host = yield* makeSqliteKeyMailbox({
+              path: path.join(dir, 'mailbox.sqlite'),
+              mode: 'create',
+              genesis: f.context.genesis,
+              ledger: f.ledger,
+            });
+            const sender = ok(host.bind(f.owner.publicKey)),
+              remote = ok(host.bind(f.phone.publicKey));
+            yield* sender.put('ab'.repeat(16), frame);
+            const config = {
+              path: journal,
+              genesis: f.context.genesis,
+              signer: f.phone.signer,
+              pair,
+              ledger: f.ledger,
+              remote,
+            };
+            let id = '';
+            yield* Effect.scoped(
+              Effect.gen(function* () {
+                const receiver = yield* makeSqliteEpochReceiver({
+                  ...config,
+                  mode: 'create',
+                  keyStore: { path: keyFile, mode: 'create', protector: native.protector },
+                });
+                id = (yield* receiver.receive(f.owner.publicKey, frame)).id;
+              })
+            );
+            const disk = new Database(journal);
+            try {
+              disk
+                .prepare('UPDATE receive_tasks SET phase=?,report=NULL WHERE id=?')
+                .run(phase, id);
+              if (suppress)
+                disk.exec(
+                  `CREATE TRIGGER suppress_receive_transition BEFORE UPDATE ON receive_tasks WHEN NEW.phase='${suppress}' BEGIN SELECT RAISE(IGNORE); END;`
+                );
+            } finally {
+              disk.close();
+            }
+            yield* Effect.scoped(
+              Effect.gen(function* () {
+                const receiver = yield* makeSqliteEpochReceiver({
+                  ...config,
+                  mode: 'open',
+                  keyStore: { path: keyFile, mode: 'open', protector: native.protector },
+                });
+                expect(
+                  Result.isFailure(yield* Effect.result(receiver.receive(f.owner.publicKey, frame)))
+                ).toBe(true);
+                expect(rows(journal)).toEqual([{ id, phase, report: null }]);
+                expect((yield* remote.status(target(f))).status).toBe('EnvelopeStored');
+                expect(yield* receiver.flushReports()).toEqual({
+                  processed: 0,
+                  blocked: [],
+                  next: null,
+                });
+              })
+            );
+          })
+        )
+      );
+    }
+  );
   it('pages past blocked repair revisions with keyset hints while preserving originals and delivering the current signed claim', async () => {
     const f = envelopeFixture(),
       native = synthetic(),
@@ -430,6 +512,10 @@ describe('durable finite epoch receive and original-report queue', () => {
       pair = await recipientPair(),
       keyFile = path.join(dir, 'keys.sqlite'),
       journal = path.join(dir, 'receive.sqlite');
+    // Reuse this already genuinely verified immutable ledger. Replaying the unchanged
+    // full fixture on every lookup measures fixture work, not finite queue progress.
+    const verified = f.view(),
+      ledger = () => Effect.succeed(verified);
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -437,7 +523,7 @@ describe('durable finite epoch receive and original-report queue', () => {
               path: path.join(dir, 'mailbox.sqlite'),
               mode: 'create',
               genesis: f.context.genesis,
-              ledger: f.ledger,
+              ledger,
             }),
             sender = ok(host.bind(f.owner.publicKey)),
             recipient = ok(host.bind(f.phone.publicKey));
@@ -447,7 +533,7 @@ describe('durable finite epoch receive and original-report queue', () => {
             genesis: f.context.genesis,
             signer: f.phone.signer,
             pair,
-            ledger: f.ledger,
+            ledger,
             remote: recipient,
             keyStore: { path: keyFile, mode: 'create', protector: native.protector },
           });

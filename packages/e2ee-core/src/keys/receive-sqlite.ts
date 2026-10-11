@@ -232,6 +232,7 @@ export function makeSqliteEpochReceiver(input: {
       )
         throw fail('corrupt');
       if ((row.phase === 'Report' || row.phase === 'Reported') && !signed) throw fail('corrupt');
+      if ((row.phase === 'Verify' || row.phase === 'Install') && signed) throw fail('corrupt');
       return {
         id: row.id,
         body,
@@ -304,6 +305,8 @@ export function makeSqliteEpochReceiver(input: {
     const finishInstallation = (id: string) =>
       Effect.gen(function* () {
         const task = yield* load(id);
+        if (task.phase === 'Revoked' || task.phase === 'Obsolete')
+          return yield* fail('context-changed');
         if (task.phase === 'Report' || task.phase === 'Reported') {
           const existingView = yield* check(task);
           if (!task.report) return yield* fail('corrupt');
@@ -347,9 +350,12 @@ export function makeSqliteEpochReceiver(input: {
               Effect.gen(function* () {
                 yield* sql(() => {
                   guard();
-                  db.prepare(
-                    "UPDATE receive_tasks SET phase='Install' WHERE id=? AND phase='Verify'"
-                  ).run(id);
+                  const changed = db
+                    .prepare(
+                      "UPDATE receive_tasks SET phase='Install' WHERE id=? AND phase IN ('Verify','Install') AND report IS NULL"
+                    )
+                    .run(id);
+                  if (changed.changes !== 1) throw fail('corrupt');
                 });
                 yield* keys.saveAndReload(task.context.epoch, key);
               }),
@@ -389,9 +395,17 @@ export function makeSqliteEpochReceiver(input: {
         );
         yield* sql(() => {
           guard();
-          db.prepare(
-            "UPDATE receive_tasks SET report=?,phase='Report' WHERE id=? AND phase='Install' AND report IS NULL"
-          ).run(bytes, id);
+          const changed = db
+            .prepare(
+              "UPDATE receive_tasks SET report=?,phase='Report' WHERE id=? AND phase='Install' AND report IS NULL"
+            )
+            .run(bytes, id);
+          if (changed.changes !== 1) throw fail('corrupt');
+          const queued = parse(
+            db.prepare(select + ' WHERE id=?').get(id) as Record<string, unknown>
+          );
+          if (queued.phase !== 'Report' || !queued.report || !bytesEqual(queued.report, bytes))
+            throw fail('corrupt');
         });
         return undefined;
       });
