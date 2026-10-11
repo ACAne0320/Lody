@@ -18,6 +18,10 @@ unverified.
 
 ## Diagnosis and decision
 
+This implements the controller and composer repair from the
+[original analysis](../../proposed/bug-fix/2026-10-11-mobile-conversation-bottom-ownership.md),
+retaining its native-device acceptance boundary.
+
 This partially replaces the immediate 4px re-arm and input-reset behavior described
 in the [scroll-engine decision](../architecture/2026-09-27-conversation-scroll-engine.md#touch-input-and-delayed-scroll-delivery-2026-10-07),
 while preserving its anchor ownership, bounded transactions and relative layout
@@ -62,6 +66,10 @@ the fix and all 12 pass afterward. The remaining viewport-clamp case already
 passed before the fix. Tests requiring the new `onReaderInput` API are excluded
 from this comparison; missing-method failures are not evidence of the original bug.
 The complete three-suite run on the fixed version passes all 104 tests.
+After merging `main` at `a8e1cf548`, those suites and the updated conversation
+backend suite pass together (109 tests); the composer browser regression also
+passes again in Chromium and WebKit. The merge does not change the scroll
+controller, its adapter, the composer or its measurement helper.
 
 | Identical scenario | Before | After |
 | --- | --- | --- |
@@ -108,8 +116,19 @@ failed against the real 52px box in CI. It still checks that growth and shrink
 measurements leave the live height unchanged. Repository formatting, typechecking
 and linting pass. Full `pnpm check` then stops on unrelated CLI process, simulator,
 Git and history test failures on this host; that CLI job passed in the inspected
-GitHub run.
-Manifests and the lockfile are unchanged. Documentation checks in the original
+GitHub run. After merging main, the six previously failing CLI files pass 55 of
+56 tests with a neutral isolated temporary directory, system Git and no inherited
+`GIT_EXEC_PATH`. The remaining signed-prefix restore/fencing test still times out
+at 30 seconds, including when run alone. Earlier process fixtures inherited
+`/tmp/package.json`'s ESM mode, while the Git fixture inherited the host transport
+wrapper. Neither assertions nor timeouts were changed. Merged CLI sources and
+dependency manifests match main, so these observations do not establish a scroll
+regression or a fully passing local check.
+The full merged check passes typechecking and linting, then stops after 4,002 CLI
+tests pass and those two Roost/host-Git cases fail. Formatting, i18n, Code Collab
+imports, platform, process and public-boundary guards pass separately.
+The scroll repair makes no manifest or lockfile changes; main's SDK update is
+retained by the merge. Documentation checks in the original
 worktree retain the 82 baseline errors from unavailable submodules and existing
 documents; no protected topics are registered.
 

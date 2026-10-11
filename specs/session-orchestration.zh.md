@@ -38,6 +38,11 @@ option。独立 Plan option 可以与权限共存。旧式 Plan 若占用 ACP mo
 则拒绝不同的显式 mode，不能静默覆盖。显式 Role 仍具有完整优先级：手填目标和
 配置字段在能力校验、命令身份和派发前被忽略。
 
+CLI `lody session create --agent-role <idOrName>` 按固定 id 或唯一名称解析同一
+目录中的 Role。Role 的 machine、代理配置、运行配置和 Prompt 前缀具有优先级；
+被覆盖的手填参数会以警告形式报告，`--repo`、`--local-project`、`--branch`、
+`--worktree` 等工作上下文参数仍然有效。
+
 显式权限可能宽于父会话。调用方必须遵守获得的用户授权。本接口不新增权限等级、
 升级审批政策，也不形成相对 CLI 创建路径的安全边界。通过 `lody_session_chat`
 修改已有会话不在本次范围。
@@ -45,7 +50,15 @@ option。独立 Plan option 可以与权限共存。旧式 Plan 若占用 ACP mo
 显式 selector 参与 canonical command 指纹。Map 键顺序变化仍是同一请求；已接受
 Operation id 下更改选择返回 `OPERATION_ID_REUSED`。接受时冻结各目标的有效派发
 配置。重试和恢复使用冻结配置，不重新计算 requester 默认值或 Role 配置。
-不需要 Operation 存储迁移。
+有效继承的 mode/model/options 保留内部来源；重放保留兼容值、丢弃不兼容的继承值，
+即使目录新鲜度未确认也不改变该行为。当前显式选择仍须严格校验。首次校验和冻结
+重放时，effort 与 Fast 都使用最终目标模型。
+
+内部合成的内置模式保留独立来源，避免把回退默认值误判为用户显式选择。固定
+UserTurn 写入前，根据可用能力重新推导默认值。物化中断后的重放仅保留冻结的
+继承或合成来源能够产生的已有值，不改写历史，也不放宽完整的不可变输入身份
+校验。来源字段不属于公开 MCP 输入或会话历史。旧的继承默认值标记仍可读取，
+无需存储迁移。
 
 ## 运行时拒绝模型
 

@@ -15,6 +15,9 @@ iOS 原生惯性效果仍未验证。
 
 ## 定位与决策
 
+本实现采用[原始分析](../../proposed/bug-fix/2026-10-11-mobile-conversation-bottom-ownership.zh.md)
+中的控制器与 composer 修复方案，保留其真机验收边界。
+
 本修复部分替代[滚动引擎决策](../architecture/2026-09-27-conversation-scroll-engine.zh.md)中的
 立即按 4px 恢复跟随和清理输入证据的行为，保留锚点所有权、有界事务和相对布局补偿。
 它实现既有[对话滚动意图](../../../../specs/conversation-scroll.zh.md)：布局变化本身不能要求跟随。
@@ -46,6 +49,9 @@ wheel/key/touch 事件，以及 composer 的 focus、pointer 和编辑事件。
 修复前 11 个失败，修复后 12 个全部通过；余下那个 viewport clamp 用例在旧版就已通过。
 对比排除了要求新 `onReaderInput` API 的用例，缺少新方法的错误不作为原问题的证据。
 修复版本完整运行这三套测试，共 104 个全部通过。
+合并 `main` 的 `a8e1cf548` 后，这三套测试与更新后的对话后端测试共同通过，共 109 个；
+composer 浏览器回归在 Chromium 和 WebKit 中也再次通过。
+合并没有改动滚动控制器、React 接线、composer 或测量函数。
 
 | 相同场景 | 修复前 | 修复后 |
 | --- | --- | --- |
@@ -87,7 +93,16 @@ viewport 从 480px 短暂扩大到 696px，让距底部 80px 的阅读位置丢�
 52px 输入框上误报。测试仍验证增长和缩小测量时真实输入框的高度不变。
 仓库格式化、类型检查和 lint 通过。完整 `pnpm check` 随后因本机的 CLI 进程、模拟器、Git
 和历史测试失败而停止；已读取的 GitHub run 中该 CLI 任务通过。这些测试不涉及本次改动。
-manifest 和 lockfile 不变。原始工作区的文档检查保留了缺失子模块及既有文档
+合并 main 后，在中性的隔离临时目录中使用系统 Git，并清除继承的 `GIT_EXEC_PATH`，
+此前失败的 6 个 CLI 文件已有 55/56 个测试通过；签名前缀恢复与旧写入者隔离用例仍在
+30 秒后超时，单独运行也能复现。此前进程 fixture 继承了 `/tmp/package.json` 的 ESM 模式，
+Git fixture 则继承了宿主的传输包装器。没有修改断言或延长超时。
+合并后的 CLI 源码和依赖 manifest 与 main 相同，这些结果不能证明滚动回归，
+也不能宣称本地全量检查已通过。
+合并后的完整检查通过类型检查和 lint，随后在 CLI 的 4,002 个测试通过、上述 Roost 与
+宿主 Git 两项失败后停止。格式化、i18n、Code Collab 引用、平台、进程及公开边界检查分别通过。
+滚动修复没有改动 manifest 或 lockfile；合并保留了 main 的 SDK 更新。
+原始工作区的文档检查保留了缺失子模块及既有文档
 造成的 82 个基线错误，没有注册 SHA 保护主题。
 
 WebKit 验证使用仓库锁定的 Playwright Linux 构建，布局实验的移动 viewport 为
