@@ -28,3 +28,7 @@ Translation: current
 Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472).
 
 同步父层计数修复后，组合 core 197/197、typecheck 与完整 root check 通过。精确 Draft head/base 交独立审查；组合验证后未再改代码。
+
+SQL 单页增量修复：独立审查 ad4aed943928be69b0013445c2a38d86c7907fbe 发现请求 100 项实际 LIMIT／加载 101 行。密文查询现使用精确请求上限；从最后 sender／digest 后作索引 scalar EXISTS 判断继续，不加载额外 frame。所属真实密码分页覆盖 101 包分为 100／1 页、精确包一致、末尾空游标及越界拒绝。原 reviewer 证据不改，另用复制 fixture 保留旧 load101 失败／新 load100 通过及首轮 ESM 脚本错误；信任／wire／修复策略未变。
+
+单页修复最终树通过 core 198/198、typecheck 与 native Git／本地 IPC 完整 root check、格式／文档／公共边界。原 NOT READY 证据不改，新 head 仍交独立增量复验。
