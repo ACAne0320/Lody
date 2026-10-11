@@ -42,3 +42,8 @@
   queue at host initialization. No arbitrary install callback. Own every fetched
   row before async recheck; validate the whole bounded page before task writes.
   Failed install returns no successful next hint; no durable cursor is saved.
+
+- Facade fetch and repair share the receiver’s genuine durable observation boundary
+  before eligibility. Rejected revocation remains known; observation writes/readback
+  preserve fixed Org/self/head/count, and failure rolls back without forgetting the
+  genuine in-memory prefix. Fixed page counts cannot change while row getters run.

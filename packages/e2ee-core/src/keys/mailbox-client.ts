@@ -1,7 +1,6 @@
 import { Data, Effect } from 'effect';
 import * as Bytes from '../bytes';
 import { keyId } from '../identifiers';
-import { requireLedgerContinuation, type LedgerView } from '../ledger';
 import { isHash, fromHex } from './reports';
 import { makeSqliteEpochReceiver, type ReceiveMailboxRemote } from './receive-sqlite';
 import { makeSqliteMailboxRepair } from './repair-sqlite';
@@ -57,30 +56,26 @@ export function makeSqliteRecipientMailbox(
       ...repairConfig,
       genesis: anchor,
       recipient: signer.publicKey,
-      ledger: lookup,
+      ledger: receiver.observeLedger,
       remote,
     });
-    let closed = false,
-      observed: LedgerView | undefined;
+    let closed = false;
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closed = true;
-        observed = undefined;
       })
     );
     const current = () =>
       Effect.gen(function* () {
         if (closed) return yield* fail('closed');
-        const view = yield* lookup();
+        // The actual receiver durably observes genuine prefixes before eligibility.
+        // Receive/protection and repair therefore share the same rollback boundary.
+        const view = yield* receiver.observeLedger();
         if (closed) return yield* fail('closed');
-        yield* Effect.fromResult(requireLedgerContinuation(view, view));
-        if (!anchor.equals(view.genesis)) return yield* fail('rollback');
-        if (observed) yield* Effect.fromResult(requireLedgerContinuation(observed, view));
         const state = view.inspectState(),
           device = state.devices.get(keyId(signer.publicKey.toBytes()));
         if (!device || !state.members.has(keyId(device.membershipId.toBytes())))
           return yield* fail('unauthorized');
-        observed = view;
         return view;
       });
     return Object.freeze({
@@ -108,12 +103,14 @@ export function makeSqliteRecipientMailbox(
             epoch = view.inspectState().epoch.number;
           const page = yield* fetch(epoch, cursor, limit);
           if (closed) return yield* fail('closed');
-          const rows = page?.items,
-            next = page?.next;
+          const rows = page?.items;
+          if (!page || !Array.isArray(rows)) return yield* fail('invalid-page');
+          const count = rows.length,
+            next = page.next;
           if (
-            !page ||
-            !Array.isArray(rows) ||
-            rows.length > limit ||
+            !Number.isInteger(count) ||
+            count < 0 ||
+            count > limit ||
             (next !== null &&
               (typeof next !== 'string' ||
                 next.length < 1 ||
@@ -121,9 +118,9 @@ export function makeSqliteRecipientMailbox(
                 next === cursor))
           )
             return yield* fail('invalid-page');
-          if (rows.length === 0 && next !== null) return yield* fail('invalid-page');
+          if (count === 0 && next !== null) return yield* fail('invalid-page');
           const items: { sender: Bytes.SigningPublicKey; frame: Uint8Array }[] = [];
-          for (let index = 0; index < rows.length; index++) {
+          for (let index = 0; index < count; index++) {
             const row = rows[index];
             if (!row) return yield* fail('invalid-page');
             const sender = row.sender,
@@ -140,6 +137,7 @@ export function makeSqliteRecipientMailbox(
               frame: new Uint8Array(frame),
             });
           }
+          if (rows.length !== count) return yield* fail('invalid-page');
           const latest = yield* current();
           if (latest.inspectState().epoch.number !== epoch) return yield* fail('rollback');
           for (const row of items) yield* receiver.receive(row.sender, row.frame);

@@ -204,12 +204,14 @@ describe('authenticated SQLite key mailbox', () => {
     const f = envelopeFixture(),
       dbPath = file(),
       frame = await Effect.runPromise(f.prepare());
+    const verified = f.view(),
+      ledger = () => Effect.succeed(verified);
     const other = await Effect.runPromise(
       Envelopes.prepareEpochEnvelope({
         context: { ...f.context, recipient: f.owner.publicKey },
         key: f.secret,
         signer: f.owner.signer,
-        ledger: f.ledger,
+        ledger,
       })
     );
     await Effect.runPromise(
@@ -219,7 +221,7 @@ describe('authenticated SQLite key mailbox', () => {
             path: dbPath,
             mode: 'create',
             genesis: f.context.genesis,
-            ledger: f.ledger,
+            ledger,
           });
           const sender = ok(host.bind(f.owner.publicKey)),
             recipient = ok(host.bind(f.phone.publicKey));

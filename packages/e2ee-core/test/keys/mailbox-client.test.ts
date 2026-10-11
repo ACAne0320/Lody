@@ -190,6 +190,8 @@ describe('real recipient receive/repair/fetch composition', () => {
     'empty-next',
     'revoked-during-fetch',
     'hidden-bad-row',
+    'shrink-rows',
+    'grow-rows',
   ] as const)(
     'rejects the complete %s page before any task/key/report is persisted',
     async (fault) => {
@@ -219,6 +221,20 @@ describe('real recipient receive/repair/fetch composition', () => {
                 fetch: () =>
                   Effect.sync(() => {
                     const row = { sender: hex(f.owner.raw), frame };
+                    if (fault === 'shrink-rows' || fault === 'grow-rows') {
+                      const items: { sender: string; frame: Uint8Array }[] = [];
+                      items.push({
+                        get sender() {
+                          if (fault === 'shrink-rows') items.length = 1;
+                          else items.push(row);
+                          return row.sender;
+                        },
+                        frame,
+                      });
+                      if (fault === 'shrink-rows')
+                        items.push({ sender: row.sender, frame: new Uint8Array(513) });
+                      return { items, next: 'unchecked-next' };
+                    }
                     if (fault === 'revoked-during-fetch') {
                       f.append([5, f.phone.raw]);
                       return { items: [row], next: null };
@@ -243,7 +259,11 @@ describe('real recipient receive/repair/fetch composition', () => {
                 protector: synthetic().protector,
               },
             });
-            expect(Result.isFailure(yield* Effect.result(client.fetchAndInstall()))).toBe(true);
+            expect(
+              Result.isFailure(
+                yield* Effect.result(client.fetchAndInstall(null, fault === 'grow-rows' ? 1 : 100))
+              )
+            ).toBe(true);
             expect(inspect(path.join(dir, 'receive.sqlite'))).toEqual([]);
             const keys = new Database(path.join(dir, 'keys.sqlite'));
             try {
@@ -256,6 +276,141 @@ describe('real recipient receive/repair/fetch composition', () => {
           })
         )
       );
+    }
+  );
+  it.each(['none', 'IGNORE', 'rewrite'] as const)(
+    'retains known revocation across all owners and reopen (observation fault=%s)',
+    async (fault) => {
+      const f = envelopeFixture(),
+        dir = directory(),
+        pair = await recipientPair(),
+        frame = await Effect.runPromise(f.prepare()),
+        initial = f.view(),
+        protection = synthetic();
+      let view = initial;
+      const ledger = () => Effect.succeed(view);
+      const config = {
+        path: path.join(dir, 'receive.sqlite'),
+        mode: 'create' as const,
+        genesis: f.context.genesis,
+        signer: f.phone.signer,
+        pair,
+        ledger,
+        repairStore: { path: path.join(dir, 'repair.sqlite'), mode: 'create' as const },
+        keyStore: {
+          path: path.join(dir, 'keys.sqlite'),
+          mode: 'create' as const,
+          protector: protection.protector,
+        },
+      };
+      let remote: RecipientMailboxRemote;
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const host = yield* makeSqliteKeyMailbox({
+                path: path.join(dir, 'host.sqlite'),
+                mode: 'create',
+                genesis: f.context.genesis,
+                ledger: () => Effect.succeed(initial),
+              }),
+              sender = ok(host.bind(f.owner.publicKey));
+            remote = ok(host.bind(f.phone.publicKey));
+            const client = yield* makeSqliteRecipientMailbox({ ...config, remote });
+            expect(yield* client.fetchAndInstall()).toEqual({ processed: 0, next: null });
+            yield* sender.put('bd'.repeat(16), frame);
+            f.append([5, f.phone.raw]);
+            view = f.view();
+            if (fault !== 'none') {
+              const broken = new Database(config.path);
+              try {
+                broken.exec(
+                  fault === 'IGNORE'
+                    ? 'CREATE TRIGGER observation_fault BEFORE UPDATE ON receive_meta WHEN NEW.count>OLD.count BEGIN SELECT RAISE(IGNORE); END;'
+                    : 'CREATE TRIGGER observation_fault AFTER UPDATE ON receive_meta WHEN NEW.count>OLD.count BEGIN UPDATE receive_meta SET head=OLD.head,count=OLD.count WHERE id=NEW.id; END;'
+                );
+              } finally {
+                broken.close();
+              }
+              const failed = yield* Effect.result(client.fetchAndInstall());
+              expect(Result.isFailure(failed)).toBe(true);
+              if (Result.isFailure(failed))
+                expect(failed.failure).toMatchObject({ code: 'corrupt' });
+              const unchanged = new Database(config.path);
+              try {
+                const pin = unchanged
+                  .prepare('SELECT head,count FROM receive_meta WHERE id=1')
+                  .get() as { head: Uint8Array; count: number };
+                expect(pin.count).toBe(initial.length);
+                expect(new Uint8Array(pin.head)).toEqual(initial.head.toBytes());
+              } finally {
+                unchanged.close();
+              }
+              view = initial;
+              expect(Result.isFailure(yield* Effect.result(client.fetchAndInstall()))).toBe(true);
+              const restored = new Database(config.path);
+              try {
+                restored.exec('DROP TRIGGER observation_fault');
+              } finally {
+                restored.close();
+              }
+              view = f.view();
+            }
+            expect(Result.isFailure(yield* Effect.result(client.fetchAndInstall()))).toBe(true);
+            const db = new Database(config.path);
+            try {
+              const pin = db.prepare('SELECT head,count FROM receive_meta WHERE id=1').get() as {
+                head: Uint8Array;
+                count: number;
+              };
+              expect(pin.count).toBe(view.length);
+              expect(new Uint8Array(pin.head)).toEqual(view.head.toBytes());
+            } finally {
+              db.close();
+            }
+            view = initial;
+            expect(Result.isFailure(yield* Effect.result(client.fetchAndInstall()))).toBe(true);
+            expect(
+              Result.isFailure(yield* Effect.result(client.receive(f.owner.publicKey, frame)))
+            ).toBe(true);
+            expect(
+              Result.isFailure(yield* Effect.result(client.enqueueRepair('known-revoked')))
+            ).toBe(true);
+            expect(inspect(config.path)).toEqual([]);
+            const keys = new Database(config.keyStore.path);
+            try {
+              expect(keys.prepare('SELECT COUNT(*) AS n FROM protected_epoch_keys').get()).toEqual({
+                n: 0,
+              });
+            } finally {
+              keys.close();
+            }
+          })
+        )
+      );
+      const reopened = await Effect.runPromise(
+        Effect.scoped(
+          Effect.result(
+            Effect.gen(function* () {
+              const host = yield* makeSqliteKeyMailbox({
+                path: path.join(dir, 'host.sqlite'),
+                mode: 'open',
+                genesis: f.context.genesis,
+                ledger: () => Effect.succeed(initial),
+              });
+              const client = yield* makeSqliteRecipientMailbox({
+                ...config,
+                mode: 'open',
+                repairStore: { ...config.repairStore, mode: 'open' },
+                keyStore: { ...config.keyStore, mode: 'open' },
+                remote: ok(host.bind(f.phone.publicKey)),
+              });
+              return yield* client.fetchAndInstall();
+            })
+          )
+        )
+      );
+      expect(Result.isFailure(reopened)).toBe(true);
+      expect(inspect(config.path)).toEqual([]);
     }
   );
   it('copies the complete fetched page before async ledger recheck and retains initialized fetch capability', async () => {
