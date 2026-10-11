@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import type { SessionHistoryParsed, SessionId } from '@lody/shared';
 import { CornerLeftUp } from 'lucide-react';
@@ -326,7 +327,8 @@ export const AllCreationStates: Story = {
 /** Separate MCP create calls must share the same bounded list. */
 export const ManyCreatedSessions: Story = {
   args: operationStoryArgs,
-  render: () => {
+  render: function ManyCreatedSessions() {
+    const [range, setRange] = useState<{ from: number; to: number } | null>(null);
     const items: ChatStreamItem[] = Array.from({ length: 22 }, (_, index) => ({
       type: 'message',
       sessionId: 'storybook-opener' as SessionId,
@@ -354,10 +356,14 @@ export const ManyCreatedSessions: Story = {
       },
     }));
     return (
-      <div style={{ width: 'min(720px, calc(100vw - 32px))', height: 680 }}>
+      <div
+        data-visible-turn-range={range ? `${range.from}:${range.to}` : undefined}
+        style={{ width: 'min(720px, calc(100vw - 32px))', height: 680 }}
+      >
         <SessionChatStreamView
           sessionId={'storybook-opener' as SessionId}
           items={items}
+          onVisibleTurnRangeChange={setRange}
           renderMessageRow={({ message, sessionId }) => (
             <MessageRowView message={message} sessionId={sessionId} onNavigateSession={() => {}} />
           )}

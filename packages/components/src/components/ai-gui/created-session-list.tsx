@@ -14,7 +14,7 @@ type Card = Omit<ComponentProps<typeof CreatedSessionOperationCard>, 'onNavigate
 
 /** Only pure creation records may coalesce; notices and failures keep their own rows. */
 export function getCreatedSessionCards(message: SessionHistoryParsed): Card[] | null {
-  if (message.role !== 'system' || message.items.length === 0) return null;
+  if (message.role !== 'system') return null;
   const cards: Card[] = [];
   for (const item of message.items) {
     if (item.type === 'operation_progress') {
@@ -31,20 +31,16 @@ export function getCreatedSessionCards(message: SessionHistoryParsed): Card[] | 
       !item.progressMessageId &&
       !item.continuation &&
       item.completion.type === 'result' &&
-      item.completion.value.items.length > 0 &&
-      item.completion.value.items.every((entry) => entry.target && entry.status === 'succeeded')
+      item.completion.value.items.length > 0
     ) {
       for (const entry of item.completion.value.items) {
-        if (entry.target)
-          cards.push({
-            sessionId: entry.target.sessionId,
-            fallbackTitle: entry.label,
-            status: 'succeeded',
-            detail:
-              entry.status === 'succeeded'
-                ? summarizeOperationOutput(entry.output?.text)
-                : undefined,
-          });
+        if (!entry.target || entry.status !== 'succeeded') return null;
+        cards.push({
+          sessionId: entry.target.sessionId,
+          fallbackTitle: entry.label,
+          status: entry.status,
+          detail: summarizeOperationOutput(entry.output?.text),
+        });
       }
     } else return null;
   }

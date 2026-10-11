@@ -443,7 +443,6 @@ type AssistantChatVirtualRow = {
 
 type StandardChatVirtualRow = {
   groupedItems?: SessionMessageItem[];
-  endMessageIndex?: number;
   type: 'standard';
   key: string;
   /** Absolute turn index (the `empty` item uses its list position). */
@@ -1133,7 +1132,6 @@ export const buildChatVirtualRows = ({
         type: 'standard',
         key: item.message.id,
         messageIndex,
-        endMessageIndex: groupedItems[groupedItems.length - 1]!.turnIndex,
         groupedItems: groupedItems.length > 1 ? groupedItems : undefined,
         item:
           groupedItems.length === 1
@@ -2185,7 +2183,9 @@ export const SessionChatStreamView = forwardRef<
       const from = rows[startRow]?.messageIndex;
       const end = rows[endRow];
       const to =
-        end?.type === 'standard' ? (end.endMessageIndex ?? end.messageIndex) : end?.messageIndex;
+        end?.type === 'standard'
+          ? (end.groupedItems?.at(-1)?.turnIndex ?? end.messageIndex)
+          : end?.messageIndex;
       if (from === undefined || to === undefined) return;
       const next = { from: Math.min(from, to), to: Math.max(from, to) + 1 };
       const last = lastVisibleRangeRef.current;
@@ -2701,18 +2701,7 @@ const SystemMessageRowView = ({
 }) => {
   const creationCards = getCreatedSessionCards(message);
   if (creationCards) {
-    return (
-      <div
-        data-session-create-progress={
-          message.items.some((item) => item.type === 'operation_progress') ? '' : undefined
-        }
-        data-session-create-completion={
-          message.items.some((item) => item.type === 'operation_completion') ? '' : undefined
-        }
-      >
-        <CreatedSessionList cards={creationCards} onNavigateSession={onNavigateSession} />
-      </div>
-    );
+    return <CreatedSessionList cards={creationCards} onNavigateSession={onNavigateSession} />;
   }
   const systemItems = message.items.flatMap((item, itemIndex) =>
     shouldRenderSystemRowItem(item) ? [{ item, itemIndex }] : []
@@ -2843,11 +2832,7 @@ const OperationCompletionView = ({
     continuationNotice !== null;
 
   return (
-    <div
-      className="flex flex-col gap-2"
-      data-operation-completion={completion.operationKind}
-      {...(createsSessions && cards.length > 0 ? { 'data-session-create-completion': '' } : {})}
-    >
+    <div className="flex flex-col gap-2" data-operation-completion={completion.operationKind}>
       {createsSessions ? (
         <CreatedSessionList cards={cards} onNavigateSession={onNavigateSession} />
       ) : (

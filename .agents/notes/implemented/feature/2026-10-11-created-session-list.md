@@ -49,7 +49,29 @@ stay capped at 22rem (352px) and scroll to the remaining records.
 Message-selection mode preserves original rows so selected ids still match exported records.
 Native iOS WebView behavior requires device verification.
 
-Targeted tests (24), component typecheck, lint, i18n, boundary checks, formatting
+Targeted tests (26), component typecheck, lint, i18n, boundary checks, formatting
 and docs check passed. Root `pnpm check` passed typecheck/lint but stopped on two
 unmodified CLI tests: macOS `/var` versus `/private/var` in worktree inspection,
 and the native Git fixture's `context_unreadable`; both reproduced separately.
+
+## Ablation evidence
+
+Against `4c8bf23db`, each candidate was removed independently before combining the
+accepted changes. Removing the empty wrapper, deriving the ending turn from existing
+group members, and validating legacy results in one pass preserved relation rendering,
+navigation and browser behavior. The early empty-message check is covered by the final
+empty-card check. The browser observed the actual visible-turn callback (`0:22`), rather
+than asserting an internal cached index.
+
+| Removal | Observed result | Decision |
+| --- | --- | --- |
+| Wrapper and unused creation markers | Relation tests and browser checks pass | Remove |
+| Cached ending-turn field | Full `0:22` hydration range retained | Derive from group |
+| Repeated legacy-result validation | Success cards and failure summaries retained | Single pass |
+| Empty legacy-result guard | Completion summary disappears beside successful creations | Keep guard |
+| Five-row height cap | Default viewport grows to 352px / twelve visible rows | Keep cap |
+
+The combined version passes 26 relation/virtual-row tests. The existing scroll-engine
+browser suite now covers five visible rows, actual grouped hydration range, wheel
+scrolling in both states, and restored height after collapsing at 375px and 1280px.
+Fixtures are synthetic; no captured conversation data is included.
