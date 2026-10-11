@@ -70,3 +70,14 @@ UI 300 与 turn-diff 31 通过。Electron 有 11 项沙箱 socket/下载失败�
 重标为全绿；CI 在 PR 中跟进。
 定向测试和 CI 不等于生产、安全审查、用户安装端或全平台验收；额外独立高风险
 审查由协调方另行安排。
+
+## 已合入 main 的组合
+
+[PR #1434](https://github.com/LodyAI/Lody/pull/1434) 使用正常 merge 保留原 P09
+实现、测试和来源指纹。最终整合输入为 #1432/#1433 实际合入后的
+`37cadfbcb0fa2183a98ccf041ba3820a8945b28e`。AGENTS/README 冲突保留 HPKE 与
+submission 两侧块；manifest 保留双方入口和依赖。Frozen 安装、core typecheck
+及 128/128（含原15项恢复）、SDK transport/cursor 43/43、静态/公开边界通过。
+本轮完整本地检查保留一项无关 Git helper `context_unreadable` fixture 失败
+（CLI 3723通过、四项跳过），不称完整门禁绿。准确 head 的 Linux CI 与 reviewer
+增量复验在 PR 跟进；旧审查仅覆盖旧 head。未改生产接线或恢复约定。

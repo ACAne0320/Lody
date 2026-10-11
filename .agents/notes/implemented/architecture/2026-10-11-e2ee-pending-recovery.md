@@ -83,3 +83,17 @@ the same two suites passed 14/14 with local permissions. Remaining CLI passed
 permissions and an isolated npm cache. The original full check remains failed,
 not re-labelled green; CI is tracked in the PR. Focused tests and CI are not production, security-review, installed
 client or all-platform acceptance; independent high-risk review is separate.
+
+## Merged-main integration
+
+[PR #1434](https://github.com/LodyAI/Lody/pull/1434) preserves the original P09
+implementation, tests and source fingerprints through normal main merges. Final
+integration input is `37cadfbcb0fa2183a98ccf041ba3820a8945b28e`, after #1432/#1433
+actually merged. AGENTS/README conflicts retain both HPKE and submission blocks;
+manifests retain both entrypoints and dependencies. Frozen installation, core
+typecheck and 128/128 tests (including the original 15 recovery cases), SDK
+transport/cursor 43/43 and static/public boundaries pass. This follow-up's full
+local check retained one unrelated Git-helper `context_unreadable` fixture failure
+(CLI 3723 passed, four skipped); it is not a full green gate. Exact-head Linux
+CI and reviewer incremental verification are tracked in the PR; the old review
+only covers the old head. No production composition or recovery contract changes.

@@ -39,3 +39,9 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
 - Journal bytes/checkpoints do not establish permissions. Reverify complete history
   from external trusted genesis, including stored terminal results. No legacy-state
   import, checkpoint restore, implicit repinning or bad-history skipping.
+
+- HPKE is the fixed Base X25519/HKDF-SHA-256/ChaCha20-Poly1305 epoch
+  primitive, not an authorized envelope workflow. Keep the existing info and
+  canonical AAD; never accept an algorithm/info override. Caller-owned native
+  device key handles stay external; no key generation, storage or delivery here.
+  Await non-cancellable native work and temporary-buffer cleanup on interruption.
