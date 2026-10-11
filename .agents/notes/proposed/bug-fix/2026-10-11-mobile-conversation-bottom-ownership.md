@@ -128,3 +128,5 @@ deletion, IME updates and keyboard open/close while read and while follow. Test 
 reported rapid downward fling on an iOS device with raw/logical offset, max range,
 input source, intent transition and write reason traces. Synthetic tests cannot
 establish native momentum or whether the reported visual vibration is gone.
+
+PR: [#1465](https://github.com/LodyAI/Lody/pull/1465).

@@ -51,3 +51,5 @@ tsc --target es2022 --module commonjs --moduleResolution node --strict \
 扩展所属模型与适配器测试：弹性越界和返回、commit/resize 先于 scroll 采样、`scrollend` 前的触摸到达、原生序列中的新输出、真实向上脱离及显式回到底部。增加 unknown、clamp、自身写入应保持 read 的情形，跨 viewport resize 的历史底部情形，以及向下 wheel/键盘/滚动条恢复 follow。保留已有估计底部恢复、覆盖与种子序列检查。
 
 composer 浏览器验收须测量真实相邻 viewport，在 read 与 follow 两种状态下覆盖换行输入、删除、IME 更新和键盘开关。iOS 真机验证用户报告的快速向下甩动，记录 raw/logical offset、最大范围、输入来源、意图转换与写入原因。合成测试不能证明原生惯性行为或用户报告的视觉振动已经消失。
+
+PR：[#1465](https://github.com/LodyAI/Lody/pull/1465)。
