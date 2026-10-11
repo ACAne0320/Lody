@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+PR: [#1433](https://github.com/LodyAI/Lody/pull/1433)
+
 [English](2026-10-11-e2ee-sdk-preparation.md)
 
 ## 摘要
