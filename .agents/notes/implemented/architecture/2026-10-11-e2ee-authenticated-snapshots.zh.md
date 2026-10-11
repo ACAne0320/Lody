@@ -30,3 +30,5 @@ raw 比较只报告相同、冲突或落后，始终 independent=false。confirm
 包 187/187 与类型检查通过。合成百万 count 测试只验证已 pin 位置的有限表示，不代表百万条审计。完整根检查/CI 另记。不代表产品冷启动信任来源、文档 SDK 快照 offset 接收/客户端恢复、持久信任保存、完整 Lab 或生产 E2EE 完成。原 core/Lab 旧失败继续逐项记录；旧提取指纹保留，新 provenance 记录共享文件修改。
 
 最终 187 项测试代码树通过原生 Git/本地 IPC 环境的完整根检查，以及格式、文档和公共边界检查。首次根检查停在 fixture 变量遮蔽 lint 错误，修正后完整重跑最终树。精确 head CI 单独记录。
+
+Draft: [#1464](https://github.com/LodyAI/Lody/pull/1464).

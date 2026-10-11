@@ -30,3 +30,5 @@ Isolated unchanged source tests fail for Owner-without-governance state and raw-
 Package 187/187 and typecheck pass. The synthetic million-count test verifies bounded representation of a caller-pinned position, not a million-record audit. Full root check/CI are recorded separately. This does not complete product cold-start trust sourcing, document SDK snapshot-offset admission/client recovery, durable trust persistence, complete Lab or production E2EE. Original old core/Lab failure owners remain explicit. Source/destination fingerprints preserve extraction history; new provenance records shared-file revisions.
 
 Final 187-test code tree passed full root check with native Git/local IPC, format/docs/public boundary. The first root attempt stopped at a fixture variable-shadowing lint error; the corrected final tree received a fresh full check. Exact-head CI is a separate record.
+
+Draft: [#1464](https://github.com/LodyAI/Lody/pull/1464).
