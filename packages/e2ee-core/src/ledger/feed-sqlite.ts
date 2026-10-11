@@ -222,9 +222,23 @@ export function makeSqliteLedgerFeed(input: {
           db
             .transaction(() => {
               matches();
+              const incoming = page.records;
+              if (!Array.isArray(incoming) || incoming.length > 4096) throw fail('read-too-large');
+              const records: Uint8Array[] = [];
+              let pageBytes = 0;
+              for (let index = 0; index < incoming.length; index++) {
+                const record = incoming[index];
+                if (!(record instanceof Uint8Array) || record.length < 1 || record.length > 8192)
+                  throw fail('invalid-frame');
+                pageBytes += record.length;
+                if (pageBytes > 16 * 1024 * 1024) throw fail('read-too-large');
+                records.push(new Uint8Array(record));
+              }
               const copied = {
-                ...page,
-                records: page.records.map((record) => new Uint8Array(record)),
+                requestOffset: page.requestOffset,
+                nextOffset: page.nextOffset,
+                upToDate: page.upToDate,
+                records,
               };
               const prepared = prepareLedgerPage(state, copied, checkpoint);
               if (Result.isFailure(prepared)) throw prepared.failure;

@@ -34,3 +34,7 @@ Owning12 覆盖原帧、真实签名、初始绑定、重复／回退、独立�
 原 reviewer 在 dd297541 复验发现：后续 INSERT 或 metadata 触发器可同长改写已检查记录，原 P1 未关闭。第二次修复在所有 DML 结束后、同事务提交前，按已验证启动历史和本后缀的私有原件列表逐位置核对完整原字节；之后没有 DML。仅事务成功才更新内存 view／原件列表。新增 later／meta／existing 同长改写回归在旧 dd 实际失败，新 owning17 通过，失败保持内存与磁盘原状态并可重试。原 reviewer 脚本只复制到作者目录、重定向 imports，三个场景实际 rollback／真实 OS child 重开／同 handle 重试通过，旧审查证据未修改；作者结果不能代替独立关闭依据。
 
 第二次修复最终作者检查：owning17/core251、package typecheck、完整 root `pnpm check`、format/docs/public boundary 通过。三个原脚本复制后的失败保持／重开／同 handle 重试通过。旧 dd297541 的 NOT READY 不改写；新精确 head 的独立增量和 CI 分列等待核验，不关闭原 Lab2。
+
+输入原件归属修复：5b 调用输入数组的 `.map`，自定义方法可返回借用字节，accept 后外部修改仍污染私有 expected originals。改为读取有界数字索引并构造全新 typed array，复制不调用输入数组方法／iterator；验证、写入、最终历史比较使用同一组自有原件。两条实际回归准确5b均失败：外部改写会拒绝合法续页；metadata trigger 同长破坏旧历史却假成功推进。修复 owning19／typecheck 通过；复制的独立 trigger 反例现返回 corrupt，保持 count2／cursor2，真实子进程重开成功。旧证据不改写，新独立复验／CI 分列。
+
+输入原件修复最终作者检查：feed19/core253、package typecheck、完整 root `pnpm check`、format/docs 检查通过。复制的独立反例还验证失败后真实子进程重开原历史；删除 trigger 后同 handle 重试并再次子进程重开通过。这不提前升级独立审查／CI，也不关闭源 Lab2。
