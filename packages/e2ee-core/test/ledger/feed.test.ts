@@ -382,6 +382,90 @@ describe('durable full-history feed boundary', () => {
       }
     }
   );
+  it.each([false, true])(
+    'owns caller bytes despite overridden Array.map (disk fault=%s)',
+    async (fault) => {
+      const f = envelopeFixture(),
+        dir = mkdtempSync(path.join(tmpdir(), 'ledger-alias-')),
+        file = path.join(dir, 'feed.sqlite');
+      const initialRecords = f.records();
+      const firstCheckpoint = { head: f.view().head, length: f.view().length };
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const feed = yield* makeSqliteLedgerFeed({
+                path: file,
+                mode: 'create',
+                genesis: f.context.genesis,
+                genesisRecord: f.genesisRecord,
+                expected: { head: hashRecordBytes(f.genesisRecord), length: 1 },
+                budget: { maxRecords: 100, maxBytes: 100000 },
+              });
+              const borrowed = initialRecords.map((record) => new Uint8Array(record));
+              const records = borrowed.slice();
+              Object.defineProperty(records, 'map', { value: () => borrowed.slice() });
+              yield* feed.accept(
+                { requestOffset: '-1', nextOffset: 'opaque/2', records, upToDate: true },
+                firstCheckpoint
+              );
+              borrowed[1]!.fill(0);
+              f.append([5, f.phone.raw]);
+              const all = f.records(),
+                page = {
+                  requestOffset: 'opaque/2',
+                  nextOffset: 'opaque/3',
+                  records: [all[2]!],
+                  upToDate: true,
+                },
+                expected = { head: f.view().head, length: f.view().length };
+              if (fault) {
+                const db = new Database(file);
+                try {
+                  db.exec(
+                    'CREATE TRIGGER alias_fault AFTER UPDATE ON ledger_feed_meta BEGIN UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=2; END'
+                  );
+                } finally {
+                  db.close();
+                }
+              }
+              const result = yield* Effect.result(feed.accept(page, expected));
+              expect(Result.isSuccess(result)).toBe(!fault);
+              expect((yield* feed.current()).offset).toBe(fault ? 'opaque/2' : 'opaque/3');
+              const db = new Database(file);
+              try {
+                const row = db
+                  .prepare('SELECT record FROM ledger_feed_records WHERE position=2')
+                  .get() as { record: Uint8Array };
+                expect(new Uint8Array(row.record)).toEqual(initialRecords[1]);
+                if (fault) db.exec('DROP TRIGGER alias_fault');
+              } finally {
+                db.close();
+              }
+              if (fault) expect((yield* feed.accept(page, expected)).offset).toBe('opaque/3');
+            })
+          )
+        );
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const reopened = yield* makeSqliteLedgerFeed({
+                path: file,
+                mode: 'open',
+                genesis: f.context.genesis,
+                genesisRecord: f.genesisRecord,
+                expected: { head: f.view().head, length: f.view().length },
+                budget: { maxRecords: 100, maxBytes: 100000 },
+              });
+              expect((yield* reopened.current()).offset).toBe('opaque/3');
+            })
+          )
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
   it.each(['later-overwrite', 'meta-overwrite', 'existing-overwrite'] as const)(
     'verifies the complete retained originals after the last write: %s',
     async (fault) => {

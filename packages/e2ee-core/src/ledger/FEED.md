@@ -62,3 +62,5 @@ initial history plus this suffix. This bounded full comparison runs inside the s
 transaction with no later DML. Later triggers cannot turn an earlier per-row
 readback or equal byte totals into false durable confirmation. The private original
 list and published view change only after transaction success.
+
+Page copies read bounded array indices and construct fresh typed arrays without calling caller-provided array methods or iterators. The same owned copies are validated, written and retained; later caller mutation cannot alter expected history. An overridden input `.map` neither lends bytes to the journal nor suppresses validation.
