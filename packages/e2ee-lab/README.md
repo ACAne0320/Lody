@@ -58,14 +58,27 @@ global fetch requires no native close. Real
 HPKE delivery and SQLite save/readback/report rounds run through this adapter;
 tampered frames install nothing and do not report, and Recovery cannot send after
 stores reopen. The HTTP fixture's pre-authenticated synthetic session and AES
-wrapping are explicit mock boundaries; host credential authentication and full
+wrapping are explicit mock boundaries; full host route authentication and
 rotation/actor composition remain pending. Reopen in this key-round test is within
 one OS process; it does not establish cross-process key-round acceptance.
+
+The scoped credential owner retains the frozen Lab v2 possession domain, 60-second
+single-use nonce and at most 15-minute synthetic token TTL. Real Ed25519 proofs,
+genuine current Org membership and transactional SQLite mint/invalidate readback
+are required. Account is only a test label; no JWT claim, ordinary tolerance or
+strict production deadline B is changed. The loopback HTTP host currently serves
+health, challenge, credential and control append-CAS routes. Exact canonical paths,
+bounded JSON/single-record bodies and stored bearer tokens are checked. Public
+submission audits the independently selected complete prefix and pins SDK CAS;
+caller lifecycle/offset/auth headers have no upstream forwarding path. Workspace
+registration/checkpoint persistence, joins, metadata, key/content routes and CLI
+are still pending. Shared operation scopes abort, interrupt and await all children,
+even if one cleanup defects, before earlier SQLite/SDK owners close.
 
 The original full host/gateway, honest actors, key delivery/rotation composition,
 Flock process/recovery/live sessions, schedule driver, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
-30 tests do not close the original Lab2 failures or the complete original fault
+37 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
 D12 and permanent publisher loss remain explicit decisions. Native custody,
 production E2EE, independent whole-stack review, CI and product acceptance are

@@ -45,12 +45,22 @@ Flock 0.4.3 没有公开的确定性 free/dispose；关闭 SDK 订阅、丢弃�
 可选原生 transport lease 明确转交，实际工作结束后才 close；global fetch 不需 close。
 真实 HPKE 投递、SQLite 保存/读回/报告经过此适配器；篡改帧不安装也不报告，
 重开后 R 仍不能发送。HTTP fixture 的预认证合成会话和 AES 包装是明确的 mock
-边界；宿主凭据认证、完整轮换/actor 组合仍未完成。该密钥轮次在同一 OS 进程内
+边界；全部宿主路由认证、完整轮换/actor 组合仍未完成。该密钥轮次在同一 OS 进程内
 重开存储，不代表跨进程密钥轮次验收。
+
+scoped 凭证 owner 保留冻结 Lab v2 持有消息、60 秒单次 nonce 和最多 15 分钟
+合成 token TTL。真实 Ed25519 证明、genuine 当前 Org 成员和 SQLite 事务读回
+都是必要条件。account 只是测试标签，不增加 JWT claim、不改普通容差，也不代表
+严格生产期限 B。loopback HTTP host 当前提供 health、challenge、credential 和
+control append-CAS；检查精确路径、有限 JSON/单记录 body 和已落盘 bearer。
+公开 submission 完整验证独立选定前缀并固定 SDK CAS，请求的生命周期/offset/auth
+头没有上游转发入口。workspace 注册/checkpoint 持久化、joins、metadata、密钥/
+内容路由及 CLI 仍未完成。共享操作 Scope 关闭时 abort、打断并等待所有子操作，
+某个清理失败也不能跳过其他操作，再关闭此前的 SQLite/SDK owner。
 
 原完整 host/gateway、诚实 actors、密钥投递/轮换组合、Flock 进程重开/恢复/live
 session、schedule driver、攻击能力、捕获 replay、原 fixtures 和 CLI/启动流程
-尚未完成。当前 30 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
+尚未完成。当前 37 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
 快照 wire/offset、replay 熵、严格期限 B、恢复库、D12、发布设备永久丢失仍是待决项。
 原生存钥、生产 E2EE、整栈独立审查、CI 和产品验收各自独立。
 参见[完整清单](../../.agents/docs/e2ee-migration-manifest.json)和

@@ -12,7 +12,10 @@
     "./content-session": "./src/platform/content-session.ts",
     "./replay": "./src/pure/replay.ts",
     "./gateway": "./src/platform/gateway.ts",
-    "./key-mailbox": "./src/platform/key-mailbox.ts"
+    "./key-mailbox": "./src/platform/key-mailbox.ts",
+    "./credentials": "./src/platform/credentials.ts",
+    "./control-gateway": "./src/platform/control-gateway.ts",
+    "./host": "./src/platform/host.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

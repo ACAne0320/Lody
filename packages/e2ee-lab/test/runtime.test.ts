@@ -1,6 +1,10 @@
-import { Effect, Exit, Fiber, Result, Scope } from 'effect';
+import { Deferred, Effect, Exit, Fiber, Result, Scope } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { makeLabRuntime } from '../src/platform/runtime';
+import { makeLabOperations } from '../src/platform/operation-scope';
+import { fixture } from './ledger-fixture';
+import Database from 'better-sqlite3';
+import { join } from 'node:path';
 const latch = () => {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
@@ -154,4 +158,99 @@ describe('scoped Lab permit runtime and borrowed work settlement', () => {
       )
     );
   });
+});
+
+it('closes all operation children despite one native cleanup defect and waits another real SDK borrower before the earlier owner', async () => {
+  const f = await fixture(),
+    entered = latch(),
+    release = latch();
+  let secondSettled = false,
+    closedEarly = false,
+    closed = false;
+  const defect = new Error('synthetic native cleanup defect');
+  let database: Database.Database | undefined;
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const child = yield* Scope.make();
+          yield* Scope.addFinalizer(
+            child,
+            Effect.promise(async () => {
+              closedEarly = !secondSettled;
+              await f.close();
+              closed = true;
+            })
+          );
+          const operations = yield* makeLabOperations().pipe(
+            Effect.provideService(Scope.Scope, child)
+          );
+          const acquired = yield* Deferred.make<void>();
+          const idle = yield* Deferred.make<void>();
+          const first = yield* Effect.forkChild(
+            Effect.exit(
+              operations.run(
+                Effect.gen(function* () {
+                  database = yield* Effect.acquireRelease(
+                    Effect.sync(() => new Database(join(f.dir, 'cleanup.sqlite'))),
+                    (handle) =>
+                      Effect.sync(() => handle.close()).pipe(Effect.andThen(Effect.die(defect)))
+                  );
+                  yield* Deferred.succeed(acquired, undefined);
+                  yield* Deferred.await(idle);
+                })
+              )
+            )
+          );
+          yield* Deferred.await(acquired);
+          // Explicit abort-ignoring native phase gate, then an actual published SDK read.
+          const second = yield* Effect.forkChild(
+            Effect.exit(
+              operations.run(
+                Effect.uninterruptible(
+                  Effect.promise(async () => {
+                    entered.resolve();
+                    await release.promise;
+                    const result = await f.sdk.read({
+                      offset: '-1',
+                      signal: new AbortController().signal,
+                    });
+                    secondSettled = true;
+                    if (!result.ok) throw new Error('actual SDK read failed before owner closure');
+                  })
+                )
+              )
+            )
+          );
+          yield* Effect.addFinalizer(() => Effect.sync(release.resolve));
+          yield* Effect.promise(() => entered.promise);
+          const closing = yield* Effect.forkChild(Effect.exit(Scope.close(child, Exit.void)), {
+            startImmediately: true,
+          });
+          const denied = yield* Effect.result(operations.run(Effect.void));
+          expect(Result.isFailure(denied)).toBe(true);
+          const pending = closing.pollUnsafe();
+          release.resolve();
+          const result = yield* Fiber.join(closing);
+          expect(closedEarly).toBe(false);
+          expect(pending).toBeUndefined();
+          expect(closed).toBe(true);
+          expect(secondSettled).toBe(true);
+          expect(database?.open).toBe(false);
+          expect(Exit.isFailure(result)).toBe(true);
+          if (Exit.isFailure(result))
+            expect(
+              result.cause.reasons.some(
+                (reason) => reason._tag === 'Die' && reason.defect === defect
+              )
+            ).toBe(true);
+          yield* Fiber.join(first);
+          yield* Fiber.join(second);
+        })
+      )
+    );
+  } finally {
+    release.resolve();
+    if (!closed) await f.close();
+  }
 });

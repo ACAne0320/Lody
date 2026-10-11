@@ -108,6 +108,29 @@ transportClosedEarly 断言，无 timeout，恢复后通过。失败门由 final
 当前同计数suite/typecheck及原生lease完整 root pnpmcheck Lab30/core302
 通过，Lab输入SHA不变；format/docs/public boundary通过。
 
+## 凭证/control/HTTP 增量（作者 WIP）
+
+新增凭证 owner 与 loopback HTTP/control 组合消费公开签名、genuine 账本和
+submission API。合成 account 标签及冻结 Lab 持有消息/nonce/token TTL 只属于
+测试契约，不代表生产身份、JWT claim、普通容差变化或严格期限 B 获批。
+SQLite mint 与 nonce 消费必须读回；SQL IGNORE 不能返回未保存的凭证，trigger
+恢复 nonce 时拒绝本次消费。另两个原 HostMeta SQL 边界探针复现这两项旧失败，
+源 SHA 仍为 8f40941246e5745b441aaaf0bdc93f5e8b994656b24eea7f58b1229d63ee28c3。
+这些不是原完整宿主回归或原 Lab2 闭合。
+
+control 消费公开完整前缀准入和 SDK 固定 CAS，不重做 P09。HTTP 检查落盘 bearer、
+精确 Org/path、单个有限 frame 与持有证明；恶意 offset/生命周期头不能进入 SDK。
+checkpoint 由独立 harness 输入提供。workspace 注册/checkpoint 崩溃间隙持久化、
+joins、notes、密钥/内容路由及启动流程仍未完成，不恢复通用 proxy 或快照 wire。
+
+共享操作 owner 等待每个子操作，即使另一个 finalizer 失败也继续清理，最后保留
+失败原因。runtime 测试使用真实 SQLite/SDK 生命周期，清理错误注入边界明确。
+fresh 1087 加 7 文件 SHA overlay 的 Lab36 通过；删去子操作等待命中真实 Riverrun
+closedEarly 断言（非超时），恢复后通过。新增真实 HTTP 测试通过，当前所属 37 项；
+最终 SDK ACK 整树 pnpm check 通过 core302/Lab37，Lab 输入 SHA 始终一致；根 format/docs/public boundary 通过。未改 CLI 的继承 Git helper 失败保留；仅测试子进程移除 GIT_EXEC_PATH 后 focused6 与完整整树通过。commit 后再做固定 head 独立复跑。冻结 1087 Lab30 不覆盖新增文件。
+
+实际发布 StreamsClient 通过 auth API 消费 HTTP CAS，成功 ACK 带必需的 Stream-Next-Offset。初始合成 consumer 错把 bearer 放普通 headers（SDK 会移除），其 401 只记 fixture 错误。改用正确 auth 后，缺 ACK header 的旧失败与修复后通过分别保留。
+
 ## 剩余工作
 
 原完整 host/gateway、actors、投递/轮换组合、Flock 进程重开/恢复/live session、

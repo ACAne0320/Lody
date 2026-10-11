@@ -1,12 +1,19 @@
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { join } from 'node:path';
-import { Effect, Result } from 'effect';
+import { Effect, Exit, Fiber, Result, Scope } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { Bytes } from '@lody/e2ee-core';
 import { hashRecordBytes, type LedgerView } from '@lody/e2ee-core/ledger';
-import { prepareDeviceAdmission, prepareJoinRequest } from '@lody/e2ee-core/ledger/admission';
+import {
+  prepareDeviceAdmission,
+  prepareJoinRequest,
+  prepareLedgerCommand,
+} from '@lody/e2ee-core/ledger/admission';
 import type { LedgerSubmissionStream } from '@lody/e2ee-core/submission/streams';
 import { authorizeLabStream } from '../src/platform/gateway';
+import { makeLabControlGateway } from '../src/platform/control-gateway';
+import { makeLedgerStreamReader } from '@lody/e2ee-core/ledger/feed';
+import { signLedgerRecord } from '@lody/e2ee-core/ledger/signing';
 import { makeLabLedgerActor } from '../src/platform/ledger-actor';
 import { fixture, options, history } from './ledger-fixture';
 const ok = Result.getOrThrow;
@@ -236,4 +243,179 @@ describe('genuine ledger Lab gateway policy (HTTP authentication not implemented
       await f.close();
     }
   });
+});
+
+describe('public submission consumer behind the Lab control gateway', () => {
+  it('verifies the whole selected prefix, binds signer/Org and uses real SDK pinned CAS; failed candidates preserve the actual remote tail', async () => {
+    const f = await fixture();
+    try {
+      const originals = [...f.records];
+      const stream: LedgerSubmissionStream = {
+        read: f.sdk.read.bind(f.sdk),
+        appendCas: async (input) => {
+          const result = await f.sdk.appendCas(input);
+          if (result.ok && result.result.kind === 'ok')
+            originals.push(new Uint8Array(input.part.body.subarray(4)));
+          return result;
+        },
+      };
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const gateway = yield* makeLabControlGateway({
+              genesis: f.anchor,
+              stream,
+              checkpoint: () =>
+                Effect.sync(() => ({
+                  head: hashRecordBytes(originals.at(-1)!),
+                  length: originals.length,
+                })),
+              now: () => 0,
+              budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
+            });
+            const extra = syntheticSigner(107);
+            const command = yield* prepareDeviceAdmission({
+              genesis: f.anchor,
+              membershipId: f.membership,
+              encryptionPublicKey: ok(Bytes.encryptionPublicKey(new Uint8Array(32).fill(108))),
+              kind: 'personal',
+              signer: extra,
+            });
+            const original = yield* signLedgerRecord(
+              ok(prepareLedgerCommand(f.view, f.owner.publicKey, command)),
+              f.owner
+            );
+            const request = {
+              authenticatedCredential: { device: f.owner.publicKey, genesis: f.anchor },
+              requestGenesis: f.anchor,
+              record: original,
+            };
+            const bad = new Uint8Array(original);
+            bad[bad.length - 1] = bad[bad.length - 1]! ^ 1;
+            expect(
+              Result.isFailure(yield* Effect.result(gateway.append({ ...request, record: bad })))
+            ).toBe(true);
+            expect(
+              Result.isFailure(
+                yield* Effect.result(
+                  gateway.append({
+                    ...request,
+                    authenticatedCredential: { device: extra.publicKey, genesis: f.anchor },
+                  })
+                )
+              )
+            ).toBe(true);
+            expect(
+              Result.isFailure(
+                yield* Effect.result(
+                  gateway.append({
+                    ...request,
+                    requestGenesis: ok(Bytes.genesisHash(new Uint8Array(32).fill(109))),
+                  })
+                )
+              )
+            ).toBe(true);
+            const reader = yield* makeLedgerStreamReader(f.sdk);
+            expect((yield* reader.readAfter('-1')).records).toEqual(f.records);
+            const result = yield* gateway.append(request);
+            const after = yield* reader.readAfter('-1');
+            expect(after.records).toEqual([...f.records, original]);
+            expect(after.nextOffset).toBe(result.nextOffset);
+            expect(Result.isFailure(yield* Effect.result(gateway.append(request)))).toBe(true);
+            expect((yield* reader.readAfter('-1')).records).toEqual(after.records);
+          })
+        )
+      );
+    } finally {
+      await f.close();
+    }
+  });
+});
+
+it('stops gateway admission, interrupts and awaits its actual SDK CAS operation before closing the earlier Riverrun owner', async () => {
+  const f = await fixture();
+  const latch = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  };
+  const entered = latch(),
+    release = latch();
+  let rawSettled = false,
+    closedEarly = false,
+    closed = false;
+  let gateway: Effect.Success<ReturnType<typeof makeLabControlGateway>>;
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const child = yield* Scope.make();
+          yield* Scope.addFinalizer(
+            child,
+            Effect.promise(async () => {
+              closedEarly = !rawSettled;
+              await f.close();
+              closed = true;
+            })
+          );
+          const command = yield* prepareDeviceAdmission({
+            genesis: f.anchor,
+            membershipId: f.membership,
+            encryptionPublicKey: ok(Bytes.encryptionPublicKey(new Uint8Array(32).fill(111))),
+            kind: 'personal',
+            signer: syntheticSigner(110),
+          });
+          const record = yield* signLedgerRecord(
+            ok(prepareLedgerCommand(f.view, f.owner.publicKey, command)),
+            f.owner
+          );
+          gateway = yield* makeLabControlGateway({
+            genesis: f.anchor,
+            budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
+            now: () => 0,
+            checkpoint: () => Effect.succeed(f.checkpoint),
+            stream: {
+              read: f.sdk.read.bind(f.sdk),
+              appendCas: async (request) => {
+                entered.resolve();
+                await release.promise;
+                try {
+                  return await f.sdk.appendCas(request);
+                } finally {
+                  rawSettled = true;
+                }
+              },
+            },
+          }).pipe(Effect.provideService(Scope.Scope, child));
+          const request = {
+            authenticatedCredential: { device: f.owner.publicKey, genesis: f.anchor },
+            requestGenesis: f.anchor,
+            record,
+          };
+          const worker = yield* Effect.forkChild(Effect.result(gateway.append(request)));
+          yield* Effect.addFinalizer(() => Effect.sync(release.resolve));
+          yield* Effect.promise(() => entered.promise);
+          const closing = yield* Effect.forkChild(Scope.close(child, Exit.void), {
+            startImmediately: true,
+          });
+          // Observe close through a separate current-admission probe, not microtask counts.
+          const denied = yield* Effect.result(gateway.append(request));
+          expect(Result.isFailure(denied)).toBe(true);
+          const pending = closing.pollUnsafe();
+          release.resolve();
+          yield* Fiber.join(closing);
+          expect(closedEarly).toBe(false);
+          expect(closed).toBe(true);
+          expect(rawSettled).toBe(true);
+          expect(pending).toBeUndefined();
+          expect(Result.isFailure(yield* Fiber.join(worker))).toBe(true);
+        })
+      )
+    );
+  } finally {
+    release.resolve();
+    if (!closed) await f.close();
+  }
 });

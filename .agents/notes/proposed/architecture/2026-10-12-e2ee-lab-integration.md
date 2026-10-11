@@ -126,9 +126,9 @@ is same-process, not full OS/native custody acceptance. Initial fixture reused o
 X25519 public key for two devices; public admission rejected it. The corrected
 fixture creates independent device pairs, without changing the protocol.
 
-Current owning **30 tests** and package typecheck pass. The frozen `6de46b5d`
+Frozen 1087 owning **30 tests** and package typecheck pass. The frozen `6de46b5d`
 checkpoint had complete root Lab24/core302, format/docs/boundary evidence; its
-results do not certify this increment. Current complete root `pnpm check` passes Lab30/core302, with unchanged Lab input
+results do not certify this increment. Frozen 1087 complete root `pnpm check` passes Lab30/core302, with unchanged Lab input
 fingerprints throughout; format/docs/public boundary pass. The initial current
 check found three mailbox static errors, corrected before the passing repeat. No Lab Draft or independent whole-Lab acceptance yet.
 
@@ -143,6 +143,35 @@ are finalizer-owned, with no fixed microtask drains or sleeps. Preserve both the
 escaped original log and the new failure. Current same-count suite/typecheck pass;
 complete root pnpm check Lab30/core302 for this native-lease increment passes,
 with unchanged Lab input SHA; format/docs/public boundary pass.
+
+## Credential/control/HTTP increment (author WIP)
+
+The new credential owner and loopback HTTP/control composition consume public
+signature/genuine-ledger/submission APIs. Synthetic account labels and the frozen
+Lab possession domain/nonce/token TTL remain test contracts, never production
+identity, JWT claims, ordinary leeway changes or approved strict deadline B.
+SQLite mint and nonce consumption require actual readback; SQL IGNORE cannot return
+a phantom credential, and a trigger restoring a consumed nonce rejects the attempt.
+Two additional original HostMeta SQL-boundary probes reproduce those failures; source
+SHA remains 8f40941246e5745b441aaaf0bdc93f5e8b994656b24eea7f58b1229d63ee28c3.
+These are not whole original host regressions or the original Lab2 closure.
+
+Control uses public complete-prefix admission and SDK pinned CAS, not a second P09.
+HTTP verifies stored bearer, canonical Org/path, one bounded framed record and
+possession proof; hostile offset/lifecycle headers cannot reach the SDK capability.
+A genuine checkpoint is an independently provided harness input. Durable workspace
+registration/checkpoint crash-gap handling, joins, notes, key/content routes and
+startup remain pending. No generic proxy or snapshot wire is restored.
+
+A shared operation owner waits every child even when another finalizer defects,
+then propagates the failure. Runtime tests exercise real SQLite/SDK lifetimes with
+an explicit synthetic finalizer-fault boundary. The fresh 1087+7-file SHA overlay
+passes Lab36; removing child waits hits real Riverrun closedEarly (no timeout),
+restoration passes. The added real HTTP test passes, for 37 current owning tests;
+Final SDK-ACK complete root pnpm check passes core302/Lab37 with unchanged Lab inputs; root format/docs/public boundary pass. One inherited Git helper failure in unchanged CLI is retained; removing GIT_EXEC_PATH only in test subprocesses gives focused6 and full-root pass. Fixed-head reproduction follows commit.
+Frozen 1087 Lab30 evidence does not certify these new files.
+
+The actual published StreamsClient consumes the HTTP CAS path using its auth API; successful ACK includes the required Stream-Next-Offset header. An initial synthetic consumer incorrectly supplied bearer through generic headers (the SDK removes it); that 401 is fixture evidence only. After using auth correctly, the missing-ACK-header old failure and repaired new pass are preserved separately.
 
 ## Remaining work
 
