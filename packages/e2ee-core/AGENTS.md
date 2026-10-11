@@ -73,3 +73,9 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   independent expected context, fixed outer verification, exact commitment and
   post-crypto verified-prefix recheck. Recovery receives but never sends. It returns
   no durable installation/delivery receipt; failed owned opens wipe/invalidate their key.
+
+- Finite `./keys/delivery` never accepts an injected authorization callback or trusts
+  disk as ledger authority. Persist the first ciphertext before send, retry original
+  bytes, reverify each send and reject known in-round rollback/forks. Readback proves
+  ciphertext observation only. Node `./keys/delivery/sqlite` owns closure through Scope,
+  indexes bounded rows and never converts old JSON or deletes pending/history on close.

@@ -913,7 +913,14 @@
       "targetPath": "packages/e2ee-core/src/node-key-outbox.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4c",
+          "target": "packages/e2ee-core/src/keys/delivery.ts + delivery-sqlite.ts",
+          "scope": "Finite current authorized exact-byte put/readback/resume and Scope-owned row persistence, old 4096 lifetime failure fixed. Mailbox/discovery/report/recipient custody remain separate."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/node-received-key-store.ts",
@@ -1128,7 +1135,14 @@
       "targetPath": "packages/e2ee-core/src/platform/node-key-outbox.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4c",
+          "target": "packages/e2ee-core/src/keys/delivery.ts + delivery-sqlite.ts",
+          "scope": "Finite current authorized exact-byte put/readback/resume and Scope-owned row persistence, old 4096 lifetime failure fixed. Mailbox/discovery/report/recipient custody remain separate."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/platform/node-user-identity.ts",
@@ -1252,7 +1266,14 @@
       "targetPath": "packages/e2ee-core/src/ports/key-delivery.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4c",
+          "target": "packages/e2ee-core/src/keys/delivery.ts + delivery-sqlite.ts",
+          "scope": "Finite current authorized exact-byte put/readback/resume and Scope-owned row persistence, old 4096 lifetime failure fixed. Mailbox/discovery/report/recipient custody remain separate."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/ports/key-mailbox.ts",
@@ -1491,7 +1512,14 @@
       "targetPath": "packages/e2ee-core/src/pure/key-delivery.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4c",
+          "target": "packages/e2ee-core/src/keys/delivery.ts + delivery-sqlite.ts",
+          "scope": "Finite current authorized exact-byte put/readback/resume and Scope-owned row persistence, old 4096 lifetime failure fixed. Mailbox/discovery/report/recipient custody remain separate."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/key-distribution.ts",
@@ -1521,10 +1549,10 @@
         "core": "33dbb3d8b43eb0cde3730a7d29e06c9d3deb82d982fc77c3b7a9c9f09503eae2",
         "candidate": "33dbb3d8b43eb0cde3730a7d29e06c9d3deb82d982fc77c3b7a9c9f09503eae2"
       },
-      "targetPath": "packages/e2ee-core/src/pure/key-outbox-codec.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/keys/delivery-sqlite.ts",
+      "status": "旧方案淘汰",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Retire globally decoded JSON history/4096 lifetime cap; retained first ciphertext uses bounded indexed SQLite rows. No automatic legacy file conversion or deletion."
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/ledger-apply.ts",
@@ -1904,7 +1932,14 @@
       "targetPath": "packages/e2ee-core/src/workflows/key-delivery.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4c",
+          "target": "packages/e2ee-core/src/keys/delivery.ts + delivery-sqlite.ts",
+          "scope": "Finite current authorized exact-byte put/readback/resume and Scope-owned row persistence, old 4096 lifetime failure fixed. Mailbox/discovery/report/recipient custody remain separate."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/key-distribution.ts",

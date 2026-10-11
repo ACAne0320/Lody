@@ -93,3 +93,28 @@ cleanup does not guarantee erasure of native/runtime internal copies.
 
 [Envelope extraction note](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-epoch-envelopes.md)
  · [Envelope fingerprints](envelope-provenance.json).
+
+## Finite durable ciphertext delivery
+
+`@lody/e2ee-core/keys/delivery` derives the existing local epoch delivery ID and
+performs one authenticated put/readback round. Saved bytes take precedence; new
+preparation occurs only if none exist. Real current views/fixed verification are
+mandatory on every send/resume, and observations within the round reject known
+rollback/forks. Cross-round persistent pins and global freshness belong to the caller.
+Transport uncertainty returns Pending with unchanged original bytes; cancellation,
+validation and defects propagate. Stored is exact ciphertext readback, not recipient
+installation or proof that a malicious host is honest.
+
+Provide caller-owned DeliveryRemote and the explicit Node
+`@lody/e2ee-core/keys/delivery/sqlite` Layer. It accepts `{path, mode:'create'|'open'}`,
+with an absolute local path; Scope owns closure. Create is exclusive, open fails
+on missing/foreign files, and pending survives process exit/close. Indexed rows
+retain the first ciphertext atomically with a 512-byte bound per row. The whole
+history has no 4096-entry lifetime limit and is never globally decoded. No automatic
+pruning or old JSON-file import is added; retained disk rows grow over time.
+
+This layer has no mailbox discovery/report/repair, scheduler, actual device custody,
+new epoch publication or backup strategy. Local outbox contents are untrusted until
+verified; authenticated principal binding and host admission remain adapter work.
+[Delivery decision/evidence](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-key-delivery.md)
+ · [Delivery fingerprints](delivery-provenance.json).
