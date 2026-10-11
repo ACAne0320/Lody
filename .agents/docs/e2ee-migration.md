@@ -117,6 +117,7 @@ This is the refreshed Draft stack snapshot before this layer. Parent head is the
 | [#1485](https://github.com/LodyAI/Lody/pull/1485) | `e2ee-mailbox-repairs` | `680686d1442e7f8b12f6f8b84af3f17f3c514b97` | `14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8` |
 | [#1487](https://github.com/LodyAI/Lody/pull/1487) | `e2ee-recipient-mailbox` | `098e274221aae13305d29ff75629bee168678ded` | `680686d1442e7f8b12f6f8b84af3f17f3c514b97` |
 | [#1491](https://github.com/LodyAI/Lody/pull/1491) | `e2ee-ledger-sdk-cas` | `f82f8634743d5bc4dd8858cf6867b91d80c221ba` | `098e274221aae13305d29ff75629bee168678ded` |
+| [#1493](https://github.com/LodyAI/Lody/pull/1493) | `e2ee-sender-distribution` | `36ca2685b7eefeb15ebd041e50444796c2686652` | `f82f8634743d5bc4dd8858cf6867b91d80c221ba` |
 
 SDK preparation #1433 and submission #1434 landed; the latter merge is `7c58cabe1d05f132b7133a52b45a16b79274ea6a`. Their implementation remains unchanged. Host protection direction A is settled: trusted composition initializes protect/unprotect once, binds purpose/Org/recipient/epoch/commitment and requires actual save/reload before reports. Synthetic protection is not native platform custody.
 
@@ -124,8 +125,10 @@ L1d [full-history feed](../../packages/e2ee-core/src/ledger/FEED.md), L4g [durab
 
 ## Refreshed main and delivery limit
 
-Fetch verified main `e395d84f4f1b64440f887dce14ffbf061ce48ac1`, tree `ac964903fad38bc254c0335d5dbe339b00d772d4`. All three prerequisites are ancestors: HPKE #1432, SDK preparation #1433 and submission #1434. SDK preparation supplies tests/seams, not a production protector. Since the frozen stack base984c, public core/RPC files have no new overlap. Current main CI38135946007 is successful; exact original combination CI38109831626 remains cancelled, while successor871179 CI38109983563 succeeded. No unchanged attack matrix is rerun on that evidence alone.
+Fetch verified main `987962e77022df6a800f4e889f124b51f6eb8056`, tree `4601a3f2b65d122c5b314cab79dc275fba9af636`. All three prerequisites are ancestors: HPKE #1432, SDK preparation #1433 and submission #1434. SDK preparation supplies tests/seams, not a production protector. Since the frozen stack base984c, public core/RPC files have no new overlap. Current main CI38151323459 is successful; exact original combination CI38109831626 remains cancelled, while successor871179 CI38109983563 succeeded. No unchanged attack matrix is rerun on that evidence alone.
 
-Continue existing implementation with a maximum of24 migration PRs, including the17 already listed. Consolidate remaining SDK, sender, content/recovery consumers and Lab work; keep protocol gates explicit and all new layers Draft. Current-head independent review is separate from author checks and CI.
+Continue existing implementation with a maximum of24 migration PRs, including the18 existing. Consolidate remaining SDK, sender, content/recovery consumers and Lab work; keep protocol gates explicit and all new layers Draft. Current-head independent review is separate from author checks and CI.
 
 L4i adapts [finite sender discovery and dispatch](../../packages/e2ee-core/src/keys/DISTRIBUTION.md) for already committed protected keys, retaining original outbox bytes, per-revision tasks/results, genuine disposition and own publication-report reconstruction. Actual Lab consumption and candidate backup/rotation remain separate; new source has its own current-head review.
+
+L2 SDK update binding uses `./content/streams`, settled header3, genuine public content workflows and operation-owned key cleanup. Direct parent is sender #1493 `36ca2685b7eefeb15ebd041e50444796c2686652`. Snapshot wire/compatibility remains a human decision; published SDK type checks are separate from actual Lab/transport acceptance. Original provider migration remains incomplete.

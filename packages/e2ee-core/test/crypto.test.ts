@@ -1,8 +1,10 @@
 import { hkdfSync, createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Cause, Deferred, Effect, Exit, Fiber, Result } from 'effect';
+import { Cause, Deferred, Effect, Exit, Fiber, Result, Scope } from 'effect';
 import * as Documents from '@lody/e2ee-core/content';
+import { makeStreamsUpdateBinding } from '@lody/e2ee-core/content/streams';
+import type { PayloadProtectionProvider } from '@loro-dev/streams-crdt';
 import * as Signing from '@lody/e2ee-core/signing';
 import * as Ledger from '@lody/e2ee-core/ledger';
 import * as Snapshots from '@lody/e2ee-core/ledger/snapshot';
@@ -10,6 +12,7 @@ import { encodeCbor, type CborValue } from '../src/cbor';
 import {
   Bytes,
   deriveContentKey,
+  disposeContentKey,
   sealContentAead,
   openContentAead,
   contentKeyInfo,
@@ -25,7 +28,7 @@ import {
 import vectors from './crypto-vector.json';
 import epochVector from './epoch-history-vector.json';
 import * as EpochKeys from '@lody/e2ee-core/keys';
-import { copyEpochKeyBytes } from '../src/epoch-key';
+import { copyEpochKeyBytes, disposeEpochKey } from '../src/epoch-key';
 
 const read = <A, E>(result: Result.Result<A, E>): A => Result.getOrThrow(result);
 const hex = (value: Uint8Array) => Buffer.from(value).toString('hex');
@@ -406,6 +409,55 @@ describe('public scoped content crypto', () => {
   });
 });
 
+describe('operation-owned document leaf resources', () => {
+  it('derives only on execution and captures the requested scope', async () => {
+    const epoch = read(Bytes.epochKey(source));
+    const scope = { ...header };
+    const acquire = Documents.scopedDocumentKey(scope, epoch);
+    scope.resource = 'changed-after-construction';
+    const expected = read(Documents.deriveDocumentKey(header, epoch));
+    const actual = await Effect.runPromise(
+      Effect.scoped(
+        acquire.pipe(Effect.flatMap((key) => Effect.fromResult(Documents.exportDocumentKey(key))))
+      )
+    );
+    expect(actual).toEqual(read(Documents.exportDocumentKey(expected)));
+    Documents.disposeDocumentKey(expected);
+
+    const unused = Documents.scopedDocumentKey(header, epoch);
+    disposeEpochKey(epoch);
+    const failed = await Effect.runPromise(Effect.result(Effect.scoped(unused)));
+    expect(Result.isFailure(failed)).toBe(true);
+  });
+
+  it('invalidates a closed leaf while retaining independently owned sibling and borrowed epoch', async () => {
+    const epoch = read(Bytes.epochKey(source));
+    const sibling = read(Documents.deriveDocumentKey(header, epoch));
+    const retained = await Effect.runPromise(
+      Effect.scoped(
+        Documents.scopedDocumentKey(header, epoch).pipe(
+          Effect.map((key) => {
+            expect(read(Documents.exportDocumentKey(key))).toEqual(
+              read(Documents.exportDocumentKey(sibling))
+            );
+            return key;
+          })
+        )
+      )
+    );
+    expect(code(Documents.exportDocumentKey(retained))).toBe('invalid-document-key');
+    Documents.disposeDocumentKey(retained);
+    expect(read(Documents.exportDocumentKey(sibling))).toHaveLength(32);
+    const another = read(Documents.deriveDocumentKey(header, epoch));
+    expect(read(Documents.exportDocumentKey(another))).toEqual(
+      read(Documents.exportDocumentKey(sibling))
+    );
+    Documents.disposeDocumentKey(sibling);
+    Documents.disposeDocumentKey(another);
+    disposeEpochKey(epoch);
+  });
+});
+
 describe('ledger-bound signed document workflows', () => {
   function identity(seed: number) {
     const privateKey = createPrivateKey({
@@ -427,7 +479,7 @@ describe('ledger-bound signed document workflows', () => {
     };
     return { privateKey, raw, publicKey, signBytes, signer };
   }
-  function ledgerFixture() {
+  function ledgerFixture(realCommitment = false) {
     const owner = identity(1),
       phone = identity(2),
       attacker = identity(3);
@@ -442,7 +494,15 @@ describe('ledger-bound signed document workflows', () => {
         new Uint8Array(32).fill(10),
         new Uint8Array(16).fill(10),
         new Uint8Array(32).fill(100),
-        new Uint8Array(32).fill(20),
+        realCommitment
+          ? read(
+              EpochKeys.commitEpochKey(
+                read(Bytes.genesisHash(new Uint8Array(32))),
+                0,
+                read(Bytes.epochKey(source))
+              )
+            ).toBytes()
+          : new Uint8Array(32).fill(20),
       ]),
     ];
     const anchor = read(Bytes.genesisHash(Ledger.hashRecordBytes(rows[0]!).toBytes()));
@@ -476,6 +536,203 @@ describe('ledger-bound signed document workflows', () => {
     return { owner, phone, attacker, scope, key, view, append, addPhone };
   }
   const result = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect));
+  const updateContext = {
+    protocol: 'loro-streams-crdt-payload-protection',
+    version: 2,
+    kind: 'update_batch',
+  } as const;
+  const updateInput = {
+    context: updateContext,
+    plaintext: new Uint8Array([8, 9]),
+    additionalData: () => new Uint8Array([1, 2]),
+  };
+  const bindingOptions = (f: ReturnType<typeof ledgerFixture>) => ({
+    genesis: f.view().genesis,
+    resource: f.scope.resource,
+    model: 'loro' as const,
+    writeEpoch: 0,
+    signer: f.owner.signer,
+    ledger: () => Effect.succeed(f.view()),
+    readEpochKey: () => Effect.sync(() => read(Bytes.epochKey(source))),
+  });
+  it('binds settled header3 updates to real ledger, signer and commitment using published SDK types', async () => {
+    const f = ledgerFixture(true);
+    let owned: Bytes.EpochKey | undefined;
+    const binding = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const value = yield* makeStreamsUpdateBinding({
+            ...bindingOptions(f),
+            readEpochKey: () =>
+              Effect.sync(() => {
+                owned = read(Bytes.epochKey(source));
+                return owned;
+              }),
+          });
+          // Test-only Promise boundary. Lab composition owns its runner and raw SDK lifetime separately.
+          const sdk: PayloadProtectionProvider = {
+            maxSealOverheadBytes: value.maxSealOverheadBytes,
+            seal: (request) => Effect.runPromise(value.seal(request)),
+            open: (request) => Effect.runPromise(value.open(request)),
+          };
+          const sealed = yield* value.seal(updateInput);
+          expect(sealed.header).toEqual(new Uint8Array([3]));
+          expect(sealed.header.length + sealed.sealed.length - updateInput.plaintext.length).toBe(
+            sdk.maxSealOverheadBytes
+          );
+          expect(code(deriveContentKey(owned!, header))).toBe('invalid-content-key');
+          const opened = yield* value.open({
+            ...sealed,
+            context: updateContext,
+            additionalData: new Uint8Array([1, 2]),
+          });
+          expect(opened).toEqual(updateInput.plaintext);
+          expect(code(deriveContentKey(owned!, header))).toBe('invalid-content-key');
+          return value;
+        })
+      )
+    );
+    expect(Result.isFailure(await result(binding.seal(updateInput)))).toBe(true);
+  });
+  it('waits for an owned in-flight key read before releasing its caller scope, rejects late output and clears the key', async () => {
+    const f = ledgerFixture(true);
+    let owned: Bytes.EpochKey | undefined;
+    let ownerReleased = false;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const scope = yield* Scope.make();
+          const entered = yield* Deferred.make<void>(),
+            release = yield* Deferred.make<void>();
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              ownerReleased = true;
+            })
+          ).pipe(Effect.provideService(Scope.Scope, scope));
+          const binding = yield* makeStreamsUpdateBinding({
+            ...bindingOptions(f),
+            readEpochKey: () =>
+              Effect.gen(function* () {
+                yield* Deferred.succeed(entered, undefined);
+                yield* Deferred.await(release);
+                owned = read(Bytes.epochKey(source));
+                return owned;
+              }),
+          }).pipe(Effect.provideService(Scope.Scope, scope));
+          const sealing = yield* Effect.forkChild(Effect.result(binding.seal(updateInput)));
+          yield* Deferred.await(entered);
+          // Start close synchronously to its explicit in-flight lease wait, before releasing the borrowed read.
+          const closing = yield* Effect.sync(() => Effect.runFork(Scope.close(scope, Exit.void)));
+          expect(code(yield* Effect.result(binding.seal(updateInput)))).toBe('closed');
+          expect(ownerReleased).toBe(false);
+          yield* Deferred.succeed(release, undefined);
+          const settled = yield* Fiber.join(sealing);
+          expect(Result.isFailure(settled)).toBe(true);
+          yield* Fiber.join(closing);
+          expect(ownerReleased).toBe(true);
+          expect(code(deriveContentKey(owned!, header))).toBe('invalid-content-key');
+        })
+      )
+    );
+  });
+  it('awaits interrupted signing settlement and invalidates its owned epoch on cancellation', async () => {
+    const f = ledgerFixture(true);
+    let owned: Bytes.EpochKey | undefined;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const entered = yield* Deferred.make<void>(),
+            release = yield* Deferred.make<void>();
+          const binding = yield* makeStreamsUpdateBinding({
+            ...bindingOptions(f),
+            readEpochKey: () =>
+              Effect.sync(() => {
+                owned = read(Bytes.epochKey(source));
+                return owned;
+              }),
+            signer: {
+              publicKey: f.owner.publicKey,
+              sign: (message) =>
+                Effect.uninterruptible(
+                  Effect.gen(function* () {
+                    yield* Deferred.succeed(entered, undefined);
+                    yield* Deferred.await(release);
+                    return read(Bytes.signature(f.owner.signBytes(message)));
+                  })
+                ),
+            },
+          });
+          const sealing = yield* Effect.forkChild(binding.seal(updateInput));
+          yield* Deferred.await(entered);
+          sealing.interruptUnsafe();
+          expect(sealing.pollUnsafe()).toBeUndefined();
+          const alive = read(deriveContentKey(owned!, header));
+          expect(alive).toBeDefined();
+          disposeContentKey(alive);
+          yield* Deferred.succeed(release, undefined);
+          const exit = yield* Fiber.await(sealing);
+          expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
+          expect(code(deriveContentKey(owned!, header))).toBe('invalid-content-key');
+        })
+      )
+    );
+  });
+  it('rejects forged authors, wrong key commitments, bad AAD and undeclared snapshot format', async () => {
+    const f = ledgerFixture(true);
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const good = yield* makeStreamsUpdateBinding(bindingOptions(f));
+          const sealed = yield* good.seal(updateInput);
+          const forged = sealed.sealed.slice();
+          forged[forged.length - 1] ^= 1;
+          const rejectingKey = yield* makeStreamsUpdateBinding({
+            ...bindingOptions(f),
+            readEpochKey: () => Effect.die('forged frame must not resolve key'),
+          });
+          expect(
+            Result.isFailure(
+              yield* Effect.result(
+                rejectingKey.open({
+                  ...sealed,
+                  sealed: forged,
+                  context: updateContext,
+                  additionalData: new Uint8Array([1, 2]),
+                })
+              )
+            )
+          ).toBe(true);
+          expect(
+            Result.isFailure(
+              yield* Effect.result(
+                good.open({
+                  ...sealed,
+                  context: updateContext,
+                  additionalData: new Uint8Array([2, 1]),
+                })
+              )
+            )
+          ).toBe(true);
+          const wrong = yield* makeStreamsUpdateBinding({
+            ...bindingOptions(f),
+            readEpochKey: () => Effect.sync(() => read(Bytes.epochKey(new Uint8Array(32).fill(6)))),
+          });
+          expect(code(yield* Effect.result(wrong.seal(updateInput)))).toBe('commitment-mismatch');
+          expect(
+            code(
+              yield* Effect.result(
+                good.seal({
+                  ...updateInput,
+                  context: { ...updateContext, kind: 'snapshot', continuationOffset: '1' },
+                })
+              )
+            )
+          ).toBe('unsupported-streams-context');
+        })
+      )
+    );
+  });
+
   it('round-trips native-signed v0 bytes and keeps the scoped document leaf shared across update/snapshot purposes', async () => {
     const f = ledgerFixture(),
       plaintext = new Uint8Array([1, 2, 3]);

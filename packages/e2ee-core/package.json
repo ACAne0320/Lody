@@ -27,7 +27,8 @@
     "./keys/mailbox/repair/sqlite": "./src/keys/repair-sqlite.ts",
     "./keys/host/mailbox/sqlite": "./src/keys/mailbox-client.ts",
     "./submission/streams": "./src/submission/streams.ts",
-    "./keys/host/distribution/sqlite": "./src/keys/distribution-sqlite.ts"
+    "./keys/host/distribution/sqlite": "./src/keys/distribution-sqlite.ts",
+    "./content/streams": "./src/content/streams.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
@@ -52,6 +53,7 @@
     "oxfmt": "^0.65.0",
     "@types/better-sqlite3": "catalog:",
     "tsx": "4.23.7",
-    "@loro-dev/streams-client": "catalog:"
+    "@loro-dev/streams-client": "catalog:",
+    "@loro-dev/streams-crdt": "catalog:"
   }
 }

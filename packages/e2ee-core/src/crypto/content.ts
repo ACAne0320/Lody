@@ -23,6 +23,15 @@ export interface ContentKey {
   readonly [contentKeyBrand]: true;
 }
 const keys = new WeakMap<ContentKey, { bytes: Uint8Array; info: Uint8Array }>();
+/** Invalidate this capability and wipe its owned leaf bytes. Idempotent;
+ * does not promise erasure of every engine/native scratch copy. */
+export function disposeContentKey(key: ContentKey): void {
+  const row = keys.get(key);
+  if (row) {
+    row.bytes.fill(0);
+    keys.delete(key);
+  }
+}
 const fail = (code: string) => Result.fail(new ContentError({ code }));
 
 // Result.gen short-circuits without closing the iterator. Cleanup must complete

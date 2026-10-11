@@ -26,6 +26,8 @@ import { signVerified, type DeviceSigner } from '../signing';
 import { documentKeyForScope, type DocumentKey } from './document-key';
 export {
   deriveDocumentKey,
+  disposeDocumentKey,
+  scopedDocumentKey,
   importDocumentKey,
   exportDocumentKey,
   type DocumentKey,

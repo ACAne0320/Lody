@@ -1,0 +1,40 @@
+{
+  "sourceCommit": "f1bc0c52649c21d2e9b620fe3558874c40545e38",
+  "candidateCommit": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "hashAlgorithm": "SHA-256",
+  "sources": {
+    "packages/e2ee-core/src/pure/streams-content.ts": {
+      "core": "148977e28dcad01a9212abaae9da80e387571dcda9a37403f3aa453e02cca4b1",
+      "candidate": "148977e28dcad01a9212abaae9da80e387571dcda9a37403f3aa453e02cca4b1"
+    },
+    "packages/e2ee-core/src/streams-content.ts": {
+      "core": "94b87cf3dc2bb48dddda0ad2b95c28e49e2c2253afedbb5af096cef3c40e5ee0",
+      "candidate": "e75c8644f6644182de949199dab5c9542b25d916f19ba14ae8026fd398a59fb8"
+    },
+    "packages/e2ee-core/test/streams-content.test.ts": {
+      "core": "cc06625111ed6c2a77ea2259d9dbf2728a6cc8dbd3ca8bb7d51226a3e865b180",
+      "candidate": "35b465f8d3755279a875f422b80fc175a60522c13bf64e86a428500b2848098b"
+    }
+  },
+  "destinations": [
+    "src/content/streams.ts",
+    "test/crypto.test.ts"
+  ],
+  "scope": "Only settled header3 update binding. Snapshot4 writer/read compatibility, offset-authenticated new format and real SDK/Lab integration remain unfinished.",
+  "adaptations": [
+    "Effect descriptions only, type-only published streams-crdt 0.16.2 contract; no hidden runtime or injected verifier.",
+    "Genuine historical author and current seal/rotation checks use public content workflows; exact epoch commitment checked before leaf derivation.",
+    "Each key read transfers a fresh owned opaque epoch capability; leaf/epoch cleanup bracket all exits. Scope closes admission, awaits active leases and rejects late plaintext/ciphertext.",
+    "Retain secure host randomness and existing header3/v0 algorithms; no nonce override or snapshot format invented."
+  ],
+  "destinationFingerprints": {
+    "src/content/streams.ts": "d68be679abd811564fbb410f063fffb3938d4a7655110e8ac111314e39c1fb88",
+    "test/crypto.test.ts": "d61af89d14c4d4fe52276b82d7d41a8e77d6995f96562875fc3ec30ce2f2b3c0"
+  },
+  "sourceState": "Original and candidate sources are read-only; exact source-specific fingerprints from the complete manifest. Frozen working copy fingerprints below.",
+  "workingCopyFingerprints": {
+    "src/streams-content.ts": "e75c8644f6644182de949199dab5c9542b25d916f19ba14ae8026fd398a59fb8",
+    "src/pure/streams-content.ts": "148977e28dcad01a9212abaae9da80e387571dcda9a37403f3aa453e02cca4b1",
+    "test/streams-content.test.ts": "35b465f8d3755279a875f422b80fc175a60522c13bf64e86a428500b2848098b"
+  }
+}

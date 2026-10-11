@@ -10,9 +10,10 @@ signature/AAD contexts. The root foundation remains separate.
 registered in a private WeakMap and bound to genesis/resource/epoch/docEpoch=0;
 clones cannot create keys. Import/export own copies and grant no authority.
 The supplied epoch key/document leaf must come from the caller's validated local
-installation; derivation alone does not verify an epoch commitment. JavaScript
-key objects live while reachable; this is not native secure custody or guaranteed
-physical-memory erasure. Device private keys cannot be exported here.
+installation; derivation alone does not verify an epoch commitment. `scopedDocumentKey` derives lazily and releases its independently owned leaf with Scope.
+`disposeDocumentKey` is idempotent and invalidates only that leaf, leaving borrowed
+epoch keys and independent siblings intact. Owned byte buffers are cleared; this
+is not native secure custody or guaranteed physical-memory erasure. Device private keys cannot be exported here.
 
 `sealDocument` returns an inert Effect. Inputs are read and bounded when it runs;
 caller-owned scope, plaintext, binding, signer and lookup capabilities are captured
@@ -63,3 +64,16 @@ sleeps, real keys or physical-device claims are involved.
 
 [Extraction note](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md)
  · [Source fingerprints](provenance.json).
+
+`./content/streams` adds `makeStreamsUpdateBinding`, an Effect-native header3 update
+codec typed against published streams-crdt 0.16.2. Its initialization Scope closes
+admission, awaits active operations and rejects late output. The independently
+selected Org/resource/model/write epoch and fixed signer are captured once. Each
+key read must transfer a fresh owned opaque epoch key; the codec verifies its real
+ledger commitment before deriving a scoped leaf and clears both after use.
+Historical signatures are checked before untrusted frame epochs can request keys.
+It contains no Promise runner, production protector or SDK transport. Lab owns the
+actual SDK bridge, plaintext disposal after use and transport/native lifetime.
+Snapshot writer and legacy-read compatibility remain unimplemented pending the
+offset-binding decision; this partial codec rejects snapshots explicitly and
+does not count as complete provider migration. See [binding provenance](streams-provenance.json).
