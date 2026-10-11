@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1478](https://github.com/LodyAI/Lody/pull/1478)
 
 [English](2026-10-11-live-activity-presence.md)
 
