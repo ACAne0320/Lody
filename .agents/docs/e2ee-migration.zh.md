@@ -83,6 +83,8 @@ pnpm --filter @lody/e2ee-lab exec vitest run test/review2-b-sync.test.ts
 | 后续 offset 重复已提交控制记录被接受   | L6 + ledger transport | 拒绝且状态/游标不推进。                                |
 | 回退页让持久游标后退                   | L6 + ledger transport | 拒绝并保留已保存状态/游标。                            |
 
+冻结副本完整复跑：core **574 过 / 7 败 / 1 跳过**；确定性 Lab **182 过 / 2 败**，排除外部模型套件。九项失败均与上表一致。公共 submission 实际归属为 `src/submission/index.ts` 和 `src/submission/sqlite.ts`；候选 transport framing 待该契约落地后适配。
+
 L3 另复现、修复已知快照 continuationOffset 替换。删除测试、缺导出或禁用应迁功能都不能冒充修复。
 
 ## 验收与资源归属

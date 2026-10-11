@@ -83,6 +83,8 @@ The first run independently reproduced **7 failures / 5 passes**; the Lab run re
 | Duplicate committed control record accepted at later offset   | L6 + ledger transport | Reject it with state and cursor unchanged.                                                                  |
 | Rollback page rewinds persistent cursor                       | L6 + ledger transport | Reject it with prior durable state/cursor retained.                                                         |
 
+Full frozen-copy confirmation: core **574 passed / 7 failed / 1 skipped**; deterministic Lab **182 passed / 2 failed**, excluding the external-model suite. All nine failures match the table. The public submission target is `src/submission/index.ts` with SQLite in `src/submission/sqlite.ts`; candidate transport framing must adapt to that contract after it lands.
+
 Also reproduce and fix the known snapshot continuation-offset substitution in L3. No test removal, missing export or disabled functionality substitutes for a fix.
 
 ## Acceptance and resource ownership

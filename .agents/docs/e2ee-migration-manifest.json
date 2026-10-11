@@ -799,7 +799,7 @@
         "core": "93ef3345f1be9e08dcf8ed093a05810f9560d9e1246f25b3c36f09d72721ab0a",
         "candidate": "93ef3345f1be9e08dcf8ed093a05810f9560d9e1246f25b3c36f09d72721ab0a"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/node-store.ts",
+      "targetPath": "packages/e2ee-core/src/submission/sqlite.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -832,7 +832,7 @@
         "core": "b6a5afedd73c3dc92d0dbe97cbd1f54aac0ca8b0f731f109a7a7263648362977",
         "candidate": "b6a5afedd73c3dc92d0dbe97cbd1f54aac0ca8b0f731f109a7a7263648362977"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/submit.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -931,7 +931,7 @@
         "core": "f58895beecfdd06df3e7af3ca76aeb2eb9f572526e178d481b63dbf3e3c96e76",
         "candidate": "f58895beecfdd06df3e7af3ca76aeb2eb9f572526e178d481b63dbf3e3c96e76"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/node-store.ts",
+      "targetPath": "packages/e2ee-core/src/submission/sqlite.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1041,7 +1041,7 @@
         "core": "ca20d2a3445cce62a27b6246fdb609b649c8f2a85e2294d29c9d75b8185784fc",
         "candidate": "ca20d2a3445cce62a27b6246fdb609b649c8f2a85e2294d29c9d75b8185784fc"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/ledger-ports.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1085,7 +1085,7 @@
         "core": "c1069e89f26ff68de1df3a6ef570063c96d23633e9c59eae66ffea43df1f6da3",
         "candidate": "c1069e89f26ff68de1df3a6ef570063c96d23633e9c59eae66ffea43df1f6da3"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/node-journal.ts",
+      "targetPath": "packages/e2ee-core/src/submission/sqlite.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1250,7 +1250,7 @@
         "core": "41dee2e6919e232ae114c9d644310bbdb707c4f2f679c553d688312f3fb2d9db",
         "candidate": "41dee2e6919e232ae114c9d644310bbdb707c4f2f679c553d688312f3fb2d9db"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/ledger.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1294,7 +1294,7 @@
         "core": "810e3f4af37affe754556e1cff59c2b6d6a3d68af8beffdbf88997fab7855bda",
         "candidate": "810e3f4af37affe754556e1cff59c2b6d6a3d68af8beffdbf88997fab7855bda"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/commands.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1415,7 +1415,7 @@
         "core": "c7cb9ad5da49bd6052ace1fa93463b2842c68c687fd327643e703543212445d2",
         "candidate": "c7cb9ad5da49bd6052ace1fa93463b2842c68c687fd327643e703543212445d2"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/journal-codec.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1426,7 +1426,7 @@
         "core": "d1ff09b4c675b169584fb45524f3a33af2ed8fdf3b162581056331db43c123fc",
         "candidate": "d1ff09b4c675b169584fb45524f3a33af2ed8fdf3b162581056331db43c123fc"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/journal.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1492,7 +1492,7 @@
         "core": "9f3495770fe837ed00e75a04038d31f1cc56dff7bca6f18c7634dd2f7d05dff0",
         "candidate": "9f3495770fe837ed00e75a04038d31f1cc56dff7bca6f18c7634dd2f7d05dff0"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/ledger-page.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1624,7 +1624,7 @@
         "core": "d32ab499bf18113baf5cb1a11f82950338095e8edc959687b31d9de6873f2097",
         "candidate": "d32ab499bf18113baf5cb1a11f82950338095e8edc959687b31d9de6873f2097"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/submit-outcome.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1701,10 +1701,10 @@
         "core": "965eeb13d634afb67b6e90db377a755386ab1f38bf126914da844ae2800b7ae3",
         "candidate": "965eeb13d634afb67b6e90db377a755386ab1f38bf126914da844ae2800b7ae3"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/streams-fetch.ts",
+      "targetPath": "packages/e2ee-core/src/submission/streams.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "layer": "L1",
+      "reason": "Submission #1434 owns the public transport contract. After it lands, migrate the published-SDK length-framing/read/CAS adapter against that contract; no copied candidate coordinator or fallback append."
     },
     {
       "sourcePath": "packages/e2ee-core/src/streams.ts",
@@ -1712,10 +1712,10 @@
         "core": "d9136fe6c72c8299d6b234e9207eca8203f2ae7614bf193cb5fb0ab867e6ea0b",
         "candidate": "d9136fe6c72c8299d6b234e9207eca8203f2ae7614bf193cb5fb0ab867e6ea0b"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/streams.ts",
+      "targetPath": "packages/e2ee-core/src/submission/streams.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "layer": "L1",
+      "reason": "Submission #1434 owns the public transport contract. After it lands, migrate the published-SDK length-framing/read/CAS adapter against that contract; no copied candidate coordinator or fallback append."
     },
     {
       "sourcePath": "packages/e2ee-core/src/team-codec.ts",
@@ -1855,7 +1855,7 @@
         "core": "eecd282404c3f8cb378e7a4ab9c4aaa9bcae4c7ff36406dc7b797cfab628cedc",
         "candidate": "eecd282404c3f8cb378e7a4ab9c4aaa9bcae4c7ff36406dc7b797cfab628cedc"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/ledger-client.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
@@ -1866,7 +1866,7 @@
         "core": "365acefaf38d183b4c0115034ae0c2c6502265fdaa2e9573750e064ad9a72709",
         "candidate": "365acefaf38d183b4c0115034ae0c2c6502265fdaa2e9573750e064ad9a72709"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/ledger-engine.ts",
+      "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
       "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
