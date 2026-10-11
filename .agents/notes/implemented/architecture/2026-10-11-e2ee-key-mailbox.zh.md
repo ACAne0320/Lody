@@ -11,7 +11,7 @@ Translation: current
 
 ## 归属与取舍
 
-直接父层为 snapshot Draft #1464，13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf。[mailbox 契约](../../../../packages/e2ee-core/src/keys/MAILBOX.md) 说明信任、分页、资源和存储边界。报告模块保持跨平台，SQLite 只进入明确的 Node 子入口。调用方负责真实 Org／设备认证、当前已验证账本来源，以及自身异步请求的取消和等待；不增加隐藏 Runtime、后台 fiber 或生产消费者。
+直接父层为 snapshot Draft #1464，5d3967ec94e3b10fdec76220937e9fcfe2623590。[mailbox 契约](../../../../packages/e2ee-core/src/keys/MAILBOX.md) 说明信任、分页、资源和存储边界。报告模块保持跨平台，SQLite 只进入明确的 Node 子入口。调用方负责真实 Org／设备认证、当前已验证账本来源，以及自身异步请求的取消和等待；不增加隐藏 Runtime、后台 fiber 或生产消费者。
 
 源实现已有中心 mailbox 和 key-installed/v1 来源／revision 报告。本层把它适配为真正的不可伪造账本 view 和已合入固定密码实现，不复制全局 JSON 展开或可注入成功的 verifier。索引存储使用不同 application ID，不转换或误认旧文件。原密文全部保留；相同包重复追加不增行，不同合法包与历史仍可增长，不自行定义保留策略。分页只是当前投影提示，不是跨请求稳定快照或持久同步游标。
 
@@ -24,3 +24,7 @@ Translation: current
 包测试 196/196 通过。测试 fixture 类型错误和首轮重复测试的 5 秒超时已修正，原日志保留，没有隐藏协议失败。完整 root、格式、文档／公共边界和精确 head CI 分别报告。不声称生产启用、真实存钥、永久丢失备份、原子移除／恢复库格式、传输认证或 Lab 已迁完；[迁移归属](../../../docs/e2ee-migration.zh.md) 保留这些门槛。
 
 最终 196 测试代码树通过 native Git／本地 IPC 的完整 root check、root format、docs check 和公共边界。精确 head 远端 CI 另报。
+
+Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472).
+
+同步父层计数修复后，组合 core 197/197、typecheck 与完整 root check 通过。精确 Draft head/base 交独立审查；组合验证后未再改代码。
