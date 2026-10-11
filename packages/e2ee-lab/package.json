@@ -1,0 +1,33 @@
+{
+  "name": "@lody/e2ee-lab",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./ledger": "./src/platform/ledger-client.ts",
+    "./runtime": "./src/platform/runtime.ts",
+    "./scheduler": "./src/pure/scheduler.ts"
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm test",
+    "format": "oxfmt 'src/**/*.ts' 'test/**/*.ts' 'test/**/*.mts'",
+    "format:check": "oxfmt --check 'src/**/*.ts' 'test/**/*.ts' 'test/**/*.mts'"
+  },
+  "dependencies": {
+    "@lody/e2ee-core": "workspace:*",
+    "@loro-dev/streams-client": "catalog:",
+    "@loro-dev/sqlite-riverrun": "0.3.0",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "3.2.4",
+    "oxfmt": "^0.65.0",
+    "tsx": "4.23.7",
+    "better-sqlite3": "catalog:",
+    "@types/better-sqlite3": "catalog:"
+  }
+}

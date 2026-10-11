@@ -3427,7 +3427,10 @@
       "targetPath": "packages/e2ee-lab/src/runtime.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Consume the public core and published SDK; retain local host, scheduler, replay, fixtures and real storage tests."
+      "reason": "Scoped runtime port exists in Lab integration WIP with explicit initialization, retained native settlement and negative-control owner cleanup evidence; full actor/driver/replay integration pending.",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/runtime.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/scenario.ts",
@@ -3449,7 +3452,10 @@
       "targetPath": "packages/e2ee-lab/src/schedule.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Consume the public core and published SDK; retain local host, scheduler, replay, fixtures and real storage tests."
+      "reason": "Stable schedule identity port exists in Lab integration WIP; runtime/driver/replay consumption pending.",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/pure/schedule.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/scheduler.ts",
@@ -3460,7 +3466,10 @@
       "targetPath": "packages/e2ee-lab/src/scheduler.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Consume the public core and published SDK; retain local host, scheduler, replay, fixtures and real storage tests."
+      "reason": "Pure scheduler port exists in Lab integration WIP with typed Result errors and permit/time probes; actual runtime/driver consumption pending.",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/pure/scheduler.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/services/clock.ts",
@@ -3526,7 +3535,10 @@
       "targetPath": "packages/e2ee-lab/src/services/run.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Consume the public core and published SDK; retain local host, scheduler, replay, fixtures and real storage tests."
+      "reason": "Explicit deprecated Promise boundary port in Lab WIP; new workflows use Effects, full services composition pending.",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/run.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/trace.ts",
@@ -4740,5 +4752,23 @@
       "conclusion": "SUCCESS"
     }
   },
-  "deliveryLimit": 24
+  "deliveryLimit": 24,
+  "labIntegrationWorkInProgress": {
+    "branch": "e2ee-lab-integration",
+    "parent": "36ca2685b7eefeb15ebd041e50444796c2686652",
+    "draftPr": null,
+    "consumerTests": 9,
+    "originalLabFailuresClosed": false,
+    "remaining": "Original host/actors, content, SDK snapshots, Loro/Flock persistence, scheduler, attack capability, replay, CLI and full scenarios pending.",
+    "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
+    "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
+    "authorRootCheck": "Passed with Lab9/core296, format/docs/public boundary; no branch CI or independent acceptance.",
+    "lastFetchedMain": {
+      "head": "987962e77022df6a800f4e889f124b51f6eb8056",
+      "tree": "4601a3f2b65d122c5b314cab79dc275fba9af636",
+      "ci": 38151323459,
+      "ciConclusion": "success",
+      "coreLabProtocolOverlapFromStackBottom": []
+    }
+  }
 }

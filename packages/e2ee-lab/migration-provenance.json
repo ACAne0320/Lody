@@ -1,0 +1,30 @@
+{
+  "sourceHead": "f1bc0c52649c21d2e9b620fe3558874c40545e38",
+  "sourceFingerprints": {
+    "src/platform/session.ts": "0dd6c102cd8a608bf7a31baa05549cc5b7320b7e51277e98bcf6ffcde120c60f",
+    "test/review2-b-sync.test.ts": "8f3e00b59eb4084b7c00ec12574669741663086ce792ff1966130b1db34079b9",
+    "package.json": "ee3d590fe8738e2b715561d92856d6618ae74c38df0928cceeb6961efeca99ec",
+    "AGENTS.md": "66d79c766d95312ae17a4a9d2b07cb902b20e5fa06b0e5a9c067289165d63731",
+    "src/scheduler.ts": "1b8012063c0281ca30e913840a8471e4e6c17e41aaf93272070c695989b73aaf",
+    "src/schedule.ts": "760cc54684912e06f582bb015a2efe7ddd2d37c51e8c4043e593c70f54bf7a4f",
+    "src/runtime.ts": "51e26c9eaf96b10a875f5f951eaf6fa200748d6221d7fcf52f8975ddd5351e63",
+    "src/services/run.ts": "d05a7592b08dda18ae5f2a0be9602d6554a978fb16b6fd1d65ea8fbc782294f7"
+  },
+  "implementation": "New composition of public reader/feed; no copied original core.",
+  "originalFailures": "Retained immutable baseline; not yet closed by original host/actor scenarios.",
+  "targetFingerprints": {
+    "AGENTS.md": "a0f4a85a63b01ac8b98bef5de93991e2a3bfd435a5b7081bcd794282b19c9390",
+    "README.md": "2747a8dc8bb85cc0bb8129e6ff751ecd17a07d4bf27f00f7d06d613e261cf47e",
+    "package.json": "ee5dad1e1e752f0201b24e6e1585001bc32115e180f0318322098e5da15b5761",
+    "src/platform/ledger-client.ts": "b99e5c3476268a2db988ac3e0110cecce144564cb1b8b2ae15f6889fafc34285",
+    "src/platform/run.ts": "09857026104ea0c54113197a1786fefbd8028831da4b9fa6b535e704718ee87c",
+    "src/platform/runtime.ts": "872502a701f6074cd34abb1fe04c9e065bbd4ac36a95f4202b4110f4945985a7",
+    "src/pure/schedule.ts": "760cc54684912e06f582bb015a2efe7ddd2d37c51e8c4043e593c70f54bf7a4f",
+    "src/pure/scheduler.ts": "2e9d62e9a39a6b92ea78dbf2d59650f1366ea8921bf81af385826e164b037240",
+    "test/ledger-client.test.ts": "51a7e0477d8cdf4878ab8f9e508c780f2b45658ab2aa2095cd31449c16c7afad",
+    "test/ledger-reopen.mts": "18663757d020087fcefb7c0cfc887f756cd04287c504ddd19e7de8d6d547568f",
+    "test/runtime.test.ts": "00eff261885d5a423fd69ee723bfb6ba8b584c843c6f7ce19a11d82555984388",
+    "test/scheduler.test.ts": "68ad31cf9cf10cbd1e27e3b99dfdb4b68c9c6033f73823fa892af6b742666c12",
+    "tsconfig.json": "b88fb9865d3be1692d2db141b9f4bac2ceebfa4eaf31027ffa2991da2a6a756d"
+  }
+}
