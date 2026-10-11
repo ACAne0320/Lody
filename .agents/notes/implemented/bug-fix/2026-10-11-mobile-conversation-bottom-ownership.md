@@ -63,12 +63,19 @@ offset. Mirror measurement returns the same content height while leaving both th
 viewport height and reading offset unchanged.
 
 Strict TypeScript compilation of the controller, simulator and measurement helper
-passes. The full composer React suite could not collect because the ACP core
-submodule/dependency is unavailable, and package typechecking cannot run without
-`tsgo`. Existing local dependencies were linked temporarily for focused validation;
-manifests and the lockfile are unchanged. Documentation checks retain the 82 baseline
-errors from unavailable submodules and existing documents; no protected topics are
-registered.
+passes. With locked dependencies in an isolated public clone, the composer React
+suite and both scroll suites pass together: 104 tests. The exact failing CI command,
+`NODE_ENV=test pnpm --filter @lody/components run test --maxWorkers=4 --shard=3/3`,
+also passes all 185 files and 1,755 tests in that clone. The measurement invariant
+snapshots the actual initial live height, including padding: assuming 48px falsely
+failed against the real 52px box in CI. It still checks that growth and shrink
+measurements leave the live height unchanged. Repository formatting, typechecking
+and linting pass. Full `pnpm check` then stops on unrelated CLI process, simulator,
+Git and history test failures on this host; that CLI job passed in the inspected
+GitHub run.
+Manifests and the lockfile are unchanged. Documentation checks in the original
+worktree retain the 82 baseline errors from unavailable submodules and existing
+documents; no protected topics are registered.
 
 WebKit's local browser executable is absent, so these checks do not establish native
 iOS fling behavior. Device acceptance still requires a fast downward fling, bottom

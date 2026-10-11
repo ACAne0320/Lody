@@ -69,6 +69,7 @@ describe('ChatComposer auto resize', () => {
 
     const textarea = promptRef.current;
     expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    const initialHeight = textarea!.style.height;
     textarea!.style.lineHeight = '24px';
     let scrollHeight = 240;
     const measuredLiveHeights: string[] = [];
@@ -81,7 +82,7 @@ describe('ChatComposer auto resize', () => {
 
     expect(textarea?.style.height).toBe('240px');
     expect(textarea?.style.overflowY).toBe('hidden');
-    expect(measuredLiveHeights).toEqual(['48px']);
+    expect(measuredLiveHeights).toEqual([initialHeight]);
 
     scrollHeight = 288;
     await act(async () => root.render(renderComposer('twelve\n'.repeat(12))));
@@ -100,7 +101,7 @@ describe('ChatComposer auto resize', () => {
     await act(async () => root.render(renderComposer('three\nlines\nhere')));
     expect(textarea?.style.height).toBe('72px');
     expect(textarea?.style.overflowY).toBe('hidden');
-    expect(measuredLiveHeights).toEqual(['48px', '240px', `${elevenRowsHeight}px`]);
+    expect(measuredLiveHeights).toEqual([initialHeight, '240px', `${elevenRowsHeight}px`]);
     expect(document.querySelectorAll('textarea')).toHaveLength(1);
 
     // Cleared (e.g. after sending): back to the two-row minimum, whatever the

@@ -47,10 +47,16 @@ viewport 从 480px 短暂扩大到 696px，让距底部 80px 的阅读位置丢�
 恢复 textarea 高度不能恢复阅读位置。新的镜像测量得到相同内容高度，同时保持 viewport
 高度和阅读位置不变。
 
-控制器、模拟器和测量函数的 strict TypeScript 编译通过。完整 composer React 测试因缺失
-ACP core 子模块/依赖无法收集，包级类型检查因缺失 `tsgo` 无法执行。
-验证临时连接了本机已有依赖；manifest 和 lockfile 不变。
-文档检查保留了缺失子模块及既有文档造成的 82 个基线错误，没有注册 SHA 保护主题。
+控制器、模拟器和测量函数的 strict TypeScript 编译通过。在隔离的公开仓库 clone 中安装
+锁定依赖后，composer React 测试与两套滚动测试共同通过，共 104 个测试。实际失败的 CI 命令
+`NODE_ENV=test pnpm --filter @lody/components run test --maxWorkers=4 --shard=3/3`
+在该 clone 中也全部通过，共 185 个文件、1,755 个测试。
+测量不变量记录包括 padding 在内的真实初始高度：把它写死为 48px 会在 CI 的真实
+52px 输入框上误报。测试仍验证增长和缩小测量时真实输入框的高度不变。
+仓库格式化、类型检查和 lint 通过。完整 `pnpm check` 随后因本机的 CLI 进程、模拟器、Git
+和历史测试失败而停止；已读取的 GitHub run 中该 CLI 任务通过。这些测试不涉及本次改动。
+manifest 和 lockfile 不变。原始工作区的文档检查保留了缺失子模块及既有文档
+造成的 82 个基线错误，没有注册 SHA 保护主题。
 
 本机没有 WebKit 浏览器可执行文件，因此这些检查不能证明 iOS 原生甩动效果。
 真机验收仍需覆盖快速向下甩动、底部回弹、向上打断，以及 composer 刚获得焦点和原本已有焦点时的输入。
