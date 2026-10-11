@@ -6,6 +6,7 @@ import type { makeLabControlGateway } from './control-gateway';
 import { makeLabOperations } from './operation-scope';
 import { dispatchLabMailbox, type LabMailboxHost } from './mailbox-http';
 import { LabJoinError, parseLabJoin, type makeLabJoinMailbox } from './join-mailbox';
+import { LabWorkspaceError, type makeLabWorkspaceRegistry } from './workspace-registry';
 
 type Credentials = Effect.Success<ReturnType<typeof makeLabCredentials>>;
 type Control = Effect.Success<ReturnType<typeof makeLabControlGateway>>;
@@ -30,18 +31,20 @@ const respond = (response: ServerResponse, status: number, value: unknown) => {
   response.writeHead(status, { 'content-type': 'application/json' });
   response.end(JSON.stringify(value));
 };
-/** Local HTTP composition, currently credential, control, mailbox and join routes only. Workspace
+/** Local HTTP composition, currently credential, control, mailbox, joins and genesis discovery routes only. Workspace
  * registration/checkpoint selection is an independent harness capability. HTTP JSON,
  * headers and offsets cannot select it. No generic proxy or production account auth.
  * Caller creates credentials/control owners in the same enclosing Scope first. */
 export function makeLabHttpHost(input: {
   readonly credentials: Credentials;
+  readonly workspaces?: Effect.Success<ReturnType<typeof makeLabWorkspaceRegistry>>;
   readonly control: (genesis: Bytes.GenesisHash) => Control | undefined;
   readonly mailbox?: (genesis: Bytes.GenesisHash) => LabMailboxHost | undefined;
   readonly joins?: (genesis: Bytes.GenesisHash) => Joins | undefined;
 }) {
   return Effect.gen(function* () {
     const credentials = input.credentials,
+      workspaces = input.workspaces,
       control = input.control,
       mailbox = input.mailbox,
       joins = input.joins;
@@ -116,6 +119,19 @@ export function makeLabHttpHost(input: {
         const path = request.url ?? '';
         if (request.method === 'GET' && (path === '/healthz' || path === '/readyz'))
           return { ok: true };
+        const genesisMatch = /^\/v1\/spaces\/([0-9a-f]{64})\/genesis$/.exec(path);
+        if (genesisMatch && request.method === 'GET') {
+          const authorization = request.headers.authorization;
+          if (typeof authorization !== 'string' || !/^Bearer [0-9a-f]{64}$/.test(authorization))
+            return yield* reject(401);
+          yield* credentials.authenticate(authorization.slice(7));
+          const anchor = yield* Effect.fromResult(Bytes.genesisHash(hex(genesisMatch[1], 32)));
+          const saved = workspaces ? yield* workspaces.get(anchor) : undefined;
+          if (!saved) return yield* reject(404);
+          // Original authenticated discovery permits unbound joiners. This returns
+          // only reverified genesis bytes, never a current trusted endpoint/view.
+          return { genesis: Buffer.from(saved.record).toString('hex') };
+        }
         const joinsMatch = /^\/v1\/spaces\/([0-9a-f]{64})\/joins$/.exec(path);
         if (joinsMatch && (request.method === 'GET' || request.method === 'POST')) {
           const authorization = request.headers.authorization;
@@ -229,7 +245,8 @@ export function makeLabHttpHost(input: {
                 response,
                 result.failure instanceof LabHttpError
                   ? result.failure.status
-                  : result.failure instanceof LabJoinError
+                  : result.failure instanceof LabJoinError ||
+                      result.failure instanceof LabWorkspaceError
                     ? result.failure.code === 'conflict'
                       ? 409
                       : result.failure.code === 'invalid-input'

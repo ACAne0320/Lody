@@ -74,8 +74,14 @@ join mailbox 消费公开请求签名/验证。真实 unbound 外来设备可提
 
 原完整 host/gateway、诚实 actors、密钥投递/轮换组合、Flock 进程重开/恢复/live
 session、schedule driver、攻击能力、捕获 replay、原 fixtures 和 CLI/启动流程
-尚未完成。当前 42 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
+尚未完成。当前 45 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
 快照 wire/offset、replay 熵、严格期限 B、恢复库、D12、发布设备永久丢失仍是待决项。
 原生存钥、生产 E2EE、整栈独立审查、CI 和产品验收各自独立。
 参见[完整清单](../../.agents/docs/e2ee-migration-manifest.json)和
 [所属 Note](../../.agents/notes/proposed/architecture/2026-10-12-e2ee-lab-integration.zh.md)。
+
+workspace registry 只保存实际公开签名验证过的原始 genesis 与原 signer，并在同一
+事务读回；被忽略写入和坏存储拒绝确认，另一 OS 进程重开真实文件后重验。
+认证 genesis 发现保留 unbound joiner 的访问，仅返回原始 genesis。metadata API
+是私有 harness 注册，不代表完成 HTTP create-space 发布、当前可信端点、存钥或
+crash-gap 恢复。

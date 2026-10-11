@@ -174,3 +174,18 @@ close/open，调用真正原生 close 并在 finally 恢复观察器，不伪造
 driver、攻击能力、捕获 replay、fixtures 和 CLI 尚未完成，再独立复验原 Lab2。
 快照 wire/offset、保留历史入口、replay 熵、严格期限 B、恢复库、D12、
 永久丢失发布设备仍待决定。整栈 CI/独立验收尚未完成，无生产 E2EE、原生存钥或部署。
+
+## Workspace genesis 元数据（当前 WIP）
+
+公开 canonical decode/replay 与真实签名验证原始 genesis 和认证后的原 signer；
+每次读取重核已存行。同事务读回检测 ignored insert，不覆盖坏行。实际 SQLite
+文件经另一 OS 进程重开验证。原认证 genesis 发现保留 unbound joiner 访问，
+但不返回当前 endpoint/view。注册仍是私有 harness API，stream 发布、凭证绑定、
+当前独立 checkpoint/crash-gap 组合未完成。所属3组及关联HTTP/joins/HPKE10/type
+通过。只读原 HostMeta SQL ignored-space 复现返回却没有行，使用未验证合成字节，
+严格限 storage，不是 HTTP/签名验收。当前完整 root core302/Lab45 通过；固定head/CI/独立验收仍待完成。
+
+比较记录发布资格需人类对齐：旧 Lab 允许当前 machine/R 上传 notes，而公开
+comparisonNote 仅 personal。提案选项为沿当前 personal 契约且宿主观察仍未确认，
+或另行明确 machine 的无权威观察契约；两者都不允许 R 发送。未改 core/Spec，
+不自动把宿主记录变成独立确认。

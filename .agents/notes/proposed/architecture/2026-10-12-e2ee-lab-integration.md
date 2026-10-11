@@ -236,3 +236,23 @@ attacker capability, captured replay, fixtures and CLI, then independently rerun
 the original Lab2 scenarios. Snapshot wire/offset, replay randomness, recovery
 vault, D12 and permanent publisher-loss decisions remain open. Entire-stack CI
 and acceptance are pending. No production E2EE, native custody or deployment.
+
+## Workspace genesis metadata (current WIP)
+
+Public canonical decode/replay and actual signatures validate original genesis
+and authenticated original signer; stored rows are reverified on every read.
+Same-transaction readback detects ignored insert without replacing corrupt rows.
+The actual SQLite file reopens in another OS process. Existing authenticated
+genesis discovery includes unbound joiners, but returns no current endpoint/view.
+Registration is still a private harness API; stream publication, credential
+binding and durable current-checkpoint/crash-gap composition remain unfinished.
+Three owning tests and associated HTTP/joins/HPKE10/type pass. Original HostMeta
+ignored-space SQL insertion returns without a row; its read-only reproduction uses
+unchecked synthetic bytes and is storage-only, not HTTP/signature acceptance.
+Current full root core302/Lab45 passes; fixed-head/CI/independent acceptance remain pending.
+
+Comparison publication eligibility needs human alignment: the old Lab allowed
+current machines/R to post notes, while public comparisonNote admits only personal
+devices. Proposed options are preserve the public personal-only contract with
+unconfirmed host observations, or separately define inert machine observations;
+R cannot send in either. No core/Spec change or implicit independent confirmation.
