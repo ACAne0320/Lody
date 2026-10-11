@@ -3,6 +3,7 @@
 Status: implemented
 Translation: current
 PR: [LodyAI/Lody#1456](https://github.com/LodyAI/Lody/pull/1456)
+Follow-up PR: [LodyAI/Lody#1473](https://github.com/LodyAI/Lody/pull/1473)
 
 [中文](2026-10-11-drop-tool-images-from-history.zh.md)
 
@@ -10,12 +11,14 @@ PR: [LodyAI/Lody#1456](https://github.com/LodyAI/Lody/pull/1456)
 
 Ordinary ACP tools could persist image data and embedded image blob resources in
 session history, although conversation attachments already use references. The
-shared history projection now drops these tool image blocks instead of uploading
-them. Root tools, imported histories and normalized child tools use the same image
-filter while preserving their existing non-image content policies. Existing stored
-history and provider execution output remain unchanged.
+first shared projection dropped tool images instead of uploading them. A follow-up
+clears unused non-image resource blob bytes while preserving download references
+and removes redundant child raw copies. Audio, readable output, complete diffs,
+approval plans and permission/scheduling metadata remain available. Existing stored
+content is preserved during permission enrichment; malformed new input still
+reaches writer validation. This is a targeted cleanup, not a general binary-size cap.
 
-## Decision and boundaries
+## Initial image decision (#1456)
 
 ```text
 Root tool / replay → root content projection ─┐
@@ -43,3 +46,33 @@ Behavioral coverage crosses a real Loro HistoryWriter for root and child output,
 checks sparse updates and image-only replacements, and copies filtered history to
 a fork. Import coverage exercises the shared replay boundary. Fixtures are
 synthetic; this change does not migrate existing history or alter provider schemas.
+
+## Follow-up: binary and redundant payloads
+
+The detail view reads non-image resources through their URI, never their blob
+bytes. Clear the blob string while preserving the resource variant, MIME type,
+annotations and URI. A data URI is already disallowed by the URL policy; clear
+that unused URL and retain the link label or resource text. Audio has a real
+player, raw output has a JSON/text view, and diffs render their full old/new text:
+these are used data and stay intact.
+
+Child raw input retains `plan`, consumed by plan approval; other newly supplied
+input and the unconsumed scalar/array input copy are omitted. Scalar/array raw
+output stays readable once, without `_meta.lody.subagentRaw`. Preserve ordinary
+object raw output, metadata and root scheduling/permission fields. Omitted updates
+retain prior stored fields. Existing histories are not bulk migrated.
+
+General size budgets and base64 heuristics were rejected for this cleanup because
+they also remove visible output and may corrupt permission metadata. The earlier
+projection silently discarded malformed new locations and reparsed legacy content;
+five CLI CI regressions exposed those validation/compatibility violations. The
+filter now transforms only known unused resource fields, without schema reparsing.
+Permission enrichment reuses the existing content list untouched. The writer
+continues to reject invalid new fields atomically and accept a later valid request.
+
+Real Loro/fork/replay tests assert blob removal with preserved resource references,
+audio, long text, complete diffs and approval plans. CLI batching and permission
+writer suites cover invalid-input isolation, atomic rejection and legacy container
+identity. Ordinary conversation attachments and provider execution output remain
+unchanged. Audio and visible/opaque output can still be large; storing those through
+references requires a separate design that preserves their consumers.

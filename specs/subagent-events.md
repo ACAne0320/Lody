@@ -157,8 +157,14 @@ contract; this proposal does not create a background scheduler.
 
 Persist received task state and content through the existing SessionMirror /
 HistoryWriter owner. As in root tool history, discard ACP image blocks and embedded
-image blob resources from child tool content; retain non-image content and tool
-state. This storage projection does not change the provider's execution output or
+image blob resources from child tool content. Clear unused non-image resource blob
+bytes while retaining the resource and its download URI; data-URI references retain
+their display label with an empty URI because the UI already disallows that scheme.
+Retain audio, readable output, complete diffs and tool state. Child raw input keeps
+its displayed plan; scalar/array raw output has one readable copy without an opaque
+metadata duplicate. Permission enrichment preserves existing stored content, and
+malformed new fields must be rejected atomically rather than silently omitted.
+This storage projection does not change the provider's execution output or
 ordinary conversation image attachments. Model per-run transcripts within the owning Lody
 session; native grandchildren can nest there without creating extra Lody child
 Sessions or changing their one-level creation rule. Store the transcript in an
