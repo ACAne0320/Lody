@@ -52,6 +52,7 @@ flowchart LR
 
 ## 未决项
 
+- SDK 内容快照位置：旧 snapshot header4 把 offset 藏在密文中，服务端无法核对实际提交位置。提案是在新 snapshot header 放 exact-offset SHA-256 摘要，用现有 SDK v2 AAD 认证；另选上游 SDK 契约变更并消费已发布版本。新 tag/domain 与旧读者/接纳兼容尚未批准，provider 与 host admission 须一同审查。
 - 严格期限 B：不新增 claim，不改普通 60 秒容差。
 - 恢复库格式、包装、身份/版本绑定、并发和保留。旧共用 R/文件原型不等于批准的新格式。
 - 提交后、发钥前发布设备永久丢失的新钥备份与取回；重启不能验收永久丢失。

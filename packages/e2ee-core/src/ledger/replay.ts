@@ -232,3 +232,19 @@ export function epochHistoryPacket(
       : yield* fail('unauthorized');
   });
 }
+
+/** Verified-prefix relation only; no claim about the globally latest ledger. */
+export function requireLedgerContinuation(
+  previous: LedgerView,
+  next: LedgerView
+): Result.Result<void, LedgerError> {
+  const before = states.get(previous),
+    after = states.get(next);
+  if (!before || !after) return fail('unauthorized');
+  if (!bytesEqual(before.genesis.toBytes(), after.genesis.toBytes()))
+    return fail('genesis-mismatch');
+  const head = after.hashes[before.hashes.length - 1];
+  return head && bytesEqual(head.toBytes(), before.hashes[before.hashes.length - 1]!.toBytes())
+    ? Result.succeed(undefined)
+    : fail('checkpoint-mismatch');
+}

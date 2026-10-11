@@ -140,3 +140,10 @@ ledger-bound document sealing/authentication/opening and borrowed Ed25519 signin
 They reuse these primitives and require opaque verified views; the root remains
 unchanged. Native key custody, generic non-document policy, SDK protection,
 distribution, recovery and Lab acceptance remain later migration owners.
+
+## Canonical epoch history
+
+The explicit [`./keys` entry](src/keys/README.md) preserves ledger v1 commitment
+and 72-byte history, verifies every reverse link/commitment and supplies an
+application-scoped volatile verified key cache. It grants no document-write rights
+and supplies no persistence, rotation, delivery, recovery-vault format or backup.

@@ -66,3 +66,8 @@ and [source fingerprints](provenance.json). Run package `typecheck` and `test`;
 independent of the production verifier, and exercises the public ledger subentry.
 
 [Historical facts extraction](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-historical-facts.md).
+
+`requireLedgerContinuation(previous, next)` verifies that two real full views share
+this exact authenticated prefix using private hashes. It rejects rollback, alternate
+forks and fabricated views; it does not discover globally latest state. The scoped
+[key cache](../keys/README.md) uses this local relation after observing revocation.

@@ -12,8 +12,9 @@
     "pure/epoch-key.ts": {
       "sha256": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3",
       "destination": "src/epoch-key.ts",
-      "scope": "Opaque EpochKey parser; material accessor kept internal",
-      "destinationSha256": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3"
+      "scope": "Opaque epoch key parser and package-internal material copy; private WeakMap replaces reflected symbol accessor",
+      "destinationSha256": "91a561e0be9418a9e6feb654ad8956359739ec0a24aad7b7b55a5cee4cf5a205",
+      "extractionDestinationSha256": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3"
     },
     "pure/cbor.ts": {
       "sha256": "10a793aace02c1fce9cad249dd3b7d3c8b8ab92d86b85a88917230c881ea8337",
@@ -57,9 +58,10 @@
     "Return a fresh HKDF salt array instead of mutable exported bytes; domains and algorithms unchanged.",
     "Expose stateless signature verification as Result; add caller-context content signature check.",
     "No signing, private-key export, ledger, Lab, Node host, transport or storage entrypoints.",
-    "Bound encoding traversal and copies by expanded canonical wire size before serialization; preserve valid shared values and reject cycles. No wire or algorithm change."
+    "Bound encoding traversal and copies by expanded canonical wire size before serialization; preserve valid shared values and reject cycles. No wire or algorithm change.",
+    "L4a makes EpochKey material private WeakMap state: reflected material symbols/structural fakes no longer export or substitute secret material; wire/algorithms unchanged."
   ],
-  "migratedScopeSha256": "c3c7f53f3716d6f96f94f50e8ee710853b1d3bd5a400464c6d56f0b65d536d77",
+  "migratedScopeSha256": "f3eb78a3d9aa7e0a5ce91b10227256a7b4c0617692a157a442d14c07241c4b51",
   "scopeHashEncoding": "UTF-8, destination paths sorted ascending, one line: <destinationSha256>  <destination>\\n",
   "cryptoExtraction": {
     "destination": "src/crypto/content.ts",

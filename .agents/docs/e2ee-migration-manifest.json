@@ -612,10 +612,16 @@
         "core": "a9f9fcc147aa483c708b28e42f7cc930f529f17c01b2dece09f931bf4cdbcce5",
         "candidate": "a9f9fcc147aa483c708b28e42f7cc930f529f17c01b2dece09f931bf4cdbcce5"
       },
-      "targetPath": "packages/e2ee-core/src/epoch-keys.ts",
+      "targetPath": "packages/e2ee-core/src/keys/history.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Migrate volatile verified install/read/clear lifecycle into the canonical ledger owner. Retire the JSON prototype lody-epoch-secret/v1 digest and framed-history format; canonical ledger uses lody-e2ee/epoch-key/v1 and 72-byte history packets. Do not copy incompatible wire."
+      "reason": "Migrate volatile verified install/read/clear lifecycle into the canonical ledger owner. Retire the JSON prototype lody-epoch-secret/v1 digest and framed-history format; canonical ledger uses lody-e2ee/epoch-key/v1 and 72-byte history packets. Do not copy incompatible wire.",
+      "coverage": {
+        "L4a": "Canonical commitment/72B history and scoped volatile install/read/clear migrated; durable candidates/outbox/delivery/rotation remain separate."
+      },
+      "additionalTargetPaths": [
+        "packages/e2ee-core/src/keys/store.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/epoch-publisher.ts",
@@ -755,10 +761,16 @@
         "core": "06dc918f0e0edbbd77fee1eb1a8dc382835aeb48a95d961fa990890c8a2f5288",
         "candidate": "06dc918f0e0edbbd77fee1eb1a8dc382835aeb48a95d961fa990890c8a2f5288"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/keys.ts",
+      "targetPath": "packages/e2ee-core/src/keys/history.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": {
+        "L4a": "Canonical commitment/72B history and scoped volatile install/read/clear migrated; durable candidates/outbox/delivery/rotation remain separate."
+      },
+      "additionalTargetPaths": [
+        "packages/e2ee-core/src/keys/store.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/ledger/ledger.ts",
@@ -1383,10 +1395,16 @@
         "core": "065e8322040c030c080bb694fa14a38945f47e9af707b18daee92926690f5dbb",
         "candidate": "065e8322040c030c080bb694fa14a38945f47e9af707b18daee92926690f5dbb"
       },
-      "targetPath": "packages/e2ee-core/src/pure/epoch-history.ts",
+      "targetPath": "packages/e2ee-core/src/keys/history.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": {
+        "L4a": "Canonical commitment/72B history and scoped volatile install/read/clear migrated; durable candidates/outbox/delivery/rotation remain separate."
+      },
+      "additionalTargetPaths": [
+        "packages/e2ee-core/src/keys/store.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/epoch-key.ts",
@@ -1397,7 +1415,10 @@
       "targetPath": "packages/e2ee-core/src/epoch-key.ts",
       "status": "已迁",
       "layer": "main",
-      "reason": "Public foundations already extracted and hardened; no second byte/crypto implementation."
+      "reason": "Public foundations already extracted and hardened; no second byte/crypto implementation.",
+      "coverage": {
+        "L4a": "Private WeakMap material provenance hardens the already migrated EpochKey; reflected symbol export/structural material callbacks are rejected."
+      }
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/epoch-keyring.ts",
@@ -1667,7 +1688,15 @@
       "targetPath": "packages/e2ee-core/src/signature.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Existing public records/policy/replay own the migrated baseline. Remaining snapshot, history and workflow functions must be adapted to that owner; do not copy an entire parallel module."
+      "reason": "Existing public records/policy/replay own the migrated baseline. Remaining snapshot, history and workflow functions must be adapted to that owner; do not copy an entire parallel module.",
+      "coverage": {
+        "L4a": "Canonical commitment/72B history and scoped volatile install/read/clear migrated; durable candidates/outbox/delivery/rotation remain separate."
+      },
+      "additionalTargetPaths": [
+        "packages/e2ee-core/src/ledger/records.ts",
+        "packages/e2ee-core/src/keys/history.ts",
+        "packages/e2ee-core/src/ledger/snapshot.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/recovery-device.ts",

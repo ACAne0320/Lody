@@ -22,6 +22,9 @@ import {
   type ContentScope,
 } from '@lody/e2ee-core';
 import vectors from './crypto-vector.json';
+import epochVector from './epoch-history-vector.json';
+import * as EpochKeys from '@lody/e2ee-core/keys';
+import { copyEpochKeyBytes } from '../src/epoch-key';
 
 const read = <A, E>(result: Result.Result<A, E>): A => Result.getOrThrow(result);
 const hex = (value: Uint8Array) => Buffer.from(value).toString('hex');
@@ -52,7 +55,10 @@ function code(result: Result.Result<unknown, { code: string }>) {
   expect(Result.isFailure(result)).toBe(true);
   return Result.isFailure(result) ? result.failure.code : undefined;
 }
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('public scoped content crypto', () => {
   it('wipes temporary copies after random-source and authentication failure, retaining the leaf', () => {
@@ -706,6 +712,338 @@ describe('ledger-bound signed document workflows', () => {
         })
       )
     );
+  });
+
+  describe('canonical epoch commitment, history and volatile installation', () => {
+    const opaque = (n: number) => read(Bytes.epochKey(new Uint8Array(32).fill(n)));
+    function epochFixture() {
+      const owner = identity(1),
+        phone = identity(2),
+        recovery = identity(3);
+      const domain = (name: string, payload: Uint8Array) =>
+        new Uint8Array(Buffer.concat([Buffer.from(`lody-e2ee/${name}\0`), payload]));
+      const record = (body: readonly CborValue[]) =>
+        read(encodeCbor([body, owner.signBytes(domain('sig/v1', read(encodeCbor(body))))]));
+      const k0 = opaque(7),
+        k1 = opaque(8),
+        k2 = opaque(9);
+      const zero = read(
+        EpochKeys.commitEpochKey(read(Bytes.genesisHash(new Uint8Array(32))), 0, k0)
+      );
+      const records = [
+        record([
+          1,
+          owner.raw,
+          new Uint8Array(32).fill(10),
+          new Uint8Array(16).fill(10),
+          new Uint8Array(32).fill(100),
+          zero.toBytes(),
+        ]),
+      ];
+      const genesis = read(Bytes.genesisHash(Ledger.hashRecordBytes(records[0]!).toBytes()));
+      const view = () =>
+        read(
+          Ledger.verifyLedger({
+            anchor: genesis,
+            records,
+            checkpoint: { head: Ledger.hashRecordBytes(records.at(-1)!), length: records.length },
+          })
+        );
+      const append = (op: readonly CborValue[]) =>
+        records.push(record([Ledger.hashRecordBytes(records.at(-1)!).toBytes(), owner.raw, op]));
+      const admit = (target: ReturnType<typeof identity>, kind: number) => {
+        const enc = new Uint8Array(32).fill(120 + kind);
+        const proof = target.signBytes(
+          domain(
+            'possess/v2',
+            read(
+              encodeCbor([genesis.toBytes(), new Uint8Array(16).fill(10), target.raw, enc, kind])
+            )
+          )
+        );
+        append([4, kind, target.raw, enc, proof]);
+      };
+      const rotate = (
+        epoch: number,
+        currentKey: Bytes.EpochKey,
+        previousKey: Bytes.EpochKey,
+        packet?: Uint8Array
+      ) =>
+        append([
+          7,
+          epoch,
+          read(EpochKeys.commitEpochKey(genesis, epoch, currentKey)).toBytes(),
+          packet ?? read(EpochKeys.sealHistoryPacket({ genesis, epoch, currentKey, previousKey })),
+        ]);
+      return {
+        owner,
+        phone,
+        recovery,
+        k0,
+        k1,
+        k2,
+        genesis,
+        view,
+        append,
+        admit,
+        rotate,
+        record,
+        records,
+      };
+    }
+    it('preserves independent Python/libsodium commitments and the exact 72-byte packet', () => {
+      const genesis = read(Bytes.genesisHash(bytes(epochVector.genesis))),
+        previousKey = read(Bytes.epochKey(bytes(epochVector.previous))),
+        currentKey = read(Bytes.epochKey(bytes(epochVector.current)));
+      expect(hex(read(EpochKeys.commitEpochKey(genesis, 0, previousKey)).toBytes())).toBe(
+        epochVector.commitment0
+      );
+      expect(hex(read(EpochKeys.commitEpochKey(genesis, 1, currentKey)).toBytes())).toBe(
+        epochVector.commitment1
+      );
+      vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation((target) => {
+        (target as Uint8Array).set(bytes(epochVector.nonce));
+        return target;
+      });
+      const packet = read(
+        EpochKeys.sealHistoryPacket({ genesis, epoch: 1, currentKey, previousKey })
+      );
+      expect(hex(packet)).toBe(epochVector.packet);
+      expect(
+        copyEpochKeyBytes(
+          read(EpochKeys.openHistoryPacket({ genesis, epoch: 1, currentKey, packet }))
+        )
+      ).toEqual(bytes(epochVector.previous));
+      const other = read(Bytes.genesisHash(new Uint8Array(32).fill(12)));
+      expect(
+        read(EpochKeys.commitEpochKey(other, 0, previousKey)).equals(
+          read(EpochKeys.commitEpochKey(genesis, 0, previousKey))
+        )
+      ).toBe(true);
+      expect(
+        read(EpochKeys.commitEpochKey(other, 1, currentKey)).equals(
+          read(EpochKeys.commitEpochKey(genesis, 1, currentKey))
+        )
+      ).toBe(false);
+      expect(
+        read(EpochKeys.commitEpochKey(genesis, 2, currentKey)).equals(
+          read(EpochKeys.commitEpochKey(genesis, 1, currentKey))
+        )
+      ).toBe(false);
+      for (const input of [
+        { genesis: other, epoch: 1, currentKey, packet },
+        { genesis, epoch: 2, currentKey, packet },
+        { genesis, epoch: 1, currentKey: previousKey, packet },
+      ])
+        expect(Result.isFailure(EpochKeys.openHistoryPacket(input))).toBe(true);
+    });
+    it('recovers every signed historical link from real replay and fails the whole recovery on a corrupt/false old key', () => {
+      const f = epochFixture();
+      f.rotate(1, f.k1, f.k0);
+      f.rotate(2, f.k2, f.k1);
+      const keys = read(EpochKeys.recoverLedgerHistory(f.view(), f.k2));
+      expect([...keys.keys()]).toEqual([2, 1, 0]);
+      for (const [epoch, key] of keys)
+        expect(copyEpochKeyBytes(key)).toEqual(new Uint8Array(32).fill(7 + epoch));
+      expect(Result.isFailure(EpochKeys.recoverLedgerHistory(f.view(), f.k1))).toBe(true);
+      expect(Result.isFailure(EpochKeys.recoverLedgerHistory({ ...f.view() }, f.k2))).toBe(true);
+      const wrong = epochFixture();
+      wrong.rotate(1, wrong.k1, opaque(99));
+      expect(code(EpochKeys.recoverLedgerHistory(wrong.view(), wrong.k1))).toBe(
+        'commitment-mismatch'
+      );
+      const bad = epochFixture(),
+        packet = read(
+          EpochKeys.sealHistoryPacket({
+            genesis: bad.genesis,
+            epoch: 1,
+            currentKey: bad.k1,
+            previousKey: bad.k0,
+          })
+        );
+      packet[30] ^= 1;
+      bad.rotate(1, bad.k1, bad.k0, packet);
+      expect(code(EpochKeys.recoverLedgerHistory(bad.view(), bad.k1))).toBe('history-invalid');
+    });
+    it('wipes operation-owned key buffers on recovery/random failure without touching caller keys', () => {
+      const f = epochFixture();
+      f.rotate(1, f.k1, opaque(99));
+      const view = f.view(),
+        NativeBytes = Uint8Array,
+        outputs: Uint8Array[] = [];
+      vi.stubGlobal(
+        'Uint8Array',
+        new Proxy(NativeBytes, {
+          construct(target, args) {
+            const output = Reflect.construct(target, args) as Uint8Array;
+            if (output.length === 32) outputs.push(output);
+            return output;
+          },
+        })
+      );
+      expect(code(EpochKeys.recoverLedgerHistory(view, f.k1))).toBe('commitment-mismatch');
+      expect(
+        outputs.some(
+          (value) => value.every((byte) => byte === 8) || value.every((byte) => byte === 99)
+        )
+      ).toBe(false);
+      outputs.length = 0;
+      vi.stubGlobal('crypto', {
+        getRandomValues: () => {
+          throw new Error('synthetic unavailable');
+        },
+      });
+      expect(
+        code(
+          EpochKeys.sealHistoryPacket({
+            genesis: f.genesis,
+            epoch: 2,
+            currentKey: f.k2,
+            previousKey: f.k1,
+          })
+        )
+      ).toBe('random-unavailable');
+      expect(
+        outputs.some(
+          (value) => value.every((byte) => byte === 8) || value.every((byte) => byte === 9)
+        )
+      ).toBe(false);
+      vi.unstubAllGlobals();
+      expect(copyEpochKeyBytes(f.k1)).toEqual(new NativeBytes(32).fill(8));
+    });
+    it('keeps a local verified prefix pin; known revocation cannot be bypassed by an older view or fork', async () => {
+      const f = epochFixture();
+      f.admit(f.phone, 0);
+      const prior = f.view();
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const store = yield* EpochKeys.makeVerifiedEpochKeys(f.genesis, f.phone.publicKey);
+            read(store.install(prior, 0, f.k0));
+            expect(copyEpochKeyBytes(read(store.read(prior, 0)))).toEqual(
+              new Uint8Array(32).fill(7)
+            );
+            f.append([5, f.phone.raw]);
+            const revoked = f.view();
+            // An untrusted future epoch cannot prevent observing this verified revocation.
+            expect(code(store.read(revoked, 99))).toBe('unauthorized');
+            expect(code(store.read(revoked, 0))).toBe('unauthorized');
+            expect(code(store.read(prior, 0))).toBe('unauthorized');
+            expect(code(store.install(prior, 0, f.k0))).toBe('unauthorized');
+            expect(Result.isFailure(Ledger.requireLedgerContinuation(revoked, prior))).toBe(true);
+            const packet = read(
+              EpochKeys.sealHistoryPacket({
+                genesis: f.genesis,
+                epoch: 1,
+                currentKey: f.k1,
+                previousKey: f.k0,
+              })
+            );
+            const alternative = f.record([
+              prior.head.toBytes(),
+              f.owner.raw,
+              [7, 1, read(EpochKeys.commitEpochKey(f.genesis, 1, f.k1)).toBytes(), packet],
+            ]);
+            const fork = read(
+              Ledger.verifyLedger({
+                anchor: f.genesis,
+                records: [...f.records.slice(0, prior.length), alternative],
+                checkpoint: { head: Ledger.hashRecordBytes(alternative), length: prior.length + 1 },
+              })
+            );
+            expect(Result.isSuccess(Ledger.requireLedgerContinuation(prior, fork))).toBe(true);
+            expect(Result.isFailure(Ledger.requireLedgerContinuation(revoked, fork))).toBe(true);
+            expect(code(store.read(fork, 0))).toBe('unauthorized');
+          })
+        )
+      );
+    });
+    it('permits active R to read, rejects forged/mismatched install, and closes its volatile copies with Scope', async () => {
+      const f = epochFixture();
+      f.admit(f.recovery, 2);
+      const view = f.view();
+      let store: EpochKeys.VerifiedEpochKeys | undefined;
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            store = yield* EpochKeys.makeVerifiedEpochKeys(f.genesis, f.recovery.publicKey);
+            expect(code(store.read(view, 0))).toBe('missing-key');
+            expect(code(store.install(view, 0, f.k1))).toBe('commitment-mismatch');
+            expect(code(store.install({ ...view }, 0, f.k0))).toBe('unauthorized');
+            read(store.install(view, 0, f.k0));
+            read(store.install(view, 0, f.k0));
+            expect(copyEpochKeyBytes(read(store.read(view, 0)))).toEqual(
+              new Uint8Array(32).fill(7)
+            );
+            store.clear();
+            expect(code(store.read(view, 0))).toBe('missing-key');
+            read(store.install(view, 0, f.k0));
+          })
+        )
+      );
+      expect(code(store!.read(view, 0))).toBe('closed');
+      expect(code(store!.install(view, 0, f.k0))).toBe('closed');
+    });
+    it('has no reflective secret accessor and rejects a forged material function before installation', async () => {
+      const f = epochFixture(),
+        key = f.k0;
+      expect(Object.getPrototypeOf(key)).toBeNull();
+      expect(Reflect.ownKeys(key)).toEqual([]);
+      const fake = {
+        [Symbol('epoch-key-material')]: () => new Uint8Array(32).fill(7),
+      } as unknown as Bytes.EpochKey;
+      expect(code(EpochKeys.commitEpochKey(f.genesis, 0, fake))).toBe('invalid-input');
+      expect(
+        code(
+          deriveContentKey(fake, {
+            genesis: hex(f.genesis.toBytes()),
+            epoch: 0,
+            resource: 'doc',
+            purpose: 'doc-update',
+          })
+        )
+      ).toBe('invalid-content-key');
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const store = yield* EpochKeys.makeVerifiedEpochKeys(f.genesis, f.owner.publicKey);
+            expect(code(store.install(f.view(), 0, fake))).toBe('invalid-input');
+            expect(code(store.read(f.view(), 0))).toBe('missing-key');
+            read(store.install(f.view(), 0, key));
+            expect(copyEpochKeyBytes(read(store.read(f.view(), 0)))).toEqual(
+              new Uint8Array(32).fill(7)
+            );
+          })
+        )
+      );
+    });
+    it('rejects invalid epoch/packet bounds before any history result', () => {
+      const f = epochFixture();
+      for (const epoch of [-1, 1.5, NaN, Infinity, 2 ** 32])
+        expect(Result.isFailure(EpochKeys.commitEpochKey(f.genesis, epoch, f.k0))).toBe(true);
+      for (const epoch of [0, -1, 1.5, 2 ** 32])
+        expect(
+          Result.isFailure(
+            EpochKeys.sealHistoryPacket({
+              genesis: f.genesis,
+              epoch,
+              currentKey: f.k1,
+              previousKey: f.k0,
+            })
+          )
+        ).toBe(true);
+      for (const length of [0, 71, 73, 1000])
+        expect(
+          Result.isFailure(
+            EpochKeys.openHistoryPacket({
+              genesis: f.genesis,
+              epoch: 1,
+              currentKey: f.k1,
+              packet: new Uint8Array(length),
+            })
+          )
+        ).toBe(true);
+    });
   });
 });
 function yieldSignal(signal: Deferred.Deferred<void>) {

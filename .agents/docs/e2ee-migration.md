@@ -52,6 +52,7 @@ flowchart LR
 
 ## Decisions that remain open
 
+- SDK content-snapshot position: old snapshot header4 hides the offset in ciphertext, so host verification cannot establish the actual submitted position. Proposed new snapshot header binds an exact-offset SHA-256 digest through existing SDK v2 AAD; alternatively change upstream SDK and consume a published release. New tag/domain and old-reader/admission compatibility remain unapproved. Provider and host admission must be reviewed together.
 - Strict deadline B: no new claim and no change to ordinary 60-second tolerance.
 - Recovery-vault format, wrapping, identity/version binding, concurrent updates and retention. The old shared-R/file prototype is not approved as that format.
 - New-key backup and recovery when the publishing device is permanently lost after commit and before delivery. A process restart cannot validate permanent-loss recovery.

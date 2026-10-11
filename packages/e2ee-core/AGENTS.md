@@ -58,3 +58,9 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
 - Native signing borrows an existing Ed25519 handle, creates no identity/store/runtime,
   and awaits native settlement plus scratch cleanup on interruption. Document leaf
   import/export owns symmetric copies; it never exports a device private key.
+
+- `./keys` keeps canonical commitment/72B history, not JSON experiment wire. History
+  recovery/installation uses real verified views and checks every commitment; no
+  partial keys or journal-derived trust. Scope owns volatile copies and awaited close.
+  Known revocation/rollback/fork cannot be bypassed with an older cached view.
+  No backup/vault/rotation/delivery or durable-cursor claim is implied.

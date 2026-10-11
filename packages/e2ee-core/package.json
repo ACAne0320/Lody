@@ -9,7 +9,8 @@
     "./submission": "./src/submission/index.ts",
     "./submission/sqlite": "./src/submission/sqlite.ts",
     "./signing": "./src/signing.ts",
-    "./content": "./src/content/index.ts"
+    "./content": "./src/content/index.ts",
+    "./keys": "./src/keys/index.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
