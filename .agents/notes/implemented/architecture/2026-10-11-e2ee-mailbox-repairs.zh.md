@@ -17,8 +17,12 @@ Translation: current
 
 ## 证据与后续
 
-Owning6 使用实际公共 mailbox、真实 SQLite 与签名重放，验证先保存后发请求、服务端 ACK 丢失、另一真实 OS 进程重开相同 journal／mailbox 后同 ID 重试且 revision 不二次递增、明确拒收指定密文、ID 原字段不一致拒绝、真实撤销／Recovery／伪造 view、SQLite 忽略终态写入后幂等恢复、102 个任务的阻塞分页／结果 acknowledgement，以及 Scope 关闭后晚 ACK 不写盘。固定合成身份种子和本地公共 host 是声明的测试边界，不代表 HTTP／原生／部署验收。
+Owning6 使用实际公共 mailbox、真实 SQLite 与签名重放，验证先保存后发请求、服务端 ACK 丢失、另一真实 OS 进程重开相同 journal／mailbox 后同 ID 重试且 revision 不二次递增、明确拒收指定密文、ID 原字段不一致拒绝、真实撤销／伪造 view 与已登记 Recovery repair、SQLite 忽略终态写入后幂等恢复、102 个任务的阻塞分页／结果 acknowledgement，以及 Scope 关闭后晚 ACK 不写盘。固定合成身份种子和本地公共 host 是声明的测试边界，不代表 HTTP／原生／部署验收。
 
 早期源 kind 数值／字符串适配和 SQL 引号／harness 错误保留为原型日志，修正未删行为覆盖。sender 目标发现／当前 key／outbox rounds、receive fetch、SDK CAS 与 Lab 消费方仍须迁入。旧 core／Lab 失败与未决协议由[逐项 manifest](../../../docs/e2ee-migration-manifest.json)继续记录。新 head 不沿用父层审查结论；全部 PR 保持 Draft，由主协调安排独立审查。
 
 最终作者检查：owning6/core254、package typecheck、完整 root `pnpm check`、format/docs/public boundary 通过。子进程公开入口实际重开相同 mailbox／repair DB，重用原 ID 后 server revision 仍为1。作者与独立审查、准确 CI 分列；此层不关闭原 Lab 与永久丢失失败。
+
+对照现行白皮书／permission-ledger 已定规则，修正 de3210a4 错误拒绝恢复接收者的适配：有效 R 可接收、恢复各代密钥，只禁止其发钥、写内容、执行命令和管理。repair 不授予这些权限。原泛化的 Recovery 拒绝断言替换为实际公共 mailbox 正向修复／revision／持久原件断言，保留撤销与伪造 view 拒绝。没有新增恢复库格式或协议决策。
+
+Recovery 修复作者结果：准确 de3210a4 隔离 clone 加入相同正向断言时失败；修复后 owning6/core254 与完整 root 检查、typecheck、format/docs/public boundary 通过。旧失败／新通过分别保留，独立增量和新准确 CI 尚待核验。

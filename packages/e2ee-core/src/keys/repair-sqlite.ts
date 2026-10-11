@@ -185,7 +185,7 @@ export function makeSqliteMailboxRepair(input: {
       const state = view.inspectState();
       if (state.epoch.number !== task.epoch) return 'Obsolete';
       const device = state.devices.get(self);
-      return !device || device.kind === 'recovery' ? 'Revoked' : null;
+      return !device ? 'Revoked' : null;
     };
     const finish = (task: Task, phase: 'Repaired' | 'Obsolete' | 'Revoked') =>
       sql(() =>

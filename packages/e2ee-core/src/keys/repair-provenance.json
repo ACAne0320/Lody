@@ -8,6 +8,9 @@
   },
   "scope": "Stable-ID repair enqueue/flush/results only; no key installation or full distribution ownership.",
   "destinationFingerprints": {
+    "src/keys/repair-sqlite.ts": "767b06e8d31d79b9783b7d6689dc77d97a9208c24fa40747f959f3fd85a19e24"
+  },
+  "extractionDestinationFingerprints": {
     "src/keys/repair-sqlite.ts": "334516722e0844ba2f17ec35168603aa8f19663f4818e6ff72b44f6819fab7aa"
   }
 }

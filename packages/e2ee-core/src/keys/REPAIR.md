@@ -6,8 +6,8 @@ Trusted host initialization captures one Org/genesis, recipient, ledger lookup a
 borrowed repair capability. Application Scope owns the dedicated SQLite journal.
 
 `enqueue(id, rejectedDigest?)` copies the primitive fields, obtains a genuine
-current ledger and derives the exact current epoch/self slot. A Recovery or revoked
-recipient cannot enqueue. It saves this stable caller-selected ID and original
+current ledger and derives the exact current epoch/self slot. An active registered Recovery recipient can repair its received epoch-key
+envelopes; a revoked recipient cannot enqueue. It saves this stable caller-selected ID and original
 fields before any network dispatch. Reusing it with different fields fails replay;
 a later loss needs a new explicit ID. This function does not send a request or
 claim that a key was installed. The host port preserves source IDs of 1–256 code
@@ -47,6 +47,6 @@ separate owners.
 Owning tests use real signature/replay, real SQLite and the actual public mailbox.
 They observe a pending original before dispatch, lost ACK, a real OS child reopen
 retrying the same ID, server revision idempotency, rejected envelope exclusion,
-original-field replay refusal, Recovery/fake-view/revocation gates, ignored terminal
+original-field replay refusal, registered Recovery repair, fake-view/revocation gates, ignored terminal
 writes, 102 tasks/blocked progress and late ACK after explicit Scope close. They
 are synthetic local host evidence, not HTTP/native/deployed backend acceptance.

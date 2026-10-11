@@ -35,8 +35,7 @@ repair metadata and checkpoint facts, never trusted role certificates.
 Owning6 uses actual public mailbox and real SQLite/signature replay. It checks
 pending-before-network, a lost server ACK, another real OS process reopening the
 same journal/mailbox and retrying without a second revision, explicit rejected
-ciphertext exclusion, exact ID replay refusal, genuine revocation/Recovery/fake-view
-failures, actual SQLite ignored terminal writes with idempotent recovery, 102 tasks
+ciphertext exclusion, exact ID replay refusal, genuine revocation/fake-view failures and registered Recovery repair, actual SQLite ignored terminal writes with idempotent recovery, 102 tasks
 and blocked pagination/result acknowledgement, and explicit Scope closure before
 late ACK. Synthetic identity seeds/public local host are declared; no HTTP/native
 or deployed acceptance is claimed.
@@ -50,3 +49,7 @@ No new head inherits a parent review conclusion; all PRs stay Draft and main
 coordinator assigns independent review.
 
 Final author checks: owning6/core254, package typecheck, full root `pnpm check`, format/docs/public boundary passed. A real OS child uses public entries to reopen the same mailbox/repair databases; retrying the saved ID keeps server revision1. Author results remain separate from independent review/accurate CI and do not close original Lab or permanent-loss failures.
+
+Current whitepaper/permission-ledger rules correct the de3210a4 adaptation that wrongly rejected recovery recipients: active registered R may receive/recover epoch keys, while sending keys, writing, execution and management remain forbidden. Repair grants none of those capabilities. Replace the mistaken broad Recovery-denial expectation with actual public mailbox repair/revision/durable-original assertions, preserving revocation and fake-view rejection. No recovery-vault format or new protocol decision is introduced.
+
+Recovery increment author evidence: the exact isolated de3210a4 clone fails the same positive assertion; owning6/core254, full root check, typecheck, format/docs/public boundary pass after the fix. Old failure/new pass remain separate; independent increment and accurate new CI await verification.

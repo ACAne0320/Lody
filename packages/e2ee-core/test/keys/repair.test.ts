@@ -161,7 +161,7 @@ describe('durable stable-ID mailbox repair episodes', () => {
       )
     );
   });
-  it('uses genuine ledger disposition before dispatch and refuses Recovery or forged views', async () => {
+  it('uses genuine ledger disposition, admits a registered Recovery recipient and refuses forged views', async () => {
     const f = envelopeFixture(),
       dir = directory(),
       journal = path.join(dir, 'repair.sqlite');
@@ -214,8 +214,12 @@ describe('durable stable-ID mailbox repair episodes', () => {
             ledger: recovery.ledger,
             remote,
           });
-          expect(Result.isFailure(yield* Effect.result(queue.enqueue('recovery')))).toBe(true);
-          expect(rows(path.join(rdir, 'repair.sqlite'))).toEqual([]);
+          yield* queue.enqueue('recovery');
+          expect(yield* queue.flush()).toEqual({ processed: 1, blocked: [], next: null });
+          expect((yield* remote.status(slot(recovery))).revision).toBe(1);
+          expect(rows(path.join(rdir, 'repair.sqlite'))).toEqual([
+            { id: 'recovery', epoch: 0, rejected: null, phase: 'Repaired', consumed: 0 },
+          ]);
         })
       )
     );
