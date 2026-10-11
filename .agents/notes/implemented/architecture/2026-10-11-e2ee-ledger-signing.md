@@ -22,3 +22,5 @@ This adapts the signing portion of the source LedgerEngine/verification responsi
 The owning replay suite exercises native Ed25519 signatures, wrong parent/permission, foreign-org and wrong-kind possession proofs, rejected legacy removal, fabricated proposals, bad signer output and unchanged prior views. A real SQLite integration composes the new signer with unchanged merged submission: CAS commits but loses its response, readback returns the original signed bytes, then closing/reopening the journal resumes without a live signer. Package tests: 152/152 and typecheck. Root validation and exact Draft CI are recorded separately in the migration evidence directory. This is library integration, not process-crash Lab acceptance or production E2EE.
 
 Full root check passed this final 152-test code tree with native Git and local IPC enabled; format and docs check passed. Remote CI remains a separate exact-head claim.
+
+Draft: [#1447](https://github.com/LodyAI/Lody/pull/1447).
