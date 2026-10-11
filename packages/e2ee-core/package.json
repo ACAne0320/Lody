@@ -14,7 +14,8 @@
     "./ledger/signing": "./src/ledger/signing.ts",
     "./keys/envelope": "./src/keys/envelope.ts",
     "./keys/delivery": "./src/keys/delivery.ts",
-    "./keys/delivery/sqlite": "./src/keys/delivery-sqlite.ts"
+    "./keys/delivery/sqlite": "./src/keys/delivery-sqlite.ts",
+    "./ledger/snapshot": "./src/ledger/snapshot.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

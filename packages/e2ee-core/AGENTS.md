@@ -2,7 +2,7 @@
 
 Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README](README.md).
 
-- This package has no production entrypoint, transport host, snapshot trust,
+- This package has no production entrypoint, transport host,
   private-key export or root signing API. Borrowed signing/document workflows live
   only under `./signing` and `./content`. Keep the root export map explicit; ledger
   records/replay live only under the explicit `./ledger` subentry. Local submission
@@ -29,8 +29,9 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   Keep derived key material opaque, and validate size before copying large inputs.
 
 - Ledger authority starts only at caller-pinned genesis plus an expected head/count,
-  or a module-created verified view. No arbitrary-state constructor, injected verifier,
-  snapshot placeholder, or journal-derived trust. Failed suffixes preserve the prior view.
+  or a module-created verified view. The explicit snapshot entry adds independently
+  qualified endorsed state with distinct provenance. No arbitrary-state constructor,
+  injected verifier, hash placeholder, or journal-derived trust. Failed suffixes preserve the prior view.
 - Historical attribution and epoch packets come only from registered verified views.
   Revocation retains old author identity but grants no current write permission.
   Recovery/Guest never write; required rotation blocks new seals. Returned packet
@@ -79,3 +80,12 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   bytes, reverify each send and reject known in-round rollback/forks. Readback proves
   ciphertext observation only. Node `./keys/delivery/sqlite` owns closure through Scope,
   indexes bounded rows and never converts old JSON or deletes pending/history on close.
+
+- `./ledger/snapshot` requires independent exact Org/point/device/member/management
+  role/personal-kind confirmation, or a private token from a genuine same-point view.
+  Neither snapshot/journal self-claims nor a pubkey pin alone establish qualification.
+  Signature-only evidence is never authority. Endorsed bootstrap is explicitly distinct
+  from genesis audit; retain only actual known suffix hashes, never sparse placeholders.
+- Raw note equality is not independent confirmation. Bind caller-confirmed actual
+  genesis/head/count/stateDigest/peer and its manual/authenticated-channel source;
+  never infer confirmation from a key list, or upgrade history/permissions by comparison.

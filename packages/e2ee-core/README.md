@@ -93,8 +93,9 @@ package. Runtime tests consume the checked-in JSON; Python is not a project depe
 
 The separate [`@lody/e2ee-core/ledger`](src/ledger/README.md) subentry now
 provides strict records, signature/chain verification and deterministic permission
-replay from caller-pinned trust. It has no snapshot, CAS, journal or production
-consumer. The root exports and crypto modules remain unchanged. Ledger extraction
+replay from caller-pinned trust. Snapshot qualification and local submission use
+explicit separate subentries; there is no production consumer. Root crypto exports
+remain independent. Ledger extraction
 fingerprints are [separate](src/ledger/provenance.json).
 
 The [submission subentry](src/submission/README.md) adds finite persistent recovery

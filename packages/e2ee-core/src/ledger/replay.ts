@@ -1,8 +1,10 @@
+import { verifiedSnapshotState, proposalOf, noteOf, type SnapshotTrust } from './snapshot-codec';
 import { Result } from 'effect';
 import {
   genesisHash,
   signingPublicKey,
   epochNumber,
+  signature as parseSignature,
   type SigningPublicKey,
   type GenesisHash,
   type RecordHash,
@@ -41,6 +43,9 @@ export interface LedgerView {
   readonly genesis: GenesisHash;
   readonly head: RecordHash;
   readonly length: number;
+  readonly verification: 'full-history' | 'endorsed-snapshot';
+  /** First record position for which this view carries a verified hash. */
+  readonly historyStart: number;
   inspectState(): LedgerState;
 }
 // Closure-backed objects have no reflective constructor or exposed live state.
@@ -50,7 +55,9 @@ function viewOf(state: InternalState): LedgerView {
     Object.assign(Object.create(null), {
       genesis: state.genesis,
       head: state.hashes[state.hashes.length - 1]!,
-      length: state.hashes.length,
+      length: state.hashesOffset + state.hashes.length,
+      verification: state.verification,
+      historyStart: state.hashesOffset,
       inspectState: () => inspectState(state),
     })
   );
@@ -69,12 +76,13 @@ function replay(
     if (
       !Number.isSafeInteger(checkpoint.length) ||
       checkpoint.length < 1 ||
-      checkpoint.length !== (initial?.hashes.length ?? 0) + records.length
+      checkpoint.length !==
+        (initial ? initial.hashesOffset + initial.hashes.length : 0) + records.length
     )
       return yield* fail('checkpoint-mismatch');
     let state = initial;
     for (const bytes of records) {
-      const position = state?.hashes.length ?? 0;
+      const position = state ? state.hashesOffset + state.hashes.length : 0;
       const step = Result.gen(function* () {
         const record = yield* decodeRecord(bytes);
         const hash = hashRecordBytes(record.recordBytes);
@@ -250,7 +258,9 @@ export function requireLedgerContinuation(
   if (!before || !after) return fail('unauthorized');
   if (!bytesEqual(before.genesis.toBytes(), after.genesis.toBytes()))
     return fail('genesis-mismatch');
-  const head = after.hashes[before.hashes.length - 1];
+  const position = before.hashesOffset + before.hashes.length - 1;
+  const index = position - after.hashesOffset;
+  const head = index >= 0 ? after.hashes[index] : undefined;
   return head && bytesEqual(head.toBytes(), before.hashes[before.hashes.length - 1]!.toBytes())
     ? Result.succeed(undefined)
     : fail('checkpoint-mismatch');
@@ -265,4 +275,112 @@ export function authorizeUnsignedRecord(
   if (!state) return fail('unauthorized');
   if (!bytesEqual(body.previousHash.toBytes(), view.head.toBytes())) return fail('wrong-parent');
   return applyAuthorizedOrdinary(cloneState(state), body);
+}
+
+declare const verifiedTrust: unique symbol;
+export interface VerifiedViewSnapshotTrust {
+  readonly [verifiedTrust]: true;
+  readonly source: 'verified-view';
+}
+const snapshotPins = new WeakMap<object, { view: LedgerView; facts: SnapshotTrust }>();
+/** Same-position role facts from an actual view, never a caller-supplied role object. */
+export function snapshotTrustFromView(
+  view: LedgerView,
+  endorser: SigningPublicKey,
+  headSignature: import('../bytes').Signature
+): Result.Result<VerifiedViewSnapshotTrust, LedgerError> {
+  return Result.gen(function* () {
+    const state = states.get(view);
+    if (!state) return yield* fail('unauthorized');
+    const key = yield* Result.mapError(
+      signingPublicKey(endorser.toBytes()),
+      (error) => new LedgerError({ code: error.code })
+    );
+    yield* proposalOf(state, key);
+    const device = state.devices.get(keyId(key.toBytes()))!,
+      member = state.members.get(keyId(device.membershipId.toBytes()))!;
+    const role = member.role;
+    if (role !== 'owner' && role !== 'admin') return yield* fail('unauthorized');
+    const token = Object.freeze(
+      Object.assign(Object.create(null), { source: 'verified-view' as const })
+    ) as VerifiedViewSnapshotTrust;
+    const ownedSignature = yield* Result.mapError(
+      parseSignature(headSignature.toBytes()),
+      (error) => new LedgerError({ code: error.code })
+    );
+    snapshotPins.set(token, {
+      view,
+      facts: {
+        source: 'external-confirmation',
+        genesis: view.genesis,
+        head: view.head,
+        length: view.length,
+        endorser: key,
+        membershipId: device.membershipId,
+        role,
+        kind: 'personal',
+        headSignature: ownedSignature,
+      },
+    });
+    return token;
+  });
+}
+/** External full role/position confirmation or registered same-position view; never infer trust from disk. */
+export function verifyLedgerSnapshot(input: {
+  readonly snapshot: Uint8Array;
+  readonly trust: SnapshotTrust | VerifiedViewSnapshotTrust;
+}): Result.Result<LedgerView, LedgerError> {
+  return Result.gen(function* () {
+    if (!input?.trust) return yield* fail('unauthorized');
+    if (input.trust.source === 'verified-view') {
+      const pin = snapshotPins.get(input.trust);
+      if (!pin) return yield* fail('unauthorized');
+      const state = yield* verifiedSnapshotState(input.snapshot, pin.facts);
+      const expected = yield* proposalOf(states.get(pin.view)!, pin.facts.endorser),
+        actual = yield* proposalOf(state, pin.facts.endorser);
+      if (!bytesEqual(expected.bodyBytes, actual.bodyBytes))
+        return yield* fail('checkpoint-mismatch');
+      return pin.view;
+    }
+    return viewOf(yield* verifiedSnapshotState(input.snapshot, input.trust));
+  });
+}
+export function prepareLedgerSnapshot(view: LedgerView, signer: SigningPublicKey) {
+  const state = states.get(view);
+  return state ? proposalOf(state, signer) : fail('unauthorized');
+}
+export function comparisonNote(view: LedgerView, signer: SigningPublicKey) {
+  const state = states.get(view);
+  return state ? noteOf(state, signer) : fail('unauthorized');
+}
+export type HistoricalContentIdentity =
+  | (HistoricalContentAuthor & { readonly kind: 'member' })
+  | {
+      readonly kind: 'device-only';
+      readonly device: SigningPublicKey;
+      readonly reason: 'missing-history-context';
+    };
+/** Snapshot replay-prevention facts can identify only a device, never invent its original user. */
+export function historicalContentIdentity(
+  view: LedgerView,
+  device: SigningPublicKey
+): Result.Result<HistoricalContentIdentity, LedgerError> {
+  return Result.gen(function* () {
+    const state = states.get(view);
+    if (!state) return yield* fail('unauthorized');
+    const key = yield* Result.mapError(
+      signingPublicKey(device.toBytes()),
+      (error) => new LedgerError({ code: error.code })
+    );
+    const author = state.contentAuthors.get(keyId(key.toBytes()));
+    return author
+      ? Object.freeze({ kind: 'member' as const, ...author })
+      : state.usedSigningKeys.has(keyId(key.toBytes()))
+        ? Object.freeze({
+            kind: 'device-only' as const,
+            device: key,
+            reason: 'missing-history-context' as const,
+          })
+        : yield* fail('unauthorized');
+  });
 }

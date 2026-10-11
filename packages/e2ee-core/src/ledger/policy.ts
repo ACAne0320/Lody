@@ -51,7 +51,10 @@ export interface InternalState {
   usedMembershipIds: Set<string>;
   closedJoins: Set<string>;
   usedCommitments: Set<string>;
+  /** Only verified consecutive hashes; no invented pre-snapshot entries. */
   hashes: Bytes.RecordHash[];
+  hashesOffset: number;
+  verification: 'full-history' | 'endorsed-snapshot';
 }
 const id = (value: { toBytes(): Uint8Array }) => keyId(value.toBytes());
 export function genesisState(
@@ -99,6 +102,8 @@ export function genesisState(
     closedJoins: new Set(),
     usedCommitments: new Set([id(body.epochCommitment)]),
     hashes: [hash],
+    hashesOffset: 0,
+    verification: 'full-history',
   };
 }
 export function cloneState(s: InternalState): InternalState {

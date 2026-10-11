@@ -1,3 +1,7 @@
+import * as EpochKeys from '@lody/e2ee-core/keys';
+import { envelopeFixture } from '../keys/fixture';
+import * as Snapshots from '@lody/e2ee-core/ledger/snapshot';
+import { decodeSnapshotCbor, encodeSnapshotCbor } from '../../src/cbor';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -99,13 +103,12 @@ function comparable(view: Ledger.LedgerView) {
     length: view.length,
     owner: hex(s.owner),
     epoch: { ...s.epoch, keyCommitment: hex(s.epoch.keyCommitment) },
-    members: [...s.members].map(([k, v]) => [k, hex(v.userId), v.role]),
-    devices: [...s.devices].map(([k, v]) => [
-      k,
-      hex(v.membershipId),
-      v.kind,
-      hex(v.encryptionPublicKey),
-    ]),
+    members: [...s.members]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => [k, hex(v.userId), v.role]),
+    devices: [...s.devices]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => [k, hex(v.membershipId), v.kind, hex(v.encryptionPublicKey)]),
   };
 }
 
@@ -813,4 +816,567 @@ it('submits prepared signed bytes through real SQLite and recovers without a liv
     remote.db.close();
     rmSync(directory, { recursive: true, force: true });
   }
+});
+function endorsed(view: Ledger.LedgerView, signer: Keys = owner) {
+  const proposal = ok(Snapshots.prepareLedgerSnapshot(view, ok(Bytes.signingPublicKey(signer.pk))));
+  const device = view.inspectState().devices.get(keyId(signer.pk))!;
+  const role = view.inspectState().members.get(keyId(device.membershipId.toBytes()))!.role;
+  if (role !== 'owner' && role !== 'admin') throw new Error('fixture endorser');
+  const trust: Snapshots.SnapshotTrust = {
+    source: 'external-confirmation',
+    membershipId: device.membershipId,
+    role,
+    kind: 'personal',
+    genesis: view.genesis,
+    endorser: ok(Bytes.signingPublicKey(signer.pk)),
+    head: view.head,
+    length: view.length,
+    headSignature: ok(Bytes.signature(signer.sign(proposal.headAttestationSigningBytes))),
+  };
+  return {
+    snapshot: ok(
+      Snapshots.encodeSignedSnapshot(
+        proposal.bodyBytes,
+        ok(Bytes.signature(signer.sign(proposal.signingBytes)))
+      )
+    ),
+    trust,
+    proposal,
+  };
+}
+function editedSnapshot(view: Ledger.LedgerView, signer: Keys, edit: (body: CborValue[]) => void) {
+  const original = endorsed(view, signer);
+  const body = ok(decodeSnapshotCbor(original.proposal.bodyBytes)) as CborValue[];
+  edit(body);
+  const bytes = ok(encodeSnapshotCbor(body));
+  return {
+    ...original,
+    snapshot: ok(
+      Snapshots.encodeSignedSnapshot(
+        bytes,
+        ok(Bytes.signature(signer.sign(Snapshots.snapshotSigningBytes(bytes))))
+      )
+    ),
+  };
+}
+describe('authenticated snapshot migration reproduction', () => {
+  it('joins from independently pinned endorsement and extends the same canonical suffix', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    o.append(owner, [3, id(11), 1]);
+    const before = ok(o.verify());
+    const imported = ok(Snapshots.verifyLedgerSnapshot(endorsed(before, bob)));
+    expect(comparable(imported)).toEqual(comparable(before));
+    const suffix = o.append(bob, o.join(carol, 12));
+    const after = ok(Ledger.extendLedger(imported, [suffix], checkpoint(o.records)));
+    expect(comparable(after)).toEqual(comparable(ok(o.verify())));
+    expect(comparable(imported)).toEqual(comparable(before));
+  });
+  it('rejects an Admin-signed impossible Owner state: old failure/new pass', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    o.append(owner, [3, id(11), 1]);
+    const view = ok(o.verify());
+    const forged = editedSnapshot(view, bob, (body) => {
+      const auth = body[5] as CborValue[];
+      auth[2] = (auth[2] as CborValue[][]).filter(
+        (row) => keyId(row[0] as Uint8Array) !== keyId(owner.pk)
+      );
+    });
+    expect(code(Snapshots.verifyLedgerSnapshot(forged))).toBe('unauthorized');
+    expect(comparable(view)).toEqual(comparable(ok(o.verify())));
+  });
+  it('requires external contact trust after a journal/snapshot substitutes an attacker', () => {
+    const o = org();
+    const view = ok(o.verify());
+    const honest = endorsed(view);
+    const forged = editedSnapshot(view, owner, (body) => {
+      body[4] = attacker.pk;
+      const auth = body[5] as CborValue[];
+      const devices = auth[2] as CborValue[][];
+      devices[0]![0] = attacker.pk;
+      auth[6] = [attacker.pk];
+    });
+    const root = ok(decodeSnapshotCbor(forged.snapshot)) as CborValue[];
+    const bodyBytes = ok(encodeSnapshotCbor(root[0]!));
+    const attack = ok(
+      Snapshots.encodeSignedSnapshot(
+        bodyBytes,
+        ok(Bytes.signature(attacker.sign(Snapshots.snapshotSigningBytes(bodyBytes))))
+      )
+    );
+    const selfClaimedJournal = {
+      endorser: ok(Bytes.signingPublicKey(attacker.pk)),
+      headSignature: ok(
+        Bytes.signature(
+          attacker.sign(Snapshots.headAttestationSigningBytes(view.genesis, view.head))
+        )
+      ),
+    };
+    expect(
+      code(
+        Snapshots.verifyLedgerSnapshot({
+          snapshot: attack,
+          trust: honest.trust,
+          ...{ journal: selfClaimedJournal },
+        })
+      )
+    ).toBe('unauthorized');
+  });
+  it('checks real signatures even if an extra always-success verifier is supplied', () => {
+    const o = org();
+    const view = ok(o.verify());
+    const data = endorsed(view);
+    const root = ok(decodeSnapshotCbor(data.snapshot)) as CborValue[];
+    root[1] = filled(0, 64);
+    const snapshot = ok(encodeSnapshotCbor(root));
+    expect(
+      code(
+        Snapshots.verifyLedgerSnapshot({
+          ...data,
+          snapshot,
+          ...{ verifier: { verify: () => true } },
+        })
+      )
+    ).toBe('bad-signature');
+    o.append(owner, [7, 1, filled(50), filled(3, 72)], filled(0, 64));
+    expect(
+      code(
+        Ledger.verifyLedger({
+          records: o.records,
+          anchor: o.anchor,
+          checkpoint: checkpoint(o.records),
+          ...{ verifier: { verify: () => true } },
+        })
+      )
+    ).toBe('bad-signature');
+  });
+  it('does not mint authority from reflected, structural or independently decoded state', () => {
+    const o = org();
+    const view = ok(o.verify());
+    expect((view as unknown as { constructor: unknown }).constructor).toBeUndefined();
+    const counterfeit = {
+      ...view,
+      inspectState: () => ({ ...view.inspectState(), owner: ok(Bytes.membershipId(id(99))) }),
+    };
+    expect(
+      code(Snapshots.prepareLedgerSnapshot(counterfeit, ok(Bytes.signingPublicKey(owner.pk))))
+    ).toBe('unauthorized');
+    expect(code(Snapshots.comparisonNote(counterfeit, ok(Bytes.signingPublicKey(owner.pk))))).toBe(
+      'unauthorized'
+    );
+    expect(
+      code(Snapshots.historicalContentIdentity(counterfeit, ok(Bytes.signingPublicKey(owner.pk))))
+    ).toBe('unauthorized');
+  });
+  it('rejects changed state, wrong head/count/genesis, signer and invalid suffix without changing the previous view', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    const view = ok(o.verify());
+    const data = endorsed(view);
+    const root = ok(decodeSnapshotCbor(data.snapshot)) as CborValue[][];
+    const auth = root[0]![5] as CborValue[];
+    auth[5] = true;
+    expect(
+      code(Snapshots.verifyLedgerSnapshot({ ...data, snapshot: ok(encodeSnapshotCbor(root)) }))
+    ).toBe('bad-signature');
+    expect(
+      code(
+        Snapshots.verifyLedgerSnapshot({
+          ...data,
+          trust: { ...data.trust, length: data.trust.length + 1 },
+        })
+      )
+    ).toBe('checkpoint-mismatch');
+    expect(
+      code(
+        Snapshots.verifyLedgerSnapshot({
+          ...data,
+          trust: { ...data.trust, head: ok(Bytes.recordHash(filled(99))) },
+        })
+      )
+    ).toBe('checkpoint-mismatch');
+    expect(
+      code(
+        Snapshots.verifyLedgerSnapshot({
+          ...data,
+          trust: { ...data.trust, genesis: ok(Bytes.genesisHash(filled(99))) },
+        })
+      )
+    ).toBe('wrong-anchor');
+    expect(
+      code(
+        Snapshots.verifyLedgerSnapshot({
+          ...data,
+          trust: { ...data.trust, endorser: ok(Bytes.signingPublicKey(attacker.pk)) },
+        })
+      )
+    ).toBe('unauthorized');
+    const imported = ok(Snapshots.verifyLedgerSnapshot(data));
+    const invalid = o.append(attacker, [3, id(11), 1]);
+    expect(code(Ledger.extendLedger(imported, [invalid], checkpoint(o.records)))).toBe(
+      'unauthorized'
+    );
+    expect(comparable(imported)).toEqual(comparable(view));
+  });
+  it('preserves revoked authors and their original membership, while snapshot-only history remains device-only', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    o.append(bob, o.device(phone, 0, id(11)));
+    o.append(bob, [5, phone.pk]);
+    const view = ok(o.verify());
+    const key = ok(Bytes.signingPublicKey(phone.pk));
+    const identity = ok(Snapshots.historicalContentIdentity(view, key));
+    expect(identity.kind).toBe('member');
+    if (identity.kind === 'member') {
+      expect(hex(identity.actor)).toBe(keyId(filled(11)));
+      expect(hex(identity.memberInstance)).toBe(keyId(id(11)));
+    }
+    const imported = ok(Snapshots.verifyLedgerSnapshot(endorsed(view)));
+    expect(ok(Snapshots.historicalContentIdentity(imported, key))).toMatchObject({
+      kind: 'device-only',
+      reason: 'missing-history-context',
+    });
+    expect(
+      code(Snapshots.historicalContentIdentity(imported, ok(Bytes.signingPublicKey(attacker.pk))))
+    ).toBe('unauthorized');
+  });
+
+  it('separates raw comparison from independently confirmed exact tuples and blocks signer relabel', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    const view = ok(o.verify()),
+      ownerKey = ok(Bytes.signingPublicKey(owner.pk)),
+      bobKey = ok(Bytes.signingPublicKey(bob.pk));
+    const local = ok(Snapshots.comparisonNote(view, ownerKey)),
+      remote = ok(Snapshots.comparisonNote(view, bobKey));
+    expect(ok(Snapshots.compareNotes(local, remote))).toMatchObject({
+      kind: 'agree',
+      independent: false,
+    });
+    expect(
+      ok(
+        Snapshots.confirmIndependentComparison(local, remote, ownerKey, {
+          source: 'manual',
+          expected: remote,
+        })
+      )
+    ).toMatchObject({ kind: 'agree', independent: true, confirmationSource: 'manual' });
+    const relabeled = { ...local, noteSigner: bobKey };
+    expect(ok(Snapshots.compareNotes(local, relabeled))).toMatchObject({
+      kind: 'agree',
+      independent: false,
+    });
+    expect(
+      code(
+        Snapshots.confirmIndependentComparison(local, relabeled, ownerKey, {
+          source: 'authenticated-channel',
+          expected: local,
+        })
+      )
+    ).toBe('unauthorized');
+    for (const expected of [
+      { ...remote, genesis: ok(Bytes.genesisHash(filled(9))) },
+      { ...remote, head: ok(Bytes.recordHash(filled(9))) },
+      { ...remote, length: remote.length + 1 },
+      { ...remote, stateDigest: ok(Bytes.recordHash(filled(9))) },
+      { ...remote, noteSigner: ownerKey },
+    ])
+      expect(
+        code(
+          Snapshots.confirmIndependentComparison(local, remote, ownerKey, {
+            source: 'manual',
+            expected,
+          })
+        )
+      ).toBe('unauthorized');
+    expect(
+      ok(
+        Snapshots.confirmIndependentComparison(remote, local, ownerKey, {
+          source: 'manual',
+          expected: local,
+        })
+      )
+    ).toMatchObject({ independent: false });
+    expect(
+      ok(
+        Snapshots.compareNotes(local, { ...remote, stateDigest: ok(Bytes.recordHash(filled(88))) })
+      )
+    ).toMatchObject({ kind: 'conflict' });
+    const earlier = ok(Snapshots.comparisonNote(ok(org().verify()), ownerKey));
+    expect(ok(Snapshots.compareNotes(local, earlier))).toMatchObject({ kind: 'pending-sync' });
+    expect(view.verification).toBe('full-history');
+  });
+  it('requires explicit external role facts; signature-only evidence cannot become authority', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    const view = ok(o.verify()),
+      data = endorsed(view);
+    const { source, membershipId, role, kind, ...identityOnly } = data.trust;
+    expect(source).toBe('external-confirmation');
+    expect(kind).toBe('personal');
+    expect(role).toBe('owner');
+    expect(membershipId.equals(view.inspectState().owner)).toBe(true);
+    expect(
+      Result.isFailure(
+        Snapshots.verifyLedgerSnapshot({ ...data, trust: identityOnly as Snapshots.SnapshotTrust })
+      )
+    ).toBe(true);
+    const evidence = ok(Snapshots.authenticateLedgerSnapshotEvidence(data.snapshot, identityOnly));
+    expect(evidence.stage).toBe('signature-evidence');
+    expect(
+      code(
+        Ledger.contentPermissions(
+          evidence as unknown as Ledger.LedgerView,
+          ok(Bytes.signingPublicKey(owner.pk))
+        )
+      )
+    ).toBe('unauthorized');
+    for (const trust of [
+      { ...data.trust, membershipId: ok(Bytes.membershipId(id(11))) },
+      { ...data.trust, role: 'admin' as const },
+      { ...data.trust, kind: 'machine' as unknown as 'personal' },
+    ])
+      expect(code(Snapshots.verifyLedgerSnapshot({ ...data, trust }))).toBe('unauthorized');
+    expect(
+      code(
+        Snapshots.verifyLedgerSnapshot({
+          ...data,
+          trust: { ...data.trust, stateDigest: ok(Bytes.recordHash(filled(99))) },
+        })
+      )
+    ).toBe('checkpoint-mismatch');
+  });
+  it('derives same-position trust only from genuine management views and rejects changed full state', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    const view = ok(o.verify()),
+      data = endorsed(view);
+    const key = ok(Bytes.signingPublicKey(owner.pk));
+    const pin = ok(Snapshots.snapshotTrustFromView(view, key, data.trust.headSignature));
+    expect(ok(Snapshots.verifyLedgerSnapshot({ ...data, trust: pin }))).toBe(view);
+    expect(code(Snapshots.verifyLedgerSnapshot({ ...data, trust: { ...pin } }))).toBe(
+      'unauthorized'
+    );
+    expect(code(Snapshots.snapshotTrustFromView({ ...view }, key, data.trust.headSignature))).toBe(
+      'unauthorized'
+    );
+    expect(
+      code(
+        Snapshots.snapshotTrustFromView(
+          view,
+          ok(Bytes.signingPublicKey(bob.pk)),
+          data.trust.headSignature
+        )
+      )
+    ).toBe('unauthorized');
+    const changed = editedSnapshot(view, owner, (body) => {
+      const fields = body[5] as CborValue[];
+      fields[5] = true;
+    });
+    expect(code(Snapshots.verifyLedgerSnapshot({ ...changed, trust: pin }))).toBe(
+      'checkpoint-mismatch'
+    );
+    expect(comparable(view)).toEqual(comparable(ok(o.verify())));
+  });
+  it('tracks actual verified suffix hashes, supports large pinned counts and never invents a prefix', () => {
+    const o = org(),
+      genesis = ok(o.verify());
+    o.append(owner, o.device(phone, 0));
+    const view = ok(o.verify()),
+      data = endorsed(view),
+      imported = ok(Snapshots.verifyLedgerSnapshot(data));
+    expect(imported.verification).toBe('endorsed-snapshot');
+    expect(imported.historyStart).toBe(1);
+    expect(imported.length).toBe(2);
+    expect(Result.isFailure(Ledger.requireLedgerContinuation(genesis, imported))).toBe(true);
+    expect(Result.isSuccess(Ledger.requireLedgerContinuation(view, imported))).toBe(true);
+    const suffix = o.append(owner, [7, 1, filled(21), filled(22, 72)]);
+    const extended = ok(Ledger.extendLedger(imported, [suffix], checkpoint(o.records)));
+    expect(extended.length).toBe(3);
+    expect(extended.historyStart).toBe(1);
+    expect(Result.isSuccess(Ledger.requireLedgerContinuation(imported, extended))).toBe(true);
+    const longer = org();
+    longer.append(owner, longer.join(bob, 11));
+    longer.append(owner, [3, id(11), 1]);
+    const large = editedSnapshot(ok(longer.verify()), owner, (body) => {
+      body[2] = 1_000_000;
+    });
+    const high = ok(
+      Snapshots.verifyLedgerSnapshot({ ...large, trust: { ...large.trust, length: 1_000_000 } })
+    );
+    expect(high.length).toBe(1_000_000);
+    expect(high.historyStart).toBe(999_999);
+    const proposed = ok(
+      Snapshots.prepareLedgerSnapshot(high, ok(Bytes.signingPublicKey(owner.pk)))
+    );
+    const body = ok(decodeSnapshotCbor(proposed.bodyBytes)) as CborValue[];
+    expect(body[2]).toBe(1_000_000);
+  });
+  it('bounds snapshot expansion and keeps canonical constraints independent of record budgets', () => {
+    const shared = Array.from({ length: 16384 }, () => filled(1, 256));
+    expect(Result.isFailure(encodeSnapshotCbor(shared))).toBe(true);
+    const cycle: CborValue[] = [];
+    cycle.push(cycle);
+    expect(Result.isFailure(encodeSnapshotCbor(cycle))).toBe(true);
+    expect(Result.isFailure(encodeSnapshotCbor(new Array(16385).fill(null)))).toBe(true);
+    const o = org(),
+      data = endorsed(ok(o.verify()));
+    expect(
+      code(
+        Snapshots.verifyLedgerSnapshot({ ...data, snapshot: new Uint8Array(2 * 1024 * 1024 + 1) })
+      )
+    ).toBe('oversize');
+    expect(Result.isFailure(encodeCbor(Array.from({ length: 33 }, () => null)))).toBe(true);
+  });
+  it('signs an actual management snapshot via borrowed signer and rejects in-flight loss of management rights', async () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    o.append(owner, [3, id(11), 1]);
+    const device: DeviceSigner = {
+      publicKey: ok(Bytes.signingPublicKey(bob.pk)),
+      sign: (message) => Effect.sync(() => ok(Bytes.signature(bob.sign(message)))),
+    };
+    const produced = await Effect.runPromise(
+      Snapshots.signLedgerSnapshot({
+        signer: device,
+        ledger: () => Effect.sync(() => ok(o.verify())),
+      })
+    );
+    const data = endorsed(ok(o.verify()), bob);
+    expect(produced.snapshot).toEqual(data.snapshot);
+    expect(produced.headSignature.toBytes()).toEqual(data.trust.headSignature.toBytes());
+    let moved = false;
+    const revoked: DeviceSigner = {
+      ...device,
+      sign: (message) =>
+        Effect.sync(() => {
+          if (!moved) {
+            moved = true;
+            o.append(owner, [3, id(11), 2]);
+          }
+          return ok(Bytes.signature(bob.sign(message)));
+        }),
+    };
+    const failed = await Effect.runPromise(
+      Effect.result(
+        Snapshots.signLedgerSnapshot({
+          signer: revoked,
+          ledger: () => Effect.sync(() => ok(o.verify())),
+        })
+      )
+    );
+    expect(Result.isFailure(failed)).toBe(true);
+    expect(
+      ok(o.verify())
+        .inspectState()
+        .members.get(keyId(id(11)))!.role
+    ).toBe('member');
+  });
+  it('retains replay prevention after endorsement import and rejects malformed complete-state facts', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    o.append(bob, o.device(phone, 0, id(11)));
+    o.append(bob, [5, phone.pk]);
+    const before = ok(o.verify()),
+      imported = ok(Snapshots.verifyLedgerSnapshot(endorsed(before))),
+      retry = o.append(bob, o.device(phone, 0, id(11)));
+    expect(code(Ledger.extendLedger(imported, [retry], checkpoint(o.records)))).toBe('replay');
+    expect(
+      ok(Snapshots.historicalContentIdentity(imported, ok(Bytes.signingPublicKey(phone.pk))))
+    ).toMatchObject({ kind: 'device-only' });
+    expect(
+      code(Ledger.historicalContentAuthor(imported, ok(Bytes.signingPublicKey(phone.pk))))
+    ).toBe('unauthorized');
+    const clean = org(),
+      view = ok(clean.verify());
+    for (const edit of [
+      (fields: CborValue[]) => {
+        fields[6] = [];
+      },
+      (fields: CborValue[]) => {
+        fields[7] = [];
+      },
+      (fields: CborValue[]) => {
+        fields[8] = [];
+      },
+      (fields: CborValue[]) => {
+        fields[10] = [];
+      },
+      (fields: CborValue[]) => {
+        fields[3] = 1;
+      },
+      (fields: CborValue[]) => {
+        const members = fields[1] as CborValue[][];
+        members.push(members[0]!);
+      },
+      (fields: CborValue[]) => {
+        const devices = fields[2] as CborValue[][];
+        devices.push(devices[0]!);
+      },
+      (fields: CborValue[]) => {
+        const packet = fields[10] as CborValue[][];
+        packet[0]![2] = filled(9, 72);
+      },
+      (fields: CborValue[]) => {
+        fields[4] = filled(9);
+      },
+      (fields: CborValue[]) => {
+        fields[5] = true;
+      },
+    ]) {
+      const data = editedSnapshot(view, owner, (body) => edit(body[5] as CborValue[]));
+      expect(Result.isFailure(Snapshots.verifyLedgerSnapshot(data))).toBe(true);
+    }
+    expect(comparable(view)).toEqual(comparable(ok(clean.verify())));
+  });
+  it('authenticates endorsed history to real commitments and scoped installation without claiming a full audit', async () => {
+    const f = envelopeFixture(),
+      next = ok(Bytes.epochKey(filled(19))),
+      commitment = ok(EpochKeys.commitEpochKey(f.context.genesis, 1, next));
+    const packet = ok(
+      EpochKeys.sealHistoryPacket({
+        genesis: f.context.genesis,
+        epoch: 1,
+        currentKey: next,
+        previousKey: f.secret,
+      })
+    );
+    f.append([7, 1, commitment.toBytes(), packet]);
+    const packaged = await Effect.runPromise(
+      Snapshots.signLedgerSnapshot({ signer: f.owner.signer, ledger: f.ledger })
+    );
+    const view = ok(
+      Snapshots.verifyLedgerSnapshot({
+        snapshot: packaged.snapshot,
+        trust: {
+          source: 'external-confirmation',
+          genesis: f.context.genesis,
+          endorser: f.owner.publicKey,
+          membershipId: ok(Bytes.membershipId(id(10))),
+          role: 'owner',
+          kind: 'personal',
+          head: packaged.head,
+          length: packaged.length,
+          headSignature: packaged.headSignature,
+        },
+      })
+    );
+    const recovered = ok(EpochKeys.recoverLedgerHistory(view, next));
+    expect(recovered.size).toBe(2);
+    expect(view.verification).toBe('endorsed-snapshot');
+    expect(ok(EpochKeys.commitEpochKey(view.genesis, 0, recovered.get(0)!)).toBytes()).toEqual(
+      ok(Ledger.epochHistoryPacket(view, 0)).commitment.toBytes()
+    );
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cache = yield* EpochKeys.makeVerifiedEpochKeys(view.genesis, f.phone.publicKey);
+          for (const [epoch, key] of recovered) ok(cache.install(view, epoch, key));
+          expect(Result.isSuccess(cache.read(view, 0))).toBe(true);
+          expect(Result.isSuccess(cache.read(view, 1))).toBe(true);
+        })
+      )
+    );
+  });
 });

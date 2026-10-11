@@ -836,7 +836,14 @@
       "targetPath": "packages/e2ee-core/src/ledger/snapshot.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Authenticate full snapshot state from external trust; validate Owner reachability and persist no journal-derived authority."
+      "reason": "Authenticate full snapshot state from external trust; validate Owner reachability and persist no journal-derived authority.",
+      "coverage": [
+        {
+          "layer": "L1b",
+          "target": "packages/e2ee-core/src/ledger/snapshot.ts + snapshot-codec.ts + snapshot-signing.ts + replay.ts",
+          "scope": "Canonical authenticated state/head, explicit external role/position or genuine view trust, signature-only non-authority, real suffix coverage, identity fallback facts and exact confirmed comparison tuple. Product trust sourcing, persistence/client/SDK snapshot recovery remain incomplete."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/ledger/submit.ts",
@@ -1331,7 +1338,14 @@
       "targetPath": "packages/e2ee-core/src/cbor.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Existing public records/policy/replay own the migrated baseline. Remaining snapshot, history and workflow functions must be adapted to that owner; do not copy an entire parallel module."
+      "reason": "Existing public records/policy/replay own the migrated baseline. Remaining snapshot, history and workflow functions must be adapted to that owner; do not copy an entire parallel module.",
+      "coverage": [
+        {
+          "layer": "L1b",
+          "target": "packages/e2ee-core/src/ledger/snapshot.ts + snapshot-codec.ts + snapshot-signing.ts + replay.ts",
+          "scope": "Canonical authenticated state/head, explicit external role/position or genuine view trust, signature-only non-authority, real suffix coverage, identity fallback facts and exact confirmed comparison tuple. Product trust sourcing, persistence/client/SDK snapshot recovery remain incomplete."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/commands.ts",
@@ -1610,7 +1624,14 @@
       "targetPath": "packages/e2ee-core/src/ledger/ledger-snapshot.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Authenticate full snapshot state from external trust; validate Owner reachability and persist no journal-derived authority."
+      "reason": "Authenticate full snapshot state from external trust; validate Owner reachability and persist no journal-derived authority.",
+      "coverage": [
+        {
+          "layer": "L1b",
+          "target": "packages/e2ee-core/src/ledger/snapshot.ts + snapshot-codec.ts + snapshot-signing.ts + replay.ts",
+          "scope": "Canonical authenticated state/head, explicit external role/position or genuine view trust, signature-only non-authority, real suffix coverage, identity fallback facts and exact confirmed comparison tuple. Product trust sourcing, persistence/client/SDK snapshot recovery remain incomplete."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/ledger-state.ts",
@@ -2025,6 +2046,11 @@
           "layer": "L2b",
           "target": "packages/e2ee-core/src/ledger/signing.ts",
           "scope": "Canonical ordinary-record permission/PoP preparation and fixed-verified borrowed signing; compose unchanged merged submission. Transport, snapshot restoration and high-level command/session workflows remain incomplete."
+        },
+        {
+          "layer": "L1b",
+          "target": "packages/e2ee-core/src/ledger/snapshot.ts + snapshot-codec.ts + snapshot-signing.ts + replay.ts",
+          "scope": "Canonical authenticated state/head, explicit external role/position or genuine view trust, signature-only non-authority, real suffix coverage, identity fallback facts and exact confirmed comparison tuple. Product trust sourcing, persistence/client/SDK snapshot recovery remain incomplete."
         }
       ]
     },

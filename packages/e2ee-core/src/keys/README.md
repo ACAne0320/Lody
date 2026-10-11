@@ -13,8 +13,8 @@ No rotation, delivery, backup, vault/file format or product feature is activated
   plaintext is K(n-1)32, result nonce24 + ciphertext32 + tag16. No nonce override.
 - `openHistoryPacket` checks AEAD only. It does not authenticate publication or the
   previous commitment. Returned opaque EpochKey owns a copy; no public byte export.
-- `recoverLedgerHistory(view, latestKey)` requires a genuine full verified ledger
-  view. It verifies the latest commitment and every reverse link/old commitment,
+- `recoverLedgerHistory(view, latestKey)` requires a genuine verified ledger
+  view (full audit or independently qualified endorsed state). It verifies the latest commitment and every reverse link/old commitment,
   returning all epochs or a typed failure without partial keys. Raw maps or journal
   bytes cannot supply authority. Temporary owned material is wiped with ordinary
   try/finally on success and every failure, including a correctly decrypted but
@@ -37,7 +37,7 @@ a lower view or alternate fork cannot bypass a known revocation. A verified newe
 revocation remains observed even if read fails. This local authority observation
 is not a transport/durable cursor advance, global freshness proof or fork resolution.
 Callers still obtain current independently expected ledger endpoints and handle
-persistence. The API currently requires full replay, not snapshot restoration.
+persistence. An endorsed snapshot authenticates its state/history facts; it does not independently audit each past publication. The explicit ledger/snapshot entry documents its separate qualification.
 
 Tests extend the owning crypto suite: independently generated Python SHA-256 /
 PyNaCl 1.6.2 libsodium vectors, real native-signed ledger histories, corrupt links,
