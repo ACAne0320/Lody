@@ -26,3 +26,5 @@ This proves neither durable keystore/rotation, native device storage, delivery r
 A second isolated old-fail reproduction calls the prior EpochKey symbol accessor through its prototype and can supply a structural material callback to derivation. The final EpochKey uses private WeakMap provenance with no reflected accessor; fake derivation/install fails without a stored slot. Legitimate key bytes/algorithms remain unchanged. The owning suite now has 147 passing package tests, including genuine signed forks.
 
 Validation is separated by tree: full `env -u GIT_EXEC_PATH PATH="/usr/bin:$PATH" pnpm check` passed the 146-test history/cache tree before the final EpochKey provenance fix. On the final code, package 147/147/typecheck, fresh root typecheck/lint, real published-SDK consumers 43/43, format/docs/public boundary pass. No final-tree full-root rerun is claimed; remote CI is recorded against the exact Draft head. Two isolated old-fail reproductions (history cleanup and EpochKey reflection) remain retained alongside new passing behavior.
+
+Draft: [#1446](https://github.com/LodyAI/Lody/pull/1446).

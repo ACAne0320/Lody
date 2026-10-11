@@ -26,3 +26,5 @@ SDK 快照位置格式、原子移除、恢复库格式/并发/保留与发布�
 另一个独立旧失败通过 EpochKey 原型反射调用 material symbol，并可给派生函数注入结构化 material 回调。最终 EpochKey 用私有 WeakMap，无可反射 accessor；伪造派生/安装失败且不创建 slot，合法字节和算法不变。最终包套件 147 项通过，含真实签名的另一 fork。
 
 按测试树分别记录：完整 `env -u GIT_EXEC_PATH PATH="/usr/bin:$PATH" pnpm check` 在最终 EpochKey provenance 修复前的 146 测试树通过。最终代码上包 147/147/类型检查、重新运行的根类型/lint、实际已发布 SDK 消费者 43/43、格式/文档/公开边界通过，不声称重跑了最终树全根矩阵。远端 CI 绑定精确 Draft head。历史清理与 EpochKey 反射两个独立旧失败及新通过证据均保留。
+
+Draft: [#1446](https://github.com/LodyAI/Lody/pull/1446).
