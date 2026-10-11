@@ -195,8 +195,39 @@ first-user account binding lets a later different synthetic account claim the sa
 user ID. These probes use explicitly unchecked synthetic DTOs against HostMeta
 storage only; they are not full HTTP/signature acceptance or product identity
 findings. Source SHA is unchanged. The migration must verify both request and
-binding rows inside the same transaction before acknowledging. That implementation
-and the real authenticated joins route are still pending.
+binding rows inside the same transaction before acknowledging. The increment below implements both storage readback and the actual authenticated
+joins route; full host composition remains pending.
+
+## Join metadata/HTTP increment (WIP after fba88)
+
+Public joinRequestSigningBytes/verifySignature bind every original field and Org.
+Real unbound outsider challenge/bearer can post inert signed requests; only genuine
+current members read them. No automatic ledger admission, new deadline or product
+identity. R no-manage includes refusing join submission. Original same-ID signer
+and first synthetic user/account ownership rules remain; SQLite stores/verifies
+request and binding in one transaction. Ignoring either insert rejects and rolls
+back both; missing/tampered stored binding or signature is corrupt, not reassigned.
+Actual storage reopens; HTTP bad proof400, conflict409, unauthorized403 remain the
+original Lab semantics. The first outsider fixture accidentally requested a bound
+Org token and was correctly rejected; it now uses real unbound issuance without
+changing member admission. That failure stays fixture evidence only.
+
+Finite ledger lookup receives the scope abort signal and is retained until actual
+completion. The test observes actual native SQLite close/open, calls its genuine
+close implementation and restores the scoped observer; no successful mock or call
+count. An explicit abort-ignoring borrowed phase then a real published SDK read
+must settle before SQLite/Riverrun close. Finally also joins raw work when a mutant
+breaks ownership. Five owning groups and associated HTTP/HPKE/SDK7/type/static pass;
+Fresh fba88 plus six declared owned overlays passes all42. Removing native lookup
+retention causes a direct earlier-owner-close assertion; removing SQL readback
+causes ignored inserts to be wrongly acknowledged. Both fail without timeout and
+pass after restoration. Full root check passes core302/Lab42. The first root attempt stopped at unchanged
+CLI recursive Git context_unreadable before core/Lab ran; retain it. The original
+CLI suite separately passes6; root passes with only child-process GIT_EXEC_PATH
+removed and /usr/bin Git preferred. No source/test/global Git configuration change.
+Fixed-head/CI/independent acceptance remain pending.
+Workspace/checkpoint crash-gap, notes, content/keys stream ownership and complete
+honest actors/driver/replay/CLI/originalLab2 remain unfinished. Human gates unchanged.
 
 ## Remaining work
 

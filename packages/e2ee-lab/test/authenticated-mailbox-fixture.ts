@@ -7,6 +7,7 @@ import { makeLabCredentials, labPossessionMessage } from '../src/platform/creden
 import { makeLabHttpHost } from '../src/platform/host';
 import { makeLabSdkOwner } from '../src/platform/sdk-owner';
 import type { LabMailboxHost } from '../src/platform/mailbox-http';
+import type { makeLabJoinMailbox } from '../src/platform/join-mailbox';
 const ok = Result.getOrThrow;
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
 /** Real challenge/bearer HTTP, native Ed proofs and SQLite credentials. Account is
@@ -18,10 +19,11 @@ export function makeAuthenticatedLabMailbox(input: {
   readonly mode: 'create' | 'open';
   readonly genesis: Bytes.GenesisHash;
   readonly ledger: () => Effect.Effect<LedgerView, never>;
-  readonly mailbox: LabMailboxHost;
+  readonly mailbox?: LabMailboxHost;
+  readonly joins?: Effect.Success<ReturnType<typeof makeLabJoinMailbox>>;
 }) {
   return Effect.gen(function* () {
-    const { directory, mode, genesis, ledger, mailbox } = input;
+    const { directory, mode, genesis, ledger, mailbox, joins } = input;
     const credentials = yield* makeLabCredentials({
       path: join(directory, 'http-credentials.sqlite'),
       mode,
@@ -32,12 +34,13 @@ export function makeAuthenticatedLabMailbox(input: {
       credentials,
       control: () => undefined,
       mailbox: (anchor) => (anchor.equals(genesis) ? mailbox : undefined),
+      joins: (anchor) => (anchor.equals(genesis) ? joins : undefined),
     });
     const owner = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
     const url = `${host.baseUrl}/v1/spaces/${hex(genesis.toBytes())}/key-mailbox`;
     return {
       url,
-      authenticate: (signer: DeviceSigner) =>
+      authenticate: (signer: DeviceSigner, binding: 'workspace' | 'unbound' = 'workspace') =>
         Effect.gen(function* () {
           const account = `synthetic-${hex(signer.publicKey.toBytes())}`;
           const post = (path: string, value: unknown) =>
@@ -63,7 +66,7 @@ export function makeAuthenticatedLabMailbox(input: {
             deviceHex: hex(signer.publicKey.toBytes()),
             nonce,
             signature: hex(signature.toBytes()),
-            genesisHex: hex(genesis.toBytes()),
+            genesisHex: binding === 'workspace' ? hex(genesis.toBytes()) : null,
           }) as Effect.Effect<{ token: string }, unknown>;
           const authenticatedFetch: typeof fetch = (request, init) => {
             const headers = new Headers(init?.headers);

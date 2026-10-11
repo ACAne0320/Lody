@@ -61,13 +61,20 @@ scoped 凭证 owner 保留冻结 Lab v2 持有消息、60 秒单次 nonce 和最
 严格生产期限 B。loopback HTTP host 当前提供 health、challenge、credential 和
 control append-CAS；检查精确路径、有限 JSON/单记录 body 和已落盘 bearer。
 公开 submission 完整验证独立选定前缀并固定 SDK CAS，请求的生命周期/offset/auth
-头没有上游转发入口。workspace 注册/checkpoint 持久化、joins、metadata、密钥/
-内容路由及 CLI 仍未完成。共享操作 Scope 关闭时 abort、打断并等待所有子操作，
+头没有上游转发入口。workspace 注册/checkpoint 持久化、其余 metadata、SDK 密钥/
+内容 stream 路由及 CLI 仍未完成。共享操作 Scope 关闭时 abort、打断并等待所有子操作，
 某个清理失败也不能跳过其他操作，再关闭此前的 SQLite/SDK owner。
+
+join mailbox 消费公开请求签名/验证。真实 unbound 外来设备可提交无权威效力的
+申请，只有 genuine 当前成员能读队列；收到申请不授予成员资格，也不改变期限策略。
+同一 request ID 仅原 signer 可替换；首次合成 user/account 关联保持固定。SQLite
+两个行须在同一事务读回，复用前重核已存请求与绑定。R 不能提交 join 申请。
+借用账本读取接收 abort signal，并保留到实际结束；显式忽略 abort 的借用测试观察
+真实 SQLite close/open 与 Riverrun 关闭顺序。完整宿主组合仍未完成。
 
 原完整 host/gateway、诚实 actors、密钥投递/轮换组合、Flock 进程重开/恢复/live
 session、schedule driver、攻击能力、捕获 replay、原 fixtures 和 CLI/启动流程
-尚未完成。当前 37 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
+尚未完成。当前 42 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
 快照 wire/offset、replay 熵、严格期限 B、恢复库、D12、发布设备永久丢失仍是待决项。
 原生存钥、生产 E2EE、整栈独立审查、CI 和产品验收各自独立。
 参见[完整清单](../../.agents/docs/e2ee-migration-manifest.json)和

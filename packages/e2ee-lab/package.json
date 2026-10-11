@@ -15,7 +15,8 @@
     "./key-mailbox": "./src/platform/key-mailbox.ts",
     "./credentials": "./src/platform/credentials.ts",
     "./control-gateway": "./src/platform/control-gateway.ts",
-    "./host": "./src/platform/host.ts"
+    "./host": "./src/platform/host.ts",
+    "./joins": "./src/platform/join-mailbox.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

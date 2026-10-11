@@ -5,9 +5,11 @@ import type { makeLabCredentials } from './credentials';
 import type { makeLabControlGateway } from './control-gateway';
 import { makeLabOperations } from './operation-scope';
 import { dispatchLabMailbox, type LabMailboxHost } from './mailbox-http';
+import { LabJoinError, parseLabJoin, type makeLabJoinMailbox } from './join-mailbox';
 
 type Credentials = Effect.Success<ReturnType<typeof makeLabCredentials>>;
 type Control = Effect.Success<ReturnType<typeof makeLabControlGateway>>;
+type Joins = Effect.Success<ReturnType<typeof makeLabJoinMailbox>>;
 class LabHttpError extends Data.TaggedError('LabHttpError')<{ readonly status: number }> {}
 const reject = (status: number) => new LabHttpError({ status });
 const hex = (value: unknown, length: number) => {
@@ -28,7 +30,7 @@ const respond = (response: ServerResponse, status: number, value: unknown) => {
   response.writeHead(status, { 'content-type': 'application/json' });
   response.end(JSON.stringify(value));
 };
-/** Local HTTP composition, currently credential, control and mailbox routes only. Workspace
+/** Local HTTP composition, currently credential, control, mailbox and join routes only. Workspace
  * registration/checkpoint selection is an independent harness capability. HTTP JSON,
  * headers and offsets cannot select it. No generic proxy or production account auth.
  * Caller creates credentials/control owners in the same enclosing Scope first. */
@@ -36,11 +38,13 @@ export function makeLabHttpHost(input: {
   readonly credentials: Credentials;
   readonly control: (genesis: Bytes.GenesisHash) => Control | undefined;
   readonly mailbox?: (genesis: Bytes.GenesisHash) => LabMailboxHost | undefined;
+  readonly joins?: (genesis: Bytes.GenesisHash) => Joins | undefined;
 }) {
   return Effect.gen(function* () {
     const credentials = input.credentials,
       control = input.control,
-      mailbox = input.mailbox;
+      mailbox = input.mailbox,
+      joins = input.joins;
     const active = new Set<Promise<void>>();
     let accept: ((request: IncomingMessage, response: ServerResponse) => void) | undefined;
     const server = createServer((request, response) => {
@@ -112,6 +116,20 @@ export function makeLabHttpHost(input: {
         const path = request.url ?? '';
         if (request.method === 'GET' && (path === '/healthz' || path === '/readyz'))
           return { ok: true };
+        const joinsMatch = /^\/v1\/spaces\/([0-9a-f]{64})\/joins$/.exec(path);
+        if (joinsMatch && (request.method === 'GET' || request.method === 'POST')) {
+          const authorization = request.headers.authorization;
+          if (typeof authorization !== 'string' || !/^Bearer [0-9a-f]{64}$/.test(authorization))
+            return yield* reject(401);
+          const credential = yield* credentials.authenticate(authorization.slice(7));
+          const anchor = yield* Effect.fromResult(Bytes.genesisHash(hex(joinsMatch[1], 32)));
+          const owner = joins?.(anchor);
+          if (!owner) return yield* reject(404);
+          if (request.method === 'GET') return { requests: yield* owner.list(credential) };
+          const candidate = yield* Effect.fromResult(parseLabJoin(yield* json(request)));
+          yield* owner.put(credential, candidate);
+          return { ok: true };
+        }
         if (request.method !== 'POST') return yield* reject(404);
         if (path === '/v1/credentials/challenge') {
           const value = yield* json(request);
@@ -209,7 +227,19 @@ export function makeLabHttpHost(input: {
             else
               respond(
                 response,
-                result.failure instanceof LabHttpError ? result.failure.status : 403,
+                result.failure instanceof LabHttpError
+                  ? result.failure.status
+                  : result.failure instanceof LabJoinError
+                    ? result.failure.code === 'conflict'
+                      ? 409
+                      : result.failure.code === 'invalid-input'
+                        ? 400
+                        : ['storage', 'corrupt'].includes(result.failure.code)
+                          ? 500
+                          : result.failure.code === 'closed'
+                            ? 503
+                            : 403
+                    : 403,
                 { error: 'refused' }
               );
           },

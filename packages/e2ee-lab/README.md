@@ -77,18 +77,28 @@ single-use nonce and at most 15-minute synthetic token TTL. Real Ed25519 proofs,
 genuine current Org membership and transactional SQLite mint/invalidate readback
 are required. Account is only a test label; no JWT claim, ordinary tolerance or
 strict production deadline B is changed. The loopback HTTP host currently serves
-health, challenge, credential and control append-CAS routes. Exact canonical paths,
+health, challenge, credential, control append-CAS, authenticated mailbox and joins routes. Exact canonical paths,
 bounded JSON/single-record bodies and stored bearer tokens are checked. Public
 submission audits the independently selected complete prefix and pins SDK CAS;
 caller lifecycle/offset/auth headers have no upstream forwarding path. Workspace
-registration/checkpoint persistence, joins, metadata, key/content routes and CLI
-are still pending. Shared operation scopes abort, interrupt and await all children,
+registration/checkpoint persistence, remaining metadata, SDK key/content stream
+routes and CLI are still pending. Shared operation scopes abort, interrupt and await all children,
 even if one cleanup defects, before earlier SQLite/SDK owners close.
+
+The join mailbox consumes public request signing/verification. A real unbound
+outsider proof can submit an inert request; only genuine current members can read
+the queue. Receipt never grants membership or chooses a new expiry policy. Same
+request ID remains replaceable only by its original signing key; first synthetic
+user/account association remains fixed. Both SQLite rows must read back in one
+transaction, and stored requests/bindings are revalidated before reuse. R cannot
+submit join requests. Borrowed ledger lookup receives an abort signal and is
+retained until actual completion; actual SQLite close/open and Riverrun order are
+observed in an explicit abort-ignoring lease test. Full host composition is pending.
 
 The original full host/gateway, honest actors, key delivery/rotation composition,
 Flock process/recovery/live sessions, schedule driver, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
-37 tests do not close the original Lab2 failures or the complete original fault
+42 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
 D12 and permanent publisher loss remain explicit decisions. Native custody,
 production E2EE, independent whole-stack review, CI and product acceptance are

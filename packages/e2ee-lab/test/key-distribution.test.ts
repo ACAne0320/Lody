@@ -10,6 +10,7 @@ import { hashRecordBytes, verifyLedger } from '@lody/e2ee-core/ledger';
 import {
   signGenesisRecord,
   prepareDeviceAdmission,
+  prepareJoinRequest,
   prepareLedgerCommand,
 } from '@lody/e2ee-core/ledger/admission';
 import { signLedgerRecord } from '@lody/e2ee-core/ledger/signing';
@@ -18,6 +19,7 @@ import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
 import { makeSqliteRecipientMailbox } from '@lody/e2ee-core/keys/host/mailbox/sqlite';
 import { makeLabMailboxRemote } from '../src/platform/key-mailbox';
+import { makeLabJoinMailbox, labJoinWire } from '../src/platform/join-mailbox';
 import { makeAuthenticatedLabMailbox } from './authenticated-mailbox-fixture';
 import { syntheticProtector } from './content-fixture';
 const ok = Result.getOrThrow;
@@ -122,12 +124,19 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               genesis: genesis.genesis,
               ledger,
             });
+            const joins = yield* makeLabJoinMailbox({
+              path: file('joins'),
+              mode: 'create',
+              genesis: genesis.genesis,
+              ledger,
+            });
             const http = yield* makeAuthenticatedLabMailbox({
               directory: dir,
               mode: 'create',
               genesis: genesis.genesis,
               ledger,
               mailbox: host,
+              joins,
             });
             const anonymous = yield* makeLabMailboxRemote({ url: http.url, fetch });
             const unauthenticated = yield* Effect.result(anonymous.fetch(0, null, 100));
@@ -136,6 +145,30 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               expect(unauthenticated.failure.code).toBe('unauthorized');
             const ownerSession = yield* http.authenticate(owner);
             const receiverSession = yield* http.authenticate(recovery);
+            const recoveryJoin = yield* prepareJoinRequest({
+              genesis: genesis.genesis,
+              requestId: ok(Bytes.requestId(new Uint8Array(16).fill(147))),
+              userId: ok(Bytes.userId(new Uint8Array(32).fill(148))),
+              encryptionPublicKey,
+              expiresAt: null,
+              signer: recovery,
+            });
+            const deniedJoin = yield* Effect.promise(() =>
+              receiverSession.fetch(http.url.replace('/key-mailbox', '/joins'), {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(labJoinWire(recoveryJoin)),
+              })
+            );
+            expect(deniedJoin.status).toBe(403);
+            expect(
+              yield* joins.list({
+                account: 'synthetic-owner',
+                device: owner.publicKey,
+                genesis: genesis.genesis,
+              })
+            ).toEqual([]);
+
             const remote = yield* makeLabMailboxRemote(ownerSession);
             let tamper = false;
             const receiverRemote = yield* makeLabMailboxRemote({

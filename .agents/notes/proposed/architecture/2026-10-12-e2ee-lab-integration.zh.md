@@ -147,7 +147,26 @@ focused5/typecheck 与当前整树 core302/Lab37 通过，Lab 输入 SHA 至 for
 成功但没有行；首次 user/account 绑定被忽略，后来不同合成 account 可认领同一
 user ID。探针明确使用未校验合成 DTO，只针对 HostMeta 存储，不是完整 HTTP/
 签名准入或产品身份结论。源 SHA 不变。迁移需在同一事务内读回 request 与 binding
-两行再确认；该实现和真实认证 joins 路由仍待完成。
+两行再确认；下方增量已实现存储读回和真实认证 joins 路由，完整 host 组合仍待完成。
+
+## join 元数据/HTTP 增量（fba88 后 WIP）
+
+公开 joinRequestSigningBytes/verifySignature 绑定原全部字段和 Org。真实 unbound
+外来设备 challenge/bearer 可提交无权威效力的签名申请，仅 genuine 当前成员能读。
+不自动准入账本，不新增期限或产品身份。R 不管理包括拒绝提交 join。保持原同 ID
+signer 和首次合成 user/account 归属；同事务保存并读回 request/binding。忽略任一
+insert 时拒绝并回滚两者；已有绑定/签名缺失或篡改报 corrupt，不能重新认领。
+实际文件重开验证；坏证明400、冲突409、未授权403沿用原 Lab 语义。初次外来设备
+fixture 误请求 Org-bound token，被正确拒绝；改真实 unbound 签发，未改成员准入。
+该失败仅是 fixture 证据。
+
+有限账本读取获得 Scope abort signal，保留到实际完成。测试观察真实 SQLite
+close/open，调用真正原生 close 并在 finally 恢复观察器，不伪造成功或数调用。
+显式忽略 abort 的借用阶段再走实际发布 SDK 读取，结束前不得释放 SQLite/Riverrun。
+负控破坏拥有关系时 finally 也等待 raw 工作，避免测试自身留下悬挂任务。
+所属5组和关联HTTP/HPKE/SDK7/type/static通过；fresh fba88 加六项声明的自有 overlay 完整42通过；移除 native lookup 保留触发真实更早 owner 关闭断言，移除 SQL 读回触发 ignored insert 错误确认断言，均非超时且恢复后通过。本轮完整 root 检查 core302/Lab42 通过。首次 root 在未改 CLI recursive Git 的 context_unreadable 中断，尚未跑到 core/Lab，原失败保留；原 CLI 单独6项通过，仅对子检查进程去除 GIT_EXEC_PATH 并以 /usr/bin Git 优先后完整 root 通过，未修改源码/用例/全局 Git 配置。本轮固定head/CI/独立
+验收尚待完成。workspace/checkpoint crash-gap、notes、content/keys-stream 归属、
+完整诚实actors/driver/replay/CLI/原Lab2仍未完成；人类协议门不变。
 
 ## 剩余工作
 
