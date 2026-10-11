@@ -220,6 +220,16 @@ export type FrozenOperationContinuationConfig = {
    * correspond to batch items rejected before a target was accepted.
    */
   targetDispatchConfigs?: Array<{
+    /** Internal derived-default provenance; never accepted from public MCP input. */
+    builtinDefaultModeId?: string;
+    /** Legacy inherited-mode provenance, retained for stored config compatibility. */
+    inheritedBuiltinDefaultModeId?: string;
+    /** Effective inherited selections; never promoted to explicit input during replay. */
+    inheritedDispatchConfig?: {
+      modeId?: string;
+      modelId?: string;
+      configOptionValues?: Record<string, string | boolean>;
+    };
     modeId?: string;
     modelId?: string;
     configOptionValues?: Record<string, string | boolean>;

@@ -9,6 +9,7 @@ import {
 import { LocalLoroDataPlaneServer } from '@lody/shared/local-loro-data-plane-server';
 import type { WorkspaceId } from '@lody/shared';
 import { InMemoryRemoteCursorStore } from '@loro-dev/streams-crdt';
+import { RepoSyncError, RepoTransportError, type RepoSyncReport } from 'loro-repo';
 
 import type { Logger } from '../src/utils/logger';
 
@@ -105,6 +106,7 @@ vi.mock('@/utils/http-transport', () => ({
 }));
 
 import { LoroDocumentManager } from '../src/lib/loro/doc';
+import { createCliSqliteRepoStore } from '../src/lib/loro/sqlite-repo-store';
 
 const testStreamsTokens = {
   createTokenProvider: () => ({
@@ -682,6 +684,7 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
     const sync = vi.fn(async () => {
       markSyncStarted();
       await syncRelease;
+      return { ok: true, outcome: 'no-route', transports: [] } satisfies RepoSyncReport;
     });
     const repo = {
       destroy: vi.fn(async () => {}),
@@ -716,6 +719,236 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
     expect(sync).toHaveBeenCalledTimes(3);
     await manager.cleanUp({ fast: true });
   });
+
+  it.each([false, true])(
+    'allows ordinary no-route reads but confirms strict reads only without cloud sync (cloud=%s)',
+    async (cloudEnabled) => {
+      process.env.LODY_LORO_AUTO_RECONNECT_INTERVAL_MS = '0';
+      const { LoroRepo } = await vi.importActual<typeof import('loro-repo')>('loro-repo');
+      const repo = await LoroRepo.create({});
+      const manager = new LoroDocumentManager({
+        repo,
+        workspaceId: 'workspace-flock-no-route' as WorkspaceId,
+        userId: 'user-1',
+        metaSub: null,
+        logger: createSilentLogger(),
+        initialTransportStatus: 'connected',
+        streamsTokens: cloudEnabled ? testStreamsTokens : null,
+      });
+
+      try {
+        const docId = 'workspace-flock-no-route:wf:machine';
+        expect(await repo.sync({ scope: 'doc', flockDocIds: [docId] })).toEqual({
+          ok: true,
+          outcome: 'no-route',
+          transports: [],
+        });
+        await expect(manager.syncFlockDocOrThrow(docId)).resolves.toBeUndefined();
+        const confirmation = manager.syncFlockDocOrThrow(docId, {
+          requireRemoteConfirmation: true,
+        });
+        if (cloudEnabled) {
+          await expect(confirmation).rejects.toMatchObject({
+            cause: expect.objectContaining({
+              _tag: 'FlockSyncUnavailableError',
+              reason: 'no-route',
+            }),
+          });
+        } else {
+          await expect(confirmation).resolves.toBeUndefined();
+        }
+      } finally {
+        await manager.cleanUp({ fast: true });
+      }
+    }
+  );
+
+  it('allows ordinary partial reports but preserves permanent failure for strict reads', async () => {
+    process.env.LODY_LORO_AUTO_RECONNECT_INTERVAL_MS = '0';
+    const { LoroRepo } = await vi.importActual<typeof import('loro-repo')>('loro-repo');
+    const { StreamsTransportAdapter } = await vi.importActual<
+      typeof import('loro-repo/transport/streams')
+    >('loro-repo/transport/streams');
+    const repo = await LoroRepo.create({});
+    const failure = new RepoTransportError('Synthetic rejected credentials', {
+      code: 'unauthorized',
+      phase: 'sync',
+      retryable: false,
+    });
+    for (const transportId of ['streams', 'secondary']) {
+      const adapter = new StreamsTransportAdapter({
+        bucketId: 'test-bucket',
+        auth: async () => 'test-token',
+        persistence: { mode: 'ephemeral' },
+      });
+      vi.spyOn(adapter, 'syncFlockDoc').mockResolvedValue(
+        transportId === 'streams' ? { ok: false, error: failure } : { ok: true }
+      );
+      await repo.addTransport(transportId, adapter);
+    }
+    const manager = new LoroDocumentManager({
+      repo,
+      workspaceId: 'workspace-flock-partial' as WorkspaceId,
+      userId: 'user-1',
+      metaSub: null,
+      logger: createSilentLogger(),
+      initialTransportStatus: 'connected',
+      remoteStreamsAttached: true,
+    });
+
+    try {
+      await expect(
+        manager.syncFlockDocOrThrow('workspace-flock-partial:wf:machine')
+      ).resolves.toBeUndefined();
+      const error = await manager
+        .syncFlockDocOrThrow('workspace-flock-partial:wf:machine', {
+          requireRemoteConfirmation: true,
+        })
+        .catch((cause: unknown) => cause);
+      expect(error).toBeInstanceOf(Error);
+      const cause = error instanceof Error ? error.cause : undefined;
+      expect(cause).toBeInstanceOf(RepoSyncError);
+      if (!(cause instanceof RepoSyncError)) throw new Error('Missing typed sync report');
+      expect(cause.report.outcome).toBe('partial');
+      expect(
+        cause.report.transports.find((transport) => transport.transportId === 'streams')
+      ).toMatchObject({ ok: false, failures: [{ error: failure }] });
+    } finally {
+      await manager.cleanUp({ fast: true });
+    }
+  });
+
+  it('rejects strict coalesced waiters but preserves ordinary reads when Streams is replaced', async () => {
+    process.env.LODY_LORO_AUTO_RECONNECT_INTERVAL_MS = '0';
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const report = {
+      ok: true,
+      outcome: 'synced',
+      transports: [{ transportId: 'streams', ok: true, failures: [] }],
+    } satisfies RepoSyncReport;
+    const repo = {
+      destroy: vi.fn(async () => {}),
+      reconnect: vi.fn(async () => {}),
+      addTransport: mocks.repoAddTransport,
+      removeTransport: mocks.repoRemoveTransport,
+      transportRooms: mocks.repoTransportRooms,
+      sync: vi.fn(async () => {
+        started.resolve();
+        await release.promise;
+        return report;
+      }),
+    } as unknown as LoroDocumentManager['repo'];
+    const manager = new LoroDocumentManager({
+      repo,
+      workspaceId: 'workspace-flock-replaced' as WorkspaceId,
+      userId: 'user-1',
+      metaSub: null,
+      logger: createSilentLogger(),
+      initialTransportStatus: 'connected',
+      remoteStreamsAttached: true,
+      streamsTokens: testStreamsTokens,
+      sqliteRepoStore: await createCliSqliteRepoStore('workspace-flock-replaced' as WorkspaceId),
+      documentRemoteCursorStore: new InMemoryRemoteCursorStore(),
+    });
+
+    try {
+      const docId = 'workspace-flock-replaced:wf:machine';
+      const first = expect(
+        manager.syncFlockDocOrThrow(docId, { requireRemoteConfirmation: true })
+      ).rejects.toMatchObject({
+        cause: { _tag: 'FlockSyncUnavailableError', reason: 'transport-changed' },
+      });
+      await started.promise;
+      await manager.detachRemoteStreamsTransport();
+      await manager.attachRemoteStreamsTransport();
+      const lateWaiter = expect(
+        manager.syncFlockDocOrThrow(docId, { requireRemoteConfirmation: true })
+      ).rejects.toMatchObject({
+        cause: { _tag: 'FlockSyncUnavailableError', reason: 'transport-changed' },
+      });
+      const ordinary = expect(manager.syncFlockDocOrThrow(docId)).resolves.toBeUndefined();
+      release.resolve();
+      await Promise.all([first, lateWaiter, ordinary]);
+      await expect(
+        manager.syncFlockDocOrThrow(docId, { requireRemoteConfirmation: true })
+      ).resolves.toBeUndefined();
+    } finally {
+      release.resolve();
+      await manager.cleanUp({ fast: true });
+    }
+  });
+
+  it.each([
+    { strictFirst: true, outcome: 'no-route' },
+    { strictFirst: false, outcome: 'no-route' },
+    { strictFirst: true, outcome: 'partial' },
+    { strictFirst: false, outcome: 'partial' },
+  ] as const)(
+    'keeps coalesced confirmation policy per caller ($outcome, strictFirst=$strictFirst)',
+    async ({ strictFirst, outcome }) => {
+      process.env.LODY_LORO_AUTO_RECONNECT_INTERVAL_MS = '0';
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<RepoSyncReport>();
+      const sync = vi.fn(() => {
+        started.resolve();
+        return release.promise;
+      });
+      const repo = {
+        destroy: vi.fn(async () => {}),
+        reconnect: vi.fn(async () => {}),
+        sync,
+      } as unknown as LoroDocumentManager['repo'];
+      const manager = new LoroDocumentManager({
+        repo,
+        workspaceId: 'workspace-flock-mixed' as WorkspaceId,
+        userId: 'user-1',
+        metaSub: null,
+        logger: createSilentLogger(),
+        initialTransportStatus: 'connected',
+        streamsTokens: testStreamsTokens,
+      });
+      const report: RepoSyncReport =
+        outcome === 'no-route'
+          ? { ok: true, outcome, transports: [] }
+          : {
+              ok: false,
+              outcome,
+              transports: [
+                { transportId: 'secondary', ok: true, failures: [] },
+                {
+                  transportId: 'streams',
+                  ok: false,
+                  failures: [{ kind: 'flock-doc', error: new Error('Synthetic unknown failure') }],
+                },
+              ],
+            };
+      const read = (strict: boolean) => {
+        const result = manager.syncFlockDocOrThrow('workspace-flock-mixed:wf:machine', {
+          requireRemoteConfirmation: strict,
+        });
+        return strict
+          ? expect(result).rejects.toMatchObject({
+              cause:
+                outcome === 'no-route'
+                  ? { _tag: 'FlockSyncUnavailableError', reason: 'no-route' }
+                  : { name: 'RepoSyncError', report },
+            })
+          : expect(result).resolves.toBeUndefined();
+      };
+      try {
+        const first = read(strictFirst);
+        await started.promise;
+        const second = read(!strictFirst);
+        release.resolve(report);
+        await Promise.all([first, second]);
+        expect(sync).toHaveBeenCalledTimes(1);
+      } finally {
+        release.resolve(report);
+        await manager.cleanUp({ fast: true });
+      }
+    }
+  );
 
   it('bridges local data-plane Flock room joins to repo Flock room joins', async () => {
     const workspaceId = 'workspace-flock-bridge' as WorkspaceId;

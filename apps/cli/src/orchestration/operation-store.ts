@@ -76,6 +76,18 @@ const FrozenConfigSchema = z
         z
           .object({
             modeId: z.string().optional(),
+            builtinDefaultModeId: z.string().optional(),
+            inheritedBuiltinDefaultModeId: z.string().optional(),
+            inheritedDispatchConfig: z
+              .object({
+                modeId: z.string().optional(),
+                modelId: z.string().optional(),
+                configOptionValues: z
+                  .record(z.string(), z.union([z.string(), z.boolean()]))
+                  .optional(),
+              })
+              .strict()
+              .optional(),
             modelId: z.string().optional(),
             configOptionValues: z.record(z.string(), z.union([z.string(), z.boolean()])).optional(),
             memory: MemoryBindingSchema.optional(),

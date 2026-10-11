@@ -60,7 +60,18 @@ Explicit selectors participate in the canonical command fingerprint. Reordering
 map keys is the same request; changing selections under an accepted Operation id
 is `OPERATION_ID_REUSED`. Acceptance freezes each effective target dispatch config.
 Retry and recovery use that config rather than recomputing requester defaults or
-Role configuration. No Operation storage migration is required.
+Role configuration. Effective inherited mode/model/options retain internal provenance;
+replay keeps compatible values and drops incompatible inherited values, even when catalog
+freshness is unconfirmed. Current explicit selections remain strict. Effort and Fast use
+the effective target model on both initial validation and frozen replay.
+
+Internally synthesized builtin modes retain separate provenance so replay does not
+reinterpret a fallback default as an explicit user selection. Before the fixed UserTurn
+is authored, the default is re-derived against available capabilities. Interrupted
+materialization preserves only authored values reachable from its frozen inherited or
+synthesized provenance, without rewriting history or relaxing the complete immutable-input
+identity check. Provenance fields are not public MCP input or Session history. Existing
+stored inherited-default markers remain readable; no storage migration is required.
 
 ## Runtime model rejection
 
