@@ -32,3 +32,7 @@ Package 187/187 and typecheck pass. The synthetic million-count test verifies bo
 Final 187-test code tree passed full root check with native Git/local IPC, format/docs/public boundary. The first root attempt stopped at a fixture variable-shadowing lint error; the corrected final tree received a fresh full check. Exact-head CI is a separate record.
 
 Draft: [#1464](https://github.com/LodyAI/Lody/pull/1464).
+
+Incremental count fix: independent review of 13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf found comparison-note offset counted twice, hiding same-point state conflict as pending sync. Count now matches authenticated snapshot position once; regression checks full/endorsed agreement, explicit different-state conflict and verified suffix count. Original reviewer evidence remains untouched; old-fail/new-pass reproduction is retained separately. Trust/wire and P09 are unchanged.
+
+Final count-fix code tree: ledger 47/47 and full root check (core 188/188) passed; format/docs and unchanged public boundaries passed. Original count=5 failure and corrected count=3/conflict evidence remain separate.

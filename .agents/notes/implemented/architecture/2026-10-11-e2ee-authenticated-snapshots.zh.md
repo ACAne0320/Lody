@@ -32,3 +32,7 @@ raw 比较只报告相同、冲突或落后，始终 independent=false。confirm
 最终 187 项测试代码树通过原生 Git/本地 IPC 环境的完整根检查，以及格式、文档和公共边界检查。首次根检查停在 fixture 变量遮蔽 lint 错误，修正后完整重跑最终树。精确 head CI 单独记录。
 
 Draft: [#1464](https://github.com/LodyAI/Lody/pull/1464).
+
+增量计数修复：独立审查 13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf 发现 comparison note 重复累加 offset，使同点不同状态误判 pending sync。现只计一次，回归验证 full／endorsed 同点一致、不同状态明确冲突、已验后缀计数。原 reviewer 证据不改，另保留 old-fail／new-pass；信任／wire 与 P09 未改。
+
+计数修复最终代码树：账本 47/47、完整 root check（core 188/188）通过，格式／文档及未改公共边界通过。原 count=5 失败与新版 count=3／conflict 证据分别保留。
