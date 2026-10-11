@@ -89,3 +89,10 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
 - Raw note equality is not independent confirmation. Bind caller-confirmed actual
   genesis/head/count/stateDigest/peer and its manual/authenticated-channel source;
   never infer confirmation from a key list, or upgrade history/permissions by comparison.
+
+- `./keys/mailbox/sqlite` is a public local reference, never production authentication.
+  Bind principals only from trusted composition; fixed-verify current envelope/report
+  admission. Index recipient rows and deduplicate exact ciphertext; no global read limit.
+  Reports are signed claims, not custody proof. Repair retains history and invalidates
+  prior report revision. Separate indexed schema rejects old JSON files without import.
+  Scope closes storage; callers cancel/await their own borrowed async resources.

@@ -1062,7 +1062,14 @@
       "targetPath": "packages/e2ee-core/src/platform/key-mailbox.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4d",
+          "target": "packages/e2ee-core/src/keys/reports.ts + mailbox-sqlite.ts",
+          "scope": "Canonical signed claim/source/revision checks and real principal-bound indexed local mailbox; fixed current admission, duplicate dedup, bounded recipient pages, retained repair history and persistent public authority observation. Distribution/receive journal, production authentication and full legacy-stream/Lab closure remain unfinished."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/platform/ledger-ports.ts",
@@ -1131,7 +1138,14 @@
       "targetPath": "packages/e2ee-core/src/platform/node-key-mailbox.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4d",
+          "target": "packages/e2ee-core/src/keys/reports.ts + mailbox-sqlite.ts",
+          "scope": "Canonical signed claim/source/revision checks and real principal-bound indexed local mailbox; fixed current admission, duplicate dedup, bounded recipient pages, retained repair history and persistent public authority observation. Distribution/receive journal, production authentication and full legacy-stream/Lab closure remain unfinished."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/platform/node-key-outbox.ts",
@@ -1291,7 +1305,14 @@
       "targetPath": "packages/e2ee-core/src/ports/key-mailbox.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4d",
+          "target": "packages/e2ee-core/src/keys/reports.ts + mailbox-sqlite.ts",
+          "scope": "Canonical signed claim/source/revision checks and real principal-bound indexed local mailbox; fixed current admission, duplicate dedup, bounded recipient pages, retained repair history and persistent public authority observation. Distribution/receive journal, production authentication and full legacy-stream/Lab closure remain unfinished."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/ports/ledger.ts",
@@ -1552,10 +1573,17 @@
         "core": "3683fe8a042a813108d71b5352532335442d7fa66cdcedab69f7514c5cf021a0",
         "candidate": "3683fe8a042a813108d71b5352532335442d7fa66cdcedab69f7514c5cf021a0"
       },
-      "targetPath": "packages/e2ee-core/src/pure/key-mailbox.ts",
+      "targetPath": "packages/e2ee-core/src/keys/reports.ts + mailbox-sqlite.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4d",
+          "target": "packages/e2ee-core/src/keys/reports.ts + mailbox-sqlite.ts",
+          "scope": "Canonical signed claim/source/revision checks and real principal-bound indexed local mailbox; fixed current admission, duplicate dedup, bounded recipient pages, retained repair history and persistent public authority observation. Distribution/receive journal, production authentication and full legacy-stream/Lab closure remain unfinished."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/key-outbox-codec.ts",
@@ -1982,7 +2010,14 @@
       "targetPath": "packages/e2ee-core/src/workflows/key-mailbox.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4d",
+          "target": "packages/e2ee-core/src/keys/reports.ts + mailbox-sqlite.ts",
+          "scope": "Canonical signed claim/source/revision checks and real principal-bound indexed local mailbox; fixed current admission, duplicate dedup, bounded recipient pages, retained repair history and persistent public authority observation. Distribution/receive journal, production authentication and full legacy-stream/Lab closure remain unfinished."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/ledger-client.ts",

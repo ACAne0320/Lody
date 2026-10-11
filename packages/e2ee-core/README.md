@@ -148,3 +148,7 @@ The explicit [`./keys` entry](src/keys/README.md) preserves ledger v1 commitment
 and 72-byte history, verifies every reverse link/commitment and supplies an
 application-scoped volatile verified key cache. It grants no document-write rights
 and supplies no persistence, rotation, delivery, recovery-vault format or backup.
+
+## Local authenticated key mailbox
+
+The explicit Node [`./keys/mailbox/sqlite`](src/keys/MAILBOX.md) reference binds host-authenticated principals, admits fixed-verified current epoch envelopes and pages indexed recipient rows. [`./keys/reports`](src/keys/reports.ts) preserves signed installation-claim bytes. Reports are claims, not custody receipts; distribution/receive persistence and production authentication remain separate owners.

@@ -2,6 +2,7 @@ import { verifiedSnapshotState, proposalOf, noteOf, type SnapshotTrust } from '.
 import { Result } from 'effect';
 import {
   genesisHash,
+  recordHash,
   signingPublicKey,
   epochNumber,
   signature as parseSignature,
@@ -382,5 +383,43 @@ export function historicalContentIdentity(
             reason: 'missing-history-context' as const,
           })
         : yield* fail('unauthorized');
+  });
+}
+
+/** Only actually retained verified hashes, never an inspection object or invented pre-snapshot entry. */
+export function hasVerifiedRecordHash(
+  view: LedgerView,
+  hash: RecordHash
+): Result.Result<boolean, LedgerError> {
+  const state = states.get(view);
+  if (!state) return fail('unauthorized');
+  return Result.gen(function* () {
+    const owned = yield* Result.mapError(
+      importHash(hash),
+      (error) => new LedgerError({ code: error.code })
+    );
+    return state.hashes.some((known) => known.equals(owned));
+  });
+}
+function importHash(hash: RecordHash) {
+  return recordHash(hash.toBytes());
+}
+
+export function hasVerifiedCheckpoint(
+  view: LedgerView,
+  point: LedgerCheckpoint
+): Result.Result<boolean, LedgerError> {
+  const state = states.get(view);
+  if (!state) return fail('unauthorized');
+  return Result.gen(function* () {
+    if (!Number.isSafeInteger(point.length) || point.length < 1)
+      return yield* fail('checkpoint-mismatch');
+    const owned = yield* Result.mapError(
+      recordHash(point.head.toBytes()),
+      (error) => new LedgerError({ code: error.code })
+    );
+    const index = point.length - 1 - state.hashesOffset;
+    const known = index >= 0 ? state.hashes[index] : undefined;
+    return !!known && known.equals(owned);
   });
 }

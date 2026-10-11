@@ -29,4 +29,4 @@ export type {
   HistoricalContentAuthor,
   EpochHistoryPacket,
 } from './policy';
-export { requireLedgerContinuation } from './replay';
+export { requireLedgerContinuation, hasVerifiedRecordHash, hasVerifiedCheckpoint } from './replay';

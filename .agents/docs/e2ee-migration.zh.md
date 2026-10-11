@@ -100,4 +100,6 @@ Lab 使用真实 HTTP/SQLite 持久化、进程重开、双端 Loro/Flock/Repo S
 
 ## 当前已实施的栈
 
-实际依赖链为 L0 #1438 → L1a #1439 → L2a #1442 → L4a #1446 → 普通账本签名。规范历史先于后续分发，不等待快照新格式决策；全部保持 Draft。签名实施前 #1434 已合入实际 main，merge 为 7c58cabe1d05f132b7133a52b45a16b79274ea6a；本栈未重复实现其提交代码。独立 ledger/signing 入口准备现有普通记录，并接入未改动的持久提交；完整 engine 的传输、快照和会话责任仍未完成。
+已实施 Draft 链为 L0 [#1438](https://github.com/LodyAI/Lody/pull/1438) → 历史事实 [#1439](https://github.com/LodyAI/Lody/pull/1439) → 文档工作流 [#1442](https://github.com/LodyAI/Lody/pull/1442) → epoch 历史 [#1446](https://github.com/LodyAI/Lody/pull/1446) → 普通签名 [#1447](https://github.com/LodyAI/Lody/pull/1447) → epoch 信封 [#1448](https://github.com/LodyAI/Lody/pull/1448) → 原字节投递 [#1450](https://github.com/LodyAI/Lody/pull/1450) → 认证账本快照 [#1464](https://github.com/LodyAI/Lody/pull/1464)。索引式本地 mailbox 接在 #1464 后；[所属 note](../notes/implemented/architecture/2026-10-11-e2ee-key-mailbox.zh.md) 记录来源、适配与证据。每张 PR 只对直接父分支。规范历史／分发不等待无关格式决策；普通签名前 #1434 已落地，本栈未改其实现。
+
+快照 A 必须有独立来源的精确管理资格；B 从真正同点 view 派生信任；C 仅为签名证据。背书状态来源与未知历史前缀明确区分。mailbox reference 提供已认证主机 composition 绑定、固定准入、重复包去重、有界逐接收者读取、签名声明／修复；持久接收安装、分发调度、完整 engine／SDK／transport 恢复和 Lab 均未完。旧重复 stream 失败仍保留，仅新 mailbox 路径证据不能关闭全部旧路径／Lab 投递覆盖。
