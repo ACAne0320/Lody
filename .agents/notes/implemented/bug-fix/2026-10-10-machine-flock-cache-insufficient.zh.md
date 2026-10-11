@@ -38,4 +38,4 @@ rebase 保留 main 的持久协作停止屏障、因果深度指引和 CLI Role 
 
 行为测试覆盖跨版本 ACP 缓存、显式临时/永久/未知故障、继承模型缺失、无缓存、非默认模式、兼容值，以及 model-a 探测快照下 model-b 的 `xhigh`；还覆盖真实非 Role MCP 混合批量、已接受聊天经过 SQLite 和协调器进入终态、来源快照恢复、默认值双向变化时的中断重放，以及身份冲突时历史不变。真实 Repo 与 Streams 适配器通过合成 HTTP 503 生成 `server_error`，经过 ACP 解析到达 MCP 输出。管理器测试区分共享传输尝试的严格与普通调用。测试使用合成数据，不访问外网，不使用真实等待。
 
-本修订已 rebase 到 main 的 `loro-repo` 0.22.0。离线源码边界检查、非类型感知 lint、格式、空白和文档检查均通过。依赖注册表下载不完整，当前行为套件、类型检查及类型感知 lint 受阻，不声称这些检查通过。独立真实 Repo 0.22.0 探测确认了无路由及 HTTP 503 错误合同。前一修订的 355 项测试结果不代表当前修订结果。此前广泛套件的失败已独立在基线上复现，本记录不声称整个仓库通过。参见[实现流程](../../../docs/cli-overview.md#machine-catalog-freshness-during-session-creation)及[缓存兼容性决策](2026-09-08-acp-capability-cache-compatibility.zh.md)。
+本修订已 rebase 到 main 的 `loro-repo` 0.22.0。离线源码边界检查、非类型感知 lint、格式、空白和文档检查均通过。依赖注册表下载不完整，本地行为套件、类型检查及类型感知 lint 仍受阻；当前提交的验证依据为普通 PR CI，不声称本地通过。独立真实 Repo 0.22.0 探测确认了无路由及 HTTP 503 错误合同。前一修订的 355 项测试结果不代表当前修订结果。此前广泛套件的失败已独立在基线上复现，本记录不声称整个仓库通过。参见[实现流程](../../../docs/cli-overview.md#machine-catalog-freshness-during-session-creation)及[缓存兼容性决策](2026-09-08-acp-capability-cache-compatibility.zh.md)。

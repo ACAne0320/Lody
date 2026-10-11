@@ -910,6 +910,11 @@ describe('session MCP input schemas', () => {
       modeId: 'agent',
       modelId: 'gpt-5.6-sol',
       configOptionValues: { 'fast-mode': true },
+      inheritedDispatchConfig: {
+        modeId: 'agent',
+        modelId: 'gpt-5.6-sol',
+        configOptionValues: { 'fast-mode': true },
+      },
       inheritSessionDefaults: false,
     });
     await expect(
