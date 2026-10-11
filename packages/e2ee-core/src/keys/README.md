@@ -118,3 +118,5 @@ new epoch publication or backup strategy. Local outbox contents are untrusted un
 verified; authenticated principal binding and host admission remain adapter work.
 [Delivery decision/evidence](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-key-delivery.md)
  · [Delivery fingerprints](delivery-provenance.json).
+
+Host-only initialization and durable recipient key retention now live under [`./keys/host` and `./keys/host/sqlite`](HOST-PROTECTION.md). Ordinary entries keep opaque keys. This does not choose an OS protector or complete installation reports/recovery backup.

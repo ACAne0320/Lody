@@ -16,8 +16,9 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   establishes neither current permission nor AEAD validity.
 - Ed25519 requires canonical nonzero prime-subgroup A and canonical prime-subgroup
   R with `zip215: false`. No caller-supplied point cache or verifier bypass.
-- Public byte wrappers own copies. Secret epoch keys have no public byte export;
-  native private-key custody belongs to platform adapters, not this module.
+- Public byte wrappers own copies. Ordinary secret epoch keys have no public byte export;
+  native private-key custody belongs to platform adapters, not this module. The explicit
+  host-only epoch protection boundary is governed by [keys rules](src/keys/AGENTS.md).
 - Tests use fixed synthetic vectors and negative cases. Record extraction changes
   and source SHA-256 fingerprints in provenance.json; never copy private designs,
   captured transcripts, Lab hosts or unrelated candidate modules.

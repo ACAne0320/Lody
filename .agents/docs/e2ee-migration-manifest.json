@@ -884,10 +884,17 @@
         "core": "b4bd1e962dc24c3d8ce9dc3dcf60287e879e0cd8fa3d4e01dc2d8e7c64caf4d4",
         "candidate": "b4bd1e962dc24c3d8ce9dc3dcf60287e879e0cd8fa3d4e01dc2d8e7c64caf4d4"
       },
-      "targetPath": "packages/e2ee-core/src/node-epoch-store.ts",
+      "targetPath": "packages/e2ee-core/src/keys/host-protection.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "One-time trusted host capability and protected round-trip behavior adapted. Obsolete wire/JSON journal is retired. Publisher candidate/submission coupling and permanently lost publisher backup remain separate unfinished owners; no whole-module completion claim.",
+      "coverage": [
+        {
+          "layer": "L4e",
+          "target": "packages/e2ee-core/src/keys/host-protection.ts + protected-sqlite.ts",
+          "scope": "Approved host-only initialization-time protection direction and append-only installed recipient key retention. Real verified current recipient/prefix, complete protected context including Org at epoch0, save/reload/unprotect/commitment recheck, Scope/native cleanup. No native adapter, publisher candidate backup, recovery vault or queued reports; old plaintext/JSON/wire schemes not imported."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/node-history-store.ts",
@@ -1117,7 +1124,14 @@
       "targetPath": "packages/e2ee-core/src/platform/node-epoch-files.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Installed recipient key retention portion adapted to explicit host protection and indexed SQLite. Candidate rotation/backups, task/report/repair coordination and native-platform implementations remain unfinished or decision-gated as owned by this source.",
+      "coverage": [
+        {
+          "layer": "L4e",
+          "target": "packages/e2ee-core/src/keys/host-protection.ts + protected-sqlite.ts",
+          "scope": "Approved host-only initialization-time protection direction and append-only installed recipient key retention. Real verified current recipient/prefix, complete protected context including Org at epoch0, save/reload/unprotect/commitment recheck, Scope/native cleanup. No native adapter, publisher candidate backup, recovery vault or queued reports; old plaintext/JSON/wire schemes not imported."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/platform/node-journal.ts",
@@ -1245,7 +1259,14 @@
       "targetPath": "packages/e2ee-core/src/ports/epoch-rotation.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Installed recipient key retention portion adapted to explicit host protection and indexed SQLite. Candidate rotation/backups, task/report/repair coordination and native-platform implementations remain unfinished or decision-gated as owned by this source.",
+      "coverage": [
+        {
+          "layer": "L4e",
+          "target": "packages/e2ee-core/src/keys/host-protection.ts + protected-sqlite.ts",
+          "scope": "Approved host-only initialization-time protection direction and append-only installed recipient key retention. Real verified current recipient/prefix, complete protected context including Org at epoch0, save/reload/unprotect/commitment recheck, Scope/native cleanup. No native adapter, publisher candidate backup, recovery vault or queued reports; old plaintext/JSON/wire schemes not imported."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/ports/epoch-stream.ts",
@@ -1499,10 +1520,17 @@
         "core": "8e542ff11d2625ae9cb15c6ed094f49d372d9250c14fa978fe4a5c4e1b4ead89",
         "candidate": "8e542ff11d2625ae9cb15c6ed094f49d372d9250c14fa978fe4a5c4e1b4ead89"
       },
-      "targetPath": "packages/e2ee-core/src/pure/epoch-keyring.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/keys/protected-sqlite.ts",
+      "status": "已迁",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Append-only exact keyring behavior is adapted to protected indexed blobs. Legacy plaintext JSON codec is deliberately retired, not imported or silently used as fallback.",
+      "coverage": [
+        {
+          "layer": "L4e",
+          "target": "packages/e2ee-core/src/keys/host-protection.ts + protected-sqlite.ts",
+          "scope": "Approved host-only initialization-time protection direction and append-only installed recipient key retention. Real verified current recipient/prefix, complete protected context including Org at epoch0, save/reload/unprotect/commitment recheck, Scope/native cleanup. No native adapter, publisher candidate backup, recovery vault or queued reports; old plaintext/JSON/wire schemes not imported."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/errors.ts",
@@ -2017,7 +2045,14 @@
       "targetPath": "packages/e2ee-core/src/workflows/key-distribution.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Installed recipient key retention portion adapted to explicit host protection and indexed SQLite. Candidate rotation/backups, task/report/repair coordination and native-platform implementations remain unfinished or decision-gated as owned by this source.",
+      "coverage": [
+        {
+          "layer": "L4e",
+          "target": "packages/e2ee-core/src/keys/host-protection.ts + protected-sqlite.ts",
+          "scope": "Approved host-only initialization-time protection direction and append-only installed recipient key retention. Real verified current recipient/prefix, complete protected context including Org at epoch0, save/reload/unprotect/commitment recheck, Scope/native cleanup. No native adapter, publisher candidate backup, recovery vault or queued reports; old plaintext/JSON/wire schemes not imported."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/key-mailbox.ts",

@@ -107,3 +107,5 @@ Lab 使用真实 HTTP/SQLite 持久化、进程重开、双端 Loro/Flock/Repo S
 Mailbox Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472), direct parent #1464 at `5d3967ec94e3b10fdec76220937e9fcfe2623590`.
 
 Document snapshot-identity/input follow-up Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474), direct parent #1472 at `ad4aed943928be69b0013445c2a38d86c7907fbe`.
+
+Host-only epoch 保护方向已定：可信 composition 仅初始化一次 protect/unprotect，完整绑定用途／Org／接收者／epoch／commitment，普通消费者仍用 opaque key；保存／回读／commitment 校验后才能报告。L4e 安装密钥库采用独立本地保护 payload，不是恢复文件格式或新 mailbox wire。原生适配器和报告队列仍分开；合成保护器不证明平台存钥。

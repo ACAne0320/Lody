@@ -107,3 +107,5 @@ Snapshot A requires independently sourced exact management qualification; B deri
 Mailbox Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472), direct parent #1464 at `5d3967ec94e3b10fdec76220937e9fcfe2623590`.
 
 Document snapshot-identity/input follow-up Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474), direct parent #1472 at `ad4aed943928be69b0013445c2a38d86c7907fbe`.
+
+The host-only epoch protection direction is settled: trusted composition initializes protect/unprotect once, complete purpose/Org/recipient/epoch/commitment binding, opaque ordinary consumers and durable save/reload/commitment check before reports. The L4e installed-key library uses a distinct local protected payload, not a recovery-file format or new mailbox wire. Native adapters and report queues remain separate; synthetic protection does not establish platform custody.
