@@ -204,7 +204,17 @@ export function makeSqliteMailboxRepair(input: {
                 .run(phase, task.id).changes !== 1
             )
               throw fail('corrupt');
-            if (load(task.id).phase !== phase) throw fail('corrupt');
+            const completed = load(task.id);
+            const receipt = db
+              .prepare('SELECT consumed FROM repair_tasks WHERE id=?')
+              .get(task.id) as { consumed: unknown } | undefined;
+            if (
+              completed.phase !== phase ||
+              completed.epoch !== task.epoch ||
+              completed.rejected !== task.rejected ||
+              receipt?.consumed !== 0
+            )
+              throw fail('corrupt');
           })
           .immediate()
       );
@@ -323,7 +333,31 @@ export function makeSqliteMailboxRepair(input: {
         sql(() => {
           guard();
           if (!validId(id)) throw fail('invalid-input');
-          db.prepare("UPDATE repair_tasks SET consumed=1 WHERE id=? AND phase<>'Pending'").run(id);
+          db.transaction(() => {
+            const row = db.prepare(select + ' WHERE id=?').get(id) as
+              | Record<string, unknown>
+              | undefined;
+            if (!row) return;
+            const original = parse(row);
+            if (original.phase === 'Pending') return;
+            if (
+              db
+                .prepare("UPDATE repair_tasks SET consumed=1 WHERE id=? AND phase<>'Pending'")
+                .run(id).changes !== 1
+            )
+              throw fail('corrupt');
+            const saved = load(id),
+              receipt = db.prepare('SELECT consumed FROM repair_tasks WHERE id=?').get(id) as
+                | { consumed: unknown }
+                | undefined;
+            if (
+              saved.epoch !== original.epoch ||
+              saved.rejected !== original.rejected ||
+              saved.phase !== original.phase ||
+              receipt?.consumed !== 1
+            )
+              throw fail('corrupt');
+          }).immediate();
         }),
     });
   });

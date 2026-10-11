@@ -287,6 +287,97 @@ describe('durable stable-ID mailbox repair episodes', () => {
       )
     );
   });
+  it.each(['epoch', 'rejected', 'id', 'consumed'] as const)(
+    'rolls back a %s rewrite after terminal transition and retries the exact remotely accepted original',
+    async (field) => {
+      const f = envelopeFixture(),
+        dir = directory(),
+        journal = path.join(dir, 'repair.sqlite'),
+        frame = await Effect.runPromise(f.prepare());
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const host = yield* makeSqliteKeyMailbox({
+                path: path.join(dir, 'mailbox.sqlite'),
+                mode: 'create',
+                genesis: f.context.genesis,
+                ledger: f.ledger,
+              }),
+              sender = ok(host.bind(f.owner.publicKey)),
+              remote = ok(host.bind(f.phone.publicKey));
+            yield* sender.put('bc'.repeat(16), frame);
+            const digest = mailboxDigest(frame),
+              queue = yield* makeSqliteMailboxRepair({
+                path: journal,
+                mode: 'create',
+                genesis: f.context.genesis,
+                recipient: f.phone.publicKey,
+                ledger: f.ledger,
+                remote,
+              });
+            yield* queue.enqueue('stable-original', digest);
+            const update =
+              field === 'epoch'
+                ? 'epoch=epoch+1'
+                : field === 'rejected'
+                  ? "rejected='" + 'ff'.repeat(32) + "'"
+                  : field === 'id'
+                    ? "id='changed-original'"
+                    : 'consumed=1';
+            const db = new Database(journal);
+            try {
+              db.exec(
+                `CREATE TRIGGER rewrite_terminal AFTER UPDATE OF phase ON repair_tasks WHEN NEW.phase='Repaired' BEGIN UPDATE repair_tasks SET ${update} WHERE id=NEW.id; END;`
+              );
+            } finally {
+              db.close();
+            }
+            expect((yield* queue.flush()).blocked).toEqual(['stable-original']);
+            expect(rows(journal)).toEqual([
+              { id: 'stable-original', epoch: 0, rejected: digest, phase: 'Pending', consumed: 0 },
+            ]);
+            expect((yield* queue.results()).items).toEqual([]);
+            expect((yield* remote.status(slot(f))).revision).toBe(1);
+            const clear = new Database(journal);
+            try {
+              clear.exec('DROP TRIGGER rewrite_terminal');
+            } finally {
+              clear.close();
+            }
+            expect((yield* queue.flush()).blocked).toEqual([]);
+            expect(rows(journal)).toEqual([
+              { id: 'stable-original', epoch: 0, rejected: digest, phase: 'Repaired', consumed: 0 },
+            ]);
+            expect((yield* remote.status(slot(f))).revision).toBe(1);
+            const ack = new Database(journal);
+            try {
+              ack.exec(
+                `CREATE TRIGGER rewrite_ack AFTER UPDATE OF consumed ON repair_tasks WHEN NEW.consumed=1 BEGIN UPDATE repair_tasks SET ${field === 'consumed' ? 'consumed=0' : update} WHERE id=NEW.id; END;`
+              );
+            } finally {
+              ack.close();
+            }
+            expect(
+              Result.isFailure(yield* Effect.result(queue.acknowledge('stable-original')))
+            ).toBe(true);
+            expect(rows(journal)).toEqual([
+              { id: 'stable-original', epoch: 0, rejected: digest, phase: 'Repaired', consumed: 0 },
+            ]);
+            const clearAck = new Database(journal);
+            try {
+              clearAck.exec('DROP TRIGGER rewrite_ack');
+            } finally {
+              clearAck.close();
+            }
+            yield* queue.acknowledge('stable-original');
+            expect(rows(journal)).toEqual([
+              { id: 'stable-original', epoch: 0, rejected: digest, phase: 'Repaired', consumed: 1 },
+            ]);
+          })
+        )
+      );
+    }
+  );
   it('pages beyond blocked original repair work, retains results and idempotently binds acknowledged IDs', async () => {
     const f = envelopeFixture(),
       dir = directory(),

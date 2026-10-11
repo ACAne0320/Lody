@@ -30,7 +30,7 @@ or forks. A local journal pin is not a globally latest claim or trusted role sou
 The local APP0x4c455232/v1 file binds one Org/device, uses exclusive 0600 creation,
 WAL/FULL and bounded individual row reads. It does not import the retired whole
 JSON distribution store or carry secrets/recovery-vault data. Task transitions
-check actual writes and read back the terminal original fields in a transaction.
+check actual writes and read back every original field, terminal phase and unconsumed marker after all DML in the same transaction. Explicit acknowledgement likewise checks the original fields, phase and consumed marker before commit; ignored or rewritten writes roll back rather than reporting success.
 
 `results(limit,cursor)` returns retained local history; explicit `acknowledge(id)`
 marks consumption without deleting the ID binding. Acknowledged IDs cannot be
@@ -48,5 +48,5 @@ Owning tests use real signature/replay, real SQLite and the actual public mailbo
 They observe a pending original before dispatch, lost ACK, a real OS child reopen
 retrying the same ID, server revision idempotency, rejected envelope exclusion,
 original-field replay refusal, registered Recovery repair, fake-view/revocation gates, ignored terminal
-writes, 102 tasks/blocked progress and late ACK after explicit Scope close. They
+writes and terminal/acknowledgement field rewrites, 102 tasks/blocked progress and late ACK after explicit Scope close. They
 are synthetic local host evidence, not HTTP/native/deployed backend acceptance.

@@ -30,3 +30,7 @@ Recovery 修复作者结果：准确 de3210a4 隔离 clone 加入相同正向断
 父层同步到 #1484 5b90；repair 实现与 owning6／子进程 fixture 逐字未改。新组合独立绑定，旧 348／dd 结果不能自动变成此树结论。父 P1 的独立关闭证据待主协调核验。
 
 新父组合作者检查：repair6/core257、完整 root `pnpm check`、format/docs/public boundary 通过；repair runtime／测试与 348 逐字一致。仅父层源码／历史原件回归和本层父指纹、说明改变，独立 parent integration 与准确 CI 另核，不沿用旧READY。
+
+终态原件修复增量：独立发现真实远端 repair 成功后，SQLite trigger 可改写已保存 epoch，而本地 flush 仍返回 Repaired。终态 DML 后必须保持全部原字段和 consumed=0；acknowledgement 独立事务也校验原字段／phase 与 consumed=1，忽略写入或字段被替换均回滚。四组实际 trigger 覆盖 epoch、拒收摘要、ID、消费标记，并分别验证终态与 acknowledgement。准确 d518 上终态回归三组失败（ID 改写此前已拒绝）；修复工作树 owning10 和 typecheck 通过。作者证据不等于独立关闭或新 head CI 通过。
+
+终态增量最终作者检查：repair10/core261、package typecheck、完整 root `pnpm check`、format 与 docs check 通过。复制的独立终态反例在故障后保留 Pending epoch0；删除 trigger 后同 ID 重试，server revision 仍为1。父5b 的别名原件 finding 仍未关闭，在所属层另修。
