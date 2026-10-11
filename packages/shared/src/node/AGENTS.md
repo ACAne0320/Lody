@@ -5,6 +5,20 @@
 Node-only helpers shared by the CLI, the desktop main process and the CLI
 supervisor. Package rules: [shared](../../AGENTS.md).
 
+## Local-project Git (`local-project.ts`)
+
+- Native workflows require `LocalProjects`, provided by `LocalProjectsLive` with
+  filesystem paths, host environment and the official process spawner. Compose
+  their Effects directly; do not call a Promise facade from an Effect workflow.
+- Expected Git statuses may represent absence. Startup, deadline, corruption,
+  filesystem and release failures must remain observable; parallel probe failure
+  interrupts and joins its siblings. Preserve exact-ref and canonical project
+  identity behavior.
+- `localProjectsLegacy` is the single deprecated execution facade for remaining
+  CLI entrypoints. Keep Legacy visible in calls; remove it after those owners
+  receive the native service. Its synchronous path/identity methods remain
+  explicitly blocking. Worktree setup/GC still need their own lifecycle migration.
+
 ## Process layer (`process.ts`)
 
 The one implementation that starts, awaits and signals OS processes for the CLI,
@@ -36,8 +50,13 @@ record: [process tree layer](../../../../.agents/notes/implemented/architecture/
   `process.ts` with a test and a facade; never work around the layer in a caller.
 - End processes through the official Effect handle or `terminateTree`; never add another
   SIGTERM→wait→SIGKILL loop. Every wait is bounded, and a tree that cannot be
-  proven gone fails with `TerminationFailed`, never success. A caller that
-  cannot act on it logs it at `warn`, naming the tree.
+  proven gone fails with `TerminationFailed`, never success. Scope release failure
+  is a `ProcessReleaseFailed` defect carrying the unresolved tree's recovery lease;
+  retain it until `isAlive` proves absence or `retryTermination` succeeds. Logging
+  alone cannot turn that failure into success. Promise boundaries must use
+  `squashProcessFailure` to preserve every lease alongside the primary failure.
+  Acquisition error conversions preserve the full Cause, including release
+  defects from the spawner's failed child Scope, before reaching that boundary.
 - Termination often runs in a finalizer, where nothing is interruptible: bound
   its waits by the clock (`waitUntilGone`), never by `timeout*` or a race.
 - Never signal a child without a pid (pid 0 is the caller's own group), and
@@ -54,3 +73,28 @@ record: [process tree layer](../../../../.agents/notes/implemented/architecture/
   Promise door. Tests use `@effect/vitest` with `TestClock` and
   `process-testing.ts` (the fake process table); a real-process test waits on
   explicit readiness output, never on elapsed time.
+
+## File locks (`file-lock.ts`)
+
+- Native workflows compose `withFileLock` through one owner-provided `FileLocks`
+  service. Only unmigrated application entrypoints use `fileLocksLegacy`; keep
+  Legacy visible and never execute it inside a native Effect workflow.
+- Resolve each operation using explicit locksDir, current LODY_LOCKS_DIR, then
+  current profile locks; production composition must not freeze environment paths.
+- Keep strict FIFO, fail-fast same-context reentry, profile paths and the deadline
+  that starts after local admission. A plain Semaphore does not preserve FIFO
+  on immediate reacquisition in 4.0.2. Use the owned Ref/Deferred handoff.
+- Publish complete metadata exclusively; register release before the body. Cancelled
+  tickets leave the queue immediately. Retain failed release generations, verify
+  pid plus token, and surface unreadable-lock/cleanup errors. Changed stale
+  generations must return to backoff/deadline checks. Stale cleanup also collects
+  crash-orphan scratch using ownership/age checks, preserving fresh live
+  candidates and giving unidentified preparation a 30-minute grace period. Decision and limits:
+  [file lock lifecycle](../../../../.agents/notes/implemented/architecture/2026-10-10-effect-file-lock-lifecycle.md).
+
+- Bound each release wait independently (5 seconds), retain and join the original
+  pending OS deletion, and block replacement until actual completion. A timeout
+  never proves unlink stopped. Only settled failures permit a new deletion attempt.
+- Retry acquisition only; body/release failures preserve the full Cause. Use
+  `squashFileLockFailure` at Legacy boundaries to retain every lock cleanup owner
+  alongside process leases and the original operation failure.

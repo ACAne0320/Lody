@@ -46,7 +46,9 @@ catch })` and pass the signal on, so interruption aborts the work.
   `Effect.promise` turns a rejection into a defect.
 - Surface failures to Promise callers as the typed error itself: run with
   `Effect.runPromiseExit` and throw `Cause.squash(exit.cause)`, not the
-  `FiberFailure` wrapper `Effect.runPromise` rejects with.
+  `FiberFailure` wrapper `Effect.runPromise` rejects with. For programs owning
+  processes, use `squashProcessFailure`: plain `Cause.squash` can discard a
+  simultaneous release defect and its recovery lease.
 - An interrupt is owned by a scope or awaited. `void Effect.runPromise(Fiber.interrupt(f))`
   returns before the fiber's finalizers run.
 - Put a timeout on the waiter, not on uninterruptible work:
@@ -74,6 +76,21 @@ requires the official spawner, and `spawnProcess` requires Scope. See the
 [backend decision](../notes/implemented/architecture/2026-10-09-effect-official-process-service.md)
 for why the default Node spawner is not used unchanged.
 
+If bounded Scope termination fails, its Exit contains a `ProcessReleaseFailed`
+defect with a recovery lease for the unresolved tree. The owner retains that
+lease, observes `isAlive` and retries `retryTermination` before declaring the tree
+gone. Scope closure itself is already finished and cannot perform that retry.
+`squashProcessFailure` preserves all these leases when an unmigrated Promise
+boundary also has a body error. This tree recovery does not certify drained stdio
+or complete Session shutdown. See the
+[release decision](../notes/implemented/bug-fix/2026-10-10-effect-process-release-failure.md).
+
+In pinned 4.0.2, `Effect.mapError` selects a typed failure and can discard other
+reasons in a mixed Cause. Resource-owning error conversions use `catchCause` and
+`failCause(Cause.map(...))` to retain defects and interruptions. In particular,
+failed process acquisition can already have closed its child Scope: its release
+lease must reach the caller alongside the setup failure.
+
 Never wrap the shared Promise functions back into an Effect. A runner creates a
 separate root fiber. For an unmigrated entry point, the shared facade accepts an
 explicit AbortSignal; pass it when the entry point supports cancellation. This
@@ -86,6 +103,56 @@ whole-group exit and drained stdio. Closing the container Scope terminates its t
 monitor fibers, then removes cgroup resources. `startProcessLegacy` is reserved for
 legacy synchronous/raw Node handles (including IPC and explicit detach), whose
 owner must await `terminate`; it is not a scoped Effect API.
+
+## File locks
+
+`withFileLock(name, body, options)` requires `FileLocks`. `FileLocksLive` captures
+official FileSystem, native NodeProcess and FileLockHost dependencies. The host
+fixes pid and resolves the default lock directory on each operation; tests may
+inject a fixed directory.
+`fileLockLayer` supplies Node implementations at composition. One service instance
+owns local Ref/Deferred admission and unresolved releases; each operation owns its
+candidate and acquired file. Release waits have their own 5-second Clock bound;
+`LockReleaseFailed.cleanup` retains the original OS deletion for awaited retry.
+A still-pending deletion blocks replacement. Body and release run outside acquisition
+retry; `squashFileLockFailure` preserves their full Cause, file cleanup owners and
+process recovery leases at compatibility boundaries. See the [decision and preserved lock policy](../notes/implemented/architecture/2026-10-10-effect-file-lock-lifecycle.md).
+
+Catalog mutations compose the native API and require FileLocks. Existing Promise
+application entrypoints execute them through `fileLocksLegacy.runPromise`; worktree,
+cloudflared and Baguette use its `withLock` callback adapter. This one deprecated
+facade shares a process-lifetime ManagedRuntime so local queue waiting retains its
+old deadline meaning. Remove it when those entrypoints use the daemon runtime.
+Catalog read caching, Git/worktrees and downloads are still under migration.
+
+## Local-project Git
+
+`LocalProjects` / `LocalProjectsLive` own native repository observation and branch
+workflows. Their dependencies are `LocalProjectPaths` (official FileSystem),
+`LocalProjectHost` (an Effect reading each command's environment), and the official
+process spawner. `localProjectLayer` only composes Layers. Existing CLI command,
+control, session and worktree-observation entrypoints execute this same kernel
+through the one deprecated `localProjectsLegacy` facade. Keep that name visible;
+new Effect callers yield native methods. Remove the facade when those application
+owners provide LocalProjects. Its synchronous identity methods remain blocking.
+Expected Git absence remains a domain result; process, deadline, corruption,
+filesystem and release failures propagate. This does not complete worktree
+setup/GC or the daemon's root runtime. Decision and limits:
+[local-project Git](../notes/implemented/architecture/2026-10-10-effect-local-project-git.md).
+
+## Worktree Git execution
+
+`WorktreeGit` / `WorktreeGitLive` own native command execution, status checking and
+bounded credential-helper protocol. Layers provide official FileSystem, the process
+spawner and a per-command environment Effect. Each command owns its process Scope;
+the service has no background work. `worktreeGitLayer` only composes dependencies.
+The Promise manager uses the one deprecated `worktreeGitLegacy` facade; remove it
+when the manager composes this service. That facade uses the shared complete-Cause
+projection. Transport, cancellation and unresolved releases escape manager fallback
+catches. Preserve mixed Fail/Die Cause when mapping commands on pinned v4; ordinary
+mapError can select only the Fail reason. This is not native manager/setup/GC or
+daemon runtime completion. Decision:
+[worktree Git](../notes/implemented/architecture/2026-10-10-effect-worktree-git-execution.md).
 
 ## Temporary Promise facades
 

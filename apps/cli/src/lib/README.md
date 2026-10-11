@@ -4,6 +4,14 @@ Binding rules live in [AGENTS.md](AGENTS.md) and in the scoped `AGENTS.md` of ea
 subdirectory; this file is the navigation index. Cross-module explanations live in
 [`.agents/docs/`](../../../../.agents/docs/AGENTS.md).
 
+## Local persistence
+
+- `local-workspace-catalog.ts` — cached workspace/identity discovery; mutations
+  compose native FileLocks and keep the file write inside its lease. Read-cache
+  refresh orchestration remains Promise-based. Existing application entrypoints
+  provide the lock through the shared `fileLocksLegacy` runtime until daemon
+  composition migrates.
+
 ## Resource discovery
 
 - `discovery-query.ts` — strict query schemas, scope-bound keyset pagination and
@@ -64,6 +72,12 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
 - `session-activity-status.ts`, `session-live-status.ts` — derived busy/idle state.
 
 ## Projects and providers
+
+Local-project observation and branch commands use shared `LocalProjects` native
+Effect workflows through the visible `localProjectsLegacy` facade while these
+entrypoints remain Promise-based. Worktree setup/GC and Session lifecycle still
+need their own migration; the facade is removed once the application runtime
+provides LocalProjects. See the [decision](../../../../.agents/notes/implemented/architecture/2026-10-10-effect-local-project-git.md).
 
 - `local-project-history-sync-service.ts` / `local-project-history-precheck.ts` —
   Provider-bound local-project ACP history catalogs, import and refresh. Catalogs
