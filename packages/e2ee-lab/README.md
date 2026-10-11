@@ -41,8 +41,9 @@ Otherwise it stays failed without advancing the durable pair. Retained-history
 API/host ownership is an unresolved coordinated contract, not completed recovery.
 
 Scope closes admission, aborts requests, waits actual native SDK settlement and
-then closes SDKs/storage and frees the actual Loro owner. The published SDK's
-`close()` alone does not await every one-shot operation. Flock 0.4.3 exposes no
+then closes SDKs/storage and frees the actual Loro owner. CRDT SyncClient.close() alone does not await every one-shot operation.
+StreamsClient.close() publishes protocol EOF; the HTTP facade has no native
+disposal method. Its scoped owner aborts and awaits requests without publishing EOF. Flock 0.4.3 exposes no
 public deterministic free/dispose: close SDK subscriptions and drop references;
 do not touch private internals or claim deterministic Wasm allocation release.
 The permit runtime requires explicit mode/time/fetch. Its deprecated Promise
@@ -81,8 +82,8 @@ health, challenge, credential, control append-CAS, authenticated mailbox and joi
 bounded JSON/single-record bodies and stored bearer tokens are checked. Public
 submission audits the independently selected complete prefix and pins SDK CAS;
 caller lifecycle/offset/auth headers have no upstream forwarding path. Workspace
-registration/checkpoint persistence, remaining metadata, SDK key/content stream
-routes and CLI are still pending. Shared operation scopes abort, interrupt and await all children,
+create-space/checkpoint persistence, remaining metadata, content writes/live
+subscriptions and CLI are still pending; indexed key delivery uses the public mailbox. Shared operation scopes abort, interrupt and await all children,
 even if one cleanup defects, before earlier SQLite/SDK owners close.
 
 The join mailbox consumes public request signing/verification. A real unbound
@@ -98,7 +99,7 @@ observed in an explicit abort-ignoring lease test. Full host composition is pend
 The original full host/gateway, honest actors, key delivery/rotation composition,
 Flock process/recovery/live sessions, schedule driver, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
-47 tests do not close the original Lab2 failures or the complete original fault
+52 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
 D12 and permanent publisher loss remain explicit decisions. Native custody,
 production E2EE, independent whole-stack review, CI and product acceptance are
@@ -117,3 +118,14 @@ lease; it never renews or grants membership. It rechecks stored identity, expiry
 and invalidation after finite current-ledger lookup, then verifies the actual
 SQLite UPDATE. The lookup receives abort and remains retained until settlement.
 Host create-space/stream publication integration remains unfinished.
+
+`makeLabStreamReader` serves bounded finite GET/HEAD control/loro/flock reads and
+SDK bootstrap/latest/specific snapshots through stored bearer authentication.
+Upstream is a fixed loopback origin, with no caller URL/headers forwarded. Latest
+snapshot redirects are resolved only inside the same origin/Org/stream; response
+bytes and allowed SDK headers are buffered within the native lease. Genuine
+current authorization is checked before and after transport settlement. Actual
+signed revocation during read retains the public feed's durable cursor. Snapshot
+fixtures here are opaque unprotected bytes, not a protected snapshot contract.
+SDK0.9 putSnapshot echoes its supplied offset; tests use the server-returned
+opaque HEAD token. Full protected snapshot publication/recovery remains pending.

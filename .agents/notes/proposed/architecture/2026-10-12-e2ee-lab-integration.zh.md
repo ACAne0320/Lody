@@ -199,3 +199,23 @@ comparisonNote 仅 personal。提案选项为沿当前 personal 契约且宿主�
 关闭顺序测试覆盖 join 和 credential，未复制新测试或移除原行为。关联11/type/
 static及完整 root core302/Lab47 通过；固定head/CI/独立验收待完成。原 HostMeta
 ignored binding UPDATE 静默返回但未绑定，只读 SQL-only 复现和 source SHA 保留。HTTP create-space 绑定组合仍未完成。
+
+## 有限认证 SDK 读取
+
+读取消费公开 genuine-view 策略和实际发布 SDK；固定 loopback 上游和严格 query/
+path/header 边界，调用者不能选择上游或权限。原生 latest snapshot307 只在同
+origin/Org/stream canonical offset 内解析，不转发 Location。有限响应体留在 raw
+lease 直到完成，再复核当前权限。响应期间真实签名撤销机器设备后，不推进客户端
+持久历史/游标。原生 body gate 明示为包裹实际 HTTP bytes 的受控边界，不是成功 mock SDK。
+
+新增五组和完整 Lab52 通过。fresh eb6f 加五项 SHA 明示代码 overlay 通过52；移除
+body 等待、redirect origin 绑定、读取后权限复核均命中直接行为断言失败，无 timeout，
+恢复后通过。整树 core302/Lab52、format/docs/public boundary7010files/27manifests 通过，
+全部52 Lab 输入 SHA 始终不变。首次 root 拒绝三处 control-character 正则；改显式字符码
+保持同一边界，失败日志保留。fixed-head/CI/独立证据分别记录，原 Lab2/full host/actors 未完成。
+
+StreamsClient.close() 发布 EOF，与 CRDT SyncClient.close() 生命周期不同；HTTP facade
+无 dispose，Scope 只 abort+wait，不调用协议 close。SDK0.9 putSnapshot 回显输入
+offset，不是标准化服务端 ACK；未保护传输 fixture 使用实际 HEAD opaque token。
+这不决定受保护快照 header/offset/发布。保留早先 0 与原生20位 token fixture 失败，
+以及类型检查拒绝将协议 close 用作生命周期能力的失败。人决策、锁版本、普通容差不变。

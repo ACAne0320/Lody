@@ -17,7 +17,8 @@
     "./control-gateway": "./src/platform/control-gateway.ts",
     "./host": "./src/platform/host.ts",
     "./joins": "./src/platform/join-mailbox.ts",
-    "./workspaces": "./src/platform/workspace-registry.ts"
+    "./workspaces": "./src/platform/workspace-registry.ts",
+    "./stream-read": "./src/platform/stream-read.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

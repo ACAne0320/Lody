@@ -9,6 +9,7 @@ import { makeLabSdkOwner } from '../src/platform/sdk-owner';
 import type { LabMailboxHost } from '../src/platform/mailbox-http';
 import type { makeLabJoinMailbox } from '../src/platform/join-mailbox';
 import type { makeLabWorkspaceRegistry } from '../src/platform/workspace-registry';
+import type { makeLabStreamReader } from '../src/platform/stream-read';
 const ok = Result.getOrThrow;
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
 /** Real challenge/bearer HTTP, native Ed proofs and SQLite credentials. Account is
@@ -17,6 +18,7 @@ const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
  * Raw credential fetch AND response body are retained by a scoped native owner. */
 export function makeAuthenticatedLabMailbox(input: {
   readonly directory: string;
+  readonly streams?: Effect.Success<ReturnType<typeof makeLabStreamReader>>;
   readonly workspaces?: Effect.Success<ReturnType<typeof makeLabWorkspaceRegistry>>;
   readonly mode: 'create' | 'open';
   readonly genesis: Bytes.GenesisHash;
@@ -34,6 +36,7 @@ export function makeAuthenticatedLabMailbox(input: {
     });
     const host = yield* makeLabHttpHost({
       credentials,
+      streams: (anchor) => (anchor.equals(genesis) ? input.streams : undefined),
       workspaces: input.workspaces,
       control: () => undefined,
       mailbox: (anchor) => (anchor.equals(genesis) ? mailbox : undefined),

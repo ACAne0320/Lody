@@ -6137,7 +6137,7 @@
       "targetPath": "packages/e2ee-lab/src/platform/gateway.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Genuine-ledger current member/role/Org stream gate implemented; hostile structural view/opaque values refused, Recovery no-send tested using real admission/SDK CAS/feed. Full credential challenge/bearer authentication, join signer, pinned control CAS and payload admission in actual host remain pending.",
+      "reason": "Genuine public current member/role/Org stream policy; actual host now separately composes credential/bearer, signed inert joins, public control CAS, indexed key mailbox and finite authenticated reads. Structural views/outsiders/R send denied. Full content write/snapshot authority/live/create-space/notes host remains incomplete.",
       "sourceDeclaredExports": {
         "core": [
           "KnownStream",
@@ -6207,7 +6207,7 @@
       "targetPath": "packages/e2ee-lab/src/platform/host.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Partial actual loopback HTTP challenge/credential/bearer/control routes consume public submission through control-gateway.ts: complete independent prefix, signer/Org, one bounded frame, SDK pinned CAS, no forwarded hostile headers; shared operations await all children including cleanup defects. Workspace/checkpoint durable crash gaps, joins, key/content routes and original fault scenarios remain incomplete. Current WIP adds real credential-bound key-mailbox7 routes via mailbox-http.ts; preserve public frame/publication/repairID bounds. JSON principal mutant is rejected in real HPKE consumer; full source host remains incomplete. New WIP authenticated joins routes use public signed inert requests, preserve400/409/403 and reject R governance; full host/registry/notes/content remains incomplete.",
+      "reason": "Partial actual loopback host implements stored-bearer credentials/control CAS/mailbox7/signed inert joins/genesis discovery and finite SDK GET/HEAD control/loro/flock/bootstrap/snapshot reads. Public verification owns authority, caller headers never select upstream, bounded native body is retained and post-read genuine permission rechecked. Real signed revocation retains durable client cursor. Full create-space publication/current checkpoint/crash-gap, content writes/live, notes, startup/actors/original fault scenarios remain incomplete. Unprotected transport snapshot fixture does not decide protected snapshot wire/offset.",
       "sourceDeclaredExports": {
         "core": [
           "DemoHostOptions",
@@ -6228,7 +6228,8 @@
       "targetSupplementalPaths": [
         "packages/e2ee-lab/src/platform/control-gateway.ts",
         "packages/e2ee-lab/src/platform/mailbox-http.ts",
-        "packages/e2ee-lab/src/platform/operation-scope.ts"
+        "packages/e2ee-lab/src/platform/operation-scope.ts",
+        "packages/e2ee-lab/src/platform/stream-read.ts"
       ]
     },
     {
@@ -8261,12 +8262,12 @@
     "branch": "e2ee-lab-integration",
     "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
     "draftPr": null,
-    "consumerTests": 47,
+    "consumerTests": 52,
     "originalLabFailuresClosed": false,
     "remaining": "Full honest host/gateway/actors, Flock process/recovery/live session, key mailbox/rotation composition, schedule driver, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Current credential binding root core302/Lab47 passes, public boundary7008files27manifests; child-process Git path isolation unchanged. Root format/docs pass; all50 Lab input SHA unchanged throughout root check/format. Fixed-head/CI/independent pending.",
+    "authorRootCheck": "Current finite authenticated SDK reads full root core302/Lab52 passes, public boundary7010files27manifests; root format/docs pass and all52 Lab input SHA unchanged. First current root failed3 control-character regex static errors, repaired with explicit character-code validation; original failed log retained. Fixed-head/CI/independent pending.",
     "lastFetchedMain": {
       "head": "987962e77022df6a800f4e889f124b51f6eb8056",
       "tree": "4601a3f2b65d122c5b314cab79dc275fba9af636",
@@ -8276,7 +8277,7 @@
     },
     "actorUncommitted": "Actor consumer is committed in fixed1087; its public admission/signing/P09 code remains unchanged in this increment. Whole-current-tree acceptance awaits final root result, original Lab2/full host/CI and independent review remain incomplete.",
     "sdkConsumers": "Actual Loro two clients, released streams-crdt0.16.2, public content/ledger/protected-key composition, SQL IGNORE pair rollback, another OS reader without signer. Synthetic AES wrapping is fixture-only. Real Flock SDK/native-file consumer focused pass; public0.4.3 has no deterministic free/dispose guarantee.",
-    "sdkOwnership": "Explicit raw one-shot SDK owner aborts admission/requests, waits actual settlement, closes SDK and drops refs; actual Loro.free after close. No-wait mutant reaches closedEarly assertion, not timeout.",
+    "sdkOwnership": "Raw one-shot owners abort and await actual settlement. CRDT SyncClient close and actual Loro.free are lifecycle operations; StreamsClient.close publishes EOF and is never disposal. HTTP facades require request leases, no synthetic EOF cleanup.",
     "recoveryHistoryContract": "Real Riverrun0.3.0 snapshot PUT at nonzero offset advances earliest_offset. Public SDK recovery succeeds only while authenticated full history remains readable; otherwise it fails closed and retains the durable pair. Upstream history retention/read API versus trusted host history route needs coordinated decision; no server database reset or snapshot deletion.",
     "replayComparator": "Pure comparison of recorded inert fixtures ported with resource/actor/frame divergence; no entropy provider, resealing or full execution replay. Multipart original4pass/2newfail then fixed6pass retained.",
     "gateway": "Partial real loopback health/challenge/credential/control-CAS HTTP: genuine current Org, stored bearer and single-use real device-possession proof, exact path/single bounded frame, public complete-prefix/pinned SDK CAS, no forwarded caller lifecycle/offset/auth headers. Published StreamsClient consumes correct auth API and mandatory ACK offset header. Full workspace/checkpoint durable crash-gap, joins, notes, key/content routes and CLI remain incomplete.",
@@ -8287,6 +8288,7 @@
     "joins": "WIP public signed requests and real authenticated unbound-outsider submit/member read, same-ID original signer/first synthetic account binding, one-transaction two-row readback; original two SQL failures repaired with real signature/SQL/reopen tests. No ledger admission or production identity/new expiry; R cannot submit. Abort signal plus actual borrowed lookup retention and SQLite/nativeRiverrun close order tested. Current5/associated7/type/static pass; Fresh fba88 +6 declared overlays full42 pass; native-retain/SQL-readback negative controls hit actual direct assertions, no timeout, restored pass. Root core302/Lab42 passes; fixedhead/CI/independent pending.",
     "workspaces": "WIP original public-signature genesis/original signer SQLite registry with transaction readback, copy-owned records, corrupted-row refusal and actual OS-child reopen; stored-bearer GET genesis permits original unbound discovery. Private harness registration only; create-space stream publication/current independent checkpoint/crash gap/credential binding remain incomplete. Owning3+associated10/type pass; Fresh77485 +6 declared overlays45 pass; readback/original-signer mutants direct assertion failure, no timeout, restored pass. Root core302/Lab45 passes; fixed-head/CI/independent pending.",
     "comparisonPublicationDecision": "Proposed, awaiting human: old Lab notes permits current machine/R, current public comparisonNote only personal. Option A preserve current personal contract and inert host observations; option B separate machine observation DTO, never R send, needs explicit eligibility contract. Host notes cannot automatically become independent confirmation. No core/spec change made. Coordinator recommends A; this is not recorded as human approval.",
-    "credentialBinding": "WIP original bind-once synthetic bearer after genuine current membership; stored identity, invalidation and original expiry rechecked after borrowed lookup; real SQL UPDATE readback, same-target idempotent, other-Org rejected, no new token/renewal. New finite ledger callback receives abort and actual completion is retained before SQLite/SDK close. Existing native-owner test parameterized for join/credential without removing original join behavior. Owning credential4/join6/host1 associated11/type/static pass; Fresh349fd +3 declared overlays47 pass; native retain/readback negatives actual direct assertions, no timeout, restored pass. Root core302/Lab47 passes; fixedhead/CI/independent pending. Not completed HTTP create-space binding flow; no JWT/strictB change."
+    "credentialBinding": "WIP original bind-once synthetic bearer after genuine current membership; stored identity, invalidation and original expiry rechecked after borrowed lookup; real SQL UPDATE readback, same-target idempotent, other-Org rejected, no new token/renewal. New finite ledger callback receives abort and actual completion is retained before SQLite/SDK close. Existing native-owner test parameterized for join/credential without removing original join behavior. Owning credential4/join6/host1 associated11/type/static pass; Fresh349fd +3 declared overlays47 pass; native retain/readback negatives actual direct assertions, no timeout, restored pass. Root core302/Lab47 passes; fixedhead/CI/independent pending. Not completed HTTP create-space binding flow; no JWT/strictB change.",
+    "finiteReads": "Bounded authenticated GET/HEAD control/loro/flock/bootstrap/latest/specific snapshot routes; fixed loopback upstream, canonical same-origin/Org/stream redirect, actual response-body retention and before/after genuine permission. Real machine revoke keeps durable feed cursor. Lab52 plus five SHA overlays passes; three direct behavioral negatives/no timeout/restored. Unprotected snapshot fixture only; content writes/live/fullhost/CLI and protected snapshot contract pending."
   }
 }

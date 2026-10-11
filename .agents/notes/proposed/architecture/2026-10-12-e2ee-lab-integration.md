@@ -269,3 +269,30 @@ existing real SQLite/Riverrun close-order probe for join and credential paths;
 no copied test or removed original behavior. Associated11/type/static and full root core302/Lab47 pass; fixed-head/CI/independent
 acceptance pending. Original HostMeta ignored binding UPDATE silently returns
 without binding; read-only SQL-only reproduction and source SHA are retained. HTTP create-space binding remains incomplete.
+
+## Finite authenticated SDK reads
+
+Read transport consumes public genuine-view policy and the released SDK. Fixed
+loopback upstream and exact query/path/header bounds prevent caller-selected
+origin or authority. Resolve the native latest-snapshot307 only to canonical
+same-origin/Org/stream offsets, never forward Location. Buffer bounded bodies in
+the retained raw lease; recheck current authorization after actual settlement.
+Real signed machine revocation during response delivery rejects without advancing
+client durable history/cursor. Native body gating is an explicit controlled wrapper
+over actual HTTP bytes, not a successful mock SDK.
+
+The five new groups and complete Lab52 pass. Fresh eb6f plus five SHA-declared
+code overlays passes52; removing body retention, redirect origin binding or
+post-read authorization each causes an observable assertion failure without
+timeout, and restoration passes. Full root core302/Lab52, format/docs and public boundary7010files/27manifests pass;
+all52 Lab inputs remain byte-identical throughout. First root rejected three control-
+character regexes; explicit character-code validation fixes the same bounds, with
+the failed log retained. Fixed-head/CI/independent evidence remain separate. Original Lab2/full host/actors remain incomplete.
+
+StreamsClient.close() publishes EOF, unlike CRDT SyncClient.close() lifecycle.
+The HTTP facade owns no dispose; scoped abort+wait does not call protocol close.
+SDK0.9 putSnapshot returns its input offset, not a normalized server ACK. Use
+actual HEAD's opaque token in unprotected transport fixtures; this settles no
+protected-snapshot header/offset/publication decision. Preserve earlier fixture
+failures (0 versus native20-digit token) and the type-check rejection of protocol
+close as a lifecycle capability. Human gates, pins and ordinary leeway unchanged.

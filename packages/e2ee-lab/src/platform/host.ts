@@ -7,6 +7,7 @@ import { makeLabOperations } from './operation-scope';
 import { dispatchLabMailbox, type LabMailboxHost } from './mailbox-http';
 import { LabJoinError, parseLabJoin, type makeLabJoinMailbox } from './join-mailbox';
 import { LabWorkspaceError, type makeLabWorkspaceRegistry } from './workspace-registry';
+import { LabStreamReply, LabStreamReadError, type makeLabStreamReader } from './stream-read';
 
 type Credentials = Effect.Success<ReturnType<typeof makeLabCredentials>>;
 type Control = Effect.Success<ReturnType<typeof makeLabControlGateway>>;
@@ -20,6 +21,13 @@ const hex = (value: unknown, length: number) => {
 };
 const respond = (response: ServerResponse, status: number, value: unknown) => {
   if (response.destroyed) return;
+  if (value instanceof LabStreamReply) {
+    for (const [name, header] of value.headers) response.setHeader(name, header);
+    response.setHeader('cache-control', 'no-store');
+    response.writeHead(value.status);
+    response.end(Buffer.from(value.body));
+    return;
+  }
   if (
     status === 200 &&
     value &&
@@ -31,12 +39,15 @@ const respond = (response: ServerResponse, status: number, value: unknown) => {
   response.writeHead(status, { 'content-type': 'application/json' });
   response.end(JSON.stringify(value));
 };
-/** Local HTTP composition, currently credential, control, mailbox, joins and genesis discovery routes only. Workspace
+/** Local HTTP composition, currently credential, control, mailbox, joins, genesis discovery and finite SDK reads only. Workspace
  * registration/checkpoint selection is an independent harness capability. HTTP JSON,
  * headers and offsets cannot select it. No generic proxy or production account auth.
  * Caller creates credentials/control owners in the same enclosing Scope first. */
 export function makeLabHttpHost(input: {
   readonly credentials: Credentials;
+  readonly streams?: (
+    genesis: Bytes.GenesisHash
+  ) => Effect.Success<ReturnType<typeof makeLabStreamReader>> | undefined;
   readonly workspaces?: Effect.Success<ReturnType<typeof makeLabWorkspaceRegistry>>;
   readonly control: (genesis: Bytes.GenesisHash) => Control | undefined;
   readonly mailbox?: (genesis: Bytes.GenesisHash) => LabMailboxHost | undefined;
@@ -44,6 +55,7 @@ export function makeLabHttpHost(input: {
 }) {
   return Effect.gen(function* () {
     const credentials = input.credentials,
+      streams = input.streams,
       workspaces = input.workspaces,
       control = input.control,
       mailbox = input.mailbox,
@@ -119,6 +131,31 @@ export function makeLabHttpHost(input: {
         const path = request.url ?? '';
         if (request.method === 'GET' && (path === '/healthz' || path === '/readyz'))
           return { ok: true };
+        const readMatch =
+          /^\/ds\/([0-9a-f]{64})\/(control|loro|flock)(?:\/(snapshot|bootstrap)(?:\/([^/?#]+))?)?(?:\?([^#]*))?$/.exec(
+            path
+          );
+        if (readMatch && (request.method === 'GET' || request.method === 'HEAD')) {
+          const authorization = request.headers.authorization;
+          if (typeof authorization !== 'string' || !/^Bearer [0-9a-f]{64}$/.test(authorization))
+            return yield* reject(401);
+          const credential = yield* credentials.authenticate(authorization.slice(7));
+          const anchor = yield* Effect.fromResult(Bytes.genesisHash(hex(readMatch[1], 32)));
+          const reader = streams?.(anchor);
+          if (!reader) return yield* reject(404);
+          const snapshotOffset = yield* Effect.try({
+            try: () => (readMatch[4] === undefined ? undefined : decodeURIComponent(readMatch[4])),
+            catch: () => reject(400),
+          });
+          return yield* reader.read({
+            credential,
+            method: request.method,
+            stream: readMatch[2]!,
+            sub: readMatch[3],
+            query: readMatch[5] ?? '',
+            snapshotOffset,
+          });
+        }
         const genesisMatch = /^\/v1\/spaces\/([0-9a-f]{64})\/genesis$/.exec(path);
         if (genesisMatch && request.method === 'GET') {
           const authorization = request.headers.authorization;
@@ -243,7 +280,8 @@ export function makeLabHttpHost(input: {
             else
               respond(
                 response,
-                result.failure instanceof LabHttpError
+                result.failure instanceof LabHttpError ||
+                  result.failure instanceof LabStreamReadError
                   ? result.failure.status
                   : result.failure instanceof LabJoinError ||
                       result.failure instanceof LabWorkspaceError

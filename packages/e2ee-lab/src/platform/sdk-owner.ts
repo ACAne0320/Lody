@@ -3,7 +3,9 @@ import { Cause, Data, Effect, Exit } from 'effect';
 export class LabSdkError extends Data.TaggedError('LabSdkError')<{
   readonly code: 'closed' | 'native';
 }> {}
-/** The published SDK close() does not await every one-shot operation. Own raw operations
+/** For CRDT SDK lifecycle ports with close():Promise<void>. StreamsClient's
+ * close() publishes stream EOF and is never lifecycle disposal; use an explicit
+ * request-lease port for that HTTP facade. The CRDT SDK close() does not await every one-shot operation. Own raw operations
  * explicitly, abort this document's admission/requests, await actual settlement, then close
  * its SDK before earlier CRDT/storage owners can be released. No timeout implies stopped work. */
 export function makeLabSdkOwner<T extends { close(): Promise<void> }>(
