@@ -34,7 +34,6 @@ import { RoostNativeClient, RoostHostError } from '@loro-dev/roost-node';
 import { describeRoostHistoryFailure } from '../src/session/roost-history-diagnostics';
 import { RoostHistoryGeneration } from '../src/session/roost-history-generation';
 import { encodeRoostContent } from '../src/session/roost-history-port';
-import { readGoalProjection } from '../src/session/roost-goal-projection';
 import { loadRoostOwnerSeedLegacy } from '../src/session/roost-writer-identity';
 import type { SessionBackendContractFixtureFactory } from './session-backend-contract';
 import { defineSessionBackendContract } from './session-backend-contract';
