@@ -10,7 +10,8 @@
     "./submission/sqlite": "./src/submission/sqlite.ts",
     "./signing": "./src/signing.ts",
     "./content": "./src/content/index.ts",
-    "./keys": "./src/keys/index.ts"
+    "./keys": "./src/keys/index.ts",
+    "./ledger/signing": "./src/ledger/signing.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

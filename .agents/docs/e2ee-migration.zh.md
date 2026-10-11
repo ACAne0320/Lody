@@ -97,3 +97,7 @@ Lab 使用真实 HTTP/SQLite 持久化、进程重开、双端 Loro/Flock/Repo S
 整栈尚未完成。清单迁入不表示其中实现已迁；本次不自动 Ready、merge、deploy 或 publish。
 
 当前实施基线：三项前置均已落地。submission #1434 合入为 `7c58cabe1d05f132b7133a52b45a16b79274ea6a`；L0 已纳入实际 main `984c35c5b30600d68abec1ec3e585eca73bcd4f0`。L1a 先迁历史作者、已签名 epoch 事实与当前内容权限查询，不改 wire；快照格式与旧客户端兼容另行讨论。
+
+## 当前已实施的栈
+
+实际依赖链为 L0 #1438 → L1a #1439 → L2a #1442 → L4a #1446 → 普通账本签名。规范历史先于后续分发，不等待快照新格式决策；全部保持 Draft。签名实施前 #1434 已合入实际 main，merge 为 7c58cabe1d05f132b7133a52b45a16b79274ea6a；本栈未重复实现其提交代码。独立 ledger/signing 入口准备现有普通记录，并接入未改动的持久提交；完整 engine 的传输、快照和会话责任仍未完成。

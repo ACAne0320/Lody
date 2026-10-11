@@ -97,37 +97,7 @@ function replay(
         );
         if (body.type === 'genesis') return genesisState(body, anchor, hash);
         if (!state) return yield* fail('genesis-mismatch');
-        const op = body.operation;
-        if (op.type === 'admitMember') {
-          const message = yield* joinRequestSigningBytes(anchor, op.request);
-          yield* Result.mapError(
-            verifySignature(
-              op.request.signingPublicKey.toBytes(),
-              message,
-              op.request.signature.toBytes()
-            ),
-            () => new LedgerError({ code: 'bad-proof' })
-          );
-        } else if (op.type === 'admitDevice') {
-          const actor = state.devices.get(keyId(body.signer.toBytes()));
-          if (!actor) return yield* fail('unauthorized');
-          const message = yield* possessionSigningBytes({
-            genesis: anchor,
-            targetMembershipId: actor.membershipId,
-            signingPublicKey: op.signingPublicKey,
-            encryptionPublicKey: op.encryptionPublicKey,
-            kind: op.kind,
-          });
-          yield* Result.mapError(
-            verifySignature(
-              op.signingPublicKey.toBytes(),
-              message,
-              op.possessionSignature.toBytes()
-            ),
-            () => new LedgerError({ code: 'bad-proof' })
-          );
-        }
-        yield* applyOperation(state, body);
+        yield* applyAuthorizedOrdinary(state, body);
         state.hashes.push(hash);
         return state;
       });
@@ -137,6 +107,43 @@ function replay(
     if (!state.hashes[state.hashes.length - 1]!.equals(checkpoint.head))
       return yield* fail('checkpoint-mismatch');
     return viewOf(state);
+  });
+}
+/** Internal only: parsed body and private clone; not an authority constructor. */
+export function applyAuthorizedOrdinary(
+  state: InternalState,
+  body: Extract<import('./records').RecordBody, { type: 'ordinary' }>
+): Result.Result<void, LedgerError> {
+  const anchor = state.genesis;
+  return Result.gen(function* () {
+    const op = body.operation;
+    if (op.type === 'admitMember') {
+      const message = yield* joinRequestSigningBytes(anchor, op.request);
+      yield* Result.mapError(
+        verifySignature(
+          op.request.signingPublicKey.toBytes(),
+          message,
+          op.request.signature.toBytes()
+        ),
+        () => new LedgerError({ code: 'bad-proof' })
+      );
+    } else if (op.type === 'admitDevice') {
+      const actor = state.devices.get(keyId(body.signer.toBytes()));
+      if (!actor) return yield* fail('unauthorized');
+      const message = yield* possessionSigningBytes({
+        genesis: anchor,
+        targetMembershipId: actor.membershipId,
+        signingPublicKey: op.signingPublicKey,
+        encryptionPublicKey: op.encryptionPublicKey,
+        kind: op.kind,
+      });
+      yield* Result.mapError(
+        verifySignature(op.signingPublicKey.toBytes(), message, op.possessionSignature.toBytes()),
+        () => new LedgerError({ code: 'bad-proof' })
+      );
+    }
+    yield* applyOperation(state, body);
+    return undefined;
   });
 }
 /** Full audit from a caller-pinned genesis and expected endpoint; no URL-derived trust. */
@@ -247,4 +254,15 @@ export function requireLedgerContinuation(
   return head && bytesEqual(head.toBytes(), before.hashes[before.hashes.length - 1]!.toBytes())
     ? Result.succeed(undefined)
     : fail('checkpoint-mismatch');
+}
+
+/** Check unsigned-body policy/proofs against this exact verified parent; no state is published. */
+export function authorizeUnsignedRecord(
+  view: LedgerView,
+  body: Extract<import('./records').RecordBody, { type: 'ordinary' }>
+): Result.Result<void, LedgerError> {
+  const state = states.get(view);
+  if (!state) return fail('unauthorized');
+  if (!bytesEqual(body.previousHash.toBytes(), view.head.toBytes())) return fail('wrong-parent');
+  return applyAuthorizedOrdinary(cloneState(state), body);
 }

@@ -71,3 +71,21 @@ independent of the production verifier, and exercises the public ledger subentry
 this exact authenticated prefix using private hashes. It rejects rollback, alternate
 forks and fabricated views; it does not discover globally latest state. The scoped
 [key cache](../keys/README.md) uses this local relation after observing revocation.
+
+## Ordinary-record signing
+
+`@lody/e2ee-core/ledger/signing` prepares canonical ordinary body CBOR against a
+real verified view before any signing. Permission and nested possession proofs use
+the same replay checks. `signLedgerRecord` borrows a DeviceSigner and verifies
+its output through fixed signature verification and complete ledger extension.
+Only registered proposals are accepted; signing bytes and caller inputs are copies.
+
+Execute signing once, then persist and submit the returned original bytes through
+the existing submission entry. Re-running signing requests a new signature; the
+proposal is not a durable command. The parent is fixed, and a competing suffix
+requires CAS conflict handling, never automatic re-signing or rebasing. This entry
+does not create genesis, discover freshness, generate/store private keys, or own
+transport. Legacy removal remains rejected.
+
+[Signing migration note](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-ledger-signing.md)
+and [source/destination fingerprints](signing-provenance.json).

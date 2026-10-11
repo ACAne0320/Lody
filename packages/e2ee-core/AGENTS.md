@@ -64,3 +64,7 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   partial keys or journal-derived trust. Scope owns volatile copies and awaited close.
   Known revocation/rollback/fork cannot be bypassed with an older cached view.
   No backup/vault/rotation/delivery or durable-cursor claim is implied.
+
+- Ordinary signing lives under `./ledger/signing`: genuine view/proposal provenance,
+  shared permission/possession-proof checks before signing, fixed verification after.
+  Execute signing once then submit original bytes; no implicit rebase or re-sign retry.

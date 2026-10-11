@@ -1923,7 +1923,14 @@
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code.",
+      "coverage": [
+        {
+          "layer": "L2b",
+          "target": "packages/e2ee-core/src/ledger/signing.ts",
+          "scope": "Canonical ordinary-record permission/PoP preparation and fixed-verified borrowed signing; compose unchanged merged submission. Transport, snapshot restoration and high-level command/session workflows remain incomplete."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/ledger-engine.ts",
@@ -1934,7 +1941,14 @@
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code.",
+      "coverage": [
+        {
+          "layer": "L2b",
+          "target": "packages/e2ee-core/src/ledger/signing.ts",
+          "scope": "Canonical ordinary-record permission/PoP preparation and fixed-verified borrowed signing; compose unchanged merged submission. Transport, snapshot restoration and high-level command/session workflows remain incomplete."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/snapshot-admission.ts",
@@ -1956,7 +1970,14 @@
       "targetPath": "packages/e2ee-core/src/ledger/verification.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Extend hardened public verified view/history; fix constructor and verifier trust bypasses, never export arbitrary authority constructors."
+      "reason": "Extend hardened public verified view/history; fix constructor and verifier trust bypasses, never export arbitrary authority constructors.",
+      "coverage": [
+        {
+          "layer": "L2b",
+          "target": "packages/e2ee-core/src/ledger/signing.ts",
+          "scope": "Canonical ordinary-record permission/PoP preparation and fixed-verified borrowed signing; compose unchanged merged submission. Transport, snapshot restoration and high-level command/session workflows remain incomplete."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/test/capabilities-boundary.test.ts",

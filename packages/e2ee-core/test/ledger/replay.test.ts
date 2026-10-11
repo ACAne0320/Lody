@@ -1,6 +1,20 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  submitRecord,
+  resumeSubmission,
+  SubmissionRemote,
+  SubmissionJournal,
+  SubmissionRemoteError,
+} from '@lody/e2ee-core/submission';
+import { sqliteSubmissionJournal } from '@lody/e2ee-core/submission/sqlite';
+import * as SubmissionFixture from '../submission/fixture';
 import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { Result } from 'effect';
+import { Effect, Result } from 'effect';
+import * as Commands from '@lody/e2ee-core/ledger/signing';
+import type { DeviceSigner } from '@lody/e2ee-core/signing';
 import * as Bytes from '../../src/bytes';
 import { encodeCbor, type CborValue } from '../../src/cbor';
 import { keyId } from '../../src/identifiers';
@@ -621,4 +635,182 @@ describe('verified historical facts and current content permissions', () => {
     expect(code(Ledger.epochHistoryPacket(view, 1))).toBe('unauthorized');
     expect(permissions(view, owner).maySealNewContent).toBe(true);
   });
+});
+
+describe('authorized ordinary record preparation and signing', () => {
+  const signer = (key: Keys): DeviceSigner => ({
+    publicKey: ok(Bytes.signingPublicKey(key.pk)),
+    sign: (message) => Effect.sync(() => ok(Bytes.signature(key.sign(message)))),
+  });
+  it('owns canonical unsigned bytes, signs the exact parent and passes real replay', async () => {
+    const o = org(),
+      view = ok(o.verify());
+    const body = ok(
+      encodeCbor([view.head.toBytes(), owner.pk, [7, 1, filled(21), filled(30, 72)]])
+    );
+    const proposal = ok(Commands.prepareLedgerRecord(view, body));
+    const expectedMessage = domain('sig/v1', body);
+    body.fill(0);
+    expect(proposal.signingBytes()).toEqual(expectedMessage);
+    proposal.signingBytes().fill(0);
+    const record = await Effect.runPromise(Commands.signLedgerRecord(proposal, signer(owner)));
+    expect(ok(Ledger.decodeRecord(record)).bodyBytes).toEqual(
+      expectedMessage.subarray(new TextEncoder().encode('lody-e2ee/sig/v1\0').length)
+    );
+    const next = ok(
+      Ledger.extendLedger(view, [record], {
+        head: Ledger.hashRecordBytes(record),
+        length: view.length + 1,
+      })
+    );
+    expect(next.inspectState().epoch.number).toBe(1);
+    expect(view.inspectState().epoch.number).toBe(0);
+  });
+  it('checks genuine view, exact parent, governing permission and nested Org/member/kind proofs before signing', () => {
+    const o = org(),
+      view = ok(o.verify());
+    const body = (who: Keys, op: readonly CborValue[], parent = view.head.toBytes()) =>
+      ok(encodeCbor([parent, who.pk, op]));
+    expect(
+      code(
+        Commands.prepareLedgerRecord({ ...view }, body(owner, [7, 1, filled(21), filled(30, 72)]))
+      )
+    ).toBe('unauthorized');
+    expect(
+      code(Commands.prepareLedgerRecord(view, body(attacker, [7, 1, filled(21), filled(30, 72)])))
+    ).toBe('unauthorized');
+    expect(
+      code(
+        Commands.prepareLedgerRecord(
+          view,
+          body(owner, [7, 1, filled(21), filled(30, 72)], filled(99))
+        )
+      )
+    ).toBe('wrong-parent');
+    const foreign = org();
+    foreign.append(owner, foreign.device(phone, 0));
+    const foreignAnchor = ok(
+      Bytes.genesisHash(Ledger.hashRecordBytes(foreign.records[1]!).toBytes())
+    );
+    expect(
+      code(Commands.prepareLedgerRecord(view, body(owner, o.join(bob, 11, foreignAnchor))))
+    ).toBe('bad-proof');
+    expect(code(Commands.prepareLedgerRecord(view, body(owner, o.device(phone, 1, id(11)))))).toBe(
+      'bad-proof'
+    );
+    expect(code(Commands.prepareLedgerRecord(view, body(owner, [2, id(11)])))).toBe(
+      'unknown-operation'
+    );
+    expect(Result.isFailure(Commands.prepareLedgerRecord(view, new Uint8Array(8193)))).toBe(true);
+    expect(comparable(view)).toEqual(comparable(ok(o.verify())));
+  });
+  it('rejects fabricated proposals, wrong signer and bad signer output with prior view intact', async () => {
+    const o = org(),
+      view = ok(o.verify()),
+      before = comparable(view);
+    const proposal = ok(
+      Commands.prepareLedgerRecord(
+        view,
+        ok(encodeCbor([view.head.toBytes(), owner.pk, [7, 1, filled(21), filled(30, 72)]]))
+      )
+    );
+    const result = (work: ReturnType<typeof Commands.signLedgerRecord>) =>
+      Effect.runPromise(Effect.result(work));
+    expect(
+      Result.isFailure(await result(Commands.signLedgerRecord({ ...proposal }, signer(owner))))
+    ).toBe(true);
+    expect(
+      Result.isFailure(await result(Commands.signLedgerRecord(proposal, signer(attacker))))
+    ).toBe(true);
+    const bad: DeviceSigner = {
+      publicKey: signer(owner).publicKey,
+      sign: () => Effect.succeed(ok(Bytes.signature(new Uint8Array(64)))),
+    };
+    expect(Result.isFailure(await result(Commands.signLedgerRecord(proposal, bad)))).toBe(true);
+    expect(comparable(view)).toEqual(before);
+  });
+  it('signs valid target possession proof and remains only parent-relative evidence after a competing suffix', async () => {
+    const o = org(),
+      view = ok(o.verify());
+    const proposal = ok(
+      Commands.prepareLedgerRecord(
+        view,
+        ok(encodeCbor([view.head.toBytes(), owner.pk, o.device(phone, 0)]))
+      )
+    );
+    const original = await Effect.runPromise(Commands.signLedgerRecord(proposal, signer(owner)));
+    const accepted = ok(
+      Ledger.extendLedger(view, [original], { head: Ledger.hashRecordBytes(original), length: 2 })
+    );
+    expect(accepted.inspectState().devices.has(keyId(phone.pk))).toBe(true);
+    o.append(owner, [7, 1, filled(21), filled(30, 72)]);
+    const moved = ok(o.verify());
+    expect(
+      code(
+        Ledger.extendLedger(moved, [original], {
+          head: Ledger.hashRecordBytes(original),
+          length: moved.length + 1,
+        })
+      )
+    ).toBe('wrong-parent');
+    expect(accepted.length).toBe(2);
+    expect(view.length).toBe(1);
+  });
+});
+
+it('submits prepared signed bytes through real SQLite and recovers without a live signer', async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'e2ee-signed-command-'));
+  const remote = SubmissionFixture.host(path.join(directory, 'host.sqlite'));
+  const journal = path.join(directory, 'pending.sqlite');
+  try {
+    const records = remote.read();
+    const view = ok(
+      Ledger.verifyLedger({
+        anchor: SubmissionFixture.anchor,
+        records,
+        checkpoint: SubmissionFixture.checkpoint(records),
+      })
+    );
+    const previousIndependent = SubmissionFixture.rotate();
+    const proposal = ok(
+      Commands.prepareLedgerRecord(view, ok(Ledger.decodeRecord(previousIndependent)).bodyBytes)
+    );
+    const produced = await Effect.runPromise(
+      Commands.signLedgerRecord(proposal, {
+        publicKey: ok(Bytes.signingPublicKey(SubmissionFixture.owner.pk)),
+        sign: (message) =>
+          Effect.sync(() => ok(Bytes.signature(SubmissionFixture.owner.sign(message)))),
+      })
+    );
+    expect(produced).toEqual(previousIndependent);
+    const lostResponse = {
+      ...remote.service,
+      appendCas: (
+        anchor: typeof SubmissionFixture.anchor,
+        expected: Ledger.LedgerCheckpoint,
+        record: Uint8Array
+      ) =>
+        Effect.gen(function* () {
+          yield* remote.service.appendCas(anchor, expected, record);
+          return yield* new SubmissionRemoteError();
+        }),
+    };
+    const run = <A, E>(
+      work: Effect.Effect<A, E, SubmissionRemote | SubmissionJournal>,
+      service = remote.service
+    ) =>
+      Effect.runPromise(
+        work.pipe(
+          Effect.provideService(SubmissionRemote, service),
+          Effect.provide(sqliteSubmissionJournal(journal))
+        )
+      );
+    const committed = await run(submitRecord(SubmissionFixture.anchor, produced), lostResponse);
+    expect(committed).toEqual({ outcome: 'Committed', record: produced });
+    expect(await run(resumeSubmission(SubmissionFixture.anchor))).toEqual(committed);
+    expect(remote.read()).toEqual([SubmissionFixture.genesis, produced]);
+  } finally {
+    remote.db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

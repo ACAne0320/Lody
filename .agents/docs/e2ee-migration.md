@@ -97,3 +97,7 @@ Lab acceptance uses real HTTP/SQLite persistence, process reopen, two clients, L
 The complete stack is unfinished. Migrating the manifest is not migrating its remaining implementations; no layer is Ready, merged, deployed or published by this work.
 
 Current implementation base: all three prerequisites have landed. Submission #1434 merged as `7c58cabe1d05f132b7133a52b45a16b79274ea6a`; L0 now includes actual main `984c35c5b30600d68abec1ec3e585eca73bcd4f0`. L1a migrates historical authors, signed epoch facts and current content permission queries without wire changes. Snapshot format/old-reader compatibility remains a separate decision gate.
+
+## Current implemented stack
+
+The actual dependency chain is L0 #1438 → L1a #1439 → L2a #1442 → L4a #1446 → ordinary-ledger signing. Canonical history precedes later distribution without waiting for snapshot new-format decisions. All remain Draft. Submission #1434 landed on actual main at 7c58cabe1d05f132b7133a52b45a16b79274ea6a before dependent signing implementation; its implementation was not duplicated. The new explicit ledger/signing entry prepares existing ordinary bodies and composes unchanged durable submission; remaining full-engine transport/snapshot/session responsibilities stay incomplete.
