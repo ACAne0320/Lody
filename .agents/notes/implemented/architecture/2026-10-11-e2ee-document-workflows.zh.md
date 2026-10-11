@@ -34,3 +34,5 @@ Draft: [#1442](https://github.com/LodyAI/Lody/pull/1442).
 固定 13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf 的独立副本复现三项失败：快照已撤销作者不能打开旧文档、查询等待期间修改明文改变加密结果、后次前缀回退仍封装。原源文件／review 证据不改，另保留 old-fail／new-pass；覆盖真实签名快照与 Ed25519／AEAD、撤销后的新封装拒绝、坏签名、Deferred 控制输入及 capability 修改、真正账本回退。这仅是库的文档行为，不是 SDK／host 准入、生产信任来源或 Lab 验收。
 
 L2c 最终代码树：core 201/201 与 typecheck、native Git／本地 IPC 完整 root check、格式／文档／公共边界通过。作者 union 明确区分，原完整历史断言先确认 member；无生产消费者或 wire 变更。
+
+L2c Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474).

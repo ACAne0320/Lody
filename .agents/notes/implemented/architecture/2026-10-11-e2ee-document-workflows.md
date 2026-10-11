@@ -34,3 +34,5 @@ The L1b identity query is now consumed by document authentication/opening: genui
 An independent fixed 13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf clone reproduces three failures: retired snapshot author cannot open old document, mutation while lookup waits changes encrypted plaintext, and later prefix rollback still seals. Original source/review artifacts remain untouched; separate old-fail/new-pass evidence covers actual signed snapshot + Ed25519/AEAD, revoked seal rejection, bad signature, Deferred-controlled input and capability mutation, and genuine rollback. This is library document behavior, not SDK/host admission, production trust sourcing or Lab acceptance.
 
 Final L2c code tree: core 201/201 and typecheck, full root check with native Git/local IPC, format/docs/public boundary pass. The new author union is explicit and existing full-history assertions now narrow its member case. No production consumer or wire change.
+
+L2c Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474).
