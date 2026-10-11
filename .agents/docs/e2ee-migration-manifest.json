@@ -7107,11 +7107,21 @@
         "core": "7f650e12d37ced7bde11d492de91679e2f34a7721b7fe9c25cb5a8c69abdfb8a",
         "candidate": "7f650e12d37ced7bde11d492de91679e2f34a7721b7fe9c25cb5a8c69abdfb8a"
       },
-      "targetPath": "packages/e2ee-lab/test/flock.test.ts",
+      "targetPath": "packages/e2ee-lab/test/content-provider.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Port observable coverage for actual protected Loro/Flock roundtrips, peer initialization and cross-model rejection. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Actual protected Loro/Flock SDK roundtrips and stronger cross-model rejection now mapped into owning content suite: same-Org/resource original Loro wire cannot import into Flock or advance native-file/cursor, real OS child reopens and decrypts fresh independent update. Original entropy-driven peer ID binding still pending human entropy/replay contract; source fixture/full honest host integration not closed.",
+      "targetPathState": "existing",
+      "targetSupplementalPaths": [
+        "packages/e2ee-lab/test/content-reopen.mts"
+      ],
+      "coverage": [
+        {
+          "layer": "L6",
+          "target": "packages/e2ee-lab/test/content-provider.test.ts",
+          "scope": "Partial original encrypted-roundtrip and cross-model behaviors plus actual Flock OS-process persistence. Original peer-id entropy and full host fixture pending."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/test/gateway-headers.test.ts",
@@ -8264,10 +8274,10 @@
     "draftPr": null,
     "consumerTests": 52,
     "originalLabFailuresClosed": false,
-    "remaining": "Full honest host/gateway/actors, Flock process/recovery/live session, key mailbox/rotation composition, schedule driver, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
+    "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, schedule driver, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Current finite authenticated SDK reads full root core302/Lab52 passes, public boundary7010files27manifests; root format/docs pass and all52 Lab input SHA unchanged. First current root failed3 control-character regex static errors, repaired with explicit character-code validation; original failed log retained. Fixed-head/CI/independent pending.",
+    "authorRootCheck": "Current Flock actual OS child reopen and cross-model refusal full root core302/Lab52/format/publicboundary7010files27manifests pass, all52 Lab inputSHA unchanged. Note consolidation docs first failed missing required Abstract heading; repaired and docs recheck passes. Fixedhead/CI/independent pending; previous285289 root remains separate.",
     "lastFetchedMain": {
       "head": "987962e77022df6a800f4e889f124b51f6eb8056",
       "tree": "4601a3f2b65d122c5b314cab79dc275fba9af636",
@@ -8276,7 +8286,7 @@
       "coreLabProtocolOverlapFromStackBottom": []
     },
     "actorUncommitted": "Actor consumer is committed in fixed1087; its public admission/signing/P09 code remains unchanged in this increment. Whole-current-tree acceptance awaits final root result, original Lab2/full host/CI and independent review remain incomplete.",
-    "sdkConsumers": "Actual Loro two clients, released streams-crdt0.16.2, public content/ledger/protected-key composition, SQL IGNORE pair rollback, another OS reader without signer. Synthetic AES wrapping is fixture-only. Real Flock SDK/native-file consumer focused pass; public0.4.3 has no deterministic free/dispose guarantee.",
+    "sdkConsumers": "Actual Loro two clients, released streams-crdt0.16.2, public content/ledger/protected-key composition, SQL IGNORE pair rollback, actual Loro/Flock OS readers without signer. Synthetic AES wrapping is fixture-only. Real Flock SDK/native-file consumer focused pass; public0.4.3 has no deterministic free/dispose guarantee.",
     "sdkOwnership": "Raw one-shot owners abort and await actual settlement. CRDT SyncClient close and actual Loro.free are lifecycle operations; StreamsClient.close publishes EOF and is never disposal. HTTP facades require request leases, no synthetic EOF cleanup.",
     "recoveryHistoryContract": "Real Riverrun0.3.0 snapshot PUT at nonzero offset advances earliest_offset. Public SDK recovery succeeds only while authenticated full history remains readable; otherwise it fails closed and retains the durable pair. Upstream history retention/read API versus trusted host history route needs coordinated decision; no server database reset or snapshot deletion.",
     "replayComparator": "Pure comparison of recorded inert fixtures ported with resource/actor/frame divergence; no entropy provider, resealing or full execution replay. Multipart original4pass/2newfail then fixed6pass retained.",
@@ -8289,6 +8299,8 @@
     "workspaces": "WIP original public-signature genesis/original signer SQLite registry with transaction readback, copy-owned records, corrupted-row refusal and actual OS-child reopen; stored-bearer GET genesis permits original unbound discovery. Private harness registration only; create-space stream publication/current independent checkpoint/crash gap/credential binding remain incomplete. Owning3+associated10/type pass; Fresh77485 +6 declared overlays45 pass; readback/original-signer mutants direct assertion failure, no timeout, restored pass. Root core302/Lab45 passes; fixed-head/CI/independent pending.",
     "comparisonPublicationDecision": "Proposed, awaiting human: old Lab notes permits current machine/R, current public comparisonNote only personal. Option A preserve current personal contract and inert host observations; option B separate machine observation DTO, never R send, needs explicit eligibility contract. Host notes cannot automatically become independent confirmation. No core/spec change made. Coordinator recommends A; this is not recorded as human approval.",
     "credentialBinding": "WIP original bind-once synthetic bearer after genuine current membership; stored identity, invalidation and original expiry rechecked after borrowed lookup; real SQL UPDATE readback, same-target idempotent, other-Org rejected, no new token/renewal. New finite ledger callback receives abort and actual completion is retained before SQLite/SDK close. Existing native-owner test parameterized for join/credential without removing original join behavior. Owning credential4/join6/host1 associated11/type/static pass; Fresh349fd +3 declared overlays47 pass; native retain/readback negatives actual direct assertions, no timeout, restored pass. Root core302/Lab47 passes; fixedhead/CI/independent pending. Not completed HTTP create-space binding flow; no JWT/strictB change.",
-    "finiteReads": "Bounded authenticated GET/HEAD control/loro/flock/bootstrap/latest/specific snapshot routes; fixed loopback upstream, canonical same-origin/Org/stream redirect, actual response-body retention and before/after genuine permission. Real machine revoke keeps durable feed cursor. Lab52 plus five SHA overlays passes; three direct behavioral negatives/no timeout/restored. Unprotected snapshot fixture only; content writes/live/fullhost/CLI and protected snapshot contract pending."
+    "finiteReads": "Bounded authenticated GET/HEAD control/loro/flock/bootstrap/latest/specific snapshot routes; fixed loopback upstream, canonical same-origin/Org/stream redirect, actual response-body retention and before/after genuine permission. Real machine revoke keeps durable feed cursor. Lab52 plus five SHA overlays passes; three direct behavioral negatives/no timeout/restored. Unprotected snapshot fixture only; content writes/live/fullhost/CLI and protected snapshot contract pending.",
+    "flockProcess": "Actual OS child reopens signed-genesis/protected epoch SQLite/native Flock file/exact cursor without usable signer, preserves prior field and decrypts independent new update. Actual released Loro SDK same-Org/resource different-model wire is refused by reopened Flock, actual durable file/cursor unchanged. Existing owning4/child script extended, no copied core/public native free claim. Fresh285289+2SHA Lab52 passes; removing Flock restore loses old field direct assertion, disabling reopened key yields actual missing_read_key child failure; no timeouts/restored pass. Full Flock session/recovery/live/entropy and original host still incomplete.",
+    "genesisControlLayoutDecision": "Proposed awaiting human: original createSpace stores genesis in metadata and empty control, loadControl prepends metadata genesis; merged public SDK submission adapter requires full signed history. Option A initialize control with verified original genesis (agent/coordinator recommendation, not approval), with idempotent create/lostACK/crash recovery; option B Lab-only metadata-prefix transport with explicit cursor/retry verification. No P09 change or dependent createSpace implementation before selection."
   }
 }

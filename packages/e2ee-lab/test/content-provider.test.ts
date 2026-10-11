@@ -288,6 +288,19 @@ describe('public update provider with released CRDT SDK', () => {
                 checkpoint: { head: hashRecordBytes(genesis.record), length: 1 },
               })
             );
+            const keys = yield* makeSqliteProtectedEpochKeys({
+              path: join(f.dir, 'content-keys.sqlite'),
+              mode: 'create',
+              genesis: genesis.genesis,
+              recipient: f.owner.publicKey,
+              ledger: () => Effect.succeed(view),
+              protector: syntheticProtector,
+            });
+            yield* keys.saveAndReload(0, ok(Bytes.epochKey(material)));
+            writeFileSync(join(f.dir, 'content-genesis.cbor'), genesis.record);
+            const readerScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+              Scope.close(scope, Exit.void)
+            );
             const provider = yield* makeLabUpdateProvider({
               genesis: genesis.genesis,
               resource: 'flock-A',
@@ -295,7 +308,7 @@ describe('public update provider with released CRDT SDK', () => {
               writeEpoch: 0,
               signer: f.owner,
               ledger: () => Effect.succeed(view),
-              readEpochKey: () => Effect.sync(() => ok(Bytes.epochKey(material))),
+              readEpochKey: keys.read,
             });
             // Public Flock0.4.3 has no dispose/free. Stop/await SDK and unsubscribe, then drop references;
             // this probe makes no deterministic native allocation deallocation claim.
@@ -322,7 +335,7 @@ describe('public update provider with released CRDT SDK', () => {
               resource: 'flock-A',
               model: 'flock',
               streamUrl: url,
-            });
+            }).pipe(Effect.provideService(Scope.Scope, readerScope));
             const writer = yield* makeLabSdkOwner(
               () =>
                 new FlockStreamsCrdt({
@@ -345,7 +358,7 @@ describe('public update provider with released CRDT SDK', () => {
                   payloadProtectionRequired: true,
                   e2ee: { provider, readPolicy: 'encrypted-only', writePolicy: 'encrypt' },
                 })
-            );
+            ).pipe(Effect.provideService(Scope.Scope, readerScope));
             expect((yield* writer.invoke((sdk) => sdk.createStream())).ok).toBe(true);
             writerDoc!.put(['private', 'note'], { value: 'synthetic flock update' }, 100);
             expect((yield* writer.invoke((sdk) => sdk.appendWriteOnly())).ok).toBe(true);
@@ -356,6 +369,110 @@ describe('public update provider with released CRDT SDK', () => {
             expect(yield* store.inspectCursor()).not.toBeNull();
             restored = Flock.fromFile((yield* store.restore())!, 'synthetic-restored-flock');
             expect(restored.get(['private', 'note'])).toEqual({ value: 'synthetic flock update' });
+            const prior = yield* store.inspectCursor();
+            yield* Scope.close(readerScope, Exit.void);
+            readerDoc = undefined;
+            restored = undefined;
+            writerDoc!.put(['private', 'second'], { value: 'new process receives second' }, 101);
+            expect((yield* writer.invoke((sdk) => sdk.appendWriteOnly())).ok).toBe(true);
+            const child = yield* runOwnedChild([
+              '--import',
+              'tsx',
+              fileURLToPath(new URL('./content-reopen.mts', import.meta.url)),
+              f.dir,
+              url,
+              Buffer.from(genesis.genesis.toBytes()).toString('hex'),
+              Buffer.from(f.owner.publicKey.toBytes()).toString('hex'),
+              'flock',
+            ]);
+            const recovered = JSON.parse(child.trim()) as {
+              value: { value: string };
+              second: { value: string };
+              restoredCursor: unknown;
+              cursor: { nextOffset: string };
+            };
+            expect(recovered.value).toEqual({ value: 'synthetic flock update' });
+            expect(recovered.second).toEqual({ value: 'new process receives second' });
+            expect(recovered.restoredCursor).toEqual(prior);
+            expect(recovered.cursor.nextOffset).not.toBe(prior!.nextOffset);
+            const durable = yield* makeLabDocumentStore<VersionVector>({
+              path: join(f.dir, 'flock-A.sqlite'),
+              mode: 'open',
+              genesis: Buffer.from(genesis.genesis.toBytes()).toString('hex'),
+              resource: 'flock-A',
+              model: 'flock',
+              streamUrl: url,
+            });
+            const retainedState = yield* durable.restore();
+            const retainedCursor = yield* durable.inspectCursor();
+            // Real released Loro SDK seals a same-Org/resource, different-model update.
+            // Appending that original protected wire into Flock must never import it.
+            const crossProvider = yield* makeLabUpdateProvider({
+              genesis: genesis.genesis,
+              resource: 'flock-A',
+              model: 'loro',
+              writeEpoch: 0,
+              signer: f.owner,
+              ledger: () => Effect.succeed(view),
+              readEpochKey: keys.read,
+            });
+            const crossDoc = yield* Effect.acquireRelease(
+              Effect.sync(() => new LoroDoc()),
+              (value) => Effect.sync(() => value.free())
+            );
+            const crossUrl = `${f.server.baseUrl}/ds/synthetic/flock-cross-loro`;
+            const crossSdk = yield* makeLabSdkOwner(
+              () =>
+                new StreamsCrdt({
+                  streamUrl: crossUrl,
+                  adapter: createLoroDocAdapter(crossDoc),
+                  payloadProtectionRequired: true,
+                  e2ee: {
+                    provider: crossProvider,
+                    readPolicy: 'encrypted-only',
+                    writePolicy: 'encrypt',
+                  },
+                })
+            );
+            expect((yield* crossSdk.invoke((sdk) => sdk.createStream())).ok).toBe(true);
+            crossDoc.getText('text').insert(0, 'synthetic cross-model secret');
+            crossDoc.commit();
+            expect((yield* crossSdk.invoke((sdk) => sdk.appendWriteOnly())).ok).toBe(true);
+            const rawSdk = yield* makeLabSdkOwner(() => ({
+              source: new StreamsClient({ url: crossUrl, retry: { maxAttempts: 1 } }),
+              target: new StreamsClient({ url, retry: { maxAttempts: 1 } }),
+              close: async () => undefined, // HTTP facades: no protocol EOF during disposal.
+            }));
+            const wire = yield* rawSdk.invoke(({ source }) =>
+              source.read({ offset: '-1', signal: rawSdk.signal })
+            );
+            expect(wire.ok).toBe(true);
+            if (!wire.ok) throw new Error('synthetic protected wire unavailable');
+            expect(
+              (yield* rawSdk.invoke(({ target }) =>
+                target.append({
+                  part: {
+                    contentType: 'application/octet-stream',
+                    body: wire.result.payload.body,
+                  },
+                })
+              )).ok
+            ).toBe(true);
+            const failed = yield* Effect.result(
+              runOwnedChild([
+                '--import',
+                'tsx',
+                fileURLToPath(new URL('./content-reopen.mts', import.meta.url)),
+                f.dir,
+                url,
+                Buffer.from(genesis.genesis.toBytes()).toString('hex'),
+                Buffer.from(f.owner.publicKey.toBytes()).toString('hex'),
+                'flock',
+              ])
+            );
+            expect(Result.isFailure(failed)).toBe(true);
+            expect(yield* durable.restore()).toEqual(retainedState);
+            expect(yield* durable.inspectCursor()).toEqual(retainedCursor);
           })
         )
       );

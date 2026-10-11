@@ -7,292 +7,177 @@ Translation: current
 
 ## Abstract
 
-The original Lab consumes obsolete core APIs and has two recorded ledger-read
-failures. Migrate its consumers to public modules and published SDKs, starting
-with durable ledger reads, explicit logical permits and scoped native work.
-Real local transport and process-reopen probes pass for this implementation
-checkpoint. Original host/actor, protected content, replay and complete fault
-acceptance remain pending, so keep work on one integration branch before a Draft.
+Migrate the actual original `packages/e2ee-lab` onto public core exports and
+released SDKs, with runnable durable-state behavior. Original host/actors,
+driver/replay/attacks/CLI and complete fault acceptance remain unfinished; keep
+one integration branch before one consolidated Draft. Direct parent is #1496
+`0418fd69e22d1eeba47553714473ec54762837ec`.
+[Manifest](../../../docs/e2ee-migration-manifest.json) and
+[provenance](../../../../packages/e2ee-lab/migration-provenance.json) retain
+per-source SHA, target and partial status. No copied core, signature-acceptance
+injection, private product sources, real credentials or production activation.
 
-## Ownership and boundaries
+Preserve root Effect4.0.2, streams-client0.9.0, streams-crdt0.16.2, Loro1.16.3,
+Flock0.4.3 and source-specific Riverrun0.3.0. Only the Lab importer, Riverrun
+package/snapshot and approved package-specific SQLite13.0.3 override are added;
+prior lock entries/root Riverrun catalog stay unchanged. Frozen ignore-scripts
+install passes. Source worktrees and the staged compatibility candidate are read-only.
 
-Direct parent is update binding #1496 `0418fd69e22d1eeba47553714473ec54762837ec`.
-Actual source and target package: `packages/e2ee-lab`. The client consumes public
-reader/feed exports with no copied verifier/store or injected signature acceptance.
-Caller-selected signed checkpoints are independent of hostile transport offsets.
-Serialized reads commit verified original records and cursor in the same SQLite
-transaction. Scope aborts and waits the borrowed SDK read before closing its owner.
+## Ledger and authority
 
-The original scheduler and stable schedule identity helpers live under `src/pure`.
-Expected invalid permit/time operations return typed Results. The scoped runtime
-has explicit mode/time/fetch inputs; its deprecated Promise bridge serves only
-SDK/harness callbacks. Close rejects new work, aborts, waits retained native
-requests and phase work, then closes the internal Effect owner. Late values and
-frames are rejected. Runtime/driver/host composition remains incomplete.
+Public reader/feed verification owns genuine views; independently selected
+checkpoints never come from hostile offsets/headers. Serialized SQLite commits
+original verified records and cursor together. Duplicate committed records at a
+later offset, older pages and SQL IGNORE retain the prior durable pair. The actor
+captures ordinary intent, consumes public admission/signing and unchanged P09,
+prohibits new signing while pending, and requires durable inclusion before terminal
+acknowledgement. Another OS process resumes original pending bytes without a
+usable signer. The earlier Result-as-boolean acknowledgement bug is repaired;
+its old failure stays separate from restored behavior.
 
-## Evidence and dependency closure
+Genuine policy checks precede inspecting current device/member/Org. Structural
+counterfeit views and hostile wrappers cannot choose authority. R receives and
+repairs keys but cannot send, write or manage. Inert join receipt is not admission.
+Current trusted-checkpoint/lost-ACK crash-gap host composition is unfinished.
+Original createSpace stores genesis only in host metadata and creates empty control;
+original loadControl prepends that metadata genesis. The public submission adapter
+requires a complete signed history. Human options are A initialize control with
+verified original genesis (recommended), or B a Lab-only metadata-prefix transport
+with explicit cursor/lost-ACK acceptance. Coordinator recommends A, not approval.
+Do not change merged P09 or implement dependent createSpace before human selection.
 
-The fixed 6de checkpoint had twenty-four author tests: real official SQLite Riverrun 0.3.0, released
-streams-client 0.9.0, synthetic-account real Ed25519 records, actual durable files,
-another OS process; duplicate-at-new-offset and older-page rejection; real SQLite
-IGNORE rollback and same-history retry; logical parent-chain/single-consumption
-permits; raw-work settlement and owner cleanup. Native-work mock boundaries are
-explicit. The first no-wait negative control escaped the initial test; preserve
-that log. With the real owner-finalizer ordering assertion, the revised no-wait
-control fails and the fixed suite passes. This is a new negative control,
-not closure of the immutable original Lab2 failures.
+## Resource ownership
 
-Fixed 6de package typecheck, focused lint and the owning Lab24 suite pass.
-Historical e677 root `pnpm check` (Lab9/core296), root formatting, docs and public
-boundary pass remain separate; fixed 6de complete root `pnpm check` (Lab24/core302), format, docs and public
-boundary pass; frozen noninteractive ignore-scripts install passes. Checked Lab
-file fingerprints remain unchanged from root-check start to completion. Author-local checks are distinct from independent
-review and branch CI, neither of which is claimed for this WIP. Source and target
-fingerprints are in the package migration provenance and the complete manifest.
+Scoped operations reject new work, propagate abort and await raw request/body,
+finite ledger lookup and native phase settlement before earlier SQLite/SDK owners
+close. Every child is awaited even if another cleanup defects; failures remain
+visible. Controlled abort-ignoring gates wrap real work, not successful mock SDKs.
+SDK/harness callbacks alone use the deprecated Promise bridge. Pure scheduler
+uses typed Results and explicit logical permit parent chains/time/mode/fetch.
+Missing identities and future permits are not silently skipped.
 
-Keep the source's explicit Riverrun 0.3.0 without changing the root catalog.
-A package-specific override selects the approved SQLite 13.0.3 runtime.
-Resolution initially brought unrelated dependency changes; preserve every prior
-lock entry and add only the Lab importer, Riverrun package/snapshot and override.
-Frozen install with scripts disabled passes. Lab and core resolve the same Effect
-4.0.2. Main fetched to `987962e77022df6a800f4e889f124b51f6eb8056`, accurate CI
-`38151323459` succeeds, with no core/Lab/protocol changes from the actual stack bottom.
+StreamsClient.close() publishes protocol EOF, not disposal. Its HTTP facade has
+no native dispose: Scope aborts and awaits requests without publishing EOF.
+CRDT SyncClient.close() is lifecycle cleanup, but does not join all one-shot
+operations itself. Wait raw operations, close subscriptions/SDK, then Loro.free.
+Flock0.4.3 has no public free/dispose; drop references after closing SDK, without
+private internals or deterministic Wasm allocation-release claims.
 
-## Real content, submission and recovery composition
+Initial no-wait/body probes let mutants escape. Retain those immutable logs;
+revised actual owner-close assertions fail without timeout and restored tests pass.
+Failure-path gates are released and raw work joined even during a negative control.
+No sleeps, scheduler luck, source-string assertions or mock-call counts.
 
-The actor consumes public admission/signing and unchanged P09, never a copied
-proposal/genesis codec. It captures commands before waiting, prohibits new signing
-while pending and requires genuine durable feed inclusion before terminal
-consumption. A real SQLite IGNORE probe caught an uncommitted actor treating a
-Result as a boolean; the fix unwraps it through Effect.fromResult. Old failure
-and actual no-signer child-process resume pass are retained. P09 is unchanged.
+## Credentials, metadata and HTTP
 
-The Promise provider consumes public update binding, retaining an internal Effect
-owner only at the actual SDK callback boundary. Actual released Loro/Flock clients
-use real local Riverrun. Per-document SQLite pairs actual native snapshots and
-exact cursors atomically with readback; SQL IGNORE cannot acknowledge a pair.
-Another OS process reopens Loro/cursor/protected epochs with no usable signer.
-Fixture AES wrapping is explicitly synthetic, not a production algorithm choice.
+Synthetic account labels, frozen Lab v2 possession domain, single-use60s nonce
+and token lease at most15min are Lab contracts, not production identity/JWT,
+ordinary leeway changes or approved strict deadline B. Real Ed proofs and current
+membership precede scoped SQLite mint/invalidate/consume. Actual transactional
+readback rejects ignored inserts and nonce-restoring triggers.
 
-The scoped SDK owner retains and awaits raw one-shot operations before SDK close
-and real Loro.free. Published SDK.close does not itself join every such operation.
-The no-wait mutant reaches the closedEarly assertion, not a timeout; failure-path
-gate release prevents cleanup deadlock. Flock0.4.3 has no public free/dispose:
-close SDK subscriptions and drop references, without touching private internals
-or claiming deterministic Wasm allocation release.
+Bind-once preserves original token/TTL, grants no membership and refuses foreign
+Org. Recheck stored identity, expiry/invalidation after finite genuine ledger
+lookup, then read back the actual UPDATE. Same-Org retry is idempotent. Signed
+inert joins preserve original signer per request ID and first synthetic account
+per user; two rows read back atomically and are reverified after reopen. R cannot
+submit. Genesis registry replays original canonical signed genesis and signer,
+owns bytes, rejects corrupt rows and reopens in another OS process. Authenticated
+genesis-only discovery preserves unbound joiner access. Registry is still private
+harness registration, not complete HTTP create-space publication/current authority.
 
-A new scoped Loro session serializes per-document work, persists local edits
-before upload, and stops only the failed document. Initial WIP created its SDK
-after editing, so SDK appendWriteOnly returned success without uploading any
-queued local update. The real remote-state assertion failed. Construct the SDK
-before native edits; old failure/new pass remain. Full-history recovery reloads
-the durable native state including local edits; only a successful whole pull
-commits the final staged state/cursor. A failed recovery retains the durable pair.
+Actual loopback routes provide health/challenge/credential/control-CAS,
+authenticated mailbox7, joins, genesis discovery and finite SDK reads. Stored
+bearer/device/boundOrg are sole principals; JSON cannot choose a sender. Public
+complete-prefix/control admission pins SDK CAS and supplies required ACK offset;
+caller lifecycle/offset/auth headers cannot reach upstream. Initial SDK generic
+Authorization-header401 and missing ACK-header failures are retained; the correct
+published auth API/header passes. No second P09.
 
-Actual Riverrun0.3.0 snapshot PUT at nonzero offset updates earliest_offset.
-Public history reads then return gone, and SDK recovery falls back to the same
-bad snapshot. Real probes distinguish readable-history recovery success from
-unavailable-prefix failure, which remains document-stopped with unchanged cursor.
-Do not reset host SQL offsets or delete snapshots to manufacture recovery.
-Upstream retained authenticated history API versus a trusted host history route
-is a coordinated contract gap; no new header/offset wire is invented here.
+Fixed loopback finite GET/HEAD control/loro/flock/bootstrap/latest/specific
+snapshot reads bound queries/headers/body. Native307 resolves only canonical
+same-origin/Org/stream offset, without forwarding Location. Retain the body lease
+and recheck genuine authority afterward. Real signed machine revocation during
+response delivery rejects without advancing client durable cursor. Actual other
+origin/Org/stream redirect endpoints leave SQLite audit storage untouched.
+SDK0.9 putSnapshot echoes its input; use native HEAD opaque tokens in unprotected
+transport fixtures. The earlier literal0 versus native20digit token failure and
+protocol-close typing rejection are fixture evidence, not protocol changes.
 
-Pure replay comparison consumes recorded synthetic fixtures only, with no entropy
-provider or resealing capability. It compares frame actor/operation/phase/resource
-as well as original protected request/response bytes. Original multipart normalization
-rewrote incomplete messages and overran its allocation for many short boundaries:
-original4pass/2newfail retained, complete conservative framing and exact-size allocation
-then6pass. Full replay/driver/host integration remains incomplete; original driver
-heuristics that skip missing identities or pull later permits forward are not copied.
+Original HostMeta SQL-only probes reproduce phantom credential/nonce, joins/first
+account binding, ignored genesis and ignored credential-binding writes. They use
+unchecked synthetic DTOs/issuer bytes, not full HTTP/product-identity vulnerability
+proofs. Source8f409412… remains unchanged. Notes eligibility needs human alignment:
+old Lab machine/R notes conflict with public personal-only comparisonNote. Option
+A preserves personal-only plus unconfirmed host observations; option B separately
+defines machine inert observations, never R sending. Coordinator recommends A;
+this is not human approval or automatic independent confirmation.
 
-## Genuine policy and HTTP key consumers
+## Keys, native content and recovery
 
-The increment adds a genuine-ledger stream policy gate and a scoped mailbox HTTP
-adapter. R can read/repair, never send/manage/write; current membership and the
-credential/request Org are independent gates. Structural counterfeit views and
-hostile opaque-value methods are refused before caller-visible ledger state.
-This is not challenge/bearer authentication, fresh checkpoint selection, pinned CAS
-or content/snapshot acceptance. The complete honest host still owns those gates.
+Real public HPKE/distributor/receiver, SQLite installation readback/report and
+actual challenge/bearer mailbox routes compose. Tampered frames install nothing
+and do not report; original frames install and report. Recovery cannot send after
+reopen and own-slot repair revision advances once, same-ID retry is idempotent.
+Preserve512-byte envelope/report,8192-byte publication and existing1–256-char
+repair-ID bounds. Fixture AES wrapping and test accounts are synthetic; some
+transport-only units explicitly use pre-authenticated fixtures. The key-round
+reopen remains same-process, not full cross-process delivery/rotation/native custody.
+The earlier duplicate X25519 key fixture was rejected, then corrected without
+changing public admission.
 
-Mailbox responses have bounded bodies, canonical even hex, safe slot/revision
-numbers and bounded decimal pages. Scope retains raw fetch plus response body,
-including abort-ignoring reads, before earlier owner closure. Real public HPKE,
-SQLite distribution/receiver and installation report rounds run over actual
-loopback HTTP. A tampered signature leaves key storage empty and status unchanged;
-the original frame then installs/readbacks/reports successfully. Reopened Recovery
-receives durable results and cannot schedule sends. Session authentication and
-AES wrapping remain explicit synthetic boundaries; key-store reopen in this round
-is same-process, not full OS/native custody acceptance. Initial fixture reused one
-X25519 public key for two devices; public admission rejected it. The corrected
-fixture creates independent device pairs, without changing the protocol.
+Public header3 update binding feeds real released Loro/Flock SDKs. Per-document
+SQLite atomically pairs native snapshot/file and exact SDK cursor with readback;
+failed save/import retains the prior pair. Loro and now Flock reopen native state,
+cursor and protected epoch file in a real OS child with no usable signer, preserve
+old data and decrypt a new independent update. Reopened Flock refuses actual Loro SDK protected wire for the same Org/resource
+and different model without changing either durable field. Removing Flock file restoration
+loses the old field; withholding reopened key fails actual SDK missing_read_key.
+Both fail without timeout and restoration passes. Reuse the existing content
+suite/child script; no duplicate core or new production wrapping choice.
 
-Frozen 1087 owning **30 tests** and package typecheck pass. The frozen `6de46b5d`
-checkpoint had complete root Lab24/core302, format/docs/boundary evidence; its
-results do not certify this increment. Frozen 1087 complete root `pnpm check` passes Lab30/core302, with unchanged Lab input
-fingerprints throughout; format/docs/public boundary pass. The initial current
-check found three mailbox static errors, corrected before the passing repeat. No Lab Draft or independent whole-Lab acceptance yet.
+Scoped Loro session subscribes before native edits, saves local state before
+upload and stops only the failed document. Editing before SDK creation originally
+returned append success without remote content; real remote-state failure is
+retained and fixed by construction order. Full-history recovery preserves local
+edits and commits only after whole pull succeeds. Riverrun0.3.0 nonzero snapshot
+PUT advances earliest_offset: public history is then gone and SDK sees the same
+bad snapshot. Readable-history recovery passes; unavailable-prefix recovery stays
+failed with unchanged pair. No host SQL reset or snapshot deletion. Authenticated
+retained-history API versus trusted-host history remains a coordinated decision.
+Protected snapshot wire/offset/publication and full Flock recovery/live are pending.
 
-The fixed 02f checkpoint's new response-body test initially let a no-wait mutant
-escape; its passing positive suite is not that failure's acceptance evidence.
-The adapter now accepts an optional explicitly owned native transport `close`
-capability, captured at acquisition and run once after raw fetch/body settlement.
-Global fetch has no native lease to close. The synthetic lease records actual
-close before body completion; the revised no-wait mutant hits
-`transportClosedEarly` (5ms, no timeout), then restored tests pass. Failure gates
-are finalizer-owned, with no fixed microtask drains or sleeps. Preserve both the
-escaped original log and the new failure. Current same-count suite/typecheck pass;
-complete root pnpm check Lab30/core302 for this native-lease increment passes,
-with unchanged Lab input SHA; format/docs/public boundary pass.
+Pure replay comparison only consumes recorded inert synthetic fixtures, including
+actor/operation/phase/resource and protected request/response bytes. No entropy,
+resealing or full execution driver. Original multipart normalization short-boundary
+allocation/incomplete-frame failures are repaired conservatively; old4pass/2fail
+and new6pass remain. Full original fixture/replay/attack/CLI closure is pending.
 
-## Credential/control/HTTP increment (author WIP)
+## Validation and remaining work
 
-The new credential owner and loopback HTTP/control composition consume public
-signature/genuine-ledger/submission APIs. Synthetic account labels and the frozen
-Lab possession domain/nonce/token TTL remain test contracts, never production
-identity, JWT claims, ordinary leeway changes or approved strict deadline B.
-SQLite mint and nonce consumption require actual readback; SQL IGNORE cannot return
-a phantom credential, and a trigger restoring a consumed nonce rejects the attempt.
-Two additional original HostMeta SQL-boundary probes reproduce those failures; source
-SHA remains 8f40941246e5745b441aaaf0bdc93f5e8b994656b24eea7f58b1229d63ee28c3.
-These are not whole original host regressions or the original Lab2 closure.
+Fixed285289 authenticated reads root core302/Lab52, format/docs and public boundary
+7010files/27manifests pass with all52 Lab inputs unchanged. Fixed-head no-overlay
+Lab52 and body retention/origin/post-read-authority negatives fail direct behavior
+assertions without timeout; restored passes. Earlier first-root control-character
+regex errors were repaired with equivalent character-code bounds; failed log remains.
+Flock process expansion is current WIP: owning4/type and fresh285289 plus two
+SHA-declared overlays Lab52 pass; current full root core302/Lab52, format and public boundary7010files/27manifests
+pass with unchanged52 Lab SHA. Consolidation initially missed the required Abstract
+heading; preserve docs failure, restore bilingual Abstract and rerun docs.
+Fixed-head/CI/independent evidence remain separate. Prior checkpoint reports/logs stay immutable, not inherited Ready.
 
-Control uses public complete-prefix admission and SDK pinned CAS, not a second P09.
-HTTP verifies stored bearer, canonical Org/path, one bounded framed record and
-possession proof; hostile offset/lifecycle headers cannot reach the SDK capability.
-A genuine checkpoint is an independently provided harness input. Durable workspace
-registration/checkpoint crash-gap handling, joins, notes, key/content routes and
-startup remain pending. No generic proxy or snapshot wire is restored.
+An unchanged CLI inherited Git-helper context failure is retained. Focused original
+CLI6 and whole root pass with only test-child GIT_EXEC_PATH removed and /usr/bin
+preferred; no source/global Git change or proved root-cause claim. Actual fetch
+main987962e… has no owned overlap; merged1432/1433/1434 are ancestors, not duplicated.
+Original combined CI cancellation is not successor CI success. SDK prep is not a
+production protector. Main coordinator owns independent review; no self-review model.
 
-A shared operation owner waits every child even when another finalizer defects,
-then propagates the failure. Runtime tests exercise real SQLite/SDK lifetimes with
-an explicit synthetic finalizer-fault boundary. The fresh 1087+7-file SHA overlay
-passes Lab36; removing child waits hits real Riverrun closedEarly (no timeout),
-restoration passes. The added real HTTP test passes, for 37 current owning tests;
-Final SDK-ACK complete root pnpm check passes core302/Lab37 with unchanged Lab inputs; root format/docs/public boundary pass. One inherited Git helper failure in unchanged CLI is retained; removing GIT_EXEC_PATH only in test subprocesses gives focused6 and full-root pass. Fixed-head reproduction follows commit.
-Frozen 1087 Lab30 evidence does not certify these new files.
-
-The actual published StreamsClient consumes the HTTP CAS path using its auth API; successful ACK includes the required Stream-Next-Offset header. An initial synthetic consumer incorrectly supplied bearer through generic headers (the SDK removes it); that 401 is fixture evidence only. After using auth correctly, the missing-ACK-header old failure and repaired new pass are preserved separately.
-
-## Authenticated mailbox increment (WIP after dd718)
-
-The actual loopback host binds a stored bearer to its device and bound Org for all
-seven original mailbox operations; JSON never selects a principal. The public
-SQLite host retains crypto/eligibility/store/report/repair admission. No copied
-core or independent acceptance shortcut. Native credential requests and response
-bodies in the synthetic fixture have explicit scoped raw ownership. The actual
-HPKE/save/readback/report round now consumes challenge/bearer HTTP, preserving
-prior tampered-frame no-install/no-report and Recovery reopen no-send assertions.
-An actual owner-signed stored frame with hostile owner JSON under a Recovery bearer
-is refused. R's own receive-slot repair advances revision once; same ID retry does
-not advance again. Unauthorized HTTP401 maps to the adapter's unauthorized error.
-The server preserves 512-byte envelopes/reports, 8192-byte publication records and
-existing bounded arbitrary repair IDs; no new wire format, production identity or
-strict B. Focused5/typecheck and current full-root core302/Lab37 pass, with unchanged Lab input SHA through format. Docs/public boundary pass. The first DTO static consistent-return failure is retained and fixed with a fail-closed branch. Fresh dd718+5-file overlay37 passes; JSON-principal mutant returns200 where403 is required, a direct assertion without timeout; restoration passes. Fixed-head reproduction follows commit; no independent whole-Lab review/CI acceptance.
-
-The next joins/host-metadata storage work also has two read-only original SQL
-reproductions: ignored join insertion returns success without a row, and ignored
-first-user account binding lets a later different synthetic account claim the same
-user ID. These probes use explicitly unchecked synthetic DTOs against HostMeta
-storage only; they are not full HTTP/signature acceptance or product identity
-findings. Source SHA is unchanged. The migration must verify both request and
-binding rows inside the same transaction before acknowledging. The increment below implements both storage readback and the actual authenticated
-joins route; full host composition remains pending.
-
-## Join metadata/HTTP increment (WIP after fba88)
-
-Public joinRequestSigningBytes/verifySignature bind every original field and Org.
-Real unbound outsider challenge/bearer can post inert signed requests; only genuine
-current members read them. No automatic ledger admission, new deadline or product
-identity. R no-manage includes refusing join submission. Original same-ID signer
-and first synthetic user/account ownership rules remain; SQLite stores/verifies
-request and binding in one transaction. Ignoring either insert rejects and rolls
-back both; missing/tampered stored binding or signature is corrupt, not reassigned.
-Actual storage reopens; HTTP bad proof400, conflict409, unauthorized403 remain the
-original Lab semantics. The first outsider fixture accidentally requested a bound
-Org token and was correctly rejected; it now uses real unbound issuance without
-changing member admission. That failure stays fixture evidence only.
-
-Finite ledger lookup receives the scope abort signal and is retained until actual
-completion. The test observes actual native SQLite close/open, calls its genuine
-close implementation and restores the scoped observer; no successful mock or call
-count. An explicit abort-ignoring borrowed phase then a real published SDK read
-must settle before SQLite/Riverrun close. Finally also joins raw work when a mutant
-breaks ownership. Five owning groups and associated HTTP/HPKE/SDK7/type/static pass;
-Fresh fba88 plus six declared owned overlays passes all42. Removing native lookup
-retention causes a direct earlier-owner-close assertion; removing SQL readback
-causes ignored inserts to be wrongly acknowledged. Both fail without timeout and
-pass after restoration. Full root check passes core302/Lab42. The first root attempt stopped at unchanged
-CLI recursive Git context_unreadable before core/Lab ran; retain it. The original
-CLI suite separately passes6; root passes with only child-process GIT_EXEC_PATH
-removed and /usr/bin Git preferred. No source/test/global Git configuration change.
-Fixed-head/CI/independent acceptance remain pending.
-Workspace/checkpoint crash-gap, notes, content/keys stream ownership and complete
-honest actors/driver/replay/CLI/originalLab2 remain unfinished. Human gates unchanged.
-
-## Remaining work
-
-Migrate the actual host/actors, content sessions, Loro/Flock persistence, driver,
-attacker capability, captured replay, fixtures and CLI, then independently rerun
-the original Lab2 scenarios. Snapshot wire/offset, replay randomness, recovery
-vault, D12 and permanent publisher-loss decisions remain open. Entire-stack CI
-and acceptance are pending. No production E2EE, native custody or deployment.
-
-## Workspace genesis metadata (current WIP)
-
-Public canonical decode/replay and actual signatures validate original genesis
-and authenticated original signer; stored rows are reverified on every read.
-Same-transaction readback detects ignored insert without replacing corrupt rows.
-The actual SQLite file reopens in another OS process. Existing authenticated
-genesis discovery includes unbound joiners, but returns no current endpoint/view.
-Registration is still a private harness API; stream publication, credential
-binding and durable current-checkpoint/crash-gap composition remain unfinished.
-Three owning tests and associated HTTP/joins/HPKE10/type pass. Original HostMeta
-ignored-space SQL insertion returns without a row; its read-only reproduction uses
-unchecked synthetic bytes and is storage-only, not HTTP/signature acceptance.
-Current full root core302/Lab45 passes; fixed-head/CI/independent acceptance remain pending.
-
-Comparison publication eligibility needs human alignment: the old Lab allowed
-current machines/R to post notes, while public comparisonNote admits only personal
-devices. Proposed options are preserve the public personal-only contract with
-unconfirmed host observations, or separately define inert machine observations;
-R cannot send in either. No core/Spec change or implicit independent confirmation.
-
-## Credential binding (current WIP)
-
-Keep the original bind-once token, unchanged TTL and per-route current authority.
-A genuine ledger lookup precedes binding; recheck stored identity, expiry and
-invalidation after it, with actual SQL UPDATE readback. Foreign-Org rebinding is
-refused; same-Org retry returns the original token/expiry. Real ignored UPDATE,
-lookup-time expiry/invalidation, counterfeit views and file reopen are covered.
-The finite lookup receives abort and is retained to actual completion. Extend the
-existing real SQLite/Riverrun close-order probe for join and credential paths;
-no copied test or removed original behavior. Associated11/type/static and full root core302/Lab47 pass; fixed-head/CI/independent
-acceptance pending. Original HostMeta ignored binding UPDATE silently returns
-without binding; read-only SQL-only reproduction and source SHA are retained. HTTP create-space binding remains incomplete.
-
-## Finite authenticated SDK reads
-
-Read transport consumes public genuine-view policy and the released SDK. Fixed
-loopback upstream and exact query/path/header bounds prevent caller-selected
-origin or authority. Resolve the native latest-snapshot307 only to canonical
-same-origin/Org/stream offsets, never forward Location. Buffer bounded bodies in
-the retained raw lease; recheck current authorization after actual settlement.
-Real signed machine revocation during response delivery rejects without advancing
-client durable history/cursor. Native body gating is an explicit controlled wrapper
-over actual HTTP bytes, not a successful mock SDK.
-
-The five new groups and complete Lab52 pass. Fresh eb6f plus five SHA-declared
-code overlays passes52; removing body retention, redirect origin binding or
-post-read authorization each causes an observable assertion failure without
-timeout, and restoration passes. Full root core302/Lab52, format/docs and public boundary7010files/27manifests pass;
-all52 Lab inputs remain byte-identical throughout. First root rejected three control-
-character regexes; explicit character-code validation fixes the same bounds, with
-the failed log retained. Fixed-head/CI/independent evidence remain separate. Original Lab2/full host/actors remain incomplete.
-
-StreamsClient.close() publishes EOF, unlike CRDT SyncClient.close() lifecycle.
-The HTTP facade owns no dispose; scoped abort+wait does not call protocol close.
-SDK0.9 putSnapshot returns its input offset, not a normalized server ACK. Use
-actual HEAD's opaque token in unprotected transport fixtures; this settles no
-protected-snapshot header/offset/publication decision. Preserve earlier fixture
-failures (0 versus native20-digit token) and the type-check rejection of protocol
-close as a lifecycle capability. Human gates, pins and ordinary leeway unchanged.
+Finish real create-space publication/binding/current-checkpoint crash gaps,
+content writes/live, full honest actors/rotation/cross-process key round, Flock
+recovery/session, scheduler driver, attacker capabilities, original fixtures/replay/
+CLI and original Lab2/full fault matrix before one consolidated Lab Draft. Strict B,
+vault format/wrapping/concurrency/retention, permanent publisher-loss backup,
+D12 atomic-removal wire, snapshot/history, entropy and notes remain human gates.
+None blocks independent settled work. Production activation, native custody,
+whole-stack CI/review and all-platform product acceptance remain separate.

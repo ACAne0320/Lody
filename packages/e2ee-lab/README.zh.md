@@ -22,7 +22,7 @@ actor 消费公开 admission/signing 和未改动的 P09 submission recovery；
 
 内容 provider 消费公开 header3 update binding；真实 Loro/Flock SDK 执行加密、
 解密和原生状态导入。每文档独立 SQLite 文件，以事务和读回将实际原生状态与精确
-SDK 游标一起保存；失败保留旧的持久化对。Loro 在另一 OS 进程重开文档、游标和
+SDK 游标一起保存；失败保留旧的持久化对。Loro/Flock 在另一 OS 进程重开文档、游标和
 受保护 epoch store。AES 包装能力明确是合成 fixture，不是原生安全存钥或生产算法决策。
 
 `makeLabLoroSession` 管理串行操作、每次新建的 SDK 与真实 Loro 文档。
@@ -74,7 +74,7 @@ join mailbox 消费公开请求签名/验证。真实 unbound 外来设备可提
 借用账本读取接收 abort signal，并保留到实际结束；显式忽略 abort 的借用测试观察
 真实 SQLite close/open 与 Riverrun 关闭顺序。完整宿主组合仍未完成。
 
-原完整 host/gateway、诚实 actors、密钥投递/轮换组合、Flock 进程重开/恢复/live
+原完整 host/gateway、诚实 actors、密钥投递/轮换组合、Flock 完整恢复/live
 session、schedule driver、攻击能力、捕获 replay、原 fixtures 和 CLI/启动流程
 尚未完成。当前 52 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
 快照 wire/offset、replay 熵、严格期限 B、恢复库、D12、发布设备永久丢失仍是待决项。
@@ -99,3 +99,7 @@ headers；latest 重定向只允许同 origin/Org/stream。有限响应体和允
 不会推进公开 feed 的持久游标。这里的快照只是未保护的不透明传输 fixture，不代表
 受保护快照契约。SDK0.9 putSnapshot 回显输入 offset，测试使用原生 HEAD 返回的
 opaque token。完整受保护快照发布/恢复仍未完成。
+
+Flock 子进程没有可用 signer，保留旧字段并用落盘保护密钥解密新的独立更新；实际 Loro SDK
+生成同 Org/resource 的不同 model 保护帧写入 Flock 后，子进程拒绝、原 native file/游标
+不变。这是有限进程重开证据，完整 Flock session/recovery/live 未完成。

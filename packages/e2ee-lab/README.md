@@ -25,8 +25,11 @@ reopen real state and resume original signed records without a usable signer.
 The content provider consumes the public header3 update binding. Actual Loro
 and Flock SDK clients encrypt/decrypt and import native state. Each document owns
 one SQLite file; staged actual native state and exact SDK cursor commit together
-with transactional readback. Failed save retains the prior durable pair. Loro
-reopens that pair and the protected epoch store in another OS process.
+with transactional readback. Failed save retains the prior durable pair. Loro and Flock
+reopen that pair and the protected epoch store in another OS process, without a
+usable signer. Flock retains an old field, decrypts a new independent update and
+refuses actual Loro protected wire for the same Org/resource without changing its
+durable pair. This is finite process-reopen evidence, not a full Flock session.
 The AES fixture wrapping capability is synthetic, not native platform custody or
 a chosen production wrapping algorithm.
 
@@ -97,7 +100,7 @@ retained until actual completion; actual SQLite close/open and Riverrun order ar
 observed in an explicit abort-ignoring lease test. Full host composition is pending.
 
 The original full host/gateway, honest actors, key delivery/rotation composition,
-Flock process/recovery/live sessions, schedule driver, attacker capabilities,
+Flock recovery/live sessions, schedule driver, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
 52 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
