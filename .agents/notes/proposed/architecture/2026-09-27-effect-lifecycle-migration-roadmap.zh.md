@@ -268,6 +268,8 @@ preview 代理、`packages/loro-streams-rpc`、PR poller、Electron updater：�
 
 ## 迁移引导与进度
 
+引导修订评审：[#1452](https://github.com/LodyAI/Lody/pull/1452)。
+
 叶子 PR 合并或代码导入 Effect，不能说明消费者与最终拥有者也已迁移。下面的单元台账分别记录这些事实；按可独立验收的职责组织，不要求一个文件一行，也不按层号全局串行。
 
 [Effect skill](../../../skills/effect-ts/SKILL.md)指导实现：先明确行为合同，优先官方原语，再核对已安装版本的语义，最后决定是否需要自定义协调。本纲领负责依赖与完成标准，[指南](../../../docs/cli-effect-ts.md)负责惯例与测试，每个单元的 Note 负责决策、证据与局限。根 AGENTS.md 要求实现者在选迁移范围前阅读这些入口。

@@ -406,6 +406,8 @@ Migrate these only when touched:
 
 ## Migration guidance and progress
 
+Guidance review: [#1452](https://github.com/LodyAI/Lody/pull/1452).
+
 Merged leaves and Effect imports do not show whether their consumers or final
 owners have migrated. The unit ledger below separates those facts. It groups
 responsibilities that can be independently accepted, rather than requiring one
