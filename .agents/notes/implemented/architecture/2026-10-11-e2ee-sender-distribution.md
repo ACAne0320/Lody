@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: https://github.com/LodyAI/Lody/pull/1493
 
 [中文](2026-10-11-e2ee-sender-distribution.zh.md)
 
