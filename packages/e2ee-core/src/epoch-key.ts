@@ -19,3 +19,9 @@ export function copyEpochKeyBytes(key: EpochKey): Uint8Array {
   if (!bytes) throw new TypeError('invalid-epoch-key');
   return new Uint8Array(bytes);
 }
+
+/** Package-internal: release only a secret created and still owned by this operation. */
+export function disposeEpochKey(key: EpochKey): void {
+  materials.get(key)?.fill(0);
+  materials.delete(key);
+}

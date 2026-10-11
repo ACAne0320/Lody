@@ -12,8 +12,8 @@
     "pure/epoch-key.ts": {
       "sha256": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3",
       "destination": "src/epoch-key.ts",
-      "scope": "Opaque epoch key parser and package-internal material copy; private WeakMap replaces reflected symbol accessor",
-      "destinationSha256": "91a561e0be9418a9e6feb654ad8956359739ec0a24aad7b7b55a5cee4cf5a205",
+      "scope": "Opaque epoch key parser and package-internal material copy; private WeakMap replaces reflected symbol accessor; operation-owned opened key disposal on failed/cancelled verification",
+      "destinationSha256": "ad21b5e661b3d6bb7ef483658e912039fbdfc07588d3a960a86e85fc2d727628",
       "extractionDestinationSha256": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3"
     },
     "pure/cbor.ts": {
@@ -59,9 +59,10 @@
     "Expose stateless signature verification as Result; add caller-context content signature check.",
     "No signing, private-key export, ledger, Lab, Node host, transport or storage entrypoints.",
     "Bound encoding traversal and copies by expanded canonical wire size before serialization; preserve valid shared values and reject cycles. No wire or algorithm change.",
-    "L4a makes EpochKey material private WeakMap state: reflected material symbols/structural fakes no longer export or substitute secret material; wire/algorithms unchanged."
+    "L4a makes EpochKey material private WeakMap state: reflected material symbols/structural fakes no longer export or substitute secret material; wire/algorithms unchanged.",
+    "L4b adds internal EpochKey disposal for failed/cancelled post-HPKE checks; no public material export or change to merged HPKE primitive."
   ],
-  "migratedScopeSha256": "f3eb78a3d9aa7e0a5ce91b10227256a7b4c0617692a157a442d14c07241c4b51",
+  "migratedScopeSha256": "728f24230c476e61f56e4691f81ca5580c31c48fe399169eb9745f7aac420a65",
   "scopeHashEncoding": "UTF-8, destination paths sorted ascending, one line: <destinationSha256>  <destination>\\n",
   "cryptoExtraction": {
     "destination": "src/crypto/content.ts",

@@ -1387,7 +1387,14 @@
       "targetPath": "packages/e2ee-core/src/pure/epoch-envelope.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4b",
+          "target": "packages/e2ee-core/src/keys/envelope.ts",
+          "scope": "Current canonical prepare/authenticate/open with genuine view, fixed signatures, exact commitments and post-crypto recheck. Durable install, outbox delivery/receipts and coordinator remain incomplete."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/epoch-history.ts",
@@ -1857,7 +1864,14 @@
       "targetPath": "packages/e2ee-core/src/workflows/epoch-envelope.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4b",
+          "target": "packages/e2ee-core/src/keys/envelope.ts",
+          "scope": "Current canonical prepare/authenticate/open with genuine view, fixed signatures, exact commitments and post-crypto recheck. Durable install, outbox delivery/receipts and coordinator remain incomplete."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/epoch-rotation.ts",

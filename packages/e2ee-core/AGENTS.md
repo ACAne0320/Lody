@@ -68,3 +68,8 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
 - Ordinary signing lives under `./ledger/signing`: genuine view/proposal provenance,
   shared permission/possession-proof checks before signing, fixed verification after.
   Execute signing once then submit original bytes; no implicit rebase or re-sign retry.
+
+- `./keys/envelope` preserves current envelope bytes: genuine current eligibility,
+  independent expected context, fixed outer verification, exact commitment and
+  post-crypto verified-prefix recheck. Recovery receives but never sends. It returns
+  no durable installation/delivery receipt; failed owned opens wipe/invalidate their key.

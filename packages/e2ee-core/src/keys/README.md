@@ -54,7 +54,7 @@ pnpm --filter @lody/e2ee-core test
 ```
 
 The fixture generator is optional; runtime tests consume committed bytes and need
-no Python/network. Node custody/persistence, signed envelopes, exact pending/outbox
+no Python/network. Node custody/persistence, exact pending/outbox
 bytes, finite delivery rounds, durable reports, publisher-loss backup and recovery
 remain separate migration owners.
 
@@ -64,3 +64,32 @@ remain separate migration owners.
 EpochKey values use a private registry and null prototype; reflected symbols or
 structural objects cannot export/substitute material. The prior public slice
 accepted a forged symbol accessor, reproduced separately before this fix.
+
+## Signed current-epoch envelopes
+
+The explicit `@lody/e2ee-core/keys/envelope` entry preserves canonical
+`AAD || enc32 || ct48 || signature64` and `lody-e2ee/epoch-env/v1\0`.
+Expected genesis/epoch/sender/recipient come from the caller; the frame cannot
+choose them. `authenticateEpochEnvelope` checks real verified current eligibility,
+exact framing and the fixed signature verifier, without decrypting or proving the
+key preimage. A host must bind the sender to its authenticated request principal.
+
+`prepareEpochEnvelope` checks the source commitment before real HPKE and borrowed
+signing, then checks the verified prefix, current epoch and device/key eligibility
+again. Active personal/machine devices may forward keys; Recovery cannot send.
+All active recipient kinds can receive, including Recovery and Guest membership.
+Execute preparation once and retain the exact bytes for later durable delivery.
+This API performs no transport, outbox persistence or retry.
+
+`openEpochEnvelope` fixes caller context/frame/key handles before asynchronous
+work, checks outer signature before decryption, checks the plaintext commitment,
+then rechecks current authority. It returns a caller-owned opaque key, not a
+durable installation receipt. Compose it with `makeVerifiedEpochKeys` for volatile
+installation; durable storage/reporting remains a later owner. A failed/cancelled
+post-decrypt check wipes and invalidates this operation's newly created EpochKey.
+Native primitive settlement is awaited; a native call that never settles cannot
+provide bounded shutdown. Successful returned keys live while reachable; JavaScript
+cleanup does not guarantee erasure of native/runtime internal copies.
+
+[Envelope extraction note](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-epoch-envelopes.md)
+ · [Envelope fingerprints](envelope-provenance.json).
