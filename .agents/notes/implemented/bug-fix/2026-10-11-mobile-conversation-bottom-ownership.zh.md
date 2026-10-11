@@ -10,7 +10,7 @@ Translation: current
 快速向下滚动会与引擎反复写回底部竞争，composer 布局变化也可能在没有对话手势时恢复跟随。
 控制器现在以真实滚动范围内的逻辑位置采样弹性越界值，只凭对话输入恢复跟随，并等待原生
 滚动结束后再补齐底部附近的偏差。composer 在真实 flex 布局之外测量内容，避免短暂扩大
-viewport 导致阅读位置丢失。模型、React 接线与 Chromium 布局验证覆盖了这些路径；
+viewport 导致阅读位置丢失。模型、React 接线与 Chromium、WebKit 布局验证覆盖了这些路径；
 iOS 原生惯性效果仍未验证。
 
 ## 定位与决策
@@ -41,8 +41,40 @@ unknown 位移、活动手势被 viewport clamp 结束及旧底部恢复等场�
 wheel/key/touch 事件，以及 composer 的 focus、pointer 和编辑事件。
 两套测试保留既有行为覆盖及模型的 40 组固定随机种子，共 103 个测试通过。
 
+前后对比在隔离 clone 中使用修复前 `4922c038c` 和 PR 版本 `4601077e2` 的真实产品代码，
+配以相同的当前行为测试 fixture。12 个针对性的模型、React 接线和 composer 用例中，
+修复前 11 个失败，修复后 12 个全部通过；余下那个 viewport clamp 用例在旧版就已通过。
+对比排除了要求新 `onReaderInput` API 的用例，缺少新方法的错误不作为原问题的证据。
+修复版本完整运行这三套测试，共 104 个全部通过。
+
+| 相同场景 | 修复前 | 修复后 |
+| --- | --- | --- |
+| +24、+18、+12、+6px 弹性采样，包含父组件提交 | 4 次修正写入 | 0 次修正写入 |
+| 原生位移停在距底部 3px，尚未 `scrollend` | 立即进入 follow 并写回底部 | 保持 read，不写入；`scrollend` 后恢复 follow |
+| 无对话输入，浏览器移至底部附近，再缩小 viewport 40px | 恢复 follow，额外移动 40px | 保持 read，不额外移动 |
+| 活动手势、短暂 viewport clamp、恢复原高度 | 阅读位置丢失 40px | 保留原阅读位置 |
+| composer 获得焦点、已有焦点时编辑或对话外 pointer 输入 | 旧证据误恢复 follow | 保持 read，追加输出不移动位置 |
+| React composer 测量 | 测量时真实高度变为 `auto` | 测量时保留之前的真实高度 |
+
+复现时，在安装锁定依赖的临时 clone 中 checkout `4922c038c`，只用
+`git show 4601077e2:<path> > <path>` 覆盖 `packages/components/` 下的三个测试文件，
+保留旧版产品源码。运行：
+
+```sh
+NODE_ENV=test pnpm --filter @lody/components exec vitest run \
+  tests/conversation-scroll-engine.test.ts \
+  tests/engine-conversation-scroller.test.tsx \
+  tests/chat-composer-autoresize.test.tsx \
+  -t 'keeps the reading anchor when a viewport clamp|waits for the native fling|ignores elastic|never follows after|downward .* input re-arms|composer .* clears|grows through 11 rows'
+```
+
+恢复覆盖的测试文件，再 checkout `4601077e2` 并运行相同命令，即为修复后对比；
+去掉 `-t` 可运行全部 104 个相关测试。
+
 `tests/e2e/conversation-scroll-engine.spec.ts` 的浏览器回归在真实 flex 布局中执行产品测量函数，
-验证换行及中英文混排，Chromium 通过。composer 高度为 240px 时，旧 `auto` 测量会把对话
+验证换行及中英文混排，所属回归在 Chromium 和 WebKit 中均通过（两个浏览器测试）。
+Chromium 145 和 WebKit 26.0 的补充布局实验确认恢复真实高度也不能恢复旧阅读位置。
+composer 高度为 240px 时，旧 `auto` 测量会把对话
 viewport 从 480px 短暂扩大到 696px，让距底部 80px 的阅读位置丢失 136px；
 恢复 textarea 高度不能恢复阅读位置。新的镜像测量得到相同内容高度，同时保持 viewport
 高度和阅读位置不变。
@@ -58,7 +90,9 @@ viewport 从 480px 短暂扩大到 696px，让距底部 80px 的阅读位置丢�
 manifest 和 lockfile 不变。原始工作区的文档检查保留了缺失子模块及既有文档
 造成的 82 个基线错误，没有注册 SHA 保护主题。
 
-本机没有 WebKit 浏览器可执行文件，因此这些检查不能证明 iOS 原生甩动效果。
+WebKit 验证使用仓库锁定的 Playwright Linux 构建，布局实验的移动 viewport 为
+390×844 并启用触摸能力。控制器弹性采样由模型注入，并非真实 iOS 甩动产生。
+这些检查不能证明 iOS 原生动画、键盘或手势效果。
 真机验收仍需覆盖快速向下甩动、底部回弹、向上打断，以及 composer 刚获得焦点和原本已有焦点时的输入。
 阅读模式下的流式输出和键盘显示/隐藏必须保留锚点；follow 仍须跟踪新输出和最终 viewport 变化。
 

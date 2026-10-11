@@ -13,7 +13,8 @@ The controller now samples elastic offsets within the real scroll range and only
 re-arms following from conversation input; near-edge corrections wait for native
 scroll completion. Composer content is measured outside its live flex layout, avoiding
 a transient viewport expansion that loses the reading offset. Model, adapter and
-Chromium layout checks verify these paths; native iOS momentum remains unverified.
+Chromium and WebKit layout checks verify these paths; native iOS momentum remains
+unverified.
 
 ## Diagnosis and decision
 
@@ -54,10 +55,45 @@ recovery. The adapter suite dispatches wheel/key/touch events and composer focus
 pointer and editing events. Both include their prior behavioral coverage and the
 model's 40 seeded sequences: 103 tests pass.
 
+Before/after verification uses the actual pre-fix production code at `4922c038c`
+and the PR code at `4601077e2`, with the same current behavioral test fixtures in
+an isolated clone. Of 12 targeted model, adapter and composer cases, 11 fail before
+the fix and all 12 pass afterward. The remaining viewport-clamp case already
+passed before the fix. Tests requiring the new `onReaderInput` API are excluded
+from this comparison; missing-method failures are not evidence of the original bug.
+The complete three-suite run on the fixed version passes all 104 tests.
+
+| Identical scenario | Before | After |
+| --- | --- | --- |
+| Elastic samples of +24, +18, +12 and +6px, including parent commits | Four corrective writes | Zero corrective writes |
+| Native movement stops 3px short, before `scrollend` | Immediately follows and writes the bottom | Remains reading, no write; follows at `scrollend` |
+| No conversation input, browser moves near the bottom, viewport shrinks 40px | Restores follow and moves another 40px | Remains reading, no additional movement |
+| Active gesture, transient viewport clamp, original height restored | Reading offset loses 40px | Original reading offset preserved |
+| Composer focus, editing with existing focus, or outside pointer input | Restores follow from stale evidence | Remains reading; appended output does not move it |
+| React composer measurement | Live height becomes `auto` while measuring | Live height remains at its previous value |
+
+To reproduce the targeted comparison, in a disposable clone with locked dependencies,
+check out `4922c038c` and overlay only the three test files under `packages/components/`
+from `4601077e2` using `git show 4601077e2:<path> > <path>`.
+Do not replace production sources. Run:
+
+```sh
+NODE_ENV=test pnpm --filter @lody/components exec vitest run \
+  tests/conversation-scroll-engine.test.ts \
+  tests/engine-conversation-scroller.test.tsx \
+  tests/chat-composer-autoresize.test.tsx \
+  -t 'keeps the reading anchor when a viewport clamp|waits for the native fling|ignores elastic|never follows after|downward .* input re-arms|composer .* clears|grows through 11 rows'
+```
+
+Restore those test overlays, check out `4601077e2`, and run the same command for
+the fixed comparison; omit `-t` to run all 104 related tests.
+
 The browser regression in `tests/e2e/conversation-scroll-engine.spec.ts` executes the
 production measurement helper with actual flex layout, wrapping and mixed Chinese/
-English text. It passes in Chromium. With a 240px composer, the old live `auto` reset
-expanded the conversation viewport from 480px to 696px and lost 136px of a reading
+English text. The owning regression passes in both Chromium and WebKit (two browser
+tests). Additional layout experiments in Chromium 145 and WebKit 26.0 confirm the
+restored live height still cannot recover the old offset. With a 240px composer,
+the old live `auto` reset expanded the conversation viewport from 480px to 696px and lost 136px of a reading
 offset 80px above the bottom; restoring the textarea height did not restore that
 offset. Mirror measurement returns the same content height while leaving both the
 viewport height and reading offset unchanged.
@@ -77,8 +113,11 @@ Manifests and the lockfile are unchanged. Documentation checks in the original
 worktree retain the 82 baseline errors from unavailable submodules and existing
 documents; no protected topics are registered.
 
-WebKit's local browser executable is absent, so these checks do not establish native
-iOS fling behavior. Device acceptance still requires a fast downward fling, bottom
+WebKit verification uses the repository-locked Playwright build on Linux, with a
+390×844 touch-capable mobile viewport for the layout experiment. Elastic controller
+samples are injected by the model, not produced by a real iOS fling. These checks
+do not establish native iOS animation, keyboard or gesture behavior.
+Device acceptance still requires a fast downward fling, bottom
 rebound, upward interruption, and typing with both a newly focused and already
 focused composer. Streaming while reading and keyboard show/hide must preserve the
 reading anchor; following must still track new output and final viewport changes.
