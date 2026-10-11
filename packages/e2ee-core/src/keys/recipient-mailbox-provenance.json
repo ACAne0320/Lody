@@ -7,6 +7,6 @@
   },
   "scope": "Actual recipient receiver/repair plus finite copied fetch-page composition only. No sender target discovery, vault, production or new wire.",
   "destinationFingerprints": {
-    "src/keys/mailbox-client.ts": "1dd5c7d9d76da6acc4a1dcff5dc0ff3e16d481c6085428559a562d9b655dd991"
+    "src/keys/mailbox-client.ts": "888b0046d56e415060bafbaa74cdb4bcc3097a1796f3b01b14b5930e7f862018"
   }
 }

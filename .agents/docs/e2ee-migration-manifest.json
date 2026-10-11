@@ -1629,10 +1629,10 @@
         "core": "96e6e88eb20228c4d47eee03023e0b859e43e0d9a0a16b7214d90463e56c7290",
         "candidate": "96e6e88eb20228c4d47eee03023e0b859e43e0d9a0a16b7214d90463e56c7290"
       },
-      "targetPath": "packages/e2ee-core/src/pure/key-distribution.ts",
+      "targetPath": "packages/e2ee-core/src/keys/distribution-sqlite.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "reason": "Settled distribution composes public receiver/protected store/outbox/repair and sender journal. Whole-JSON tasks are retired, and remote-only terminal status is not copied. Actual Lab consumption and gated epoch publication/backup coordination remain unfinished.",
       "coverage": [
         {
           "layer": "L4f",
@@ -1643,6 +1643,11 @@
           "layer": "L4g",
           "target": "packages/e2ee-core/src/keys/repair-sqlite.ts",
           "scope": "Actual stable-ID enqueue before dispatch, retained original-field binding, lost-ACK idempotent retry, genuine disposition, finite indexed pending/results and explicit acknowledgement; no sender discovery/outbox rounds/receive fetch or installed-key proof."
+        },
+        {
+          "layer": "L4i",
+          "target": "packages/e2ee-core/src/keys/distribution-sqlite.ts",
+          "scope": "Finite verified-ledger targets, immutable per-revision task/result metadata and original public outbox, actual committed protected-key reads, own publication-original/report reconstruction, exact readback, genuine epoch/revocation disposition and explicit acknowledgement. Remote hints never supply terminal authority. Prototype JSON retired; complete Lab consumer/epoch candidate backup/rotation remain separate."
         }
       ]
     },
@@ -2102,10 +2107,10 @@
         "core": "ff8c46814c2e2755e128aece4d7a3dd25e034ca82d098282d1d765c8e5b8b481",
         "candidate": "ff8c46814c2e2755e128aece4d7a3dd25e034ca82d098282d1d765c8e5b8b481"
       },
-      "targetPath": "packages/e2ee-core/src/workflows/key-distribution.ts",
+      "targetPath": "packages/e2ee-core/src/keys/distribution-sqlite.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Recipient install/report/result, stable-ID repair and finite copied fetch composition are adapted. Sender target discovery/current-key/outbox rounds remain unfinished; old whole-document task schema is not imported. Publisher permanent-loss backup/rotation remains separately gated.",
+      "reason": "Settled distribution composes public receiver/protected store/outbox/repair and sender journal. Whole-JSON tasks are retired, and remote-only terminal status is not copied. Actual Lab consumption and gated epoch publication/backup coordination remain unfinished.",
       "coverage": [
         {
           "layer": "L4e",
@@ -2126,6 +2131,11 @@
           "layer": "L4h",
           "target": "packages/e2ee-core/src/keys/mailbox-client.ts",
           "scope": "Actual host-only receiver/protection and repair composition; genuine current recipient/epoch before and after fetch; complete indexed page copy before install; any install failure returns no successful pagination-next, prior valid installs/originals retained. No arbitrary installer, durable document cursor, native adapter or production assembly."
+        },
+        {
+          "layer": "L4i",
+          "target": "packages/e2ee-core/src/keys/distribution-sqlite.ts",
+          "scope": "Finite verified-ledger targets, immutable per-revision task/result metadata and original public outbox, actual committed protected-key reads, own publication-original/report reconstruction, exact readback, genuine epoch/revocation disposition and explicit acknowledgement. Remote hints never supply terminal authority. Prototype JSON retired; complete Lab consumer/epoch candidate backup/rotation remain separate."
         }
       ]
     },
@@ -4687,6 +4697,14 @@
       "baseRefName": "e2ee-mailbox-repairs",
       "isDraft": true,
       "parentHead": "680686d1442e7f8b12f6f8b84af3f17f3c514b97"
+    },
+    {
+      "number": 1491,
+      "headRefName": "e2ee-ledger-sdk-cas",
+      "headRefOid": "f82f8634743d5bc4dd8858cf6867b91d80c221ba",
+      "baseRefName": "e2ee-recipient-mailbox",
+      "isDraft": true,
+      "parentHead": "098e274221aae13305d29ff75629bee168678ded"
     }
   ],
   "lastFetchedMain": {
