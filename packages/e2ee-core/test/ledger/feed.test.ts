@@ -382,6 +382,82 @@ describe('durable full-history feed boundary', () => {
       }
     }
   );
+  it.each(['later-overwrite', 'meta-overwrite', 'existing-overwrite'] as const)(
+    'verifies the complete retained originals after the last write: %s',
+    async (fault) => {
+      const f = envelopeFixture(),
+        dir = mkdtempSync(path.join(tmpdir(), 'ledger-final-')),
+        file = path.join(dir, 'feed.sqlite');
+      f.append([5, f.phone.raw]);
+      const endpoint = { head: f.view().head, length: f.view().length };
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const feed = yield* makeSqliteLedgerFeed({
+                path: file,
+                mode: 'create',
+                genesis: f.context.genesis,
+                genesisRecord: f.genesisRecord,
+                expected: { head: hashRecordBytes(f.genesisRecord), length: 1 },
+                budget: { maxRecords: 100, maxBytes: 100000 },
+              });
+              const initial = yield* feed.current(),
+                disk = new Database(file);
+              try {
+                disk.exec(
+                  fault === 'later-overwrite'
+                    ? 'CREATE TRIGGER final_fault AFTER INSERT ON ledger_feed_records WHEN NEW.position=3 BEGIN UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=2; END;'
+                    : fault === 'meta-overwrite'
+                      ? 'CREATE TRIGGER final_fault AFTER UPDATE ON ledger_feed_meta BEGIN UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=2; END;'
+                      : 'CREATE TRIGGER final_fault AFTER INSERT ON ledger_feed_records BEGIN UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=1; END;'
+                );
+              } finally {
+                disk.close();
+              }
+              const page = {
+                requestOffset: '-1',
+                nextOffset: 'opaque/3',
+                records: f.records(),
+                upToDate: true,
+              };
+              expect(Result.isFailure(yield* Effect.result(feed.accept(page, endpoint)))).toBe(
+                true
+              );
+              const retained = yield* feed.current();
+              expect(retained.view).toBe(initial.view);
+              expect(retained.offset).toBe('-1');
+              const check = new Database(file);
+              try {
+                expect(
+                  check.prepare('SELECT COUNT(*) AS n FROM ledger_feed_records').get()
+                ).toEqual({ n: 1 });
+                expect(
+                  new Uint8Array(
+                    (
+                      check
+                        .prepare('SELECT record FROM ledger_feed_records WHERE position=1')
+                        .get() as { record: Uint8Array }
+                    ).record
+                  )
+                ).toEqual(f.genesisRecord);
+                expect(check.prepare('SELECT offset,count FROM ledger_feed_meta').get()).toEqual({
+                  offset: '-1',
+                  count: 1,
+                });
+                check.exec('DROP TRIGGER final_fault');
+              } finally {
+                check.close();
+              }
+              expect((yield* feed.accept(page, endpoint)).offset).toBe('opaque/3');
+            })
+          )
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
   it.each(['ABORT', 'IGNORE'] as const)(
     'rolls back actual appended records and position when metadata write is %s',
     async (failure) => {

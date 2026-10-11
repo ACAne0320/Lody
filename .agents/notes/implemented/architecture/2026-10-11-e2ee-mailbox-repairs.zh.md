@@ -7,7 +7,7 @@ Translation: current
 
 ## 摘要
 
-原 distribution 的 repair request／flush 子集仍需公共持久化归属。本层直接基于 #1484 `dd2975419c49bf129eff9b037239dac2a64a7bbc`，改成独立索引 SQLite 队列，保留稳定 request ID、原字段绑定与公共 mailbox 的幂等行为。不复制整块 JSON distribution，也不把 ACK 当作已安装密钥。
+原 distribution 的 repair request／flush 子集仍需公共持久化归属。本层直接基于 #1484 `5b90addffa22e5e88cc4442a03fe1422c4ef2b5e`，改成独立索引 SQLite 队列，保留稳定 request ID、原字段绑定与公共 mailbox 的幂等行为。不复制整块 JSON distribution，也不把 ACK 当作已安装密钥。
 
 ## 归属
 
@@ -26,3 +26,7 @@ Owning6 使用实际公共 mailbox、真实 SQLite 与签名重放，验证先�
 对照现行白皮书／permission-ledger 已定规则，修正 de3210a4 错误拒绝恢复接收者的适配：有效 R 可接收、恢复各代密钥，只禁止其发钥、写内容、执行命令和管理。repair 不授予这些权限。原泛化的 Recovery 拒绝断言替换为实际公共 mailbox 正向修复／revision／持久原件断言，保留撤销与伪造 view 拒绝。没有新增恢复库格式或协议决策。
 
 Recovery 修复作者结果：准确 de3210a4 隔离 clone 加入相同正向断言时失败；修复后 owning6/core254 与完整 root 检查、typecheck、format/docs/public boundary 通过。旧失败／新通过分别保留，独立增量和新准确 CI 尚待核验。
+
+父层同步到 #1484 5b90；repair 实现与 owning6／子进程 fixture 逐字未改。新组合独立绑定，旧 348／dd 结果不能自动变成此树结论。父 P1 的独立关闭证据待主协调核验。
+
+新父组合作者检查：repair6/core257、完整 root `pnpm check`、format/docs/public boundary 通过；repair runtime／测试与 348 逐字一致。仅父层源码／历史原件回归和本层父指纹、说明改变，独立 parent integration 与准确 CI 另核，不沿用旧READY。

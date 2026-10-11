@@ -9,7 +9,7 @@ Translation: current
 
 The original distribution repair request/flush subset still needed durable public
 ownership. Adapt it to a dedicated indexed SQLite queue relative to #1484 at
-dd2975419c49bf129eff9b037239dac2a64a7bbc. Preserve source request IDs/field binding
+5b90addffa22e5e88cc4442a03fe1422c4ef2b5e. Preserve source request IDs/field binding
 and public mailbox idempotency without copying whole-JSON distribution state or
 claiming that an ACK means an installed key.
 
@@ -53,3 +53,7 @@ Final author checks: owning6/core254, package typecheck, full root `pnpm check`,
 Current whitepaper/permission-ledger rules correct the de3210a4 adaptation that wrongly rejected recovery recipients: active registered R may receive/recover epoch keys, while sending keys, writing, execution and management remain forbidden. Repair grants none of those capabilities. Replace the mistaken broad Recovery-denial expectation with actual public mailbox repair/revision/durable-original assertions, preserving revocation and fake-view rejection. No recovery-vault format or new protocol decision is introduced.
 
 Recovery increment author evidence: the exact isolated de3210a4 clone fails the same positive assertion; owning6/core254, full root check, typecheck, format/docs/public boundary pass after the fix. Old failure/new pass remain separate; independent increment and accurate new CI await verification.
+
+Parent synchronization to #1484 5b90 leaves repair implementation/owning6/process fixture byte-identical. Bind the new combination independently; old 348/dd results do not automatically assess this tree. Parent P1 closure awaits coordinator verification.
+
+New-parent author checks: repair6/core257, full root `pnpm check`, format/docs/public boundary passed; repair runtime/tests remain byte-identical to348. Only parent code/original-history regressions and parent metadata/docs changed. Independently bind parent integration and accurate CI; no old READY is inherited.

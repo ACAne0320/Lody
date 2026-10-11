@@ -185,12 +185,14 @@ export function makeSqliteLedgerFeed(input: {
               bootstrap: meta.bootstrap === 1,
             } satisfies LedgerFeedState,
             bytes: size,
+            records,
           };
         })
         .deferred();
     });
     let state = initial.state,
-      totalBytes = initial.bytes;
+      totalBytes = initial.bytes,
+      originals = initial.records;
     const matches = () => {
       guard();
       const row = db
@@ -286,13 +288,43 @@ export function makeSqliteLedgerFeed(input: {
               )
                 throw fail('corrupt');
               if (changed.changes !== 1) throw fail('corrupt');
-              return { next, bytes };
+              // No DML follows this complete check: later INSERT or metadata triggers
+              // may have changed previously checked records without changing their lengths.
+              const expectedOriginals = [...originals, ...additions];
+              const finalSize = db
+                .prepare(
+                  'SELECT COUNT(*) AS count,COALESCE(SUM(length(record)),0) AS bytes FROM ledger_feed_records'
+                )
+                .get() as { count: number; bytes: number };
+              if (
+                finalSize.count !== expectedOriginals.length ||
+                finalSize.bytes !== bytes ||
+                finalSize.bytes > budget.maxBytes
+              )
+                throw fail('corrupt');
+              const retained = db
+                .prepare(
+                  'SELECT position,CASE WHEN length(record) BETWEEN 1 AND 8192 THEN record ELSE NULL END AS record FROM ledger_feed_records ORDER BY position LIMIT ?'
+                )
+                .all(budget.maxRecords) as { position: number; record: unknown }[];
+              if (retained.length !== expectedOriginals.length) throw fail('corrupt');
+              for (let index = 0; index < retained.length; index++) {
+                const row = retained[index]!;
+                if (
+                  row.position !== index + 1 ||
+                  !(row.record instanceof Uint8Array) ||
+                  !bytesEqual(row.record, expectedOriginals[index]!)
+                )
+                  throw fail('corrupt');
+              }
+              return { next, bytes, originals: expectedOriginals };
             })
             .immediate()
         ).pipe(
-          Effect.map(({ next, bytes }) => {
+          Effect.map(({ next, bytes, originals: retainedOriginals }) => {
             state = next;
             totalBytes = bytes;
+            originals = retainedOriginals;
             return { ...state };
           })
         ),
