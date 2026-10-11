@@ -57,10 +57,20 @@ optional transferred native transport lease closes only after that settlement;
 global fetch requires no native close. Real
 HPKE delivery and SQLite save/readback/report rounds run through this adapter;
 tampered frames install nothing and do not report, and Recovery cannot send after
-stores reopen. The HTTP fixture's pre-authenticated synthetic session and AES
-wrapping are explicit mock boundaries; full host route authentication and
+stores reopen. Transport unit fixtures use explicit pre-authenticated synthetic sessions; AES
+wrapping is an explicit mock boundary. Full host route authentication and
 rotation/actor composition remain pending. Reopen in this key-round test is within
 one OS process; it does not establish cross-process key-round acceptance.
+
+The mailbox host now exposes the seven original operations through the actual
+challenge/bearer HTTP composition, binds only the stored device and bound Org, and
+consumes the public SQLite mailbox. JSON cannot select a sender. Envelope/report
+frames retain the public 512-byte bound; local-publication records retain 8192
+bytes and repair IDs retain the existing 1–256-character contract. No new ID format
+is introduced. The real HPKE round uses this route, including Recovery no-send and
+idempotent own-slot repair. Account identity and AES wrapping remain synthetic;
+some transport unit fixtures are still explicitly pre-authenticated. This is not
+full host/rotation composition or cross-process key-round acceptance.
 
 The scoped credential owner retains the frozen Lab v2 possession domain, 60-second
 single-use nonce and at most 15-minute synthetic token TTL. Real Ed25519 proofs,

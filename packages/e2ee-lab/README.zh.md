@@ -44,9 +44,16 @@ Flock 0.4.3 没有公开的确定性 free/dispose；关闭 SDK 订阅、丢弃�
 消费公开接收/分发接口，限制 JSON/hex/page 大小，关闭时 abort 并等待完整响应体。
 可选原生 transport lease 明确转交，实际工作结束后才 close；global fetch 不需 close。
 真实 HPKE 投递、SQLite 保存/读回/报告经过此适配器；篡改帧不安装也不报告，
-重开后 R 仍不能发送。HTTP fixture 的预认证合成会话和 AES 包装是明确的 mock
+重开后 R 仍不能发送。传输单元 fixture 的预认证合成会话和 AES 包装是明确的 mock
 边界；全部宿主路由认证、完整轮换/actor 组合仍未完成。该密钥轮次在同一 OS 进程内
 重开存储，不代表跨进程密钥轮次验收。
+
+mailbox 宿主当前通过真实 challenge/bearer HTTP 提供原七项操作，只绑定落盘
+设备与 bound Org，消费公开 SQLite mailbox；JSON 不能选择 sender。envelope/
+report 保留公开 512 字节限制，local-publication 记录保留 8192 字节，repair ID
+保留已有 1–256 字符契约，不发明新 ID 格式。真实 HPKE 轮次经过此路由，包括 R
+不能发送、修复自身接收 slot 的重试幂等。账户身份与 AES 包装仍是合成 fixture；
+部分传输单元 fixture 仍明确预认证。这不代表完整 host/rotation 组合或跨进程密钥轮次验收。
 
 scoped 凭证 owner 保留冻结 Lab v2 持有消息、60 秒单次 nonce 和最多 15 分钟
 合成 token TTL。真实 Ed25519 证明、genuine 当前 Org 成员和 SQLite 事务读回

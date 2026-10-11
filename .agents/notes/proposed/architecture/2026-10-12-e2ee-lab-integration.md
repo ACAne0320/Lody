@@ -173,6 +173,31 @@ Frozen 1087 Lab30 evidence does not certify these new files.
 
 The actual published StreamsClient consumes the HTTP CAS path using its auth API; successful ACK includes the required Stream-Next-Offset header. An initial synthetic consumer incorrectly supplied bearer through generic headers (the SDK removes it); that 401 is fixture evidence only. After using auth correctly, the missing-ACK-header old failure and repaired new pass are preserved separately.
 
+## Authenticated mailbox increment (WIP after dd718)
+
+The actual loopback host binds a stored bearer to its device and bound Org for all
+seven original mailbox operations; JSON never selects a principal. The public
+SQLite host retains crypto/eligibility/store/report/repair admission. No copied
+core or independent acceptance shortcut. Native credential requests and response
+bodies in the synthetic fixture have explicit scoped raw ownership. The actual
+HPKE/save/readback/report round now consumes challenge/bearer HTTP, preserving
+prior tampered-frame no-install/no-report and Recovery reopen no-send assertions.
+An actual owner-signed stored frame with hostile owner JSON under a Recovery bearer
+is refused. R's own receive-slot repair advances revision once; same ID retry does
+not advance again. Unauthorized HTTP401 maps to the adapter's unauthorized error.
+The server preserves 512-byte envelopes/reports, 8192-byte publication records and
+existing bounded arbitrary repair IDs; no new wire format, production identity or
+strict B. Focused5/typecheck and current full-root core302/Lab37 pass, with unchanged Lab input SHA through format. Docs/public boundary pass. The first DTO static consistent-return failure is retained and fixed with a fail-closed branch. Fresh dd718+5-file overlay37 passes; JSON-principal mutant returns200 where403 is required, a direct assertion without timeout; restoration passes. Fixed-head reproduction follows commit; no independent whole-Lab review/CI acceptance.
+
+The next joins/host-metadata storage work also has two read-only original SQL
+reproductions: ignored join insertion returns success without a row, and ignored
+first-user account binding lets a later different synthetic account claim the same
+user ID. These probes use explicitly unchecked synthetic DTOs against HostMeta
+storage only; they are not full HTTP/signature acceptance or product identity
+findings. Source SHA is unchanged. The migration must verify both request and
+binding rows inside the same transaction before acknowledging. That implementation
+and the real authenticated joins route are still pending.
+
 ## Remaining work
 
 Migrate the actual host/actors, content sessions, Loro/Flock persistence, driver,

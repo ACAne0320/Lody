@@ -18,7 +18,7 @@ import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
 import { makeSqliteRecipientMailbox } from '@lody/e2ee-core/keys/host/mailbox/sqlite';
 import { makeLabMailboxRemote } from '../src/platform/key-mailbox';
-import { makeSyntheticMailboxHttp } from './mailbox-http-fixture';
+import { makeAuthenticatedLabMailbox } from './authenticated-mailbox-fixture';
 import { syntheticProtector } from './content-fixture';
 const ok = Result.getOrThrow;
 const signer = (seed: number) => {
@@ -122,14 +122,26 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               genesis: genesis.genesis,
               ledger,
             });
-            const ownerUrl = yield* makeSyntheticMailboxHttp(ok(host.bind(owner.publicKey)));
-            const receiverUrl = yield* makeSyntheticMailboxHttp(ok(host.bind(recovery.publicKey)));
-            const remote = yield* makeLabMailboxRemote({ url: ownerUrl, fetch });
+            const http = yield* makeAuthenticatedLabMailbox({
+              directory: dir,
+              mode: 'create',
+              genesis: genesis.genesis,
+              ledger,
+              mailbox: host,
+            });
+            const anonymous = yield* makeLabMailboxRemote({ url: http.url, fetch });
+            const unauthenticated = yield* Effect.result(anonymous.fetch(0, null, 100));
+            expect(Result.isFailure(unauthenticated)).toBe(true);
+            if (Result.isFailure(unauthenticated))
+              expect(unauthenticated.failure.code).toBe('unauthorized');
+            const ownerSession = yield* http.authenticate(owner);
+            const receiverSession = yield* http.authenticate(recovery);
+            const remote = yield* makeLabMailboxRemote(ownerSession);
             let tamper = false;
             const receiverRemote = yield* makeLabMailboxRemote({
-              url: receiverUrl,
+              url: receiverSession.url,
               fetch: async (input, init) => {
-                const response = await fetch(input, init);
+                const response = await receiverSession.fetch(input, init);
                 if (!tamper || JSON.parse(String(init?.body)).op !== 'fetch') return response;
                 const page = (await response.json()) as {
                   items: { sender: string; frame: string }[];
@@ -164,6 +176,24 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
             expect((yield* remote.status(slot)).status).toBe('EnvelopeStored');
             const before = yield* receiverRemote.fetch(0, null, 100);
             expect(before.items).toHaveLength(1);
+            // A real owner-signed HPKE frame does not let a Recovery bearer choose
+            // the sender via hostile JSON. Server binds only the stored principal.
+            const forged = yield* Effect.promise(() =>
+              receiverSession.fetch(receiverSession.url, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  op: 'put',
+                  id: 'ef'.repeat(16),
+                  bytes: Buffer.from(before.items[0]!.frame).toString('hex'),
+                  deviceHex: Buffer.from(owner.publicKey.toBytes()).toString('hex'),
+                  principal: Buffer.from(owner.publicKey.toBytes()).toString('hex'),
+                }),
+              })
+            );
+            expect(forged.status).toBe(403);
+            expect((yield* receiverRemote.fetch(0, null, 100)).items).toEqual(before.items);
+
             const receiver = yield* makeSqliteRecipientMailbox({
               path: file('recovery-receive'),
               mode: 'create',
@@ -194,6 +224,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
             expect(yield* receiver.fetchAndInstall()).toEqual({ processed: 1, next: null });
             yield* receiver.flushReports();
             expect((yield* remote.status(slot)).status).toBe('InstallationReported');
+
             expect((yield* receiver.results()).map((item) => item.outcome)).toEqual(['Reported']);
             expect((yield* distributor.reconcileCurrentEpoch()).scheduled).toBe(0);
             expect((yield* receiverRemote.fetch(0, null, 100)).items[0]!.frame).toEqual(
@@ -211,8 +242,15 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               genesis: genesis.genesis,
               ledger,
             });
-            const url = yield* makeSyntheticMailboxHttp(ok(host.bind(recovery.publicKey)));
-            const remote = yield* makeLabMailboxRemote({ url, fetch });
+            const http = yield* makeAuthenticatedLabMailbox({
+              directory: dir,
+              mode: 'open',
+              genesis: genesis.genesis,
+              ledger,
+              mailbox: host,
+            });
+            const receiverSession = yield* http.authenticate(recovery);
+            const remote = yield* makeLabMailboxRemote(receiverSession);
             const reopened = yield* makeSqliteKeyDistribution({
               path: file('recovery-receive'),
               mode: 'open',
@@ -238,6 +276,12 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               blocked: [],
             });
             expect((yield* remote.status(slot)).status).toBe('InstallationReported');
+            // R can repair its own receive slot. Arbitrary existing bounded request
+            // IDs remain valid; no new hex-ID wire format is invented in the adapter.
+            yield* remote.repair(slot, 'lab-repair-request');
+            expect((yield* remote.status(slot)).revision).toBe(1);
+            yield* remote.repair(slot, 'lab-repair-request');
+            expect((yield* remote.status(slot)).revision).toBe(1);
           })
         )
       );

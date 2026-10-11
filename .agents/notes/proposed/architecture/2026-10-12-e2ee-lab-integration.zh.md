@@ -131,6 +131,24 @@ closedEarly 断言（非超时），恢复后通过。新增真实 HTTP 测试�
 
 实际发布 StreamsClient 通过 auth API 消费 HTTP CAS，成功 ACK 带必需的 Stream-Next-Offset。初始合成 consumer 错把 bearer 放普通 headers（SDK 会移除），其 401 只记 fixture 错误。改用正确 auth 后，缺 ACK header 的旧失败与修复后通过分别保留。
 
+## 认证 mailbox 增量（dd718 后 WIP）
+
+真实 loopback 宿主为原七项 mailbox 操作绑定落盘 bearer 的设备和 bound Org，
+JSON 不选择 principal。crypto/资格/存储/report/repair 准入继续由公开 SQLite
+宿主完成，不复制 core，也不绕过验收。合成 fixture 的原生凭证请求与完整响应体
+明确由 Scope 保留。真实 HPKE/保存/读回/report 轮次改走 challenge/bearer HTTP，
+保留篡改不安装/不报告与 R 重开不发送原断言。R bearer 即使提交真实 owner 签名帧
+并在 JSON 冒充 owner 仍被拒绝。R 修复自身接收 slot 仅推进一次版本，同 ID 重试
+不再推进。HTTP401 映射 adapter unauthorized。宿主保留 512 字节 envelope/report、
+8192 字节 publication 和既有任意有限 repair ID，不增加 wire、生产身份或严格 B。
+focused5/typecheck 与当前整树 core302/Lab37 通过，Lab 输入 SHA 至 format 后保持一致，docs/public boundary 通过。首次 DTO consistent-return 静态失败保留，并补失败闭合分支。fresh dd718 加 5 文件 overlay 的 37 项通过；JSON principal 负控返回 200 而应为 403，命中明确断言非超时，恢复后通过。commit 后再做固定 head 复跑；无独立整 Lab 审查/CI 验收。
+
+下一步 joins/宿主元数据另有两项只读原 SQL 复现：join insert 被忽略仍返回
+成功但没有行；首次 user/account 绑定被忽略，后来不同合成 account 可认领同一
+user ID。探针明确使用未校验合成 DTO，只针对 HostMeta 存储，不是完整 HTTP/
+签名准入或产品身份结论。源 SHA 不变。迁移需在同一事务内读回 request 与 binding
+两行再确认；该实现和真实认证 joins 路由仍待完成。
+
 ## 剩余工作
 
 原完整 host/gateway、actors、投递/轮换组合、Flock 进程重开/恢复/live session、

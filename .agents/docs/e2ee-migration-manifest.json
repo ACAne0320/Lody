@@ -6202,7 +6202,7 @@
       "targetPath": "packages/e2ee-lab/src/platform/host.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Partial actual loopback HTTP challenge/credential/bearer/control routes consume public submission through control-gateway.ts: complete independent prefix, signer/Org, one bounded frame, SDK pinned CAS, no forwarded hostile headers; shared operations await all children including cleanup defects. Workspace/checkpoint durable crash gaps, joins, key/content routes and original fault scenarios remain incomplete.",
+      "reason": "Partial actual loopback HTTP challenge/credential/bearer/control routes consume public submission through control-gateway.ts: complete independent prefix, signer/Org, one bounded frame, SDK pinned CAS, no forwarded hostile headers; shared operations await all children including cleanup defects. Workspace/checkpoint durable crash gaps, joins, key/content routes and original fault scenarios remain incomplete. Current WIP adds real credential-bound key-mailbox7 routes via mailbox-http.ts; preserve public frame/publication/repairID bounds. JSON principal mutant is rejected in real HPKE consumer; full source host remains incomplete.",
       "sourceDeclaredExports": {
         "core": [
           "DemoHostOptions",
@@ -6219,7 +6219,12 @@
           "resolveDataDir"
         ]
       },
-      "targetPathState": "existing"
+      "targetPathState": "existing",
+      "targetSupplementalPaths": [
+        "packages/e2ee-lab/src/platform/control-gateway.ts",
+        "packages/e2ee-lab/src/platform/mailbox-http.ts",
+        "packages/e2ee-lab/src/platform/operation-scope.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/key-delivery-layer.ts",
@@ -8256,7 +8261,7 @@
     "remaining": "Full honest host/gateway/actors, Flock process/recovery/live session, key mailbox/rotation composition, schedule driver, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Final SDK-ACK complete pnpm check passed: core302/Lab37; all Lab input SHA unchanged from check start through root format/docs. Public boundary7001 files/27 manifests. Two initial static errors fixed; inherited Git helper caused one unchanged CLI failure, isolated subprocess GIT_EXEC_PATH then six focused tests and full required check passed. Frozen1087 Lab30 and preceding HTTP37 evidence remain separate; no CI/independent whole-Lab acceptance.",
+    "authorRootCheck": "Authenticated-mailbox increment full pnpm check core302/Lab37, root format/docs/public boundary7003files/27manifests passed with unchanged Lab inputs; first DTO static consistent-return fixed with fail-closed branch, failure retained. Test-only inherited Git helper isolation remains explicit. Fixed dd718 SDK-ACK root37 evidence is separate. No current CI or independent whole-Lab acceptance.",
     "lastFetchedMain": {
       "head": "987962e77022df6a800f4e889f124b51f6eb8056",
       "tree": "4601a3f2b65d122c5b314cab79dc275fba9af636",
@@ -8270,7 +8275,7 @@
     "recoveryHistoryContract": "Real Riverrun0.3.0 snapshot PUT at nonzero offset advances earliest_offset. Public SDK recovery succeeds only while authenticated full history remains readable; otherwise it fails closed and retains the durable pair. Upstream history retention/read API versus trusted host history route needs coordinated decision; no server database reset or snapshot deletion.",
     "replayComparator": "Pure comparison of recorded inert fixtures ported with resource/actor/frame divergence; no entropy provider, resealing or full execution replay. Multipart original4pass/2newfail then fixed6pass retained.",
     "gateway": "Partial real loopback health/challenge/credential/control-CAS HTTP: genuine current Org, stored bearer and single-use real device-possession proof, exact path/single bounded frame, public complete-prefix/pinned SDK CAS, no forwarded caller lifecycle/offset/auth headers. Published StreamsClient consumes correct auth API and mandatory ACK offset header. Full workspace/checkpoint durable crash-gap, joins, notes, key/content routes and CLI remain incomplete.",
-    "mailbox": "Scoped bounded HTTP remote with public real HPKE/SQLite receiver/distributor round, tampered frame no-install/no-report, actual response-body wait, same-process Recovery reopen no-send; synthetic pre-authenticated HTTP and wrapping boundaries explicit. Full repair/rotation/host/process composition pending.",
+    "mailbox": "Actual stored-bearer/bound-Org HTTP route binds public SQLite mailbox principal only from credential, implements7 DTO operations; real HPKE/SQLite/install/readback/report round and Recovery own-slot repair/idempotence consume it. Hostile owner JSON under R bearer cannot send. Public512-byte frame/8192-byte publication/existing1–256-char repairID bounds preserved. Account and AES wrapping remain synthetic, transport-only units retain explicit preauth fixture; same-process reopen only, no full rotation/process/originalLab2 acceptance. Current5 focused/typecheck and freshdd718+5SHA Lab37 pass; JSON-principal mutant hits actualHTTP expected403/got200, no timeout, restored pass. Current full-root core302/Lab37, format/docs/public boundary pass with unchanged Lab inputs; fixed-head reproduction follows commit. No currentCI/independent acceptance.",
     "mailboxNativeLease": "Optional transferred native HTTP close capability, actual raw fetch/body wait then close once. Initial response-body no-wait mutant escaped; corrected native close-order assertion fails in5ms, no timeout; restored pass. Fixed1087 native-lease complete root Lab30/core302 passed with unchanged Lab input SHA; format/docs/public boundary pass. Earlier02f root30 remains separate.",
     "credentialStorage": "Real SQLite mint/invalidate and nonce-consumption readback; original HostMeta SQL IGNORE phantom-token and nonce-restoring-trigger failures reproduced read-only. Source SHA unchanged. Synthetic Lab labels/TTL only, not product identity/JWT/ordinary-leeway or approved strictB.",
     "operationOwnership": "Shared parent-owned child scopes close admission, abort native capabilities and interrupt/await every child before earlier owners; defective child finalizer cannot skip other children or hide cause. Real SQLite/SDK lifetimes tested; fault injection boundary explicit."

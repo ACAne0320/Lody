@@ -82,7 +82,7 @@ export function makeLabMailboxRemote(input: {
               if (!response.ok)
                 return Result.fail(
                   fail(
-                    response.status === 400 || response.status === 403
+                    response.status === 400 || response.status === 401 || response.status === 403
                       ? 'unauthorized'
                       : 'transport'
                   )

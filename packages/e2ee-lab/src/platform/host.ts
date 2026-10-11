@@ -4,6 +4,7 @@ import { Bytes } from '@lody/e2ee-core';
 import type { makeLabCredentials } from './credentials';
 import type { makeLabControlGateway } from './control-gateway';
 import { makeLabOperations } from './operation-scope';
+import { dispatchLabMailbox, type LabMailboxHost } from './mailbox-http';
 
 type Credentials = Effect.Success<ReturnType<typeof makeLabCredentials>>;
 type Control = Effect.Success<ReturnType<typeof makeLabControlGateway>>;
@@ -27,17 +28,19 @@ const respond = (response: ServerResponse, status: number, value: unknown) => {
   response.writeHead(status, { 'content-type': 'application/json' });
   response.end(JSON.stringify(value));
 };
-/** Local HTTP composition, currently credential and control routes only. Workspace
+/** Local HTTP composition, currently credential, control and mailbox routes only. Workspace
  * registration/checkpoint selection is an independent harness capability. HTTP JSON,
  * headers and offsets cannot select it. No generic proxy or production account auth.
  * Caller creates credentials/control owners in the same enclosing Scope first. */
 export function makeLabHttpHost(input: {
   readonly credentials: Credentials;
   readonly control: (genesis: Bytes.GenesisHash) => Control | undefined;
+  readonly mailbox?: (genesis: Bytes.GenesisHash) => LabMailboxHost | undefined;
 }) {
   return Effect.gen(function* () {
     const credentials = input.credentials,
-      control = input.control;
+      control = input.control,
+      mailbox = input.mailbox;
     const active = new Set<Promise<void>>();
     let accept: ((request: IncomingMessage, response: ServerResponse) => void) | undefined;
     const server = createServer((request, response) => {
@@ -89,8 +92,8 @@ export function makeLabHttpHost(input: {
           catch: (error) => (error instanceof LabHttpError ? error : reject(400)),
         })
       );
-    const json = (request: IncomingMessage) =>
-      body(request, 8192).pipe(
+    const json = (request: IncomingMessage, maxBytes = 8192) =>
+      body(request, maxBytes).pipe(
         Effect.flatMap((bytes) =>
           Effect.try({
             try: () => {
@@ -155,6 +158,19 @@ export function makeLabHttpHost(input: {
             issuedAt: credential.issuedAt,
             expiresAt: credential.expiresAt,
           };
+        }
+        const mailboxMatch = /^\/v1\/spaces\/([0-9a-f]{64})\/key-mailbox$/.exec(path);
+        if (mailboxMatch) {
+          const authorization = request.headers.authorization;
+          if (typeof authorization !== 'string' || !/^Bearer [0-9a-f]{64}$/.test(authorization))
+            return yield* reject(401);
+          const credential = yield* credentials.authenticate(authorization.slice(7));
+          const anchor = yield* Effect.fromResult(Bytes.genesisHash(hex(mailboxMatch[1], 32)));
+          if (!credential.genesis?.equals(anchor)) return yield* reject(403);
+          const owner = mailbox?.(anchor);
+          if (!owner) return yield* reject(404);
+          const remote = yield* Effect.fromResult(owner.bind(credential.device));
+          return yield* dispatchLabMailbox(remote, yield* json(request, 20480), mailboxMatch[1]!);
         }
         const match = /^\/ds\/([0-9a-f]{64})\/control\/append-cas$/.exec(path);
         if (!match) return yield* reject(404);
