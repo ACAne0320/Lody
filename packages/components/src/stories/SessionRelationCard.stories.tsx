@@ -327,7 +327,7 @@ export const AllCreationStates: Story = {
 export const ManyCreatedSessions: Story = {
   args: operationStoryArgs,
   render: () => {
-    const items: ChatStreamItem[] = Array.from({ length: 12 }, (_, index) => ({
+    const items: ChatStreamItem[] = Array.from({ length: 22 }, (_, index) => ({
       type: 'message',
       sessionId: 'storybook-opener' as SessionId,
       turnIndex: index,

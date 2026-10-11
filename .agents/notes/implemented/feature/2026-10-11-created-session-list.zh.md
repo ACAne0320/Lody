@@ -7,7 +7,7 @@ Translation: current
 
 ## 摘要
 
-大量 MCP 创建操作会让导航卡片占满会话。现在连续的纯创建记录共用 Subagent Task 风格的面板，内部为带状态图标的紧凑分隔行，顶部摘要显示总数及展开/收起。可滚动区域默认最多展示五行。批量创建与多次独立创建采用相同展示方式，标题、状态与跳转保持实时可用。遇到其他消息或未加载的轮次时结束分组，保留原有顺序。
+大量 MCP 创建操作会让导航卡片占满会话。现在连续的纯创建记录共用 Subagent Task 风格的面板，内部为带状态图标的紧凑分隔行，顶部摘要显示总数及展开/收起。可滚动区域默认最多展示五行，展开后提高到任务面板的 22rem 高度上限，仍在内部滚动。批量创建与多次独立创建采用相同展示方式，标题、状态与跳转保持实时可用。遇到其他消息或未加载的轮次时结束分组，保留原有顺序。
 
 ## 决策与边界
 
@@ -19,6 +19,6 @@ Translation: current
 
 ## 验证
 
-关系卡片测试覆盖分组、轮次范围、阈值、展开收起与导航，同时保留实时状态和完成去重测试。Storybook 的 `ManyCreatedSessions` 使用十二条合成的独立创建记录，供浏览器验证和截图。Chromium 在 375px 和 1280px 宽度下验证了 144px 区域正好显示五张卡片、内部滚轮滚动和两种展开状态。[收起截图](../../assets/created-session-list/collapsed.png) / [展开截图](../../assets/created-session-list/expanded.png)。消息选择模式保留原始行，确保选中的标识与导出记录对应。原生 iOS WebView 行为仍需真机验证。
+关系卡片测试覆盖分组、轮次范围、阈值、展开收起与导航，同时保留实时状态和完成去重测试。Storybook 的 `ManyCreatedSessions` 使用二十二条合成的独立创建记录，供浏览器验证和截图。Chromium 在 375px 和 1280px 宽度下验证了 144px 区域正好显示五张卡片、内部滚轮滚动和两种展开状态。展开后保持 22rem（352px）高度上限，并能滚动到剩余记录。[收起截图](../../assets/created-session-list/collapsed.png) / [展开截图](../../assets/created-session-list/expanded.png)。消息选择模式保留原始行，确保选中的标识与导出记录对应。原生 iOS WebView 行为仍需真机验证。
 
 24 项针对性测试、组件类型检查、lint、国际化、边界检查、格式化及文档检查均通过。根目录 `pnpm check` 通过类型检查和 lint 后，停在两项未改动的 CLI 测试：工作树检查的 macOS `/var` 与 `/private/var` 路径差异，以及原生 Git 测试的 `context_unreadable`；单独重跑均可复现。

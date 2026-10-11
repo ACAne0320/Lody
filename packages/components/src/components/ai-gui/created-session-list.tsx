@@ -54,13 +54,10 @@ export function getCreatedSessionCards(message: SessionHistoryParsed): Card[] | 
 const styles = stylex.create({
   header: { display: 'grid', minWidth: 0 },
   headerLabel: { flexGrow: 1, textAlign: 'start' },
-  list: { display: 'flex', flexDirection: 'column', minWidth: 0, marginTop: '2px' },
+  list: { minWidth: 0, scrollbarGutter: 'stable', overscrollBehaviorY: 'contain' },
   bounded: {
     // Five compact control rows, with four separators.
     maxHeight: `calc(5 * ${control.small} + 4px)`,
-    overflowY: 'auto',
-    scrollbarGutter: 'stable',
-    overscrollBehaviorY: 'contain',
   },
 });
 
@@ -112,11 +109,11 @@ export function CreatedSessionList({
       <div
         id={id}
         {...withClassName(
-          stylex.props(styles.list, overflowing && !expanded && styles.bounded),
+          stylex.props(taskStyles.rows, styles.list, overflowing && !expanded && styles.bounded),
           'scrollbar-pro'
         )}
         data-vaul-no-drag=""
-        tabIndex={overflowing && !expanded ? 0 : undefined}
+        tabIndex={overflowing ? 0 : undefined}
         role="region"
         aria-label={t('sessions.openedBy.childCount', { count: cards.length })}
       >

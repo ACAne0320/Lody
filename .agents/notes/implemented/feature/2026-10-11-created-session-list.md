@@ -10,7 +10,8 @@ Translation: current
 Many MCP session creations filled the conversation with navigation cards. Consecutive
 pure creation records now share a Subagent Task-style panel with ruled compact rows,
 leading status marks, and a header containing the count and expand/collapse control.
-Its scrollable viewport shows at most five rows by default. Both batch and separate
+Its scrollable viewport shows at most five rows by default; expansion raises the
+cap to the task panel’s 22rem rather than removing the scroll boundary. Both batch and separate
 creation calls use the same presentation; live titles, statuses and navigation remain
 available. Grouping stops at other messages or unhydrated turns, preserving their order.
 
@@ -40,9 +41,10 @@ and preserves the [scroll engine's ownership](../architecture/2026-09-27-convers
 
 The relation-card suite covers grouping, turn range, threshold, disclosure and navigation,
 alongside existing live status and duplicate-completion coverage. Storybook's
-`ManyCreatedSessions` uses twelve synthetic independent creation records for browser
+`ManyCreatedSessions` uses twenty-two synthetic independent creation records for browser
 checks and screenshots. Chromium at 375px and 1280px widths verified a 144px viewport with five
-visible cards, internal wheel scrolling, and both disclosure states.
+visible cards, internal wheel scrolling, and both disclosure states. Expanded lists
+stay capped at 22rem (352px) and scroll to the remaining records.
 [Collapsed](../../assets/created-session-list/collapsed.png) / [expanded](../../assets/created-session-list/expanded.png).
 Message-selection mode preserves original rows so selected ids still match exported records.
 Native iOS WebView behavior requires device verification.

@@ -251,7 +251,8 @@ cards. Older histories without progress rows retain successful-target cards.
 `created-session-list.tsx` uses the Subagent Task panel surface and ruled rows,
 with leading status marks and no repeated “Session created” labels. The header
 reports the total and expands/collapses lists longer than five rows; the default
-viewport holds five compact rows with internal scrolling. Controls use `@lody/ui`.
+viewport holds five compact rows with internal scrolling. Expanded lists retain
+the Subagent Task panel’s 22rem height cap and internal scrollbar. Controls use `@lody/ui`.
 `buildChatVirtualRows` combines consecutive pure creation records (including
 separate MCP calls) under the first record's key; a different message or an
 unhydrated turn ends the group. The row retains its final turn index so visible
