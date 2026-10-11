@@ -16,7 +16,8 @@ import { sqliteSubmissionJournal } from '@lody/e2ee-core/submission/sqlite';
 import * as SubmissionFixture from '../submission/fixture';
 import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { Effect, Result } from 'effect';
+import { Effect, Result, Deferred, Fiber } from 'effect';
+import * as Admission from '@lody/e2ee-core/ledger/admission';
 import * as Commands from '@lody/e2ee-core/ledger/signing';
 import type { DeviceSigner } from '@lody/e2ee-core/signing';
 import * as Bytes from '../../src/bytes';
@@ -1430,5 +1431,362 @@ describe('authenticated snapshot migration reproduction', () => {
         })
       )
     );
+  });
+});
+
+describe('public admission consent and ordinary intent', () => {
+  const signerFor = (device: Keys): DeviceSigner => ({
+    publicKey: ok(Bytes.signingPublicKey(device.pk)),
+    sign: (message) => Effect.sync(() => ok(Bytes.signature(device.sign(message)))),
+  });
+  const genesisInput = () => ({
+    userId: ok(Bytes.userId(filled(10))),
+    membershipId: ok(Bytes.membershipId(id(10))),
+    encryptionPublicKey: ok(Bytes.encryptionPublicKey(owner.enc)),
+    initialKey: ok(Bytes.epochKey(filled(7))),
+    signer: signerFor(owner),
+  });
+  it('produces exact independently signed v1 genesis with the known epoch-zero commitment', async () => {
+    const produced = await Effect.runPromise(Admission.signGenesisRecord(genesisInput()));
+    const commitment = new Uint8Array(
+      Buffer.from('a3aef9534598636f0eae326672b9710bc84d0e3627062491026d681df37e6f14', 'hex')
+    );
+    const expected = signed([1, owner.pk, filled(10), id(10), owner.enc, commitment], owner);
+    expect(produced.record).toEqual(expected);
+    const view = ok(
+      Ledger.verifyLedger({
+        anchor: produced.genesis,
+        records: [produced.record],
+        checkpoint: { head: Ledger.hashRecordBytes(produced.record), length: 1 },
+      })
+    );
+    expect(view.inspectState().owner.toBytes()).toEqual(id(10));
+    expect(view.inspectState().epoch.keyCommitment.toBytes()).toEqual(commitment);
+    expect(
+      ok(Ledger.contentPermissions(view, ok(Bytes.signingPublicKey(owner.pk)))).maySealNewContent
+    ).toBe(true);
+    const tampered = new Uint8Array(produced.record);
+    tampered[tampered.length - 1] ^= 1;
+    expect(
+      Result.isFailure(
+        Ledger.verifyLedger({
+          anchor: produced.genesis,
+          records: [tampered],
+          checkpoint: { head: Ledger.hashRecordBytes(tampered), length: 1 },
+        })
+      )
+    ).toBe(true);
+  });
+  it('rejects fake initial key and malformed signer output rather than producing a genesis', async () => {
+    const first = await Effect.runPromise(
+      Effect.result(
+        Admission.signGenesisRecord({ ...genesisInput(), initialKey: {} as Bytes.EpochKey })
+      )
+    );
+    expect(Result.isFailure(first) && first.failure).toMatchObject({ code: 'invalid-initial-key' });
+    const failed = await Effect.runPromise(
+      Effect.result(
+        Admission.signGenesisRecord({
+          ...genesisInput(),
+          signer: {
+            ...signerFor(owner),
+            sign: () => Effect.succeed(ok(Bytes.signature(new Uint8Array(64)))),
+          },
+        })
+      )
+    );
+    expect(Result.isFailure(failed) && failed.failure).toMatchObject({ code: 'bad-signature' });
+  });
+  it('signs joining consent and admits the real requester through existing permission/proof verification', async () => {
+    const o = org(),
+      view = ok(o.verify());
+    const request = await Effect.runPromise(
+      Admission.prepareJoinRequest({
+        genesis: o.anchor,
+        requestId: ok(Bytes.requestId(id(11))),
+        userId: ok(Bytes.userId(filled(11))),
+        encryptionPublicKey: ok(Bytes.encryptionPublicKey(bob.enc)),
+        expiresAt: null,
+        signer: signerFor(bob),
+      })
+    );
+    const prepared = ok(
+      Admission.prepareLedgerCommand(view, ok(Bytes.signingPublicKey(owner.pk)), {
+        _tag: 'AdmitMember',
+        membershipId: ok(Bytes.membershipId(id(11))),
+        request,
+      })
+    );
+    const record = await Effect.runPromise(Commands.signLedgerRecord(prepared, signerFor(owner)));
+    const expected = o.join(bob, 11);
+    expect(record).toEqual(signed([view.head.toBytes(), owner.pk, expected], owner));
+    const next = ok(
+      Ledger.extendLedger(view, [record], { head: Ledger.hashRecordBytes(record), length: 2 })
+    );
+    expect(next.inspectState().members.has(keyId(id(11)))).toBe(true);
+    expect(
+      Result.isFailure(
+        Admission.prepareLedgerCommand(next, ok(Bytes.signingPublicKey(owner.pk)), {
+          _tag: 'AdmitMember',
+          membershipId: ok(Bytes.membershipId(id(12))),
+          request,
+        })
+      )
+    ).toBe(true);
+  });
+  it('binds device proof to declared Org, membership and kind and ignores extra retargeting fields', async () => {
+    const o = org(),
+      view = ok(o.verify());
+    const command = await Effect.runPromise(
+      Admission.prepareDeviceAdmission({
+        genesis: o.anchor,
+        membershipId: ok(Bytes.membershipId(id(10))),
+        encryptionPublicKey: ok(Bytes.encryptionPublicKey(phone.enc)),
+        kind: 'personal',
+        signer: signerFor(phone),
+        ...{ targetMembershipId: ok(Bytes.membershipId(id(11))), grant: { kind: 'recovery' } },
+      })
+    );
+    const prepare = (input: Admission.LedgerCommand) =>
+      Admission.prepareLedgerCommand(view, ok(Bytes.signingPublicKey(owner.pk)), input);
+    const record = await Effect.runPromise(
+      Commands.signLedgerRecord(ok(prepare(command)), signerFor(owner))
+    );
+    expect(record).toEqual(signed([view.head.toBytes(), owner.pk, o.device(phone, 0)], owner));
+    expect(code(prepare({ ...command, kind: 'machine' }))).toBe('bad-proof');
+    const wrong = await Effect.runPromise(
+      Admission.prepareDeviceAdmission({
+        genesis: o.anchor,
+        membershipId: ok(Bytes.membershipId(id(11))),
+        encryptionPublicKey: ok(Bytes.encryptionPublicKey(phone.enc)),
+        kind: 'personal',
+        signer: signerFor(phone),
+      })
+    );
+    expect(code(prepare(wrong))).toBe('bad-proof');
+    const different = await Effect.runPromise(
+      Admission.prepareDeviceAdmission({
+        genesis: ok(Bytes.genesisHash(filled(99))),
+        membershipId: ok(Bytes.membershipId(id(10))),
+        encryptionPublicKey: ok(Bytes.encryptionPublicKey(phone.enc)),
+        kind: 'personal',
+        signer: signerFor(phone),
+      })
+    );
+    expect(code(prepare(different))).toBe('bad-proof');
+    expect(
+      code(
+        Admission.prepareLedgerCommand({ ...view }, ok(Bytes.signingPublicKey(owner.pk)), command)
+      )
+    ).toBe('unauthorized');
+  });
+  it('keeps proofs fixed when request properties mutate during borrowed async signing', async () => {
+    const o = org();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reached = yield* Deferred.make<void>(),
+            release = yield* Deferred.make<void>();
+          const delayed: DeviceSigner = {
+            publicKey: ok(Bytes.signingPublicKey(phone.pk)),
+            sign: (message) =>
+              Effect.gen(function* () {
+                yield* Deferred.succeed(reached, undefined);
+                yield* Deferred.await(release);
+                return ok(Bytes.signature(phone.sign(message)));
+              }),
+          };
+          const request = {
+            genesis: o.anchor,
+            membershipId: ok(Bytes.membershipId(id(10))),
+            encryptionPublicKey: ok(Bytes.encryptionPublicKey(phone.enc)),
+            kind: 'personal' as Ledger.DeviceKind,
+            signer: delayed,
+          };
+          const worker = yield* Effect.forkChild(Admission.prepareDeviceAdmission(request));
+          yield* Deferred.await(reached);
+          request.kind = 'recovery';
+          request.membershipId = ok(Bytes.membershipId(id(99)));
+          request.signer = signerFor(recovery);
+          yield* Deferred.succeed(release, undefined);
+          const command = yield* Fiber.join(worker);
+          expect(command.kind).toBe('personal');
+          expect(
+            Result.isSuccess(
+              Admission.prepareLedgerCommand(
+                ok(o.verify()),
+                ok(Bytes.signingPublicKey(owner.pk)),
+                command
+              )
+            )
+          ).toBe(true);
+        })
+      )
+    );
+  });
+  it('keeps ordinary intent parent-relative and rejects unauthorized, unknown and obsolete commands', async () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    const view = ok(o.verify());
+    const ownerKey = ok(Bytes.signingPublicKey(owner.pk)),
+      member = ok(Bytes.membershipId(id(11)));
+    const role = ok(
+      Admission.prepareLedgerCommand(view, ownerKey, {
+        _tag: 'SetRole',
+        membershipId: member,
+        role: 'guest',
+      })
+    );
+    const signedRole = await Effect.runPromise(Commands.signLedgerRecord(role, signerFor(owner)));
+    const next = ok(
+      Ledger.extendLedger(view, [signedRole], {
+        head: Ledger.hashRecordBytes(signedRole),
+        length: 3,
+      })
+    );
+    expect(next.inspectState().members.get(keyId(id(11)))?.role).toBe('guest');
+    expect(
+      code(
+        Admission.prepareLedgerCommand(next, ok(Bytes.signingPublicKey(bob.pk)), {
+          _tag: 'SetRole',
+          membershipId: member,
+          role: 'admin',
+        })
+      )
+    ).toBe('unauthorized');
+    expect(
+      code(
+        Admission.prepareLedgerCommand(view, ownerKey, {
+          _tag: 'RemoveMember',
+          membershipId: member,
+        } as unknown as Admission.LedgerCommand)
+      )
+    ).toBe('unknown-operation');
+    const transfer = ok(
+      Admission.prepareLedgerCommand(view, ownerKey, {
+        _tag: 'TransferOwner',
+        successorMembershipId: member,
+      })
+    );
+    const transferred = await Effect.runPromise(
+      Commands.signLedgerRecord(transfer, signerFor(owner))
+    );
+    expect(
+      ok(
+        Ledger.extendLedger(view, [transferred], {
+          head: Ledger.hashRecordBytes(transferred),
+          length: 3,
+        })
+      )
+        .inspectState()
+        .owner.toBytes()
+    ).toEqual(id(11));
+    expect(
+      Result.isFailure(
+        Ledger.extendLedger(next, [transferred], {
+          head: Ledger.hashRecordBytes(transferred),
+          length: 4,
+        })
+      )
+    ).toBe(true);
+  });
+  it('converts own-device revoke and all settled device kinds through actual ledger policy', async () => {
+    for (const [kind, target] of [
+      ['personal', phone],
+      ['machine', machine],
+      ['recovery', recovery],
+    ] as const) {
+      const o = org(),
+        view = ok(o.verify()),
+        ownerKey = ok(Bytes.signingPublicKey(owner.pk));
+      const command = await Effect.runPromise(
+        Admission.prepareDeviceAdmission({
+          genesis: o.anchor,
+          membershipId: ok(Bytes.membershipId(id(10))),
+          encryptionPublicKey: ok(Bytes.encryptionPublicKey(target.enc)),
+          kind,
+          signer: signerFor(target),
+        })
+      );
+      const record = await Effect.runPromise(
+        Commands.signLedgerRecord(
+          ok(Admission.prepareLedgerCommand(view, ownerKey, command)),
+          signerFor(owner)
+        )
+      );
+      const admitted = ok(
+        Ledger.extendLedger(view, [record], { head: Ledger.hashRecordBytes(record), length: 2 })
+      );
+      expect(admitted.inspectState().devices.get(keyId(target.pk))?.kind).toBe(kind);
+      const removal = await Effect.runPromise(
+        Commands.signLedgerRecord(
+          ok(
+            Admission.prepareLedgerCommand(admitted, ownerKey, {
+              _tag: 'RevokeDevice',
+              target: ok(Bytes.signingPublicKey(target.pk)),
+            })
+          ),
+          signerFor(owner)
+        )
+      );
+      const revoked = ok(
+        Ledger.extendLedger(admitted, [removal], {
+          head: Ledger.hashRecordBytes(removal),
+          length: 3,
+        })
+      );
+      expect(revoked.inspectState().devices.has(keyId(target.pk))).toBe(false);
+      expect(
+        Result.isFailure(
+          Admission.prepareLedgerCommand(revoked, ok(Bytes.signingPublicKey(target.pk)), {
+            _tag: 'RevokeDevice',
+            target: ownerKey,
+          })
+        )
+      ).toBe(true);
+    }
+  });
+  it('rejects invalid kind/expiry and bad joining signer output with explicit errors', async () => {
+    const o = org();
+    const device = {
+      genesis: o.anchor,
+      membershipId: ok(Bytes.membershipId(id(10))),
+      encryptionPublicKey: ok(Bytes.encryptionPublicKey(phone.enc)),
+      kind: 'unknown' as Ledger.DeviceKind,
+      signer: signerFor(phone),
+    };
+    const invalidKind = await Effect.runPromise(
+      Effect.result(Admission.prepareDeviceAdmission(device))
+    );
+    expect(Result.isFailure(invalidKind) && invalidKind.failure).toMatchObject({
+      code: 'canonical',
+    });
+    const join = {
+      genesis: o.anchor,
+      requestId: ok(Bytes.requestId(id(11))),
+      userId: ok(Bytes.userId(filled(11))),
+      encryptionPublicKey: ok(Bytes.encryptionPublicKey(bob.enc)),
+      expiresAt: -1,
+      signer: signerFor(bob),
+    };
+    const invalidExpiry = await Effect.runPromise(
+      Effect.result(Admission.prepareJoinRequest(join))
+    );
+    expect(Result.isFailure(invalidExpiry) && invalidExpiry.failure).toMatchObject({
+      code: 'canonical',
+    });
+    const bad = await Effect.runPromise(
+      Effect.result(
+        Admission.prepareJoinRequest({
+          ...join,
+          expiresAt: null,
+          signer: {
+            ...join.signer,
+            sign: () => Effect.succeed(ok(Bytes.signature(new Uint8Array(64)))),
+          },
+        })
+      )
+    );
+    expect(Result.isFailure(bad) && bad.failure).toMatchObject({ code: 'bad-signature' });
   });
 });
