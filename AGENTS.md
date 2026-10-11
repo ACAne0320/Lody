@@ -31,10 +31,10 @@ Repository map and entry points: [README.md](README.md#repository).
 
 ## Effect reference
 
-Before assessing a native migration or doing any Effect work, read the
-[Effect skill](.agents/skills/effect-ts/SKILL.md) and the consuming package's
-resolved `effect/AGENTS.md` completely, following required links. Preserve locked
-versions and Lody's behavioral acceptance rules.
+For Effect work, use the [Effect skill](.agents/skills/effect-ts/SKILL.md) to select
+review, debug, feature/fix or migration mode. Read the consuming package's resolved
+`effect/AGENTS.md` completely once per version in the current context; then follow
+task-relevant links and source. Preserve locked versions and behavioral acceptance.
 Explicit v3 migrations also use the
 [migration skill](.agents/skills/effect-v3-to-v4/SKILL.md).
 
@@ -45,8 +45,11 @@ completed and behavior-tested within a small reviewable scope. About 500 additio
 changed lines is a sizing guide, not an acceptance or approval gate. Keep pure
 computation ordinary and preserve behavior outside the requested change. Do not
 extend the migration into unfinished dependency chains.
-Before choosing the scope, read the [selection guide](.agents/docs/cli-effect-ts.md#small-migrations-during-feature-and-fix-work)
-and apply the roadmap's completion criteria.
+For migration scope, read relevant [charter](.agents/notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#unit-ledger)
+rows and the [selection guide](.agents/docs/cli-effect-ts.md#small-migrations-during-feature-and-fix-work).
+Apply the charter's completion criteria; update its unit ledger when a migration
+changes dependencies, native boundaries, consumers or ownership. Keep small modules
+simple; use the guide's responsibility split only when a large module needs it.
 
 ## Repository boundary
 
