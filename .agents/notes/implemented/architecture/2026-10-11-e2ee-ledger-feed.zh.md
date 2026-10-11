@@ -30,3 +30,7 @@ Owning12 覆盖原帧、真实签名、初始绑定、重复／回退、独立�
 作者扩展存储故障测试后发现 13ce5dac 漏查记录 INSERT：忽略或改写记录时，元数据仍可成功写入并推进位置。旧 head 两项失败保留；修复逐条实际 changes／原字节读回，并在同事务检查实际记录总数与 bytes，不只检查元数据。14 项拥有测试包含新增 IGNORE/TAMPER 原件回归，失败回滚记录和位置。另同步继承的 receive 目标指纹为原审查 4134109a 的实际源码 hash，保留初次提取 hash；其运行源码未改，不沿用旧 fingerprint 为当前匹配。
 
 本次修复最终作者检查：owning14/core248、package typecheck、完整 root `pnpm check`、format/docs/public boundary 通过。原 13ce5dac 两项失败与修复后通过分列保存，尚待新 head 的独立增量与准确 CI，不关闭原 Lab2。
+
+原 reviewer 在 dd297541 复验发现：后续 INSERT 或 metadata 触发器可同长改写已检查记录，原 P1 未关闭。第二次修复在所有 DML 结束后、同事务提交前，按已验证启动历史和本后缀的私有原件列表逐位置核对完整原字节；之后没有 DML。仅事务成功才更新内存 view／原件列表。新增 later／meta／existing 同长改写回归在旧 dd 实际失败，新 owning17 通过，失败保持内存与磁盘原状态并可重试。原 reviewer 脚本只复制到作者目录、重定向 imports，三个场景实际 rollback／真实 OS child 重开／同 handle 重试通过，旧审查证据未修改；作者结果不能代替独立关闭依据。
+
+第二次修复最终作者检查：owning17/core251、package typecheck、完整 root `pnpm check`、format/docs/public boundary 通过。三个原脚本复制后的失败保持／重开／同 handle 重试通过。旧 dd297541 的 NOT READY 不改写；新精确 head 的独立增量和 CI 分列等待核验，不关闭原 Lab2。
