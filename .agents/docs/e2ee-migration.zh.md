@@ -8,7 +8,7 @@
 
 [逐文件 manifest](e2ee-migration-manifest.json)记录源 SHA-256、目标、状态和层次。“已迁”表示已有公共功能归属，不是原样复制或整个源模块验收；“需迁并修复”包含尚未实施；“旧方案淘汰”保留固定来源作历史；“待明确决定”需要协议或产品结论。目标路径是计划归属，不假称文件已存在。
 
-- 公共基线：`871179e297a9a9f52f83d51a6038d1958c263139`，含 HPKE [#1432](https://github.com/LodyAI/Lody/pull/1432)。
+- 公共基线：`984c35c5b30600d68abec1ec3e585eca73bcd4f0`，含 HPKE [#1432](https://github.com/LodyAI/Lody/pull/1432)。
 - 原 core：`f1bc0c52649c21d2e9b620fe3558874c40545e38`。
 - 候选：`bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8`；暂存补丁 SHA-256 `4c36a1e507f2e7bcc55e9e88906ffe2b617e9d9c9aed55ab5e76745bd4d7ee71`；未暂存 diff 为空。原仓和候选只读。
 - 公共包实际解析的 Effect 是 **4.0.2**，与 root lock/catalog 一致。原型另设 v4 catalog，不是升级或新增另一套 runtime 的理由。
@@ -94,3 +94,5 @@ core 返回惰性 Effect；应用/Lab 管 Scope、创建、取消、等待和有
 Lab 使用真实 HTTP/SQLite 持久化、进程重开、双端 Loro/Flock/Repo SDK、保存屏障、解密/导入/保存失败不推进游标、文档隔离及坏快照客户端恢复。受控传输故障和合成存钥明确为测试边界。外部模型探索是可选项，与确定性 CI 分开，不读取真实密钥。SIGKILL 不等于断电或设备永久丢失。
 
 整栈尚未完成。清单迁入不表示其中实现已迁；本次不自动 Ready、merge、deploy 或 publish。
+
+当前实施基线：三项前置均已落地。submission #1434 合入为 `7c58cabe1d05f132b7133a52b45a16b79274ea6a`；L0 已纳入实际 main `984c35c5b30600d68abec1ec3e585eca73bcd4f0`。L1a 先迁历史作者、已签名 epoch 事实与当前内容权限查询，不改 wire；快照格式与旧客户端兼容另行讨论。

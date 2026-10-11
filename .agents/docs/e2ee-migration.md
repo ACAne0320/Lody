@@ -8,7 +8,7 @@ This migration brings the public library, protocol drafts and runnable local Lab
 
 The [per-file manifest](e2ee-migration-manifest.json) records source SHA-256, target owner, disposition and layer. `已迁` means the functionality has an existing public owner, not byte-for-byte copying or whole-module acceptance; `需迁并修复` includes unfinished implementation, `旧方案淘汰` retains the pinned source as history, and `待明确决定` requires a protocol or product decision. Planned target paths are not claims that those files exist.
 
-- Public base: `871179e297a9a9f52f83d51a6038d1958c263139`, including HPKE [#1432](https://github.com/LodyAI/Lody/pull/1432).
+- Public base: `984c35c5b30600d68abec1ec3e585eca73bcd4f0`, including HPKE [#1432](https://github.com/LodyAI/Lody/pull/1432).
 - Original core: `f1bc0c52649c21d2e9b620fe3558874c40545e38`.
 - Candidate: `bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8`; staged patch SHA-256 `4c36a1e507f2e7bcc55e9e88906ffe2b617e9d9c9aed55ab5e76745bd4d7ee71`; unstaged diff empty. Original source and candidate stay read-only.
 - Public Effect resolves from `packages/e2ee-core` to **4.0.2**, matching the root lock/catalog. The prototype's separate v4 catalog does not justify upgrading or adding another Effect runtime.
@@ -94,3 +94,5 @@ Core workflows remain inert Effect values. Application/Lab composition owns Scop
 Lab acceptance uses real HTTP/SQLite persistence, process reopen, two clients, Loro/Flock/Repo SDK paths, durability barriers, retained cursor on decrypt/import/save failure, document isolation and bad-snapshot client recovery. Controlled transport faults and synthetic key protection are stated as test boundaries. External-model exploration is optional, separate from deterministic CI and does not access real keys. SIGKILL recovery is not power-loss or device-loss acceptance.
 
 The complete stack is unfinished. Migrating the manifest is not migrating its remaining implementations; no layer is Ready, merged, deployed or published by this work.
+
+Current implementation base: all three prerequisites have landed. Submission #1434 merged as `7c58cabe1d05f132b7133a52b45a16b79274ea6a`; L0 now includes actual main `984c35c5b30600d68abec1ec3e585eca73bcd4f0`. L1a migrates historical authors, signed epoch facts and current content permission queries without wire changes. Snapshot format/old-reader compatibility remains a separate decision gate.
