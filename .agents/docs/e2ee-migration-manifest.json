@@ -615,7 +615,7 @@
       "targetPath": "packages/e2ee-core/src/epoch-keys.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Migrate volatile verified install/read/clear lifecycle into the canonical ledger owner. Retire the JSON prototype lody-epoch-secret/v1 digest and framed-history format; canonical ledger uses lody-e2ee/epoch-key/v1 and 72-byte history packets. Do not copy incompatible wire."
     },
     {
       "sourcePath": "packages/e2ee-core/src/epoch-publisher.ts",
@@ -978,7 +978,10 @@
       "targetPath": "packages/e2ee-core/src/content/content.ts",
       "status": "需迁并修复",
       "layer": "L2",
-      "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract."
+      "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract.",
+      "coverage": {
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+      }
     },
     {
       "sourcePath": "packages/e2ee-core/src/platform/entropy.ts",
@@ -1044,7 +1047,10 @@
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code.",
+      "coverage": {
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+      }
     },
     {
       "sourcePath": "packages/e2ee-core/src/platform/memory-stores.ts",
@@ -1165,7 +1171,10 @@
       "targetPath": "packages/e2ee-core/src/content/content.ts",
       "status": "需迁并修复",
       "layer": "L2",
-      "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract."
+      "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract.",
+      "coverage": {
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+      }
     },
     {
       "sourcePath": "packages/e2ee-core/src/ports/entropy.ts",
@@ -1253,7 +1262,10 @@
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code.",
+      "coverage": {
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+      }
     },
     {
       "sourcePath": "packages/e2ee-core/src/ports/snapshot.ts",
@@ -1305,10 +1317,17 @@
         "core": "909a59c44922fcc6ad9a973cc0f7f1adc2a0b6858dafe131ba36a71349867ed6",
         "candidate": "022ef814d7d82f684d6ce39ae78561c9f3e240033b2faff29c0854f808d4b65f"
       },
-      "targetPath": "packages/e2ee-core/src/content/content-frame.ts",
+      "targetPath": "packages/e2ee-core/src/content/index.ts",
       "status": "需迁并修复",
       "layer": "L2",
-      "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract."
+      "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract.",
+      "coverage": {
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+      },
+      "additionalTargetPaths": [
+        "packages/e2ee-core/src/content/document-key.ts",
+        "packages/e2ee-core/src/content-format.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/content-policy.ts",
@@ -1321,7 +1340,8 @@
       "layer": "L1",
       "reason": "Extend hardened public verified view/history; fix constructor and verifier trust bypasses, never export arbitrary authority constructors.",
       "coverage": {
-        "L1a": "Historical admission identity, signed epoch history packet facts and current write/seal gates migrated; snapshots, scope-bound workflows and new atomic removal remain separately owned."
+        "L1a": "Historical admission identity, signed epoch history packet facts and current write/seal gates migrated; snapshots, scope-bound workflows and new atomic removal remain separately owned.",
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
       }
     },
     {
@@ -1700,9 +1720,9 @@
         "candidate": "e75c8644f6644182de949199dab5c9542b25d916f19ba14ae8026fd398a59fb8"
       },
       "targetPath": "packages/e2ee-core/src/content/streams-content.ts",
-      "status": "需迁并修复",
+      "status": "待明确决定",
       "layer": "L2",
-      "reason": "Reuse v0 public crypto and published SDK; retain current-write gate and immutable historical author identity."
+      "reason": "Migrate real published-SDK protection bridge and cancellation ownership. Old snapshot header4 hides offset in ciphertext, so host cannot verify actual submission position. Discuss new offset-authenticated provider header or linked upstream SDK contract before implementing; update header3 is separately stable."
     },
     {
       "sourcePath": "packages/e2ee-core/src/streams-fetch.ts",
@@ -1776,10 +1796,17 @@
         "core": "749034145fa8d12ac6e1c75f05c63d775fa5c492dd7356ee78ac86bcb68e9161",
         "candidate": "e04d0fde3f541d1eb0cb2c81c9a437034ad5863f253bb2daf3beec50ec7f57d6"
       },
-      "targetPath": "packages/e2ee-core/src/content/content.ts",
+      "targetPath": "packages/e2ee-core/src/content/index.ts",
       "status": "需迁并修复",
       "layer": "L2",
-      "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract."
+      "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract.",
+      "coverage": {
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+      },
+      "additionalTargetPaths": [
+        "packages/e2ee-core/src/content/document-key.ts",
+        "packages/e2ee-core/src/content-format.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/enrollment.ts",

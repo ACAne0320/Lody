@@ -1,0 +1,57 @@
+# Ledger-bound signed documents
+
+`@lody/e2ee-core/content` migrates the settled Loro/Flock update/snapshot workflow.
+It preserves content v0 wire bytes, purpose domains, scoped document HKDF and
+XChaCha20-Poly1305. The four document purposes share a leaf but have distinct
+signature/AAD contexts. The root foundation remains separate.
+
+`deriveDocumentKey(scope, epochKey)`, `importDocumentKey(scope, bytes)` and
+`exportDocumentKey(key)` are synchronous Result functions. A document leaf is
+registered in a private WeakMap and bound to genesis/resource/epoch/docEpoch=0;
+clones cannot create keys. Import/export own copies and grant no authority.
+The supplied epoch key/document leaf must come from the caller's validated local
+installation; derivation alone does not verify an epoch commitment. JavaScript
+key objects live while reachable; this is not native secure custody or guaranteed
+physical-memory erasure. Device private keys cannot be exported here.
+
+`sealDocument` returns an inert Effect. Inputs are read and bounded when it runs;
+callers retain input ownership and must not mutate them during the operation.
+The caller supplies a borrowed DeviceSigner and a synchronized verified-view
+lookup. Each view must originate from full real ledger verification. Sealing binds
+the caller's genesis, resource, purpose and current epoch; active non-Guest
+personal/machine devices may seal only when rotation is not required. It checks
+before encryption and after asynchronous signing, and always verifies signer
+output with the fixed strict verifier. No injected verifier/authority can accept
+unsigned content. Each run is a new encryption; a transport retry must retain the
+returned bytes, rather than rerun encryption. No pending store is introduced.
+
+`authenticateDocument` returns only historical author/signature evidence relative
+to that verified view and caller scope. It authenticates revoked admitted authors;
+it does not establish current publication permission, ciphertext validity, global
+freshness or prior host admission. `openDocument` additionally verifies the AEAD
+and returns an owned plaintext buffer. Untrusted metadata cannot choose the
+trusted genesis/resource/purpose. Context, signature or tag failure returns no
+plaintext and never falls back to ordinary bytes. The consumer owns plaintext
+cleanup after use. Host admission must independently enforce current permissions.
+
+`@lody/e2ee-core/signing` exposes a borrowed `DeviceSigner`, `signVerified` and
+`nativeDeviceSigner`. The native adapter borrows an existing Ed25519 CryptoKey,
+creates no identity and starts no runtime. It awaits non-cancellable WebCrypto
+settlement and wipes message scratch on success/failure before interruption
+completes. The owner retains the handle's lifecycle; cancellable custom signers
+must implement cancellation in their Effects. The factory validates key shape;
+`signVerified` proves the signature matches its expected public key, not ledger
+permission. Neither performs platform-specific secure storage.
+
+Non-document generic content, epoch-history encryption, signed ledger command
+preparation, published-SDK protection/admission, recovery and Lab composition are
+remaining migration owners. Presence/RPC machine-operation scope requires its
+own decision. This module does not enable product E2EE or publish a package.
+
+Run package `typecheck` and `test`. The owning crypto suite uses fixed synthetic
+Node/native WebCrypto signatures, real HKDF/AEAD and explicit Deferred/native
+interruption signals. Crypto completion gating is a stated test boundary; no
+sleeps, real keys or physical-device claims are involved.
+
+[Extraction note](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md)
+ · [Source fingerprints](provenance.json).

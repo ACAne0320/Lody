@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./ledger": "./src/ledger/index.ts",
     "./submission": "./src/submission/index.ts",
-    "./submission/sqlite": "./src/submission/sqlite.ts"
+    "./submission/sqlite": "./src/submission/sqlite.ts",
+    "./signing": "./src/signing.ts",
+    "./content": "./src/content/index.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

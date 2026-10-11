@@ -63,7 +63,7 @@
   "scopeHashEncoding": "UTF-8, destination paths sorted ascending, one line: <destinationSha256>  <destination>\\n",
   "cryptoExtraction": {
     "destination": "src/crypto/content.ts",
-    "destinationSha256": "25fc404916ac933c1b35aa076028deac80717d83c9203ccd2898cb9b9cac4340",
+    "destinationSha256": "a6f9fc5ea2defb18bd941828575e7f9e13614e8d5a5e174ff01b2e2fc5476687",
     "sources": {
       "pure/content-frame.ts": "022ef814d7d82f684d6ce39ae78561c9f3e240033b2faff29c0854f808d4b65f",
       "platform/content.ts": "0afee368139aa8217a2ebb5ee8803608c86da5d89a38bd518c4cc33f73f9720b"
@@ -74,8 +74,10 @@
       "Opaque context-bound derived ContentKey; leaf import/export remains outside this slice.",
       "Bound and classify AEAD inputs before copying; use host secure randomness only with a typed unavailable result.",
       "Wipe temporary epoch/key/PRK/plaintext copies; no signing private key or runtime service.",
-      "Run ordinary try/finally cleanup before yielding Results: Effect 4.0.2 Result.gen does not close its iterator on typed failure."
-    ]
+      "Run ordinary try/finally cleanup before yielding Results: Effect 4.0.2 Result.gen does not close its iterator on typed failure.",
+      "L2a adds package-internal context-bound leaf import/export used only by the explicit document workflow entry; original primitive behavior and wire algorithms unchanged."
+    ],
+    "extractionDestinationSha256": "25fc404916ac933c1b35aa076028deac80717d83c9203ccd2898cb9b9cac4340"
   },
   "hpkeExtraction": {
     "destination": "src/crypto/hpke.ts",

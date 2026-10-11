@@ -1,7 +1,11 @@
-import { hkdfSync, createPrivateKey, sign } from 'node:crypto';
+import { hkdfSync, createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Result } from 'effect';
+import { Cause, Deferred, Effect, Exit, Fiber, Result } from 'effect';
+import * as Documents from '@lody/e2ee-core/content';
+import * as Signing from '@lody/e2ee-core/signing';
+import * as Ledger from '@lody/e2ee-core/ledger';
+import { encodeCbor, type CborValue } from '../src/cbor';
 import {
   Bytes,
   deriveContentKey,
@@ -394,3 +398,316 @@ describe('public scoped content crypto', () => {
     expect(Object.isFrozen(key)).toBe(true);
   });
 });
+
+describe('ledger-bound signed document workflows', () => {
+  function identity(seed: number) {
+    const privateKey = createPrivateKey({
+      key: Buffer.concat([
+        Buffer.from('302e020100300506032b657004220420', 'hex'),
+        Buffer.alloc(32, seed),
+      ]),
+      format: 'der',
+      type: 'pkcs8',
+    });
+    const raw = new Uint8Array(
+      createPublicKey(privateKey).export({ format: 'der', type: 'spki' }).subarray(-32)
+    );
+    const publicKey = read(Bytes.signingPublicKey(raw));
+    const signBytes = (message: Uint8Array) => new Uint8Array(sign(null, message, privateKey));
+    const signer: Signing.DeviceSigner = {
+      publicKey,
+      sign: (message) => Effect.succeed(read(Bytes.signature(signBytes(message)))),
+    };
+    return { privateKey, raw, publicKey, signBytes, signer };
+  }
+  function ledgerFixture() {
+    const owner = identity(1),
+      phone = identity(2),
+      attacker = identity(3);
+    const tag = (name: string, payload: Uint8Array) =>
+      new Uint8Array(Buffer.concat([Buffer.from(`lody-e2ee/${name}\0`), payload]));
+    const record = (body: readonly CborValue[]) =>
+      read(encodeCbor([body, owner.signBytes(tag('sig/v1', read(encodeCbor(body))))]));
+    const rows = [
+      record([
+        1,
+        owner.raw,
+        new Uint8Array(32).fill(10),
+        new Uint8Array(16).fill(10),
+        new Uint8Array(32).fill(100),
+        new Uint8Array(32).fill(20),
+      ]),
+    ];
+    const anchor = read(Bytes.genesisHash(Ledger.hashRecordBytes(rows[0]!).toBytes()));
+    const view = () =>
+      read(
+        Ledger.verifyLedger({
+          anchor,
+          records: rows,
+          checkpoint: { head: Ledger.hashRecordBytes(rows.at(-1)!), length: rows.length },
+        })
+      );
+    const append = (op: readonly CborValue[]) =>
+      rows.push(record([Ledger.hashRecordBytes(rows.at(-1)!).toBytes(), owner.raw, op]));
+    const addPhone = () => {
+      const enc = new Uint8Array(32).fill(102);
+      const proof = phone.signBytes(
+        tag(
+          'possess/v2',
+          read(encodeCbor([anchor.toBytes(), new Uint8Array(16).fill(10), phone.raw, enc, 0]))
+        )
+      );
+      append([4, 0, phone.raw, enc, proof]);
+    };
+    const scope: ContentScope = {
+      genesis: hex(anchor.toBytes()),
+      epoch: 0,
+      resource: 'doc',
+      purpose: 'doc-update',
+    };
+    const key = read(Documents.deriveDocumentKey(scope, read(Bytes.epochKey(source))));
+    return { owner, phone, attacker, scope, key, view, append, addPhone };
+  }
+  const result = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect));
+  it('round-trips native-signed v0 bytes and keeps the scoped document leaf shared across update/snapshot purposes', async () => {
+    const f = ledgerFixture(),
+      plaintext = new Uint8Array([1, 2, 3]);
+    const binding = new Uint8Array([7, 8]);
+    const frame = await Effect.runPromise(
+      Documents.sealDocument({
+        scope: f.scope,
+        documentKey: f.key,
+        signer: f.owner.signer,
+        ledger: () => Effect.succeed(f.view()),
+        plaintext,
+        additionalData: binding,
+      })
+    );
+    expect(read(verifyContentSignature(frame, f.scope, f.owner.publicKey, binding)).epoch).toBe(0);
+    const opened = read(Documents.openDocument(f.view(), f.scope, f.key, frame, binding));
+    expect(opened.plaintext).toEqual(plaintext);
+    expect(hex(opened.author.actor.toBytes())).toBe('0a'.repeat(32));
+    const exported = read(Documents.exportDocumentKey(f.key));
+    expect(exported).toEqual(nativeKey(f.scope));
+    const imported = read(Documents.importDocumentKey(f.scope, exported));
+    exported.fill(0);
+    expect(
+      read(Documents.openDocument(f.view(), f.scope, imported, frame, binding)).plaintext
+    ).toEqual(plaintext);
+    const snapshot = { ...f.scope, purpose: 'doc-snapshot' as const };
+    const snap = await Effect.runPromise(
+      Documents.sealDocument({
+        scope: snapshot,
+        documentKey: f.key,
+        signer: f.owner.signer,
+        ledger: () => Effect.succeed(f.view()),
+        plaintext,
+      })
+    );
+    expect(read(Documents.openDocument(f.view(), snapshot, f.key, snap)).plaintext).toEqual(
+      plaintext
+    );
+    expect(
+      Result.isFailure(Documents.openDocument(f.view(), snapshot, f.key, frame, binding))
+    ).toBe(true);
+    expect(
+      Result.isFailure(Documents.openDocument(f.view(), f.scope, f.key, frame, new Uint8Array([9])))
+    ).toBe(true);
+  });
+  it('uses the actual non-extractable native signer and preserves caller bytes on native failure', async () => {
+    const f = ledgerFixture();
+    const privateKey = await globalThis.crypto.subtle.importKey(
+      'pkcs8',
+      new Uint8Array(f.owner.privateKey.export({ format: 'der', type: 'pkcs8' })),
+      'Ed25519',
+      false,
+      ['sign']
+    );
+    const signer = read(Signing.nativeDeviceSigner(f.owner.publicKey, privateKey));
+    const plaintext = new Uint8Array([8, 9]);
+    const input = {
+      scope: f.scope,
+      documentKey: f.key,
+      signer,
+      ledger: () => Effect.succeed(f.view()),
+      plaintext,
+    };
+    const frame = await Effect.runPromise(Documents.sealDocument(input));
+    expect(read(Documents.openDocument(f.view(), f.scope, f.key, frame)).plaintext).toEqual(
+      plaintext
+    );
+    expect(privateKey.extractable).toBe(false);
+    let scratch: Uint8Array | undefined;
+    vi.spyOn(globalThis.crypto.subtle, 'sign').mockImplementation(
+      async (_algorithm, _key, signedMessage) => {
+        scratch = signedMessage as Uint8Array;
+        throw new DOMException('synthetic failure', 'OperationError');
+      }
+    );
+    const failed = await result(Documents.sealDocument(input));
+    expect(Result.isFailure(failed) && failed.failure.code).toBe('sign-failed');
+    expect(scratch?.every((byte) => byte === 0)).toBe(true);
+    expect(plaintext).toEqual(new Uint8Array([8, 9]));
+  });
+  it('keeps authenticated signatures separate from ciphertext validity', async () => {
+    const f = ledgerFixture();
+    const valid = await Effect.runPromise(
+      Documents.sealDocument({
+        scope: f.scope,
+        documentKey: f.key,
+        signer: f.owner.signer,
+        ledger: () => Effect.succeed(f.view()),
+        plaintext: new Uint8Array([7]),
+      })
+    );
+    const unsigned = valid.slice(0, -64);
+    unsigned[63] ^= 1;
+    const signature = f.owner.signBytes(read(contentSigningBytes(f.scope, unsigned)));
+    const broken = new Uint8Array([...unsigned, ...signature]);
+    expect(Result.isSuccess(Documents.authenticateDocument(f.view(), f.scope, broken))).toBe(true);
+    expect(code(Documents.openDocument(f.view(), f.scope, f.key, broken))).toBe(
+      'content-authentication-failed'
+    );
+  });
+  it('retains revoked historical authors while rejecting new seals and changed scope', async () => {
+    const f = ledgerFixture();
+    f.addPhone();
+    const input = {
+      scope: f.scope,
+      documentKey: f.key,
+      signer: f.phone.signer,
+      ledger: () => Effect.succeed(f.view()),
+      plaintext: new Uint8Array([4]),
+    };
+    const frame = await Effect.runPromise(Documents.sealDocument(input));
+    f.append([5, f.phone.raw]);
+    expect(read(Documents.openDocument(f.view(), f.scope, f.key, frame)).plaintext).toEqual(
+      new Uint8Array([4])
+    );
+    expect(Result.isFailure(await result(Documents.sealDocument(input)))).toBe(true);
+    for (const scope of [
+      { ...f.scope, genesis: '11'.repeat(32) },
+      { ...f.scope, resource: 'elsewhere' },
+      { ...f.scope, epoch: 1 },
+      { ...f.scope, purpose: 'presence' as const },
+    ])
+      expect(Result.isFailure(Documents.openDocument(f.view(), scope, f.key, frame))).toBe(true);
+  });
+  it('rejects forged views, forged/imported document keys and bad injected signer output', async () => {
+    const f = ledgerFixture();
+    const input = {
+      scope: f.scope,
+      documentKey: f.key,
+      signer: f.owner.signer,
+      ledger: () => Effect.succeed(f.view()),
+      plaintext: new Uint8Array([4]),
+    };
+    expect(
+      Result.isFailure(
+        await result(
+          Documents.sealDocument({ ...input, ledger: () => Effect.succeed({ ...f.view() }) })
+        )
+      )
+    ).toBe(true);
+    expect(Result.isFailure(Documents.exportDocumentKey({} as Documents.DocumentKey))).toBe(true);
+    const badSigner = {
+      publicKey: f.owner.publicKey,
+      sign: (message: Uint8Array) => f.attacker.signer.sign(message),
+    };
+    expect(
+      Result.isFailure(await result(Documents.sealDocument({ ...input, signer: badSigner })))
+    ).toBe(true);
+    expect(
+      Result.isFailure(
+        await result(Documents.sealDocument({ ...input, signer: f.attacker.signer }))
+      )
+    ).toBe(true);
+    const corrupted = read(Documents.importDocumentKey(f.scope, new Uint8Array(32)));
+    const frame = await Effect.runPromise(Documents.sealDocument(input));
+    expect(Result.isFailure(Documents.openDocument(f.view(), f.scope, corrupted, frame))).toBe(
+      true
+    );
+    const broken = new Uint8Array(frame);
+    broken[70] ^= 1;
+    expect(Result.isFailure(Documents.authenticateDocument(f.view(), f.scope, broken))).toBe(true);
+  });
+  it('rechecks current view after awaiting signer and refuses a revoked in-flight producer', async () => {
+    const f = ledgerFixture();
+    f.addPhone();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const entered = yield* Deferred.make<void>(),
+            release = yield* Deferred.make<void>();
+          const signer: Signing.DeviceSigner = {
+            publicKey: f.phone.publicKey,
+            sign: (message) =>
+              Effect.gen(function* () {
+                yield* Deferred.succeed(entered, undefined);
+                yield* Deferred.await(release);
+                return yield* f.phone.signer.sign(message);
+              }),
+          };
+          const worker = yield* Effect.forkChild(
+            Effect.result(
+              Documents.sealDocument({
+                scope: f.scope,
+                documentKey: f.key,
+                signer,
+                ledger: () => Effect.succeed(f.view()),
+                plaintext: new Uint8Array([1]),
+              })
+            )
+          );
+          yield* Deferred.await(entered);
+          f.append([5, f.phone.raw]);
+          yield* Deferred.succeed(release, undefined);
+          expect(Result.isFailure(yield* Fiber.join(worker))).toBe(true);
+        })
+      )
+    );
+  });
+  it('awaits non-cancellable native signing on interruption and clears its borrowed message scratch', async () => {
+    const f = ledgerFixture();
+    const privateKey = await globalThis.crypto.subtle.importKey(
+      'pkcs8',
+      new Uint8Array(f.owner.privateKey.export({ format: 'der', type: 'pkcs8' })),
+      'Ed25519',
+      false,
+      ['sign']
+    );
+    let scratch: Uint8Array | undefined;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const entered = yield* Deferred.make<void>(),
+            release = yield* Deferred.make<void>();
+          vi.spyOn(globalThis.crypto.subtle, 'sign').mockImplementation(
+            async (_algo, _key, signedMessage) => {
+              scratch = signedMessage as Uint8Array;
+              yieldSignal(entered);
+              await Effect.runPromise(Deferred.await(release));
+              return f.owner.signBytes(scratch).buffer as ArrayBuffer;
+            }
+          );
+          const signer = read(Signing.nativeDeviceSigner(f.owner.publicKey, privateKey));
+          const worker = yield* Effect.forkChild(
+            Signing.signVerified(signer, new Uint8Array([1, 2, 3]))
+          );
+          yield* Deferred.await(entered);
+          // Explicit runtime interrupt request: no race with release of native work.
+          worker.interruptUnsafe();
+          expect(worker.pollUnsafe()).toBeUndefined();
+          expect(scratch).toEqual(new Uint8Array([1, 2, 3]));
+          yield* Deferred.succeed(release, undefined);
+          const exit = yield* Fiber.await(worker);
+          expect(scratch).toEqual(new Uint8Array(3));
+          expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
+        })
+      )
+    );
+  });
+});
+function yieldSignal(signal: Deferred.Deferred<void>) {
+  Effect.runSync(Deferred.succeed(signal, undefined));
+}

@@ -3,7 +3,8 @@
 Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README](README.md).
 
 - This package has no production entrypoint, transport host, snapshot trust,
-  private-key export or signing API. Keep the root export map explicit; ledger
+  private-key export or root signing API. Borrowed signing/document workflows live
+  only under `./signing` and `./content`. Keep the root export map explicit; ledger
   records/replay live only under the explicit `./ledger` subentry. Local submission
   workflow/storage live under `./submission` and `./submission/sqlite`; the root stays platform-neutral.
 - Preserve candidate wire algorithms, domains and versions. Expected malformed
@@ -49,3 +50,11 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   canonical AAD; never accept an algorithm/info override. Caller-owned native
   device key handles stay external; no key generation, storage or delivery here.
   Await non-cancellable native work and temporary-buffer cleanup on interruption.
+
+- Document workflows accept only real verified ledger views and bound document keys.
+  Current write/rotation checks precede encryption and repeat after signing; the
+  fixed verifier checks signer output. Historical signature evidence is neither
+  current permission nor AEAD validity. Host admission remains independent.
+- Native signing borrows an existing Ed25519 handle, creates no identity/store/runtime,
+  and awaits native settlement plus scratch cleanup on interruption. Document leaf
+  import/export owns symmetric copies; it never exports a device private key.

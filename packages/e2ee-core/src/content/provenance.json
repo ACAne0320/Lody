@@ -1,0 +1,36 @@
+{
+  "sourceCommit": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "sourceState": "read-only candidate working tree including pinned staged patch; exact selected fingerprints",
+  "hashAlgorithm": "SHA-256",
+  "files": {
+    "pure/content-frame.ts": "022ef814d7d82f684d6ce39ae78561c9f3e240033b2faff29c0854f808d4b65f",
+    "pure/content-policy.ts": "3e5b268bf3dde13d2d70f73de6fbb9413b90e244f633dee63df84feee5527689",
+    "workflows/content.ts": "e04d0fde3f541d1eb0cb2c81c9a437034ad5863f253bb2daf3beec50ec7f57d6",
+    "ports/content.ts": "a959100ff9067cab17f0a74808312056dcc6aaead92e58bf76a766e3fa39c552",
+    "platform/content.ts": "0afee368139aa8217a2ebb5ee8803608c86da5d89a38bd518c4cc33f73f9720b",
+    "platform/ledger-ports.ts": "ca20d2a3445cce62a27b6246fdb609b649c8f2a85e2294d29c9d75b8185784fc",
+    "ports/ledger.ts": "41dee2e6919e232ae114c9d644310bbdb707c4f2f679c553d688312f3fb2d9db"
+  },
+  "destinations": [
+    "src/content/index.ts",
+    "src/content/document-key.ts",
+    "src/signing.ts",
+    "src/crypto/content.ts"
+  ],
+  "scope": "Four document-purpose workflows, scoped symmetric document leaves, borrowed native Ed25519 signer; no wire/algorithm/version changes.",
+  "adaptations": [
+    "Use public opaque ledger view and fixed verifier instead of injected ContentAuthority/ContentCrypto verification.",
+    "Reuse merged v0 format/HKDF/XChaCha20 primitives; generic key material helpers remain package-internal.",
+    "Document keys have private registry provenance; exported/imported symmetric leaf bytes are copied.",
+    "Check current seal permission before encryption and after signing; historical author authentication never grants publication rights.",
+    "Native signer borrows a CryptoKey, awaits native completion on interruption, cleans scratch with ordinary finally, and creates no runtime/key/store.",
+    "Operations read inputs on Effect execution; input stability is an explicit caller contract.",
+    "Generic non-document scopes, ledger command signing, key installation/commitment checks and SDK workflows remain separately owned, not silently removed."
+  ],
+  "destinationFingerprints": {
+    "src/content/index.ts": "f64a806f9657dc88bae170649d4f8c7410bc0f91d16635221d8fb41c76a9016f",
+    "src/content/document-key.ts": "2dfa7c391b18f8ee74bcef9f8f951673821c2104a12a452c69ef27d76d6f0de2",
+    "src/signing.ts": "5752345fb3376b02cbd15d0ff57861707858ce36d6d5c87ffa47498d0b0c2d81",
+    "src/crypto/content.ts": "a6f9fc5ea2defb18bd941828575e7f9e13614e8d5a5e174ff01b2e2fc5476687"
+  }
+}

@@ -30,9 +30,9 @@ P14 can consume `Bytes.SigningPublicKey`, `Bytes.EncryptionPublicKey`,
 `Bytes.Signature` and the validators from this root entry. Private keys and native
 handles stay in the platform owner. `EncryptionPublicKey` preserves the candidate's
 32-byte, nonzero wire-shape check; it is not proof of safe X25519 agreement or
-possession. Do not use it as one. No generic signer or key export is introduced.
-Full signed HPKE delivery, document-key import/export and signed content workflows
-remain future slices; no SDK or repo dependency is needed here.
+possession. Do not use it as one. The root foundation has no signer or key export.
+Full signed HPKE delivery, generic non-document content and SDK workflows remain
+subsequent slices; no SDK or repo dependency is needed by the foundation.
 
 Source files and exact input SHA-256 values are in [provenance.json](provenance.json).
 Extraction omits ledger/snapshot schemas, trust caches, injected executors,
@@ -132,3 +132,11 @@ and recheck authority after async operations. Those workflows remain separate.
 The primitive exposes no transport, ledger shortcut, recovery format or production
 switch. [HPKE tests](test/hpke.test.ts) cover independently encoded RFC/Python
 vectors, trusted-context mismatch, lengths, randomness failure and interruption.
+
+## Signed document workflows
+
+The explicit [`./content` and `./signing` entries](src/content/README.md) add
+ledger-bound document sealing/authentication/opening and borrowed Ed25519 signing.
+They reuse these primitives and require opaque verified views; the root remains
+unchanged. Native key custody, generic non-document policy, SDK protection,
+distribution, recovery and Lab acceptance remain later migration owners.

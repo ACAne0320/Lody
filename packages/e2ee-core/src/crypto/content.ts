@@ -162,3 +162,21 @@ export function openContentAead(
     );
   });
 }
+
+/** Package-internal scoped leaf import/export; never re-export the generic helper. */
+export function importContentKey(
+  bytes: Uint8Array,
+  scope: ContentScope
+): Result.Result<ContentKey, ContentError> {
+  return Result.gen(function* () {
+    const info = yield* contentKeyInfo(scope);
+    if (!(bytes instanceof Uint8Array) || bytes.byteLength !== 32)
+      return yield* fail('invalid-content-key');
+    const key = Object.freeze({}) as ContentKey;
+    keys.set(key, { bytes: new Uint8Array(bytes), info });
+    return key;
+  });
+}
+export function exportContentKey(key: ContentKey, scope: ContentScope) {
+  return keyForScope(key, scope);
+}
