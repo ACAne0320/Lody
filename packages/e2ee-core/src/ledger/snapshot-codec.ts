@@ -192,7 +192,7 @@ export function noteOf(
     return Object.freeze({
       genesis: s.genesis,
       head,
-      length: s.hashesOffset + s.hashesOffset + s.hashes.length,
+      length: s.hashesOffset + s.hashes.length,
       stateDigest,
       noteSigner: signer,
     });

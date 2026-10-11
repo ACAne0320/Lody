@@ -1179,6 +1179,58 @@ describe('authenticated snapshot migration reproduction', () => {
     );
     expect(comparable(view)).toEqual(comparable(ok(o.verify())));
   });
+  it('compares endorsed snapshots at their actual count and reports same-position state conflict', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    o.append(owner, [3, id(11), 1]);
+    const full = ok(o.verify()),
+      imported = ok(Snapshots.verifyLedgerSnapshot(endorsed(full)));
+    const local = ok(Snapshots.comparisonNote(imported, ok(Bytes.signingPublicKey(owner.pk))));
+    const remote = ok(Snapshots.comparisonNote(full, ok(Bytes.signingPublicKey(bob.pk))));
+    expect(imported.length).toBe(3);
+    expect(local.length).toBe(imported.length);
+    expect(ok(Snapshots.compareNotes(local, remote))).toMatchObject({
+      kind: 'agree',
+      independent: false,
+    });
+    expect(
+      ok(
+        Snapshots.confirmIndependentComparison(
+          local,
+          remote,
+          ok(Bytes.signingPublicKey(owner.pk)),
+          { source: 'authenticated-channel', expected: remote }
+        )
+      )
+    ).toMatchObject({ kind: 'agree', independent: true });
+    const changed = editedSnapshot(full, owner, (body) => {
+      (body[5] as CborValue[])[5] = true;
+    });
+    const contrary = ok(
+      Snapshots.comparisonNote(
+        ok(Snapshots.verifyLedgerSnapshot(changed)),
+        ok(Bytes.signingPublicKey(owner.pk))
+      )
+    );
+    expect(contrary.head.equals(remote.head)).toBe(true);
+    expect(contrary.length).toBe(remote.length);
+    expect(ok(Snapshots.compareNotes(remote, contrary))).toMatchObject({
+      kind: 'conflict',
+    });
+    const suffix = o.append(owner, [7, 1, filled(21), filled(22, 72)]);
+    const extended = ok(Ledger.extendLedger(imported, [suffix], checkpoint(o.records)));
+    expect(
+      ok(Snapshots.comparisonNote(extended, ok(Bytes.signingPublicKey(owner.pk)))).length
+    ).toBe(4);
+    expect(
+      ok(
+        Snapshots.compareNotes(
+          local,
+          ok(Snapshots.comparisonNote(extended, ok(Bytes.signingPublicKey(bob.pk))))
+        )
+      )
+    ).toMatchObject({ kind: 'pending-sync' });
+  });
   it('tracks actual verified suffix hashes, supports large pinned counts and never invents a prefix', () => {
     const o = org(),
       genesis = ok(o.verify());
