@@ -1,6 +1,13 @@
 import { Result } from 'effect';
-import { genesisHash, type GenesisHash, type RecordHash } from '../bytes';
-import { bytesEqual } from '../cbor';
+import {
+  genesisHash,
+  signingPublicKey,
+  epochNumber,
+  type SigningPublicKey,
+  type GenesisHash,
+  type RecordHash,
+} from '../bytes';
+import { bytesEqual, copyBytes } from '../cbor';
 import { keyId } from '../identifiers';
 import { verifySignature } from '../signature';
 import { LedgerError } from './errors';
@@ -11,6 +18,8 @@ import {
   inspectState,
   type InternalState,
   type LedgerState,
+  type HistoricalContentAuthor,
+  type EpochHistoryPacket,
 } from './policy';
 import {
   decodeRecord,
@@ -155,4 +164,71 @@ export function extendLedger(
   return state
     ? replay(cloneState(state), state.genesis, records, checkpoint)
     : fail('unauthorized');
+}
+
+/** An admitted historical signer is not necessarily a current writer. */
+export function historicalContentAuthor(
+  view: LedgerView,
+  device: SigningPublicKey
+): Result.Result<HistoricalContentAuthor, LedgerError> {
+  return Result.gen(function* () {
+    const state = states.get(view);
+    if (!state) return yield* fail('unauthorized');
+    const key = yield* Result.mapError(
+      signingPublicKey(device.toBytes()),
+      (error) => new LedgerError({ code: error.code })
+    );
+    const author = state.contentAuthors.get(keyId(key.toBytes()));
+    return author ? author : yield* fail('unauthorized');
+  });
+}
+export interface ContentPermissions {
+  /** Host admission: active personal/machine device of a non-Guest member. */
+  readonly mayWriteDocument: boolean;
+  /** Honest seal gate additionally waits for any required epoch rotation. */
+  readonly maySealNewContent: boolean;
+}
+/** Current permissions at this caller-selected verified endpoint, not freshness proof. */
+export function contentPermissions(
+  view: LedgerView,
+  device: SigningPublicKey
+): Result.Result<ContentPermissions, LedgerError> {
+  return Result.gen(function* () {
+    const state = states.get(view);
+    if (!state) return yield* fail('unauthorized');
+    const key = yield* Result.mapError(
+      signingPublicKey(device.toBytes()),
+      (error) => new LedgerError({ code: error.code })
+    );
+    const active = state.devices.get(keyId(key.toBytes()));
+    const member = active && state.members.get(keyId(active.membershipId.toBytes()));
+    const mayWriteDocument = !!(
+      active &&
+      active.kind !== 'recovery' &&
+      member &&
+      member.role !== 'guest'
+    );
+    return Object.freeze({
+      mayWriteDocument,
+      maySealNewContent: mayWriteDocument && !state.epoch.rotationRequired,
+    });
+  });
+}
+/** Owns a detached packet copy. Signed publication is not authenticated decryption. */
+export function epochHistoryPacket(
+  view: LedgerView,
+  epoch: number
+): Result.Result<EpochHistoryPacket, LedgerError> {
+  return Result.gen(function* () {
+    const state = states.get(view);
+    if (!state) return yield* fail('unauthorized');
+    const number = yield* Result.mapError(
+      epochNumber(epoch),
+      (error) => new LedgerError({ code: error.code })
+    );
+    const row = state.historyPackets.get(number);
+    return row
+      ? Object.freeze({ ...row, packet: copyBytes(row.packet) })
+      : yield* fail('unauthorized');
+  });
 }

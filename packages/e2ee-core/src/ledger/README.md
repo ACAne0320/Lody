@@ -45,10 +45,24 @@ Join `expiresAt` remains a signed nullable field; pure historical replay does no
 consult a current wall clock. Online request expiry/admission belongs to a future
 host boundary. A valid 72-byte epoch history packet remains opaque; this module
 verifies its signed publication and order, not its decryption or key commitment
-preimage. Snapshot endorsement, persistent trust restoration, historical author
-APIs, delivery, and product integration remain subsequent slices.
+preimage. `epochHistoryPacket(view, epoch)` returns that signed fact with an owned
+packet copy; epoch zero uses an empty previous-key packet. Unknown/future epochs
+fail rather than fabricate a key. Decryption belongs to the key workflow.
+
+`historicalContentAuthor(view, device)` resolves the admission-bound user and
+member instance, retaining attribution after revocation and role changes. Full
+verified replay is required; missing author context fails rather than guessing.
+`contentPermissions(view, device)` separates current host write admission from
+honest new-content sealing: active non-Guest personal/machine devices may write,
+Recovery never writes, and a pending rotation additionally blocks new seals.
+Permission is relative to the caller-selected verified endpoint; freshness and
+scope binding remain caller obligations. Every query requires the module-created
+view, not an inspection object. Snapshot endorsement/import, delivery, and product
+integration remain subsequent slices.
 
 [Extraction and reproduced defects](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-ledger-records.md)
 and [source fingerprints](provenance.json). Run package `typecheck` and `test`;
 `test/ledger/replay.test.ts` signs fixed synthetic seeds with native Node Ed25519,
 independent of the production verifier, and exercises the public ledger subentry.
+
+[Historical facts extraction](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-historical-facts.md).

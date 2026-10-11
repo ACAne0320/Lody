@@ -481,3 +481,144 @@ describe('verified view is a runtime boundary', () => {
     ).toBe('bad-signature');
   });
 });
+
+describe('verified historical facts and current content permissions', () => {
+  const publicKey = (key: Keys) => ok(Bytes.signingPublicKey(key.pk));
+  const permissions = (view: Ledger.LedgerView, key: Keys) =>
+    ok(Ledger.contentPermissions(view, publicKey(key)));
+  it('retains admission identity after revocation without granting current write rights', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    o.append(bob, o.device(phone, 0, id(11)));
+    const prior = ok(o.verify());
+    expect(permissions(prior, phone)).toEqual({ mayWriteDocument: true, maySealNewContent: true });
+    o.append(bob, [5, phone.pk]);
+    const current = ok(o.verify());
+    const author = ok(Ledger.historicalContentAuthor(current, publicKey(phone)));
+    expect(hex(author.device)).toBe(keyId(phone.pk));
+    expect(hex(author.actor)).toBe(keyId(filled(11)));
+    expect(hex(author.memberInstance)).toBe(keyId(id(11)));
+    author.actor.toBytes().fill(0);
+    author.memberInstance.toBytes().fill(0);
+    expect(hex(ok(Ledger.historicalContentAuthor(current, publicKey(phone))).actor)).toBe(
+      keyId(filled(11))
+    );
+    expect(permissions(current, phone)).toEqual({
+      mayWriteDocument: false,
+      maySealNewContent: false,
+    });
+    expect(permissions(prior, phone)).toEqual({ mayWriteDocument: true, maySealNewContent: true });
+    expect(code(Ledger.historicalContentAuthor(current, publicKey(attacker)))).toBe('unauthorized');
+  });
+  it('distinguishes host admission from the honest seal rotation gate', () => {
+    const o = org();
+    o.append(owner, o.device(phone, 0));
+    o.append(owner, [5, phone.pk]);
+    const pending = ok(o.verify());
+    expect(permissions(pending, owner)).toEqual({
+      mayWriteDocument: true,
+      maySealNewContent: false,
+    });
+    o.append(owner, [7, 1, filled(21), filled(30, 72)]);
+    const rotated = ok(
+      Ledger.extendLedger(pending, [o.records[o.records.length - 1]!], checkpoint(o.records))
+    );
+    expect(permissions(rotated, owner)).toEqual({
+      mayWriteDocument: true,
+      maySealNewContent: true,
+    });
+    expect(permissions(pending, owner).maySealNewContent).toBe(false);
+    expect(permissions(rotated, phone).mayWriteDocument).toBe(false);
+  });
+  it('uses current role/kind for permission and admission history for attribution', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    o.append(bob, o.device(machine, 1, id(11)));
+    o.append(bob, o.device(recovery, 2, id(11)));
+    const member = ok(o.verify());
+    expect(permissions(member, bob).mayWriteDocument).toBe(true);
+    expect(permissions(member, machine).mayWriteDocument).toBe(true);
+    expect(permissions(member, recovery)).toEqual({
+      mayWriteDocument: false,
+      maySealNewContent: false,
+    });
+    o.append(owner, [3, id(11), 3]);
+    const guest = ok(o.verify());
+    for (const key of [bob, machine, recovery]) {
+      expect(permissions(guest, key)).toEqual({
+        mayWriteDocument: false,
+        maySealNewContent: false,
+      });
+      expect(hex(ok(Ledger.historicalContentAuthor(guest, publicKey(key))).actor)).toBe(
+        keyId(filled(11))
+      );
+    }
+    expect(permissions(guest, attacker)).toEqual({
+      mayWriteDocument: false,
+      maySealNewContent: false,
+    });
+    o.append(owner, [3, id(11), 1]);
+    const admin = ok(o.verify());
+    expect(permissions(admin, machine).mayWriteDocument).toBe(true);
+    expect(permissions(admin, recovery).mayWriteDocument).toBe(false);
+  });
+  it('returns owned signed epoch facts, not invented keys or packet validity', () => {
+    const o = org();
+    const genesis = ok(o.verify());
+    expect(ok(Ledger.epochHistoryPacket(genesis, 0)).packet).toHaveLength(0);
+    expect(hex(ok(Ledger.epochHistoryPacket(genesis, 0)).commitment)).toBe(keyId(filled(20)));
+    expect(code(Ledger.epochHistoryPacket(genesis, 1))).toBe('unauthorized');
+    o.append(owner, [7, 1, filled(21), filled(30, 72)]);
+    o.append(owner, [7, 2, filled(22), filled(31, 72)]);
+    const full = ok(o.verify());
+    for (let split = 1; split <= o.records.length; split++) {
+      const prefix = o.records.slice(0, split);
+      const view = ok(
+        Ledger.extendLedger(
+          ok(
+            Ledger.verifyLedger({
+              anchor: o.anchor,
+              records: prefix,
+              checkpoint: checkpoint(prefix),
+            })
+          ),
+          o.records.slice(split),
+          checkpoint(o.records)
+        )
+      );
+      for (const epoch of [1, 2]) {
+        const row = ok(Ledger.epochHistoryPacket(view, epoch));
+        expect(row.epoch).toBe(epoch);
+        expect(row.packet).toEqual(filled(29 + epoch, 72));
+        expect(hex(row.commitment)).toBe(keyId(filled(20 + epoch)));
+        row.packet.fill(0);
+        expect(ok(Ledger.epochHistoryPacket(view, epoch)).packet).toEqual(filled(29 + epoch, 72));
+      }
+    }
+    for (const invalid of [-1, 1.5, NaN, Infinity, 2 ** 32])
+      expect(Result.isFailure(Ledger.epochHistoryPacket(full, invalid))).toBe(true);
+    expect(code(Ledger.epochHistoryPacket(full, 3))).toBe('unauthorized');
+    expect(code(Ledger.epochHistoryPacket(genesis, 1))).toBe('unauthorized');
+  });
+  it('does not disclose facts or permissions through forged/cloned views or failed suffixes', () => {
+    const o = org(),
+      view = ok(o.verify());
+    for (const fake of [
+      { ...view },
+      { ...view, inspectState: () => view.inspectState() },
+      Object.create(view),
+    ] as Ledger.LedgerView[]) {
+      expect(code(Ledger.historicalContentAuthor(fake, publicKey(owner)))).toBe('unauthorized');
+      expect(code(Ledger.contentPermissions(fake, publicKey(owner)))).toBe('unauthorized');
+      expect(code(Ledger.epochHistoryPacket(fake, 0))).toBe('unauthorized');
+    }
+    o.append(owner, o.join(bob, 11));
+    o.append(owner, [7, 1, filled(21), filled(30, 72)], new Uint8Array(64));
+    expect(
+      Result.isFailure(Ledger.extendLedger(view, o.records.slice(1), checkpoint(o.records)))
+    ).toBe(true);
+    expect(code(Ledger.historicalContentAuthor(view, publicKey(bob)))).toBe('unauthorized');
+    expect(code(Ledger.epochHistoryPacket(view, 1))).toBe('unauthorized');
+    expect(permissions(view, owner).maySealNewContent).toBe(true);
+  });
+});

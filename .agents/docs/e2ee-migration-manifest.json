@@ -1316,10 +1316,13 @@
         "core": "3e5b268bf3dde13d2d70f73de6fbb9413b90e244f633dee63df84feee5527689",
         "candidate": "3e5b268bf3dde13d2d70f73de6fbb9413b90e244f633dee63df84feee5527689"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/content-policy.ts",
+      "targetPath": "packages/e2ee-core/src/ledger/replay.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Extend hardened public verified view/history; fix constructor and verifier trust bypasses, never export arbitrary authority constructors."
+      "reason": "Extend hardened public verified view/history; fix constructor and verifier trust bypasses, never export arbitrary authority constructors.",
+      "coverage": {
+        "L1a": "Historical admission identity, signed epoch history packet facts and current write/seal gates migrated; snapshots, scope-bound workflows and new atomic removal remain separately owned."
+      }
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/epoch-candidate.ts",
@@ -1506,7 +1509,10 @@
       "targetPath": "packages/e2ee-core/src/ledger/policy.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Existing public records/policy/replay own the migrated baseline. Remaining snapshot, history and workflow functions must be adapted to that owner; do not copy an entire parallel module."
+      "reason": "Existing public records/policy/replay own the migrated baseline. Remaining snapshot, history and workflow functions must be adapted to that owner; do not copy an entire parallel module.",
+      "coverage": {
+        "L1a": "Historical admission identity, signed epoch history packet facts and current write/seal gates migrated; snapshots, scope-bound workflows and new atomic removal remain separately owned."
+      }
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/ledger-schema.ts",
@@ -1539,7 +1545,10 @@
       "targetPath": "packages/e2ee-core/src/ledger/policy.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Existing public records/policy/replay own the migrated baseline. Remaining snapshot, history and workflow functions must be adapted to that owner; do not copy an entire parallel module."
+      "reason": "Existing public records/policy/replay own the migrated baseline. Remaining snapshot, history and workflow functions must be adapted to that owner; do not copy an entire parallel module.",
+      "coverage": {
+        "L1a": "Historical admission identity, signed epoch history packet facts and current write/seal gates migrated; snapshots, scope-bound workflows and new atomic removal remain separately owned."
+      }
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/legacy-error.ts",

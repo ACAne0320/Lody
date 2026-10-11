@@ -19,5 +19,25 @@
     "Require caller-pinned genesis and expected head/count; suffix failure preserves the preceding view.",
     "Omit snapshots, journal, services, content-author and history decryption APIs.",
     "Reject obsolete tag 2 non-atomic removal; P12 owns replacement."
-  ]
+  ],
+  "historicalFactsExtraction": {
+    "sources": {
+      "pure/content-policy.ts": "3e5b268bf3dde13d2d70f73de6fbb9413b90e244f633dee63df84feee5527689",
+      "pure/ledger-state.ts": "bc6b9d31fc7da0121c0c37643ff25ec849e500c25dcc8454af4245085517dbd4",
+      "pure/ledger-policy.ts": "91da76c0836303fa581fd9cc7841254169e22beadff91577f7695fb836a11ed7"
+    },
+    "destinations": [
+      "src/ledger/policy.ts",
+      "src/ledger/replay.ts"
+    ],
+    "scope": "Historical admission identity, signed epoch packet facts and current write/seal gates only; full verified replay with no wire/version change.",
+    "adaptations": [
+      "Private view registry is mandatory for every query; no caller-supplied state or permissive verifier.",
+      "Use copy-owning public keys/user/member wrappers; return a detached history packet.",
+      "Retain attribution after device revocation without granting write rights; Recovery and Guest never write.",
+      "Host admission and honest seal gate remain separate: pending rotation blocks new seals, not prior ciphertext admission.",
+      "Epoch packet publication authenticates signed bytes only; decryption/commitment checks belong to key workflows.",
+      "Full replay gives complete author context; device-only snapshot fallback is deferred with snapshot import."
+    ]
+  }
 }

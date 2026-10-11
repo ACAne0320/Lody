@@ -30,6 +30,10 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
 - Ledger authority starts only at caller-pinned genesis plus an expected head/count,
   or a module-created verified view. No arbitrary-state constructor, injected verifier,
   snapshot placeholder, or journal-derived trust. Failed suffixes preserve the prior view.
+- Historical attribution and epoch packets come only from registered verified views.
+  Revocation retains old author identity but grants no current write permission.
+  Recovery/Guest never write; required rotation blocks new seals. Returned packet
+  bytes are owned copies, not decrypted keys or commitment-preimage proofs.
 - Reject legacy non-atomic member removal; its replacement belongs to P12.
 
 - Submission persists original signed bytes before CAS, retries exact bytes, and

@@ -1,6 +1,7 @@
 import { Result } from 'effect';
 import type * as Bytes from '../bytes';
 import { keyId } from '../identifiers';
+import { copyBytes } from '../cbor';
 import { fail, type DeviceKind, type RecordBody, type Role } from './records';
 import type { LedgerError } from './errors';
 
@@ -24,7 +25,22 @@ export interface LedgerState {
     readonly rotationRequired: boolean;
   };
 }
+/** Identity established at admission, retained after revocation/role changes. */
+export interface HistoricalContentAuthor {
+  readonly device: Bytes.SigningPublicKey;
+  readonly actor: Bytes.UserId;
+  readonly memberInstance: Bytes.MembershipId;
+}
+/** Signed ledger fact; packet validity/preimage is checked by the key workflow. */
+export interface EpochHistoryPacket {
+  readonly epoch: number;
+  readonly commitment: Bytes.EpochCommitment;
+  /** Epoch zero has no previous key: its packet is empty. */
+  readonly packet: Uint8Array;
+}
 export interface InternalState {
+  contentAuthors: Map<string, HistoricalContentAuthor>;
+  historyPackets: Map<number, EpochHistoryPacket>;
   genesis: Bytes.GenesisHash;
   owner: Bytes.MembershipId;
   members: Map<string, Member>;
@@ -44,6 +60,19 @@ export function genesisState(
   hash: Bytes.RecordHash
 ): InternalState {
   return {
+    contentAuthors: new Map([
+      [
+        id(body.signer),
+        Object.freeze({
+          device: body.signer,
+          actor: body.userId,
+          memberInstance: body.membershipId,
+        }),
+      ],
+    ]),
+    historyPackets: new Map([
+      [0, Object.freeze({ epoch: 0, commitment: body.epochCommitment, packet: new Uint8Array() })],
+    ]),
     genesis,
     owner: body.membershipId,
     members: new Map([
@@ -75,6 +104,13 @@ export function genesisState(
 export function cloneState(s: InternalState): InternalState {
   return {
     ...s,
+    contentAuthors: new Map(s.contentAuthors),
+    historyPackets: new Map(
+      [...s.historyPackets].map(([epoch, row]) => [
+        epoch,
+        Object.freeze({ ...row, packet: copyBytes(row.packet) }),
+      ])
+    ),
     members: new Map(s.members),
     devices: new Map(s.devices),
     usedSigningKeys: new Set(s.usedSigningKeys),
@@ -134,6 +170,14 @@ export function applyOperation(
         s.usedSigningKeys.add(sign);
         s.usedEncKeys.add(enc);
         s.members.set(membership, Object.freeze({ userId: op.request.userId, role: 'member' }));
+        s.contentAuthors.set(
+          sign,
+          Object.freeze({
+            device: op.request.signingPublicKey,
+            actor: op.request.userId,
+            memberInstance: op.membershipId,
+          })
+        );
         s.devices.set(
           sign,
           Object.freeze({
@@ -164,6 +208,14 @@ export function applyOperation(
         if (s.usedSigningKeys.has(sign) || s.usedEncKeys.has(enc)) return yield* fail('replay');
         s.usedSigningKeys.add(sign);
         s.usedEncKeys.add(enc);
+        s.contentAuthors.set(
+          sign,
+          Object.freeze({
+            device: op.signingPublicKey,
+            actor: member.userId,
+            memberInstance: actor.membershipId,
+          })
+        );
         s.devices.set(
           sign,
           Object.freeze({
@@ -203,6 +255,14 @@ export function applyOperation(
         if (op.epoch !== s.epoch.number + 1) return yield* fail('invalid-operation');
         if (s.usedCommitments.has(id(op.commitment))) return yield* fail('replay');
         s.usedCommitments.add(id(op.commitment));
+        s.historyPackets.set(
+          op.epoch,
+          Object.freeze({
+            epoch: op.epoch,
+            commitment: op.commitment,
+            packet: copyBytes(op.previousEpochKey),
+          })
+        );
         s.epoch = Object.freeze({
           number: op.epoch,
           keyCommitment: op.commitment,
