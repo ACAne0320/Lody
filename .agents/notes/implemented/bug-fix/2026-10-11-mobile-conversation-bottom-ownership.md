@@ -85,4 +85,4 @@ chosen: bounded sampling addresses engine ownership without changing native gest
 presentation. Layout compensation during real row growth retains its documented
 potential to interrupt WebKit momentum; this fix does not remove that separate cost.
 
-PR: not opened.
+PR: [#1445](https://github.com/LodyAI/Lody/pull/1445).
