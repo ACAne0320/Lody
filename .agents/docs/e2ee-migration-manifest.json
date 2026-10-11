@@ -1159,6 +1159,11 @@
           "layer": "L4d",
           "target": "packages/e2ee-core/src/keys/reports.ts + mailbox-sqlite.ts",
           "scope": "Canonical signed claim/source/revision checks and real principal-bound indexed local mailbox; fixed current admission, duplicate dedup, bounded recipient pages, retained repair history and persistent public authority observation. Distribution/receive journal, production authentication and full legacy-stream/Lab closure remain unfinished."
+        },
+        {
+          "layer": "L4f",
+          "target": "packages/e2ee-core/src/keys/receive-sqlite.ts",
+          "scope": "Host-only finite recipient receipt/local-publication installation, real protected save/reload before original signed-report queue, exact report retry, indexed keyset task pages, genuine epoch/revocation disposition and explicit result acknowledgement. Source/signed bytes retained, no phase-derived authority or report-derived key possession. Sender discovery/scheduling, durable requestRepair coordination and fetch composition remain separate unfinished owners."
         }
       ]
     },
@@ -1334,6 +1339,11 @@
           "layer": "L4d",
           "target": "packages/e2ee-core/src/keys/reports.ts + mailbox-sqlite.ts",
           "scope": "Canonical signed claim/source/revision checks and real principal-bound indexed local mailbox; fixed current admission, duplicate dedup, bounded recipient pages, retained repair history and persistent public authority observation. Distribution/receive journal, production authentication and full legacy-stream/Lab closure remain unfinished."
+        },
+        {
+          "layer": "L4f",
+          "target": "packages/e2ee-core/src/keys/receive-sqlite.ts",
+          "scope": "Host-only finite recipient receipt/local-publication installation, real protected save/reload before original signed-report queue, exact report retry, indexed keyset task pages, genuine epoch/revocation disposition and explicit result acknowledgement. Source/signed bytes retained, no phase-derived authority or report-derived key possession. Sender discovery/scheduling, durable requestRepair coordination and fetch composition remain separate unfinished owners."
         }
       ]
     },
@@ -1603,7 +1613,14 @@
       "targetPath": "packages/e2ee-core/src/pure/key-distribution.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately."
+      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "coverage": [
+        {
+          "layer": "L4f",
+          "target": "packages/e2ee-core/src/keys/receive-sqlite.ts",
+          "scope": "Host-only finite recipient receipt/local-publication installation, real protected save/reload before original signed-report queue, exact report retry, indexed keyset task pages, genuine epoch/revocation disposition and explicit result acknowledgement. Source/signed bytes retained, no phase-derived authority or report-derived key possession. Sender discovery/scheduling, durable requestRepair coordination and fetch composition remain separate unfinished owners."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/key-mailbox.ts",
@@ -2045,12 +2062,17 @@
       "targetPath": "packages/e2ee-core/src/workflows/key-distribution.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Installed recipient key retention portion adapted to explicit host protection and indexed SQLite. Candidate rotation/backups, task/report/repair coordination and native-platform implementations remain unfinished or decision-gated as owned by this source.",
+      "reason": "Recipient install/report/result subset is adapted under host receive/sqlite. Sender target discovery/finite round, persistent repair requests and fetch composition remain unfinished; old whole-document task schema is not imported. Publisher loss/rotation backup remains gated separately.",
       "coverage": [
         {
           "layer": "L4e",
           "target": "packages/e2ee-core/src/keys/host-protection.ts + protected-sqlite.ts",
           "scope": "Approved host-only initialization-time protection direction and append-only installed recipient key retention. Real verified current recipient/prefix, complete protected context including Org at epoch0, save/reload/unprotect/commitment recheck, Scope/native cleanup. No native adapter, publisher candidate backup, recovery vault or queued reports; old plaintext/JSON/wire schemes not imported."
+        },
+        {
+          "layer": "L4f",
+          "target": "packages/e2ee-core/src/keys/receive-sqlite.ts",
+          "scope": "Host-only finite recipient receipt/local-publication installation, real protected save/reload before original signed-report queue, exact report retry, indexed keyset task pages, genuine epoch/revocation disposition and explicit result acknowledgement. Source/signed bytes retained, no phase-derived authority or report-derived key possession. Sender discovery/scheduling, durable requestRepair coordination and fetch composition remain separate unfinished owners."
         }
       ]
     },
