@@ -23,7 +23,7 @@ explains why a tracked Effect subtree is not currently recommended.
 
 ## When to use Effect
 
-- New modules and services: a `Context.Service` for the capability, a `Layer` for
+- New effectful capabilities: a `Context.Service` for the capability, a `Layer` for
   each implementation, `Effect.provide` at the composition point.
 - Errors: `Data.TaggedError` values and `Effect.catchTag`, not `try`/`catch`
   on unknown exceptions.
@@ -33,9 +33,9 @@ explains why a tracked Effect subtree is not currently recommended.
 - Retries, polling and deadlines: `Schedule`, `Effect.timeout*`, `Effect.sleep`,
   not `setTimeout`/`setInterval` loops.
 
-Raw `async`/`await` remains fine for thin glue at process entry points,
-synchronous code without error handling, and hot paths where a measurement shows
-Effect overhead matters (the per-token ACP update path, CRDT import/export).
+Keep Promise glue at registered application/compatibility entries and genuine
+external adapters. Pure synchronous calculations and measured hot-path computation
+remain ordinary functions; hot paths do not justify unmanaged lifecycle work.
 
 ## Small migrations during feature and fix work
 
@@ -76,6 +76,58 @@ Record the chosen boundary and remaining work in the owning Note when updating i
 follow existing Spec selection rules rather than creating a Spec for each migration.
 The [roadmap decision](../notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#small-migrations-alongside-features-and-fixes)
 explains why this selection complements the dedicated migration series.
+
+## Choosing a native unit and its structure
+
+Use the [Effect skill](../skills/effect-ts/SKILL.md) to decide the implementation,
+the roadmap's [unit ledger](../notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#unit-ledger)
+to identify prerequisites and progress, and the owning Note for behavior and evidence.
+Before choosing primitives, list the unit's inputs, raw work, local waiters, resources,
+background tasks, release order and failure/recovery owner. Follow injected callbacks
+and resource handles as well as imports: a Promise callback supplied by another Lody
+module can contain an unfinished dependency chain.
+
+Classify each capability as native Lody, a real third-party I/O adapter, or unfinished
+Lody orchestration. Prefer official capabilities and primitives, then verify the
+installed signatures and relevant semantics. Primitive names are not lifecycle
+guarantees: the file-lock FIFO experiment and the Scope/FiberMap boundary rules below
+show why admission, replacement and release need behavioral evidence. Record any
+necessary custom coordination and its justification in the owning Note.
+
+Keep small cohesive modules simple. When a large module mixes responsibilities
+enough to obstruct understanding, testing or independent migration, consider separating:
+
+| Responsibility | Contents                                                         | Dependency boundary                                                               |
+| -------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| pure           | Deterministic planners, reducers, codecs and calculations        | Ordinary functions; no Effect/Promise, external state reads or input mutation     |
+| workflow       | Effect composition, domain coordination, retry and cancellation  | Pure helpers and abstract Service contracts; no production implementation imports |
+| platform       | Concrete filesystem, process, network, database and SDK adapters | Implements contracts and owns technical I/O/resources                             |
+
+These are responsibilities, not mandatory directories or a line-count threshold.
+A domain service implemented entirely by composing injected capabilities belongs in
+workflow; using `Layer.effect` does not make it a platform adapter. A workflow describes
+managed effects and can require services; its runtime execution can perform I/O.
+No-Promise and `R=never` types alone do not establish purity. Time, environment,
+randomness and captured mutable state still need the appropriate boundary.
+Keep production Layer selection in composition and execution at registered entries;
+reuse official abstractions instead of adding interfaces that only rename them.
+Preserve existing scoped file-layout constraints, including the single process module.
+
+## Keeping native boundaries native
+
+For a completed unit, keep its nearest AGENTS.md boundary, behavioral suite and
+applicable checks together. Update the ledger row only when migration facts change;
+ordinary unrelated work does not need a ledger edit. Native consumers compose the
+core service, with no Legacy import or internal `run*`. Remove a compatibility door
+when its recorded consumers migrate; any new unfinished dependency changes the status.
+
+Use static import/execution checks for boundaries that can be expressed accurately,
+with explicit adapter/entry exceptions. They complement lifecycle behavior tests.
+The existing `check:cli-process-boundary` protects process access and process Legacy
+names/aliases; it is not an all-module native-workflow validator. Add or extend a
+guard when a unit's new boundary warrants it, recording uncovered limits rather than
+claiming an absent guard already enforces them. Do not globally prohibit every Map,
+Promise or callback in adapters and unmigrated code.
 
 ## Rules at the Promise boundary
 
@@ -206,6 +258,7 @@ facade shares a process-lifetime ManagedRuntime so local queue waiting retains i
 old deadline meaning. Remove it when those entrypoints use the daemon runtime.
 Catalog read caching, worktree setup/GC and downloads are still under migration.
 Local-project Git is native as described above; full worktree ownership is separate.
+
 ## Worktree Git execution
 
 `WorktreeGit` / `WorktreeGitLive` own native command execution, status checking and
@@ -295,6 +348,28 @@ The guard rejects retired facade imports/exports and aliases that hide Legacy.
   clock uses. It drives Effect sleeps only when the test advances timers
   (`vi.advanceTimersByTimeAsync`); prefer `TestClock` for Effect-first code.
 
+For lifecycle changes, select the applicable behaviors from this acceptance matrix:
+
+| Mechanism         | Observable acceptance                                                                           |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| Queue/admission   | Cancelled waiters cannot acquire later; preserve ordering and reentry policy                    |
+| Resource/body     | Failure or interruption releases acquired resources before a successor proceeds                 |
+| Shared work       | One reader's cancellation preserves other leases; the last release awaits producer cleanup      |
+| Close/replacement | Concurrent close joins one receipt; a new generation waits for confirmed old release            |
+| Deadline/retry    | Clock-driven expiry is observable; body/release failures do not become acquisition retries      |
+| Release failure   | Retain the unresolved owner and full Cause, including simultaneous body/release failure         |
+| Composition       | Real consumers use the kernel; applicable filesystem/process/protocol boundaries remain covered |
+
+Confirm readiness with an explicit signal before advancing time or cancelling. Await
+the affected fiber and cleanup, then inspect resulting resource/data state. Pure
+helpers use ordinary tests; workflows substitute service Layers; platform adapters
+retain real-boundary regressions. Do not replace coverage with source-string or
+mock-call-only assertions. Use temporary ablations for important coordination
+mechanisms to confirm that removing them makes behavior tests fail; restore and
+recheck the baseline, keeping experiment scripts outside tracked product code.
+Link the tested revision and limits from the owning Note. Passing local checks does
+not establish untested platforms, packaged installation or production behavior.
+
 ## v4 API choices
 
 - Define capabilities with `Context.Service<Self, Api>()(id)`. `Layer.effect`
@@ -319,7 +394,6 @@ The guard rejects retired facade imports/exports and aliases that hide Legacy.
 API reference: [official migration guide](https://github.com/Effect-TS/effect/blob/main/MIGRATION.md).
 Use the pinned package's declarations to verify details: the upstream guide can
 advance beyond the installed release.
-
 
 ## Local worktree preparation
 

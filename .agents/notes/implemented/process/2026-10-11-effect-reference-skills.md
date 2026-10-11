@@ -46,6 +46,15 @@ checkout, pin it to the target release tag/commit, and verify signatures against
 the actual dependency. Revisit a subtree if repeated work needs upstream tests or
 an installation-free reference and has an owner for version synchronization.
 
+## Later guidance revision
+
+The [charter revision](../../proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#migration-guidance-and-progress)
+adapts the general effect-ts entry into a contract-first Lody lifecycle workflow,
+replacing conflicting upstream installation steps while retaining provenance and
+MIT licensing. The explicitly scoped v3-to-v4 skill and version-matched reference
+policy remain unchanged. Responsibility splitting is optional for large mixed
+modules; ordinary small migrations do not need a prescribed file layout.
+
 ## Verification limits
 
 This change affects instructions and skills only; dependencies and runtime code

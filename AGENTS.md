@@ -45,8 +45,11 @@ completed and behavior-tested within a small reviewable scope. About 500 additio
 changed lines is a sizing guide, not an acceptance or approval gate. Keep pure
 computation ordinary and preserve behavior outside the requested change. Do not
 extend the migration into unfinished dependency chains.
-Before choosing the scope, read the [selection guide](.agents/docs/cli-effect-ts.md#small-migrations-during-feature-and-fix-work)
-and apply the roadmap's completion criteria.
+Before choosing the scope, read the [migration charter](.agents/notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#unit-ledger)
+and [selection guide](.agents/docs/cli-effect-ts.md#small-migrations-during-feature-and-fix-work).
+Apply the charter's completion criteria; update its unit ledger when a migration
+changes dependencies, native boundaries, consumers or ownership. Keep small modules
+simple; use the guide's responsibility split only when a large module needs it.
 
 ## Repository boundary
 
