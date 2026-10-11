@@ -34,6 +34,12 @@ Design, invariants I1–I8 and the coverage lemma:
   post-touch momentum is reader input too. Taps, pinches, horizontal gestures,
   cancelled touches and nested scrolling must not arm conversation momentum.
   Explicit follow navigation supersedes old momentum even without `scrollend`.
+- Automatic follow requires conversation input evidence. Elastic offsets are
+  sampled in the valid scroll range and must not trigger correction writes.
+  Reaching the exact edge preserves native input; near-edge or stale-bottom
+  snapping waits for `scrollend`. Outside focus, pointer input and editing clear
+  old conversation evidence. Rationale:
+  [bottom ownership](../../../../../.agents/notes/implemented/bug-fix/2026-10-11-mobile-conversation-bottom-ownership.md).
 - `keyed-layout/` came from Lody's removed Virtua fork with its tests; engine
   extensions are marked `Engine:`. It is engine-owned: keep its MIT `LICENSE`.
 - Change the transaction logic only with a model test in

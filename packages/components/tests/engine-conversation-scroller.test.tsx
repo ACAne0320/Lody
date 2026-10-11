@@ -423,6 +423,73 @@ it('an upward move with no pointer or touch is corrected back to the end', async
   }
 });
 
+it.each(['wheel', 'key', 'touch'])(
+  'downward %s input re-arms only after a near-edge scroll ends',
+  async (input) => {
+    const { ctx } = await openFollowing(`engine-down-${input}`);
+    try {
+      await act(async () => ctx.handle.current!.scrollRowToTop(30, { smooth: false }));
+      await ctx.settle();
+      await act(async () => {
+        const viewport = ctx.viewport();
+        if (input === 'wheel')
+          viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true }));
+        else if (input === 'key')
+          viewport.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+        else {
+          viewport.dispatchEvent(touch('touchstart', [[100, 140]]));
+          viewport.dispatchEvent(touch('touchend', [[100, 100]]));
+        }
+      });
+      ctx.harness.nativeScrollTo(BOTTOM(40) - 3);
+      await ctx.settle();
+      expect(ctx.state.current?.isSticky).toBe(false);
+      expect(ctx.harness.scrollTop).toBe(BOTTOM(40) - 3);
+      await act(async () => ctx.viewport().dispatchEvent(new Event('scrollend')));
+      await ctx.settle();
+      expect(ctx.state.current?.isSticky).toBe(true);
+      expect(ctx.harness.scrollTop).toBe(BOTTOM(40));
+    } finally {
+      unmount(ctx);
+    }
+  }
+);
+
+it.each(['focus', 'typing', 'pointer'])(
+  'composer %s clears old conversation momentum before browser movement',
+  async (input) => {
+    const { ctx, keys } = await openFollowing('engine-composer-focus');
+    const composer = document.createElement('textarea');
+    document.body.append(composer);
+    try {
+      if (input !== 'focus') await act(async () => composer.focus());
+      await act(async () => {
+        ctx.viewport().dispatchEvent(touch('touchstart', [[100, 100]]));
+        ctx.viewport().dispatchEvent(touch('touchend', [[100, 140]]));
+      });
+      ctx.harness.nativeScrollTo(BOTTOM(40) - 100);
+      await ctx.settle();
+      await act(async () => {
+        if (input === 'focus') composer.focus();
+        else
+          composer.dispatchEvent(
+            new Event(input === 'typing' ? 'beforeinput' : 'pointerdown', { bubbles: true })
+          );
+      });
+      ctx.harness.nativeScrollTo(BOTTOM(40) - 3);
+      await ctx.settle();
+      await act(async () => ctx.viewport().dispatchEvent(new Event('scrollend')));
+      await ctx.settle();
+      expect(ctx.state.current?.isSticky).toBe(false);
+      await appendRows(ctx, keys);
+      expect(ctx.harness.scrollTop).toBe(BOTTOM(40) - 3);
+    } finally {
+      composer.remove();
+      unmount(ctx);
+    }
+  }
+);
+
 it.each([
   [
     'a held scrollbar thumb',

@@ -35,6 +35,13 @@ const isUpwardNavigationKey = (event: KeyboardEvent): boolean =>
   event.key === 'ArrowUp' ||
   (event.key === ' ' && event.shiftKey);
 
+const isNavigationKey = (event: KeyboardEvent): boolean =>
+  isUpwardNavigationKey(event) ||
+  event.key === 'PageDown' ||
+  event.key === 'End' ||
+  event.key === 'ArrowDown' ||
+  event.key === ' ';
+
 /**
  * Whether input over `target` scrolls some element nested inside the
  * viewport (a code block, a terminal) rather than the viewport itself.
@@ -403,21 +410,24 @@ export function EngineConversationScroller({
       });
     };
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY >= 0 || event.ctrlKey) return;
+      if (event.defaultPrevented || event.deltaY === 0 || event.ctrlKey) return;
       if (element.scrollHeight <= element.clientHeight) return;
       // A code block or terminal scrolling inside a row is not the conversation.
-      if (inputScrollsNestedElement(event.target, element, true)) return;
-      controller.release('wheel-up');
+      if (inputScrollsNestedElement(event.target, element, event.deltaY < 0)) return;
+      controller.onReaderInput(event.deltaY < 0);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isUpwardNavigationKey(event) || isEditableTarget(event.target)) return;
+      if (event.defaultPrevented || !isNavigationKey(event) || isEditableTarget(event.target))
+        return;
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (target !== ownerDocument.body && !element.contains(target)) return;
-      controller.release('key-up');
+      const upward = isUpwardNavigationKey(event);
+      if (inputScrollsNestedElement(target, element, upward)) return;
+      controller.onReaderInput(upward);
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button === 0) controller.setPointerHeld(true);
+      if (event.button === 0 && event.pointerType !== 'touch') controller.setPointerHeld(true);
     };
     const onPointerUp = () => controller.setPointerHeld(false);
     let touchOrigin: { id: number; x: number; y: number } | null = null;
@@ -462,6 +472,12 @@ export function EngineConversationScroller({
       touchOrigin = null;
       touchScrolled = false;
     };
+    const onOutsideInput = (event: Event) => {
+      if (event.target instanceof Node && !element.contains(event.target)) {
+        cancelTouch();
+        controller.resetReaderInput();
+      }
+    };
     element.addEventListener('scroll', onScrollEvent, { passive: true });
     element.addEventListener('scrollend', handleScrollEnd, { passive: true });
     element.addEventListener('wheel', onWheel, { passive: true });
@@ -473,6 +489,9 @@ export function EngineConversationScroller({
     ownerDocument.addEventListener('pointerup', onPointerUp, true);
     ownerDocument.addEventListener('pointercancel', onPointerUp, true);
     ownerDocument.addEventListener('keydown', onKeyDown, true);
+    ownerDocument.addEventListener('focusin', onOutsideInput, true);
+    ownerDocument.addEventListener('pointerdown', onOutsideInput, true);
+    ownerDocument.addEventListener('beforeinput', onOutsideInput, true);
     return () => {
       element.removeEventListener('scroll', onScrollEvent);
       element.removeEventListener('scrollend', handleScrollEnd);
@@ -485,6 +504,9 @@ export function EngineConversationScroller({
       ownerDocument.removeEventListener('pointerup', onPointerUp, true);
       ownerDocument.removeEventListener('pointercancel', onPointerUp, true);
       ownerDocument.removeEventListener('keydown', onKeyDown, true);
+      ownerDocument.removeEventListener('focusin', onOutsideInput, true);
+      ownerDocument.removeEventListener('pointerdown', onOutsideInput, true);
+      ownerDocument.removeEventListener('beforeinput', onOutsideInput, true);
     };
   }, [controller, scrollElement, sessionId]);
 

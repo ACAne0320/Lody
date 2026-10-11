@@ -170,6 +170,14 @@ defines locale-specific spacing for these labels.
   a resize samples it before the scroll event. Taps, pinches, horizontal gestures,
   cancelled touches and nested scrolling do not leave momentum evidence. Model and
   adapter tests cover these orderings; iOS device behavior still needs verification.
+- **Native bottom arrival.** The controller samples elastic `scrollTop` in the
+  valid range, so overshoot/rebound does not fight a programmatic bottom reset.
+  Only conversation input can re-arm follow. An exact-edge arrival retains native
+  input; the 4px near-edge and remembered stale-bottom cases snap on `scrollend`.
+  Focus, pointer input or editing outside the viewport clears previous evidence,
+  including when the composer already has focus. Hosts without `scrollend` still
+  follow at the exact edge; near-edge recovery needs that native signal.
+  [Decision and verification](../../../../../.agents/notes/implemented/bug-fix/2026-10-11-mobile-conversation-bottom-ownership.md).
 - **`buildChatStreamItems()` filtering.** An empty assistant entry renders `null`,
   which Virtua cannot measure, and a duplicate history id produces a duplicate key
   that desyncs the list.
