@@ -18,6 +18,7 @@ import { ReadyForReviewStillDraftError, useGitHubPrDetails } from '@/hooks/use-g
 import { useGitHubPrDiff } from '@/hooks/use-github-pr-diff';
 import type { PrCommitSelection } from '@/lib/github-pr-diff';
 import { PrTabView, type PrTabViewData, type PrTabViewState } from './pr-tab-view';
+import { MissingPrAssociationAction } from './missing-pr-association-action';
 import { resolveConflictsActionAtomFamily } from './session-pr-agent-action';
 import {
   capturePrMergeFailed,
@@ -80,6 +81,7 @@ export function PrTabContainer({
     state,
     data,
     error,
+    canReassociate,
     checksPermissionError,
     refresh,
     postComment,
@@ -301,6 +303,16 @@ export function PrTabContainer({
       state={viewState}
       data={viewData}
       error={error?.message ?? null}
+      recoveryAction={
+        canReassociate && currentWorkspaceId && sessionId ? (
+          <MissingPrAssociationAction
+            workspaceId={currentWorkspaceId}
+            sessionId={sessionId}
+            repoFullName={repoFullName}
+            prNumber={prNumber}
+          />
+        ) : undefined
+      }
       isRefreshing={isRevalidating}
       isPostingComment={isPostingComment}
       checksPermissionError={checksPermissionError}

@@ -526,12 +526,36 @@ export type CloudApi = {
       { workspaceId: string; repoFullName: string; prNumber: number; sessionId: string },
       { resolved: boolean }
     >;
+    previewMissingPrAssociation: Action<
+      { workspaceId: string; repoFullName: string; prNumber: number; sessionId: string },
+      {
+        repositoryId: number;
+        repoFullName: string;
+        prNumber: number;
+        prNodeId: string;
+        title: string;
+        url: string;
+      }
+    >;
+    confirmMissingPrAssociation: Action<
+      {
+        workspaceId: string;
+        repoFullName: string;
+        prNumber: number;
+        sessionId: string;
+        expectedRepositoryId: number;
+        expectedPrNodeId: string;
+      },
+      { associated: boolean }
+    >;
     getPrCacheVersions: Query<
       { workspaceId: string; repoFullName: string; prNumber: number; sessionId?: string },
       {
         repoFullName?: string;
         repositoryId?: number;
         identityPending?: boolean;
+        associationMissing?: boolean;
+        canReassociate?: boolean;
         prDetailsUpdatedAt: number | null;
         reviewCommentsUpdatedAt: number | null;
         reviewsUpdatedAt: number | null;

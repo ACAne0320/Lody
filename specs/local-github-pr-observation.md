@@ -60,9 +60,18 @@ mutation affordances stay unavailable until details load. Branch observation is
 event-driven; PR discovery and status use bounded background polling, not a new
 polling loop per view. Product-cloud requests remain forbidden in local mode.
 
+A missing hosted association is not evidence that a session belongs to the
+repository currently using its recorded name. Ordinary Retry repairs only
+provable existing legacy associations. A workspace owner or administrator may
+explicitly establish a new association after reviewing the currently verified
+repository and PR. Confirmation binds the preview's immutable repository and PR
+identity, rechecks current access, and refuses conflicting existing links. This
+does not reconstruct historical identity or bypass GitHub authorization.
+
 ## Evidence
 
 - [Reconciler boundaries](../apps/cli/src/lib/pr-poller/AGENTS.md)
 - [Workspace Git observer](../apps/cli/src/session/workspace-git-service.ts)
 - [Decision](../.agents/notes/implemented/feature/2026-09-24-local-github-pr-observation.md)
 - [Hosted publication correction](../.agents/notes/proposed/bug-fix/2026-10-01-pr-observation-association.md)
+- [Missing association confirmation](../.agents/notes/proposed/bug-fix/2026-10-12-missing-pr-association.md)

@@ -3,6 +3,55 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { SessionMeta } from '@lody/shared';
 
+test('missing association uses an explicit current-PR confirmation in the real UI', async ({
+  browser,
+}, testInfo) => {
+  const baseURL = testInfo.project.use.baseURL ?? 'http://127.0.0.1:6006';
+  for (const width of [1280, 480, 300]) {
+    const context = await browser.newContext({
+      baseURL,
+      viewport: { width, height: 720 },
+      reducedMotion: 'reduce',
+    });
+    await context.route('**/*', (route) =>
+      new URL(route.request().url()).origin === new URL(baseURL).origin
+        ? route.continue()
+        : route.abort()
+    );
+    await context.routeWebSocket('**/*', async (socket) => {
+      if (new URL(socket.url()).host === new URL(baseURL).host) socket.connectToServer();
+      else await socket.close();
+    });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    try {
+      await page.goto(
+        '/iframe.html?id=sessions-prtabview--error-association-missing&viewMode=story&globals=theme:light;locale:en'
+      );
+      await page.getByRole('button', { name: 'Verify and associate PR', exact: true }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByText('Verified current PR', { exact: true })).toBeVisible();
+      await expect(dialog).toContainText(
+        'original association is missing and cannot be reconstructed'
+      );
+      await expect(page.locator('textarea')).toHaveCount(0);
+      await expect(dialog.getByRole('link', { name: 'Open on GitHub' })).toHaveAttribute(
+        'href',
+        'https://github.com/owner/repo/pull/42'
+      );
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      await page.getByRole('button', { name: 'Verify and associate PR', exact: true }).click();
+      await dialog.getByRole('button', { name: 'Confirm association', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }
+});
+
 test('observed PR replaces creation actions without granting hosted mutations', async ({
   browser,
 }, testInfo) => {

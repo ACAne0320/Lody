@@ -42,9 +42,15 @@ GitHub 观测及发布，也不把跳过的关联当作成功。耗尽前，满�
 一次裸失败；详情恢复前不提供修改入口。分支观测由事件触发，
 PR 发现与状态使用有界后台轮询，不为每个视图增加轮询循环。本地模式仍禁止产品云端请求。
 
+缺失的托管关联不能证明会话属于当前占用其记录名称的仓库。普通重试只能修复
+已有且可证明的旧关联。工作区所有者或管理员可以查看经过核验的当前仓库与 PR，
+明确建立新关联。确认绑定预览时的不可变仓库和 PR 身份，重新核验当前权限，
+并拒绝冲突的已有记录。这不还原历史身份，也不绕过 GitHub 授权。
+
 ## 证据
 
 - [协调器边界](../apps/cli/src/lib/pr-poller/AGENTS.md)
 - [工作目录 Git 观测](../apps/cli/src/session/workspace-git-service.ts)
 - [决策](../.agents/notes/implemented/feature/2026-09-24-local-github-pr-observation.zh.md)
 - [托管发布修正](../.agents/notes/proposed/bug-fix/2026-10-01-pr-observation-association.zh.md)
+- [缺失关联确认](../.agents/notes/proposed/bug-fix/2026-10-12-missing-pr-association.zh.md)

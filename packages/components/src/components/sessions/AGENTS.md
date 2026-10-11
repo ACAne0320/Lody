@@ -120,6 +120,8 @@ Read parent rules and each heading's linked context before edits.
   same commit as any non-user `isSidebarOpen` write.
 - "Current branch" copy uses `SessionMeta.branchName` only.
 - PR summaries do not enable hosted detail/mutation APIs; local PR links open externally.
+- Missing PR links require server-authorized admin preview/confirmation; Retry never
+  creates them. Bind consent to login and owner-session PR.
 
 ## [File surfaces](../../../../../.agents/docs/sessions-file-surfaces.md)
 

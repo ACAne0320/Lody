@@ -38,6 +38,8 @@ const convexAuthMock = vi.hoisted(() => ({
 const identityMocks = vi.hoisted(() => ({
   versions: null as null | {
     identityPending?: boolean;
+    associationMissing?: boolean;
+    canReassociate?: boolean;
     repositoryId?: number;
     repoFullName?: string;
   },
@@ -338,6 +340,24 @@ describe('useGitHubPrDetails target isolation', () => {
     expect(currentResult?.error).toBeNull();
   });
 
+  it('explains a missing association without releasing the read or write gates', async () => {
+    identityMocks.versions = {
+      identityPending: true,
+      associationMissing: true,
+      canReassociate: true,
+    };
+    await renderHook({
+      workspaceId: 'identity-ws',
+      sessionId: 'owner-A',
+      repoFullName: 'org/repo',
+      prNumber: 42,
+    });
+    expect(currentResult?.error?.message).toContain('cannot reconstruct a missing one');
+    expect(currentResult?.canReassociate).toBe(true);
+    expect(currentResult?.data).toBeNull();
+    expect(githubMocks.githubFetchPullRequestDetails).not.toHaveBeenCalled();
+    await expect(currentResult?.postComment('test')).rejects.toThrow('not ready');
+  });
   it('rejects a comment instead of silently dropping it while identity is unverified', async () => {
     identityMocks.versions = { identityPending: true };
     await renderHook({

@@ -570,6 +570,7 @@ export interface PrTabViewProps {
   state: PrTabViewState;
   data?: PrTabViewData | null;
   error?: string | null;
+  recoveryAction?: React.ReactNode;
   isRefreshing?: boolean;
   isPostingComment?: boolean;
   checksPermissionError?: boolean;
@@ -1781,12 +1782,14 @@ function Composer({
 function PrDetailsUnavailable({
   githubUrl,
   error,
+  recoveryAction,
   isRefreshing,
   onRetry,
   onReviewAppAccess,
 }: {
   githubUrl: string;
   error: string | null;
+  recoveryAction?: React.ReactNode;
   isRefreshing: boolean;
   onRetry?: () => void | Promise<unknown>;
   /** Opens the GitHub App install page — the same destination the checks-permission grant uses. */
@@ -1870,6 +1873,7 @@ function PrDetailsUnavailable({
               {t('sessions.prTab.retry', 'Retry')}
             </Button>
           )}
+          {recoveryAction}
         </div>
       </div>
     </section>
@@ -1895,6 +1899,7 @@ export const PrTabView = memo(function PrTabView({
   state,
   data,
   error,
+  recoveryAction,
   isRefreshing,
   isPostingComment,
   checksPermissionError,
@@ -1973,6 +1978,7 @@ export const PrTabView = memo(function PrTabView({
           <PrDetailsUnavailable
             githubUrl={badgeMeta.url}
             error={error ?? null}
+            recoveryAction={recoveryAction}
             isRefreshing={Boolean(isRefreshing)}
             onRetry={onRefresh}
             // Same destination the checks-permission grant uses: the GitHub

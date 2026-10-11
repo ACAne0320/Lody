@@ -73,6 +73,8 @@ export interface UseGitHubPrDetailsResult {
   state: GitHubPrDetailsState;
   data: GitHubPrDetailsData | null;
   error: Error | null;
+  /** An administrator may explicitly create a missing association after verification. */
+  canReassociate: boolean;
   checksPermissionError: boolean;
   /** True while any slice is being revalidated in the background. */
   isRevalidating: boolean;
@@ -1251,6 +1253,7 @@ export function useGitHubPrDetails({
     state: identity.error ? 'error' : effectiveState,
     data: enabledWithInputs ? data : null,
     error: identity.error ?? error,
+    canReassociate: identity.canReassociate,
 
     checksPermissionError,
     isRevalidating,

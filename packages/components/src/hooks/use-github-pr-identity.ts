@@ -80,19 +80,25 @@ export function useGitHubPrIdentity({
     () =>
       unresolved
         ? new Error(
-            t(
-              'sessions.prTab.repositoryIdentityUnresolved',
-              'Cannot verify this session’s repository identity. GitHub operations are paused. Ask a workspace administrator to check Settings > GitHub, the active GitHub App installation, repository access and the original PR association. Background association stops after 6 failed attempts; after fixing access, restart this machine’s Lody background agent and retry. Signing in again does not repair a missing repository link.'
-            )
+            serverVersions?.associationMissing
+              ? t(
+                  'sessions.prTab.associationMissing',
+                  'This session has no verified PR association. Retry can repair existing legacy records, but cannot reconstruct a missing one. A workspace administrator can verify the current PR and explicitly associate it. You can still open it on GitHub.'
+                )
+              : t(
+                  'sessions.prTab.repositoryIdentityUnresolved',
+                  'Cannot verify this session’s repository identity. GitHub operations are paused. Ask a workspace administrator to check Settings > GitHub, the active GitHub App installation, repository access and the original PR association. Background association stops after 6 failed attempts; after fixing access, restart this machine’s Lody background agent and retry. Signing in again does not repair a missing repository link.'
+                )
           )
         : null,
-    [t, unresolved]
+    [serverVersions?.associationMissing, t, unresolved]
   );
   return {
     serverVersions,
     repositoryId,
     repoFullName: serverVersions?.repoFullName ?? requestedRepoFullName,
     ready,
+    canReassociate: unresolved && isAuthenticated && serverVersions?.canReassociate === true,
     error,
     retry,
   };

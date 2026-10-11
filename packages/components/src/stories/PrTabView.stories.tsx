@@ -1,5 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { useState } from 'react';
+import {
+  createCapabilitySet,
+  createLocalPlatformProvider,
+  createStaticStore,
+  type PlatformProvider,
+} from '@lody/platform';
+import { PlatformContext } from '@lody/platform/react';
+import { AuthenticatedConvexContext } from '@/hooks/use-authenticated-convex';
+import { MissingPrAssociationAction } from '@/components/sessions/missing-pr-association-action';
 import type {
   GitHubCheckRun,
   GitHubIssueComment,
@@ -573,6 +582,70 @@ export const ErrorIdentityBlocked: Story = {
       'Cannot verify this session’s repository identity. GitHub operations are paused. Retry after reconnecting to Lody. If the repository was removed, reinstalled or renamed, ask a workspace administrator to verify the original repository and PR association; a matching name alone is not enough.',
     ...storyCallbacks,
   },
+};
+
+/** Synthetic cloud actions exercise the real confirmation UI without a backend. */
+const associationPlatform: PlatformProvider = {
+  ...createLocalPlatformProvider({
+    session: createStaticStore({ status: 'unauthenticated' }),
+    workspaces: createStaticStore({ status: 'ready', workspaces: [], activeWorkspaceId: null }),
+  }),
+  kind: 'cloud',
+  capabilities: createCapabilitySet(['githubIntegration']),
+  sync: { mode: 'cloud' },
+  cloudApi: {
+    useQuery: () => undefined,
+    useMutation: () => async () => {
+      throw new Error('No mutations in this fixture');
+    },
+    useAction:
+      <Args, Result>(operation: { name: string }) =>
+      async (_args: Args): Promise<Result> => {
+        const result =
+          operation.name === 'github:previewMissingPrAssociation'
+            ? {
+                repositoryId: 99,
+                repoFullName: 'owner/repo',
+                prNumber: 42,
+                prNodeId: 'PR_fixture',
+                title: 'Verified current PR',
+                url: 'https://github.com/owner/repo/pull/42',
+              }
+            : { associated: true };
+        return result as Result;
+      },
+  },
+};
+
+export const ErrorAssociationMissing: Story = {
+  args: { repoFullName: 'owner/repo', prNumber: 42, state: 'error', data: null, ...storyCallbacks },
+  render: (args) => (
+    <PlatformContext.Provider value={associationPlatform}>
+      <AuthenticatedConvexContext.Provider
+        value={{
+          authSessionId: 'fixture-login',
+          isAuthenticated: true,
+          isLoading: false,
+          confirmedUnauthenticated: false,
+          isRecovering: false,
+          claimAutomaticCommand: () => false,
+          requestAuthRecovery: () => {},
+        }}
+      >
+        <PrTabView
+          {...args}
+          recoveryAction={
+            <MissingPrAssociationAction
+              workspaceId="fixture-workspace"
+              sessionId="fixture-owner"
+              repoFullName="owner/repo"
+              prNumber={42}
+            />
+          }
+        />
+      </AuthenticatedConvexContext.Provider>
+    </PlatformContext.Provider>
+  ),
 };
 
 export const ChecksPermissionMissing: Story = {

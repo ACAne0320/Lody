@@ -296,6 +296,12 @@ export const cloudOperations = {
     resolveLegacyPrRepositoryIdentity: mutation<
       ConvexApi['github']['resolveLegacyPrRepositoryIdentity']
     >('github:resolveLegacyPrRepositoryIdentity'),
+    previewMissingPrAssociation: action<ConvexApi['github']['previewMissingPrAssociation']>(
+      'github:previewMissingPrAssociation'
+    ),
+    confirmMissingPrAssociation: action<ConvexApi['github']['confirmMissingPrAssociation']>(
+      'github:confirmMissingPrAssociation'
+    ),
     getWorkspaceRepositories: query<ConvexApi['github']['getWorkspaceRepositories']>(
       'github:getWorkspaceRepositories'
     ),

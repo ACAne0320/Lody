@@ -21,9 +21,23 @@ const mocks = vi.hoisted(() => {
     toastError: vi.fn(),
     useGitHubPrDetails: vi.fn(),
     useGitHubPrDiff: vi.fn(),
+    authSessionId: 'login-A',
+    previewAssociation: vi.fn(),
+    confirmAssociation: vi.fn(),
     ReadyForReviewStillDraftError,
   };
 });
+
+vi.mock('@/hooks/use-authenticated-convex', () => ({
+  useAuthenticatedConvex: () => ({ isAuthenticated: true, authSessionId: mocks.authSessionId }),
+}));
+vi.mock('@lody/platform/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@lody/platform/react')>()),
+  useCloudAction: (operation: { name: string }) =>
+    operation.name === 'github:previewMissingPrAssociation'
+      ? mocks.previewAssociation
+      : mocks.confirmAssociation,
+}));
 
 vi.mock('@posthog/react', () => ({
   usePostHog: () => null,
@@ -178,6 +192,16 @@ describe('PrTabContainer ready-for-review auth recovery', () => {
     mocks.toastError.mockReset();
     mocks.useGitHubPrDetails.mockReset();
     mocks.useGitHubPrDiff.mockReset();
+    mocks.authSessionId = 'login-A';
+    mocks.previewAssociation.mockReset().mockResolvedValue({
+      repositoryId: 99,
+      repoFullName: 'loro-dev/lody',
+      prNumber: 42,
+      prNodeId: 'PR_A',
+      title: 'Verified current PR',
+      url: 'https://github.com/loro-dev/lody/pull/42',
+    });
+    mocks.confirmAssociation.mockReset().mockResolvedValue({ associated: true });
 
     store = createStore();
     store.set(currentWorkspaceIdAtom, 'workspace-1' as WorkspaceId);
@@ -212,15 +236,107 @@ describe('PrTabContainer ready-for-review auth recovery', () => {
     vi.clearAllMocks();
   });
 
-  async function renderContainer(): Promise<void> {
+  async function renderContainer(sessionId?: string): Promise<void> {
     await act(async () => {
       root?.render(
         <Provider store={store}>
-          <PrTabContainer repoFullName="loro-dev/lody" prNumber={42} />
+          <PrTabContainer repoFullName="loro-dev/lody" prNumber={42} sessionId={sessionId} />
         </Provider>
       );
     });
   }
+
+  function showMissingAssociation(canReassociate = true) {
+    mocks.useGitHubPrDetails.mockReturnValue({
+      ...createPrDetailsResult(),
+      state: 'error',
+      data: null,
+      error: new Error('This session has no verified PR association.'),
+      canReassociate,
+    });
+  }
+  async function click(label: string, scope: ParentNode = document) {
+    const button = Array.from(scope.querySelectorAll<HTMLButtonElement>('button')).find(
+      (node) => node.textContent?.trim() === label
+    );
+    if (!button) throw new Error(`Missing button: ${label}`);
+    await act(async () => button.click());
+    await flushPromises();
+  }
+
+  it('previews the current PR and creates an association only after explicit confirmation', async () => {
+    showMissingAssociation();
+    await renderContainer('owner-A');
+    await click('Verify and associate PR');
+    expect(document.body.textContent).toContain('Verified current PR');
+    expect(document.body.textContent).toContain('original association is missing');
+    expect(document.querySelector('textarea')).toBeNull();
+    expect(mocks.confirmAssociation).not.toHaveBeenCalled();
+    await click('Confirm association');
+    expect(mocks.confirmAssociation).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      sessionId: 'owner-A',
+      repoFullName: 'loro-dev/lody',
+      prNumber: 42,
+      expectedRepositoryId: 99,
+      expectedPrNodeId: 'PR_A',
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+  it('does not offer manual association to viewers without the server capability', async () => {
+    showMissingAssociation(false);
+    await renderContainer('owner-A');
+    expect(document.body.textContent).not.toContain('Verify and associate PR');
+    expect(document.querySelector('textarea')).toBeNull();
+    expect(mocks.confirmAssociation).not.toHaveBeenCalled();
+  });
+  it('keeps a verification failure visible and never enables confirmation', async () => {
+    showMissingAssociation();
+    mocks.previewAssociation.mockRejectedValueOnce(new Error('App access was revoked'));
+    await renderContainer('owner-A');
+    await click('Verify and associate PR');
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      'App access was revoked'
+    );
+    expect(document.body.textContent).not.toContain('Confirm association');
+    await click('Retry', document.querySelector('[role="dialog"]')!);
+    expect(document.body.textContent).toContain('Verified current PR');
+    expect(mocks.confirmAssociation).not.toHaveBeenCalled();
+  });
+  it.each(['session', 'workspace', 'login'])(
+    'invalidates consent when the %s changes',
+    async (change) => {
+      showMissingAssociation();
+      await renderContainer('owner-A');
+      await click('Verify and associate PR');
+      if (change === 'login') mocks.authSessionId = 'login-B';
+      if (change === 'workspace')
+        await act(async () => {
+          store.set(currentWorkspaceIdAtom, 'workspace-2' as WorkspaceId);
+        });
+      await renderContainer(change === 'session' ? 'owner-B' : 'owner-A');
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(document.body.textContent).not.toContain('Verified current PR');
+      expect(mocks.confirmAssociation).not.toHaveBeenCalled();
+    }
+  );
+  it('ignores a late preview for a session that is no longer selected', async () => {
+    showMissingAssociation();
+    let resolvePreview!: (value: unknown) => void;
+    mocks.previewAssociation.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePreview = resolve;
+      })
+    );
+    await renderContainer('owner-A');
+    await click('Verify and associate PR');
+    await renderContainer('owner-B');
+    await act(async () =>
+      resolvePreview({ repositoryId: 1, prNodeId: 'old', title: 'Old session PR' })
+    );
+    expect(document.body.textContent).not.toContain('Old session PR');
+    expect(mocks.confirmAssociation).not.toHaveBeenCalled();
+  });
 
   function getReadyButton(): HTMLButtonElement {
     const button = Array.from(container?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
