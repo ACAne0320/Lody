@@ -31,9 +31,10 @@ Repository map and entry points: [README.md](README.md#repository).
 
 ## Effect reference
 
-Before Effect work, read the [Effect skill](.agents/skills/effect-ts/SKILL.md) and
-consuming package's resolved `effect/AGENTS.md` completely, following required
-links. Preserve locked versions and Lody's behavioral acceptance rules.
+Before assessing a native migration or doing any Effect work, read the
+[Effect skill](.agents/skills/effect-ts/SKILL.md) and the consuming package's
+resolved `effect/AGENTS.md` completely, following required links. Preserve locked
+versions and Lody's behavioral acceptance rules.
 Explicit v3 migrations also use the
 [migration skill](.agents/skills/effect-v3-to-v4/SKILL.md).
 

@@ -43,6 +43,9 @@ The root [Effect rule](../../AGENTS.md#effect-reference) requires assessing a sm
 native migration when a feature or fix touches an effectful module. Prefer it in
 the same PR when it directly improves the requested behavior: for example,
 replacing the Promise queue or timer lifecycle responsible for a cancellation bug.
+Before assessing that scope, read the [Effect skill](../skills/effect-ts/SKILL.md)
+and the consuming package's resolved `effect/AGENTS.md` completely; explicit v3
+migrations also use the [migration skill](../skills/effect-v3-to-v4/SKILL.md).
 Use existing Effect primitives for ownership, coordination, retry and local
 observability where they simplify that work. Preserve existing telemetry policy.
 
