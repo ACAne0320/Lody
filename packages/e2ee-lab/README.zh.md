@@ -42,6 +42,7 @@ Flock 0.4.3 没有公开的确定性 free/dispose；关闭 SDK 订阅、丢弃�
 绑定 credential/request Org，拒绝 R 发送或内容写入。它只做策略检查，
 不代表凭据认证、固定 CAS 或 payload 准入。`makeLabMailboxRemote` 通过 HTTP
 消费公开接收/分发接口，限制 JSON/hex/page 大小，关闭时 abort 并等待完整响应体。
+可选原生 transport lease 明确转交，实际工作结束后才 close；global fetch 不需 close。
 真实 HPKE 投递、SQLite 保存/读回/报告经过此适配器；篡改帧不安装也不报告，
 重开后 R 仍不能发送。HTTP fixture 的预认证合成会话和 AES 包装是明确的 mock
 边界；宿主凭据认证、完整轮换/actor 组合仍未完成。该密钥轮次在同一 OS 进程内

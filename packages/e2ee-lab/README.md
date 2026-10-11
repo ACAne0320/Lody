@@ -52,7 +52,9 @@ bridge is confined to SDK callbacks. Logical scheduler commands use typed Result
 membership, binds credential/request Org, and refuses R sending or content writes.
 It is a policy gate, not credential authentication, pinned CAS or payload admission.
 `makeLabMailboxRemote` consumes the public receiver/distributor interface over HTTP,
-bounds JSON/hex/pages, aborts and awaits the entire response body on close. Real
+bounds JSON/hex/pages, aborts and awaits the entire response body on close. An
+optional transferred native transport lease closes only after that settlement;
+global fetch requires no native close. Real
 HPKE delivery and SQLite save/readback/report rounds run through this adapter;
 tampered frames install nothing and do not report, and Recovery cannot send after
 stores reopen. The HTTP fixture's pre-authenticated synthetic session and AES

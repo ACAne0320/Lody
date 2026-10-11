@@ -123,6 +123,8 @@ describe('Lab HTTP mailbox transport consuming public SQLite mailbox', () => {
     const entered = latch(),
       aborted = latch(),
       release = latch();
+    let transportClosedEarly = false,
+      transportClosed = false;
     let bodySettled = false,
       closedEarly = false,
       ownerClosed = false;
@@ -139,6 +141,10 @@ describe('Lab HTTP mailbox transport consuming public SQLite mailbox', () => {
           );
           const client = yield* makeLabMailboxRemote({
             url: 'http://synthetic.invalid/mailbox',
+            close: async () => {
+              transportClosedEarly = !bodySettled;
+              transportClosed = true;
+            },
             fetch: async (_input, init) => {
               init!.signal!.addEventListener('abort', aborted.resolve, { once: true });
               return new Response(
@@ -165,6 +171,8 @@ describe('Lab HTTP mailbox transport consuming public SQLite mailbox', () => {
           yield* Fiber.join(closing);
           expect(pending).toBeUndefined();
           expect(bodySettled).toBe(true);
+          expect(transportClosed).toBe(true);
+          expect(transportClosedEarly).toBe(false);
           expect(ownerClosed).toBe(true);
           expect(closedEarly).toBe(false);
           expect(Result.isFailure(yield* Fiber.join(worker))).toBe(true);

@@ -132,6 +132,18 @@ results do not certify this increment. Current complete root `pnpm check` passes
 fingerprints throughout; format/docs/public boundary pass. The initial current
 check found three mailbox static errors, corrected before the passing repeat. No Lab Draft or independent whole-Lab acceptance yet.
 
+The fixed 02f checkpoint's new response-body test initially let a no-wait mutant
+escape; its passing positive suite is not that failure's acceptance evidence.
+The adapter now accepts an optional explicitly owned native transport `close`
+capability, captured at acquisition and run once after raw fetch/body settlement.
+Global fetch has no native lease to close. The synthetic lease records actual
+close before body completion; the revised no-wait mutant hits
+`transportClosedEarly` (5ms, no timeout), then restored tests pass. Failure gates
+are finalizer-owned, with no fixed microtask drains or sleeps. Preserve both the
+escaped original log and the new failure. Current same-count suite/typecheck pass;
+complete root pnpm check Lab30/core302 for this native-lease increment passes,
+with unchanged Lab input SHA; format/docs/public boundary pass.
+
 ## Remaining work
 
 Migrate the actual host/actors, content sessions, Loro/Flock persistence, driver,

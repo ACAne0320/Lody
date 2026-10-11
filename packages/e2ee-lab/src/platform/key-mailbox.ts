@@ -56,11 +56,17 @@ const ack = (value: unknown) => {
 export function makeLabMailboxRemote(input: {
   readonly url: string;
   readonly fetch: typeof fetch;
+  /** Optional owned transport lease (e.g. an authenticated native HTTP session).
+   * Runs only after actual fetch/body settlement; global fetch needs no native close. */
+  readonly close?: () => Promise<void>;
 }) {
   return Effect.gen(function* () {
     const url = input.url,
-      fetchImpl = input.fetch;
-    const owner = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
+      fetchImpl = input.fetch,
+      closeTransport = input.close;
+    const owner = yield* makeLabSdkOwner(() => ({
+      close: closeTransport ?? (async () => undefined),
+    }));
     const call = <A>(body: unknown, decode: (value: unknown) => A) =>
       owner
         .invoke(async () => {

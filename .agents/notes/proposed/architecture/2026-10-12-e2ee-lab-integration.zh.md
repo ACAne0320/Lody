@@ -99,6 +99,15 @@ root Lab24/core302、format/docs/boundary 证据，不能继承为本增量通�
 Lab 输入指纹在检查开始/结束不变。最初当前检查发现邮箱3项静态错误，
 修复后重复检查完整通过。尚无 Lab Draft 或整 Lab 独立验收。
 
+固定02f检查点的新响应体测试最初让 no-wait 负控逃逸；正向通过不算该失败验收。
+适配器现可接收明确转交的可选原生 transport close 能力，获取时捕获，
+等待实际 fetch/body 结束后关闭一次；global fetch 无原生 lease 可关。
+合成 lease 在实际 close 时记录响应体是否完成，新负控5ms明确命中
+transportClosedEarly 断言，无 timeout，恢复后通过。失败门由 finalizer 释放，
+无固定 microtask drain 或 sleep。旧逃逸及新失败日志保留。
+当前同计数suite/typecheck及原生lease完整 root pnpmcheck Lab30/core302
+通过，Lab输入SHA不变；format/docs/public boundary通过。
+
 ## 剩余工作
 
 原完整 host/gateway、actors、投递/轮换组合、Flock 进程重开/恢复/live session、
