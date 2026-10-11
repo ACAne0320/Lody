@@ -7,23 +7,79 @@ Translation: current
 
 ## 摘要
 
-原 Lab 消费旧 core API，且有两项账本读取失败证据。迁移至公开模块与发布 SDK，先完成持久账本读取、明确逻辑 permit 与 scoped 原生工作。这一实施检查点的真实本地传输和进程重开测试通过。原 host/actor、保护内容、重放及完整故障验收仍待完成，因此先集中在同一集成分支，再形成 Draft。
+原 Lab 消费旧 core API，并留下两项账本读取失败。迁移至公开模块与发布 SDK，
+先完成持久账本、明确逻辑 permit 与 Scope 原生工作，再组合真实内容 SDK。
+当前真实本地传输、SQLite 和另一个 OS 进程重开测试通过；原完整 host/actor、
+重放和故障验收仍未完成。工作集中在一个集成分支，尚未形成 Lab Draft。
 
 ## 归属与边界
 
-直接父层为 sender #1493 `36ca2685b7eefeb15ebd041e50444796c2686652`。
-实际来源与目标包均是 `packages/e2ee-lab`。客户端消费公开 reader/feed，无复制 verifier/store 或注入签名接受。调用方选择的签名检查点独立于不可信传输游标。串行读取将验证后的原记录与游标在同一 SQLite 事务提交。Scope abort 并等待借用 SDK 读取后才关闭 owner。
-
-原 scheduler 与稳定 schedule identity 已迁至 `src/pure`，无效 permit/time 操作返回明确的 Result。scoped runtime 要求显式 mode/time/fetch 输入，已弃用 Promise 桥仅供 SDK/harness 回调。关闭先拒绝新工作、abort，等待保留的原生请求和阶段工作，再关闭内部 Effect owner；晚返回值和 frame 被拒绝。runtime/driver/host 的组合仍不完整。
+直接父层为 update binding #1496 `0418fd69e22d1eeba47553714473ec54762837ec`。
+实际来源和目标包都是 `packages/e2ee-lab`。客户端消费公开 reader/feed，
+无复制 verifier/store 或签名接受回调。独立选定的签名 checkpoint 不来自传输 offset。
+串行读取将原始验证记录和游标以一个 SQLite 事务提交；Scope abort 并等待借用 SDK
+读取，再关闭 owner。原 scheduler/稳定 schedule identity 迁至 `src/pure`，
+无效操作返回明确 Result。runtime 要求显式 mode/time/fetch；Promise bridge
+仅供 SDK/harness 回调，关闭先拒绝入口、abort、等待实际原生工作，再关闭 Effect owner。
 
 ## 证据与依赖
 
-九项作者测试通过：官方真实 SQLite Riverrun 0.3.0、发布 streams-client 0.9.0、合成账号的真实 Ed25519 记录、真实文件与另一 OS 进程；新位置重复记录/旧页拒绝；真实 SQLite IGNORE 回滚及同一历史重试；逻辑父链/单次消费 permit；原生结算与 owner 清理。原生工作 mock 边界明确。首版不等待负向控制逃过初版测试，日志保留；加入真实 owner-finalizer 顺序断言后，不等待控制失败而修复套件通过。这是新负向控制，不是原 Lab2 失败的关闭。
+当前作者 Lab **24 项通过**，包 typecheck 和 focused lint 通过；
+包含真实 Riverrun0.3.0、streams-client0.9.0、合成账户真实 Ed25519、SQLite 和 OS 重开；
+重复记录的新 offset/旧页拒绝、SQLite IGNORE 回滚重试、logical permit 和原生清理。
+最初 runtime no-wait 负控逃逸；加强真实 owner finalizer 顺序断言后，删除等待明确失败。
+旧逃逸日志和新失败均保留，不把它称作原 Lab2 完整闭合。
+历史 e677 root `pnpm check` Lab9/core296、格式/docs/boundary 通过单独保留；
+当前完整 root pnpm check Lab24/core302、format、docs 和 public boundary 通过，
+CI=true 非交互 frozen install 忽略 scripts 通过；此前无 TTY 中止日志保留。
+root 检查开始与结束之间 Lab 文件指纹不变。没有继承历史结果为当前通过，
+也未声明 WIP 的 CI/独立验收。
 
-包 typecheck、完整根 `pnpm check`（Lab9/core296）、根格式化、docs 与公开边界通过。作者本地检查与独立审查、分支 CI 分列，后两项尚无此 WIP 结论。来源和目标指纹在包 migration provenance 与完整 manifest 中。
+Riverrun 固定0.3.0，根 catalog 不变；包级 override 使用 SQLite13.0.3。
+旧 lock 条目逐字保留，仅添加 Lab importer/Riverrun 和 override；历史 frozen install
+忽略 scripts 通过。当前 direct SQLite import 已移至 dependencies，版本不变。
+Lab/core 同一 Effect4.0.2。main 核对至987962e77022df6a800f4e889f124b51f6eb8056，
+对应CI38151323459成功，与实际 stack bottom 的 core/Lab/spec 路径无交集。
 
-保留来源显式 Riverrun 0.3.0，不改根 catalog；包级 override 使用已定 SQLite 13.0.3。首次解析带出无关依赖变化，已保留所有旧锁项，仅加入 Lab importer、新 Riverrun package/snapshot 和 override。禁脚本 frozen install 通过，Lab/core 解析到同一 Effect 4.0.2。main 已 fetch 为 `987962e77022df6a800f4e889f124b51f6eb8056`，准确 CI `38151323459` 成功，相对实际栈底无 core/Lab/协议变化。
+## 真实内容、submission 与恢复组合
+
+actor 消费公开 admission/signing 和未改 P09，无重复 genesis/proposal codec。
+等待前复制命令，pending 时拒绝新签名，terminal 被消费前必须在真实持久 feed 中出现。
+真实 SQLite IGNORE 揭露未提交 actor 将 Result 当布尔值；修为 Effect.fromResult，
+保留旧失败和无 signer 的真实子进程恢复通过。P09 没有修改。
+
+Promise provider 消费公开 binding，仅在实际 SDK 回调边界保留内部 Effect owner。
+真实 Loro/Flock SDK 使用本地 Riverrun。每文档 SQLite 原子保存实际 native snapshot
+和精确 cursor，并事务读回；SQL IGNORE 无法确认保存。另一 OS 进程重开 Loro/
+cursor/protected epochs，不需要可用 signer。fixture AES 包装明确是合成能力，
+不是生产安全存钥或算法选择。
+
+SDK owner 保留 raw 单次操作，真实结束后才 SDK.close 和 Loro.free。
+发布 SDK.close 本身不等待所有单次操作。no-wait 负控明确命中 closedEarly 断言，
+非 timeout；断言失败时 finalizer 释放门，避免清理死锁。Flock0.4.3 没有公开
+free/dispose，只关闭 SDK 订阅并丢引用，不读 private inner，不声称确定性 Wasm 释放。
+
+新 Loro session 串行管理单文档操作，上传前保存本地编辑，失败只停该文档。
+初始 WIP 在编辑后才创建 SDK，使 appendWriteOnly 成功但未上传本地队列；
+真实远端内容断言失败。已修为创建并订阅 SDK 后再编辑，保留旧失败/新通过。
+全历史恢复重载实际持久本地状态，保留本地编辑；整次 SDK pull 成功后才保存最终对。
+恢复失败时旧持久对不变。
+
+实际 Riverrun0.3.0 在非零 offset PUT snapshot 后推进 earliest_offset。
+公开历史读返回 gone，SDK 恢复回到同一个坏快照。真实测试区分历史可读时恢复成功，
+历史不可读时保持 document-stopped/原游标，其他文档仍继续。
+不得重置宿主 SQL offset 或删除快照制造恢复成功。
+上游带授权的历史保留/读取 API 与可信宿主历史入口归属是需提前协调的契约缺口，
+这里没有发明新 header/offset wire。
+
+纯 replay 比较仅消费已记录合成 fixture，不提供熵源或重新 seal。除原始受保护请求/
+响应字节，还比较 frame 的 actor/operation/phase/resource。原 multipart 改写不完整消息，
+多段短 boundary 又触发越界；保留原4通过/新增2失败，修完整边界与精确容量后6通过。
+完整 replay/driver/host 未完成，不复制原 driver 跳过缺失 identity、提前放行后续 permit 的启发式。
 
 ## 剩余工作
 
-继续迁实际 host/actors、内容会话、Loro/Flock 持久化、driver、攻击者能力、捕获重放、fixtures 和 CLI，再独立复验原 Lab2 场景。快照 wire/offset、重放随机数、恢复库、D12、发布设备永久丢失仍待决定。整栈 CI 与验收待完成。未启用生产 E2EE、原生存钥或部署。
+原完整 host/gateway、actors、投递/轮换组合、Flock 进程重开/恢复/live session、
+driver、攻击能力、捕获 replay、fixtures 和 CLI 尚未完成，再独立复验原 Lab2。
+快照 wire/offset、保留历史入口、replay 熵、严格期限 B、恢复库、D12、
+永久丢失发布设备仍待决定。整栈 CI/独立验收尚未完成，无生产 E2EE、原生存钥或部署。

@@ -1,7 +1,11 @@
 import { Effect, Semaphore } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 import type { LedgerCheckpoint } from '@lody/e2ee-core/ledger';
-import { makeLedgerStreamReader, type LedgerStreamReader } from '@lody/e2ee-core/ledger/feed';
+import {
+  LedgerFeedError,
+  makeLedgerStreamReader,
+  type LedgerStreamReader,
+} from '@lody/e2ee-core/ledger/feed';
 import { makeSqliteLedgerFeed } from '@lody/e2ee-core/ledger/feed/sqlite';
 
 /** A scoped Lab client of public modules. Transport is borrowed; checkpoint
@@ -11,7 +15,14 @@ export function makeLabLedgerClient(
 ) {
   return Effect.gen(function* () {
     const feed = yield* makeSqliteLedgerFeed(input);
-    const reader = yield* makeLedgerStreamReader(input.stream);
+    const sourceRead = input.stream.read.bind(input.stream);
+    let pageCalls = 0;
+    const reader = yield* makeLedgerStreamReader({
+      read: (request) =>
+        ++pageCalls > 4096
+          ? Promise.reject(new LedgerFeedError({ code: 'read-too-large' }))
+          : sourceRead(request),
+    });
     const serial = yield* Semaphore.make(1);
     return Object.freeze({
       current: feed.current,
@@ -26,8 +37,39 @@ export function makeLabLedgerClient(
           return yield* serial.withPermit(
             Effect.gen(function* () {
               const before = yield* feed.current();
-              const page = yield* reader.readAfter(before.offset);
-              return yield* feed.accept(page, checkpoint);
+              pageCalls = 0;
+              let offset = before.offset,
+                bytes = 0;
+              const records: Uint8Array[] = [],
+                visited = new Set([offset]);
+              for (let pages = 0; pages < 4096; pages++) {
+                const page = yield* reader.readAfter(offset);
+                if (page.records.length > 0 && visited.has(page.nextOffset))
+                  return yield* new LedgerFeedError({ code: 'invalid-offset' });
+                if (records.length + page.records.length > 4096)
+                  return yield* new LedgerFeedError({ code: 'read-too-large' });
+                for (const record of page.records) {
+                  bytes += record.length;
+                  if (bytes > 16 * 1024 * 1024)
+                    return yield* new LedgerFeedError({ code: 'read-too-large' });
+                  records.push(record);
+                }
+                if (page.upToDate)
+                  return yield* feed.accept(
+                    {
+                      requestOffset: before.offset,
+                      nextOffset: page.nextOffset,
+                      records,
+                      upToDate: true,
+                    },
+                    checkpoint
+                  );
+                if (page.nextOffset === offset)
+                  return yield* new LedgerFeedError({ code: 'invalid-offset' });
+                visited.add(page.nextOffset);
+                offset = page.nextOffset;
+              }
+              return yield* new LedgerFeedError({ code: 'read-too-large' });
             })
           );
         }),

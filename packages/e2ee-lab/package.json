@@ -6,7 +6,11 @@
   "exports": {
     "./ledger": "./src/platform/ledger-client.ts",
     "./runtime": "./src/platform/runtime.ts",
-    "./scheduler": "./src/pure/scheduler.ts"
+    "./scheduler": "./src/pure/scheduler.ts",
+    "./ledger-actor": "./src/platform/ledger-actor.ts",
+    "./content": "./src/platform/content-provider.ts",
+    "./content-session": "./src/platform/content-session.ts",
+    "./replay": "./src/pure/replay.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
@@ -19,7 +23,11 @@
     "@lody/e2ee-core": "workspace:*",
     "@loro-dev/streams-client": "catalog:",
     "@loro-dev/sqlite-riverrun": "0.3.0",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "@loro-dev/streams-crdt": "catalog:",
+    "loro-crdt": "catalog:",
+    "@loro-dev/flock-wasm": "catalog:",
+    "better-sqlite3": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
@@ -27,7 +35,6 @@
     "vitest": "3.2.4",
     "oxfmt": "^0.65.0",
     "tsx": "4.23.7",
-    "better-sqlite3": "catalog:",
     "@types/better-sqlite3": "catalog:"
   }
 }

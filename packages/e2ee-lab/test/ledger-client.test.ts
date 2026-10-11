@@ -1,112 +1,14 @@
-import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { runOwnedChild } from './native-child';
 import Database from 'better-sqlite3';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Effect, Result } from 'effect';
-import { startDevServer } from '@loro-dev/sqlite-riverrun';
 import { StreamsClient } from '@loro-dev/streams-client';
-import { Bytes, encodeCbor, type CborValue } from '@lody/e2ee-core';
-import { hashRecordBytes, verifyLedger } from '@lody/e2ee-core/ledger';
 import { frameLedgerRecord } from '@lody/e2ee-core/ledger/feed';
 import { describe, expect, it } from 'vitest';
 import { makeLabLedgerClient } from '../src/platform/ledger-client';
-
+import { fixture, options } from './ledger-fixture';
 const ok = Result.getOrThrow;
-/** Synthetic account and signing seed, real Ed25519 and public protocol codec. */
-function history() {
-  const key = createPrivateKey({
-    key: Buffer.concat([
-      Buffer.from('302e020100300506032b657004220420', 'hex'),
-      Buffer.alloc(32, 51),
-    ]),
-    format: 'der',
-    type: 'pkcs8',
-  });
-  const publicKey = new Uint8Array(
-    createPublicKey(key).export({ format: 'der', type: 'spki' }).subarray(-32)
-  );
-  const signed = (body: readonly CborValue[]) =>
-    ok(
-      encodeCbor([
-        body,
-        new Uint8Array(
-          sign(null, Buffer.concat([Buffer.from('lody-e2ee/sig/v1\0'), ok(encodeCbor(body))]), key)
-        ),
-      ])
-    );
-  const genesis = signed([
-    1,
-    publicKey,
-    new Uint8Array(32).fill(52),
-    new Uint8Array(16).fill(53),
-    new Uint8Array(32).fill(54),
-    new Uint8Array(32).fill(55),
-  ]);
-  const anchor = ok(Bytes.genesisHash(hashRecordBytes(genesis).toBytes()));
-  const rotate = signed([
-    hashRecordBytes(genesis).toBytes(),
-    publicKey,
-    [7, 1, new Uint8Array(32).fill(56), new Uint8Array(72).fill(57)],
-  ]);
-  const records = [genesis, rotate];
-  const checkpoint = { head: hashRecordBytes(rotate), length: 2 };
-  const view = ok(verifyLedger({ anchor, records, checkpoint }));
-  return { genesis, anchor, rotate, records, checkpoint, view };
-}
-async function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'public-e2ee-lab-ledger-'));
-  const server = await startDevServer({
-    host: '127.0.0.1',
-    port: 0,
-    dbPath: join(dir, 'remote.sqlite'),
-    protocol: 'http1',
-  });
-  const f = history();
-  try {
-    expect((await fetch(`${server.baseUrl}/ds/synthetic`, { method: 'PUT' })).ok).toBe(true);
-    const sdk = new StreamsClient({
-      url: `${server.baseUrl}/ds/synthetic/control`,
-      retry: { maxAttempts: 1 },
-    });
-    expect((await sdk.create({ contentType: 'application/octet-stream' })).ok).toBe(true);
-    for (const record of f.records)
-      expect(
-        (
-          await sdk.append({
-            part: { contentType: 'application/octet-stream', body: ok(frameLedgerRecord(record)) },
-          })
-        ).ok
-      ).toBe(true);
-    return {
-      ...f,
-      dir,
-      server,
-      sdk,
-      path: join(dir, 'client.sqlite'),
-      close: async () => {
-        await server.close();
-        rmSync(dir, { recursive: true, force: true });
-      },
-    };
-  } catch (error) {
-    await server.close();
-    rmSync(dir, { recursive: true, force: true });
-    throw error;
-  }
-}
-function options(f: Awaited<ReturnType<typeof fixture>>, mode: 'create' | 'open', stream = f.sdk) {
-  return {
-    path: f.path,
-    mode,
-    genesis: f.anchor,
-    genesisRecord: f.genesis,
-    expected: mode === 'create' ? { head: hashRecordBytes(f.genesis), length: 1 } : f.checkpoint,
-    budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
-    stream,
-  };
-}
 describe('real Riverrun, released SDK and public ledger feed', () => {
   it('rejects duplicate committed record at a later offset and preserves the durable file after reopen', async () => {
     const f = await fixture();
@@ -160,23 +62,9 @@ describe('real Riverrun, released SDK and public ledger feed', () => {
         }),
         { mode: 0o600 }
       );
-      const child = spawn(process.execPath, ['--import', 'tsx', 'test/ledger-reopen.mts', config], {
-        cwd: process.cwd(),
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let stdout = '',
-        stderr = '';
-      child.stdout.on('data', (data) => {
-        stdout += data;
-      });
-      child.stderr.on('data', (data) => {
-        stderr += data;
-      });
-      const code = await new Promise<number | null>((resolve, reject) => {
-        child.once('error', reject);
-        child.once('exit', resolve);
-      });
-      expect(code, stderr).toBe(0);
+      const stdout = await Effect.runPromise(
+        runOwnedChild(['--import', 'tsx', 'test/ledger-reopen.mts', config])
+      );
       expect(JSON.parse(stdout)).toEqual({ offset: originalOffset, length: 2, rejected: true });
     } finally {
       await f.close();
@@ -260,6 +148,105 @@ describe('real Riverrun, released SDK and public ledger feed', () => {
             } finally {
               db.close();
             }
+          })
+        )
+      );
+    } finally {
+      await f.close();
+    }
+  });
+  it('collects complete record pages before one durable commit and keeps the initial cursor on a later-page failure', async () => {
+    const f = await fixture();
+    try {
+      const actual = await f.sdk.read({ offset: '-1' });
+      if (!actual.ok) throw new Error('real Riverrun history unavailable');
+      const firstSize = 4 + f.genesis.length;
+      for (const failSecond of [false, true]) {
+        const stream = {
+          read: async (request: { offset: string; signal: AbortSignal }) => {
+            if (request.offset === '-1')
+              return {
+                ok: true as const,
+                result: {
+                  ...actual.result,
+                  requestOffset: request.offset,
+                  nextOffset: 'fixture/partial',
+                  upToDate: false,
+                  payload: {
+                    ...actual.result.payload,
+                    body: actual.result.payload.body.slice(0, firstSize),
+                  },
+                },
+              };
+            if (failSecond) return { ok: false as const, result: 'injected later-page disruption' };
+            return {
+              ok: true as const,
+              result: {
+                ...actual.result,
+                requestOffset: request.offset,
+                payload: {
+                  ...actual.result.payload,
+                  body: actual.result.payload.body.slice(firstSize),
+                },
+              },
+            };
+          },
+        };
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const client = yield* makeLabLedgerClient({
+                ...options(f, 'create'),
+                path: join(f.dir, failSecond ? 'failed-page.sqlite' : 'complete-page.sqlite'),
+                stream,
+              });
+              const outcome = yield* Effect.result(client.read(f.checkpoint));
+              const current = yield* client.current();
+              if (failSecond) {
+                expect(Result.isFailure(outcome)).toBe(true);
+                expect(current.offset).toBe('-1');
+                expect(current.view.length).toBe(1);
+              } else {
+                expect(Result.isSuccess(outcome)).toBe(true);
+                expect(current.offset).toBe(actual.result.nextOffset);
+                expect(current.view.head.equals(f.view.head)).toBe(true);
+              }
+            })
+          )
+        );
+      }
+    } finally {
+      await f.close();
+    }
+  });
+  it('applies finite read budgets per invocation rather than as a lifetime limit', async () => {
+    const f = await fixture();
+    try {
+      const actual = await f.sdk.read({ offset: '-1' });
+      if (!actual.ok) throw new Error('real Riverrun history unavailable');
+      // Explicit mock transport boundary after one real SDK response. Real signed
+      // history, verifier and SQLite remain; no elapsed-time or scheduler assumption.
+      const stream = {
+        read: async (request: { offset: string; signal: AbortSignal }) => ({
+          ok: true as const,
+          result: {
+            ...actual.result,
+            requestOffset: request.offset,
+            payload: {
+              ...actual.result.payload,
+              body: request.offset === '-1' ? actual.result.payload.body : new Uint8Array(0),
+            },
+          },
+        }),
+      };
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const client = yield* makeLabLedgerClient({ ...options(f, 'create'), stream });
+            for (let index = 0; index < 4097; index++) yield* client.read(f.checkpoint);
+            const current = yield* client.current();
+            expect(current.offset).toBe(actual.result.nextOffset);
+            expect(current.view.head.equals(f.view.head)).toBe(true);
           })
         )
       );

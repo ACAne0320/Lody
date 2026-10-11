@@ -12,6 +12,13 @@ Checkpoint selection is independent of hostile transport. A failed read or
 SQLite write retains both verified history and its read cursor. Every client
 has its own durable file; replay never silently skips already committed hashes.
 
+Content native state and exact SDK cursor commit atomically per document. Failed
+full-history recovery retains the previous durable pair and stops only that document.
+SDK subscription precedes local edits; abort is not proof of stopped native work.
+Wait actual raw operations before closing SDK/storage or freeing Loro. Flock has
+no public deterministic free/dispose: close subscriptions and drop references.
+Never reset host earliest offsets or delete snapshots to make recovery tests pass.
+
 This package is being migrated. Missing content, host, scheduler, attacker,
 replay and CLI paths stay explicit in README and the migration manifest.
 Do not claim the original Lab is migrated from a smaller consumer's green tests.
