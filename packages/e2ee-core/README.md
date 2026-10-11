@@ -94,3 +94,8 @@ provides strict records, signature/chain verification and deterministic permissi
 replay from caller-pinned trust. It has no snapshot, CAS, journal or production
 consumer. The root exports and crypto modules remain unchanged. Ledger extraction
 fingerprints are [separate](src/ledger/provenance.json).
+
+The [submission subentry](src/submission/README.md) adds finite persistent recovery
+for existing-ledger ordinary records, with an explicit Scope-owned SQLite Layer.
+It calls P08 replay before CAS and readback, retains exact signed bytes and
+unconsumed results across process restart, and exposes no production host or signer.
