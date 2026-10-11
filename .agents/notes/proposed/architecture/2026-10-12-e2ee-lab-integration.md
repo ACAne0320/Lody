@@ -32,7 +32,7 @@ frames are rejected. Runtime/driver/host composition remains incomplete.
 
 ## Evidence and dependency closure
 
-Twenty-four current author tests pass: real official SQLite Riverrun 0.3.0, released
+The fixed 6de checkpoint had twenty-four author tests: real official SQLite Riverrun 0.3.0, released
 streams-client 0.9.0, synthetic-account real Ed25519 records, actual durable files,
 another OS process; duplicate-at-new-offset and older-page rejection; real SQLite
 IGNORE rollback and same-history retry; logical parent-chain/single-consumption
@@ -42,9 +42,9 @@ that log. With the real owner-finalizer ordering assertion, the revised no-wait
 control fails and the fixed suite passes. This is a new negative control,
 not closure of the immutable original Lab2 failures.
 
-Current package typecheck, focused lint and the owning Lab24 suite pass.
+Fixed 6de package typecheck, focused lint and the owning Lab24 suite pass.
 Historical e677 root `pnpm check` (Lab9/core296), root formatting, docs and public
-boundary pass remain separate; current complete root `pnpm check` (Lab24/core302), format, docs and public
+boundary pass remain separate; fixed 6de complete root `pnpm check` (Lab24/core302), format, docs and public
 boundary pass; frozen noninteractive ignore-scripts install passes. Checked Lab
 file fingerprints remain unchanged from root-check start to completion. Author-local checks are distinct from independent
 review and branch CI, neither of which is claimed for this WIP. Source and target
@@ -104,6 +104,33 @@ rewrote incomplete messages and overran its allocation for many short boundaries
 original4pass/2newfail retained, complete conservative framing and exact-size allocation
 then6pass. Full replay/driver/host integration remains incomplete; original driver
 heuristics that skip missing identities or pull later permits forward are not copied.
+
+## Genuine policy and HTTP key consumers
+
+The increment adds a genuine-ledger stream policy gate and a scoped mailbox HTTP
+adapter. R can read/repair, never send/manage/write; current membership and the
+credential/request Org are independent gates. Structural counterfeit views and
+hostile opaque-value methods are refused before caller-visible ledger state.
+This is not challenge/bearer authentication, fresh checkpoint selection, pinned CAS
+or content/snapshot acceptance. The complete honest host still owns those gates.
+
+Mailbox responses have bounded bodies, canonical even hex, safe slot/revision
+numbers and bounded decimal pages. Scope retains raw fetch plus response body,
+including abort-ignoring reads, before earlier owner closure. Real public HPKE,
+SQLite distribution/receiver and installation report rounds run over actual
+loopback HTTP. A tampered signature leaves key storage empty and status unchanged;
+the original frame then installs/readbacks/reports successfully. Reopened Recovery
+receives durable results and cannot schedule sends. Session authentication and
+AES wrapping remain explicit synthetic boundaries; key-store reopen in this round
+is same-process, not full OS/native custody acceptance. Initial fixture reused one
+X25519 public key for two devices; public admission rejected it. The corrected
+fixture creates independent device pairs, without changing the protocol.
+
+Current owning **30 tests** and package typecheck pass. The frozen `6de46b5d`
+checkpoint had complete root Lab24/core302, format/docs/boundary evidence; its
+results do not certify this increment. Current complete root `pnpm check` passes Lab30/core302, with unchanged Lab input
+fingerprints throughout; format/docs/public boundary pass. The initial current
+check found three mailbox static errors, corrected before the passing repeat. No Lab Draft or independent whole-Lab acceptance yet.
 
 ## Remaining work
 

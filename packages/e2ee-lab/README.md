@@ -48,10 +48,22 @@ do not touch private internals or claim deterministic Wasm allocation release.
 The permit runtime requires explicit mode/time/fetch. Its deprecated Promise
 bridge is confined to SDK callbacks. Logical scheduler commands use typed Results.
 
+`authorizeLabStream` uses a genuine public ledger before inspecting current
+membership, binds credential/request Org, and refuses R sending or content writes.
+It is a policy gate, not credential authentication, pinned CAS or payload admission.
+`makeLabMailboxRemote` consumes the public receiver/distributor interface over HTTP,
+bounds JSON/hex/pages, aborts and awaits the entire response body on close. Real
+HPKE delivery and SQLite save/readback/report rounds run through this adapter;
+tampered frames install nothing and do not report, and Recovery cannot send after
+stores reopen. The HTTP fixture's pre-authenticated synthetic session and AES
+wrapping are explicit mock boundaries; host credential authentication and full
+rotation/actor composition remain pending. Reopen in this key-round test is within
+one OS process; it does not establish cross-process key-round acceptance.
+
 The original full host/gateway, honest actors, key delivery/rotation composition,
 Flock process/recovery/live sessions, schedule driver, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
-24 tests do not close the original Lab2 failures or the complete original fault
+30 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
 D12 and permanent publisher loss remain explicit decisions. Native custody,
 production E2EE, independent whole-stack review, CI and product acceptance are

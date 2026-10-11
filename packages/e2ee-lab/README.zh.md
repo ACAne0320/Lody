@@ -38,9 +38,18 @@ Flock 0.4.3 没有公开的确定性 free/dispose；关闭 SDK 订阅、丢弃�
 实现，不声称确定性释放 Wasm 分配。permit runtime 要求显式 mode/time/fetch，
 已弃用的 Promise bridge 仅用于 SDK 回调；纯 scheduler 使用类型化 Result。
 
+`authorizeLabStream` 先通过公开 core 检查 genuine 账本，再读取当前成员，
+绑定 credential/request Org，拒绝 R 发送或内容写入。它只做策略检查，
+不代表凭据认证、固定 CAS 或 payload 准入。`makeLabMailboxRemote` 通过 HTTP
+消费公开接收/分发接口，限制 JSON/hex/page 大小，关闭时 abort 并等待完整响应体。
+真实 HPKE 投递、SQLite 保存/读回/报告经过此适配器；篡改帧不安装也不报告，
+重开后 R 仍不能发送。HTTP fixture 的预认证合成会话和 AES 包装是明确的 mock
+边界；宿主凭据认证、完整轮换/actor 组合仍未完成。该密钥轮次在同一 OS 进程内
+重开存储，不代表跨进程密钥轮次验收。
+
 原完整 host/gateway、诚实 actors、密钥投递/轮换组合、Flock 进程重开/恢复/live
 session、schedule driver、攻击能力、捕获 replay、原 fixtures 和 CLI/启动流程
-尚未完成。当前 24 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
+尚未完成。当前 30 个测试不代表原 Lab2 失败闭合或原故障矩阵完成。
 快照 wire/offset、replay 熵、严格期限 B、恢复库、D12、发布设备永久丢失仍是待决项。
 原生存钥、生产 E2EE、整栈独立审查、CI 和产品验收各自独立。
 参见[完整清单](../../.agents/docs/e2ee-migration-manifest.json)和

@@ -134,4 +134,6 @@ L4i适配[有限发送目标发现与投递](../../packages/e2ee-core/src/keys/D
 
 L2 SDK update绑定使用 `./content/streams`、已定header3、真实公开内容工作流和本次操作密钥清理。直接父层为sender #1493 `36ca2685b7eefeb15ebd041e50444796c2686652`。快照wire／兼容仍待人决定；已发布SDK类型检查与实际Lab／transport验收分开，原provider迁移仍未完成。
 
-Lab 集成分支以 #1496 0418 为直接父层，仍未创建 Lab PR。当前真实 Lab24/typecheck/focused lint 通过：公共账本 actor/P09 原字节恢复、Loro/Flock 实际 SDK、SQLite 状态/游标对与 Loro 子进程重开、单文档隔离。坏快照仅在历史可读时客户端恢复成功；Riverrun0.3.0非零 snapshot PUT 推进 earliest_offset，历史不可读时只能安全拒绝并保留游标，历史保留/API归属是新增恢复依赖缺口。完整原 host/actors/driver/攻击/replay/CLI 与原 Lab2 仍未闭合。详见同层[Lab README](../../packages/e2ee-lab/README.zh.md)，不继承历史 root/CI 为当前通过。
+Lab 集成分支以 #1496 0418 为直接父层，仍未创建 Lab PR。固定6de真实 Lab24/typecheck/focused lint 通过：公共账本 actor/P09 原字节恢复、Loro/Flock 实际 SDK、SQLite 状态/游标对与 Loro 子进程重开、单文档隔离。坏快照仅在历史可读时客户端恢复成功；Riverrun0.3.0非零 snapshot PUT 推进 earliest_offset，历史不可读时只能安全拒绝并保留游标，历史保留/API归属是新增恢复依赖缺口。完整原 host/actors/driver/攻击/replay/CLI 与原 Lab2 仍未闭合。详见同层[Lab README](../../packages/e2ee-lab/README.zh.md)，不继承历史 root/CI 为当前通过。
+
+当前 Lab 增量添加 genuine 账本策略和有界 Scope HTTP 密钥消费者：公开 HPKE 投递/安装/报告、篡改帧拒绝、同进程重开 R 禁止发送。当前完整 root Lab30/core302、format/docs/public boundary 通过，Lab输入指纹不变；凭据认证、完整轮换/host/driver/replay/CLI 仍未完成。固定 6de 的 Lab24 root 证据不继承至本增量。

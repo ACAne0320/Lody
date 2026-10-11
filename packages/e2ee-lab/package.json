@@ -10,7 +10,9 @@
     "./ledger-actor": "./src/platform/ledger-actor.ts",
     "./content": "./src/platform/content-provider.ts",
     "./content-session": "./src/platform/content-session.ts",
-    "./replay": "./src/pure/replay.ts"
+    "./replay": "./src/pure/replay.ts",
+    "./gateway": "./src/platform/gateway.ts",
+    "./key-mailbox": "./src/platform/key-mailbox.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

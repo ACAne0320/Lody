@@ -6137,7 +6137,7 @@
       "targetPath": "packages/e2ee-lab/src/platform/gateway.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Current-member/role/Org/device-bound stream authorization, join signer and key sender rules; reconstruct against genuine public ledger policy. Recovery receives/repairs only; no old tag2 removal.",
+      "reason": "Genuine-ledger current member/role/Org stream gate implemented; hostile structural view/opaque values refused, Recovery no-send tested using real admission/SDK CAS/feed. Full credential challenge/bearer authentication, join signer, pinned control CAS and payload admission in actual host remain pending.",
       "sourceDeclaredExports": {
         "core": [
           "KnownStream",
@@ -6162,7 +6162,14 @@
           "authorizeStreamRequest"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coverage": [
+        {
+          "layer": "L6",
+          "target": "packages/e2ee-lab/src/platform/gateway.ts",
+          "scope": "Policy only: current public ledger provenance, bound/request Org, current roles and R no-send; 2 owning groups pass. Does not authenticate a credential or accept records/snapshots."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/host-meta.ts",
@@ -6249,7 +6256,7 @@
       "targetPath": "packages/e2ee-lab/src/platform/key-mailbox.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Actual finite authenticated HTTP mailbox rounds and SQLite ciphertext persistence; consume public mailbox DTOs/adapters and acknowledged durable results.",
+      "reason": "Scoped HTTP remote now consumes public receiver/distributor APIs with bounded JSON/hex/pages and actual fetch/body abort/wait. Real HPKE delivery/install/readback/report over loopback HTTP, tamper refusal and same-process reopened R no-send pass; synthetic pre-authenticated session is explicit. Full credential host, repair/rotation/actor and process-reopen composition still pending; obsolete Effect service layers not copied.",
       "sourceDeclaredExports": {
         "core": [
           "centralMailboxHttpLayer"
@@ -6258,7 +6265,14 @@
           "centralMailboxHttpLayer"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coverage": [
+        {
+          "layer": "L6",
+          "target": "packages/e2ee-lab/src/platform/key-mailbox.ts",
+          "scope": "All eight old HTTP operations have explicit public remote mappings; 3 adapter groups plus one real HPKE/SQLite round pass. Actual production authentication and full original central delivery fixtures remain incomplete."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/persist.ts",
@@ -8237,12 +8251,12 @@
     "branch": "e2ee-lab-integration",
     "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
     "draftPr": null,
-    "consumerTests": 24,
+    "consumerTests": 30,
     "originalLabFailuresClosed": false,
     "remaining": "Full honest host/gateway/actors, Flock process/recovery/live session, key mailbox/rotation composition, schedule driver, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Current checked Lab24/core302 complete pnpm check passed. Lab path fingerprints unchanged from check start to completion; formatting, type, docs and public boundary pass; frozen CI=true ignore-scripts install pass. No Lab PR/CI/independent acceptance and original full Lab2/harness remain incomplete.",
+    "authorRootCheck": "Current complete pnpm check Lab30/core302 passed; Lab input fingerprints unchanged from check start to completion. Format/docs/public boundary pass. First current check failed 3 new mailbox static errors; corrected repeat passed. Fixed 6de Lab24 root remains separate. No current CI or independent whole-Lab acceptance.",
     "lastFetchedMain": {
       "head": "987962e77022df6a800f4e889f124b51f6eb8056",
       "tree": "4601a3f2b65d122c5b314cab79dc275fba9af636",
@@ -8254,6 +8268,8 @@
     "sdkConsumers": "Actual Loro two clients, released streams-crdt0.16.2, public content/ledger/protected-key composition, SQL IGNORE pair rollback, another OS reader without signer. Synthetic AES wrapping is fixture-only. Real Flock SDK/native-file consumer focused pass; public0.4.3 has no deterministic free/dispose guarantee.",
     "sdkOwnership": "Explicit raw one-shot SDK owner aborts admission/requests, waits actual settlement, closes SDK and drops refs; actual Loro.free after close. No-wait mutant reaches closedEarly assertion, not timeout.",
     "recoveryHistoryContract": "Real Riverrun0.3.0 snapshot PUT at nonzero offset advances earliest_offset. Public SDK recovery succeeds only while authenticated full history remains readable; otherwise it fails closed and retains the durable pair. Upstream history retention/read API versus trusted host history route needs coordinated decision; no server database reset or snapshot deletion.",
-    "replayComparator": "Pure comparison of recorded inert fixtures ported with resource/actor/frame divergence; no entropy provider, resealing or full execution replay. Multipart original4pass/2newfail then fixed6pass retained."
+    "replayComparator": "Pure comparison of recorded inert fixtures ported with resource/actor/frame divergence; no entropy provider, resealing or full execution replay. Multipart original4pass/2newfail then fixed6pass retained.",
+    "gateway": "Genuine-ledger policy gate only, no challenge/bearer, freshness, pinned CAS, record/content/snapshot acceptance; complete host pending.",
+    "mailbox": "Scoped bounded HTTP remote with public real HPKE/SQLite receiver/distributor round, tampered frame no-install/no-report, actual response-body wait, same-process Recovery reopen no-send; synthetic pre-authenticated HTTP and wrapping boundaries explicit. Full repair/rotation/host/process composition pending."
   }
 }

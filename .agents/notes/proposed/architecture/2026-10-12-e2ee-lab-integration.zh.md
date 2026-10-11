@@ -24,13 +24,13 @@ Translation: current
 
 ## 证据与依赖
 
-当前作者 Lab **24 项通过**，包 typecheck 和 focused lint 通过；
+固定6de作者 Lab **24 项通过**，包 typecheck 和 focused lint 通过；
 包含真实 Riverrun0.3.0、streams-client0.9.0、合成账户真实 Ed25519、SQLite 和 OS 重开；
 重复记录的新 offset/旧页拒绝、SQLite IGNORE 回滚重试、logical permit 和原生清理。
 最初 runtime no-wait 负控逃逸；加强真实 owner finalizer 顺序断言后，删除等待明确失败。
 旧逃逸日志和新失败均保留，不把它称作原 Lab2 完整闭合。
 历史 e677 root `pnpm check` Lab9/core296、格式/docs/boundary 通过单独保留；
-当前完整 root pnpm check Lab24/core302、format、docs 和 public boundary 通过，
+固定6de完整 root pnpm check Lab24/core302、format、docs 和 public boundary 通过，
 CI=true 非交互 frozen install 忽略 scripts 通过；此前无 TTY 中止日志保留。
 root 检查开始与结束之间 Lab 文件指纹不变。没有继承历史结果为当前通过，
 也未声明 WIP 的 CI/独立验收。
@@ -76,6 +76,28 @@ free/dispose，只关闭 SDK 订阅并丢引用，不读 private inner，不声�
 响应字节，还比较 frame 的 actor/operation/phase/resource。原 multipart 改写不完整消息，
 多段短 boundary 又触发越界；保留原4通过/新增2失败，修完整边界与精确容量后6通过。
 完整 replay/driver/host 未完成，不复制原 driver 跳过缺失 identity、提前放行后续 permit 的启发式。
+
+## genuine 策略与 HTTP 密钥消费者
+
+本增量添加 genuine 账本 stream 策略检查及 Scope 邮箱 HTTP 适配器。
+R 可接收/修复，不能发送/管理/写入；当前成员和 credential/request Org 独立检查。
+结构伪造 view、恶意 opaque 值方法在读取可见账本状态前被拒绝。
+这不代表 challenge/bearer 认证、最新 checkpoint 选择、固定 CAS 或内容/快照准入，
+完整诚实 host 仍需要接入这些检查。
+
+邮箱响应限制 body、canonical 偶数 hex、安全 slot/revision 数值和十进制 page。
+Scope 保留实际 fetch 和响应体工作，包括忽略 abort 的读取，再关闭较早 owner。
+公开 HPKE、SQLite 分发/接收和安装报告轮次经过真实 loopback HTTP。
+篡改签名后存钥为空、状态不变；随后原始帧正常安装、读回并报告。
+重开后 Recovery 保留结果且不能安排发送。会话认证/AES 包装仍是合成边界；
+该轮次同进程重开存储，不等于 OS 重开/真实存钥验收。最初 fixture 两设备复用
+X25519 公钥被公开准入拒绝；修正为独立设备 pair，没有改协议。
+
+当前 owning **30 项**及包 typecheck 通过。固定 `6de46b5d` 检查点已有完整
+root Lab24/core302、format/docs/boundary 证据，不能继承为本增量通过。
+当前完整 root pnpm check Lab30/core302、format/docs/public boundary 通过，
+Lab 输入指纹在检查开始/结束不变。最初当前检查发现邮箱3项静态错误，
+修复后重复检查完整通过。尚无 Lab Draft 或整 Lab 独立验收。
 
 ## 剩余工作
 
