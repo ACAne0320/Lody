@@ -179,3 +179,13 @@ so missing parent cannot equal the literal string "none". This compares typed in
 materials; it validates no repro schema and executes no captured actions/crypto.
 eventSignature remains a coarse actor/operation/phase/status diagnostic projection,
 not exact replay equality.
+
+The original independent reference-model exports now live under ./reference-model.
+Independent synthetic observations predict policy without calling core decision
+functions. New-seal prediction denies rotationRequired, and missing rotation/kind or
+pending-byte/cursor observations remain unmeasured. Legacy boolean projections fail
+closed and cannot prove two unknown runs agree. captureRefState owns factual rows
+and collections before measured actors run; the LedgerState adapter is metadata
+only and establishes no authority. Snapshot helper predicts local context/personal
+manager eligibility only, never signature/history/trust admission. These eight pure
+owning cases do not complete real actor/reference correspondence or old Lab2.

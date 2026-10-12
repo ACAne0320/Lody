@@ -141,3 +141,10 @@ control 网关放行已定的 Recovery 例外：授权本人的新个人设备�
 原值再格式化诊断，缺失值不会等于字面字符串 "none"。这里只比较有类型的静态材料，
 不验证 repro 格式、不执行 captured 动作/加密。eventSignature 仍为 actor/operation/
 phase/status 的粗略诊断投影，不能作为精确 replay 相等证据。
+
+原独立 reference-model 导出已迁到 ./reference-model。独立合成观察预测规则，不调用
+core 决策函数产生期待值。待轮换拒绝新 seal；缺少 rotation/kind、pending 字节或游标
+观察明确未测。旧 boolean 投影安全拒绝，不能证明两个未测运行一致。captureRefState
+在测量 actor 执行前独立拥有事实行和集合；LedgerState 适配只映射元数据，不建立授权。
+snapshot 辅助只预测局部 context/personal manager 资格，不证明签名/历史/信任已接纳。
+八个纯 owning 用例不代表真实 actor/reference 对应或旧 Lab2 完成。

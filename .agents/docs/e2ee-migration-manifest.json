@@ -6971,10 +6971,10 @@
         "core": "328d426df98c6c6ef83540f44b656ece2a23573fbb534dba4ca9509b1424b2b0",
         "candidate": "328d426df98c6c6ef83540f44b656ece2a23573fbb534dba4ca9509b1424b2b0"
       },
-      "targetPath": "packages/e2ee-lab/src/reference-model.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/pure/reference-model.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Independent Org/resource/epoch/role/recovery policy model and durability oracle; translate to settled current authority without deriving oracle acceptance from implementation.",
+      "reason": "All original 14 declared exports migrated to pure independent oracle. rotationRequired blocks new seal, missing rotation/kind/cursor/retry observations explicitly unmeasured; bool compatibility is fail closed, not agreement. Owned inert factual snapshot; public LedgerState adapter never authority. Snapshot helper only local context/personal-manager eligibility, not full signature/history/trust. Actual actor/reference correspondence remains separate incomplete integration.",
       "sourceDeclaredExports": {
         "core": [
           "RefKind",
@@ -7009,7 +7009,11 @@
           "refRevokeIsLocal"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/pure/reference-model.ts",
+        "packages/e2ee-lab/test/reference-model.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/replay.ts",
@@ -7728,10 +7732,10 @@
         "candidate": "f2441afa1fd59eaccd9aabd616231db09792ead8d26ff20d3836aaedd9eceb48"
       },
       "targetPath": "packages/e2ee-lab/test/reference-model.test.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Port observable coverage for independent Org/resource/epoch policy, current membership/recovery, snapshot context and durable cursor/lost ACK oracle. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Original five behavioral oracle cases retained with explicit settled rotation facts; extended same owning suite to eight groups for missing facts, rotation, ownership and public factual adapter. Actual native actor/reference correspondence and full adversarial composition remain incomplete.",
+      "targetPathState": "created"
     },
     {
       "sourcePath": "packages/e2ee-lab/test/replay-bytes.test.ts",

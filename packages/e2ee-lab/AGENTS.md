@@ -28,3 +28,7 @@ as coverage gaps. Shrink preserves measured violations and known trigger facts;
 other unmeasured dimensions stay explicit. Generic actions must be independently
 owned and immutable; an array copy does not own nested bytes. Synthetic device
 exports/native handles are not a recovery vault or platform custody guarantee.
+
+Reference expectations use independently owned observations, never production
+policy as expected values. Missing facts stay unmeasured; boolean projections do
+not prove agreement. Snapshot eligibility alone never admits a snapshot.
