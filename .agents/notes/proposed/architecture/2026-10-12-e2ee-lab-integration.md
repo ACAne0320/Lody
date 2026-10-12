@@ -244,3 +244,20 @@ and collections before measured actors run; the LedgerState adapter is metadata
 only and establishes no authority. Snapshot helper predicts local context/personal
 manager eligibility only, never signature/history/trust admission. These eight pure
 owning cases do not complete real actor/reference correspondence or old Lab2.
+
+./key-round implements one finite centralKeyRound application pass over an already
+scoped public distributor: repair flush, receive resume/fetch, report flush, current
+epoch reconciliation, pending delivery resume and final reports/results. Every phase
+borrows captured public methods; the caller keeps that owner scope alive until the
+Effect settles. Errors propagate without fabricated next/results; blocked tasks and
+individual page cursors remain explicit. Existing real HTTP/native SQLite/HPKE and
+OS-child tests now consume it for Owner epoch0/1 and reopened Recovery; bad envelopes
+and failed installs abort the pass with native keys/task/report state retained.
+No automatic full pagination, startup/reauth/ledger bootstrap facade, production
+publisher/backup strategy or native cancellation guarantee is added here.
+
+The source session inventory also tracks all 29 declared fields and the private
+constructor options property. Raw ordinary epoch-key maps and duplicate point
+verification cache are retired through public owners; synthetic adversary key
+fixtures keep an explicit separate destination. Field inventory does not close
+full honest actor state or four original crash-injection phase scenarios.

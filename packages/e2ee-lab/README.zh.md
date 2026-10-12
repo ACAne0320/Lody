@@ -148,3 +148,11 @@ core 决策函数产生期待值。待轮换拒绝新 seal；缺少 rotation/kin
 在测量 actor 执行前独立拥有事实行和集合；LedgerState 适配只映射元数据，不建立授权。
 snapshot 辅助只预测局部 context/personal manager 资格，不证明签名/历史/信任已接纳。
 八个纯 owning 用例不代表真实 actor/reference 对应或旧 Lab2 完成。
+
+./key-round 实现一次有限 centralKeyRound 应用编排：已存在的 scoped 公开 distributor
+负责 repair、接收恢复/拉取、报告、当前 epoch 对账、投递恢复及最终报告/结果。各阶段
+捕获并借用公开方法，调用者须等 Effect 结束后再关闭拥有者。失败不伪造 next/结果，
+blocked tasks 和各页游标显式保留。已有真实 HTTP/SQLite/HPKE/OS-child 用例改为消费
+该模块，覆盖 Owner epoch0/1、重开的 Recovery；坏 envelope/安装失败中止这一轮，
+原生 key/task/report 状态保留。这里只是单页有限编排，不代表完整自动翻页、启动/重新
+认证/账本 bootstrap facade、生产发布者/备份策略或新增原生取消保证。

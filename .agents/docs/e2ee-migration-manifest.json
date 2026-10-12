@@ -6419,7 +6419,8 @@
         "packages/e2ee-lab/src/platform/ledger-client.ts",
         "packages/e2ee-lab/src/platform/ledger-actor.ts",
         "packages/e2ee-lab/test/ledger-actor.test.ts",
-        "packages/e2ee-lab/test/ledger-actor-reopen.mts"
+        "packages/e2ee-lab/test/ledger-actor-reopen.mts",
+        "packages/e2ee-lab/src/platform/key-round.ts"
       ],
       "sourceDeclaredExports": {
         "core": [
@@ -6853,10 +6854,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/mailbox-http.ts",
-              "packages/e2ee-lab/src/platform/key-mailbox.ts"
+              "packages/e2ee-lab/src/platform/key-mailbox.ts",
+              "packages/e2ee-lab/src/platform/key-round.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Public HPKE/protected SQLite/distribution and real possession/bearer HTTP OS reopen pass. Honest session delivery/resume/report/repair orchestration still missing; observed ciphertext is not installed key."
+            "reason": "Public HPKE/protected SQLite/distribution and real possession/bearer HTTP OS reopen pass. Honest session delivery/resume/report/repair orchestration still missing; observed ciphertext is not installed key. Finite public-owner scheduling primitive now exists and is consumed by actual Owner epoch0/1 and reopened R HTTP/HPKE/OS-child tests, including bad-frame/install failure. Full startup/reauth/independent current ledger bootstrap/class facade and automatic pagination still missing; no production backup claim."
           },
           {
             "name": "recoverEpochHistory",
@@ -6943,6 +6945,355 @@
           }
         ],
         "acceptance": "Method destinations are inventory, not implemented facade or production acceptance. Shared owning modules remain single implementations; pending targets not created."
+      },
+      "sourceFieldInventory": {
+        "sourceHead": "f1bc0c52649c21d2e9b620fe3558874c40545e38",
+        "sourceFileSha256": "0dd6c102cd8a608bf7a31baa05549cc5b7320b7e51277e98bcf6ffcde120c60f",
+        "hashDefinition": "UTF-8 TypeScript AST property getStart..end, excluding leading comments",
+        "declaredFields": 29,
+        "fields": [
+          {
+            "name": "account",
+            "private": false,
+            "sha256": "524d739865a2cf060c02e99347b46c075963dbbf42dbdefcfa26f6d98fd7f5e4",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+          },
+          {
+            "name": "clientDir",
+            "private": false,
+            "sha256": "df14ecf3133c3021c763c5b55526cdf8721768c94c24920be5f719eb66706a8e",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+          },
+          {
+            "name": "device",
+            "private": false,
+            "sha256": "1c45946c4eb7f31f8d9653190f449ded3353543257eb9e127ecb8debdf689b08",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+          },
+          {
+            "name": "credential",
+            "private": false,
+            "sha256": "11792b5da22b25032ded5e87b47e417c14f8c4eef2608f086a39c11f9f678f05",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+          },
+          {
+            "name": "genesis",
+            "private": false,
+            "sha256": "5eead668fe2bd88eb0bf1777b4606693ad9deaaaece6cec681a6c06a6064de3e",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/workspace-registry.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Keep original signed genesis record distinct from verified anchor/hash. Metadata registry exists; full adoption/create/bootstrap awaits selected Genesis layout, no empty control-prefix assumption."
+          },
+          {
+            "name": "genesisHex",
+            "private": false,
+            "sha256": "ee58ad6d4547e6d3a6efbdeff5443d21b2f10d8d57230a9fc54c8b0d3d629228",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/workspace-registry.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Keep original signed genesis record distinct from verified anchor/hash. Metadata registry exists; full adoption/create/bootstrap awaits selected Genesis layout, no empty control-prefix assumption."
+          },
+          {
+            "name": "epochKeys",
+            "private": false,
+            "sha256": "3615a3ff6eab0444d4e56a2f8faaa17ed68457a20d25a2d34f07b93a783c7bba",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/keys/protected-sqlite.ts"
+            ],
+            "status": "旧方案淘汰",
+            "reason": "Ordinary raw-material Map plus plaintext epochs.json is replaced by public opaque key/protected-store owners. Explicit synthetic adversary fixture keys remain a separate owned harness input; do not expose private core copies or delete insider attack capability. Vault/backup format remains undecided."
+          },
+          {
+            "name": "userId",
+            "private": false,
+            "sha256": "f2183b50d13ad727ffff53422d39065d9a1767dfe7028cdd68792a3ee6b597bd",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+          },
+          {
+            "name": "verifiedLedger",
+            "private": true,
+            "sha256": "08ca6f4f3dff96ca2520098c10c100c38889437ed48082b5aeba52879e061974",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Use genuine public verified views/feed and unchanged merged submission; cache/context ownership and durable process reopen primitives exist, class lifecycle still absent. Structural state or count never authority."
+          },
+          {
+            "name": "membershipId",
+            "private": false,
+            "sha256": "3f5cc67e7218d52823ccf12ec628ba8c78d5d15e1329d838e34b7cc73e06afa1",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+          },
+          {
+            "name": "baseUrl",
+            "private": false,
+            "sha256": "88309e08745b3a84136164532aa023feb5d01f3fe507bcdfcf6b79cdb27fd41d",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+          },
+          {
+            "name": "now",
+            "private": false,
+            "sha256": "d409549ba3ccd34739206296805dd8e1e14352291b5d878d1a1b4246fb391ae7",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+          },
+          {
+            "name": "testMode",
+            "private": false,
+            "sha256": "8156e9f916d1f944c899fc8a27de8c4665b848c38d57924e1e0ec7ed68172240",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+          },
+          {
+            "name": "canWriteDocument",
+            "private": false,
+            "sha256": "4240bfa278ead3ee537a79cb867e51f4bba3898c920a1fd89bdfee8fdffb5ea4",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Derive actual new-seal permission/epoch from genuine current ledger, including rotationRequired; do not use max keys or a caller boolean as authority. Full facade pending."
+          },
+          {
+            "name": "authenticatedWriterMayWrite",
+            "private": false,
+            "sha256": "cfd9a52861791cc6ab689c4a45ea1c8b3fd7301decd76bc4160b09f5c1cdf209",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/pure/reference-model.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Independent owned reference expectations now exist, with explicit unmeasured. Honest actor correspondence must use expectation status; two false/undefined projections cannot prove agreement."
+          },
+          {
+            "name": "ledgerEpoch",
+            "private": false,
+            "sha256": "441aea09adf47892390b2c2cb844d09bf846106770143f6a35bf6929b0afbe27",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Derive actual new-seal permission/epoch from genuine current ledger, including rotationRequired; do not use max keys or a caller boolean as authority. Full facade pending."
+          },
+          {
+            "name": "loroDoc",
+            "private": false,
+            "sha256": "10216ddc3cf40eefce33cfe7145dd6dfe4cdc3d7196017302a463a9ab2223b2e",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/content-session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts",
+              "packages/e2ee-lab/src/platform/document-sqlite.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual public Loro/Flock protected provider and native durable paired persistence probes exist. Full session holders/actor mutations pending; stop borrowed SDK before dropping references, no nonexistent Flock deterministic free claim."
+          },
+          {
+            "name": "flockDoc",
+            "private": false,
+            "sha256": "11e66c84bc9ef393980cd28b297b6ad4ecbbe13f7a63ebc3e580b31d1b633bf6",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/content-session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts",
+              "packages/e2ee-lab/src/platform/document-sqlite.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual public Loro/Flock protected provider and native durable paired persistence probes exist. Full session holders/actor mutations pending; stop borrowed SDK before dropping references, no nonexistent Flock deterministic free claim."
+          },
+          {
+            "name": "crashAt",
+            "private": false,
+            "sha256": "3088278cd3d83ca9a27df431d837308295d2deace0dee97750124d1e300d84cc",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/document-sqlite.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Original four phase-specific crash controls/marker must retain distinct destinations in actual native persistence and OS-child harness. Existing narrower failure probes do not close original whole actor scenarios."
+          },
+          {
+            "name": "crashMarker",
+            "private": false,
+            "sha256": "d75aaf60b03f231f3cdb9a024f60c37839369165a1f4184308359318bda5e6f6",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/document-sqlite.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Original four phase-specific crash controls/marker must retain distinct destinations in actual native persistence and OS-child harness. Existing narrower failure probes do not close original whole actor scenarios."
+          },
+          {
+            "name": "runtime",
+            "private": false,
+            "sha256": "425b7bed2dcb035808fad11780ea9009f3327e7b6b38d107e03105e87f4140e7",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/runtime.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Borrow typed scoped native/filesystem/HTTP operations with captured bindings and explicit cancellation/settle/close. No source Result.gen-finally cleanup assumption, no globals or protocol EOF disposal. Full facade not wired."
+          },
+          {
+            "name": "fs",
+            "private": false,
+            "sha256": "e85d69919382b67f1dd015c203345b6f64e88a2fd99d2ba05c8a98f011c68618",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/runtime.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Borrow typed scoped native/filesystem/HTTP operations with captured bindings and explicit cancellation/settle/close. No source Result.gen-finally cleanup assumption, no globals or protocol EOF disposal. Full facade not wired."
+          },
+          {
+            "name": "ledgerClient",
+            "private": true,
+            "sha256": "465099cd9c4af62bae8e7a5a95ff8c7e5a8e4d42f26a974ed53776d2d4dd726e",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Use genuine public verified views/feed and unchanged merged submission; cache/context ownership and durable process reopen primitives exist, class lifecycle still absent. Structural state or count never authority."
+          },
+          {
+            "name": "pointCache",
+            "private": true,
+            "sha256": "792815983d2cfbc8edf368f326c996726ff56e94d08785e793f0c7ef19311e01",
+            "targetPaths": [
+              "packages/e2ee-core/src/signature.ts",
+              "packages/e2ee-core/src/ledger/replay.ts"
+            ],
+            "status": "旧方案淘汰",
+            "reason": "Use public fixed verifier/genuine ledger private ownership, not an independently duplicated point cache/verifier or caller-injected acceptance. Algorithm unchanged; no lost required signature coverage."
+          },
+          {
+            "name": "closed",
+            "private": true,
+            "sha256": "65e094ba52933d0b0761f9ced4d8456f995daabdc249e1a368141ef49ddfbf10",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/run.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Scoped owner primitives and real cancellation/drain/close probes exist; full session cleanup/cached disposal/error ownership still pending. Forever nonsettling native bounded shutdown is not established."
+          },
+          {
+            "name": "run",
+            "private": true,
+            "sha256": "4d0678afaf725740b071a188ba2f549c3b15771da0aa179bfc2b2305e3ae4880",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/run.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Scoped owner primitives and real cancellation/drain/close probes exist; full session cleanup/cached disposal/error ownership still pending. Forever nonsettling native bounded shutdown is not established."
+          },
+          {
+            "name": "disposal",
+            "private": true,
+            "sha256": "c1f74931a27d58621462a8f4a20182f543c9c7c8f60fe9794c4597ec8ff57fd6",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/run.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Scoped owner primitives and real cancellation/drain/close probes exist; full session cleanup/cached disposal/error ownership still pending. Forever nonsettling native bounded shutdown is not established."
+          },
+          {
+            "name": "disk",
+            "private": true,
+            "sha256": "a0985f4f28d55cab8e8246a4ba0a14dc2196e6b55f7898b4ed8ce4086fc6dd5c",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/runtime.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Borrow typed scoped native/filesystem/HTTP operations with captured bindings and explicit cancellation/settle/close. No source Result.gen-finally cleanup assumption, no globals or protocol EOF disposal. Full facade not wired."
+          },
+          {
+            "name": "fetchImpl",
+            "private": true,
+            "sha256": "ab992523dca624b9a04a022b42519471d1e4d74ddfe52dff015326a2014ea88c",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/runtime.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Borrow typed scoped native/filesystem/HTTP operations with captured bindings and explicit cancellation/settle/close. No source Result.gen-finally cleanup assumption, no globals or protocol EOF disposal. Full facade not wired."
+          }
+        ],
+        "constructorParameterProperty": "options is private and included in the already fingerprinted constructor; copy caller options and bindings before asynchronous operations, no production entropy replay inferred",
+        "acceptance": "Inventory only; source field destinations do not prove complete honest facade/actor state."
       }
     },
     {
@@ -8779,13 +9130,13 @@
     }
   ],
   "lastFetchedMain": {
-    "head": "d95548aa9d1663eb6cff0ec6c92ac61420901106",
-    "tree": "f7237680767a970c5fe574966bd7cb927fe626a7",
+    "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
+    "tree": "f3168cbda928a4f9866fba330c8278bbbb09d5ef",
     "stackFrozenMain": "984c35c5b30600d68abec1ec3e585eca73bcd4f0",
     "ownedOverlapSinceFrozenMain": [],
     "ci": {
-      "head": "d95548aa9d1663eb6cff0ec6c92ac61420901106",
-      "run": 38185403487,
+      "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
+      "run": 38196554181,
       "conclusion": "SUCCESS"
     },
     "originalCombinationCi": {
@@ -8803,24 +9154,24 @@
     "branch": "e2ee-lab-integration",
     "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
     "draftPr": null,
-    "consumerTests": 80,
+    "consumerTests": 88,
     "originalLabFailuresClosed": false,
     "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Pure fingerprint/minimizer full root core302/Lab80, format/docs/publicboundary7020files/27manifests pass; all62 Lab input SHA unchanged. First root stopped at six loop static errors before tests; fixed equivalent guards. Fixed-head/CI/independent original Lab2/full host acceptance pending; earlier fixed498 device/727 epoch1 evidence separate.",
+    "authorRootCheck": "Current finite key-round full root core302/Lab88, format/docs/publicboundary7023files/27manifests pass; all65 Lab input SHA unchanged. Actual HTTP/HPKE/SQLite/OS-child owning tests consume the new module and retain bad-frame/install-failure states. Independent original Lab2/full host and complete stack CI acceptance remain pending; earlier c4/6b8/54a3 fixed evidence kept separately.",
     "lastFetchedMain": {
-      "head": "d95548aa9d1663eb6cff0ec6c92ac61420901106",
-      "tree": "f7237680767a970c5fe574966bd7cb927fe626a7",
-      "ci": 38185403487,
+      "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
+      "tree": "f3168cbda928a4f9866fba330c8278bbbb09d5ef",
+      "ci": 38196554181,
       "ciConclusion": "success",
       "coreLabProtocolOverlapFromStackBottom": []
     },
-    "actorUncommitted": "Actor consumer is committed in fixed1087; its public admission/signing/P09 code remains unchanged in this increment. Whole-current-tree acceptance awaits final root result, original Lab2/full host/CI and independent review remain incomplete.",
+    "actorUncommitted": "Actor consumer remains committed and unchanged since fixed1087; actual admission/signing/merged P09 is not reimplemented. Current root passes for this whole Lab tree; original Lab2/full honest host and independent review remain incomplete.",
     "sdkConsumers": "Actual Loro two clients, released streams-crdt0.16.2, public content/ledger/protected-key composition, SQL IGNORE pair rollback, actual Loro/Flock OS readers without signer. Synthetic AES wrapping is fixture-only. Real Flock SDK/native-file consumer focused pass; public0.4.3 has no deterministic free/dispose guarantee.",
     "sdkOwnership": "Raw one-shot owners abort and await actual settlement. CRDT SyncClient close and actual Loro.free are lifecycle operations; StreamsClient.close publishes EOF and is never disposal. HTTP facades require request leases, no synthetic EOF cleanup.",
     "recoveryHistoryContract": "Real Riverrun0.3.0 snapshot PUT at nonzero offset advances earliest_offset. Public SDK recovery succeeds only while authenticated full history remains readable; otherwise it fails closed and retains the durable pair. Upstream history retention/read API versus trusted host history route needs coordinated decision; no server database reset or snapshot deletion.",
-    "replayComparator": "Pure comparison of recorded inert fixtures ported with resource/actor/frame divergence; no entropy provider, resealing or full execution replay. Multipart original4pass/2newfail then fixed6pass retained.",
+    "replayComparator": "Existing typed events compare all fields including eventId/step; missing parent distinct from literal none. Frames and inert entropy byte diagnostics retained. Exact fingerprint versus shrink preservation distinct; unknown observations remain gaps. No captured executor, entropy/reseal or new repro schema acceptance.",
     "gateway": "Partial real loopback health/challenge/credential/control-CAS HTTP: genuine current Org, stored bearer and single-use real device-possession proof, exact path/single bounded frame, public complete-prefix/pinned SDK CAS, no forwarded caller lifecycle/offset/auth headers. Published StreamsClient consumes correct auth API and mandatory ACK offset header. Full workspace/checkpoint durable crash-gap, joins, notes, key/content routes and CLI remain incomplete.",
     "mailbox": "Actual stored-bearer/boundOrg7 HTTP DTOs consume public HPKE/SQLite mailbox and installation gates; original JSON identity mutant refuses R sender. Finite real OS child HPKE install/report after ignored key INSERT retains originaltask/frame and independently verifies installed context/save/readback/new credential/reportACK; Recovery no-send/ownslotrepair retained. Syntheticaccount/deviceexport/AES fixture only; full epochrotation/host/originalfault/nativecustody pending.",
     "mailboxNativeLease": "Optional transferred native HTTP close capability, actual raw fetch/body wait then close once. Initial response-body no-wait mutant escaped; corrected native close-order assertion fails in5ms, no timeout; restored pass. Fixed1087 native-lease complete root Lab30/core302 passed with unchanged Lab input SHA; format/docs/public boundary pass. Earlier02f root30 remains separate.",
@@ -8838,6 +9189,9 @@
     "judgeAndTrace": "Finite pure verdict18 exports ported: missing measurements/default baseline/mixed unavailable not all-pass, count-only history unavailable, measured new unauthorized acceptance violation with lawful admitted-history semantics unchanged, explicit insider freshness scope. Source4 old pure FAIL/new same probe PASS retained; new observer old original alias FAIL retained. Typed run-scoped bounded private synthetic trace provides original record/read/clear as methods, owned fields before budget/no returned alias/no cross-run clear/close and closed observation fails. No global plaintext registry, no attacker access or authority inference. Owning9/type pass; Root core302/Lab67, format/docs/publicboundary7017/27 pass; all59Lab inputSHA unchanged. Fixed71d98f no-overlay Lab67 passes; four verdict/trace negative controls fail direct assertions and restore. Real actor/attack observation integration pending.",
     "onlineEpoch1": "The existing key-round also covers a genuine signed synthetic epoch1 record, real owner distribution, fresh HTTP credentials and an OS child installing only key1. Public history recovery derives key0 from that installed key and the authenticated packet; the parent checks native SQLite rows change from [1] to [0,1], commitment matching, the original ciphertext frame and the installation receipt. A valid identical epoch2 proposal succeeds for Owner and fails for R. R still cannot send. Signed history is independently pinned by the fixture; this is not control-stream publication, a durable production rotation producer, backup completion or a recovery-vault format. No old key is supplied to the child. Affected7/type and current root core302/Lab67, format/docs/publicboundary7017files/27manifests pass; 59 Lab inputSHA unchanged. Fixed-head negative controls and whole actor/rotation acceptance pending.",
     "syntheticDevices": "The original synthetic device module now preserves its seven exports as typed Effect/public-byte APIs and consumes the public native signer/verifier. Its existing four-field JSON roundtrips native Ed25519/X25519 fixtures, with private/public binding checked before import returns. Real public HPKE and SQLite credentials verify the imported device, single-use proof and refusal to bind an unregistered device to an Org. Creation awaits both native generators on rejection/cancellation; explicit signal tests instrument only post-native returns/failure, leaving actual crypto/entropy unchanged. Caller owns native handles; WebCrypto offers no key close/zeroization. Exportable strings are synthetic fixture material, not a recovery-vault, OS custody or captured replay contract. Full session/actors still need wiring. Source two mismatch oldFAIL/new same-probe PASS and owning8/type pass. Current root core302/Lab71, format/docs/publicboundary7018files/27manifests pass; 60 Lab input SHA unchanged. Fixed-head negatives/whole actor acceptance pending.",
-    "fingerprintAndMinimize": "Pure fingerprint and bounded minimizer retain the original five/two exports with separate policies: exact replay compares every original field and reports missing/JSON-dropped/null/unavailable measurements as gaps; another dimension's harness error never erases a measured violation. Shrink preserves the original rules and exact known trigger facts, permits diagnostic ledger length to shrink, and exposes partial observation. Unmeasured original triggers refuse execution. Effect runners remain sequential, bounded, caller-owned and fail transparently. The original fingerprint is independently copied before callbacks; generic action items must already be immutable and independently owned. Legacy model labels are inert compatibility diagnostics, not authorization policy. These are pure synthetic algorithm probes, not full attack/repro execution, serialization approval, captured entropy or resealing. Four original oldFAIL/new same-probe PASS; owning10/type pass. Current root core302/Lab80, format/docs/publicboundary7020files/27manifests pass; 62 Lab input SHA unchanged. First six loop-static failures retained, equivalent budget guards moved into loop body; fixed-head controls/real actor integration pending."
+    "fingerprintAndMinimize": "Pure fingerprint and bounded minimizer retain the original five/two exports with separate policies: exact replay compares every original field and reports missing/JSON-dropped/null/unavailable measurements as gaps; another dimension's harness error never erases a measured violation. Shrink preserves the original rules and exact known trigger facts, permits diagnostic ledger length to shrink, and exposes partial observation. Unmeasured original triggers refuse execution. Effect runners remain sequential, bounded, caller-owned and fail transparently. The original fingerprint is independently copied before callbacks; generic action items must already be immutable and independently owned. Legacy model labels are inert compatibility diagnostics, not authorization policy. These are pure synthetic algorithm probes, not full attack/repro execution, serialization approval, captured entropy or resealing. Four original oldFAIL/new same-probe PASS; owning10/type pass. Current root core302/Lab80, format/docs/publicboundary7020files/27manifests pass; 62 Lab input SHA unchanged. First six loop-static failures retained, equivalent budget guards moved into loop body; fixed-head controls/real actor integration pending.",
+    "referenceModel": "All14 original pure exports retained, independent owned synthetic observations plus public metadata-only fact adapter; rotation blocks new seal, missing rotation/kind/cursor/retry stays unmeasured, legacy bool not agreement, snapshot eligibility not full snapshot trust. Actual actor/reference correspondence incomplete.",
+    "keyRound": "One finite application pass now consumes unchanged public distributor with real Owner epoch0/1 and reopened R HTTP/HPKE/SQLite/OS-child evidence. Bad-frame/install failures propagate without next; invalid budget leaves actual native task/mailbox untouched. Startup/re-auth/bootstrap/session class and automatic pagination remain incomplete.",
+    "sessionInventory": "All43 methods (31 public inclconstructor,12private) and29 declared fields + constructor options have source member SHA/destinations; raw ordinary key maps/private point cache replaced by public owners, synthetic adversary fixtures explicitly retained. Inventory is not facade completion."
   }
 }

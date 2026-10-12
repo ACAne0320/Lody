@@ -20,7 +20,7 @@ import { prepareLedgerRecord, signLedgerRecord } from '@lody/e2ee-core/ledger/si
 import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
 import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
-import { makeSqliteRecipientMailbox } from '@lody/e2ee-core/keys/host/mailbox/sqlite';
+import { runLabKeyRound, LabKeyRoundError } from '../src/platform/key-round';
 import { makeLabMailboxRemote } from '../src/platform/key-mailbox';
 import { makeLabJoinMailbox, labJoinWire } from '../src/platform/join-mailbox';
 import { makeAuthenticatedLabMailbox } from './authenticated-mailbox-fixture';
@@ -222,12 +222,28 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               outboxStore: { path: file('owner-outbox'), mode: 'create' },
               currentPublication: () => Effect.succeed(genesis.record),
             });
-            expect(yield* distributor.reconcileCurrentEpoch()).toEqual({
-              scheduled: 1,
-              next: null,
-              blocked: [],
+            const invalidRound = yield* Effect.result(runLabKeyRound(distributor, 0));
+            expect(Result.isFailure(invalidRound)).toBe(true);
+            if (Result.isFailure(invalidRound)) {
+              expect(invalidRound.failure).toBeInstanceOf(LabKeyRoundError);
+              expect((invalidRound.failure as LabKeyRoundError).code).toBe('invalid-limit');
+            }
+            const untouched = new Database(file('owner-send'), {
+              fileMustExist: true,
+              readonly: true,
             });
-            expect((yield* distributor.resumePendingDeliveries()).blocked).toEqual([]);
+            try {
+              expect(
+                untouched.prepare('SELECT count(*) AS n FROM distribution_tasks').get()
+              ).toEqual({ n: 0 });
+              expect((yield* receiverRemote.fetch(0, null, 100)).items).toEqual([]);
+            } finally {
+              untouched.close();
+            }
+            const firstRound = yield* runLabKeyRound(distributor);
+            expect(firstRound.results.map((row) => row.outcome)).toEqual(['Reported']);
+            expect(firstRound.reconciliation).toEqual({ scheduled: 1, next: null, blocked: [] });
+            expect(firstRound.delivered.blocked).toEqual([]);
             expect((yield* remote.status(slot)).status).toBe('EnvelopeStored');
             const before = yield* receiverRemote.fetch(0, null, 100);
             expect(before.items).toHaveLength(1);
@@ -250,7 +266,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
             expect(forged.status).toBe(403);
             expect((yield* receiverRemote.fetch(0, null, 100)).items).toEqual(before.items);
 
-            const receiver = yield* makeSqliteRecipientMailbox({
+            const receiver = yield* makeSqliteKeyDistribution({
               path: file('recovery-receive'),
               mode: 'create',
               genesis: genesis.genesis,
@@ -264,9 +280,12 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
                 protector: syntheticProtector,
               },
               repairStore: { path: file('recovery-repair'), mode: 'create' },
+              sendStore: { path: file('recovery-send'), mode: 'create' },
+              outboxStore: { path: file('recovery-outbox'), mode: 'create' },
+              currentPublication: () => Effect.succeed(null),
             });
             tamper = true;
-            expect(Result.isFailure(yield* Effect.result(receiver.fetchAndInstall()))).toBe(true);
+            expect(Result.isFailure(yield* Effect.result(runLabKeyRound(receiver)))).toBe(true);
             expect((yield* remote.status(slot)).status).toBe('EnvelopeStored');
             const db = new Database(file('recovery-keys'), { fileMustExist: true });
             try {
@@ -285,7 +304,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
             } finally {
               blocker.close();
             }
-            expect(Result.isFailure(yield* Effect.result(receiver.fetchAndInstall()))).toBe(true);
+            expect(Result.isFailure(yield* Effect.result(runLabKeyRound(receiver)))).toBe(true);
             expect((yield* remote.status(slot)).status).toBe('EnvelopeStored');
             const pending = new Database(file('recovery-receive'), { fileMustExist: true });
             try {
@@ -369,16 +388,13 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
                 protector: syntheticProtector,
               },
               repairStore: { path: file('recovery-repair'), mode: 'open' },
-              sendStore: { path: file('recovery-send'), mode: 'create' },
-              outboxStore: { path: file('recovery-outbox'), mode: 'create' },
+              sendStore: { path: file('recovery-send'), mode: 'open' },
+              outboxStore: { path: file('recovery-outbox'), mode: 'open' },
               currentPublication: () => Effect.succeed(null),
             });
             expect((yield* reopened.results()).map((item) => item.outcome)).toEqual(['Reported']);
-            expect(yield* reopened.reconcileCurrentEpoch()).toEqual({
-              scheduled: 0,
-              next: null,
-              blocked: [],
-            });
+            const recoveryRound = yield* runLabKeyRound(reopened);
+            expect(recoveryRound.reconciliation).toEqual({ scheduled: 0, next: null, blocked: [] });
             expect((yield* remote.status(slot)).status).toBe('InstallationReported');
             // R can repair its own receive slot. Arbitrary existing bounded request
             // IDs remain valid; no new hex-ID wire format is invented in the adapter.
@@ -495,12 +511,9 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               outboxStore: { path: file('owner-outbox'), mode: 'open' },
               currentPublication: () => Effect.succeed(epochOne),
             });
-            expect(yield* sender.reconcileCurrentEpoch()).toEqual({
-              scheduled: 1,
-              next: null,
-              blocked: [],
-            });
-            expect((yield* sender.resumePendingDeliveries()).blocked).toEqual([]);
+            const epochOneRound = yield* runLabKeyRound(sender);
+            expect(epochOneRound.reconciliation).toEqual({ scheduled: 1, next: null, blocked: [] });
+            expect(epochOneRound.delivered.blocked).toEqual([]);
             expect((yield* senderRemote.status(slot1)).status).toBe('EnvelopeStored');
             const receiverSession = yield* http.authenticate(recovery);
             const receiverRemote = yield* makeLabMailboxRemote(receiverSession);
@@ -557,7 +570,8 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               outboxStore: { path: file('epoch1-recovery-outbox'), mode: 'create' },
               currentPublication: () => Effect.succeed(epochOne),
             });
-            expect(yield* reopened.reconcileCurrentEpoch()).toEqual({
+            const epochOneRecoveryRound = yield* runLabKeyRound(reopened);
+            expect(epochOneRecoveryRound.reconciliation).toEqual({
               scheduled: 0,
               next: null,
               blocked: [],
