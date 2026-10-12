@@ -103,7 +103,9 @@ Mock-call-only 断言改为状态；浅层 unload 源码文本测试由既有真
 代码。整合 review 基于 `dd674eae`，复用已合入的 P5。独立 clone 使用 frozen
 install，保留锁定版本。完整 shared 验证 112 文件／1458 测试通过，CLI 的真实
 socket、卸载、双作者和零云调用 5 文件／37 测试通过；根类型、lint、格式、文档
-及公开／native 边界检查通过。本地完整 CLI 阶段 4052 项通过，仍是相同的五个
+及公开／native 边界检查通过。Renderer 重连 harness 注入原生 writer，
+用假时钟验证真实 room adapter／健康判定链路，并等待 engine 与 writer 清理。
+完整第三组件分片 186 文件／1799 测试通过。本地完整 CLI 阶段 4052 项通过，仍是相同的五个
 Git/进程基线套件（15 项失败／4 个未处理错误）；远端 CI 才是提交版本的干净环境验证。
 
 验证限于本地 Linux／Node 源码，不证明 Windows/macOS、打包桌面／CLI 安装、生产负载

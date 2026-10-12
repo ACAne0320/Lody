@@ -118,7 +118,10 @@ code. Integration review is based on `dd674eae` and reuses merged P5. A frozen i
 independent clone keeps locked versions. Full shared validation passes 112 files / 1458
 tests; actual CLI socket, unload, dual-author and zero-cloud integration passes five files /
 37 tests. Root typechecking, lint, format, document and public/native boundary checks
-pass. The complete local CLI phase passes 4052 tests with the same five baseline suites
+pass. The renderer reconnect harness injects the native writer, drives the actual
+room adapter/health predicate with fake clocks, and awaits engine/writer release.
+The full third components shard passes 186 files / 1799 tests.
+The complete local CLI phase passes 4052 tests with the same five baseline suites
 (15 failures / four unhandled errors) in Git/process fixtures; remote CI must validate the submitted revision in a clean environment.
 
 Validation is local Linux/Node source-level evidence. It does not establish Windows/macOS,
