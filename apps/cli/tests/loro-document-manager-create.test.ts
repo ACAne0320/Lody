@@ -6,7 +6,7 @@ import {
   LOCAL_LORO_DATA_PLANE_PROTOCOL_VERSION,
   type LocalLoroDataPlaneServerMessage,
 } from '@lody/shared/local-loro-data-plane';
-import { LocalLoroDataPlaneServer } from '@lody/shared/local-loro-data-plane-server';
+import { LocalLoroDataPlaneServerLegacy } from '@lody/shared/local-loro-data-plane-server';
 import type { WorkspaceId } from '@lody/shared';
 import { InMemoryRemoteCursorStore } from '@loro-dev/streams-crdt';
 import { RepoSyncError, RepoTransportError, type RepoSyncReport } from 'loro-repo';
@@ -1066,7 +1066,7 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
       commit: vi.fn(),
       subscribe: vi.fn(() => vi.fn()),
     };
-    const localServer = new LocalLoroDataPlaneServer({
+    const localServer = new LocalLoroDataPlaneServerLegacy({
       workspaceId,
       resolveDoc: async () => {
         throw new Error('unused');

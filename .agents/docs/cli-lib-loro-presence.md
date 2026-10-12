@@ -45,8 +45,11 @@ NOT a rate limit: a `detail` that changes on every emit — a percentage, a coun
 streaming label — defeats it completely and publishes at the source's rate.
 
 `packages/shared/src/local-loro-data-plane-server.ts` relays presence to the renderer
-over local IPC and already collapses a burst into a single frame, snapshotting at
-write time. It is the template to copy when a producer is genuinely bursty.
+over local IPC through the native process-wide writer, coalescing changes and
+snapshotting at write time. The final clear/delete retains its follow-up; every
+workspace on a slow socket shares its export/drain backpressure. This lower unit
+does not migrate the workspace presence producer or cloud transport. See the
+[local-plane writer](cli-lib-local-loro-data-plane.md#shape).
 
 ## Token-provider ownership
 

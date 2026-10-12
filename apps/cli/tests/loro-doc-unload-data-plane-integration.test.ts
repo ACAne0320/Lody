@@ -8,7 +8,7 @@ import { updateTestHistory } from './history-port-fixture';
  *     -> SessionDocument.destroy
  *       -> LoroDocumentManager.unloadDocRoom
  *         -> repo.unloadDoc(docId)            (evicts the LoroDoc instance)
- *         -> LocalLoroDataPlaneServer.invalidateDocRoom(docId)
+ *         -> LocalLoroDataPlaneServerLegacy.invalidateDocRoom(docId)
  *
  * `repo.unloadDoc` hands the NEXT `openPersistedDoc` a different `LoroDoc`, but
  * a data-plane doc room resolves its instance ONCE and keeps it while a peer
@@ -18,7 +18,7 @@ import { updateTestHistory } from './history-port-fixture';
  *
  * Everything here is REAL — a real `LoroDocumentManager` over a real `LoroRepo`
  * with SQLite storage in a temp dir, and the manager's own
- * `LocalLoroDataPlaneServer`. Only the socket is faked: the renderer peer is an
+ * `LocalLoroDataPlaneServerLegacy`. Only the socket is faked: the renderer peer is an
  * in-memory connection driven straight through `engine.handleMessage`, exactly
  * as `local-loro-data-plane-server.ts` drives it for a real net socket.
  *
@@ -28,7 +28,7 @@ import { updateTestHistory } from './history-port-fixture';
  *  - `packages/components/tests/local-data-plane-room-invalidation-reconnect.test.ts`:
  *    that the published terminal status actually makes the renderer's reconnect
  *    loop fire.
- *  - `apps/cli/tests/loro-doc-unload-invalidates-data-plane.test.ts`: that
+ *  - The local writer boundary guard protects the single unload entry;
  *    `unloadDocRoom` stays the only `repo.unloadDoc` call site.
  */
 import fs from 'node:fs/promises';
@@ -45,7 +45,7 @@ import {
   LOCAL_LORO_DATA_PLANE_PROTOCOL_VERSION,
   sessionDocSchema,
   type LocalLoroDataPlaneRoom,
-  type LocalLoroDataPlaneServer,
+  type LocalLoroDataPlaneServerLegacy,
   type LocalLoroDataPlaneServerMessage,
   type Role,
   type SessionDoc,
@@ -151,7 +151,7 @@ class FakeRendererPeer {
   private joinCount = 0;
 
   constructor(
-    private readonly engine: LocalLoroDataPlaneServer,
+    private readonly engine: LocalLoroDataPlaneServerLegacy,
     private readonly connection: FakeRendererConnection,
     private readonly workspaceId: WorkspaceId,
     private readonly room: LocalLoroDataPlaneRoom
