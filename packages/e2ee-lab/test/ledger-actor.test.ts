@@ -19,6 +19,7 @@ import { makeLabHttpHost } from '../src/platform/host';
 import { openLabExistingWorkspace } from '../src/platform/workspace-session';
 import { makeLabLedgerActor } from '../src/platform/ledger-actor';
 import { fixture, options } from './ledger-fixture';
+import { generateDevice, exportDevice } from '../src/platform/device';
 const ok = Result.getOrThrow;
 async function admission(f: Awaited<ReturnType<typeof fixture>>) {
   const key = createPrivateKey({
@@ -209,7 +210,18 @@ it('opens an admitted workspace through actual HTTP/public SDK, cleans failed ac
           })
         ).ok
       ).toBe(true);
-    const command = await admission(f);
+    const tablet = await Effect.runPromise(generateDevice());
+    const tabletFixture = await Effect.runPromise(exportDevice(tablet));
+    expect(tablet.publicKey.equals(f.owner.publicKey)).toBe(false);
+    const command = await Effect.runPromise(
+      prepareDeviceAdmission({
+        genesis: f.anchor,
+        membershipId: f.membership,
+        kind: 'personal',
+        encryptionPublicKey: tablet.enc,
+        signer: tablet,
+      })
+    );
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -344,10 +356,27 @@ it('opens an admitted workspace through actual HTTP/public SDK, cleans failed ac
           const healthy = yield* openLabExistingWorkspace({
             ...input,
             path: healthyPath,
+            signer: tablet,
             journalPath: join(f.dir, 'healthy-journal.sqlite'),
             mode: 'create',
             fetch,
           });
+          const credentialsDb = new Database(join(f.dir, 'session-credentials.sqlite'), {
+            readonly: true,
+          });
+          try {
+            const devices = credentialsDb
+              .prepare('SELECT DISTINCT device_hex FROM credentials WHERE genesis_hex=?')
+              .all(org) as { device_hex: string }[];
+            expect(devices.map((row) => row.device_hex)).toContain(
+              Buffer.from(tablet.publicKey.toBytes()).toString('hex')
+            );
+            expect(devices.map((row) => row.device_hex)).toContain(
+              Buffer.from(f.owner.publicKey.toBytes()).toString('hex')
+            );
+          } finally {
+            credentialsDb.close();
+          }
           const persisted = (file: string) => {
             const db = new Database(file, { readonly: true });
             try {
@@ -441,6 +470,34 @@ it('opens an admitted workspace through actual HTTP/public SDK, cleans failed ac
             expect(persisted(path)).toEqual(before);
           }
           yield* healthy.close();
+          const tabletManifest = join(f.dir, 'tablet-child.json');
+          writeFileSync(
+            tabletManifest,
+            JSON.stringify({
+              baseUrl: host.baseUrl,
+              path: healthyPath,
+              journalPath: join(f.dir, 'healthy-journal.sqlite'),
+              anchor: org,
+              head: Buffer.from(saved.view.head.toBytes()).toString('hex'),
+              length: 3,
+              offset: (yield* session.control.current()).offset,
+              device: tabletFixture,
+            }),
+            { mode: 0o600 }
+          );
+          const tabletOutput = yield* runOwnedChild([
+            '--import',
+            'tsx',
+            'test/workspace-session-reopen.mts',
+            tabletManifest,
+          ]);
+          expect(JSON.parse(tabletOutput)).toEqual({
+            device: Buffer.from(tablet.publicKey.toBytes()).toString('hex'),
+            length: 3,
+            head: Buffer.from(saved.view.head.toBytes()).toString('hex'),
+            offset: saved.offset,
+            pending: false,
+          });
           yield* session.close();
           yield* session.close();
           expect(Result.isFailure(yield* Effect.result(session.control.refresh()))).toBe(true);

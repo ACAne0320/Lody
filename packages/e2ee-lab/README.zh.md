@@ -187,6 +187,8 @@ view及游标保留。另一同时存活且独立文件的客户端仍可用；�
 新OS子进程先重开所保留的完整对。这是旧Lab2两项失败语义在既有工作区consumer中的
 对应验证，不是原完整宿主/actor套件或已关闭的迁移缺口。
 
+独立客户端现使用另外真实生成的个人设备，经真实PoP和既有签名CAS登记；原生凭据行明确包含两台设备。其合成四字段fixture只交给0600私有子进程文件，经公开device模块导入；子进程返回实际导入签名公钥及保留head/cursor。这些可导出的测试fixture不选择存钥、恢复库或发布者备份语义。
+
 ./snapshot-cache用真实SQLite保存v1签名快照字节，只按独立选择的Org/head/count/endorser
 索引；每次复制并用另行提供的完整资格经公开snapshot入口重验。SQL不提供role/member/
 head背书，也不选择新peer。返回view仍为endorsed-snapshot，不等于全量审计/最新状态。

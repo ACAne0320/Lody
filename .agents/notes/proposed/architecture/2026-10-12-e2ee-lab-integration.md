@@ -306,6 +306,8 @@ client's retained pair before same-handle retry. This maps the two original Lab2
 failure semantics onto the existing-workspace consumer, not the full original Lab2
 host/actor suite or a closed migration gap.
 
+The independent client now has a separately native-generated personal device, admitted by genuine PoP and the unchanged signed CAS path. Actual credential rows identify both devices. Its own synthetic four-field fixture is handed to a private mode0600 child file and imported through the public device module; the child reports the actual imported signing key along with the retained head/cursor. These test-only exportable fixtures do not select custody, recovery-vault or publisher-backup semantics.
+
 ./snapshot-cache stores v1 signed snapshot bytes in real SQLite, indexed only by
 independently selected Org/head/count/endorser. Every read copies and reverifies
 through the public snapshot entry with a separately supplied full qualification;

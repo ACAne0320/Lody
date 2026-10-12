@@ -9098,10 +9098,11 @@
     {
       "number": 1464,
       "headRefName": "e2ee-ledger-snapshots",
-      "headRefOid": "5d3967ec94e3b10fdec76220937e9fcfe2623590",
+      "headRefOid": "926e1501e69b047d1a367f241b3660cb474d61b8",
       "baseRefName": "e2ee-key-delivery",
       "isDraft": true,
-      "parentHead": "34b918367fe23f6bf9c2ff1cea31b154de298cb2"
+      "parentHead": "34b918367fe23f6bf9c2ff1cea31b154de298cb2",
+      "reviewStatus": "original limited NOT READY; author oldfail/newpass and supplemental exact-point regressions done; coordinator/original reviewer incremental recheck pending"
     },
     {
       "number": 1472,
@@ -9109,7 +9110,9 @@
       "headRefOid": "58cbd49c6869f28d09efb60d3b9a7ec10243e93a",
       "baseRefName": "e2ee-ledger-snapshots",
       "isDraft": true,
-      "parentHead": "5d3967ec94e3b10fdec76220937e9fcfe2623590"
+      "parentHead": "926e1501e69b047d1a367f241b3660cb474d61b8",
+      "lastIntegratedParentHead": "5d3967ec94e3b10fdec76220937e9fcfe2623590",
+      "syncRequired": true
     },
     {
       "number": 1474,
@@ -9222,7 +9225,7 @@
     "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "v1 snapshot byte cache + actual permission-history recovery root core302/Lab92, check/format/docs/publicboundary7036files27manifests PASS; all70 Lab input SHA unchanged. Same-Org/head real self-claimed Owner signatures cannot replace external pins; SQL rollback/isolation/OS-child, genuine full history fallback and failed native metadata-save retention/retry verified. Root1 no-shadow failure preserved, fixed without suppressing rules. P09 already migrated unchanged; production pin custody/vault/fullR/content snapshot and originalLab2/final-stackCI/independent review incomplete. Extended existing owning session case now verifies native duplicate/rollback bytes, two live SQLite owners, OS-child reopen before retry; root check/format/docs PASS, core302/Lab92 unchanged; no new protocol/production code, all70 input SHA retained.",
+    "authorRootCheck": "v1 snapshot byte cache + actual permission-history recovery root core302/Lab92, check/format/docs/publicboundary7036files27manifests PASS; all70 Lab input SHA unchanged. Same-Org/head real self-claimed Owner signatures cannot replace external pins; SQL rollback/isolation/OS-child, genuine full history fallback and failed native metadata-save retention/retry verified. Root1 no-shadow failure preserved, fixed without suppressing rules. P09 already migrated unchanged; production pin custody/vault/fullR/content snapshot and originalLab2/final-stackCI/independent review incomplete. Extended existing owning session case now verifies native duplicate/rollback bytes, two live SQLite owners, OS-child reopen before retry; root check/format/docs PASS, core302/Lab92 unchanged; no new protocol/production code, all70 input SHA retained. Distinct native admitted personal peer, credential row identity and actual imported peer-key OS-child reopen now verified; same owning case count/root core302/Lab92, check/format/docs/publicboundary7036files27manifests PASS, all70 inputSHA unchanged; only synthetic fixtures, no custody/vault/backup decisions.",
     "lastFetchedMain": {
       "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
       "tree": "f3168cbda928a4f9866fba330c8278bbbb09d5ef",
@@ -9259,7 +9262,7 @@
     "httpIdentity": "Actual bounded local native possession/bearer client extracted from test helper; public verifier/provenance-safe signer capture, Schema account/device/Org/token/timestamp response validation, original lease policy retained, same-origin/redirect/closed guard. Native transport instrumentation is explicit; full application identity/re-auth/facade and forever-native bounded finalizer remain incomplete.",
     "genesisConsumer": "Authenticated bounded existing metadata discovery verifies requested hash/type/real original signature and returns owned original bytes only. Unbound joiners preserved; not current authority or selected Genesis/control bootstrap. Full adopt/session keyring and ledger initialization incomplete.",
     "joinConsumer": "Public bounded authenticated submit/list consumes existing candidate metadata, verifies copied Org/signature/sender, true receipt and unique IDs; no membership/identity authority, new IDs/expiry or full session approval facade. Actual host permissions unchanged.",
-    "existingWorkspaceSession": "Public child-scope composition of admitted identity, original genesis, released SDK and public actor. Independently pinned existing full-prefix control/local/network checkpoints required. Failure closes resources before parent teardown; close shares completion. Actual SQLite/HTTP/CAS/OS-child same-history+cursor pass; full honest key/content/startup and host durable checkpoint/lostACK gap pending. Real native duplicate-at-current-offset/rollback-prefix response bytes refuse progress: all SQLite rows/meta/view/cursor retained, independent simultaneous client usable, OS-child reopens before same-handle retry. Existing-workspace consumer evidence only; original Lab2 not closed.",
+    "existingWorkspaceSession": "Public child-scope composition of admitted identity, original genesis, released SDK and public actor. Independently pinned existing full-prefix control/local/network checkpoints required. Failure closes resources before parent teardown; close shares completion. Actual SQLite/HTTP/CAS/OS-child same-history+cursor pass; full honest key/content/startup and host durable checkpoint/lostACK gap pending. Real native duplicate-at-current-offset/rollback-prefix response bytes refuse progress: all SQLite rows/meta/view/cursor retained, independent simultaneous client usable, OS-child reopens before same-handle retry. Existing-workspace consumer evidence only; original Lab2 not closed. The independent client is now a genuinely distinct native personal device admitted by actual PoP/signed CAS. Native credential rows identify both peers; a private synthetic fixture is imported in its own OS child, returning actual public key/head/cursor. No production custody/vault/backup claim.",
     "snapshotCache": "Real SQLite v1 byte cache indexed by independently provided Org/head/count/endorser, public verification with full separate pins on every get. No role/head attestation/peer selection from SQL. Native rollback/readback, scoped cleanup, owned bytes, distinct-Org isolation and OS-child pass; returned endorsed view is not full history/currentness. Production pin custody/bootstrap/recovery unimplemented. Same-Org/head actual self-claimed Owner and structural full-view clones refused; client fallback reads actual full signed SDK history, failed native metadata save retains prior records/view/cursor and same-handle retry commits. This is permission-history recovery only."
   },
   "unsettledContractProposals": {
@@ -9299,5 +9302,23 @@
     ],
     "unchanged": true,
     "remaining": "Old journal snapshot/trust restore, consumers and whole Lab remain separate partial scopes."
+  },
+  "snapshotCountFixHandoff": {
+    "pr": 1464,
+    "head": "926e1501e69b047d1a367f241b3660cb474d61b8",
+    "directBase": "34b918367fe23f6bf9c2ff1cea31b154de298cb2",
+    "implementationAlreadyInStack": "5d3967ec94e3b10fdec76220937e9fcfe2623590",
+    "originalReviewedHead": "13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf",
+    "authorEvidence": "oldfail/newpass, offset0/nonzero/suffix same/different digest raw/confirm bilateral regression; owning47/core188/root PASS",
+    "independentClosure": false,
+    "ci": {
+      "run": 38213100550,
+      "head": "926e1501e69b047d1a367f241b3660cb474d61b8",
+      "conclusion": "SUCCESS",
+      "checkout": "7a29ccc5406679f6246ec7c1d5c050247e20e157",
+      "desktop": "SKIPPED",
+      "treeLimitation": "core directory equals head; intermediate base merges direct base into 960e7022; full lock/catalog/tree differs"
+    },
+    "downstream": "11 descendants and Lab still contain original5d count fix, not new926 test/Note; coordinate later sync; no rebase or force push here"
   }
 }

@@ -22,8 +22,8 @@
   "targetFingerprints": {
     "AGENTS.md": "ba82fcdcc2622a31a80350358e50c97f9e53afb4d003ab4977eccafd82979342",
     "CLAUDE.md": "ba82fcdcc2622a31a80350358e50c97f9e53afb4d003ab4977eccafd82979342",
-    "README.md": "22f24b3402d9bb79e44f25eca2fea0e05644189170edcc95664172c94b590a98",
-    "README.zh.md": "ae5876c6d9637de1bb9fd01a86f000f1ef1a0edd879a582b0b86bd5c4d5008f6",
+    "README.md": "08d3f3b58a69353c36fd5568d426dc3f2142614651f6b932c52bbeb71f1539f0",
+    "README.zh.md": "3445172b22d0eebb08f0a0da7f6a03c1133390f6fa54081d8f399d4a5d0b2bc2",
     "package.json": "956baf1e6d1609d6508dec6b51d489212ddf422b2103712df1acabd7da459357",
     "src/platform/content-provider.ts": "b4be8bfceb43a591097015499c10aefbd4ab870105d3569dddd7fa951ff9501d",
     "src/platform/content-session.ts": "7c22e34f85f2eabd79b472b861681127e7bb6b2ced687da3bc47c8eb415e6dfe",
@@ -65,7 +65,7 @@
     "test/key-mailbox.test.ts": "94ec488d11ccd80a751edc039c2e9ae29894d4aaf985ede0750529702bf346fb",
     "test/key-reopen.mts": "349d4e08056f8d94d16299ea4dd439bdd04103c20fef6cbc22b24be9437146f5",
     "test/ledger-actor-reopen.mts": "760fd376ac9a624ccb5e5ab7601358e5d508d320905c1c8fda7fb235044b9cce",
-    "test/ledger-actor.test.ts": "52ea7c5ab6ff7e571b50563bb246a588e95052ced4f95e50e8aa6601749041c0",
+    "test/ledger-actor.test.ts": "4f745ef9e310c8cfa5aa45b4d005c66eee21b964b235941bab1c4b064d9ba4e7",
     "test/ledger-client.test.ts": "93fdc1ad5a9f2faacb62814f1449a39ee64500f47491299d0fe5b94dbe9dbeeb",
     "test/ledger-fixture.ts": "430f3e44bc6316a0825326e646348afe59a8c487e8cc4bf2974d1944fd66444b",
     "test/ledger-reopen.mts": "18663757d020087fcefb7c0cfc887f756cd04287c504ddd19e7de8d6d547568f",
@@ -87,7 +87,7 @@
     "src/platform/key-round.ts": "a11d48a996d0575d2a34ea7a0dce183d0f7d875a2687bb2f9340d32bf54b2ba0",
     "src/platform/http-identity.ts": "baed8a333885a2639ac68ee29c5f4e0cf052bed18f18e6ab69cdd8ad1683c2e0",
     "src/platform/workspace-session.ts": "5f535a377bcf3dbe1a052501e37a6a2e3fee643f461e49452e7dc02158be3762",
-    "test/workspace-session-reopen.mts": "5bab6ce4fadfd2e1d8801b234622ad4f937b99025becaba111505a0961d2a2dc",
+    "test/workspace-session-reopen.mts": "ee99f073d1ff8cd7bcaa6a686c4753e048cc11af5fb2a5cbff31ff4616e69183",
     "src/platform/snapshot-cache.ts": "06373fedb3456942dc3ff02a9a01e9694e40909c2c6a274051d8fca2d20a5c60",
     "test/snapshot-cache-reopen.mts": "ad4ba766a5aa0ca1c44573c77969a0e5c7460534ea8d7deffbe18e8b1c78c9c9"
   },
