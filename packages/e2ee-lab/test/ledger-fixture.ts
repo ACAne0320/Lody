@@ -11,11 +11,11 @@ import { frameLedgerRecord } from '@lody/e2ee-core/ledger/feed';
 import { expect } from 'vitest';
 const ok = Result.getOrThrow;
 /** Synthetic account and signing seed, real Ed25519 and public protocol codec. */
-export function history() {
+export function history(syntheticSigningSeed = 51) {
   const key = createPrivateKey({
     key: Buffer.concat([
       Buffer.from('302e020100300506032b657004220420', 'hex'),
-      Buffer.alloc(32, 51),
+      Buffer.alloc(32, syntheticSigningSeed),
     ]),
     format: 'der',
     type: 'pkcs8',

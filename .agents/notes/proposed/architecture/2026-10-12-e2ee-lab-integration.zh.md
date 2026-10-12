@@ -213,3 +213,17 @@ OS-child 密钥用例直接消费它。改写回执/超预算 stream 明确是 t
 真实HTTP/CAS owning用例验证失败后重试、持久确认、OS子进程重开同一文件及游标。
 fixture checkpoint来自独立拥有的原历史；宿主持久checkpoint/lostACK崩溃窗口仍未完工。
 不保证永不settle的native关闭，不选择createSpace布局、不完成密钥/内容启动或整个DemoSession。
+
+./snapshot-cache用真实SQLite保存v1签名快照字节，只按独立选择的Org/head/count/endorser
+索引；每次复制并用另行提供的完整资格经公开snapshot入口重验。SQL不提供role/member/
+head背书，也不选择新peer。返回view仍为endorsed-snapshot，不等于全量审计/最新状态。
+保存只追加、事务回读，SQLIGNORE/坏触发器回滚，同handle可重试；一Org缓存损坏不影响另一Org。
+OS-child用独立合成pin重开，无需当时有管理员在线。生产pin来源/持久资格保管、suffix/offset
+bootstrap和完整恢复仍未完工；不是vault或protectedcontent新wire，也不改变现行v1背书者可说谎的信任边界。
+
+restoreLabLedgerFromCacheOrHistory只接受独立选择的精确endpoint与genuine view。
+缺失/损坏/旧位置的可选缓存走实际全历史owner；无效pin/closed/defect不静默转换。
+同Org/head自称Owner确有真实signature evidence，仍不能替换独立peer。客户端用真实SDK
+全历史恢复；native SQLite metadata触发器失败保留原records/view/cursor，原handle重试后
+提交新完整对。结构克隆full-view在读字段前被公开provenance拒绝。这里只恢复权限历史，
+不是完整R/vault/key或protectedcontent快照恢复。

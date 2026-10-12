@@ -296,3 +296,25 @@ retry after failed acquisition, persisted acknowledgement and OS-child same-file
 reopen. Fixture checkpoint authority is an independently owned history; the host's
 durable checkpoint/lost-ACK crash gap remains unfinished. No forever-unsettled native
 shutdown guarantee, create-space selection, key/content startup or full DemoSession.
+
+./snapshot-cache stores v1 signed snapshot bytes in real SQLite, indexed only by
+independently selected Org/head/count/endorser. Every read copies and reverifies
+through the public snapshot entry with a separately supplied full qualification;
+SQL cannot provide role/member/head attestation or choose a new peer. Returned
+views remain endorsed-snapshot, not full audit/currentness. Saves are append-only,
+transactional and read back; SQL IGNORE/corrupting triggers roll back, same-handle
+retry is explicit, and one corrupt Org leaves another usable. OS-child reopen uses
+independent synthetic pins without a live administrator. Production pin acquisition,
+durable qualification custody, suffix/offset bootstrap and full recovery remain
+unfinished. This is not vault-v1/v2, protected content snapshot wire or a new trust
+policy; v1 endorsement can still trust a lying qualified signer as documented.
+
+restoreLabLedgerFromCacheOrHistory accepts only a genuine view at the independently
+selected exact endpoint. Missing/corrupt/stale optional cache falls back to a real
+full-history owner; invalid pins/closed cache/defects are not silently converted.
+An actual same-Org/head self-claimed Owner has real signature evidence but cannot
+replace the separately qualified peer. Client fallback audits real SDK history;
+a native SQLite metadata trigger failure retains old records/view/cursor, then
+same-handle retry commits the new exact pair. Structural full-view clones fail
+public provenance before any field inspection. This is permission-history recovery,
+not full R/vault/key recovery or protected-content snapshot restoration.
