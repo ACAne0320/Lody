@@ -63,6 +63,9 @@ npm publication, macOS/Windows, daemon end-to-end or throughput acceptance is cl
 
 ## Development evidence
 
+Draft review: [#1510](https://github.com/LodyAI/Lody/pull/1510). It remains explicitly
+incomplete pending the integration gates above; no P5 readiness is claimed.
+
 Initial main was verified remotely at `3ac76bad10f46720517a2ca6929f03de4ef5bb9b`.
 The isolated branch includes P1 `9c3d354bf283d7957b46f4bb2feb98e39310e5a0`
 ([#1503](https://github.com/LodyAI/Lody/pull/1503)); other clones and the parent

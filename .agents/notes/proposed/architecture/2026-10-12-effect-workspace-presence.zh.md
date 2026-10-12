@@ -45,6 +45,8 @@ Scope.close 不等待先前 close，中断不可中断释放也不能施加真�
 
 ## 开发证据
 
+Draft review：[#1510](https://github.com/LodyAI/Lody/pull/1510)。上述集成闸门仍未完成，不宣称 P5 ready。
+
 已远程核对初始 main `3ac76bad10f46720517a2ca6929f03de4ef5bb9b`。
 独占分支包含 P1 `9c3d354bf283d7957b46f4bb2feb98e39310e5a0`
 （[#1503](https://github.com/LodyAI/Lody/pull/1503)）；父工作区与其他 clone 未修改。
