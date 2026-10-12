@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1519](https://github.com/LodyAI/Lody/pull/1519)
 
 [English](2026-10-12-effect-local-presence-writer.md)
 
