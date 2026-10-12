@@ -1,6 +1,7 @@
 import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'effect';
 import {
   LoroStreamsTokenError,
+  LoroStreamsTokenAuthError,
   LoroStreamsTokenWebLive,
   type FetchLike,
   type LoroStreamsTokenProviderEvent,
@@ -106,7 +107,19 @@ export function createLoroStreamsTokenProviderLegacy(options: {
       return (context?: { reason: string; previousToken?: string }, signal?: AbortSignal) =>
         run((tokens) => {
           auth ??= tokens.createAuthCallback();
-          return auth(context);
+          // Undefined belongs only to the old transport protocol. Preserve every
+          // non-auth reason, including mixed auth/interruption/release Causes.
+          return auth(context).pipe(
+            Effect.catchCause((cause) =>
+              cause.reasons.length > 0 &&
+              cause.reasons.every(
+                (reason) =>
+                  Cause.isFailReason(reason) && reason.error instanceof LoroStreamsTokenAuthError
+              )
+                ? Effect.succeed(undefined)
+                : Effect.failCause(cause)
+            )
+          );
         }, signal);
     },
     close: () => {

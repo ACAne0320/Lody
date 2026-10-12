@@ -1,8 +1,9 @@
 import { it as effectIt } from '@effect/vitest';
-import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from 'effect';
+import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer, Scope } from 'effect';
 import { TestClock } from 'effect/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeLoroStreamsRawIo } from '../src/loro-streams-token/io';
+import { LoroStreamsTokenLegacyFailure } from '../src/loro-streams-token/legacy';
 
 import {
   buildLoroStreamsTokenEndpoint,
@@ -15,9 +16,13 @@ import {
   LoroStreamsTokenWebLive,
   LoroStreamsTokenReleaseFailed,
   LoroStreamsTokenShutdownFailed,
+  LoroStreamsTokenAuthError,
+  LoroStreamsTokenError,
+  describeLoroStreamsTokenCause,
   makeLoroStreamsTokenProvider,
   makeLoroStreamsTokenWebPorts,
   type LoroStreamsTokenProviderOptions,
+  type LoroStreamsTokenProvider,
 } from '../src/loro-streams-auth';
 
 type LocalStorageMock = {
@@ -112,6 +117,48 @@ describe('loro streams auth helpers', () => {
     await expect(provider.getToken()).resolves.toBe('jwt-1');
 
     expect(provider.getGatewayBaseUrl()).toBe('https://streams-api.example.com');
+  });
+
+  it('keeps auth plus diagnostic failure through the Legacy protocol callback', async () => {
+    const observerFailure = new Error('synthetic private observer payload');
+    const provider = createLoroStreamsTokenProviderLegacy({
+      endpoint: tokenOptions.endpoint,
+      workspaceId: tokenOptions.workspaceId,
+      authToken: 'synthetic-credential',
+      fetchImpl: async () => new Response('', { status: 403 }),
+      onEvent: (event) => {
+        if (event.type === 'fetch-failure') throw observerFailure;
+      },
+    });
+    let failure: unknown;
+    try {
+      try {
+        await provider.createAuthCallback()();
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(LoroStreamsTokenLegacyFailure);
+      if (failure instanceof LoroStreamsTokenLegacyFailure) {
+        expect(describeLoroStreamsTokenCause(failure.effectCause)).toEqual({
+          kinds: ['auth', 'defect', 'release'],
+          authStatuses: [403],
+        });
+        expect(
+          failure.effectCause.reasons.some(
+            (reason) =>
+              Cause.isFailReason(reason) && reason.error instanceof LoroStreamsTokenAuthError
+          )
+        ).toBe(true);
+        expect(
+          failure.effectCause.reasons.some(
+            (reason) => Cause.isDieReason(reason) && reason.defect === observerFailure
+          )
+        ).toBe(true);
+      }
+    } finally {
+      await provider.retryCleanup();
+      await provider.close();
+    }
   });
 
   it('refreshes the token after the cache window', async () => {
@@ -1107,6 +1154,311 @@ function retainedRawOwners(cause: Cause.Cause<unknown>): Array<LoroStreamsTokenR
 }
 
 describe('native shared Streams token ownership', () => {
+  effectIt.effect('close waits for success-body EOF after HTTP headers have arrived', () =>
+    Effect.gen(function* () {
+      const reading = Deferred.makeUnsafe<void>();
+      const aborted = Deferred.makeUnsafe<void>();
+      let body: ReadableStreamDefaultController<Uint8Array> | undefined;
+      const ports = makeLoroStreamsTokenWebPorts({
+        credential: Effect.succeed('auth'),
+        fetchImpl: async (_url, init) => {
+          init?.signal?.addEventListener('abort', () => Deferred.doneUnsafe(aborted, Effect.void));
+          const response = new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                body = controller;
+                controller.enqueue(
+                  new TextEncoder().encode(JSON.stringify({ token: 'late-body', expiresIn: 900 }))
+                );
+              },
+            })
+          );
+          const json = response.json.bind(response);
+          response.json = () => {
+            Deferred.doneUnsafe(reading, Effect.void);
+            return json();
+          };
+          return response;
+        },
+      });
+      const provider = yield* nativeProvider(ports);
+      const waiter = yield* Effect.forkChild(provider.getToken());
+      yield* Deferred.await(reading);
+      const close = yield* Effect.forkChild(provider.close);
+      yield* Effect.raceFirst(Deferred.await(aborted), Fiber.await(close));
+      try {
+        expect(close.pollUnsafe()).toBeUndefined();
+        expect((yield* provider.health).pendingRawWork).toBe(true);
+      } finally {
+        body?.close();
+      }
+      yield* Fiber.join(close);
+      expect(Exit.isFailure(yield* Fiber.await(waiter))).toBe(true);
+      expect(yield* provider.health).toMatchObject({
+        state: 'closed',
+        pendingRawWork: false,
+        hasCachedToken: false,
+      });
+    })
+  );
+
+  effectIt.effect(
+    'close owns a terminal response body until its actual cancellation completes',
+    () =>
+      Effect.gen(function* () {
+        const cancelling = Deferred.makeUnsafe<void>();
+        const aborted = Deferred.makeUnsafe<void>();
+        let finish: (() => void) | undefined;
+        const ports = makeLoroStreamsTokenWebPorts({
+          credential: Effect.succeed('auth'),
+          fetchImpl: async (_url, init) => {
+            init?.signal?.addEventListener('abort', () =>
+              Deferred.doneUnsafe(aborted, Effect.void)
+            );
+            return new Response(
+              new ReadableStream({
+                cancel: () =>
+                  new Promise<void>((resolve) => {
+                    finish = resolve;
+                    Deferred.doneUnsafe(cancelling, Effect.void);
+                  }),
+              }),
+              { status: 403 }
+            );
+          },
+        });
+        const provider = yield* nativeProvider(ports);
+        const waiter = yield* Effect.forkChild(provider.getToken());
+        yield* Deferred.await(cancelling);
+        const close = yield* Effect.forkChild(provider.close);
+        yield* Effect.raceFirst(Deferred.await(aborted), Fiber.await(close));
+        if (!finish) throw new Error('body cancellation did not start');
+        const finishBody = finish;
+        try {
+          expect(close.pollUnsafe()).toBeUndefined();
+          expect((yield* provider.health).pendingRawWork).toBe(true);
+        } finally {
+          finishBody();
+        }
+        yield* Fiber.join(close);
+        expect(Exit.isFailure(yield* Fiber.await(waiter))).toBe(true);
+        expect(yield* provider.health).toMatchObject({ state: 'closed', pendingRawWork: false });
+      })
+  );
+
+  effectIt.effect(
+    'auth and body release failure retain their owner, Cause and terminal suppression',
+    () =>
+      Effect.gen(function* () {
+        const releaseFailure = new Error('synthetic body cancellation failure');
+        let response = new Response(
+          new ReadableStream({ cancel: () => Promise.reject(releaseFailure) }),
+          { status: 403 }
+        );
+        const ports = makeLoroStreamsTokenWebPorts({
+          credential: Effect.succeed('auth'),
+          fetchImpl: async () => {
+            const current = response;
+            response = new Response(
+              JSON.stringify({ token: 'must-not-be-fetched', expiresIn: 900 })
+            );
+            return current;
+          },
+        });
+        const provider = yield* nativeProvider(ports);
+        const first = yield* Effect.exit(provider.createAuthCallback()());
+        expect(Exit.isFailure(first)).toBe(true);
+        if (Exit.isFailure(first)) {
+          expect(describeLoroStreamsTokenCause(first.cause)).toEqual({
+            kinds: ['auth', 'http', 'release'],
+            authStatuses: [403],
+          });
+          const owners = retainedRawOwners(first.cause);
+          expect(owners.length).toBeGreaterThan(0);
+          expect(owners[0]?.owner.settled()).toBe(true);
+        }
+        expect(yield* provider.health).toMatchObject({
+          state: 'release-failed',
+          terminalAuthStatus: 403,
+          pendingRawWork: true,
+        });
+        expect(Exit.isFailure(yield* Effect.exit(provider.retryCleanup))).toBe(true);
+        yield* provider.retryCleanup;
+        const suppressed = yield* Effect.exit(provider.getToken());
+        expect(Exit.isFailure(suppressed)).toBe(true);
+        if (Exit.isFailure(suppressed))
+          expect(describeLoroStreamsTokenCause(suppressed.cause)).toEqual({
+            kinds: ['auth'],
+            authStatuses: [403],
+          });
+        yield* provider.close;
+        expect((yield* provider.health).pendingRawWork).toBe(false);
+      })
+  );
+
+  effectIt.effect(
+    'acquisition does no credential I/O and first read preserves its typed failure',
+    () =>
+      Effect.gen(function* () {
+        const started = Deferred.makeUnsafe<void>();
+        const failure = new LoroStreamsTokenError({
+          reason: 'credential',
+          message: 'private credential diagnostic',
+          cause: { credential: 'synthetic-secret' },
+        });
+        const ports = makeLoroStreamsTokenWebPorts({
+          credential: Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.fail(failure))
+          ),
+        });
+        const acquire: Effect.Effect<LoroStreamsTokenProvider, never, Scope.Scope> =
+          nativeProvider(ports);
+        const provider = yield* acquire;
+        expect(Deferred.isDoneUnsafe(started)).toBe(false);
+        expect(yield* provider.health).toEqual({
+          state: 'open',
+          closed: false,
+          generation: 0,
+          activeReads: 0,
+          leases: 0,
+          refreshRunning: false,
+          pendingRawWork: false,
+          hasCachedToken: false,
+          terminalAuthStatus: undefined,
+          cleanupError: undefined,
+        });
+        const exit = yield* Effect.exit(provider.getToken());
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          expect(exit.cause.reasons.find(Cause.isFailReason)?.error).toBe(failure);
+          expect(describeLoroStreamsTokenCause(exit.cause)).toEqual({
+            kinds: ['credential'],
+            authStatuses: [],
+          });
+        }
+        expect(Deferred.isDoneUnsafe(started)).toBe(true);
+        yield* provider.close;
+        expect((yield* provider.health).state).toBe('closed');
+      })
+  );
+
+  effectIt.effect(
+    'native auth preserves mixed auth, deadline, interruption and defect Causes',
+    () =>
+      Effect.gen(function* () {
+        const auth = new LoroStreamsTokenAuthError('synthetic private auth message', 403, 'secret');
+        const defect = new Error('synthetic private raw payload');
+        const mixed = Cause.combine(
+          Cause.combine(Cause.fail(auth), Cause.fail(new Cause.TimeoutError())),
+          Cause.combine(Cause.interrupt(101), Cause.die(defect))
+        );
+        const provider = yield* nativeProvider(
+          makeLoroStreamsTokenWebPorts({
+            credential: Effect.failCause(mixed),
+          })
+        );
+        const exit = yield* Effect.exit(provider.createAuthCallback()());
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          expect(
+            exit.cause.reasons.some((reason) => Cause.isFailReason(reason) && reason.error === auth)
+          ).toBe(true);
+          expect(
+            exit.cause.reasons.some(
+              (reason) => Cause.isFailReason(reason) && Cause.isTimeoutError(reason.error)
+            )
+          ).toBe(true);
+          expect(
+            exit.cause.reasons.some(
+              (reason) => Cause.isDieReason(reason) && reason.defect === defect
+            )
+          ).toBe(true);
+          expect(Cause.hasInterrupts(exit.cause)).toBe(true);
+          const context = describeLoroStreamsTokenCause(exit.cause);
+          expect(context).toEqual({
+            kinds: ['auth', 'defect', 'interruption', 'release', 'timeout'],
+            authStatuses: [403],
+          });
+        }
+        yield* provider.retryCleanup;
+        yield* provider.close;
+      })
+  );
+
+  effectIt.effect(
+    'native callback rejection uses its own last token and explicit previousToken',
+    () =>
+      Effect.gen(function* () {
+        const requests: unknown[] = [];
+        let issued = 0;
+        const provider = yield* nativeProvider(
+          makeLoroStreamsTokenWebPorts({
+            credential: Effect.succeed('auth'),
+            fetchImpl: async (_url, init) => {
+              requests.push(JSON.parse(String(init?.body)));
+              return new Response(JSON.stringify({ token: `jwt-${++issued}`, expiresIn: 900 }));
+            },
+          })
+        );
+        const first = provider.createAuthCallback();
+        const late = provider.createAuthCallback();
+        expect(yield* first()).toBe('jwt-1');
+        expect(yield* late()).toBe('jwt-1');
+        expect(yield* first({ reason: 'unauthorized', previousToken: 'jwt-1' })).toBe('jwt-2');
+        expect(yield* late({ reason: 'unauthorized' })).toBe('jwt-2');
+        expect(yield* provider.getToken({ reason: 'unauthorized' })).toBe('jwt-2');
+        expect(yield* first({ reason: 'refresh', previousToken: 'jwt-2' })).toBe('jwt-2');
+        expect(yield* first({ reason: 'unauthorized', previousToken: 'jwt-1' })).toBe('jwt-2');
+        expect(yield* first({ reason: 'unauthorized' })).toBe('jwt-3');
+        expect(requests).toEqual([
+          { workspaceId: 'workspace' },
+          { workspaceId: 'workspace', rejectedToken: 'jwt-1' },
+          { workspaceId: 'workspace', rejectedToken: 'jwt-2' },
+        ]);
+        yield* provider.close;
+      })
+  );
+
+  effectIt.effect(
+    'an old closed receipt cannot skip a successor provider cleanup in the same Scope',
+    () =>
+      Effect.gen(function* () {
+        const http = tokenHttpFixture(true);
+        let successor: LoroStreamsTokenProvider | undefined;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const previous = yield* nativeProvider(
+              makeLoroStreamsTokenWebPorts({
+                credential: Effect.succeed('previous'),
+                fetchImpl: async () =>
+                  new Response(JSON.stringify({ token: 'previous-jwt', expiresIn: 900 })),
+              })
+            );
+            expect(yield* previous.getToken()).toBe('previous-jwt');
+            yield* previous.close;
+            yield* previous.close;
+            successor = yield* nativeProvider(
+              makeLoroStreamsTokenWebPorts({
+                credential: Effect.succeed('successor'),
+                fetchImpl: http.fetchImpl,
+              })
+            );
+            yield* Effect.forkScoped(successor.getToken());
+            yield* http.started;
+          })
+        );
+        expect(http.signal()?.aborted).toBe(true);
+        expect(http.alive()).toBe(false);
+        if (!successor) throw new Error('successor was not constructed');
+        expect(yield* successor.health).toMatchObject({
+          state: 'closed',
+          closed: true,
+          pendingRawWork: false,
+          activeReads: 0,
+        });
+      })
+  );
+
   effectIt.effect('cleanup retains every noncooperative raw owner in its complete Cause', () =>
     Effect.gen(function* () {
       const io = makeLoroStreamsRawIo(50);
@@ -1303,8 +1655,12 @@ describe('native shared Streams token ownership', () => {
       Effect.gen(function* () {
         let login = 'alice';
         const http = tokenHttpFixture();
+        const replacementCredentialStarted = Deferred.makeUnsafe<void>();
         const ports = makeLoroStreamsTokenWebPorts({
-          credential: Effect.sync(() => login),
+          credential: Effect.gen(function* () {
+            if (login === 'bob') yield* Deferred.succeed(replacementCredentialStarted, undefined);
+            return login;
+          }),
           fetchImpl: http.fetchImpl,
           cleanupTimeoutMs: 50,
         });
@@ -1328,11 +1684,24 @@ describe('native shared Streams token ownership', () => {
         login = 'bob';
         const replacement = yield* Effect.exit(provider.getToken());
         expect(Exit.isFailure(replacement)).toBe(true);
+        expect(Deferred.isDoneUnsafe(replacementCredentialStarted)).toBe(false);
         expect(ports.hasPending()).toBe(true);
+        expect(yield* provider.health).toMatchObject({
+          state: 'release-failed',
+          closed: false,
+          pendingRawWork: true,
+        });
+        expect((yield* provider.health).cleanupError?.kinds).toContain('release');
         http.finish('stale');
         yield* provider.retryCleanup;
         expect(ports.hasPending()).toBe(false);
         expect(owners[0]?.owner.settled()).toBe(true);
+        expect(yield* provider.health).toMatchObject({
+          state: 'open',
+          pendingRawWork: false,
+          activeReads: 0,
+          leases: 0,
+        });
         yield* provider.close;
       })
   );
@@ -1521,8 +1890,23 @@ describe('native shared Streams token ownership', () => {
         const program = Effect.gen(function* () {
           const provider = yield* LoroStreamsTokens;
           const auth = provider.createAuthCallback();
-          expect(yield* auth()).toBeUndefined();
-          expect(yield* auth({ reason: 'unauthorized' })).toBeUndefined();
+          const first = yield* Effect.exit(auth());
+          const suppressed = yield* Effect.exit(auth({ reason: 'unauthorized' }));
+          for (const result of [first, suppressed]) {
+            expect(Exit.isFailure(result)).toBe(true);
+            if (Exit.isFailure(result)) {
+              const failure = result.cause.reasons.find(Cause.isFailReason)?.error;
+              expect(failure).toBeInstanceOf(LoroStreamsTokenAuthError);
+              expect(describeLoroStreamsTokenCause(result.cause)).toEqual({
+                kinds: ['auth'],
+                authStatuses: [403],
+              });
+            }
+          }
+          expect(yield* provider.health).toMatchObject({
+            terminalAuthStatus: 403,
+            hasCachedToken: false,
+          });
           expect(authorization).toEqual(['Bearer revoked']);
           login = 'valid';
           expect(yield* auth()).toBe('valid-jwt');

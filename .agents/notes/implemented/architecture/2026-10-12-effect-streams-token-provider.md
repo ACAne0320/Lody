@@ -42,7 +42,8 @@ The five lifecycle questions are:
   close is memoized by Deferred. Failed close retains one receipt and the child
   Scope. Explicit `retryCleanup` joins retained resources before admission resumes.
 - Failure/recovery: typed auth, HTTP/credential/response, deadline and interruption
-  stay distinct. Auth callbacks map only an all-auth Cause to undefined. Release
+  stay distinct. Native getToken/auth preserve typed auth failure; only the explicit
+  Legacy old-protocol callback maps a nonempty all-auth Cause to undefined. Release
   defects retain raw owners; shutdown defects retain the provider and complete
   Cause, including simultaneous timeout/interruption and release failure.
 
@@ -66,7 +67,10 @@ its first finalizers, so the provider uses its own receipt.
 Native API: `LoroStreamsTokens` / `LoroStreamsTokensLive`,
 `makeLoroStreamsTokenProvider`, and provider-specific `LoroStreamsTokenPorts`.
 The official CLI composition's native token port requires Scope and supplies
-native credentials plus signal-aware getCliHttpFetch. Local ports still expose
+native credentials plus signal-aware getCliHttpFetch. Acquisition registers ownership
+without credential/cache/HTTP initialization, so its typed acquisition error remains
+never; all first-read failures belong to getToken with the acquired provider retained.
+Service/Layer/factory compose the same provider kernel/cache. Local ports still expose
 no cloud token capability, and telemetry stays disabled.
 
 Remaining consumers are renderer workspace/eager-sync auth, CLI durable
@@ -83,11 +87,35 @@ registry once those callers and their application owners compose native Effects.
 No upper caller or end-to-end daemon ownership is claimed native merely by using
 this kernel. The root roadmap is maintained separately by the coordinator.
 
+Auth context remains structural `{ reason: string; previousToken?: string }`.
+Only unauthorized rejects a JWT. Explicit previousToken wins; each long-lived
+callback otherwise remembers its own last successful token. Direct getToken has
+no callback fallback. Late callbacks for an old token cannot invalidate a newer
+cached token, and joining waiters share one extra request when needed.
+
+Native `health` and `describeLoroStreamsTokenCause` expose only lifecycle, generation,
+counts, presence flags, sorted failure kinds and 401/403 statuses. They omit tokens,
+credentials, URLs, raw messages/stacks, Causes and owners. Nested retained Causes are
+traversed iteratively with identity deduplication; original Causes remain intact for
+recovery. A failed close/timeout leaves health observable, and successful cleanup
+clears its blocked state. New providers in the same parent Scope have independent
+close receipts. A retained release failure fences admission before any new credential
+I/O, not only before producer replacement. This changes no P1-owned logger/presence files.
+
+The raw HTTP receipt includes success-body EOF and error-body cancellation. A body
+release rejection retains its owner and I/O failure; 401/403 also retain their typed
+auth reason and terminal suppression. Cleanup reports an ended failed receipt before
+retiring it; a later successful retry permits handoff. In pinned v4 tapCause uses
+andThen(f(cause), failCause(cause)), so a failing observer replaces the original
+failure. The synchronous event hook therefore uses an explicit Exit and Cause.combine,
+verified through the real Legacy facade's auth-plus-observer failure.
+
 ## Evidence and limits
 
 PR: [#1506](https://github.com/LodyAI/Lody/pull/1506) (draft).
-Tested source revision: `b79eea2df26e5ecd0e796e9dfd9c32a75a4d13b7`;
-subsequent documentation-only changes record this review link.
+Initial tested source revision: `b79eea2df26e5ecd0e796e9dfd9c32a75a4d13b7`;
+The auth/diagnostic follow-up is verified below; its exact source revision is recorded
+when the final check completes.
 
 Base: `3ac76bad10f46720517a2ca6929f03de4ef5bb9b`. Effect remains 4.0.2;
 no manifest, lockfile or submodule gitlink changes. The existing token suite uses
@@ -98,19 +126,25 @@ a callback-resolution-count race was replaced by explicit encryption fencing.
 Mock-count-only assertions were removed; concurrent callbacks wait for real
 admission before releasing HTTP rather than relying on Promise scheduling.
 
-Validation: existing shared auth suite 45 passed; five CLI token/local-only/document
+Validation: existing shared auth suite 53 passed; five CLI token/local-only/document
 suites 44 passed; renderer runtime/eager/meta and cloud-policy suites 111 passed.
-Root `pnpm check` completed typecheck and lint, then failed in the unchanged CLI
-child-process suites: 15 failures in `baguette-process`, `guest-buttons`,
-`host-controls`, `github-git-transport` and `cloudflared-process` (4026 other CLI
-tests passed). An independent checkout of the base SHA with the same locked
+Final `pnpm check` completed typecheck and lint, then failed with 16 CLI tests
+(4025 passed, 1 skipped). Fifteen persistent failures are in the unchanged CLI
+child-process suites in `baguette-process`, `guest-buttons`,
+`host-controls`, `github-git-transport` and `cloudflared-process`. An independent checkout of the base SHA with the same locked
 dependencies and pinned ACP artifacts reproduced the same 15 failures, using
 `pnpm --dir apps/cli exec vitest run` on those five files and `--testTimeout=5000`
 to bound diagnosis. Failures include the inherited Git shim's `context_unreadable`,
 unavailable simulator fixtures and cloudflared exit/cleanup timeouts. These are
-baseline/environment failures, not changed token behavior; Electron tests after
-that recursive test step did not execute. The final shared typecheck and root lint
-were also run separately after the raw-owner Cause aggregation change.
+baseline/environment failures, not changed token behavior. The remaining failure
+is the unchanged roost goal-cache test's 30-second full-suite timeout; its complete
+30-test suite passes separately on both this source and the base checkout. An earlier
+full run also timed out an unchanged daemon fixture import hook; its isolated base
+suite passes all 16 tests. These timing-sensitive suites are left unchanged. Electron
+tests after the recursive test step did not execute. The shared suite now also covers lazy acquisition with typed credential failure,
+native terminal/mixed Cause failure, safe diagnostics, explicit/callback-fallback
+rejection semantics, retained health/recovery and successor cleanup in one Scope.
+The native acquisition signature is explicitly constrained in source to never error.
 
 `pnpm format`, `pnpm format:check`, explicit root Oxfmt on changed shared/docs
 files, `pnpm run docs status`, `pnpm run docs check`, i18n, Code Collab, platform,
@@ -122,7 +156,10 @@ configuration was changed. Verification children alone stripped inherited
 In a disposable overlay, baseline and restored auth suites passed. Removing
 shared lease protection, raw settlement join, rejected-token storage fence,
 late unauthorized matching, credential-after-encryption fence or full raw-owner
-Cause aggregation each made its behavioral regression fail. Scripts and logs
+Cause aggregation each made its behavioral regression fail. The follow-up also
+ablates native auth failure preservation, Legacy all-auth projection, diagnostic
+redaction, credential admission, observer Cause combination, success/error-body joins
+and release-owner registration (14 mutations total). Scripts and logs
 remain outside the product/repository.
 No live cloud/issuer, production service, npm publication, installed desktop,
 Windows/macOS packaging, or whole Session/Turn/durable lifecycle is verified.

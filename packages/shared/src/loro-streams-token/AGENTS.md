@@ -16,8 +16,14 @@
   Raw port cleanup bounds must not exceed the provider cleanup base; producer/read
   observers allow 2×/3× that base to preserve inner release Causes.
   Fetch/body and WebCrypto use the single raw adapter; a signal alone is not cleanup.
+  HTTP headers are not completion: await success-body EOF or error-body cancellation.
+  Keep failed body releases registered until cleanup reports their ended receipt;
+  combine observer failures with the original Cause. onEvent is synchronous.
   No authenticated cloud capability is built outside official cloud composition.
 - Keep endpoint/workspace/credential fences and the synchronous rejected-token
   fence immediately before encrypted storage writes. Only terminal auth failures
-  become undefined at transport auth callbacks; timeout, interruption and release
-  failure remain observable. Decision and verification: [README.md](README.md).
+  become undefined at the explicit Legacy facade's old-protocol auth callback.
+  Native getToken/auth remain typed failures; mixed Causes never lose non-auth reasons.
+  Diagnostic health/Cause summaries must contain only finite categories, state/counts
+  and auth status, never credentials, tokens, URLs, raw errors, Causes or owners.
+  Timeout, interruption and release failure remain observable. [Contract](README.md).

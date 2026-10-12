@@ -335,6 +335,12 @@ renderer, durable transport and Machine RPC callers use the sole
 shutdown await provider close. This is token ownership, not completion of upper
 Loro/daemon lifecycles. [API and decision](../../packages/shared/src/loro-streams-token/README.md).
 
+Native getToken/auth preserve terminal typed failure; only the explicit Legacy
+old-protocol callback projects a nonempty all-auth Cause to undefined. Mixed Causes
+retain non-auth reasons. Native `health` and `describeLoroStreamsTokenCause` expose
+safe state/counts and failure kinds without tokens, credentials or raw error payloads;
+keep the original Cause separately for recovery.
+
 ## Temporary Promise facades
 
 A migrated layer is consumed by callers that are still Promise-based. Such a
