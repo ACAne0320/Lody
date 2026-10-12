@@ -89,6 +89,11 @@ owning Effect release. Never publish or clear session presence from `setStatus`,
 dispatch, permission or image callbacks, or watcher recovery paths — a second writer
 makes the clear path unreliable and leaves sessions showing work that ended.
 
+Cancellation and initialization-stall finalizers run before the presence child Scope
+closes; the Turn slot is released afterward, so the previous release cannot clear
+a successor. Raw ACP drain retains presence until settlement or confirmed termination.
+The heartbeat controller itself remains Legacy pending P6.
+
 Its scope covers ALL turn-finalization stages, so optional cloud side effects inside
 it (usage flush, completion notification, Live Activity sync) MUST go through
 `MessageHandler.runTurnCloudSideEffect`. Third-party calls such as GitHub and model

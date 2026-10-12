@@ -69,7 +69,7 @@ import {
 import type { ContentBlock } from '@agentclientprotocol/sdk';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ModelInfo } from '@lody/shared';
-import { Cause, Data, Effect, Exit, Fiber, type Scope } from 'effect';
+import { Cause, Data, Effect, Exit, Fiber, Scope } from 'effect';
 import {
   captureGitWorkingTreeDiffBaseline,
   getCurrentCommitHash,
@@ -3754,33 +3754,39 @@ export class SessionExecutionService {
     };
 
     const program = Effect.scoped(
-      Effect.acquireRelease(Effect.succeed(runtime), (turnRuntime, exit) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(() => turnRuntime.yieldedFinalization);
-          const wasInterrupted = Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause);
-          const wasCancelled =
-            turnRuntime.cancelRequested ||
-            self.isTurnCancelled(sessionId, turnRuntime.turnId) ||
-            wasInterrupted;
-          if (turnRuntime.initializationStalled) {
-            yield* self.finalizeStalledInitializationEffect(turnRuntime);
-          } else if (wasCancelled) {
-            yield* self.finalizeCancelledTurnEffect({
-              sessionId,
-              sessionDoc,
-              turnId: turnRuntime.turnId,
-              userTurnId: turnRuntime.userTurnId,
-              session: turnRuntime.session,
-              pendingSession: turnRuntime.pendingSession,
-              terminateSession: turnRuntime.terminateSessionOnCancel,
-              reportTurnError: self.shouldReportCancelledTurnError(turnRuntime),
-            });
-          }
-          self.releaseTurnRuntime(sessionId, turnRuntime.turnId);
-        })
+      Effect.acquireRelease(Effect.succeed(runtime), (turnRuntime) =>
+        Effect.sync(() => self.releaseTurnRuntime(sessionId, turnRuntime.turnId))
       ).pipe(
         Effect.flatMap(() =>
           Effect.gen(function* () {
+            // Reverse registration order: cancellation/drain, presence, turn slot.
+            // A successor cannot start before the old presence has been released.
+            const presenceScope = yield* Scope.fork(yield* Scope.Scope);
+            yield* Effect.addFinalizer((exit) =>
+              Effect.gen(function* () {
+                const turnRuntime = runtime;
+                yield* Effect.promise(() => turnRuntime.yieldedFinalization);
+                const wasInterrupted = Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause);
+                const wasCancelled =
+                  turnRuntime.cancelRequested ||
+                  self.isTurnCancelled(sessionId, turnRuntime.turnId) ||
+                  wasInterrupted;
+                if (turnRuntime.initializationStalled) {
+                  yield* self.finalizeStalledInitializationEffect(turnRuntime);
+                } else if (wasCancelled) {
+                  yield* self.finalizeCancelledTurnEffect({
+                    sessionId,
+                    sessionDoc,
+                    turnId: turnRuntime.turnId,
+                    userTurnId: turnRuntime.userTurnId,
+                    session: turnRuntime.session,
+                    pendingSession: turnRuntime.pendingSession,
+                    terminateSession: turnRuntime.terminateSessionOnCancel,
+                    reportTurnError: self.shouldReportCancelledTurnError(turnRuntime),
+                  });
+                }
+              })
+            );
             if (
               yield* self.tryPromise(() =>
                 isSessionCollaborationStopped(self.deps.workspaceDocument.repo, sessionId)
@@ -3790,7 +3796,10 @@ export class SessionExecutionService {
               runtime.pendingInputOnCancel = 'preserve';
               return undefined;
             }
-            yield* self.acquireSessionActivePresence(sessionId, 'initializing');
+            yield* Scope.provide(
+              self.acquireSessionActivePresence(sessionId, 'initializing'),
+              presenceScope
+            );
 
             const setUnhandledErrorContext = (
               context: VisibleSessionTurnUnhandledErrorContext
