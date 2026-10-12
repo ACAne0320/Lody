@@ -45,8 +45,8 @@ Worktree rules: [worktree/AGENTS.md](worktree/AGENTS.md).
 
 - Gate turn-scoped LIST writes on user-entry sync (`turn-history-gate.ts`, 20s), never status/meta.
 - Goals obey [this contract](../../../../specs/session-goal-control.md).
-- Stop ends local steer waits, not the owner fiber. Drain raw prompt/steer/config work before
-  reuse, or confirm termination. Assistant ids use `userTurnId`.
+- Stop ends local steer waits, not the owner fiber. Drain raw ACP or confirm termination,
+  clear presence, then permit reuse. Assistant ids use `userTurnId`.
   `invocation` owns source Turn, requester and config atomically; steer replaces it before tools.
 - Publish `latestUserMsgId` in the SAME write as the history append (`appendUserTurn`). Only
   dispatch producers publish it. Renderer sends and queue promotion retain the missing-history

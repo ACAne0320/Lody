@@ -8046,8 +8046,22 @@ describe('SessionExecutionService', () => {
         terminateSession: vi.fn(),
         validateSessionCredentials: vi.fn(async () => {}),
       } as unknown as SessionManager;
+      const activePresence = new Map<SessionId, SessionStatus>();
+      const presence = new SessionActivePresenceController(
+        {
+          publishSessionPresence: (id: SessionId, _machine: MachineId, value: SessionStatus) => {
+            activePresence.set(id, value);
+          },
+          clearSessionPresence: (id: SessionId) => activePresence.delete(id),
+        } as unknown as LoroDocumentManager,
+        'machine-1' as MachineId,
+        createSilentLogger()
+      );
       const deps = createBaseDeps({
         sessionManager,
+        startSessionActivePresence: (id, phase) => presence.start(id, phase),
+        setSessionActivePresencePhase: (id, phase, detail) => presence.setPhase(id, phase, detail),
+        clearSessionActivePresence: (id) => presence.clear(id),
         beginConversationTurn: (_id, turn) => {
           activeTurnId = `assistant:${turn}`;
           return activeTurnId;
@@ -8112,6 +8126,12 @@ describe('SessionExecutionService', () => {
           }
         ).turnRuntimeBySession.get(sessionId);
         if (!owner?.fiber) throw new Error('Expected the running turn owner');
+        const released = service
+          .waitForTurnRelease(sessionId, `assistant:${userTurnId}`)
+          .then(() => {
+            expect(activePresence.has(sessionId)).toBe(false);
+            expect(presence.has(sessionId)).toBe(false);
+          });
         // External teardown can still interrupt the owner; normal Stop no longer does.
         void Effect.runPromise(Fiber.interrupt(owner.fiber));
         await Promise.race([drainStarted.promise, running]);
@@ -8124,6 +8144,8 @@ describe('SessionExecutionService', () => {
           processingUserMsgId: undefined,
         });
         expect(service.getExecutionSnapshot(sessionId)).toMatchObject({ hasActiveTurn: true });
+        expect(activePresence.get(sessionId)?.type).toBe('running');
+        expect(presence.has(sessionId)).toBe(true);
         // The entry is already stamped finished here, so its compaction marker
         // is settled with it — a still-spinning row on a finished turn is the
         // state finalization exists to remove. A compaction that does reach a
@@ -8164,7 +8186,10 @@ describe('SessionExecutionService', () => {
           await running;
           expect(terminated).toBe(false);
         }
+        await released;
         expect(service.getExecutionSnapshot(sessionId)).toMatchObject({ hasActiveTurn: false });
+        expect(activePresence.has(sessionId)).toBe(false);
+        expect(presence.has(sessionId)).toBe(false);
         expect(deps.turnFinalization.finalizeACPState).toHaveBeenCalledTimes(2);
         expect(history[1]).toMatchObject({
           id: `assistant:${userTurnId}`,
@@ -8186,6 +8211,7 @@ describe('SessionExecutionService', () => {
       } finally {
         rawPrompt.resolve();
         termination.resolve();
+        presence.clearAll();
         vi.useRealTimers();
       }
     }
