@@ -3754,39 +3754,40 @@ export class SessionExecutionService {
     };
 
     const program = Effect.scoped(
-      Effect.acquireRelease(Effect.succeed(runtime), (turnRuntime) =>
-        Effect.sync(() => self.releaseTurnRuntime(sessionId, turnRuntime.turnId))
-      ).pipe(
-        Effect.flatMap(() =>
+      Effect.acquireRelease(
+        // Acquire/register the presence child and cancellation owner atomically.
+        Effect.flatMap(Scope.Scope, (scope) => Scope.fork(scope)),
+        (presenceScope, exit) =>
           Effect.gen(function* () {
-            // Reverse registration order: cancellation/drain, presence, turn slot.
-            // A successor cannot start before the old presence has been released.
-            const presenceScope = yield* Scope.fork(yield* Scope.Scope);
-            yield* Effect.addFinalizer((exit) =>
-              Effect.gen(function* () {
-                const turnRuntime = runtime;
-                yield* Effect.promise(() => turnRuntime.yieldedFinalization);
-                const wasInterrupted = Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause);
-                const wasCancelled =
-                  turnRuntime.cancelRequested ||
-                  self.isTurnCancelled(sessionId, turnRuntime.turnId) ||
-                  wasInterrupted;
-                if (turnRuntime.initializationStalled) {
-                  yield* self.finalizeStalledInitializationEffect(turnRuntime);
-                } else if (wasCancelled) {
-                  yield* self.finalizeCancelledTurnEffect({
-                    sessionId,
-                    sessionDoc,
-                    turnId: turnRuntime.turnId,
-                    userTurnId: turnRuntime.userTurnId,
-                    session: turnRuntime.session,
-                    pendingSession: turnRuntime.pendingSession,
-                    terminateSession: turnRuntime.terminateSessionOnCancel,
-                    reportTurnError: self.shouldReportCancelledTurnError(turnRuntime),
-                  });
-                }
-              })
-            );
+            const turnRuntime = runtime;
+            yield* Effect.promise(() => turnRuntime.yieldedFinalization);
+            const wasInterrupted = Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause);
+            const wasCancelled =
+              turnRuntime.cancelRequested ||
+              self.isTurnCancelled(sessionId, turnRuntime.turnId) ||
+              wasInterrupted;
+            if (turnRuntime.initializationStalled) {
+              yield* self.finalizeStalledInitializationEffect(turnRuntime);
+            } else if (wasCancelled) {
+              yield* self.finalizeCancelledTurnEffect({
+                sessionId,
+                sessionDoc,
+                turnId: turnRuntime.turnId,
+                userTurnId: turnRuntime.userTurnId,
+                session: turnRuntime.session,
+                pendingSession: turnRuntime.pendingSession,
+                terminateSession: turnRuntime.terminateSessionOnCancel,
+                reportTurnError: self.shouldReportCancelledTurnError(turnRuntime),
+              });
+            }
+            // Preserve the owner on cleanup failure. A successor starts only after
+            // both cancellation/raw ACP drain and presence release have completed.
+            yield* Scope.close(presenceScope, exit);
+            self.releaseTurnRuntime(sessionId, turnRuntime.turnId);
+          })
+      ).pipe(
+        Effect.flatMap((presenceScope) =>
+          Effect.gen(function* () {
             if (
               yield* self.tryPromise(() =>
                 isSessionCollaborationStopped(self.deps.workspaceDocument.repo, sessionId)

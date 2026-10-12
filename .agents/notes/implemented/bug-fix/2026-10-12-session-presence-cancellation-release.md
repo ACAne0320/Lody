@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1518](https://github.com/LodyAI/Lody/pull/1518)
 
 [中文](2026-10-12-session-presence-cancellation-release.zh.md)
 
@@ -9,8 +10,8 @@ Translation: current
 
 A cancelled visible Turn cleared its active presence before finalizing cancellation and
 joining the original ACP prompt. Users could therefore see no active work while the
-agent remained busy and the next Turn was correctly blocked. Separate Effect finalizers
-now close cancellation and raw-work ownership first, presence second, and the Turn slot
+agent remained busy and the next Turn was correctly blocked. The cancellation Effect finalizer
+now closes raw-work ownership first, the presence child Scope second, and the Turn slot
 last. This fixes release ordering without claiming completion of the P6 native heartbeat
 and session-lease migration.
 
@@ -18,11 +19,14 @@ and session-lease migration.
 
 The trigger is visible-turn Scope closure, including external interruption and the
 initialization watchdog. The visible Turn owns both cancellation finalization and its
-presence child Scope; reverse registration order provides cancellation/drain → presence
-clear → Turn-slot release. Presence is acquired into the child Scope only after the
+presence child Scope; its cancellation finalizer explicitly orders cancellation/drain →
+presence clear → Turn-slot release. Presence is acquired into the child Scope only after the
 collaboration-stop check, while cancellation finalization remains registered for early
-exit. The child Scope is registered before cancellation cleanup, and the Turn-slot
-finalizer before both, following the pinned Effect 4.0.2 Scope semantics.
+exit. Uninterruptible acquireRelease creates the child Scope and registers cancellation
+cleanup together, so interruption cannot fall between registration steps. The parent
+also attempts child closure if cleanup fails, but the Turn owner remains retained. Only
+successful cleanup and presence closure permit handoff, following the pinned Effect
+4.0.2 Scope semantics.
 
 Stop cancels local prompt waiting; it does not prove raw prompt completion. The existing
 cancellation finalizer retains ownership until the original ACP work settles or

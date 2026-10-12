@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1518](https://github.com/LodyAI/Lody/pull/1518)
 
 [English](2026-10-12-session-presence-cancellation-release.md)
 
@@ -9,16 +10,17 @@ Translation: current
 
 可见 Turn 取消时，旧代码会先清除 active presence，再完成取消收尾并等待原始 ACP
 prompt 退出。因此，agent 仍忙且下一轮 Turn 正确被阻止时，用户却会看到没有活动工作。
-现在分别登记 Effect finalizer，依次完成取消与原始工作清理、清除 presence、释放 Turn
+现在由取消 Effect finalizer 依次完成原始工作清理、清除 presence 子 Scope、释放 Turn
 执行位置。这修复了释放顺序，但不代表 P6 原生心跳与 session 租约迁移已经完成。
 
 ## 所有权与决定
 
 触发条件是可见 Turn Scope 关闭，包括外部中断和初始化 watchdog。可见 Turn 同时拥有
-取消收尾与 presence 子 Scope；反向登记顺序保证「取消/ACP drain → presence clear →
-Turn 位置释放」。presence 在 collaboration-stop 检查之后才取得，取消 finalizer 则在
-检查前登记，以覆盖提前退出。子 Scope 先于取消收尾登记，Turn 释放 finalizer 又先于
-两者登记，遵循锁定的 Effect 4.0.2 Scope 语义。
+取消收尾与 presence 子 Scope；取消 finalizer 显式依次完成「取消/ACP drain →
+presence clear → Turn 位置释放」。presence 在 collaboration-stop 检查之后才取得，取消 finalizer 则在
+检查前登记，以覆盖提前退出。不可中断的 acquireRelease 先创建子 Scope，再登记取消收尾，防止中断发生在登记之间。
+收尾失败时父 Scope 仍尝试关闭子 Scope，但保留 Turn owner；只有收尾和 presence 释放
+成功后才开放下一轮，遵循锁定的 Effect 4.0.2 Scope 语义。
 
 Stop 只取消本地 prompt 等待，不证明原始 prompt 已完成。现有取消 finalizer 保留
 所有权，直到原始 ACP 工作结束或终止成功；终止失败时仍等待原始工作最终结束。
