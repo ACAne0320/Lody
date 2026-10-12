@@ -152,3 +152,14 @@ rotation/跨进程密钥轮次、Flock恢复/session、scheduler driver、attack
 fixtures/replay/CLI、原Lab2/完整故障矩阵，再建一张整合 Lab Draft。严格B、vault格式/包装/
 并发/保留、永久publisher新钥backup、D12原子移除wire、snapshot/history、entropy、notes
 仍待人决定，不阻塞可独立工作。生产启用、原生custody、整栈CI/审查、全平台验收分别未完成。
+
+control 网关放行已定的 Recovery 例外：授权本人的新个人设备。候选筛选只绑定已存
+凭据的签名者和操作种类；完整历史、当前成员实例、新设备持钥证明及 SDK CAS 仍由
+公开 submission 验证。真实新鲜 possession/bearer HTTP、已发布 StreamsClient 与
+原生 SQLite 用例确认：错误成员的持钥证明、R 禁止操作和坏签名不改变远端字节/尾游标，
+撤权 R 被拒绝。这只是设备登记，不代表恢复库、备份、内容恢复或生产存钥完成。
+
+manifest 补齐原 DemoSession 的全部方法及源成员指纹：含 constructor 的 31 个公开
+入口和 12 个私有辅助方法。每项列拥有模块、尚缺的真实 session 组合或人类决定；模块
+已有用例不等于对应 session 方法完成。明文 epoch JSON 不作为普通存钥方案迁回，旧
+移除继续等待 D12。源字段和完整 actor/replay 组合仍是独立未完成项。

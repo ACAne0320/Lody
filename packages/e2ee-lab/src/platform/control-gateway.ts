@@ -98,6 +98,7 @@ export function makeLabControlGateway(input: {
                 stream: 'control',
                 method: 'POST',
                 sub: 'append-cas',
+                controlRecord: record,
               })
             );
             const decoded = yield* Effect.fromResult(decodeRecord(record));

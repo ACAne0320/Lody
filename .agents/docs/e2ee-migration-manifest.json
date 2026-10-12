@@ -6148,7 +6148,7 @@
       "targetPath": "packages/e2ee-lab/src/platform/gateway.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Genuine public current member/role/Org stream policy; actual host now separately composes credential/bearer, signed inert joins, public control CAS, indexed key mailbox and finite authenticated reads. Structural views/outsiders/R send denied. Full content write/snapshot authority/live/create-space/notes host remains incomplete.",
+      "reason": "Genuine public current member/role/Org stream policy; actual host now separately composes credential/bearer, signed inert joins, public control CAS, indexed key mailbox and finite authenticated reads. Structural views/outsiders/R send denied. Full content write/snapshot authority/live/create-space/notes host remains incomplete. Settled R→own personal admission now routed through full public submission; actual HTTP/SDK/native tail+bytes rejection evidence, no vault/backup acceptance.",
       "sourceDeclaredExports": {
         "core": [
           "KnownStream",
@@ -6178,7 +6178,7 @@
         {
           "layer": "L6",
           "target": "packages/e2ee-lab/src/platform/gateway.ts",
-          "scope": "Policy only: current public ledger provenance, bound/request Org, current roles and R no-send; 2 owning groups pass. Does not authenticate a credential or accept records/snapshots."
+          "scope": "Policy only: current public ledger provenance, bound/request Org, current roles and R no-send; 2 owning groups pass. Does not authenticate a credential or accept records/snapshots. Narrow R personal candidate screen is not admission: public core enforces same actor membership and bound PoP; actual HTTP tested."
         }
       ]
     },
@@ -6431,7 +6431,519 @@
           "DemoSession"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "proposed-path-not-created",
+      "sourceMethodInventory": {
+        "sourceHead": "f1bc0c52649c21d2e9b620fe3558874c40545e38",
+        "sourceFileSha256": "0dd6c102cd8a608bf7a31baa05549cc5b7320b7e51277e98bcf6ffcde120c60f",
+        "hashDefinition": "UTF-8 TypeScript AST member getStart..end, excluding leading comments",
+        "publicMethodsIncludingConstructor": 31,
+        "privateMethods": 12,
+        "methods": [
+          {
+            "name": "constructor",
+            "private": false,
+            "sha256": "3f18d3d14e73c48b2b1578931c82121b063c879e3cbc5a717766725984f17490",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/run.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF."
+          },
+          {
+            "name": "headers",
+            "private": true,
+            "sha256": "f9469b000a2e98bdb4dc190a6e58dd1b293119e5e76ef18c14c514580ff4b062",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close."
+          },
+          {
+            "name": "random",
+            "private": false,
+            "sha256": "a9b7a67760f7c7fc31321c4ad5422688b6db45d3228f4d07dc4ab9d99c9f2af8",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Native entropy only for crypto. Synthetic ID/label injection may be independent; captured crypto entropy replay/init-only nonce scope remains a human decision."
+          },
+          {
+            "name": "fetch",
+            "private": false,
+            "sha256": "2b4c8f1f5c36c0378ce8e23250645fd1e65811b6c536c14c6f0a0fa721dce778",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close."
+          },
+          {
+            "name": "persistEpochs",
+            "private": true,
+            "sha256": "c4a4d7cd1bf098c3c4ee48a3a5fb963e2c9f68ba3b8035414959e180f0b15abb",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/keys/protected-sqlite.ts"
+            ],
+            "status": "旧方案淘汰",
+            "reason": "Do not copy plaintext epochs.json as ordinary durable custody/recovery format. Use public protected host SQLite for synthetic Lab keys; recovery wrapping/retention remains undecided, no production native-key claims."
+          },
+          {
+            "name": "ensureKeyring",
+            "private": true,
+            "sha256": "a6a76da2e999f419058a06a254f9c0b37fcba75a29b8325a7692073fa38b4b05",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/keys/protected-sqlite.ts"
+            ],
+            "status": "旧方案淘汰",
+            "reason": "Do not copy plaintext epochs.json as ordinary durable custody/recovery format. Use public protected host SQLite for synthetic Lab keys; recovery wrapping/retention remains undecided, no production native-key claims."
+          },
+          {
+            "name": "epochFiles",
+            "private": true,
+            "sha256": "0e938fbb9fd12a18aeefe98e395a91d24dc1e23156ef587eb70d7c21162a2068",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/keys/protected-sqlite.ts"
+            ],
+            "status": "旧方案淘汰",
+            "reason": "Do not copy plaintext epochs.json as ordinary durable custody/recovery format. Use public protected host SQLite for synthetic Lab keys; recovery wrapping/retention remains undecided, no production native-key claims."
+          },
+          {
+            "name": "loadEpochs",
+            "private": true,
+            "sha256": "9dfbaf0a3eccfd32fafdeac7c5ebc3859612f546156a3709146a73b7d9cd0dc3",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/keys/protected-sqlite.ts"
+            ],
+            "status": "旧方案淘汰",
+            "reason": "Do not copy plaintext epochs.json as ordinary durable custody/recovery format. Use public protected host SQLite for synthetic Lab keys; recovery wrapping/retention remains undecided, no production native-key claims."
+          },
+          {
+            "name": "close",
+            "private": false,
+            "sha256": "a2b09d2eb315b5b7a41c2b2fbd227dc247722dbd6724357bfcc7ef7e44128a6b",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/run.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF."
+          },
+          {
+            "name": "start",
+            "private": false,
+            "sha256": "053df800cdc2a2d7333ff604b3901f272c98044e92f4b15e3d6cf166e5dafc34",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/run.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF."
+          },
+          {
+            "name": "requestCredential",
+            "private": true,
+            "sha256": "d4bbe3659ae8e7fd5b416074c457ea5b23b4146b75eac57f852aac9e0fd7facb",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close."
+          },
+          {
+            "name": "reauth",
+            "private": false,
+            "sha256": "42b23b2827eef0a6a424b66aa8143387d214e07a304395a9ae23efd2cb52e167",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/credentials.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close."
+          },
+          {
+            "name": "streamUrl",
+            "private": true,
+            "sha256": "39d29e450842d948b9706308cf12671fd46349871cd469bbb3d8639610eb8462",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+          },
+          {
+            "name": "openLedgerEffect",
+            "private": true,
+            "sha256": "c42888eca474d0dc6eaa2710cfea34ad627ebbef9819cb0898c1ed79ed8e98cd",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+          },
+          {
+            "name": "ledgerLayer",
+            "private": true,
+            "sha256": "249eee103f91dbb29a6944b4863f2e734e40628ffcf4f2f1d2b16d3db6ea7e27",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+          },
+          {
+            "name": "openLedger",
+            "private": true,
+            "sha256": "a933ec1425f3ad519b011197743a24502ede25411da21e1e89adbbbf41d923e6",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+          },
+          {
+            "name": "prepareWrite",
+            "private": false,
+            "sha256": "acc71e146759eb3cf1d548d8bc3dffe87f587650811aa82e4aba0d96654cd4b9",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Use genuine public ledger/current rotation and committed epoch key; no structural state or copied historical-author authorization. Public provider exists, honest session wiring remains absent."
+          },
+          {
+            "name": "prepareRead",
+            "private": false,
+            "sha256": "ad62913488ebb57a205ba1a7a565d6adcacf4692b010988cbee38a4b494068f4",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+          },
+          {
+            "name": "contentAuthority",
+            "private": false,
+            "sha256": "785f93e2b5934c717d6981e252e53470a86146467132cd1f14da430aac9b8bc7",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Use genuine public ledger/current rotation and committed epoch key; no structural state or copied historical-author authorization. Public provider exists, honest session wiring remains absent."
+          },
+          {
+            "name": "readLedger",
+            "private": false,
+            "sha256": "8a8698f41f1cc968a8a61de77bfb6ab97ebf60d20f2dc14889d4197f1506f5a4",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+          },
+          {
+            "name": "createSpace",
+            "private": false,
+            "sha256": "1525fa45305b698bc2a09c73e4438be1dc4181d6a4c36f95592c081b064d8044",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/workspace-registry.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "待明确决定",
+            "reason": "Genesis transport layout A/B pending human choice; metadata-only original versus public submission complete original control history. No fake successful genesisTransport or new P09 implementation."
+          },
+          {
+            "name": "adoptGenesis",
+            "private": false,
+            "sha256": "60de0db846233ff8f91673c4739fce6c639542eef43e8a9d990c5acab446a212",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/workspace-registry.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Verified original signer/hash/metadata persistence module exists. Actual host adoption plus client ledger bootstrap depends on selected genesis layout; hash alone is not membership/current trust."
+          },
+          {
+            "name": "submit",
+            "private": false,
+            "sha256": "f0756b5c0098d604d1b48222fe5a90592e921523cdabbef792c075aff18b4f38",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public admission/signing and unchanged merged P09 own operations. Actual durable terminal-result resume without signer is tested; facade must preserve unknown/conflict, not count response as committed."
+          },
+          {
+            "name": "resume",
+            "private": false,
+            "sha256": "fb8ff69f788da07f1c1e7cc79ba9e1f1ddcdf6d0cdc3607ab415a186bd573253",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public admission/signing and unchanged merged P09 own operations. Actual durable terminal-result resume without signer is tested; facade must preserve unknown/conflict, not count response as committed."
+          },
+          {
+            "name": "requestJoin",
+            "private": false,
+            "sha256": "004b40b942d7c8dcf6bbef534a550a09754bf5edc8ec13c772265932b20170e1",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/join-mailbox.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual signed inert join metadata and current membership checks exist. Honest approval/retry/role followup workflow pending; admitted and roleConfigured must remain separate after unknown/conflict."
+          },
+          {
+            "name": "listJoins",
+            "private": false,
+            "sha256": "dc261887ab46b865c887a6047d1015a175edbdf179630e275643a70a6e5a8d87",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/join-mailbox.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual signed inert join metadata and current membership checks exist. Honest approval/retry/role followup workflow pending; admitted and roleConfigured must remain separate after unknown/conflict."
+          },
+          {
+            "name": "approveJoin",
+            "private": false,
+            "sha256": "43d3ca0cb576742d327d91b6e179e057afe64612e503487cab2c6fd480318b94",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/join-mailbox.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual signed inert join metadata and current membership checks exist. Honest approval/retry/role followup workflow pending; admitted and roleConfigured must remain separate after unknown/conflict."
+          },
+          {
+            "name": "configureJoinRole",
+            "private": true,
+            "sha256": "0407bb79960d9a0f673493bf6a064d21dd8ee0ef2dfbac47f60e15b97dce6fea",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/join-mailbox.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Actual signed inert join metadata and current membership checks exist. Honest approval/retry/role followup workflow pending; admitted and roleConfigured must remain separate after unknown/conflict."
+          },
+          {
+            "name": "admitDevice",
+            "private": false,
+            "sha256": "af59a494920166cb798e9a0857dea591b79fc84e070d02c6c8feaea3018da3ea",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/control-gateway.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Use public prepareDeviceAdmission current actor membership + new-device PoP. Actual R→own personal HTTP/SDK path repaired and revoked R refused; full honest facade still absent."
+          },
+          {
+            "name": "revokeDevice",
+            "private": false,
+            "sha256": "7b4bfd07e6078b8138bbf99df5a4aa1239e8f7f691e4027823c8ea02b8fbcb0c",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/control-gateway.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Use public prepareDeviceAdmission current actor membership + new-device PoP. Actual R→own personal HTTP/SDK path repaired and revoked R refused; full honest facade still absent."
+          },
+          {
+            "name": "removeMember",
+            "private": false,
+            "sha256": "088ce8022e451c9c93a05aa2cec4a1e798bcc69d7f74672c4df3eefe4b9d770f",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts"
+            ],
+            "status": "待明确决定",
+            "reason": "Old tag2/two-step removal is obsolete and must not return. D12 atomic replacement wire needs human clarification in owning protocol layer."
+          },
+          {
+            "name": "publishEpoch",
+            "private": false,
+            "sha256": "70d8a9ad97bef80002484454db3b75c82304c3fb2b02c71fd6f89762e0073829",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/keys/distribution-sqlite.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Signed synthetic epoch1 public fixtures validate consumers; actual durable candidate/publisher/lost-ACK/crash workflow pending. No permanent publisher-loss/new-key backup strategy inferred."
+          },
+          {
+            "name": "deliverEpochKey",
+            "private": false,
+            "sha256": "e5aa1ec8d227af8ee697ea42a299d194364ca472497c9270f3838d2d3e08e6b7",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/mailbox-http.ts",
+              "packages/e2ee-lab/src/platform/key-mailbox.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public HPKE/protected SQLite/distribution and real possession/bearer HTTP OS reopen pass. Honest session delivery/resume/report/repair orchestration still missing; observed ciphertext is not installed key."
+          },
+          {
+            "name": "currentEpoch",
+            "private": false,
+            "sha256": "86650f4f78f0f62d1bd4839f5daed4fd6c5843050a54e3d42b3357324fd5a57e",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Return authenticated ledger epoch, never max local keys; pure projection absent with honest facade."
+          },
+          {
+            "name": "receiveEpochKey",
+            "private": false,
+            "sha256": "e081d47719e85ac3e7cc577e9a6232fa269e6404d87ebb387265e6eab819dc8f",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/mailbox-http.ts",
+              "packages/e2ee-lab/src/platform/key-mailbox.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public HPKE/protected SQLite/distribution and real possession/bearer HTTP OS reopen pass. Honest session delivery/resume/report/repair orchestration still missing; observed ciphertext is not installed key."
+          },
+          {
+            "name": "centralKeyRound",
+            "private": false,
+            "sha256": "fc2c00833abb46bfbb89bf8911b573e54b78f050851b14bba097a8d1ce39e905",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/mailbox-http.ts",
+              "packages/e2ee-lab/src/platform/key-mailbox.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public HPKE/protected SQLite/distribution and real possession/bearer HTTP OS reopen pass. Honest session delivery/resume/report/repair orchestration still missing; observed ciphertext is not installed key."
+          },
+          {
+            "name": "recoverEpochHistory",
+            "private": false,
+            "sha256": "b0112165c106a5fbfb40f6a27efc9b0ba4a583482168b136f3ff0a8c6c32ee18",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/keys/history.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Public verified history recovery + native protected install/readback validated in OS child from key1 only. Honest facade absent; no vault format/backup atomic receipt claim."
+          },
+          {
+            "name": "exportNote",
+            "private": false,
+            "sha256": "9b80b35295f3f2545ea05deed4a9f6100cf63bdefc3a45955d65b7aafb17926d",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "待明确决定",
+            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+          },
+          {
+            "name": "publishNote",
+            "private": false,
+            "sha256": "bc629d80c2614d067a7c728cbec7f02ee6d4edb561397b5da51994bcdc0cf754",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "待明确决定",
+            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+          },
+          {
+            "name": "compareRemote",
+            "private": false,
+            "sha256": "b2175be034c2148b20bca13132b68224fb1f8cd4c3bb0a5c6bf10a3f16f26413",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "待明确决定",
+            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+          },
+          {
+            "name": "compareIndependent",
+            "private": false,
+            "sha256": "088cf9d21670a3193ebbc13317235e5e0d49cb8f7bd944cb639d752c06fae30f",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "待明确决定",
+            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+          },
+          {
+            "name": "finishCompare",
+            "private": true,
+            "sha256": "38f80b756e37c2723259b5ac2b7d8981cf0ae13170a0ab5d8b630fe0181e3de8",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts",
+              "packages/e2ee-lab/src/platform/host.ts"
+            ],
+            "status": "待明确决定",
+            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+          },
+          {
+            "name": "readKeyFrames",
+            "private": false,
+            "sha256": "6c72f285ce78a2eb2d7de283d0836725aa3ce2f69c397837466aa0d5077c8eb9",
+            "targetPaths": [
+              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/key-mailbox.ts",
+              "packages/e2ee-lab/src/platform/stream-read.ts"
+            ],
+            "status": "需迁并修复",
+            "reason": "Finite authenticated SDK readers exist; original raw legacy keys-stream reader must surface transport failures and preserve cursor. Legacy frame delivery versus indexed current mailbox orchestration must be explicit."
+          }
+        ],
+        "acceptance": "Method destinations are inventory, not implemented facade or production acceptance. Shared owning modules remain single implementations; pending targets not created."
+      }
     },
     {
       "sourcePath": "packages/e2ee-lab/src/pure/ledger-command.ts",

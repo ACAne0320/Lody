@@ -1,6 +1,6 @@
 import { Data, Result } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
-import { contentPermissions, type LedgerView } from '@lody/e2ee-core/ledger';
+import { contentPermissions, decodeRecord, type LedgerView } from '@lody/e2ee-core/ledger';
 
 export type GatewayAction = 'read' | 'control-cas' | 'keys-cas' | 'content-cas' | 'snapshot-put';
 export class LabGatewayError extends Data.TaggedError('LabGatewayError')<{
@@ -24,6 +24,9 @@ export function authorizeLabStream(input: {
   readonly stream: string;
   readonly method: string;
   readonly sub?: string;
+  /** Candidate bytes only, not evidence of admission. Full public submission
+   * verification, PoP, current permission and pinned CAS must still follow. */
+  readonly controlRecord?: Uint8Array;
 }) {
   return Result.try({
     try: () =>
@@ -64,8 +67,30 @@ export function authorizeLabStream(input: {
           (sub === undefined || sub === 'snapshot' || sub === 'bootstrap')
         )
           return { action: 'read' as const };
-        // Registered R receives/repairs only, never ordinary control/content writes or sends.
-        if (active.kind === 'recovery') return yield* deny('unauthorized');
+        // The settled exception is R authorizing its own new personal device.
+        // Core derives ownership from the actor's member instance and verifies
+        // the new device's bound PoP; this route screening is never admission.
+        if (active.kind === 'recovery') {
+          if (
+            method !== 'POST' ||
+            stream !== 'control' ||
+            sub !== 'append-cas' ||
+            !(input.controlRecord instanceof Uint8Array)
+          )
+            return yield* deny('unauthorized');
+          const decoded = yield* Result.mapError(
+            decodeRecord(input.controlRecord),
+            () => new LabGatewayError({ status: 403, code: 'unauthorized' })
+          );
+          if (
+            decoded.body.type !== 'ordinary' ||
+            !decoded.body.signer.equals(device) ||
+            decoded.body.operation.type !== 'admitDevice' ||
+            decoded.body.operation.kind !== 'personal'
+          )
+            return yield* deny('unauthorized');
+          return { action: 'control-cas' as const };
+        }
         if (method === 'POST' && sub === 'append-cas' && stream === 'control')
           return { action: 'control-cas' as const };
         if (method === 'POST' && sub === 'append-cas' && stream === 'keys')

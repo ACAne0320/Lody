@@ -130,3 +130,9 @@ freshness 模型假设另列。`makeLabContentTrace` 为每轮 Scope 提供有�
 事实，先拥有字段再检查预算，返回不可变快照；clear/close 不影响另一轮，关闭后拒绝写入
 和观察。它是有类型的测试观察，不是攻击者可见日志、权限服务或原生存钥。真实 actors/
 attack 测量组合仍待迁入。
+
+control 网关放行已定的 Recovery 例外：授权本人的新个人设备。候选筛选只绑定已存
+凭据的签名者和操作种类；完整历史、当前成员实例、新设备持钥证明及 SDK CAS 仍由
+公开 submission 验证。真实新鲜 possession/bearer HTTP、已发布 StreamsClient 与
+原生 SQLite 用例确认：错误成员的持钥证明、R 禁止操作和坏签名不改变远端字节/尾游标，
+撤权 R 被拒绝。这只是设备登记，不代表恢复库、备份、内容恢复或生产存钥完成。

@@ -164,3 +164,11 @@ owned before budget checks and returned as immutable snapshots. Clear/close cann
 change another run, and closed traces refuse both writes and observations. These
 are typed harness observations, not an attacker-visible log, authorization service
 or native custody. Full real measured actors/attack composition is still pending.
+
+The control gateway permits only the settled Recovery exception: authorizing its own
+new personal device. Candidate screening binds the stored credential signer and
+operation kind; public submission still verifies the whole history, current member
+instance, new-device PoP and pinned SDK CAS. Actual fresh possession/bearer HTTP and
+released StreamsClient/native SQLite tests retain remote bytes/tail on foreign-member
+PoP, forbidden R operations and invalid signatures; revoked R is refused. This is
+device registration, not recovery vault, backup, restored content or production custody.

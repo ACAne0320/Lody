@@ -211,3 +211,19 @@ vault format/wrapping/concurrency/retention, permanent publisher-loss backup,
 D12 atomic-removal wire, snapshot/history, entropy and notes remain human gates.
 None blocks independent settled work. Production activation, native custody,
 whole-stack CI/review and all-platform product acceptance remain separate.
+
+The control gateway permits only the settled Recovery exception: authorizing its own
+new personal device. Candidate screening binds the stored credential signer and
+operation kind; public submission still verifies the whole history, current member
+instance, new-device PoP and pinned SDK CAS. Actual fresh possession/bearer HTTP and
+released StreamsClient/native SQLite tests retain remote bytes/tail on foreign-member
+PoP, forbidden R operations and invalid signatures; revoked R is refused. This is
+device registration, not recovery vault, backup, restored content or production custody.
+
+The manifest now inventories all original DemoSession AST methods with source member
+fingerprints: 31 public entries including constructor and 12 private helpers. Every
+entry states owning target modules and remaining facade work or human decision.
+Primitive/module coverage does not close the corresponding honest session method;
+plaintext epoch JSON helpers are retired as ordinary custody, and old removal stays
+blocked on D12. Source fields and complete actor/replay composition remain separate
+uncompleted work.
