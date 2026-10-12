@@ -92,13 +92,13 @@ For a lifecycle change, answer these questions briefly in the existing owning No
 before choosing primitives. Omit inapplicable questions and link existing contracts
 instead of creating a new checklist document for every edit.
 
-| Question | Observable contract |
-| --- | --- |
-| Trigger | Which input/state starts work, and what ordering or reentry is allowed? |
-| Owner | Who owns each resource/producer, and who may release it? |
-| Cancellation | Does cancellation end one wait, the producer, or raw external work? How is actual termination confirmed? |
-| Handoff | What observable release condition allows a successor or replacement to start? |
-| Failure recovery | Who retains unresolved resources and the complete failure, and who can retry cleanup? |
+| Question         | Observable contract                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| Trigger          | Which input/state starts work, and what ordering or reentry is allowed?                                  |
+| Owner            | Who owns each resource/producer, and who may release it?                                                 |
+| Cancellation     | Does cancellation end one wait, the producer, or raw external work? How is actual termination confirmed? |
+| Handoff          | What observable release condition allows a successor or replacement to start?                            |
+| Failure recovery | Who retains unresolved resources and the complete failure, and who can retry cleanup?                    |
 
 Map applicable answers to behavioral acceptance cases. A cancelled reader must not
 stop a shared producer needed by other readers; a cleanup timeout must not permit
@@ -319,6 +319,21 @@ which executes in the existing `fileLocksLegacy` runtime, with no second lock co
 Delete it when the mutation owner receives native services. Synchronous manager
 path/existence methods, setup, GC and the daemon runtime still need migration. See
 [the decision](../notes/implemented/architecture/2026-10-10-effect-worktree-observations.md).
+
+## Streams token refresh
+
+`LoroStreamsTokens` / `LoroStreamsTokensLive` own native credential admission,
+shared refresh leases and encrypted-cache publication. Each provider has its own
+ports and Scope. Waiter deadlines retire only that waiter; last-lease release and
+replacement/close abort and join actual I/O. Failed joins retain raw/provider
+owners and the full Cause, and require explicit recovery before handoff.
+
+The official CLI cloud root supplies the native platform token port. Remaining
+renderer, durable transport and Machine RPC callers use the sole
+`createLoroStreamsTokenProviderLegacy` facade and visible
+`createTokenProviderLegacy` port/type. Renderer teardown and CLI cloud-port
+shutdown await provider close. This is token ownership, not completion of upper
+Loro/daemon lifecycles. [API and decision](../../packages/shared/src/loro-streams-token/README.md).
 
 ## Temporary Promise facades
 

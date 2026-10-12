@@ -64,7 +64,10 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
 - `cloud-cli-port.ts` — the sole official-build composition root for cloud clients,
   endpoint-derived adapters, and their lifecycle. `start.ts` validates
   identity/deployment configuration once and injects the resulting `CloudPort` through
-  Fleet → Lody → MachineRuntime → MessageHandler/Loro/session services.
+  Fleet → Lody → MachineRuntime → MessageHandler/Loro/session services. Its native
+  Streams token factory requires the caller's Scope; it retains Legacy token
+  providers until cloud disposal and reports failed cleanup. Existing durable and
+  Machine RPC consumers keep the visible Legacy token port until their owners migrate.
 - `cloud-pr-association.ts` — hosted PR association HTTP requests and shared failure
   cooldowns; independent of GitHub observation and publication.
 - `local-loro-data-plane-server.ts` — Electron renderer ↔ CLI local Loro data plane

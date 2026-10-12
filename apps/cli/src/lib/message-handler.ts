@@ -195,7 +195,7 @@ import type {
   CloudNotificationsPort,
   CloudPort,
   CloudUsagePort,
-  LoroStreamsTokenProvider,
+  LoroStreamsTokenProviderLegacy,
 } from '@lody/platform';
 import { Logger } from '@/utils/logger';
 import { ProviderSetupManager } from './provider-setup-manager';
@@ -765,7 +765,7 @@ export class MessageHandler {
   private localProjectControlService: LocalProjectControlService;
   private localWorkspaceCatalog: LocalWorkspaceCatalogService;
   private machineRpcServer: LoroStreamsMachineRpcServer | null = null;
-  private machineRpcTokenProvider: LoroStreamsTokenProvider | null = null;
+  private machineRpcTokenProvider: LoroStreamsTokenProviderLegacy | null = null;
   private machineRpcGatewayBaseUrl: string | null = null;
   private machineRpcServerStartPromise: Promise<void> | null = null;
   private machineRpcServerRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -3085,7 +3085,7 @@ export class MessageHandler {
       this.logger.debug(
         `[rpc-server:${this.machineId}] using Loro Streams RPC connect timeout ${rpcConnectTimeoutMs}ms`
       );
-      const streamsTokenProvider = streamsTokens.createTokenProvider({
+      const streamsTokenProvider = streamsTokens.createTokenProviderLegacy({
         workspaceId: this.workspaceId,
       });
       this.machineRpcTokenProvider = streamsTokenProvider;
