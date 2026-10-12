@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { makeHostEpochProtection, type NativeEpochProtector } from '@lody/e2ee-core/keys/host';
 import { commitEpochKey } from '../../src/keys/history';
+import { contentPermissions } from '@lody/e2ee-core/ledger';
 import { envelopeFixture } from './fixture';
 const ok = Result.getOrThrow;
 const dirs: string[] = [];
@@ -278,6 +279,25 @@ describe('host-only epoch protection', () => {
       Buffer.from(ok(commitEpochKey(f.context.genesis, 0, f.secret)).toBytes()).toString('hex')
     );
     f.append([5, f.owner.raw]);
+    expect(ok(contentPermissions(f.view(), f.owner.publicKey))).toMatchObject({
+      mayWriteDocument: false,
+      maySealNewContent: false,
+    });
+    expect(Result.isFailure(await Effect.runPromise(Effect.result(f.prepare())))).toBe(true);
+    const revokedChild = execFileSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
+        dbPath,
+        'sender-revoked',
+      ],
+      { encoding: 'utf8', timeout: 20_000 }
+    );
+    expect(revokedChild.trim()).toBe(
+      Buffer.from(ok(commitEpochKey(f.context.genesis, 0, f.secret)).toBytes()).toString('hex')
+    );
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {

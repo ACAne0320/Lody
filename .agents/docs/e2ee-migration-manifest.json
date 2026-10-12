@@ -4483,5 +4483,21 @@
     "1432": "e9c672806f96776f699a57aee64fe368383cfa1d",
     "1433": "37cadfbcb0fa2183a98ccf041ba3820a8945b28e",
     "1434": "7c58cabe1d05f132b7133a52b45a16b79274ea6a"
+  },
+  "restrictedDurableEpochApproval": {
+    "decision": "A",
+    "approvedBy": "user",
+    "date": "2026-10-12",
+    "scope": "Verified installed EpochKeys persist through trusted host initialization-time authenticated protection; native priority. Opaque protected SQLite blobs; full purpose/genesis/recipient/epoch/commitment payload binding; actual native settlement and own-copy cleanup; context journal/save/reload/fixed report queue. Local installed-key restore independent of original sender still active; new-delivery current sender unchanged.",
+    "existingOwner": "#1480 host protection; downstream receive/report owner composes existing HPKE/P09",
+    "limits": [
+      "not generic material export or per-business-call callback",
+      "adapter may copy secrets; JavaScript total erasure not promised",
+      "no historical-sender envelope restore B",
+      "no new wrapping/wire/domain/vault format",
+      "no D12/SDK snapshot header/backup policy/strict B/production enablement approval",
+      "synthetic tests only, not OS/native custody acceptance"
+    ],
+    "platformGap": "platform host-keys only public identity storage; Electron string safeStorage has no reviewed full-payload-integrity adapter/backend failure contract and dev plaintext override; not composed for A"
   }
 }

@@ -4,6 +4,9 @@ import { commitEpochKey } from '../../src/keys/history';
 import { envelopeFixture } from './fixture';
 import { synthetic } from './protection-fixture';
 const f = envelopeFixture();
+// Fixed public fixture transition, not an envelope reopen or production trust source.
+if (process.argv[3] === 'sender-revoked') f.append([5, f.owner.raw]);
+else if (process.argv[3] !== undefined) throw new Error('unknown synthetic transition');
 await Effect.runPromise(
   Effect.scoped(
     Effect.gen(function* () {
