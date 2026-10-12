@@ -111,7 +111,7 @@ durable Legacy facade. SDK effects, rather than a Lody POST/SSE coordinator, own
 the I/O in these experiments. No artifact, script, dependency override or local
 tarball enters product source or the lockfile.
 
-That success is revision-specific. Current stable upstream head `7126a255a5520e66ce05958d5a233b141b1601a2`
+That success is revision-specific. Upstream head `7126a255a5520e66ce05958d5a233b141b1601a2`
 has the identical tree to experiment revision
 `ad4ec1f6444d0d431753970580574c2d876938fd`; rebuilt entry SHA-256 is
 `870f3ebd1a4a218ed66ae9c30a47d0f89bec4ce7c1b0728e7b525b4d2fdd02c7`.
@@ -121,6 +121,13 @@ release failure. The owning SDK has been given the controlled reproduction;
 classification as a normal-shutdown versus real cleanup failure remains unresolved.
 Lody retains the Cause and recovery owner rather than suppressing it. This is a
 current integration gate, not grounds to freeze the earlier snapshot as ready.
+The next committed upstream head `5e5cd0d0dee70b6eecc61ff1f7e40d3f95be4849`
+also reproduces this result (one pass, one failure), including after passing the
+native token callback directly under its updated auth contract. Its rebuilt entry
+SHA-256 is `2df12c9e33e1c46541f79892b39b8c48b04eef8514391d5faad8794837451bc3`.
+The shared producer, replacement and actual machine POST succeed; normal stop
+still retains the SDK's EphemeralClosed release receipt. This is not a new Lody
+source revision, and it does not extend the passing product checks below.
 Probes now call the native subscription's `syncBarrier()` to capture chain
 membership immediately, rather than borrowing a lazily captured waitUntilSynced.
 

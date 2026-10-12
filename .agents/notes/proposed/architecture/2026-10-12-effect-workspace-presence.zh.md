@@ -77,13 +77,18 @@ Retirement 在通知订阅者之前禁止同步新写入；订阅回调 defect �
 另一读者模拟 durable 需求，并非产品 durable Legacy 门面。实验 IO 由 SDK Effect 拥有，
 没有在 Lody 实现第二套 POST/SSE 编排；产物、脚本、依赖 override、临时 tarball 均不进入产品或锁文件。
 
-上述成功仅对应该修订。上游目前稳定 head `7126a255a5520e66ce05958d5a233b141b1601a2` 与实验修订
+上述成功仅对应该修订。上游 head `7126a255a5520e66ce05958d5a233b141b1601a2` 与实验修订
 `ad4ec1f6444d0d431753970580574c2d876938fd` 的 tree 完全相同；重新编译入口 SHA-256：
 `870f3ebd1a4a218ed66ae9c30a47d0f89bec4ce7c1b0728e7b525b4d2fdd02c7`。
 重跑通过忽略 POST abort 的清理，但共享 provider replacement 后正常 stop 失败：
 EphemeralReleaseFailure 包含 Fail(EphemeralClosed) 与嵌套 release failure。
 已向 SDK 拥有者提供受控复现；它属于正常关闭还是实际清理失败仍未解决。
 Lody 保留完整 Cause 与恢复 owner，不吞掉失败；该项仍是集成闸门，不能冻结较旧快照冒充 ready。
+后续已提交 head `5e5cd0d0dee70b6eecc61ff1f7e40d3f95be4849` 仍复现该结果（一项通过、一项失败），
+按新 auth 契约直接传入原生 token callback 后也相同。重新编译入口 SHA-256：
+`2df12c9e33e1c46541f79892b39b8c48b04eef8514391d5faad8794837451bc3`。
+共享 producer、replacement 和实际 machine POST 成功，正常 stop 仍保留 SDK 的 EphemeralClosed 清理回执。
+本次没有修改 Lody 源码，也不扩展下文已通过的产品检查范围。
 Probe 现调用原生 subscription.syncBarrier() 即时捕获 chain 集合，不借用延迟捕获的 waitUntilSynced。
 
 registry 核验正式版本仍为 streams-client 0.9.0 / streams-crdt 0.16.2；新原生入口与 client helper 等待上游授权发布流程。
