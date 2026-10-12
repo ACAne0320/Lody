@@ -201,3 +201,7 @@ OS-child 密钥用例直接消费它。改写回执/超预算 stream 明确是 t
 （记录仍限8KiB）。它检查请求哈希、genesis记录类型及公开账本真实签名，仅返回
 独立拥有的原始记录。未绑定workspace的joiner仍可发现。坏存储和敌意元数据拒绝；
 响应不提供当前权限、持久checkpoint、控制流发布或Genesis布局选择。
+
+已认证submitJoin/listJoins消费现有签名候选信箱：复制并核Org签名、sender、true回执与唯一ID。列表256KiB预算超出即整次失败，不是分页/静默截断；宿主当前权限不变。回执待审且可能于保存后丢失，重试原签名申请，不生成新ID/期限/自动批准，不代表完整session。
+
+[未批准契约提案](2026-10-12-e2ee-unsettled-contracts.zh.md)。

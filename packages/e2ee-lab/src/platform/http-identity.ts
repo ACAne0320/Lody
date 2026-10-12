@@ -1,8 +1,15 @@
 import { Data, Effect, Result, Schema } from 'effect';
-import { Bytes } from '@lody/e2ee-core';
-import { decodeRecord, hashRecordBytes, verifyLedger } from '@lody/e2ee-core/ledger';
+import { Bytes, verifySignature } from '@lody/e2ee-core';
+import {
+  decodeRecord,
+  hashRecordBytes,
+  verifyLedger,
+  joinRequestSigningBytes,
+  type JoinRequest,
+} from '@lody/e2ee-core/ledger';
 import { signVerified, type DeviceSigner } from '@lody/e2ee-core/signing';
 import { labPossessionMessage } from './credentials';
+import { labJoinWire, parseLabJoin } from './join-mailbox';
 import { makeLabSdkOwner } from './sdk-owner';
 
 export class LabHttpIdentityError extends Data.TaggedError('LabHttpIdentityError')<{
@@ -27,6 +34,16 @@ const Credential = Schema.Struct({
 const GenesisReply = Schema.Struct({
   genesis: Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{2}){1,8192}$/)),
 });
+const JoinWire = Schema.Struct({
+  requestId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/)),
+  userId: HashHex,
+  signingPublicKey: HashHex,
+  encryptionPublicKey: HashHex,
+  expiresAt: Schema.NullOr(Timestamp),
+  signature: Schema.String.check(Schema.isPattern(/^[0-9a-f]{128}$/)),
+});
+const JoinList = Schema.Struct({ requests: Schema.Array(JoinWire) });
+const JoinReceipt = Schema.Struct({ ok: Schema.Literal(true) });
 const maxReplyBytes = 20 * 1024;
 
 /** Synthetic local possession/bearer client, not product identity or key custody.
@@ -186,6 +203,75 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
           })
         );
       };
+      const validateJoin = Effect.fnUntraced(function* (value: unknown) {
+        const wire = yield* Effect.fromResult(
+          Result.mapError(Schema.decodeUnknownResult(JoinWire)(value), () =>
+            fail('invalid-response')
+          )
+        );
+        const request = yield* Effect.fromResult(parseLabJoin(wire));
+        yield* Effect.fromResult(
+          verifySignature(
+            request.signingPublicKey.toBytes(),
+            yield* Effect.fromResult(joinRequestSigningBytes(genesis, request)),
+            request.signature.toBytes()
+          )
+        );
+        return Object.freeze(request);
+      });
+      const submitJoin = Effect.fnUntraced(function* (request: JoinRequest) {
+        if (owner.signal.aborted) return yield* fail('closed');
+        const owned = yield* validateJoin(
+          yield* Effect.try({
+            try: () => labJoinWire(request),
+            catch: () => fail('invalid-response'),
+          })
+        );
+        if (!owned.signingPublicKey.equals(captured.publicKey))
+          return yield* fail('invalid-response');
+        yield* Effect.fromResult(
+          Result.mapError(
+            Schema.decodeUnknownResult(JoinReceipt)(
+              yield* readJson(
+                () =>
+                  authenticatedFetch(`${origin}/v1/spaces/${genesisHex}/joins`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify(labJoinWire(owned)),
+                  }),
+                16 * 1024
+              )
+            ),
+            () => fail('invalid-response')
+          )
+        );
+        // Receipt is inert and can be lost after server persistence. Retrying
+        // these original bytes is idempotent; do not generate another identity.
+        return owned;
+      });
+      const listJoins = Effect.fnUntraced(function* () {
+        if (owner.signal.aborted) return yield* fail('closed');
+        const reply = yield* Effect.fromResult(
+          Result.mapError(
+            Schema.decodeUnknownResult(JoinList)(
+              yield* readJson(
+                () => authenticatedFetch(`${origin}/v1/spaces/${genesisHex}/joins`),
+                256 * 1024
+              )
+            ),
+            () => fail('invalid-response')
+          )
+        );
+        const ids = new Set<string>(),
+          requests: JoinRequest[] = [];
+        for (const value of reply.requests) {
+          if (ids.has(value.requestId)) return yield* fail('invalid-response');
+          ids.add(value.requestId);
+          requests.push(yield* validateJoin(value));
+        }
+        // A signed candidate is not current eligibility or admission authority.
+        return Object.freeze(requests);
+      });
       const discoverGenesis = Effect.fnUntraced(function* () {
         if (owner.signal.aborted) return yield* fail('closed');
         const reply = yield* Effect.fromResult(
@@ -216,7 +302,13 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
         // as current membership, endpoint, cursor, custody or control bootstrap.
         return Object.freeze({ anchor: genesis, record });
       });
-      return Object.freeze({ url, fetch: authenticatedFetch, discoverGenesis });
+      return Object.freeze({
+        url,
+        fetch: authenticatedFetch,
+        discoverGenesis,
+        submitJoin,
+        listJoins,
+      });
     }),
   });
 });

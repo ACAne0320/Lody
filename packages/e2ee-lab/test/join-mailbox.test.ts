@@ -11,6 +11,7 @@ import type { LedgerView } from '@lody/e2ee-core/ledger';
 import { makeLabJoinMailbox, labJoinWire } from '../src/platform/join-mailbox';
 import { makeLabCredentials, labPossessionMessage } from '../src/platform/credentials';
 import { history, fixture } from './ledger-fixture';
+import { makeLabHttpIdentity } from '../src/platform/http-identity';
 import { makeAuthenticatedLabMailbox } from './authenticated-mailbox-fixture';
 const ok = Result.getOrThrow;
 const signer = (seed: number) => {
@@ -289,8 +290,53 @@ describe('public signed Lab join metadata, synthetic account labels only', () =>
             ).toBe(404);
             // Outsider proof mints an explicitly unbound token. Receipt is inert;
             // it grants neither membership nor permission to read the queue.
-            expect((yield* post(labJoinWire(request))).status).toBe(200);
-            expect((yield* post(labJoinWire(request))).status).toBe(200);
+            expect(yield* applicant.submitJoin(request)).toEqual(request);
+            expect(yield* applicant.submitJoin(request)).toEqual(request);
+            expect(Result.isFailure(yield* Effect.result(applicant.submitJoin(wrongSigner)))).toBe(
+              true
+            );
+            expect(Result.isFailure(yield* Effect.result(applicant.listJoins()))).toBe(true);
+            expect(yield* owner.listJoins()).toEqual([request]);
+            // Real HTTP replies are altered only at the explicit native port.
+            const altered = (mode: string) =>
+              Effect.gen(function* () {
+                const identity = yield* makeLabHttpIdentity({
+                  baseUrl: new URL(http.url).origin,
+                  genesis:
+                    mode === 'org' ? ok(Bytes.genesisHash(new Uint8Array(32).fill(219))) : f.anchor,
+                  fetch: async (target, init) => {
+                    const response = await fetch(target, init);
+                    const address = target instanceof Request ? target.url : String(target);
+                    if (!address.endsWith('/joins')) return response;
+                    await response.body?.cancel();
+                    if (mode === 'receipt') return new Response(JSON.stringify({ ok: false }));
+                    const wire = labJoinWire(request);
+                    if (mode === 'signature') wire.userId = 'aa'.repeat(32);
+                    if (mode === 'shape') wire.requestId = 'short';
+                    return new Response(
+                      JSON.stringify({ requests: mode === 'duplicates' ? [wire, wire] : [wire] })
+                    );
+                  },
+                });
+                const identityOwner = yield* identity.authenticate(
+                  mode === 'receipt' ? outsider : f.owner,
+                  'unbound'
+                );
+                if (mode === 'receipt')
+                  return Result.isFailure(yield* Effect.result(identityOwner.submitJoin(request)));
+                return Result.isFailure(yield* Effect.result(identityOwner.listJoins()));
+              });
+            for (const mode of ['signature', 'shape', 'org', 'duplicates', 'receipt'])
+              expect(yield* altered(mode)).toBe(true);
+            // The false receipt followed actual persistence; same original retry
+            // succeeds, rather than claiming the host never stored the request.
+            expect(yield* applicant.submitJoin(request)).toEqual(request);
+            expect(yield* owner.listJoins()).toEqual([request]);
+            expect(
+              f.view
+                .inspectState()
+                .devices.has(Buffer.from(outsider.publicKey.toBytes()).toString('hex'))
+            ).toBe(false);
             expect((yield* Effect.promise(() => applicant.fetch(url))).status).toBe(403);
             const response = yield* Effect.promise(() => owner.fetch(url));
             expect(response.status).toBe(200);

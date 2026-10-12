@@ -22,8 +22,8 @@
   "targetFingerprints": {
     "AGENTS.md": "42aadd5a7d127a27d4d9cdc4e4c75be907be2dbf1010cc42e971c77b0b314207",
     "CLAUDE.md": "42aadd5a7d127a27d4d9cdc4e4c75be907be2dbf1010cc42e971c77b0b314207",
-    "README.md": "9cbe437318143413fc6be345e0806a9c2da3b436bbb2b8713d78edb156ec35d8",
-    "README.zh.md": "738cb7d6e667059c8c2fe6ff06576e2100185488bc788ff9883e6caa4969e1c4",
+    "README.md": "967a78e31a082054b064752688cac75582407936c268166d44187765c905474f",
+    "README.zh.md": "ad1da8392cdf7fc640f237634e982fb6821312cbea7d8a6767e4404bfb99ef74",
     "package.json": "d25a825c3a5c2ed5e204deb4fce9c64604d4e03a571e507007c0091d2498f36e",
     "src/platform/content-provider.ts": "b4be8bfceb43a591097015499c10aefbd4ab870105d3569dddd7fa951ff9501d",
     "src/platform/content-session.ts": "7c22e34f85f2eabd79b472b861681127e7bb6b2ced687da3bc47c8eb415e6dfe",
@@ -59,7 +59,7 @@
     "test/driver.test.ts": "e8fd4e1d7986da517ca9cac3c0461195107fb97b035a229edc2287f0566f7d96",
     "test/gateway.test.ts": "20948f66cc48fd959223733b0a5663d82e4c6c690e1e73c08252cfcd9eb44df2",
     "test/host.test.ts": "6755e3edebf6e70d1acc16fb0f1b7952ea6288f4a8dbed8a7765150d3ffffd2b",
-    "test/join-mailbox.test.ts": "e446dd1c1836fbf6093a54c2649cd659855556c710cee0e77b52f728f7db7386",
+    "test/join-mailbox.test.ts": "049e512ada09c1fbc5f6df6f576712889fe2f92daf6200e8bb344d3f0e0a6777",
     "test/judge.test.ts": "d3054dcb2a5dc52790b8d30343d33b5adab0099cb86dc880a01dfc277c1e2ce7",
     "test/key-distribution.test.ts": "07676cf0dfa78def9ac2908811479416de275dcbcd5fac3d97d08f2ed20c527a",
     "test/key-mailbox.test.ts": "94ec488d11ccd80a751edc039c2e9ae29894d4aaf985ede0750529702bf346fb",
@@ -85,7 +85,7 @@
     "src/pure/reference-model.ts": "f603f10d197727f5fb9ec399bf1bc421622be67226880c10ed09e15b6691d619",
     "test/reference-model.test.ts": "3be46c65a2adbd89b92b7b8bc79333bd1ee034fd9f4df917616dfd7b117d1662",
     "src/platform/key-round.ts": "a11d48a996d0575d2a34ea7a0dce183d0f7d875a2687bb2f9340d32bf54b2ba0",
-    "src/platform/http-identity.ts": "b1b41b29b10214ee12cd6102cfbc518f8d94d93528e9261aa17152cebcfce480"
+    "src/platform/http-identity.ts": "885b55d913318fbc511f2f1b6d58df87d3cfffa028fae865c0b5c73e18d85b21"
   },
   "sourceSpecificFingerprints": {
     ".gitignore": {

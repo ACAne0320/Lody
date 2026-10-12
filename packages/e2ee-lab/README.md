@@ -219,3 +219,5 @@ hash, genesis record type and real public ledger signature, and returns an owned
 original record only. Unbound joiners still work. Host storage corruption and
 hostile metadata refuse discovery; no current authority, durable checkpoint,
 control publication or Genesis layout selection follows from this response.
+
+Authenticated submitJoin/listJoins consume the existing signed candidate mailbox: copied Org-bound signatures, sender binding, receipt true and unique IDs. List body256KiB is a whole-response budget, not pagination or silent truncation. Host current permissions remain. Receipt is inert and may be lost after persistence; retry the original signed request, with no new ID/expiry/automatic approval or full session facade.
