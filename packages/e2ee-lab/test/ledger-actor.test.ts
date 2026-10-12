@@ -263,6 +263,34 @@ it('opens an admitted workspace through actual HTTP/public SDK, cleans failed ac
           });
           const path = join(f.dir, 'session-feed.sqlite'),
             journalPath = join(f.dir, 'session-journal.sqlite');
+          let attack: 'duplicate' | 'old-prefix' | undefined;
+          let served: { bytes: Uint8Array; requestedOffset: string | null } | undefined;
+          const observedResponse = () => served;
+          const transport: typeof fetch = async (url, init) => {
+            const target = new URL(url instanceof Request ? url.url : String(url));
+            if (
+              attack &&
+              (init?.method ?? (url instanceof Request ? url.method : 'GET')) === 'GET' &&
+              target.pathname === `/ds/${org}/control`
+            ) {
+              // Duplicate is at the client's current native offset; rollback ignores it.
+              // Do not forward the product bearer to the fixture's raw transport.
+              const requestedOffset = target.searchParams.get('offset');
+              const offset = attack === 'duplicate' ? requestedOffset! : '-1';
+              const response = await fetch(
+                `${f.server.baseUrl}/ds/${org}/${attack}?offset=${encodeURIComponent(offset)}`,
+                {
+                  method: 'GET',
+                  signal: init?.signal,
+                  redirect: 'manual',
+                }
+              );
+              const bytes = new Uint8Array(await response.arrayBuffer());
+              served = { bytes, requestedOffset };
+              return new Response(bytes, { status: response.status, headers: response.headers });
+            }
+            return fetch(url, init);
+          };
           const input = {
             baseUrl: host.baseUrl,
             genesis: f.anchor,
@@ -271,6 +299,7 @@ it('opens an admitted workspace through actual HTTP/public SDK, cleans failed ac
             journalPath,
             budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
             checkpoint: () => Effect.sync(() => checkpoint(originals)),
+            fetch: transport,
           };
           const closed = new Set<string>();
           const nativeClose = Database.prototype.close;
@@ -311,6 +340,107 @@ it('opens an admitted workspace through actual HTTP/public SDK, cleans failed ac
           expect(saved.view.length).toBe(3);
           expect(saved.view.head.equals(checkpoint(originals).head)).toBe(true);
           yield* session.control.acknowledge(result);
+          const healthyPath = join(f.dir, 'healthy-feed.sqlite');
+          const healthy = yield* openLabExistingWorkspace({
+            ...input,
+            path: healthyPath,
+            journalPath: join(f.dir, 'healthy-journal.sqlite'),
+            mode: 'create',
+            fetch,
+          });
+          const persisted = (file: string) => {
+            const db = new Database(file, { readonly: true });
+            try {
+              return {
+                meta: db.prepare('SELECT * FROM ledger_feed_meta').all(),
+                records: db.prepare('SELECT * FROM ledger_feed_records ORDER BY position').all(),
+              };
+            } finally {
+              db.close();
+            }
+          };
+          const before = persisted(path),
+            healthyBefore = persisted(healthyPath);
+          for (const scenario of ['duplicate', 'old-prefix'] as const) {
+            const poisoned = new StreamsClient({
+              url: `${f.server.baseUrl}/ds/${org}/${scenario}`,
+              retry: { maxAttempts: 1 },
+            });
+            expect(
+              (yield* Effect.promise(() =>
+                poisoned.create({ contentType: 'application/octet-stream' })
+              )).ok
+            ).toBe(true);
+            const entries =
+              scenario === 'duplicate' ? [...originals, originals[1]!] : originals.slice(0, 2);
+            for (const entry of entries)
+              expect(
+                (yield* Effect.promise(() =>
+                  poisoned.append({
+                    part: {
+                      contentType: 'application/octet-stream',
+                      body: ok(frameLedgerRecord(entry)),
+                    },
+                  })
+                )).ok
+              ).toBe(true);
+            attack = scenario;
+            served = undefined;
+            expect(Result.isFailure(yield* Effect.result(session.control.refresh()))).toBe(true);
+            const observed = observedResponse();
+            expect(observed?.requestedOffset).toBe(saved.offset);
+            const expectedBytes =
+              scenario === 'duplicate'
+                ? ok(frameLedgerRecord(originals[1]!))
+                : Buffer.concat(
+                    originals.slice(0, 2).map((entry) => Buffer.from(ok(frameLedgerRecord(entry))))
+                  );
+            expect(Buffer.from(observed!.bytes)).toEqual(Buffer.from(expectedBytes));
+            const retained = yield* session.control.current();
+            expect(retained.offset).toBe(saved.offset);
+            expect(retained.view.head.equals(saved.view.head)).toBe(true);
+            expect(retained.view.length).toBe(saved.view.length);
+            expect(persisted(path)).toEqual(before);
+            // Another simultaneously live owner uses its own database and real route.
+            const other = yield* healthy.control.refresh();
+            expect(other.view.head.equals(saved.view.head)).toBe(true);
+            expect(other.view.length).toBe(3);
+            expect(persisted(healthyPath)).toEqual(healthyBefore);
+            const faultManifest = join(f.dir, `${scenario}-child.json`);
+            const head = Buffer.from(saved.view.head.toBytes()).toString('hex');
+            writeFileSync(
+              faultManifest,
+              JSON.stringify({
+                baseUrl: host.baseUrl,
+                path,
+                journalPath,
+                anchor: org,
+                head,
+                length: saved.view.length,
+                offset: saved.offset,
+              }),
+              { mode: 0o600 }
+            );
+            const reopened = yield* runOwnedChild([
+              '--import',
+              'tsx',
+              'test/workspace-session-reopen.mts',
+              faultManifest,
+            ]);
+            expect(JSON.parse(reopened)).toEqual({
+              length: 3,
+              head,
+              offset: saved.offset,
+              pending: false,
+            });
+            expect(persisted(path)).toEqual(before);
+            attack = undefined;
+            const retry = yield* session.control.refresh();
+            expect(retry.offset).toBe(saved.offset);
+            expect(retry.view.head.equals(saved.view.head)).toBe(true);
+            expect(persisted(path)).toEqual(before);
+          }
+          yield* healthy.close();
           yield* session.close();
           yield* session.close();
           expect(Result.isFailure(yield* Effect.result(session.control.refresh()))).toBe(true);

@@ -181,6 +181,12 @@ OS-child 密钥用例直接消费它。改写回执/超预算 stream 明确是 t
 fixture checkpoint来自独立拥有的原历史；宿主持久checkpoint/lostACK崩溃窗口仍未完工。
 不保证永不settle的native关闭，不选择createSpace布局、不完成密钥/内容启动或整个DemoSession。
 
+同一组合会话现接两条原生故障流：当前游标处重复已提交记录，以及忽略该游标、从-1
+返回旧前缀。用例核对实际响应字节，两者均拒绝推进，SQLite全部历史/元数据行、内存
+view及游标保留。另一同时存活且独立文件的客户端仍可用；原客户端同handle重试前，
+新OS子进程先重开所保留的完整对。这是旧Lab2两项失败语义在既有工作区consumer中的
+对应验证，不是原完整宿主/actor套件或已关闭的迁移缺口。
+
 ./snapshot-cache用真实SQLite保存v1签名快照字节，只按独立选择的Org/head/count/endorser
 索引；每次复制并用另行提供的完整资格经公开snapshot入口重验。SQL不提供role/member/
 head背书，也不选择新peer。返回view仍为endorsed-snapshot，不等于全量审计/最新状态。

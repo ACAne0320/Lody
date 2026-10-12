@@ -297,6 +297,15 @@ reopen. Fixture checkpoint authority is an independently owned history; the host
 durable checkpoint/lost-ACK crash gap remains unfinished. No forever-unsettled native
 shutdown guarantee, create-space selection, key/content startup or full DemoSession.
 
+Two native fault streams now exercise that same composed session: a committed record
+replayed at the requested current offset, and an older prefix served from -1 despite
+that request. Exact native response bytes are checked. Both refuse progress and
+retain every SQLite history/meta row, the in-memory view and cursor. Another live
+client with a separate file remains usable; a fresh OS child reopens the damaged
+client's retained pair before same-handle retry. This maps the two original Lab2
+failure semantics onto the existing-workspace consumer, not the full original Lab2
+host/actor suite or a closed migration gap.
+
 ./snapshot-cache stores v1 signed snapshot bytes in real SQLite, indexed only by
 independently selected Org/head/count/endorser. Every read copies and reverifies
 through the public snapshot entry with a separately supplied full qualification;
