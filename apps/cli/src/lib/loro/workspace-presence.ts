@@ -16,6 +16,8 @@ import {
 import {
   LODY_PRESENCE_HEARTBEAT_MS,
   LODY_PRESENCE_TTL_MS,
+  LoroStreamsTokenShutdownFailed,
+  type LoroStreamsTokenProvider,
   type LodyPresenceInstanceId,
   type WorkspaceId,
 } from '@lody/shared';
@@ -95,6 +97,9 @@ export class PresenceReleaseFailed extends Data.TaggedError('PresenceReleaseFail
 }> {}
 export interface WorkspacePresence {
   readonly replica: PresenceReplica;
+  readonly createTokenProvider: (
+    factory: Effect.Effect<LoroStreamsTokenProvider, never, Scope.Scope>
+  ) => Effect.Effect<LoroStreamsTokenProvider, PresenceUnavailable>;
   readonly attach: (
     options: PresenceRemoteOptions
   ) => Effect.Effect<void, PresenceReleaseFailed | PresenceUnavailable>;
@@ -156,6 +161,7 @@ export const makeWorkspacePresence = Effect.fnUntraced(function* (
   let stopReceipt: Deferred.Deferred<void, PresenceReleaseFailed> | undefined;
   let heartbeat: Fiber.Fiber<void, unknown> | undefined;
   let workspaceScopeClose: Fiber.Fiber<void> | undefined;
+  const tokenProviders = new Set<LoroStreamsTokenProvider>();
   let api: WorkspacePresence;
   const report = (event: PresenceDiagnostic) => host.report(workspaceId, event);
   const now = Clock.currentTimeMillis.pipe(Effect.map((time) => time + host.serverOffsetMs()));
@@ -500,7 +506,23 @@ export const makeWorkspacePresence = Effect.fnUntraced(function* (
     if (generation) yield* releaseGeneration(generation, retry);
     if (heartbeat) yield* awaitActual(heartbeat, undefined, retry);
     workspaceScopeClose ??= yield* Effect.forkDetach(Scope.close(scope, Exit.void));
-    yield* awaitActual(workspaceScopeClose);
+    let tokenCleanupRecovered = false;
+    const scopeExit = workspaceScopeClose.pollUnsafe();
+    if (retry && scopeExit && Exit.isFailure(scopeExit)) {
+      const failures = scopeExit.cause.reasons.flatMap((reason) =>
+        Cause.isDieReason(reason) &&
+        reason.defect instanceof LoroStreamsTokenShutdownFailed &&
+        tokenProviders.has(reason.defect.owner)
+          ? [reason.defect]
+          : []
+      );
+      if (failures.length === scopeExit.cause.reasons.length) {
+        for (const provider of new Set(failures.map((failed) => failed.owner)))
+          yield* provider.retryCleanup;
+        tokenCleanupRecovered = true;
+      }
+    }
+    yield* awaitActual(workspaceScopeClose, undefined, tokenCleanupRecovered);
     replica.destroy();
     if (Exit.isFailure(retired)) return yield* Effect.fail(releaseError());
     released = true;
@@ -541,6 +563,19 @@ export const makeWorkspacePresence = Effect.fnUntraced(function* (
   );
   api = {
     replica,
+    createTokenProvider: (factory) =>
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          if (stopped) return yield* Effect.fail(new PresenceUnavailable({ stage: 'closed' }));
+          const provider = yield* Scope.provide(factory, scope);
+          tokenProviders.add(provider);
+          if (stopped) {
+            yield* provider.close;
+            return yield* Effect.fail(new PresenceUnavailable({ stage: 'closed' }));
+          }
+          return provider;
+        })
+      ),
     attach,
     detach,
     stop,

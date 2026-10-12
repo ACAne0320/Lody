@@ -24,6 +24,10 @@ const numericFields: ReadonlySet<string> = new Set([
   'httpStatus',
   'barrierAgeMs',
   'barrierPendingMs',
+  'ageMs',
+  'physicalEntries',
+  'queuedBytes',
+  'releasePending',
 ]);
 const enumFields: Readonly<Record<string, readonly string[]>> = {
   stage: [
@@ -41,6 +45,17 @@ const enumFields: Readonly<Record<string, readonly string[]>> = {
     'health',
     'close_returned',
     'join_failed',
+    'auth',
+    'bootstrap',
+    'queue',
+    'post',
+    'ack',
+    'retry',
+    'stall',
+    'release',
+    'heartbeat',
+    'joined',
+    'barrier',
   ],
   outcome: ['ok', 'http_failure', 'aborted', 'rejected', 'unavailable'],
   room: [
@@ -55,6 +70,27 @@ const enumFields: Readonly<Record<string, readonly string[]>> = {
   queueAgeMs: ['unavailable'],
   retryAttempt: ['unavailable'],
   peerReceipt: ['unavailable'],
+  code: [
+    'stream_not_found',
+    'auth_failed',
+    'auth_provider_error',
+    'protocol_error',
+    'payload_too_large',
+    'network_error',
+    'timeout',
+    'initial_sync_timeout',
+    'gone',
+    'apply_incomplete',
+    'server_error',
+    'internal_error',
+    'unknown',
+    'payload_protection_error',
+    'first_join_no_bootstrap',
+    'join_failed',
+    'terminal_room',
+    'rejoin_failed',
+    'upload_no_progress',
+  ],
 };
 
 /** Content-free projection; unknown keys and arbitrary strings/objects never reach the sink. */

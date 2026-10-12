@@ -33,7 +33,7 @@ function project(cause: Cause.Cause<unknown>): unknown {
  * @deprecated The only execution facade for renderer/durable/Machine RPC Promise callers.
  * Delete when those owners compose LoroStreamsTokens with their application Scope.
  */
-export function createLoroStreamsTokenProviderLegacy(options: {
+type OwnedLegacyOptions = {
   endpoint: string;
   workspaceId: string;
   authToken:
@@ -46,55 +46,81 @@ export function createLoroStreamsTokenProviderLegacy(options: {
   requestTimeoutMs?: number;
   cleanupTimeoutMs?: number;
   onEvent?: (event: LoroStreamsTokenProviderEvent) => void;
-}) {
-  const layer = LoroStreamsTokensLive(options).pipe(
-    Layer.provide(
-      LoroStreamsTokenWebLive({
-        credential: Effect.succeed(undefined),
-        resolveCredentialLegacy: (signal) =>
-          Promise.resolve(
-            typeof options.authToken === 'function' ? options.authToken(signal) : options.authToken
-          ),
-        fetchImpl: options.fetchImpl,
-        cleanupTimeoutMs: options.cleanupTimeoutMs,
-      })
-    )
-  );
-  const runtime = ManagedRuntime.make(layer);
-  let provider: LoroStreamsTokenProvider | undefined;
+};
+
+type BorrowedLegacyOptions = {
+  readonly provider: LoroStreamsTokenProvider;
+  readonly executor: {
+    readonly runPromiseExit: <A, E>(
+      effect: Effect.Effect<A, E>,
+      options?: { signal?: AbortSignal }
+    ) => Promise<Exit.Exit<A, E>>;
+    readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
+  };
+};
+
+/** @deprecated One facade; borrowing an application-owned provider creates no runtime or cache. */
+export function createLoroStreamsTokenProviderLegacy(
+  options: OwnedLegacyOptions | BorrowedLegacyOptions
+) {
+  const borrowed = 'provider' in options ? options : undefined;
+  const owned = 'provider' in options ? undefined : options;
+  const layer = owned
+    ? LoroStreamsTokensLive(owned).pipe(
+        Layer.provide(
+          LoroStreamsTokenWebLive({
+            credential: Effect.succeed(undefined),
+            resolveCredentialLegacy: (signal) =>
+              Promise.resolve(
+                typeof owned.authToken === 'function' ? owned.authToken(signal) : owned.authToken
+              ),
+            fetchImpl: owned.fetchImpl,
+            cleanupTimeoutMs: owned.cleanupTimeoutMs,
+          })
+        )
+      )
+    : undefined;
+  const runtime = layer ? ManagedRuntime.make(layer) : undefined;
+  let provider: LoroStreamsTokenProvider | undefined = borrowed?.provider;
   let closeReceipt: Promise<void> | undefined;
   let closing = false;
   const invalidations = new Set<Fiber.Fiber<void>>();
+  const program = <A, E>(operation: (tokens: LoroStreamsTokenProvider) => Effect.Effect<A, E>) =>
+    Effect.gen(function* () {
+      const tokens = yield* LoroStreamsTokens;
+      provider = tokens;
+      return yield* operation(tokens);
+    });
   const run = <A, E>(
     operation: (tokens: LoroStreamsTokenProvider) => Effect.Effect<A, E>,
     signal?: AbortSignal
-  ): Promise<A> =>
-    runtime
-      .runPromiseExit(
-        Effect.gen(function* () {
-          const tokens = yield* LoroStreamsTokens;
-          provider = tokens;
-          return yield* operation(tokens);
-        }),
-        { signal }
-      )
-      .then((exit) => {
-        if (Exit.isFailure(exit)) throw project(exit.cause);
-        return exit.value;
-      });
+  ): Promise<A> => {
+    const exit = borrowed
+      ? borrowed.executor.runPromiseExit(
+          Effect.suspend(() => operation(borrowed.provider)),
+          { signal }
+        )
+      : runtime
+        ? runtime.runPromiseExit(program(operation), { signal })
+        : Promise.reject(new Error('Streams token executor unavailable'));
+    return exit.then((result) => {
+      if (Exit.isFailure(result)) throw project(result.cause);
+      return result.value;
+    });
+  };
   return {
     getToken: (signal?: AbortSignal) => run((tokens) => tokens.getToken(), signal),
     invalidate: (reason: 'manual' | 'unauthorized' = 'manual'): void => {
       // The imperative caller retains its old synchronous signature. A failed
       // invalidation stays observable through the retained provider/close receipt.
       if (closing) throw new Error('Loro Streams token provider closed');
-      const fiber = runtime.runFork(
-        Effect.gen(function* () {
-          const tokens = yield* LoroStreamsTokens;
-          provider = tokens;
-          yield* tokens.invalidate(reason);
-        })
-      );
+      const fiber = borrowed
+        ? borrowed.executor.runFork(borrowed.provider.invalidate(reason))
+        : runtime
+          ? runtime.runFork(program((tokens) => tokens.invalidate(reason)))
+          : (() => {
+              throw new Error('Streams token executor unavailable');
+            })();
       invalidations.add(fiber);
       fiber.addObserver((exit) => {
         if (Exit.isSuccess(exit)) invalidations.delete(fiber);
@@ -138,6 +164,7 @@ export function createLoroStreamsTokenProviderLegacy(options: {
           return undefined;
         })
       ).then(async () => {
+        if (!runtime) return;
         const exit = await Effect.runPromiseExit(runtime.disposeEffect);
         if (Exit.isFailure(exit)) throw project(exit.cause);
       }));

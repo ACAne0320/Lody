@@ -70,7 +70,7 @@ selector values to collaborators.
 ## Presence is ephemeral and partitioned by origin
 
 Read [presence contracts](../../../../../.agents/docs/cli-lib-loro-presence.md) before changes:
-origin dual stores, sole session-active owner and finalization effects. Intent: `specs/loro-ephemeral-presence-channel.md`.
+origin stores and session ownership. Intent: `specs/loro-ephemeral-presence-channel.md`.
 
 The workspace's ONE serial queue carries machine heartbeats. Publish only from a
 timer, lifecycle transition or navigation; never stream/progress/chunk callbacks.
@@ -86,11 +86,12 @@ getOnlineMachineIds means unknown, never offline.
 stops heartbeat and notifyInitializationStalled fails the turn:
 `specs/session-initialization-deadline.md`.
 
-`workspace-presence.ts` owns child Scopes; `presence-replica.ts` stays synchronous.
-Only presence-legacy executes in the application runtime; no kernel Promise/timer
-coordination, new runtime or second POST/SSE queue. Failed release retains work/full
-Cause/owner, forbids replacement; close shares completion. Revoke preserves local
-production. Product integration awaits published upstream.
+`workspace-presence.ts` owns Scopes; `presence-replica.ts` is synchronous.
+Only presence-legacy executes in the app runtime. No kernel Promise/timers,
+extra runtime or POST/SSE queue. Failed release retains work/Cause/owner
+and fences replacement; close joins completion. Revoke preserves local
+production. CLI owns registry/token Scopes; durable/presence share one provider.
+`platform/presence.ts` consumes the published SDK native entry.
 
 ## Device resources use `machine-monitor.ts`
 

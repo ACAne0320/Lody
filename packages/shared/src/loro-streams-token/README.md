@@ -89,3 +89,10 @@ Cause. Async diagnostics belong in the caller's owned Effects using the safe API
 
 Decision, alternatives and evidence:
 [owning Note](../../../../.agents/notes/implemented/architecture/2026-10-12-effect-streams-token-provider.md).
+
+CLI workspace presence creates one native provider in its workspace Scope. Durable
+Streams and machine monitor use `createLoroStreamsTokenProviderLegacy({ provider,
+executor })` with that provider and the existing application runtime; this mode
+creates no runtime or cache. Its close ends the provider after all cloud sinks
+are detached, and never disposes the borrowed executor. Renderer/Machine RPC
+callers may still use the owned options until their application ownership migrates.

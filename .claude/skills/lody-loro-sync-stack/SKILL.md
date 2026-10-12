@@ -101,7 +101,7 @@ write time. Copy that shape when a producer is genuinely bursty.
 ## Ownership map
 
 - `packages/shared/src/presence.ts` — channel constant, payload schemas, TTL, freshness predicate. Every new field gets a bound here.
-- `apps/cli/src/lib/loro/presence.ts` — `CliPresenceRuntime`: the transport, the 30s heartbeat timer, and the two stores. Locally-authored presence is written ONLY through `writeLocalOrigin`/`deleteLocalOrigin`. Never relay the workspace replica; the origin partition is load-bearing.
+- `apps/cli/src/lib/loro/workspace-presence.ts` — `WorkspacePresence`: scoped transport and 30s heartbeat; `PresenceReplica` owns the two synchronous stores. Locally-authored presence is written ONLY through `writeLocalOrigin`/`deleteLocalOrigin`. Never relay the workspace replica; the origin partition is load-bearing.
 - `apps/cli/src/lib/loro/session-active-presence.ts` — the single owner of session active presence. Never publish or clear it from `setStatus`, RPC dispatch, permission/image callbacks or watcher recovery.
 - `packages/components/src/providers/workspace-presence-transport.ts` — the renderer's session-viewing writer.
 - `packages/components/src/atoms/presence.ts` — reader side. Liveness is three-state: `online` from a fresh heartbeat, `offline` only on a synced transport, `unknown` otherwise. Never report offline from an unsynced transport.

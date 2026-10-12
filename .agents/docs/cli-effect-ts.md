@@ -330,10 +330,12 @@ replacement/close abort and join actual I/O. Failed joins retain raw/provider
 owners and the full Cause, and require explicit recovery before handoff.
 
 The official CLI cloud root supplies the native platform token port. Remaining
-renderer, durable transport and Machine RPC callers use the sole
+renderer and Machine RPC callers use the sole
 `createLoroStreamsTokenProviderLegacy` facade and visible
 `createTokenProviderLegacy` port/type. Renderer teardown and CLI cloud-port
-shutdown await provider close. This is token ownership, not completion of upper
+shutdown await provider close. CLI durable transport and machine monitor borrow the
+workspace-native provider through `{provider, executor}` in that same facade,
+creating no extra runtime/cache. This is token ownership, not completion of upper
 Loro/daemon lifecycles. [API and decision](../../packages/shared/src/loro-streams-token/README.md).
 
 Native getToken/auth preserve terminal typed failure; only the explicit Legacy
@@ -341,6 +343,19 @@ old-protocol callback projects a nonempty all-auth Cause to undefined. Mixed Cau
 retain non-auth reasons. Native `health` and `describeLoroStreamsTokenCause` expose
 safe state/counts and failure kinds without tokens, credentials or raw error payloads;
 keep the original Cause separately for recovery.
+
+## Workspace presence
+
+The CLI root provides `WorkspacePresenceOwners` alongside its shell cache. Product
+`doc.ts` and bridge readers use `createCliPresenceRuntimeLegacy`; its execution
+borrows that application runtime. `workspace-presence.ts` owns heartbeat and remote
+generation Scopes, while `presence-replica.ts` keeps CRDT state synchronous.
+`platform/presence.ts` supplies the published native SDK without a Promise transport
+coordinator. Delete the sole Legacy door when doc/Session/reader consumers directly
+compose the service. Full Causes and retained cleanup owners survive root disposal;
+explicit retry proves actual SDK and token cleanup before handoff. Session-active
+leases and local relay pacing remain P6/P7. See the
+[decision](../notes/implemented/architecture/2026-10-12-effect-workspace-presence.md).
 
 ## Temporary Promise facades
 

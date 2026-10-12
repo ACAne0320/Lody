@@ -1,6 +1,8 @@
-import { Cause, Effect, Exit } from 'effect';
+import { Cause, Effect, Exit, Scope } from 'effect';
 import {
   getServerNow,
+  createLoroStreamsTokenProviderLegacy,
+  type LoroStreamsTokenProvider,
   type MachineId,
   type SessionId,
   type SessionStatus,
@@ -8,8 +10,14 @@ import {
 } from '@lody/shared';
 import type { ApplicationRuntime } from '@lody/shared/node/application-runtime';
 import {
+  LoginShellCacheShutdownFailed,
+  recoverLoginShellCacheShutdown,
+} from '@lody/shared/node/login-shell-env';
+import {
   WorkspacePresenceOwners,
   PresenceUnavailable,
+  PresenceReleaseFailed,
+  recoverWorkspacePresenceShutdown,
   type PresenceRemoteOptions,
   type WorkspacePresence,
 } from './workspace-presence';
@@ -49,6 +57,15 @@ export const createCliPresenceRuntimeLegacy = async (workspaceId: WorkspaceId) =
   if (Exit.isFailure(acquired)) throw new WorkspacePresenceLegacyFailure(acquired.cause);
   const owner: WorkspacePresence = acquired.value;
   return {
+    createStreamsTokens: async (
+      factory: Effect.Effect<LoroStreamsTokenProvider, never, Scope.Scope>
+    ) => {
+      const native = await run(owner.createTokenProvider(factory));
+      return {
+        native,
+        legacy: createLoroStreamsTokenProviderLegacy({ provider: native, executor: root.runtime }),
+      };
+    },
     attachStreams: (options: PresenceRemoteOptions) => run(owner.attach(options)),
     detachStreams: () => run(owner.detach),
     stop: () => run(owner.stop),
@@ -84,3 +101,32 @@ export const createCliPresenceRuntimeLegacy = async (workspaceId: WorkspaceId) =
   };
 };
 export type CliPresenceRuntimeLegacy = Awaited<ReturnType<typeof createCliPresenceRuntimeLegacy>>;
+
+/** The CLI root owns both services; recovery keeps each transferred domain owner. */
+export const recoverCliPresenceApplicationShutdown = Effect.fnUntraced(function* (
+  cause: Cause.Cause<unknown>
+) {
+  const exits = yield* Effect.forEach(
+    cause.reasons,
+    (reason) => {
+      const single = Cause.fromReasons([reason]);
+      if (Cause.isDieReason(reason) && reason.defect instanceof LoginShellCacheShutdownFailed)
+        return recoverLoginShellCacheShutdown(single).pipe(Effect.exit);
+      const error = Cause.isDieReason(reason)
+        ? reason.defect
+        : Cause.isFailReason(reason)
+          ? reason.error
+          : undefined;
+      return (
+        error instanceof PresenceReleaseFailed
+          ? recoverWorkspacePresenceShutdown(single)
+          : Effect.failCause(single)
+      ).pipe(Effect.exit);
+    },
+    { concurrency: 'unbounded' }
+  );
+  const failures = exits.filter(Exit.isFailure);
+  if (failures.length)
+    return yield* Effect.failCause(failures.map((failed) => failed.cause).reduce(Cause.combine));
+  return undefined;
+});
