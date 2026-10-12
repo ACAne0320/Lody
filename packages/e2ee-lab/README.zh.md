@@ -42,6 +42,8 @@ Flock 0.4.3 没有公开的确定性 free/dispose；关闭 SDK 订阅、丢弃�
 
 原有密钥轮次还覆盖真实签名的合成 epoch1 记录、Owner 实际分发、新 HTTP 凭据和 OS 子进程只安装 key1。公开历史恢复从已安装钥和认证历史包取得 key0；父端检查实际 SQLite 行从 [1] 变为 [0,1]、承诺一致、原密文 frame 和安装回执。同一合法 epoch2 提案 Owner 可准备、R 被拒绝，R 仍不能发送。完整签名历史由 fixture 独立固定；这不代表 control-stream 发布、持久生产换代发布器、备份完成或恢复库格式。父端不向子进程提供旧钥。
 
+原合成 device 模块七项导出已转为有类型的 Effect/公开 byte API，复用公开原生 signer/verifier。原四字段 JSON 可往返真实 Ed25519/X25519 fixture，返回导入结果前核对私钥与公钥绑定。实际公开 HPKE 和 SQLite credentials 验证导入设备、一次性证明及未入账设备不能绑定 Org。创建在错误/取消时等待两个原生生成器结算；显式信号测试只控制原生完成后的返回/错误，不改真实算法或随机数。原生 handle 由调用方拥有，WebCrypto 无 key close/清零 API；可导出字符串仅是合成 fixture，不是恢复库、平台安全存钥或捕获熵 replay 契约。完整 session/actors 仍需接入。
+
 `authorizeLabStream` 先通过公开 core 检查 genuine 账本，再读取当前成员，
 绑定 credential/request Org，拒绝 R 发送或内容写入。它只做策略检查，
 不代表凭据认证、固定 CAS 或 payload 准入。`makeLabMailboxRemote` 通过 HTTP

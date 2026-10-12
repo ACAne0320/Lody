@@ -6114,9 +6114,9 @@
         "candidate": "495ef9b8e1b92e72502a43e8face42a0b9fd65f3457608777106304b28d1f1f5"
       },
       "targetPath": "packages/e2ee-lab/src/platform/device.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Synthetic device generation/import/export and possession proof; compose public signing/HPKE identities, never access real platform keys or treat fixture wrapping as production custody.",
+      "reason": "Seven original synthetic device exports retained with Effect/public-byte API adaptation, native public signer/verifier and frozen possession domain. Four-field fixture import/export checks Ed/X key pairing; native sibling generation settlement tested with explicit signals. Real HPKE/SQLite possession integration and original mismatch oldFAIL/newPASS. Caller-owned exportable native fixture handles/strings are not production custody or vault format. Full session/actors wiring separately pending.",
       "sourceDeclaredExports": {
         "core": [
           "DemoDevice",
@@ -6137,7 +6137,7 @@
           "verifyPossession"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/gateway.ts",
@@ -8287,12 +8287,12 @@
     "branch": "e2ee-lab-integration",
     "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
     "draftPr": null,
-    "consumerTests": 67,
+    "consumerTests": 71,
     "originalLabFailuresClosed": false,
     "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Online epoch1 current root core302/Lab67, format/docs/publicboundary7017files/27manifests pass; all59 Lab inputSHA unchanged. Source heads/candidate staged SHA unchanged. Fixed-head negatives/CI/independent original Lab2/full host acceptance pending; prior evidence retained separately.",
+    "authorRootCheck": "Synthetic device full root core302/Lab71, format/docs/publicboundary7018files/27manifests pass; 60 Lab input SHA unchanged. Fixed-head negatives/CI/independent original Lab2/full host acceptance pending; prior fixed727 epoch1 evidence retained separately.",
     "lastFetchedMain": {
       "head": "d95548aa9d1663eb6cff0ec6c92ac61420901106",
       "tree": "f7237680767a970c5fe574966bd7cb927fe626a7",
@@ -8320,6 +8320,7 @@
     "keyProcess": "Actual SQLite ignored protected-key insert retains original Install task/no terminal/no key; after closing parent receiver owners actual OS child reopens syntheticX25519/device/publicgenuine2records, realHPKEopens/saves/readbacks and reports through fresh challenge/bearer HTTP. Parent actualSQLite taskReported/frame bytecompare, original Recovery no-send/repair coverage retained. Synthetic device file0600 only, importedprivate handle nonextractable/publicextractable needed lockedHPKEserialize binding. Original nonextractable-public open-failed log retained, noalgorithm/corechange. Affected13/type + fresh e574/3SHA Lab52 pass, skipping actualinstall/report gives noReported directfail/nontimeout/restored. Full epochrotation/host/originalLab2/nativecustody pending.",
     "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work.",
     "judgeAndTrace": "Finite pure verdict18 exports ported: missing measurements/default baseline/mixed unavailable not all-pass, count-only history unavailable, measured new unauthorized acceptance violation with lawful admitted-history semantics unchanged, explicit insider freshness scope. Source4 old pure FAIL/new same probe PASS retained; new observer old original alias FAIL retained. Typed run-scoped bounded private synthetic trace provides original record/read/clear as methods, owned fields before budget/no returned alias/no cross-run clear/close and closed observation fails. No global plaintext registry, no attacker access or authority inference. Owning9/type pass; Root core302/Lab67, format/docs/publicboundary7017/27 pass; all59Lab inputSHA unchanged. Fixed71d98f no-overlay Lab67 passes; four verdict/trace negative controls fail direct assertions and restore. Real actor/attack observation integration pending.",
-    "onlineEpoch1": "The existing key-round also covers a genuine signed synthetic epoch1 record, real owner distribution, fresh HTTP credentials and an OS child installing only key1. Public history recovery derives key0 from that installed key and the authenticated packet; the parent checks native SQLite rows change from [1] to [0,1], commitment matching, the original ciphertext frame and the installation receipt. A valid identical epoch2 proposal succeeds for Owner and fails for R. R still cannot send. Signed history is independently pinned by the fixture; this is not control-stream publication, a durable production rotation producer, backup completion or a recovery-vault format. No old key is supplied to the child. Affected7/type and current root core302/Lab67, format/docs/publicboundary7017files/27manifests pass; 59 Lab inputSHA unchanged. Fixed-head negative controls and whole actor/rotation acceptance pending."
+    "onlineEpoch1": "The existing key-round also covers a genuine signed synthetic epoch1 record, real owner distribution, fresh HTTP credentials and an OS child installing only key1. Public history recovery derives key0 from that installed key and the authenticated packet; the parent checks native SQLite rows change from [1] to [0,1], commitment matching, the original ciphertext frame and the installation receipt. A valid identical epoch2 proposal succeeds for Owner and fails for R. R still cannot send. Signed history is independently pinned by the fixture; this is not control-stream publication, a durable production rotation producer, backup completion or a recovery-vault format. No old key is supplied to the child. Affected7/type and current root core302/Lab67, format/docs/publicboundary7017files/27manifests pass; 59 Lab inputSHA unchanged. Fixed-head negative controls and whole actor/rotation acceptance pending.",
+    "syntheticDevices": "The original synthetic device module now preserves its seven exports as typed Effect/public-byte APIs and consumes the public native signer/verifier. Its existing four-field JSON roundtrips native Ed25519/X25519 fixtures, with private/public binding checked before import returns. Real public HPKE and SQLite credentials verify the imported device, single-use proof and refusal to bind an unregistered device to an Org. Creation awaits both native generators on rejection/cancellation; explicit signal tests instrument only post-native returns/failure, leaving actual crypto/entropy unchanged. Caller owns native handles; WebCrypto offers no key close/zeroization. Exportable strings are synthetic fixture material, not a recovery-vault, OS custody or captured replay contract. Full session/actors still need wiring. Source two mismatch oldFAIL/new same-probe PASS and owning8/type pass. Current root core302/Lab71, format/docs/publicboundary7018files/27manifests pass; 60 Lab input SHA unchanged. Fixed-head negatives/whole actor acceptance pending."
   }
 }

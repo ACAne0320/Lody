@@ -21,7 +21,8 @@
     "./stream-read": "./src/platform/stream-read.ts",
     "./driver": "./src/platform/driver.ts",
     "./judge": "./src/pure/judge.ts",
-    "./content-trace": "./src/platform/content-trace.ts"
+    "./content-trace": "./src/platform/content-trace.ts",
+    "./device": "./src/platform/device.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

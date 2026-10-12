@@ -127,6 +127,8 @@ this is not human approval or automatic independent confirmation.
 
 ## Keys, native content and recovery
 
+The original synthetic device module now preserves its seven exports as typed Effect/public-byte APIs and consumes the public native signer/verifier. Its existing four-field JSON roundtrips native Ed25519/X25519 fixtures, with private/public binding checked before import returns. Real public HPKE and SQLite credentials verify the imported device, single-use proof and refusal to bind an unregistered device to an Org. Creation awaits both native generators on rejection/cancellation; explicit signal tests instrument only post-native returns/failure, leaving actual crypto/entropy unchanged. Caller owns native handles; WebCrypto offers no key close/zeroization. Exportable strings are synthetic fixture material, not a recovery-vault, OS custody or captured replay contract. Full session/actors still need wiring. Source Ed/X mismatch two old direct FAIL/new same-probe PASS; owning8/type and root core302/Lab71, format/docs/public boundary7018files/27manifests pass with unchanged60 Lab SHA. Fixed-head controls pending.
+
 Real public HPKE/distributor/receiver, SQLite installation readback/report and
 actual challenge/bearer mailbox routes compose. Tampered frames install nothing
 and do not report; original frames install and report. Recovery cannot send after

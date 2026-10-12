@@ -82,6 +82,8 @@ idempotent own-slot repair. Account identity and AES wrapping remain synthetic;
 some transport unit fixtures are still explicitly pre-authenticated. This is not
 full host/rotation composition or cross-process epoch-rotation acceptance.
 
+The original synthetic device module now preserves its seven exports as typed Effect/public-byte APIs and consumes the public native signer/verifier. Its existing four-field JSON roundtrips native Ed25519/X25519 fixtures, with private/public binding checked before import returns. Real public HPKE and SQLite credentials verify the imported device, single-use proof and refusal to bind an unregistered device to an Org. Creation awaits both native generators on rejection/cancellation; explicit signal tests instrument only post-native returns/failure, leaving actual crypto/entropy unchanged. Caller owns native handles; WebCrypto offers no key close/zeroization. Exportable strings are synthetic fixture material, not a recovery-vault, OS custody or captured replay contract. Full session/actors still need wiring.
+
 The scoped credential owner retains the frozen Lab v2 possession domain, 60-second
 single-use nonce and at most 15-minute synthetic token TTL. Real Ed25519 proofs,
 genuine current Org membership and transactional SQLite mint/invalidate readback
@@ -108,7 +110,7 @@ observed in an explicit abort-ignoring lease test. Full host composition is pend
 The original full host/gateway, honest actors, key delivery/rotation composition,
 Flock recovery/live sessions, full schedule executor, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
-67 tests do not close the original Lab2 failures or the complete original fault
+71 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
 D12 and permanent publisher loss remain explicit decisions. Native custody,
 production E2EE, independent whole-stack review, CI and product acceptance are

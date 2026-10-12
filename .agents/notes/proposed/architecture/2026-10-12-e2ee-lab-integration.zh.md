@@ -94,6 +94,8 @@ R 不发送。协调者推荐 A 不等于 human approval，也不自动独立确
 
 原有密钥轮次还覆盖真实签名的合成 epoch1 记录、Owner 实际分发、新 HTTP 凭据和 OS 子进程只安装 key1。公开历史恢复从已安装钥和认证历史包取得 key0；父端检查实际 SQLite 行从 [1] 变为 [0,1]、承诺一致、原密文 frame 和安装回执。同一合法 epoch2 提案 Owner 可准备、R 被拒绝，R 仍不能发送。完整签名历史由 fixture 独立固定；这不代表 control-stream 发布、持久生产换代发布器、备份完成或恢复库格式。父端不向子进程提供旧钥。 本次整树 core302/Lab67、format/docs/public boundary7017files/27manifests 通过，59Lab输入SHA不变；固定head负控和完整actor/轮换验收仍待完成。
 
+原合成 device 模块七项导出已转为有类型的 Effect/公开 byte API，复用公开原生 signer/verifier。原四字段 JSON 可往返真实 Ed25519/X25519 fixture，返回导入结果前核对私钥与公钥绑定。实际公开 HPKE 和 SQLite credentials 验证导入设备、一次性证明及未入账设备不能绑定 Org。创建在错误/取消时等待两个原生生成器结算；显式信号测试只控制原生完成后的返回/错误，不改真实算法或随机数。原生 handle 由调用方拥有，WebCrypto 无 key close/清零 API；可导出字符串仅是合成 fixture，不是恢复库、平台安全存钥或捕获熵 replay 契约。完整 session/actors 仍需接入。 原 Ed/X 错配两项旧直接FAIL/新同probe PASS；owning8/type及整树core302/Lab71、format/docs/public boundary7018files/27manifests通过，60Lab SHA不变。固定head负控待完成。
+
 ## 密钥、原生内容与恢复
 
 真实公开 HPKE/distributor/receiver、SQLite install/readback/report 与实际 challenge/bearer
