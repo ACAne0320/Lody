@@ -20,11 +20,11 @@
   "implementation": "Public core/released SDK consumers with partial actual loopback credentials/control/mailbox/joins routes. HPKE installation and signed join metadata use real possession/bearer HTTP; synthetic identity/wrapping and full Lab remaining explicit. No copied core. Finite signed synthetic epoch1 distribution/install/history restoration in an OS child; production producer/backup and full control history host remain pending.",
   "originalFailures": "Immutable original Lab2 baseline is retained. New consumer probes pass; full original host/actor scenarios are not closed.",
   "targetFingerprints": {
-    "AGENTS.md": "42aadd5a7d127a27d4d9cdc4e4c75be907be2dbf1010cc42e971c77b0b314207",
-    "CLAUDE.md": "42aadd5a7d127a27d4d9cdc4e4c75be907be2dbf1010cc42e971c77b0b314207",
-    "README.md": "967a78e31a082054b064752688cac75582407936c268166d44187765c905474f",
-    "README.zh.md": "ad1da8392cdf7fc640f237634e982fb6821312cbea7d8a6767e4404bfb99ef74",
-    "package.json": "d25a825c3a5c2ed5e204deb4fce9c64604d4e03a571e507007c0091d2498f36e",
+    "AGENTS.md": "5ae0a931c3d70a9c97ef6b2b54c924eb2a797167ae349440c97405b5969811f2",
+    "CLAUDE.md": "5ae0a931c3d70a9c97ef6b2b54c924eb2a797167ae349440c97405b5969811f2",
+    "README.md": "c60fd25dd89be267696a5455f1ec4160d6a6dbbab023a97490700bd6d60aa7e8",
+    "README.zh.md": "02445cc7ad32fdd9e18c7ed35f5d2b7791a6549e74d02c30924be57ec15b201c",
+    "package.json": "37a5ef2ce75cc1efd857b2f0efee6df2b61ac5291e59d619acd88a47926e79a8",
     "src/platform/content-provider.ts": "b4be8bfceb43a591097015499c10aefbd4ab870105d3569dddd7fa951ff9501d",
     "src/platform/content-session.ts": "7c22e34f85f2eabd79b472b861681127e7bb6b2ced687da3bc47c8eb415e6dfe",
     "src/platform/content-trace.ts": "acb459c5e159d7b3b6688a3b8f0bdcff57339f61dff2093f4e5c7ac2a6202aa6",
@@ -65,7 +65,7 @@
     "test/key-mailbox.test.ts": "94ec488d11ccd80a751edc039c2e9ae29894d4aaf985ede0750529702bf346fb",
     "test/key-reopen.mts": "349d4e08056f8d94d16299ea4dd439bdd04103c20fef6cbc22b24be9437146f5",
     "test/ledger-actor-reopen.mts": "760fd376ac9a624ccb5e5ab7601358e5d508d320905c1c8fda7fb235044b9cce",
-    "test/ledger-actor.test.ts": "b2fc73f027dd25d122eb38cbd938e38a185283ab930950f78c6356e2970ae546",
+    "test/ledger-actor.test.ts": "2be73403fa9e60680914f87db4d15d1f42e33a287a1e18203fabc6f2ab78581d",
     "test/ledger-client.test.ts": "dfab764119573b994487a46650091618f9ff64f67fbea7fa975060879ead0337",
     "test/ledger-fixture.ts": "3125cb6610595efef564ddcf9cbc4a116157cfafeb01ce47ec6c0171fccc388c",
     "test/ledger-reopen.mts": "18663757d020087fcefb7c0cfc887f756cd04287c504ddd19e7de8d6d547568f",
@@ -85,7 +85,9 @@
     "src/pure/reference-model.ts": "f603f10d197727f5fb9ec399bf1bc421622be67226880c10ed09e15b6691d619",
     "test/reference-model.test.ts": "3be46c65a2adbd89b92b7b8bc79333bd1ee034fd9f4df917616dfd7b117d1662",
     "src/platform/key-round.ts": "a11d48a996d0575d2a34ea7a0dce183d0f7d875a2687bb2f9340d32bf54b2ba0",
-    "src/platform/http-identity.ts": "885b55d913318fbc511f2f1b6d58df87d3cfffa028fae865c0b5c73e18d85b21"
+    "src/platform/http-identity.ts": "baed8a333885a2639ac68ee29c5f4e0cf052bed18f18e6ab69cdd8ad1683c2e0",
+    "src/platform/workspace-session.ts": "5f535a377bcf3dbe1a052501e37a6a2e3fee643f461e49452e7dc02158be3762",
+    "test/workspace-session-reopen.mts": "5bab6ce4fadfd2e1d8801b234622ad4f937b99025becaba111505a0961d2a2dc"
   },
   "sourceSpecificFingerprints": {
     ".gitignore": {

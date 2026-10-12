@@ -137,6 +137,7 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
     );
   return Object.freeze({
     url,
+    stop: owner.stop,
     authenticate: Effect.fnUntraced(function* (
       signer: DeviceSigner,
       binding: 'workspace' | 'unbound' = 'workspace'

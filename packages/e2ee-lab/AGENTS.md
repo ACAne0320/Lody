@@ -39,3 +39,7 @@ or after close. SDK transport callbacks keep explicit caller ownership.
 
 Genesis metadata clients verify canonical original signatures and requested hash.
 A discovery record is not a current ledger view, checkpoint or authority.
+
+Existing-workspace sessions require independent local/network checkpoint pins and
+already published full-prefix control. Failed acquisition closes its child owner;
+all close callers await one completion. Stop native admission before joining CAS.

@@ -6421,7 +6421,8 @@
         "packages/e2ee-lab/test/ledger-actor.test.ts",
         "packages/e2ee-lab/test/ledger-actor-reopen.mts",
         "packages/e2ee-lab/src/platform/key-round.ts",
-        "packages/e2ee-lab/src/platform/http-identity.ts"
+        "packages/e2ee-lab/src/platform/http-identity.ts",
+        "packages/e2ee-lab/src/platform/workspace-session.ts"
       ],
       "sourceDeclaredExports": {
         "core": [
@@ -6449,10 +6450,11 @@
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/device.ts",
               "packages/e2ee-lab/src/platform/run.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts"
+              "packages/e2ee-lab/src/platform/operation-scope.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF."
+            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, new-space layout and complete facade remain absent."
           },
           {
             "name": "headers",
@@ -6556,10 +6558,11 @@
               "packages/e2ee-lab/src/platform/device.ts",
               "packages/e2ee-lab/src/platform/run.ts",
               "packages/e2ee-lab/src/platform/operation-scope.ts",
-              "packages/e2ee-lab/src/platform/http-identity.ts"
+              "packages/e2ee-lab/src/platform/http-identity.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
+            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, new-space layout and complete facade remain absent."
           },
           {
             "name": "requestCredential",
@@ -6606,10 +6609,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/ledger-client.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, new-space layout and complete facade remain absent."
           },
           {
             "name": "ledgerLayer",
@@ -6618,10 +6622,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/ledger-client.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, new-space layout and complete facade remain absent."
           },
           {
             "name": "openLedger",
@@ -6630,10 +6635,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/ledger-client.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, new-space layout and complete facade remain absent."
           },
           {
             "name": "prepareWrite",
@@ -6676,10 +6682,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/ledger-client.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, new-space layout and complete facade remain absent."
           },
           {
             "name": "createSpace",
@@ -6700,10 +6707,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/workspace-registry.ts",
-              "packages/e2ee-lab/src/platform/http-identity.ts"
+              "packages/e2ee-lab/src/platform/http-identity.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Verified original signer/hash/metadata persistence module exists. Actual host adoption plus client ledger bootstrap depends on selected genesis layout; hash alone is not membership/current trust. Public authenticated discovery now verifies original signature as well as hash/type with bounded body and owned record. Metadata is not current authorization; keyring/session/ledger initialization still pending human bootstrap layout."
+            "reason": "Verified original signer/hash/metadata persistence module exists. Actual host adoption plus client ledger bootstrap depends on selected genesis layout; hash alone is not membership/current trust. Public authenticated discovery now verifies original signature as well as hash/type with bounded body and owned record. Metadata is not current authorization; keyring/session/ledger initialization still pending human bootstrap layout. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, new-space layout and complete facade remain absent."
           },
           {
             "name": "submit",
@@ -6722,10 +6730,11 @@
             "sha256": "fb8ff69f788da07f1c1e7cc79ba9e1f1ddcdf6d0cdc3607ab415a186bd573253",
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Public admission/signing and unchanged merged P09 own operations. Actual durable terminal-result resume without signer is tested; facade must preserve unknown/conflict, not count response as committed."
+            "reason": "Public admission/signing and unchanged merged P09 own operations. Actual durable terminal-result resume without signer is tested; facade must preserve unknown/conflict, not count response as committed. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, new-space layout and complete facade remain absent."
           },
           {
             "name": "requestJoin",
@@ -9163,12 +9172,12 @@
     "branch": "e2ee-lab-integration",
     "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
     "draftPr": null,
-    "consumerTests": 89,
+    "consumerTests": 90,
     "originalLabFailuresClosed": false,
     "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Current authenticated join consumers + unapproved proposal documents full root core302/Lab89, format/docs/publicboundary7032files/27manifests pass; all66 Lab inputs unchanged. Real HTTP/SQLite signed candidate, Org/sender, inert receipt/identical retry and duplicate/refusal behavior verified. Full original Lab2/actor, final stack CI and independent review remain pending; no proposed protocol or publisher gate implemented.",
+    "authorRootCheck": "Existing admitted workspace composition full root core302/Lab90, check/format/docs/publicboundary7034files27manifests PASS; all68 Lab inputs unchanged. Actual local native HTTP/SDK/CAS/SQLite failure-before-parent-teardown cleanup, same-file OS-child reopen, owned metadata and no EOF behavior verified. Separate independent checkpoint authority required; host durable checkpoint/lostACK crash gap, full key/content/session and original Lab2/final-stack CI/independent review remain unfinished. Three protocol proposals unchanged/unapproved.",
     "lastFetchedMain": {
       "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
       "tree": "f3168cbda928a4f9866fba330c8278bbbb09d5ef",
@@ -9204,7 +9213,8 @@
     "sessionInventory": "All43 methods (31 public inclconstructor,12private) and29 declared fields + constructor options have source member SHA/destinations; raw ordinary key maps/private point cache replaced by public owners, synthetic adversary fixtures explicitly retained. Inventory is not facade completion.",
     "httpIdentity": "Actual bounded local native possession/bearer client extracted from test helper; public verifier/provenance-safe signer capture, Schema account/device/Org/token/timestamp response validation, original lease policy retained, same-origin/redirect/closed guard. Native transport instrumentation is explicit; full application identity/re-auth/facade and forever-native bounded finalizer remain incomplete.",
     "genesisConsumer": "Authenticated bounded existing metadata discovery verifies requested hash/type/real original signature and returns owned original bytes only. Unbound joiners preserved; not current authority or selected Genesis/control bootstrap. Full adopt/session keyring and ledger initialization incomplete.",
-    "joinConsumer": "Public bounded authenticated submit/list consumes existing candidate metadata, verifies copied Org/signature/sender, true receipt and unique IDs; no membership/identity authority, new IDs/expiry or full session approval facade. Actual host permissions unchanged."
+    "joinConsumer": "Public bounded authenticated submit/list consumes existing candidate metadata, verifies copied Org/signature/sender, true receipt and unique IDs; no membership/identity authority, new IDs/expiry or full session approval facade. Actual host permissions unchanged.",
+    "existingWorkspaceSession": "Public child-scope composition of admitted identity, original genesis, released SDK and public actor. Independently pinned existing full-prefix control/local/network checkpoints required. Failure closes resources before parent teardown; close shares completion. Actual SQLite/HTTP/CAS/OS-child same-history+cursor pass; full honest key/content/startup and host durable checkpoint/lostACK gap pending."
   },
   "unsettledContractProposals": {
     "humanApproval": false,

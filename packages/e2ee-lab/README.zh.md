@@ -172,3 +172,11 @@ OS-child 密钥用例直接消费它。改写回执/超预算 stream 明确是 t
 响应不提供当前权限、持久checkpoint、控制流发布或Genesis布局选择。
 
 已认证submitJoin/listJoins消费现有签名候选信箱：复制并核Org签名、sender、true回执与唯一ID。列表256KiB预算超出即整次失败，不是分页/静默截断；宿主当前权限不变。回执待审且可能于保存后丢失，重试原签名申请，不生成新ID/期限/自动批准，不代表完整session。
+
+./workspace-session openLabExistingWorkspace组合已获准的合成身份、已认证原Genesis、
+实际发布StreamsClient和公开账本actor。它要求现有完整签名控制流，并独立提供本地重开/
+网络checkpoint；元数据不提供这些信任。启动失败在父资源存活时先关子Scope；显式close、
+父层与失败清理共享完成结果，先停native fetch再等原CAS、最后关SQLite，不发布SDK EOF。
+真实HTTP/CAS owning用例验证失败后重试、持久确认、OS子进程重开同一文件及游标。
+fixture checkpoint来自独立拥有的原历史；宿主持久checkpoint/lostACK崩溃窗口仍未完工。
+不保证永不settle的native关闭，不选择createSpace布局、不完成密钥/内容启动或整个DemoSession。

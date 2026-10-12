@@ -221,3 +221,15 @@ hostile metadata refuse discovery; no current authority, durable checkpoint,
 control publication or Genesis layout selection follows from this response.
 
 Authenticated submitJoin/listJoins consume the existing signed candidate mailbox: copied Org-bound signatures, sender binding, receipt true and unique IDs. List body256KiB is a whole-response budget, not pagination or silent truncation. Host current permissions remain. Receipt is inert and may be lost after persistence; retry the original signed request, with no new ID/expiry/automatic approval or full session facade.
+
+./workspace-session openLabExistingWorkspace composes an already admitted synthetic
+identity, authenticated original-genesis discovery, the released StreamsClient and
+public ledger actor. It requires existing signed full-prefix control plus separate
+trusted local reopen/network checkpoint pins; metadata does not supply them. Failed
+startup closes the child Scope before returning, with parent resources still alive.
+Explicit close and parent/failure cleanup share completion, cancel native fetch before
+joining raw CAS, and close SQLite without SDK EOF. A real HTTP/CAS owning test verifies
+retry after failed acquisition, persisted acknowledgement and OS-child same-file
+reopen. Fixture checkpoint authority is an independently owned history; the host's
+durable checkpoint/lost-ACK crash gap remains unfinished. No forever-unsettled native
+shutdown guarantee, create-space selection, key/content startup or full DemoSession.
