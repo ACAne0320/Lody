@@ -1,6 +1,8 @@
 import { StreamsClient } from '@loro-dev/streams-client';
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
+import Database from 'better-sqlite3';
 import { Effect, Result } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { Bytes, decodeCbor, encodeCbor, verifySignature, type CborValue } from '@lody/e2ee-core';
@@ -12,6 +14,7 @@ import { fixture } from './ledger-fixture';
 import { makeLabCredentials, labPossessionMessage } from '../src/platform/credentials';
 import { makeLabControlGateway } from '../src/platform/control-gateway';
 import { makeLabHttpHost } from '../src/platform/host';
+import { makeLabHttpIdentity } from '../src/platform/http-identity';
 import { authorizeLabStream } from '../src/platform/gateway';
 const ok = Result.getOrThrow;
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
@@ -347,6 +350,136 @@ describe('real loopback Lab credentials and control HTTP composition', () => {
           })
         )
       );
+    } finally {
+      await f.close();
+    }
+  });
+});
+
+describe('public Lab credential client on actual local HTTP', () => {
+  it('owns signer binding, rejects altered receipts, bounds response bodies and never forwards bearer to another origin or after close', async () => {
+    const f = await fixture();
+    let retained:
+      | Effect.Success<
+          ReturnType<Effect.Success<ReturnType<typeof makeLabHttpIdentity>>['authenticate']>
+        >
+      | undefined;
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const credentials = yield* makeLabCredentials({
+              path: join(f.dir, 'client-credentials.sqlite'),
+              mode: 'create',
+              now: () => 0,
+              ledger: () => Effect.succeed(f.view),
+            });
+            const host = yield* makeLabHttpHost({ credentials, control: () => undefined });
+            const receivedBearers: string[] = [];
+            const sink = yield* Effect.acquireRelease(
+              Effect.tryPromise({
+                try: () =>
+                  new Promise<ReturnType<typeof createServer>>((resolve, reject) => {
+                    const server = createServer((request, response) => {
+                      if (request.headers.authorization)
+                        receivedBearers.push(request.headers.authorization);
+                      response.end('synthetic sink');
+                    });
+                    server.once('error', reject);
+                    server.listen(0, '127.0.0.1', () => resolve(server));
+                  }),
+                catch: (error) => error,
+              }),
+              (server) =>
+                Effect.promise(
+                  () =>
+                    new Promise<void>((resolve, reject) =>
+                      server.close((error) => (error ? reject(error) : resolve()))
+                    )
+                )
+            );
+            const address = sink.address();
+            if (!address || typeof address === 'string') throw new Error('sink has no TCP address');
+            const sinkUrl = `http://127.0.0.1:${address.port}/`;
+            let alteration = '',
+              cancelled = false;
+            const mutable = { publicKey: f.owner.publicKey, sign: f.owner.sign };
+            const other = syntheticSigner(126);
+            const transport: typeof fetch = async (request, init) => {
+              const response = await fetch(request, init);
+              const target = request instanceof Request ? request.url : String(request);
+              if (target.endsWith('/challenge') && alteration === 'mutate-signer') {
+                mutable.publicKey = other.publicKey;
+                mutable.sign = other.sign;
+              }
+              if (target.endsWith('/challenge') && alteration === 'oversized') {
+                await response.body?.cancel();
+                return new Response(
+                  new ReadableStream<Uint8Array>({
+                    start(controller) {
+                      controller.enqueue(new Uint8Array(16385));
+                    },
+                    cancel() {
+                      cancelled = true;
+                    },
+                  })
+                );
+              }
+              if (!alteration || alteration === 'mutate-signer') return response;
+              const value = (await response.json()) as Record<string, unknown>;
+              if (target.endsWith('/challenge') && alteration === 'nonce')
+                value.nonce = 'malformed';
+              if (target.endsWith('/credentials')) {
+                if (alteration === 'account') value.account = 'synthetic-other';
+                if (alteration === 'device') value.deviceHex = hex(other.publicKey.toBytes());
+                if (alteration === 'org') value.genesisHex = 'ff'.repeat(32);
+                if (alteration === 'token') value.token = 'malformed';
+                if (alteration === 'time') value.expiresAt = value.issuedAt;
+              }
+              return new Response(JSON.stringify(value), { status: response.status });
+            };
+            const identity = yield* makeLabHttpIdentity({
+              baseUrl: host.baseUrl,
+              genesis: f.anchor,
+              fetch: transport,
+            });
+            alteration = 'mutate-signer';
+            retained = yield* identity.authenticate(mutable);
+            const ordinaryUnbound = yield* identity.authenticate(f.owner, 'unbound');
+            expect(ordinaryUnbound.url).toBe(retained.url);
+            alteration = '';
+            const foreign = yield* Effect.result(
+              Effect.tryPromise({ try: () => retained!.fetch(sinkUrl), catch: (error) => error })
+            );
+            expect(receivedBearers).toEqual([]);
+            expect(Result.isFailure(foreign)).toBe(true);
+            for (const mode of ['account', 'device', 'org', 'token', 'time', 'nonce']) {
+              alteration = mode;
+              expect(Result.isFailure(yield* Effect.result(identity.authenticate(f.owner)))).toBe(
+                true
+              );
+            }
+            const db = yield* Effect.acquireRelease(
+              Effect.sync(
+                () =>
+                  new Database(join(f.dir, 'client-credentials.sqlite'), {
+                    fileMustExist: true,
+                    readonly: true,
+                  })
+              ),
+              (handle) => Effect.sync(() => handle.close())
+            );
+            const before = db.prepare('SELECT count(*) AS n FROM credentials').get();
+            alteration = 'oversized';
+            const oversized = yield* Effect.result(identity.authenticate(f.owner));
+            expect(Result.isFailure(oversized)).toBe(true);
+            expect(cancelled).toBe(true);
+            expect(db.prepare('SELECT count(*) AS n FROM credentials').get()).toEqual(before);
+          })
+        )
+      );
+      expect(retained).toBeDefined();
+      await expect(retained!.fetch(retained!.url)).rejects.toMatchObject({ code: 'closed' });
     } finally {
       await f.close();
     }

@@ -6420,7 +6420,8 @@
         "packages/e2ee-lab/src/platform/ledger-actor.ts",
         "packages/e2ee-lab/test/ledger-actor.test.ts",
         "packages/e2ee-lab/test/ledger-actor-reopen.mts",
-        "packages/e2ee-lab/src/platform/key-round.ts"
+        "packages/e2ee-lab/src/platform/key-round.ts",
+        "packages/e2ee-lab/src/platform/http-identity.ts"
       ],
       "sourceDeclaredExports": {
         "core": [
@@ -6460,10 +6461,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/credentials.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/host.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close."
+            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
           },
           {
             "name": "random",
@@ -6482,10 +6484,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/credentials.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/host.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close."
+            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
           },
           {
             "name": "persistEpochs",
@@ -6552,10 +6555,11 @@
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/device.ts",
               "packages/e2ee-lab/src/platform/run.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts"
+              "packages/e2ee-lab/src/platform/operation-scope.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF."
+            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
           },
           {
             "name": "requestCredential",
@@ -6564,10 +6568,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/credentials.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/host.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close."
+            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
           },
           {
             "name": "reauth",
@@ -6576,10 +6581,11 @@
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
               "packages/e2ee-lab/src/platform/credentials.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/host.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close."
+            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
           },
           {
             "name": "streamUrl",
@@ -9154,12 +9160,12 @@
     "branch": "e2ee-lab-integration",
     "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
     "draftPr": null,
-    "consumerTests": 88,
+    "consumerTests": 89,
     "originalLabFailuresClosed": false,
     "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Current finite key-round full root core302/Lab88, format/docs/publicboundary7023files/27manifests pass; all65 Lab input SHA unchanged. Actual HTTP/HPKE/SQLite/OS-child owning tests consume the new module and retain bad-frame/install-failure states. Independent original Lab2/full host and complete stack CI acceptance remain pending; earlier c4/6b8/54a3 fixed evidence kept separately.",
+    "authorRootCheck": "Current public HTTP identity client full root core302/Lab89, format/docs/publicboundary7024files/27manifests pass; all66 Lab input SHA unchanged. Real bounded body/receipt identity/signer snapshot/native foreign sink/closed request and HTTP HPKE OS-child consumers pass. Full original Lab2/honest actor, exact final stack CI and independent review remain pending; earlier ed9986e and other fixed evidence kept separate.",
     "lastFetchedMain": {
       "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
       "tree": "f3168cbda928a4f9866fba330c8278bbbb09d5ef",
@@ -9192,6 +9198,7 @@
     "fingerprintAndMinimize": "Pure fingerprint and bounded minimizer retain the original five/two exports with separate policies: exact replay compares every original field and reports missing/JSON-dropped/null/unavailable measurements as gaps; another dimension's harness error never erases a measured violation. Shrink preserves the original rules and exact known trigger facts, permits diagnostic ledger length to shrink, and exposes partial observation. Unmeasured original triggers refuse execution. Effect runners remain sequential, bounded, caller-owned and fail transparently. The original fingerprint is independently copied before callbacks; generic action items must already be immutable and independently owned. Legacy model labels are inert compatibility diagnostics, not authorization policy. These are pure synthetic algorithm probes, not full attack/repro execution, serialization approval, captured entropy or resealing. Four original oldFAIL/new same-probe PASS; owning10/type pass. Current root core302/Lab80, format/docs/publicboundary7020files/27manifests pass; 62 Lab input SHA unchanged. First six loop-static failures retained, equivalent budget guards moved into loop body; fixed-head controls/real actor integration pending.",
     "referenceModel": "All14 original pure exports retained, independent owned synthetic observations plus public metadata-only fact adapter; rotation blocks new seal, missing rotation/kind/cursor/retry stays unmeasured, legacy bool not agreement, snapshot eligibility not full snapshot trust. Actual actor/reference correspondence incomplete.",
     "keyRound": "One finite application pass now consumes unchanged public distributor with real Owner epoch0/1 and reopened R HTTP/HPKE/SQLite/OS-child evidence. Bad-frame/install failures propagate without next; invalid budget leaves actual native task/mailbox untouched. Startup/re-auth/bootstrap/session class and automatic pagination remain incomplete.",
-    "sessionInventory": "All43 methods (31 public inclconstructor,12private) and29 declared fields + constructor options have source member SHA/destinations; raw ordinary key maps/private point cache replaced by public owners, synthetic adversary fixtures explicitly retained. Inventory is not facade completion."
+    "sessionInventory": "All43 methods (31 public inclconstructor,12private) and29 declared fields + constructor options have source member SHA/destinations; raw ordinary key maps/private point cache replaced by public owners, synthetic adversary fixtures explicitly retained. Inventory is not facade completion.",
+    "httpIdentity": "Actual bounded local native possession/bearer client extracted from test helper; public verifier/provenance-safe signer capture, Schema account/device/Org/token/timestamp response validation, original lease policy retained, same-origin/redirect/closed guard. Native transport instrumentation is explicit; full application identity/re-auth/facade and forever-native bounded finalizer remain incomplete."
   }
 }

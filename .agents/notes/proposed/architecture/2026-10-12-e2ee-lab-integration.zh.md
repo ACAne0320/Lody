@@ -187,3 +187,12 @@ blocked tasks 和各页游标显式保留。已有真实 HTTP/SQLite/HPKE/OS-chi
 源 session 清单另列全部 29 个声明字段及 constructor 的私有 options 属性。普通
 原始 epoch-key Map 与重复验签缓存由公开拥有者替代；合成攻击钥 fixture 仍有明确
 独立去向。字段清单不等于完整诚实 actor 状态或原四个 crash 注入场景已完成。
+
+./http-identity 将真实合成 possession/bearer 凭据获取从测试 helper 移成模块：持有
+有界响应 body 的原生租约、await 前捕获 signer、调用公开固定 verifier 验证 proof，
+核对 response 的 account/device/Org 与 token/time 格式，拒绝跨来源 bearer 请求、
+redirect 和关闭后请求。SDK 的 Promise fetch 端口借用 identity signal，完整请求/body
+等待仍由调用方拥有；无嵌套 Effect runner、无新 JWT claim/容差/严格 B。真实 HTTP 与
+OS-child 密钥用例直接消费它。改写回执/超预算 stream 明确是 transport 测试插桩，
+不是产品存钥或永不结束 native 的有界关闭保证。完整 startup/reauth/adoption facade
+和可信持久 checkpoint 获取仍未完成。

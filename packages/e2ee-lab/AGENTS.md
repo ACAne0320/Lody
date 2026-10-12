@@ -32,3 +32,7 @@ exports/native handles are not a recovery vault or platform custody guarantee.
 Reference expectations use independently owned observations, never production
 policy as expected values. Missing facts stay unmeasured; boolean projections do
 not prove agreement. Snapshot eligibility alone never admits a snapshot.
+
+Credential clients capture signer bindings before await, bound credential body
+reads, validate returned identity and refuse bearer forwarding to another origin
+or after close. SDK transport callbacks keep explicit caller ownership.

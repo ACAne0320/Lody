@@ -26,7 +26,8 @@
     "./fingerprint": "./src/pure/fingerprint.ts",
     "./minimize": "./src/pure/minimize.ts",
     "./reference-model": "./src/pure/reference-model.ts",
-    "./key-round": "./src/platform/key-round.ts"
+    "./key-round": "./src/platform/key-round.ts",
+    "./http-identity": "./src/platform/http-identity.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

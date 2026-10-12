@@ -261,3 +261,15 @@ constructor options property. Raw ordinary epoch-key maps and duplicate point
 verification cache are retired through public owners; synthetic adversary key
 fixtures keep an explicit separate destination. Field inventory does not close
 full honest actor state or four original crash-injection phase scenarios.
+
+./http-identity moves actual synthetic possession/bearer acquisition out of test
+helpers. It owns bounded credential response bodies, captures the signer before
+await, verifies its proof with the public fixed verifier, validates response
+account/device/Org and token/time shape, and refuses cross-origin bearer requests,
+redirects and requests after close. Native SDK Promise fetch ports borrow the
+identity signal; their caller owns full request/body settlement. No Effect runner
+is nested here, no new JWT claim/leeway/strict B policy is introduced. Real HTTP
+and OS-child key tests consume it; response alteration/over-limit streams are
+explicit transport instrumentation, not an implementation of product custody or
+a forever-native bounded shutdown guarantee. Full honest startup/re-auth/adoption
+facade and trusted durable checkpoint acquisition remain incomplete.

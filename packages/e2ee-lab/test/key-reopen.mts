@@ -9,7 +9,7 @@ import { Bytes } from '@lody/e2ee-core';
 import { verifyLedger, epochHistoryPacket } from '@lody/e2ee-core/ledger';
 import { makeSqliteRecipientMailbox } from '@lody/e2ee-core/keys/host/mailbox/sqlite';
 import { makeLabMailboxRemote } from '../src/platform/key-mailbox';
-import { makeLabHttpIdentity } from './authenticated-mailbox-fixture';
+import { makeLabHttpIdentity } from '../src/platform/http-identity';
 import { syntheticProtector } from './content-fixture';
 const [directory, baseUrl, stage] = process.argv.slice(2);
 if (stage !== undefined && stage !== 'epoch1') throw new Error('unknown synthetic key stage');

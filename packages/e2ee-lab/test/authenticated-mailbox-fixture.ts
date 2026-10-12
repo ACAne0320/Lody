@@ -1,17 +1,15 @@
 import { join } from 'node:path';
-import { Effect, Result } from 'effect';
+import { Effect } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 import type { LedgerView } from '@lody/e2ee-core/ledger';
-import type { DeviceSigner } from '@lody/e2ee-core/signing';
-import { makeLabCredentials, labPossessionMessage } from '../src/platform/credentials';
+import { makeLabCredentials } from '../src/platform/credentials';
 import { makeLabHttpHost } from '../src/platform/host';
-import { makeLabSdkOwner } from '../src/platform/sdk-owner';
+import { makeLabHttpIdentity } from '../src/platform/http-identity';
+export { makeLabHttpIdentity } from '../src/platform/http-identity';
 import type { LabMailboxHost } from '../src/platform/mailbox-http';
 import type { makeLabJoinMailbox } from '../src/platform/join-mailbox';
 import type { makeLabWorkspaceRegistry } from '../src/platform/workspace-registry';
 import type { makeLabStreamReader } from '../src/platform/stream-read';
-const ok = Result.getOrThrow;
-const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
 /** Real challenge/bearer HTTP, native Ed proofs and SQLite credentials. Account is
  * a synthetic label, global fetch is an explicit local transport capability, not
  * a product identity system or key custody. A private harness owns the workspace.
@@ -43,55 +41,5 @@ export function makeAuthenticatedLabMailbox(input: {
       joins: (anchor) => (anchor.equals(genesis) ? joins : undefined),
     });
     return yield* makeLabHttpIdentity({ baseUrl: host.baseUrl, genesis });
-  });
-}
-/** Same real challenge/bearer fixture on an already running local host, including
- * an OS child. Own native credential request/body; no pre-issued token bypass. */
-export function makeLabHttpIdentity(input: {
-  readonly baseUrl: string;
-  readonly genesis: Bytes.GenesisHash;
-}) {
-  return Effect.gen(function* () {
-    const { baseUrl, genesis } = input;
-    const owner = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
-    const url = `${baseUrl}/v1/spaces/${hex(genesis.toBytes())}/key-mailbox`;
-    return {
-      url,
-      authenticate: (signer: DeviceSigner, binding: 'workspace' | 'unbound' = 'workspace') =>
-        Effect.gen(function* () {
-          const account = `synthetic-${hex(signer.publicKey.toBytes())}`;
-          const post = (path: string, value: unknown) =>
-            owner.invoke(async () => {
-              const response = await fetch(baseUrl + path, {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                signal: owner.signal,
-                body: JSON.stringify(value),
-              });
-              if (response.status !== 200) throw new Error('synthetic credential refused');
-              return await response.json();
-            });
-          const { nonce } = yield* post('/v1/credentials/challenge', {
-            account,
-            deviceHex: hex(signer.publicKey.toBytes()),
-          }) as Effect.Effect<{ nonce: string }, unknown>;
-          const signature = yield* signer.sign(
-            ok(labPossessionMessage(account, signer.publicKey, nonce))
-          );
-          const { token } = yield* post('/v1/credentials', {
-            account,
-            deviceHex: hex(signer.publicKey.toBytes()),
-            nonce,
-            signature: hex(signature.toBytes()),
-            genesisHex: binding === 'workspace' ? hex(genesis.toBytes()) : null,
-          }) as Effect.Effect<{ token: string }, unknown>;
-          const authenticatedFetch: typeof fetch = (request, init) => {
-            const headers = new Headers(init?.headers);
-            headers.set('authorization', `Bearer ${token}`);
-            return fetch(request, { ...init, headers });
-          };
-          return { url, fetch: authenticatedFetch };
-        }),
-    };
   });
 }

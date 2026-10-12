@@ -200,3 +200,15 @@ OS-child tests now consume it for Owner epoch0/1 and reopened Recovery; bad enve
 and failed installs abort the pass with native keys/task/report state retained.
 No automatic full pagination, startup/reauth/ledger bootstrap facade, production
 publisher/backup strategy or native cancellation guarantee is added here.
+
+./http-identity moves actual synthetic possession/bearer acquisition out of test
+helpers. It owns bounded credential response bodies, captures the signer before
+await, verifies its proof with the public fixed verifier, validates response
+account/device/Org and token/time shape, and refuses cross-origin bearer requests,
+redirects and requests after close. Native SDK Promise fetch ports borrow the
+identity signal; their caller owns full request/body settlement. No Effect runner
+is nested here, no new JWT claim/leeway/strict B policy is introduced. Real HTTP
+and OS-child key tests consume it; response alteration/over-limit streams are
+explicit transport instrumentation, not an implementation of product custody or
+a forever-native bounded shutdown guarantee. Full honest startup/re-auth/adoption
+facade and trusted durable checkpoint acquisition remain incomplete.
