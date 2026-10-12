@@ -735,3 +735,808 @@ describe('streams-crdt 0.16.2 public boundary', () => {
     }
   });
 });
+// Native kernel acceptance uses injected I/O capabilities until the upstream release
+// is consumed. The final integration suite must also exercise its real fetch boundary.
+import { it as effectIt } from '@effect/vitest';
+import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from 'effect';
+import { TestClock } from 'effect/testing';
+import {
+  PresenceHost,
+  PresenceTransport,
+  PresenceReleaseFailed,
+  PresenceUnavailable,
+  makeWorkspacePresence,
+  type PresenceStream,
+  type PresenceStats,
+  PresenceDeliveryStalled,
+  WorkspacePresenceOwnersLive,
+  recoverWorkspacePresenceShutdown,
+} from './workspace-presence';
+
+const nativeFixture = Effect.fnUntraced(function* (
+  releaseTimeoutMs = 100,
+  holdJoinCleanup = false
+) {
+  const clock = yield* Clock.Clock;
+  const events: Array<{ stage: string; generation: number; code?: string; ageMs?: number }> = [];
+  const rooms: Array<{
+    readonly started: Deferred.Deferred<void>;
+    readonly bootstrap: Deferred.Deferred<void>;
+    readonly closing: Deferred.Deferred<void>;
+    readonly released: Deferred.Deferred<void>;
+    readonly ack: Deferred.Deferred<void>;
+    readonly joinCleanup: Deferred.Deferred<void>;
+    readonly cancellingJoin: Deferred.Deferred<void>;
+    readonly receiver: EphemeralStore;
+    readonly store: EphemeralStore;
+    readonly status: (status: string) => void;
+    readonly stats: PresenceStats;
+    live: boolean;
+    joinFailure?: Cause.Cause<unknown>;
+    rejoinFailure?: Cause.Cause<unknown>;
+    releaseFailure?: Cause.Cause<unknown>;
+  }> = [];
+  const io = Layer.succeed(PresenceTransport, {
+    isReleaseFailure: (cause) =>
+      cause.reasons.some(
+        (reason) => Cause.isFailReason(reason) && reason.error instanceof PresenceReleaseFailed
+      ),
+    create: (_workspaceId, store) =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const bootstrap = yield* Deferred.make<void>();
+        const closing = yield* Deferred.make<void>();
+        const released = yield* Deferred.make<void>();
+        const ack = yield* Deferred.make<void>();
+        const joinCleanup = yield* Deferred.make<void>();
+        const cancellingJoin = yield* Deferred.make<void>();
+        const receiver = new EphemeralStore(LODY_PRESENCE_TTL_MS);
+        let notify: (status: string) => void = () => {};
+        const stats = {
+          status: 'connecting',
+          pendingLocalCount: 1,
+          physicalEntries: 1,
+          queuedBytes: 64,
+          releasePending: 0,
+        };
+        const room = {
+          started,
+          bootstrap,
+          closing,
+          released,
+          ack,
+          joinCleanup,
+          cancellingJoin,
+          receiver,
+          store,
+          stats,
+          live: true,
+          joinFailure: undefined as Cause.Cause<unknown> | undefined,
+          rejoinFailure: undefined as Cause.Cause<unknown> | undefined,
+          releaseFailure: undefined as Cause.Cause<unknown> | undefined,
+          status: (status: string) => {
+            stats.status = status;
+            notify(status);
+          },
+        };
+        rooms.push(room);
+        yield* Effect.addFinalizer(() => Effect.sync(() => receiver.destroy()));
+        const close = Effect.uninterruptible(
+          Effect.gen(function* () {
+            yield* Deferred.succeed(closing, undefined);
+            yield* Deferred.await(released);
+            if (room.releaseFailure) return yield* Effect.failCause(room.releaseFailure);
+            room.live = false;
+
+            return undefined;
+          })
+        );
+        const stream: PresenceStream = {
+          stats,
+          close,
+          retryRelease: close,
+          rejoin: Effect.suspend(() =>
+            room.rejoinFailure
+              ? Effect.failCause(room.rejoinFailure)
+              : Effect.sync(() => room.status('joined'))
+          ),
+          join: ({ onStatusChange }) =>
+            Effect.gen(function* () {
+              notify = onStatusChange;
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(bootstrap).pipe(
+                Effect.onExit((exit) =>
+                  Exit.isFailure(exit) && holdJoinCleanup
+                    ? Effect.uninterruptible(
+                        Deferred.succeed(cancellingJoin, undefined).pipe(
+                          Effect.andThen(Deferred.await(joinCleanup)),
+                          Effect.andThen(
+                            Effect.suspend(() =>
+                              room.releaseFailure
+                                ? Effect.failCause(room.releaseFailure)
+                                : Effect.void
+                            )
+                          )
+                        )
+                      )
+                    : Effect.void
+                )
+              );
+              if (room.joinFailure) return yield* Effect.failCause(room.joinFailure);
+              room.status('joined');
+              return {
+                syncBarrier: () =>
+                  Effect.gen(function* () {
+                    yield* Deferred.await(ack);
+                    receiver.apply(store.encodeAll());
+                    stats.pendingLocalCount = 0;
+
+                    return undefined;
+                  }),
+              };
+            }),
+        };
+        return stream;
+      }),
+  });
+  const host = Layer.succeed(PresenceHost, {
+    instanceId: () => REMOTE_INSTANCE_ID,
+    serverOffsetMs: () => 0,
+    report: (_workspaceId, event) => {
+      events.push(event);
+    },
+  });
+  const owner = yield* makeWorkspacePresence('workspace-native' as WorkspaceId, {
+    releaseTimeoutMs,
+  }).pipe(Effect.provide(Layer.merge(io, host)));
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      for (const room of rooms) {
+        room.releaseFailure = undefined;
+        Deferred.doneUnsafe(room.released, Effect.void);
+        Deferred.doneUnsafe(room.joinCleanup, Effect.void);
+      }
+    })
+  );
+  const attachEffect = owner.attach({
+    streamsBaseUrl: 'https://synthetic.invalid',
+    auth: () => Effect.succeed('synthetic-token'),
+  });
+  return { owner, attach: attachEffect, rooms, events, io, host, clock };
+});
+
+const readyNative = Effect.fnUntraced(function* (
+  fixture: Effect.Success<ReturnType<typeof nativeFixture>>
+) {
+  yield* fixture.attach;
+  const room = fixture.rooms[0];
+  if (!room) return yield* Effect.die('No native room');
+  yield* Deferred.await(room.started);
+  yield* Deferred.succeed(room.bootstrap, undefined);
+  yield* fixture.owner.waitUntilJoined(1000);
+  return room;
+});
+
+describe('native workspace presence ownership', () => {
+  effectIt.effect('keeps origin partition and local heartbeat after cloud revoke', () =>
+    Effect.gen(function* () {
+      const fixture = yield* nativeFixture();
+      const room = yield* readyNative(fixture);
+      const { owner } = fixture;
+      owner.replica.setMachineOnline(MACHINE_ID, 10);
+      const peer = new EphemeralStore(LODY_PRESENCE_TTL_MS);
+      peer.set('synthetic-peer', {
+        kind: 'machine',
+        machineId: REMOTE_MACHINE_ID,
+        instanceId: REMOTE_INSTANCE_ID,
+        updatedAt: 10,
+      });
+      room.store.apply(peer.encodeAll());
+      peer.destroy();
+      const local = new EphemeralStore(LODY_PRESENCE_TTL_MS);
+      local.apply(owner.replica.encodeLocalOriginPresence());
+      expect(
+        Object.values(parseLodyPresenceStates(local.getAllStates())).some(
+          (s) => s.kind === 'machine' && s.machineId === REMOTE_MACHINE_ID
+        )
+      ).toBe(false);
+      local.destroy();
+      expect(
+        Object.values(owner.replica.getPresenceStates()).some(
+          (s) => s.kind === 'machine' && s.machineId === REMOTE_MACHINE_ID
+        )
+      ).toBe(true);
+      yield* Deferred.succeed(room.released, undefined);
+      yield* owner.detach;
+      yield* TestClock.adjust(LODY_PRESENCE_HEARTBEAT_MS);
+      const state = Object.values(owner.replica.getPresenceStates()).find(
+        (s) => s.kind === 'machine' && s.machineId === MACHINE_ID
+      );
+      expect(state?.updatedAt).toBe(LODY_PRESENCE_HEARTBEAT_MS);
+      expect(room.live).toBe(false);
+      yield* owner.stop;
+
+      return undefined;
+    })
+  );
+
+  effectIt.effect('cancelled/timed-out readiness waiters leave the shared join usable', () =>
+    Effect.gen(function* () {
+      const fixture = yield* nativeFixture();
+      yield* fixture.attach;
+      const room = fixture.rooms[0];
+      if (!room) return yield* Effect.die('No room');
+      yield* Deferred.await(room.started);
+      const cancelled = yield* Effect.forkChild(fixture.owner.waitUntilJoined(1000));
+      const timed = yield* Effect.forkChild(fixture.owner.waitUntilJoined(10).pipe(Effect.exit));
+      yield* Fiber.interrupt(cancelled);
+      yield* TestClock.adjust(10);
+      const expired = yield* Fiber.join(timed);
+      expect(Exit.isFailure(expired)).toBe(true);
+      expect(room.live).toBe(true);
+      yield* Deferred.succeed(room.bootstrap, undefined);
+      yield* fixture.owner.waitUntilJoined(1000);
+      yield* Deferred.succeed(room.released, undefined);
+      yield* fixture.owner.stop;
+
+      return undefined;
+    })
+  );
+
+  effectIt.effect(
+    'concurrent stop joins cleanup and rejects replacement until actual completion',
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* nativeFixture();
+        const room = yield* readyNative(fixture);
+        const first = yield* Effect.forkChild(fixture.owner.stop.pipe(Effect.exit));
+        yield* Deferred.await(room.closing);
+        const secondEntered = yield* Deferred.make<void>();
+        const second = yield* Effect.forkChild(
+          Deferred.succeed(secondEntered, undefined).pipe(
+            Effect.andThen(fixture.owner.stop.pipe(Effect.exit))
+          )
+        );
+        yield* Deferred.await(secondEntered);
+        yield* Effect.yieldNow;
+        expect(second.pollUnsafe()).toBeUndefined();
+        const replacement = yield* fixture.attach.pipe(Effect.exit);
+        expect(Exit.isFailure(replacement)).toBe(true);
+        yield* Deferred.succeed(room.released, undefined);
+        expect(Exit.isSuccess(yield* Fiber.join(first))).toBe(true);
+        expect(Exit.isSuccess(yield* Fiber.join(second))).toBe(true);
+        expect(fixture.owner.isReleased()).toBe(true);
+        expect(room.live).toBe(false);
+
+        return undefined;
+      })
+  );
+
+  effectIt.effect(
+    'bounded cleanup retains owner, blocks a new generation, and permits awaited recovery',
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* nativeFixture();
+        const room = yield* readyNative(fixture);
+        const close = yield* Effect.forkChild(fixture.owner.detach.pipe(Effect.exit));
+        yield* Deferred.await(room.closing);
+        yield* TestClock.adjust(100);
+        const failed = yield* Fiber.join(close);
+        expect(Exit.isFailure(failed)).toBe(true);
+        if (Exit.isFailure(failed)) {
+          const error = failed.cause.reasons.find(Cause.isFailReason)?.error;
+          expect(error).toBeInstanceOf(PresenceReleaseFailed);
+          expect(error instanceof PresenceReleaseFailed && error.owner).toBe(fixture.owner);
+        }
+        expect(room.live).toBe(true);
+        expect(Exit.isFailure(yield* fixture.attach.pipe(Effect.exit))).toBe(true);
+        yield* Deferred.succeed(room.released, undefined);
+        yield* fixture.owner.retryCleanup;
+        expect(room.live).toBe(false);
+        yield* fixture.attach;
+        const next = fixture.rooms[1];
+        if (!next) return yield* Effect.die('No replacement');
+        yield* Deferred.succeed(next.released, undefined);
+        yield* fixture.owner.stop;
+
+        return undefined;
+      })
+  );
+
+  effectIt.effect('retains simultaneous typed and release defect Causes', () =>
+    Effect.gen(function* () {
+      const fixture = yield* nativeFixture();
+      const room = yield* readyNative(fixture);
+      const body = new Error('synthetic-body');
+      const release = new Error('synthetic-release');
+      room.releaseFailure = Cause.combine(Cause.fail(body), Cause.die(release));
+      yield* Deferred.succeed(room.released, undefined);
+      const stopped = yield* fixture.owner.stop.pipe(Effect.exit);
+      expect(Exit.isFailure(stopped)).toBe(true);
+      expect(
+        fixture.owner.failure().reasons.some((r) => Cause.isFailReason(r) && r.error === body)
+      ).toBe(true);
+      expect(
+        fixture.owner.failure().reasons.some((r) => Cause.isDieReason(r) && r.defect === release)
+      ).toBe(true);
+      expect(fixture.owner.isReleased()).toBe(false);
+      room.releaseFailure = undefined;
+      yield* fixture.owner.retryCleanup;
+      expect(fixture.owner.isReleased()).toBe(true);
+
+      return undefined;
+    })
+  );
+
+  effectIt.effect(
+    'ignores old generation callbacks and republishes current local state on rejoin',
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* nativeFixture();
+        const room = yield* readyNative(fixture);
+        fixture.owner.replica.setMachineOnline(MACHINE_ID, 10);
+        yield* Deferred.succeed(room.released, undefined);
+        yield* fixture.owner.detach;
+        yield* fixture.attach;
+        const next = fixture.rooms[1];
+        if (!next) return yield* Effect.die('No replacement');
+        room.status('joined');
+        const before = yield* Effect.forkChild(fixture.owner.waitUntilJoined(1).pipe(Effect.exit));
+        yield* TestClock.adjust(1);
+        expect(Exit.isFailure(yield* Fiber.join(before))).toBe(true);
+        fixture.owner.replica.setSessionPresence(
+          {
+            sessionId: SESSION_ID,
+            machineId: MACHINE_ID,
+            status: SessionStatusFactory.initializing(),
+          },
+          1
+        );
+        yield* Deferred.succeed(next.bootstrap, undefined);
+        yield* fixture.owner.waitUntilJoined(1000);
+        yield* TestClock.adjust(LODY_PRESENCE_HEARTBEAT_MS);
+        yield* Deferred.succeed(next.ack, undefined);
+        // Observing a receiver is stronger than asserting the transport was called.
+        yield* Effect.yieldNow;
+        const received = parseLodyPresenceStates(next.receiver.getAllStates());
+        expect(
+          Object.values(received).some((s) => s.kind === 'session' && s.sessionId === SESSION_ID)
+        ).toBe(true);
+        yield* Deferred.succeed(next.released, undefined);
+        yield* fixture.owner.stop;
+
+        return undefined;
+      })
+  );
+
+  effectIt.effect(
+    'healthy reads with a held upload report bounded no-progress health without a reconnect storm',
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* nativeFixture();
+        const room = yield* readyNative(fixture);
+        fixture.owner.replica.setMachineOnline(MACHINE_ID, 0);
+        yield* TestClock.adjust(LODY_PRESENCE_TTL_MS * 2);
+        expect(room.stats.status).toBe('joined');
+        expect(room.receiver.getAllStates()).toEqual({});
+        expect(fixture.events.filter((e) => e.stage === 'stall').map((e) => e.code)).toEqual([
+          'upload_no_progress',
+        ]);
+        expect(fixture.events.filter((e) => e.stage === 'retry')).toEqual([]);
+        expect(fixture.owner.deliveryHealth()).toBeInstanceOf(PresenceDeliveryStalled);
+        yield* Deferred.succeed(room.ack, undefined);
+        yield* TestClock.adjust(LODY_PRESENCE_HEARTBEAT_MS);
+        expect(fixture.owner.deliveryHealth()).toBe('idle');
+        expect(
+          Object.values(parseLodyPresenceStates(room.receiver.getAllStates())).some(
+            (state) => state.kind === 'machine' && state.machineId === MACHINE_ID
+          )
+        ).toBe(true);
+        yield* Deferred.succeed(room.released, undefined);
+        yield* fixture.owner.stop;
+
+        return undefined;
+      })
+  );
+});
+
+effectIt.effect(
+  'cancellation waits for join finalizers and preserves their late complete Cause',
+  () =>
+    Effect.gen(function* () {
+      const fixture = yield* nativeFixture(100, true);
+      yield* fixture.attach;
+      const room = fixture.rooms[0];
+      if (!room) return yield* Effect.die('No room');
+      yield* Deferred.await(room.started);
+      const closing = yield* Effect.forkChild(fixture.owner.detach.pipe(Effect.exit));
+      yield* Deferred.await(room.closing);
+      yield* Deferred.await(room.cancellingJoin);
+      yield* Deferred.succeed(room.released, undefined);
+      yield* TestClock.adjust(100);
+      expect(Exit.isFailure(yield* Fiber.join(closing))).toBe(true);
+      expect(Exit.isFailure(yield* fixture.attach.pipe(Effect.exit))).toBe(true);
+      const body = new Error('synthetic-late-body');
+      const defect = new Error('synthetic-late-release');
+      room.releaseFailure = Cause.combine(Cause.fail(body), Cause.die(defect));
+      yield* Deferred.succeed(room.joinCleanup, undefined);
+      yield* fixture.owner.retryCleanup;
+      expect(
+        fixture.owner.failure().reasons.some((r) => Cause.isFailReason(r) && r.error === body)
+      ).toBe(true);
+      expect(
+        fixture.owner.failure().reasons.some((r) => Cause.isDieReason(r) && r.defect === defect)
+      ).toBe(true);
+      yield* fixture.owner.stop;
+
+      return undefined;
+    })
+);
+
+import { makeApplicationRuntime } from '@lody/shared/node/application-runtime';
+import {
+  bindWorkspacePresenceApplicationLegacy,
+  createCliPresenceRuntimeLegacy,
+  WorkspacePresenceLegacyFailure,
+} from './presence-legacy';
+
+effectIt.effect(
+  'the explicit Legacy consumer uses the application owner and awaits its shared stop',
+  () =>
+    Effect.gen(function* () {
+      const fixture = yield* nativeFixture();
+      const application = makeApplicationRuntime(
+        WorkspacePresenceOwnersLive.pipe(EffectLayerDependencies(fixture)),
+        {
+          recover: (cause) => Effect.failCause(cause),
+          project: (cause) => new WorkspacePresenceLegacyFailure(cause),
+        }
+      );
+      bindWorkspacePresenceApplicationLegacy(application);
+      const consumer = yield* Effect.promise(() =>
+        createCliPresenceRuntimeLegacy('workspace-legacy' as WorkspaceId)
+      );
+      consumer.setMachineOnline(MACHINE_ID);
+      yield* Effect.promise(() =>
+        consumer.attachStreams({
+          streamsBaseUrl: 'https://synthetic.invalid',
+          auth: () => Effect.succeed('synthetic-token'),
+        })
+      );
+      const room = fixture.rooms[0];
+      if (!room) return yield* Effect.die('No Legacy room');
+      yield* Deferred.await(room.started);
+      yield* Deferred.succeed(room.bootstrap, undefined);
+      expect(yield* Effect.promise(() => consumer.waitUntilJoined(1000))).toBe(true);
+      consumer.setMachineOnline(MACHINE_ID);
+      yield* TestClock.adjust(LODY_PRESENCE_HEARTBEAT_MS);
+      expect(
+        Object.values(consumer.getPresenceStates()).find((state) => state.kind === 'machine')
+          ?.updatedAt
+      ).toBe(LODY_PRESENCE_HEARTBEAT_MS);
+      const first = yield* Effect.forkChild(Effect.promise(() => consumer.stop()));
+      yield* Deferred.await(room.closing);
+      const second = yield* Effect.forkChild(Effect.promise(() => consumer.stop()));
+      expect(second.pollUnsafe()).toBeUndefined();
+      consumer.setMachineOnline(REMOTE_MACHINE_ID);
+      expect(
+        Object.values(consumer.getPresenceStates()).some(
+          (s) => s.kind === 'machine' && s.machineId === REMOTE_MACHINE_ID
+        )
+      ).toBe(false);
+      yield* Deferred.succeed(room.released, undefined);
+      yield* Fiber.join(first);
+      yield* Fiber.join(second);
+      expect(room.live).toBe(false);
+      yield* Effect.promise(() => application.closeLegacy());
+      expect(application.isReleased()).toBe(true);
+
+      return undefined;
+    })
+);
+
+function EffectLayerDependencies(fixture: Effect.Success<ReturnType<typeof nativeFixture>>) {
+  const clock = Layer.succeed(Clock.Clock, fixture.clock);
+  return (layer: typeof WorkspacePresenceOwnersLive) =>
+    Layer.merge(layer.pipe(Layer.provide(Layer.mergeAll(fixture.io, fixture.host, clock))), clock);
+}
+
+effectIt.effect('application disposal stops active workspaces before reporting release', () =>
+  Effect.gen(function* () {
+    const fixture = yield* nativeFixture();
+    const application = makeApplicationRuntime(
+      WorkspacePresenceOwnersLive.pipe(EffectLayerDependencies(fixture)),
+      {
+        recover: (cause) => Effect.failCause(cause),
+        project: (cause) => new WorkspacePresenceLegacyFailure(cause),
+      }
+    );
+    bindWorkspacePresenceApplicationLegacy(application);
+    const consumer = yield* Effect.promise(() =>
+      createCliPresenceRuntimeLegacy('workspace-application-close' as WorkspaceId)
+    );
+    yield* Effect.promise(() =>
+      consumer.attachStreams({
+        streamsBaseUrl: 'https://synthetic.invalid',
+        auth: () => Effect.succeed('synthetic-token'),
+      })
+    );
+    const room = fixture.rooms[0];
+    if (!room) return yield* Effect.die('No application room');
+    yield* Deferred.await(room.started);
+    yield* Deferred.succeed(room.bootstrap, undefined);
+    expect(yield* Effect.promise(() => consumer.waitUntilJoined(1000))).toBe(true);
+    const closing = yield* Effect.forkChild(Effect.promise(() => application.closeLegacy()));
+    yield* Deferred.await(room.closing);
+    expect(application.isClosing()).toBe(true);
+    expect(application.isReleased()).toBe(false);
+    const refused = yield* Effect.tryPromise(() =>
+      createCliPresenceRuntimeLegacy('new-workspace' as WorkspaceId)
+    ).pipe(Effect.exit);
+    expect(Exit.isFailure(refused)).toBe(true);
+    yield* Deferred.succeed(room.released, undefined);
+    yield* Fiber.join(closing);
+    expect(room.live).toBe(false);
+    expect(application.isReleased()).toBe(true);
+    return undefined;
+  })
+);
+
+effectIt.effect(
+  'failed application disposal keeps workspace recovery owners after the runtime closes',
+  () =>
+    Effect.gen(function* () {
+      const fixture = yield* nativeFixture();
+      const application = makeApplicationRuntime(
+        WorkspacePresenceOwnersLive.pipe(EffectLayerDependencies(fixture)),
+        {
+          recover: recoverWorkspacePresenceShutdown,
+          project: (cause) => new WorkspacePresenceLegacyFailure(cause),
+        }
+      );
+      bindWorkspacePresenceApplicationLegacy(application);
+      const consumer = yield* Effect.promise(() =>
+        createCliPresenceRuntimeLegacy('workspace-failed-application-close' as WorkspaceId)
+      );
+      yield* Effect.promise(() =>
+        consumer.attachStreams({
+          streamsBaseUrl: 'https://synthetic.invalid',
+          auth: () => Effect.succeed('synthetic-token'),
+        })
+      );
+      const room = fixture.rooms[0];
+      if (!room) return yield* Effect.die('No recovery room');
+      yield* Deferred.await(room.started);
+      yield* Deferred.succeed(room.bootstrap, undefined);
+      expect(yield* Effect.promise(() => consumer.waitUntilJoined(1000))).toBe(true);
+      const releaseFailure = new Error('synthetic-application-release');
+      room.releaseFailure = Cause.die(releaseFailure);
+      yield* Deferred.succeed(room.released, undefined);
+      const failed = yield* Effect.tryPromise(() => application.closeLegacy()).pipe(Effect.exit);
+      expect(Exit.isFailure(failed)).toBe(true);
+      expect(room.live).toBe(true);
+      expect(application.isReleased()).toBe(false);
+      const again = yield* Effect.tryPromise(() => application.closeLegacy()).pipe(Effect.exit);
+      expect(Exit.isFailure(again)).toBe(true);
+      room.releaseFailure = undefined;
+      yield* Effect.promise(() => application.closeLegacy());
+      expect(room.live).toBe(false);
+      expect(application.isReleased()).toBe(true);
+      return undefined;
+    })
+);
+
+effectIt.effect('bootstrap readiness becomes unknown during recovery and flap backoff grows', () =>
+  Effect.gen(function* () {
+    const fixture = yield* nativeFixture();
+    const room = yield* readyNative(fixture);
+    fixture.owner.replica.setMachineOnline(MACHINE_ID, 0);
+    room.status('disconnected');
+    const firstUnknown = yield* Effect.forkChild(
+      fixture.owner.waitUntilJoined(1000).pipe(Effect.exit)
+    );
+    yield* TestClock.adjust(1000);
+    expect(Exit.isFailure(yield* Fiber.join(firstUnknown))).toBe(true);
+    yield* TestClock.adjust(1000);
+    yield* fixture.owner.waitUntilJoined(1000);
+    const first = Object.values(fixture.owner.replica.getPresenceStates()).find(
+      (s) => s.kind === 'machine'
+    );
+    expect(first?.updatedAt).toBe(2000);
+    room.status('disconnected');
+    const secondUnknown = yield* Effect.forkChild(
+      fixture.owner.waitUntilJoined(4000).pipe(Effect.exit)
+    );
+    yield* TestClock.adjust(4000);
+    expect(Exit.isFailure(yield* Fiber.join(secondUnknown))).toBe(true);
+    yield* TestClock.adjust(1000);
+    yield* fixture.owner.waitUntilJoined(1000);
+    const latest = Object.values(fixture.owner.replica.getPresenceStates()).find(
+      (s) => s.kind === 'machine'
+    );
+    expect(latest?.updatedAt).toBe(7000);
+    yield* Deferred.succeed(room.released, undefined);
+    yield* fixture.owner.stop;
+    return undefined;
+  })
+);
+
+effectIt.effect(
+  'hung first bootstrap gives unknown readiness and one bounded diagnostic without overlapping joins',
+  () =>
+    Effect.gen(function* () {
+      const fixture = yield* nativeFixture();
+      yield* fixture.attach;
+      const room = fixture.rooms[0];
+      if (!room) return yield* Effect.die('No bootstrap room');
+      yield* Deferred.await(room.started);
+      const reader = yield* Effect.forkChild(
+        fixture.owner.waitUntilJoined(10_000).pipe(Effect.exit)
+      );
+      yield* TestClock.adjust(10_000);
+      const unknown = yield* Fiber.join(reader);
+      expect(Exit.isFailure(unknown)).toBe(true);
+      expect(
+        fixture.owner
+          .failure()
+          .reasons.some(
+            (reason) =>
+              Cause.isFailReason(reason) &&
+              reason.error instanceof PresenceUnavailable &&
+              reason.error.stage === 'bootstrap'
+          )
+      ).toBe(true);
+      yield* TestClock.adjust(20_000);
+      expect(
+        fixture.events.filter((event) => event.code === 'first_join_no_bootstrap')
+      ).toHaveLength(1);
+      expect(fixture.rooms).toHaveLength(1);
+      expect(room.live).toBe(true);
+      yield* Deferred.succeed(room.bootstrap, undefined);
+      yield* fixture.owner.waitUntilJoined(1000);
+      yield* Deferred.succeed(room.released, undefined);
+      yield* fixture.owner.stop;
+      return undefined;
+    })
+);
+
+effectIt.effect('typed transport release failure blocks rejoin even with no pending raw I/O', () =>
+  Effect.gen(function* () {
+    const fixture = yield* nativeFixture();
+    yield* fixture.attach;
+    const room = fixture.rooms[0];
+    if (!room) return yield* Effect.die('No typed release room');
+    yield* Deferred.await(room.started);
+    const cause = Cause.fail(new Error('synthetic-release-failure'));
+    room.joinFailure = Cause.fail(
+      new PresenceReleaseFailed({ cause, owner: fixture.owner, generation: 1 })
+    );
+    expect(room.stats.releasePending).toBe(0);
+    yield* Deferred.succeed(room.bootstrap, undefined);
+    const unavailable = yield* fixture.owner.waitUntilJoined(1000).pipe(Effect.exit);
+    expect(Exit.isFailure(unavailable)).toBe(true);
+    yield* TestClock.adjust(60_000);
+    const refused = yield* fixture.attach.pipe(Effect.exit);
+    expect(Exit.isFailure(refused)).toBe(true);
+    expect(
+      fixture.owner
+        .failure()
+        .reasons.some(
+          (reason) => Cause.isFailReason(reason) && reason.error instanceof PresenceReleaseFailed
+        )
+    ).toBe(true);
+    expect(fixture.events.some((event) => event.stage === 'joined')).toBe(false);
+    yield* Deferred.succeed(room.released, undefined);
+    yield* fixture.owner.stop;
+    return undefined;
+  })
+);
+
+effectIt.effect('failed rejoin retains a release owner and stops retry admission', () =>
+  Effect.gen(function* () {
+    const fixture = yield* nativeFixture();
+    const room = yield* readyNative(fixture);
+    room.rejoinFailure = Cause.fail(
+      new PresenceReleaseFailed({
+        cause: Cause.fail(new Error('synthetic-rejoin-release')),
+        owner: fixture.owner,
+        generation: 1,
+      })
+    );
+    room.status('disconnected');
+    yield* TestClock.adjust(2000);
+    const unavailable = yield* fixture.owner.waitUntilJoined(1000).pipe(Effect.exit);
+    expect(Exit.isFailure(unavailable)).toBe(true);
+    expect(
+      fixture.owner
+        .failure()
+        .reasons.some(
+          (reason) => Cause.isFailReason(reason) && reason.error instanceof PresenceReleaseFailed
+        )
+    ).toBe(true);
+    yield* TestClock.adjust(60_000);
+    expect(room.stats.status).toBe('disconnected');
+    expect(fixture.events.some((event) => event.code === 'rejoin_failed')).toBe(false);
+    const refused = yield* fixture.attach.pipe(Effect.exit);
+    expect(Exit.isFailure(refused)).toBe(true);
+    yield* Deferred.succeed(room.released, undefined);
+    yield* fixture.owner.stop;
+    return undefined;
+  })
+);
+
+effectIt.effect(
+  'retirement callback failure fences writes, closes I/O and transfers a recoverable full Cause',
+  () =>
+    Effect.gen(function* () {
+      const fixture = yield* nativeFixture();
+      const room = yield* readyNative(fixture);
+      fixture.owner.replica.setMachineOnline(MACHINE_ID, 0);
+      fixture.owner.replica.setSessionPresence(
+        {
+          sessionId: SESSION_ID,
+          machineId: MACHINE_ID,
+          status: SessionStatusFactory.initializing(),
+        },
+        0
+      );
+      const defect = new Error('synthetic-retirement-callback');
+      const unsubscribe = fixture.owner.replica.subscribeLocalOriginPresence(() => {
+        throw defect;
+      });
+      yield* Deferred.succeed(room.released, undefined);
+      const failed = yield* fixture.owner.stop.pipe(Effect.exit);
+      expect(Exit.isFailure(failed)).toBe(true);
+      if (Exit.isFailure(failed)) {
+        const error = failed.cause.reasons.find(Cause.isFailReason)?.error;
+        expect(error instanceof PresenceReleaseFailed && error.owner).toBe(fixture.owner);
+      }
+      expect(room.live).toBe(false);
+      expect(fixture.owner.isReleased()).toBe(false);
+      fixture.owner.replica.setMachineOnline(REMOTE_MACHINE_ID, 1);
+      expect(
+        Object.values(fixture.owner.replica.getPresenceStates()).some(
+          (state) => state.kind === 'machine' && state.machineId === REMOTE_MACHINE_ID
+        )
+      ).toBe(false);
+      unsubscribe();
+      yield* fixture.owner.retryCleanup;
+      expect(fixture.owner.isReleased()).toBe(true);
+      expect(fixture.owner.replica.getPresenceStates()).toEqual({});
+      expect(
+        fixture.owner
+          .failure()
+          .reasons.some((reason) => Cause.isDieReason(reason) && reason.defect === defect)
+      ).toBe(true);
+      return undefined;
+    })
+);
+
+effectIt.effect(
+  'failed heartbeat keeps its Cause and recovery waits for actual lower cleanup',
+  () =>
+    Effect.gen(function* () {
+      const fixture = yield* nativeFixture();
+      const room = yield* readyNative(fixture);
+      fixture.owner.replica.setMachineOnline(MACHINE_ID, 0);
+      const defect = new Error('synthetic-heartbeat-callback');
+      const unsubscribe = fixture.owner.replica.subscribeLocalOriginPresence(() => {
+        throw defect;
+      });
+      yield* TestClock.adjust(LODY_PRESENCE_HEARTBEAT_MS);
+      unsubscribe();
+      yield* Deferred.succeed(room.released, undefined);
+      const failed = yield* fixture.owner.stop.pipe(Effect.exit);
+      expect(Exit.isFailure(failed)).toBe(true);
+      expect(room.live).toBe(false);
+      expect(fixture.owner.isReleased()).toBe(false);
+      yield* fixture.owner.retryCleanup;
+      expect(fixture.owner.isReleased()).toBe(true);
+      expect(
+        fixture.owner
+          .failure()
+          .reasons.some((reason) => Cause.isDieReason(reason) && reason.defect === defect)
+      ).toBe(true);
+      return undefined;
+    })
+);

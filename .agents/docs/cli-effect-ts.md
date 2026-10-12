@@ -206,8 +206,9 @@ leases. There is no Promise cache, cache timer or independent shell-probe runner
 
 CLI index and Electron startApplication each compose the application's first
 long-lived native service through makeApplicationRuntime. Concurrent disposal joins
-one receipt; failed disposal retains the original ownership Cause across failed
-recovery attempts. Replacement is allowed only after release is confirmed.
+one receipt; failed disposal retains the original ownership Cause and subsequent
+recovery Causes in its receipts. Recovery retries the original transferred owners.
+Replacement is allowed only after release is confirmed.
 CLI graceful/one-shot/fatal exits await that owner; failed graceful cleanup exits
 with a failure code. Electron stops it inside the existing quit barrier after
 renderer unload approval, and a later quit retries unresolved resources.

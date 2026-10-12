@@ -150,6 +150,15 @@ API supplies equivalent safe stage events and truthful completion receipts. Pres
 these real-boundary regressions while doing so. Presence/token/Turn ownership has
 not migrated here; the lifecycle gap remains for the native upstream and Lody owners.
 
+The proposed `workspace-presence.ts` owner keeps heartbeat and remote generations
+in child Scopes, retains actual failed cleanup, and shares concurrent close
+receipts. `presence-replica.ts` keeps CRDT operations synchronous; the explicit
+`presence-legacy.ts` facade borrows the application runtime. These files currently
+have behavioral consumers in tests; product `doc.ts` still uses `CliPresenceRuntime`.
+Formal upstream release, shared durable token borrowing and startup/bridge wiring
+remain required. See the [P5 owning proposal](../notes/proposed/architecture/2026-10-12-effect-workspace-presence.md)
+for evidence and limits; this draft does not complete the lifecycle migration.
+
 ## Diagnosing "machine shows offline"
 
 1. Read independently with `lody machine list --workspace <selector> --json`. A room warning means unknown, not offline. Compare another workspace on the same machine to isolate its transport.
