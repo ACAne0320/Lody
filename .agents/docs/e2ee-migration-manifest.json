@@ -5723,10 +5723,10 @@
         "core": "2af8f33fbb702c7407a829d952f56e7dd825dbacb6e989bd5c8208df35b19d32",
         "candidate": "2af8f33fbb702c7407a829d952f56e7dd825dbacb6e989bd5c8208df35b19d32"
       },
-      "targetPath": "packages/e2ee-lab/src/fingerprint.ts",
+      "targetPath": "packages/e2ee-lab/src/pure/fingerprint.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Rule-specific integrity, durability and confidentiality failure fingerprints; retain distinct harness-error/outside-model and locatable facts.",
+      "reason": "All five original pure exports retained; exact every-field replay comparison, explicit missing/JSON compatibility gaps, measured violation retained beside unrelated harness failure, owned facts. Separate conservative security shrink predicate refuses unknown original triggers; old four comparison/classification/alias failures reproduced. Legacy model labels diagnostic only. Full actual attack observer/repropack integration pending, no new wire or entropy/reseal contract.",
       "sourceDeclaredExports": {
         "core": [
           "FailureFingerprint",
@@ -5743,7 +5743,7 @@
           "isSecurityFingerprint"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created-partial-functional-integration-pending"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/fixtures.ts",
@@ -5919,10 +5919,10 @@
         "core": "a1c9f3f2e84d5badf9e38dce165cd7ba8d95dfe57d1b478fda66a4dc2fb6277a",
         "candidate": "a1c9f3f2e84d5badf9e38dce165cd7ba8d95dfe57d1b478fda66a4dc2fb6277a"
       },
-      "targetPath": "packages/e2ee-lab/src/minimize.ts",
+      "targetPath": "packages/e2ee-lab/src/pure/minimize.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Bounded counterexample reduction retaining the same failure fingerprint; explicit run-owned cancellation and workload limits.",
+      "reason": "Both original exports retained as sequential typed Effect API with finite budget, independent original fingerprint ownership, required-item constraints, precise trigger preservation, partial coverage and candidate error propagation. Generic items require independent immutable ownership. No action executor/global shortest proof/serialized repro format. Full real attack/repropack integration pending.",
       "sourceDeclaredExports": {
         "core": [
           "MinimizeResult",
@@ -5933,7 +5933,7 @@
           "minimizeCounterexample"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created-partial-functional-integration-pending"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/model.ts",
@@ -7251,11 +7251,11 @@
         "core": "1038a16affa9bbfc2b5998762f8c5e15298c3bef0a170d7f248c8163f6603eaf",
         "candidate": "f603a0197836bd48b90f59835a1c5bed755a0139323e5179f3320eb8f0519ca7"
       },
-      "targetPath": "packages/e2ee-lab/test/repro-pack.test.ts",
+      "targetPath": "packages/e2ee-lab/test/replay.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Port observable coverage for known-defect distinct fingerprints, new-process no-model replay, missing material/format failclosed and counterexample minimization. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Pure exact fingerprint comparison, missing serialized measurements, finite scalar minimization and original expected-fact alias coverage consolidated into owning replay suite. Four original direct failures/new same probe pass. Full original known defects, OS-child actual execution replay, hostile pack admission, crypto entropy/reseal and complete format remain pending; not declared full source test closed.",
+      "targetPathState": "created-partial-functional-integration-pending"
     },
     {
       "sourcePath": "packages/e2ee-lab/test/restricted-agent.test.ts",
@@ -8287,12 +8287,12 @@
     "branch": "e2ee-lab-integration",
     "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
     "draftPr": null,
-    "consumerTests": 71,
+    "consumerTests": 80,
     "originalLabFailuresClosed": false,
     "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Synthetic device full root core302/Lab71, format/docs/publicboundary7018files/27manifests pass; 60 Lab input SHA unchanged. Fixed-head negatives/CI/independent original Lab2/full host acceptance pending; prior fixed727 epoch1 evidence retained separately.",
+    "authorRootCheck": "Pure fingerprint/minimizer full root core302/Lab80, format/docs/publicboundary7020files/27manifests pass; all62 Lab input SHA unchanged. First root stopped at six loop static errors before tests; fixed equivalent guards. Fixed-head/CI/independent original Lab2/full host acceptance pending; earlier fixed498 device/727 epoch1 evidence separate.",
     "lastFetchedMain": {
       "head": "d95548aa9d1663eb6cff0ec6c92ac61420901106",
       "tree": "f7237680767a970c5fe574966bd7cb927fe626a7",
@@ -8321,6 +8321,7 @@
     "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work.",
     "judgeAndTrace": "Finite pure verdict18 exports ported: missing measurements/default baseline/mixed unavailable not all-pass, count-only history unavailable, measured new unauthorized acceptance violation with lawful admitted-history semantics unchanged, explicit insider freshness scope. Source4 old pure FAIL/new same probe PASS retained; new observer old original alias FAIL retained. Typed run-scoped bounded private synthetic trace provides original record/read/clear as methods, owned fields before budget/no returned alias/no cross-run clear/close and closed observation fails. No global plaintext registry, no attacker access or authority inference. Owning9/type pass; Root core302/Lab67, format/docs/publicboundary7017/27 pass; all59Lab inputSHA unchanged. Fixed71d98f no-overlay Lab67 passes; four verdict/trace negative controls fail direct assertions and restore. Real actor/attack observation integration pending.",
     "onlineEpoch1": "The existing key-round also covers a genuine signed synthetic epoch1 record, real owner distribution, fresh HTTP credentials and an OS child installing only key1. Public history recovery derives key0 from that installed key and the authenticated packet; the parent checks native SQLite rows change from [1] to [0,1], commitment matching, the original ciphertext frame and the installation receipt. A valid identical epoch2 proposal succeeds for Owner and fails for R. R still cannot send. Signed history is independently pinned by the fixture; this is not control-stream publication, a durable production rotation producer, backup completion or a recovery-vault format. No old key is supplied to the child. Affected7/type and current root core302/Lab67, format/docs/publicboundary7017files/27manifests pass; 59 Lab inputSHA unchanged. Fixed-head negative controls and whole actor/rotation acceptance pending.",
-    "syntheticDevices": "The original synthetic device module now preserves its seven exports as typed Effect/public-byte APIs and consumes the public native signer/verifier. Its existing four-field JSON roundtrips native Ed25519/X25519 fixtures, with private/public binding checked before import returns. Real public HPKE and SQLite credentials verify the imported device, single-use proof and refusal to bind an unregistered device to an Org. Creation awaits both native generators on rejection/cancellation; explicit signal tests instrument only post-native returns/failure, leaving actual crypto/entropy unchanged. Caller owns native handles; WebCrypto offers no key close/zeroization. Exportable strings are synthetic fixture material, not a recovery-vault, OS custody or captured replay contract. Full session/actors still need wiring. Source two mismatch oldFAIL/new same-probe PASS and owning8/type pass. Current root core302/Lab71, format/docs/publicboundary7018files/27manifests pass; 60 Lab input SHA unchanged. Fixed-head negatives/whole actor acceptance pending."
+    "syntheticDevices": "The original synthetic device module now preserves its seven exports as typed Effect/public-byte APIs and consumes the public native signer/verifier. Its existing four-field JSON roundtrips native Ed25519/X25519 fixtures, with private/public binding checked before import returns. Real public HPKE and SQLite credentials verify the imported device, single-use proof and refusal to bind an unregistered device to an Org. Creation awaits both native generators on rejection/cancellation; explicit signal tests instrument only post-native returns/failure, leaving actual crypto/entropy unchanged. Caller owns native handles; WebCrypto offers no key close/zeroization. Exportable strings are synthetic fixture material, not a recovery-vault, OS custody or captured replay contract. Full session/actors still need wiring. Source two mismatch oldFAIL/new same-probe PASS and owning8/type pass. Current root core302/Lab71, format/docs/publicboundary7018files/27manifests pass; 60 Lab input SHA unchanged. Fixed-head negatives/whole actor acceptance pending.",
+    "fingerprintAndMinimize": "Pure fingerprint and bounded minimizer retain the original five/two exports with separate policies: exact replay compares every original field and reports missing/JSON-dropped/null/unavailable measurements as gaps; another dimension's harness error never erases a measured violation. Shrink preserves the original rules and exact known trigger facts, permits diagnostic ledger length to shrink, and exposes partial observation. Unmeasured original triggers refuse execution. Effect runners remain sequential, bounded, caller-owned and fail transparently. The original fingerprint is independently copied before callbacks; generic action items must already be immutable and independently owned. Legacy model labels are inert compatibility diagnostics, not authorization policy. These are pure synthetic algorithm probes, not full attack/repro execution, serialization approval, captured entropy or resealing. Four original oldFAIL/new same-probe PASS; owning10/type pass. Current root core302/Lab80, format/docs/publicboundary7020files/27manifests pass; 62 Lab input SHA unchanged. First six loop-static failures retained, equivalent budget guards moved into loop body; fixed-head controls/real actor integration pending."
   }
 }

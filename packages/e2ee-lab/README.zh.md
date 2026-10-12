@@ -44,6 +44,8 @@ Flock 0.4.3 没有公开的确定性 free/dispose；关闭 SDK 订阅、丢弃�
 
 原合成 device 模块七项导出已转为有类型的 Effect/公开 byte API，复用公开原生 signer/verifier。原四字段 JSON 可往返真实 Ed25519/X25519 fixture，返回导入结果前核对私钥与公钥绑定。实际公开 HPKE 和 SQLite credentials 验证导入设备、一次性证明及未入账设备不能绑定 Org。创建在错误/取消时等待两个原生生成器结算；显式信号测试只控制原生完成后的返回/错误，不改真实算法或随机数。原生 handle 由调用方拥有，WebCrypto 无 key close/清零 API；可导出字符串仅是合成 fixture，不是恢复库、平台安全存钥或捕获熵 replay 契约。完整 session/actors 仍需接入。
 
+纯 fingerprint 与有界 minimizer 保留原五项/两项导出，分开策略：精确 replay 比较原全部字段，缺失、JSON 丢失的 undefined、null 或 unavailable 观察明确报缺口；另一维 harness 错误不抹掉已测违约。shrink 保留原规则及精确已知触发事实，允许诊断账本数缩小并显示 partial；原触发事实未测则拒绝执行。Effect runner 串行、有预算、由调用方拥有，错误如实传播；回调前独立复制原 fingerprint。泛型 action 元素须已不可变并独立拥有，不能以浅拷贝数组声称拥有 action 内 bytes。旧 model 标签仅为兼容诊断，不是授权策略。这些是纯合成算法 probe，不代表完整 attack/repro 执行、序列化批准、捕获熵或 reseal。
+
 `authorizeLabStream` 先通过公开 core 检查 genuine 账本，再读取当前成员，
 绑定 credential/request Org，拒绝 R 发送或内容写入。它只做策略检查，
 不代表凭据认证、固定 CAS 或 payload 准入。`makeLabMailboxRemote` 通过 HTTP

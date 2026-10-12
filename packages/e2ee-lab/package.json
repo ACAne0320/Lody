@@ -22,7 +22,9 @@
     "./driver": "./src/platform/driver.ts",
     "./judge": "./src/pure/judge.ts",
     "./content-trace": "./src/platform/content-trace.ts",
-    "./device": "./src/platform/device.ts"
+    "./device": "./src/platform/device.ts",
+    "./fingerprint": "./src/pure/fingerprint.ts",
+    "./minimize": "./src/pure/minimize.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

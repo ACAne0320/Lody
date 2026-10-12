@@ -22,3 +22,9 @@ Never reset host earliest offsets or delete snapshots to make recovery tests pas
 This package is being migrated. Missing content, host, scheduler, attacker,
 replay and CLI paths stay explicit in README and the migration manifest.
 Do not claim the original Lab is migrated from a smaller consumer's green tests.
+
+Exact fingerprint replay compares all known fields and reports missing observations
+as coverage gaps. Shrink preserves measured violations and known trigger facts;
+other unmeasured dimensions stay explicit. Generic actions must be independently
+owned and immutable; an array copy does not own nested bytes. Synthetic device
+exports/native handles are not a recovery vault or platform custody guarantee.

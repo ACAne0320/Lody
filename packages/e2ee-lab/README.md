@@ -84,6 +84,8 @@ full host/rotation composition or cross-process epoch-rotation acceptance.
 
 The original synthetic device module now preserves its seven exports as typed Effect/public-byte APIs and consumes the public native signer/verifier. Its existing four-field JSON roundtrips native Ed25519/X25519 fixtures, with private/public binding checked before import returns. Real public HPKE and SQLite credentials verify the imported device, single-use proof and refusal to bind an unregistered device to an Org. Creation awaits both native generators on rejection/cancellation; explicit signal tests instrument only post-native returns/failure, leaving actual crypto/entropy unchanged. Caller owns native handles; WebCrypto offers no key close/zeroization. Exportable strings are synthetic fixture material, not a recovery-vault, OS custody or captured replay contract. Full session/actors still need wiring.
 
+Pure fingerprint and bounded minimizer retain the original five/two exports with separate policies: exact replay compares every original field and reports missing/JSON-dropped/null/unavailable measurements as gaps; another dimension's harness error never erases a measured violation. Shrink preserves the original rules and exact known trigger facts, permits diagnostic ledger length to shrink, and exposes partial observation. Unmeasured original triggers refuse execution. Effect runners remain sequential, bounded, caller-owned and fail transparently. The original fingerprint is independently copied before callbacks; generic action items must already be immutable and independently owned. Legacy model labels are inert compatibility diagnostics, not authorization policy. These are pure synthetic algorithm probes, not full attack/repro execution, serialization approval, captured entropy or resealing.
+
 The scoped credential owner retains the frozen Lab v2 possession domain, 60-second
 single-use nonce and at most 15-minute synthetic token TTL. Real Ed25519 proofs,
 genuine current Org membership and transactional SQLite mint/invalidate readback
@@ -110,7 +112,7 @@ observed in an explicit abort-ignoring lease test. Full host composition is pend
 The original full host/gateway, honest actors, key delivery/rotation composition,
 Flock recovery/live sessions, full schedule executor, attacker capabilities,
 captured replay, original fixtures and CLI/startup remain pending. The current
-71 tests do not close the original Lab2 failures or the complete original fault
+80 tests do not close the original Lab2 failures or the complete original fault
 matrix. Snapshot wire/offset, replay entropy, strict deadline B, recovery vault,
 D12 and permanent publisher loss remain explicit decisions. Native custody,
 production E2EE, independent whole-stack review, CI and product acceptance are
