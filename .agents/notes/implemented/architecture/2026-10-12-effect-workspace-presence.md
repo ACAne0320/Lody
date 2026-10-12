@@ -105,10 +105,14 @@ P6 session-active ownership and P7 local relay pacing, broader document/Session/
 ownership, macOS/Windows packaging and production daemon end-to-end acceptance are
 not completed by P5. Final workspace typechecks and type-aware lint pass; focused presence/logger/product
 manager/durable checkpoint cases pass 52, token/shell cases pass 72, and real local
-zero-cloud/data-plane cases pass six. Format, frozen install, docs check (zero errors),
+zero-cloud/data-plane cases pass six. Renderer presence cases pass 33. Its deadline
+fixture now settles auth on AbortSignal and advances the default retry backoff,
+matching the actual token facade; an infinite callback ignoring cancellation is
+unresolved owned work, not successful deadline cleanup. Fake timers leave the
+Effect scheduler unfaked. Format, frozen install, docs check (zero errors),
 i18n and all five boundary guards pass. Recursive validation reports CLI 4,052 passed,
 15 failed, one skipped and four unhandled errors. The five failing process/Git shim
 suites reproduce the same 15 failures/four errors on unchanged P1 source, whose
 relevant files match current main; the four-suite retry uses a five-second diagnostic
-limit. Recursive/Electron verification did not finish after this failure. No green
-full check is claimed; focused acceptance does not replace the stated limits.
+limit. Other recursive verification did not finish after this failure; Electron was run
+separately and passed all 216 cases. No green full check is claimed; focused acceptance does not replace the stated limits.
