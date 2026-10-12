@@ -48,6 +48,19 @@ streaming label — defeats it completely and publishes at the source's rate.
 over local IPC and already collapses a burst into a single frame, snapshotting at
 write time. It is the template to copy when a producer is genuinely bursty.
 
+## Token-provider ownership
+
+Durable and ephemeral consumers may borrow the same token provider, but each
+native auth call owns only its waiter lease. Cancelling one call cannot abort a
+refresh another lease still needs. Last release, credential replacement and close
+await actual token I/O; bounded failure retains the old owner and fences new work.
+Only the explicit Legacy facade's old-protocol callback maps an all-auth Cause to
+undefined; native getToken/auth preserve typed failure. Transient failure, deadline,
+interruption and cleanup failure stay observable, including mixed Causes. The official cloud
+composition provides native token ports, while unmigrated consumers retain the
+explicit Legacy facade. See [the provider contract](../../packages/shared/src/loro-streams-token/README.md).
+This does not change presence payloads, rate limits or durable CRDT work.
+
 ## Two stores, partitioned by origin
 
 `CliPresenceRuntime` (`presence.ts`) keeps TWO stores and the distinction is
