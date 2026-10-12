@@ -645,7 +645,9 @@ export class LoroDocumentManager {
 
     const streamsTransport = await createCliStreamsTransport({
       workspaceId: this.workspaceId,
-      tokenProvider: this.streamsTokens.createTokenProvider({ workspaceId: this.workspaceId }),
+      tokenProvider: this.streamsTokens.createTokenProviderLegacy({
+        workspaceId: this.workspaceId,
+      }),
       repo: this.repo,
       documentRemoteCursorStore: this.documentRemoteCursorStore,
       logger: this.logger,

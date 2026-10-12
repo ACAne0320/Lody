@@ -32,11 +32,13 @@ vi.mock('@lody/shared', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@lody/shared')>();
   return {
     ...actual,
-    createLoroStreamsTokenProvider: vi.fn(() => ({
+    createLoroStreamsTokenProviderLegacy: vi.fn(() => ({
       getToken: mocks.streamsGetToken,
       getGatewayBaseUrl: () => mocks.streamsGatewayBaseUrl,
       getShardHostSuffix: () => undefined,
       invalidate: () => {},
+      close: async () => {},
+      retryCleanup: async () => {},
       createAuthCallback: () => async () => 'streams-jwt',
     })),
   };
@@ -109,11 +111,16 @@ import { LoroDocumentManager } from '../src/lib/loro/doc';
 import { createCliSqliteRepoStore } from '../src/lib/loro/sqlite-repo-store';
 
 const testStreamsTokens = {
-  createTokenProvider: () => ({
+  createTokenProvider: () => {
+    throw new Error('native entry not used in this Legacy manager test');
+  },
+  createTokenProviderLegacy: () => ({
     getToken: mocks.streamsGetToken,
     getGatewayBaseUrl: () => mocks.streamsGatewayBaseUrl,
     getShardHostSuffix: () => undefined,
     invalidate: () => {},
+    close: async () => {},
+    retryCleanup: async () => {},
     createAuthCallback: () => async () => 'streams-jwt',
   }),
 };
