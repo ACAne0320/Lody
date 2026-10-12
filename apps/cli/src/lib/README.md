@@ -71,7 +71,9 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
 - `cloud-pr-association.ts` — hosted PR association HTTP requests and shared failure
   cooldowns; independent of GitHub observation and publication.
 - `local-loro-data-plane-server.ts` — Electron renderer ↔ CLI local Loro data plane
-  (protocol v7). Design:
+  (protocol v7). The explicitly Legacy room engine consumes the native process-wide
+  writer and awaits disconnect release; Node write/drain stays one adapter. Room
+  message ordering remains Promise orchestration. Design:
   [`.agents/docs/cli-lib-local-loro-data-plane.md`](../../../../.agents/docs/cli-lib-local-loro-data-plane.md).
 - `local-ipc-socket-server.ts`, `local-control-handler.ts`, `local-session-control.ts`,
   `local-project-control-service.ts`, `local-project-control-client.ts` — the local

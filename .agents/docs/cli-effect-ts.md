@@ -357,6 +357,24 @@ explicit retry proves actual SDK and token cleanup before handoff. Session-activ
 leases and local relay pacing remain P6/P7. See the
 [decision](../notes/implemented/architecture/2026-10-12-effect-workspace-presence.md).
 
+## Local presence and the shared connection writer
+
+`LocalLoroWriterLive` owns the application's FIFO pacer and shared physical socket
+writers. It requires `LocalLoroWriterTurn`; Node composition supplies a real host turn
+and the socket write/drain adapter. Native task/frame composition does not execute
+runtimes or wrap the former Promise pump. Presence encodes local-origin state at writer
+execution; CRDT/frontier/framing computation remains synchronous. Only the genuine
+Flock SDK export is a Promise adapter, retaining actual settlement without an abort
+contract. Close observers remain bounded inside finalizers; failed release retains
+complete Cause, the original producer/subscription and retry ownership.
+
+The one deprecated `local-loro-writer/legacy` executor serves the explicitly named
+`LocalLoroDataPlaneServerLegacy` and CLI doc/socket owners. Delete it when those
+application owners receive the native service. Room resolution/join/leave/import,
+LoroRepo and Fleet's wider cleanup remain under migration; this unit
+does not complete P7 or the Loro stack. Decision and acceptance evidence:
+[local presence writer](../notes/implemented/architecture/2026-10-12-effect-local-presence-writer.md).
+
 ## Temporary Promise facades
 
 A migrated layer is consumed by callers that are still Promise-based. Such a

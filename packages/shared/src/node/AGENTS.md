@@ -103,3 +103,9 @@ record: [process tree layer](../../../../.agents/notes/implemented/architecture/
 - Retry acquisition only; body/release failures preserve the full Cause. Use
   `squashFileLockFailure` at Legacy boundaries to retain every lock cleanup owner
   alongside process leases and the original operation failure.
+
+## Local Loro writer boundary
+
+`local-loro-writer.ts` owns the real Node turn and socket write/drain adapters.
+Applications provide one process-wide writer; never add a workspace scheduler.
+Native workflow and release rules: [writer](../local-loro-writer/AGENTS.md).
