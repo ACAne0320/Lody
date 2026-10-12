@@ -16,3 +16,5 @@ This replaces the size decision in the [oversized-paste attachment note](2026-09
 Updated helper tests cover 49,999, 50,000 and 50,001 characters for ASCII and Chinese, plus whitespace and CRLF normalization. Updated rendered session tests check exact attachment content at 50,000 and folding at 49,999. Packaged clipboard behavior remains unverified.
 
 Executed verification: all 23 helper-suite tests passed using an existing dependency environment. The rendered suite could not collect because that environment supplies Effect v3 while this checkout requires v4 (`Context.Service` is unavailable). Documentation checks report existing missing-submodule links; no changed document is implicated. Formatting and `git diff --check` passed.
+
+PR: [#1511](https://github.com/LodyAI/Lody/pull/1511)
