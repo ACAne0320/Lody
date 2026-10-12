@@ -114,6 +114,12 @@ provides LocalProjects. See the [decision](../../../../.agents/notes/implemented
   ([AGENTS.md](code-collab/AGENTS.md)).
 - `file-preview/` — the `file/preview` (File Preview v3) read path
   ([AGENTS.md](file-preview/AGENTS.md)).
+- `loro/workspace-presence.ts` — native workspace/remote-generation owner;
+  `presence-replica.ts` keeps synchronous origin-partitioned CRDT state and
+  `presence-legacy.ts` is its application-runtime execution door. Product doc/bridge
+  consumers borrow the CLI application registry and one native
+  token provider; the platform adapter uses streams-crdt 0.17.0. See the
+  [owning scope](../../../../.agents/notes/implemented/architecture/2026-10-12-effect-workspace-presence.md).
 - `loro/` — Loro repo/runtime layer, presence, machine flock rooms, and connection
   recovery ([AGENTS.md](loro/AGENTS.md)). `session-model-summary.ts` projects actual
   assistant models through shallow scalar/count reads of already-open documents.

@@ -1,5 +1,5 @@
 import { it as effectIt } from '@effect/vitest';
-import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer, Scope } from 'effect';
+import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime, Scope } from 'effect';
 import { TestClock } from 'effect/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeLoroStreamsRawIo } from '../src/loro-streams-token/io';
@@ -1154,6 +1154,61 @@ function retainedRawOwners(cause: Cause.Cause<unknown>): Array<LoroStreamsTokenR
 }
 
 describe('native shared Streams token ownership', () => {
+  effectIt.effect(
+    'borrowed Legacy auth shares the native producer and leaves its application executor alive',
+    () =>
+      Effect.gen(function* () {
+        const response = Promise.withResolvers<Response>();
+        const started = Deferred.makeUnsafe<void>();
+        const borrowedRead = Deferred.makeUnsafe<void>();
+        let signal: AbortSignal | null | undefined;
+        const provider = yield* makeLoroStreamsTokenProvider({
+          ...tokenOptions,
+          onEvent: (event) => {
+            if (event.type === 'in-flight-reuse') Deferred.doneUnsafe(borrowedRead, Effect.void);
+          },
+        }).pipe(
+          Effect.provideService(
+            LoroStreamsTokenPorts,
+            makeLoroStreamsTokenWebPorts({
+              credential: Effect.succeed('synthetic-credential'),
+              fetchImpl: (_url, init) => {
+                signal = init?.signal;
+                Deferred.doneUnsafe(started, Effect.void);
+                return response.promise;
+              },
+            })
+          )
+        );
+        const application = ManagedRuntime.make(Layer.succeed(Clock.Clock, yield* Clock.Clock));
+        yield* Effect.addFinalizer(() => application.disposeEffect);
+        const legacy = createLoroStreamsTokenProviderLegacy({ provider, executor: application });
+        const native = yield* Effect.forkChild(provider.getToken());
+        yield* Deferred.await(started);
+        const abort = new AbortController();
+        const waiter = legacy
+          .createAuthCallback()(undefined, abort.signal)
+          .then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error })
+          );
+        yield* Deferred.await(borrowedRead);
+        abort.abort();
+        expect((yield* Effect.promise(() => waiter)).ok).toBe(false);
+        expect(signal?.aborted).toBe(false);
+        response.resolve(
+          new Response(JSON.stringify({ token: 'shared-native-token', expiresIn: 900 }))
+        );
+        expect(yield* Fiber.join(native)).toBe('shared-native-token');
+        expect(yield* Effect.promise(() => legacy.getToken())).toBe('shared-native-token');
+        yield* Effect.promise(() => legacy.close());
+        expect((yield* provider.health).state).toBe('closed');
+        expect(
+          yield* Effect.promise(() => application.runPromise(Effect.succeed('application-alive')))
+        ).toBe('application-alive');
+      })
+  );
+
   effectIt.effect('close waits for success-body EOF after HTTP headers have arrived', () =>
     Effect.gen(function* () {
       const reading = Deferred.makeUnsafe<void>();

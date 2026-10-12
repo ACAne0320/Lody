@@ -2,7 +2,7 @@ import { describe, expect, it } from '@effect/vitest';
 import { Cause, Clock, Effect } from 'effect';
 import { TestClock } from 'effect/testing';
 import type { Logger } from '@/utils/logger';
-import { lodyLoggerLayer } from './logger';
+import { formatSafeLogFields, lodyLoggerLayer } from './logger';
 
 const captureLogger = () => {
   const records: Array<{ level: string; text: string }> = [];
@@ -51,6 +51,31 @@ describe('Effect daemon log projection', () => {
           Effect.provide(lodyLoggerLayer(logger, '[owner]'))
         );
         yield* Effect.logDebug('outside scope').pipe(Effect.provide(lodyLoggerLayer(logger)));
+        expect(
+          formatSafeLogFields({
+            stage: 'post',
+            code: 'network_error',
+            ageMs: 100,
+            physicalEntries: 2,
+            queuedBytes: 64,
+            releasePending: 1,
+            token: 'secret',
+            url: 'https://secret.invalid',
+            payload: { secret: true },
+          })
+        ).toBe(
+          ' {"stage":"post","code":"network_error","ageMs":100,"physicalEntries":2,"queuedBytes":64,"releasePending":1}'
+        );
+        expect(
+          formatSafeLogFields({
+            stage: 'secret',
+            code: 'secret-token',
+            ageMs: Infinity,
+            physicalEntries: -1,
+            queuedBytes: 'secret',
+            releasePending: NaN,
+          })
+        ).toBe('');
         expect(records).toEqual([
           {
             level: 'trace',

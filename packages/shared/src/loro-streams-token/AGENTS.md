@@ -8,6 +8,8 @@
 - Only `createLoroStreamsTokenProviderLegacy` executes for Promise consumers; keep
   Legacy visible in the factory, platform port and consumer types. Remove the facade
   when renderer, durable transports and Machine RPC owners compose the native service.
+  Borrowing `{ provider, executor }` creates neither a runtime nor another cache;
+  the application owns the provider Scope and its cleanup/recovery.
 - A waiter deadline/cancellation releases only its lease. The last lease, credential
   replacement and close abort and await actual producer I/O. Bounded failed release
   retains the provider/raw owners and complete Cause; require `retryCleanup` before
