@@ -81,8 +81,7 @@ andThen(f(cause), failCause(cause))，观察器失败会替换原始错误，因
 ## 证据与限制
 
 PR：[#1506](https://github.com/LodyAI/Lody/pull/1506)（draft）。
-初次已验证源码 revision：b79eea2df26e5ecd0e796e9dfd9c32a75a4d13b7；
-auth/诊断增补验证见下；最终检查完成后记录其准确源码 revision。
+已验证源码 revision：32c5d29dcfdaf9330c36355d285d43e4e74906f9；后续仅文档提交记录该 revision。
 
 Base：3ac76bad10f46720517a2ca6929f03de4ef5bb9b。Effect 保持 4.0.2，无 manifest、lockfile
 或 submodule gitlink 改动。已有 token suite 使用 HTTP/encryption/admission 显式 signals，原生

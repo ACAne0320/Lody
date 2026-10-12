@@ -113,9 +113,8 @@ verified through the real Legacy facade's auth-plus-observer failure.
 ## Evidence and limits
 
 PR: [#1506](https://github.com/LodyAI/Lody/pull/1506) (draft).
-Initial tested source revision: `b79eea2df26e5ecd0e796e9dfd9c32a75a4d13b7`;
-The auth/diagnostic follow-up is verified below; its exact source revision is recorded
-when the final check completes.
+Tested source revision: `32c5d29dcfdaf9330c36355d285d43e4e74906f9`. Subsequent documentation-only
+changes record this revision.
 
 Base: `3ac76bad10f46720517a2ca6929f03de4ef5bb9b`. Effect remains 4.0.2;
 no manifest, lockfile or submodule gitlink changes. The existing token suite uses
