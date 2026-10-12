@@ -9133,7 +9133,7 @@
     {
       "number": 1480,
       "headRefName": "e2ee-host-epoch-protection",
-      "headRefOid": "ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee",
+      "headRefOid": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
       "baseRefName": "e2ee-ledger-admission",
       "isDraft": true,
       "parentHead": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b"
@@ -9144,7 +9144,9 @@
       "headRefOid": "4134109a76739d8b36ff5a8a1209e37e16518703",
       "baseRefName": "e2ee-host-epoch-protection",
       "isDraft": true,
-      "parentHead": "ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee"
+      "parentHead": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
+      "lastIntegratedParentHead": "ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee",
+      "syncRequired": true
     },
     {
       "number": 1484,
@@ -9225,7 +9227,7 @@
     "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "v1 snapshot byte cache + actual permission-history recovery root core302/Lab92, check/format/docs/publicboundary7036files27manifests PASS; all70 Lab input SHA unchanged. Same-Org/head real self-claimed Owner signatures cannot replace external pins; SQL rollback/isolation/OS-child, genuine full history fallback and failed native metadata-save retention/retry verified. Root1 no-shadow failure preserved, fixed without suppressing rules. P09 already migrated unchanged; production pin custody/vault/fullR/content snapshot and originalLab2/final-stackCI/independent review incomplete. Extended existing owning session case now verifies native duplicate/rollback bytes, two live SQLite owners, OS-child reopen before retry; root check/format/docs PASS, core302/Lab92 unchanged; no new protocol/production code, all70 input SHA retained. Distinct native admitted personal peer, credential row identity and actual imported peer-key OS-child reopen now verified; same owning case count/root core302/Lab92, check/format/docs/publicboundary7036files27manifests PASS, all70 inputSHA unchanged; only synthetic fixtures, no custody/vault/backup decisions.",
+    "authorRootCheck": "v1 snapshot byte cache + actual permission-history recovery root core302/Lab92, check/format/docs/publicboundary7036files27manifests PASS; all70 Lab input SHA unchanged. Same-Org/head real self-claimed Owner signatures cannot replace external pins; SQL rollback/isolation/OS-child, genuine full history fallback and failed native metadata-save retention/retry verified. Root1 no-shadow failure preserved, fixed without suppressing rules. P09 already migrated unchanged; production pin custody/vault/fullR/content snapshot and originalLab2/final-stackCI/independent review incomplete. Extended existing owning session case now verifies native duplicate/rollback bytes, two live SQLite owners, OS-child reopen before retry; root check/format/docs PASS, core302/Lab92 unchanged; no new protocol/production code, all70 input SHA retained. Distinct native admitted personal peer, credential row identity and actual imported peer-key OS-child reopen now verified; same owning case count/root core302/Lab92, check/format/docs/publicboundary7036files27manifests PASS, all70 inputSHA unchanged; only synthetic fixtures, no custody/vault/backup decisions. Restricted A: public synthetic protector, actual hard exit after save/readback before report, first-blob reuse after child restart, network-free installed keys0/1 child restore after sender revoked PASS; root core302/Lab92/publicboundary7037files27manifests, all71 inputSHA unchanged; first no-shadow failure kept and corrected without suppressing rules.",
     "lastFetchedMain": {
       "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
       "tree": "f3168cbda928a4f9866fba330c8278bbbb09d5ef",
@@ -9263,7 +9265,8 @@
     "genesisConsumer": "Authenticated bounded existing metadata discovery verifies requested hash/type/real original signature and returns owned original bytes only. Unbound joiners preserved; not current authority or selected Genesis/control bootstrap. Full adopt/session keyring and ledger initialization incomplete.",
     "joinConsumer": "Public bounded authenticated submit/list consumes existing candidate metadata, verifies copied Org/signature/sender, true receipt and unique IDs; no membership/identity authority, new IDs/expiry or full session approval facade. Actual host permissions unchanged.",
     "existingWorkspaceSession": "Public child-scope composition of admitted identity, original genesis, released SDK and public actor. Independently pinned existing full-prefix control/local/network checkpoints required. Failure closes resources before parent teardown; close shares completion. Actual SQLite/HTTP/CAS/OS-child same-history+cursor pass; full honest key/content/startup and host durable checkpoint/lostACK gap pending. Real native duplicate-at-current-offset/rollback-prefix response bytes refuse progress: all SQLite rows/meta/view/cursor retained, independent simultaneous client usable, OS-child reopens before same-handle retry. Existing-workspace consumer evidence only; original Lab2 not closed. The independent client is now a genuinely distinct native personal device admitted by actual PoP/signed CAS. Native credential rows identify both peers; a private synthetic fixture is imported in its own OS child, returning actual public key/head/cursor. No production custody/vault/backup claim.",
-    "snapshotCache": "Real SQLite v1 byte cache indexed by independently provided Org/head/count/endorser, public verification with full separate pins on every get. No role/head attestation/peer selection from SQL. Native rollback/readback, scoped cleanup, owned bytes, distinct-Org isolation and OS-child pass; returned endorsed view is not full history/currentness. Production pin custody/bootstrap/recovery unimplemented. Same-Org/head actual self-claimed Owner and structural full-view clones refused; client fallback reads actual full signed SDK history, failed native metadata save retains prior records/view/cursor and same-handle retry commits. This is permission-history recovery only."
+    "snapshotCache": "Real SQLite v1 byte cache indexed by independently provided Org/head/count/endorser, public verification with full separate pins on every get. No role/head attestation/peer selection from SQL. Native rollback/readback, scoped cleanup, owned bytes, distinct-Org isolation and OS-child pass; returned endorsed view is not full history/currentness. Production pin custody/bootstrap/recovery unimplemented. Same-Org/head actual self-claimed Owner and structural full-view clones refused; client fallback reads actual full signed SDK history, failed native metadata save retains prior records/view/cursor and same-handle retry commits. This is permission-history recovery only.",
+    "restrictedA": "Explicit public synthetic protector consumes existing core host boundary; actual save/reload-before-report crash/reopen and local-only keys0/1 restoration after sender revocation. Production adapter gap remains; not B-envelope restore or custody/vault/backup approval."
   },
   "unsettledContractProposals": {
     "humanApproval": false,
@@ -9320,5 +9323,32 @@
       "treeLimitation": "core directory equals head; intermediate base merges direct base into 960e7022; full lock/catalog/tree differs"
     },
     "downstream": "11 descendants and Lab still contain original5d count fix, not new926 test/Note; coordinate later sync; no rebase or force push here"
+  },
+  "restrictedDurableEpochApproval": {
+    "decision": "A",
+    "approvedBy": "user",
+    "date": "2026-10-12",
+    "scope": "Verified installed EpochKeys persist through trusted host initialization-time authenticated protection; native priority. Opaque protected SQLite blobs; full purpose/genesis/recipient/epoch/commitment payload binding; actual native settlement and own-copy cleanup; context journal/save/reload/fixed report queue. Local installed-key restore independent of original sender still active; new-delivery current sender unchanged.",
+    "existingOwner": "#1480 host protection; downstream receive/report owner composes existing HPKE/P09",
+    "limits": [
+      "not generic material export or per-business-call callback",
+      "adapter may copy secrets; JavaScript total erasure not promised",
+      "no historical-sender envelope restore B",
+      "no new wrapping/wire/domain/vault format",
+      "no D12/SDK snapshot header/backup policy/strict B/production enablement approval",
+      "synthetic tests only, not OS/native custody acceptance"
+    ],
+    "platformGap": "platform host-keys only public identity storage; Electron string safeStorage has no reviewed full-payload-integrity adapter/backend failure contract and dev plaintext override; not composed for A",
+    "implementationEvidence": "Existing public host port/store/receiver reused. #1480 revoked-sender OS-child cold read passes; Lab public synthetic module, hard-exit before report, first blob retained after independent-process reinstall/report, installed-only keys0/1 read in OS-child after sender revoked; no HPKE/private-handle import/network on local restore.",
+    "hostHead": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
+    "hostBase": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b",
+    "hostCi": {
+      "run": 38217731210,
+      "head": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
+      "conclusion": "SUCCESS",
+      "checkout": "8f9d891f1f63b9960ed962b31e40d17271e23fcd",
+      "limitation": "synthetic intermediate base; core implementation identical, ledger replay test includes separate #1464 regression; full tree differs",
+      "independentReview": "coordinator pending"
+    }
   }
 }

@@ -46,3 +46,7 @@ all close callers await one completion. Stop native admission before joining CAS
 
 Snapshot cache rows contain bytes, never independent qualification. Every read
 reverifies v1 with caller-pinned peer/role/position; no SQL-selected endorser or latest.
+
+Synthetic protection is a Lab-only known-key boundary, never native custody or
+production wrapping. Restricted A local restore reads installed protected originals;
+it must not silently reopen a historical envelope or relax new sender eligibility.

@@ -9,7 +9,7 @@ import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { Bytes, encodeCbor } from '@lody/e2ee-core';
 import { commitEpochKey, sealHistoryPacket } from '@lody/e2ee-core/keys';
-import { hashRecordBytes, verifyLedger } from '@lody/e2ee-core/ledger';
+import { contentPermissions, hashRecordBytes, verifyLedger } from '@lody/e2ee-core/ledger';
 import {
   signGenesisRecord,
   prepareDeviceAdmission,
@@ -349,6 +349,41 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
             });
             const receiverSession = yield* http.authenticate(recovery);
             const remote = yield* makeLabMailboxRemote(receiverSession);
+            const crash = yield* Effect.result(
+              runOwnedChild([
+                '--import',
+                'tsx',
+                fileURLToPath(new URL('./key-reopen.mts', import.meta.url)),
+                dir,
+                http.url.replace(`/v1/spaces/${slot.genesis}/key-mailbox`, ''),
+                'crash-before-report',
+              ])
+            );
+            expect(Result.isFailure(crash)).toBe(true);
+            if (Result.isFailure(crash))
+              expect((crash.failure as Error & { code: number }).code).toBe(73);
+            const crashKeys = new Database(file('recovery-keys'), {
+              fileMustExist: true,
+              readonly: true,
+            });
+            const crashJournal = new Database(file('recovery-receive'), {
+              fileMustExist: true,
+              readonly: true,
+            });
+            let originalProtected: Uint8Array;
+            try {
+              const saved = crashKeys
+                .prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0')
+                .get() as { blob: Uint8Array };
+              originalProtected = new Uint8Array(saved.blob);
+              expect(crashJournal.prepare('SELECT phase,report FROM receive_tasks').all()).toEqual([
+                { phase: 'Install', report: null },
+              ]);
+            } finally {
+              crashKeys.close();
+              crashJournal.close();
+            }
+            expect((yield* remote.status(slot)).status).toBe('EnvelopeStored');
             const child = yield* runOwnedChild([
               '--import',
               'tsx',
@@ -363,6 +398,25 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
             expect(completed.installed).toEqual({ processed: 1, next: null });
             expect(completed.outcomes).toEqual(['Reported']);
             expect((yield* remote.status(slot)).status).toBe('InstallationReported');
+            const readback = new Database(file('recovery-keys'), {
+              fileMustExist: true,
+              readonly: true,
+            });
+            try {
+              expect(
+                new Uint8Array(
+                  (
+                    readback
+                      .prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0')
+                      .get() as {
+                      blob: Uint8Array;
+                    }
+                  ).blob
+                )
+              ).toEqual(originalProtected);
+            } finally {
+              readback.close();
+            }
             const retained = new Database(file('recovery-receive'), { fileMustExist: true });
             try {
               const row = retained.prepare('SELECT phase,frame FROM receive_tasks').get() as {
@@ -577,6 +631,44 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               blocked: [],
             });
             expect((yield* senderRemote.status(slot1)).status).toBe('InstallationReported');
+            records.push(
+              yield* signLedgerRecord(
+                ok(
+                  prepareLedgerCommand(view(), owner.publicKey, {
+                    _tag: 'RevokeDevice',
+                    target: owner.publicKey,
+                  })
+                ),
+                owner
+              )
+            );
+            expect(ok(contentPermissions(view(), owner.publicKey))).toMatchObject({
+              mayWriteDocument: false,
+              maySealNewContent: false,
+            });
+            deviceFixture.records = records.map((record) => Buffer.from(record).toString('hex'));
+            deviceFixture.checkpoint = {
+              head: Buffer.from(hashRecordBytes(records.at(-1)!).toBytes()).toString('hex'),
+              length: records.length,
+            };
+            writeFileSync(join(dir, 'recovery-device.json'), JSON.stringify(deviceFixture), {
+              mode: 0o600,
+            });
+            const localRestore = yield* runOwnedChild([
+              '--import',
+              'tsx',
+              fileURLToPath(new URL('./key-reopen.mts', import.meta.url)),
+              dir,
+              'http://127.0.0.1:1',
+              'installed-only',
+            ]);
+            expect(JSON.parse(localRestore)).toEqual({
+              commitments: [
+                { epoch: 0, matches: true },
+                { epoch: 1, matches: true },
+              ],
+              localOnly: true,
+            });
           })
         )
       );

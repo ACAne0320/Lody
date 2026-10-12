@@ -29,7 +29,8 @@
     "./key-round": "./src/platform/key-round.ts",
     "./http-identity": "./src/platform/http-identity.ts",
     "./workspace-session": "./src/platform/workspace-session.ts",
-    "./snapshot-cache": "./src/platform/snapshot-cache.ts"
+    "./snapshot-cache": "./src/platform/snapshot-cache.ts",
+    "./synthetic-protection": "./src/platform/synthetic-protection.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

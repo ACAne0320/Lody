@@ -202,3 +202,5 @@ restoreLabLedgerFromCacheOrHistory只接受独立选择的精确endpoint与genui
 全历史恢复；native SQLite metadata触发器失败保留原records/view/cursor，原handle重试后
 提交新完整对。结构克隆full-view在读字段前被公开provenance拒绝。这里只恢复权限历史，
 不是完整R/vault/key或protectedcontent快照恢复。
+
+用户已批准受限A（2026-10-12）：可信宿主一次注入保护，原生优先；复用公开keyring/receiver并绑定完整payload。./synthetic-protection现承接原固定AES-GCM合成fixture，不提供真实OS存钥。OS子进程在实际报告signer处、protected save/reload后硬退出；Install/source/原blob保留，无报告或远端installed，正常重开用同原blob完成。另一installed-only子进程在原发送者撤销后读keys0/1，不导入HPKE私钥且不调用网络，未加入B历史信封恢复。D12/header/vault/备份/严格B/生产门仍待定。platform身份port缺对称保护，现Electron字符串存储缺已审查的全payload完整性/backend失败adapter；明确该组合缺口，不擅选新算法。
