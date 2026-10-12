@@ -75,11 +75,11 @@ partition and the two stores, the single-owner rule for session active presence,
 turn-finalization side effects. Intent and the reader contract:
 `specs/loro-ephemeral-presence-channel.md`.
 
-A workspace has ONE serial presence queue and the machine heartbeat shares it. Trigger
-a presence write ONLY from a timer, a lifecycle transition, or a user navigation,
-NEVER from a stream/progress/chunk callback however small one payload is, and bound
-every field in `packages/shared/src/presence.ts`. A burst can delay the heartbeat past its 90s freshness window despite a joined room. The `(phase, detail)` dedupe is NOT a rate
-limit: a detail that changes per emit (percentage, counter, label) defeats it.
+A workspace shares one serial presence queue. Write only on timers, lifecycle
+transitions or navigation, never chunks/progress; bound fields in shared presence.
+Same-key coalescing is not rate limiting or heartbeat priority. Diagnostics expose
+only safe fields; chain barriers are not exact heartbeat/peer receipts, and close
+return is not confirmed POST cleanup. See the required presence guide above.
 
 INVARIANT: `initializing` is bounded per stage from the last phase/detail change; on
 expiry the heartbeat stops and `notifyInitializationStalled` fails the turn. Spec:
