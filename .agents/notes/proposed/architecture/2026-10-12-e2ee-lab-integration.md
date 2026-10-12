@@ -150,6 +150,8 @@ pass, with all53 Lab inputs unchanged. Fixed-head/CI/independent evidence remain
 The earlier duplicate X25519 key fixture was rejected, then corrected without
 changing public admission.
 
+The existing key-round also covers a genuine signed synthetic epoch1 record, real owner distribution, fresh HTTP credentials and an OS child installing only key1. Public history recovery derives key0 from that installed key and the authenticated packet; the parent checks native SQLite rows change from [1] to [0,1], commitment matching, the original ciphertext frame and the installation receipt. A valid identical epoch2 proposal succeeds for Owner and fails for R. R still cannot send. Signed history is independently pinned by the fixture; this is not control-stream publication, a durable production rotation producer, backup completion or a recovery-vault format. No old key is supplied to the child. Current root core302/Lab67, format/docs/public boundary7017files/27manifests pass; all59 Lab input SHA unchanged. Fixed-head negatives and full actor/rotation acceptance remain pending.
+
 Public header3 update binding feeds real released Loro/Flock SDKs. Per-document
 SQLite atomically pairs native snapshot/file and exact SDK cursor with readback;
 failed save/import retains the prior pair. Loro and now Flock reopen native state,

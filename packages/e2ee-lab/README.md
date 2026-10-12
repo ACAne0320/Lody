@@ -70,6 +70,8 @@ saves/readbacks the protected epoch and sends the report through fresh real
 challenge/bearer HTTP; parent verifies actual Reported/frame bytes and R no-send.
 This is not full cross-process epoch rotation or platform custody.
 
+The existing key-round also covers a genuine signed synthetic epoch1 record, real owner distribution, fresh HTTP credentials and an OS child installing only key1. Public history recovery derives key0 from that installed key and the authenticated packet; the parent checks native SQLite rows change from [1] to [0,1], commitment matching, the original ciphertext frame and the installation receipt. A valid identical epoch2 proposal succeeds for Owner and fails for R. R still cannot send. Signed history is independently pinned by the fixture; this is not control-stream publication, a durable production rotation producer, backup completion or a recovery-vault format. No old key is supplied to the child.
+
 The mailbox host now exposes the seven original operations through the actual
 challenge/bearer HTTP composition, binds only the stored device and bound Org, and
 consumes the public SQLite mailbox. JSON cannot select a sender. Envelope/report

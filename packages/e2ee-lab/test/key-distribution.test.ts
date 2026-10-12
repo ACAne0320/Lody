@@ -1,5 +1,5 @@
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { runOwnedChild } from './native-child';
 import { tmpdir } from 'node:os';
@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { Effect, Result } from 'effect';
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { Bytes } from '@lody/e2ee-core';
+import { Bytes, encodeCbor } from '@lody/e2ee-core';
+import { commitEpochKey, sealHistoryPacket } from '@lody/e2ee-core/keys';
 import { hashRecordBytes, verifyLedger } from '@lody/e2ee-core/ledger';
 import {
   signGenesisRecord,
@@ -15,7 +16,7 @@ import {
   prepareJoinRequest,
   prepareLedgerCommand,
 } from '@lody/e2ee-core/ledger/admission';
-import { signLedgerRecord } from '@lody/e2ee-core/ledger/signing';
+import { prepareLedgerRecord, signLedgerRecord } from '@lody/e2ee-core/ledger/signing';
 import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
 import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
@@ -47,7 +48,7 @@ const signer = (seed: number) => {
   };
 };
 describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
-  it('delivers original envelopes, installs with real save/readback and reports over HTTP; reopened Recovery cannot send', async () => {
+  it('delivers original epoch0/1 envelopes over HTTP, reopens installation/report and restores history from only the latest key; Recovery cannot send', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'lab-key-round-'));
     // Test-only native device creation. No production key store, replay entropy override or real account.
     const pair = (await crypto.subtle.generateKey('X25519', true, ['deriveBits'])) as CryptoKeyPair;
@@ -385,6 +386,183 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
             expect((yield* remote.status(slot)).revision).toBe(1);
             yield* remote.repair(slot, 'lab-repair-request');
             expect((yield* remote.status(slot)).revision).toBe(1);
+          })
+        )
+      );
+      // Fixture-owned complete signed history is independently pinned, not a
+      // server-provided checkpoint or implementation of createSpace's pending layout.
+      // Synthetic key preparation is NOT a durable production rotation producer.
+      const key1 = ok(Bytes.epochKey(new Uint8Array(32).fill(155)));
+      const commitment1 = ok(commitEpochKey(genesis.genesis, 1, key1));
+      const packet1 = ok(
+        sealHistoryPacket({
+          genesis: genesis.genesis,
+          epoch: 1,
+          currentKey: key1,
+          previousKey: key,
+        })
+      );
+      const epochOne = await Effect.runPromise(
+        signLedgerRecord(
+          ok(
+            prepareLedgerRecord(
+              view(),
+              ok(
+                encodeCbor([
+                  view().head.toBytes(),
+                  owner.publicKey.toBytes(),
+                  [7, 1, commitment1.toBytes(), packet1],
+                ])
+              )
+            )
+          ),
+          owner
+        )
+      );
+      records.push(epochOne);
+      expect(view().inspectState().epoch.number).toBe(1);
+      const key2 = ok(Bytes.epochKey(new Uint8Array(32).fill(156)));
+      const commitment2 = ok(commitEpochKey(genesis.genesis, 2, key2));
+      const packet2 = ok(
+        sealHistoryPacket({
+          genesis: genesis.genesis,
+          epoch: 2,
+          currentKey: key2,
+          previousKey: key1,
+        })
+      );
+      const proposalFor = (device: typeof owner) =>
+        prepareLedgerRecord(
+          view(),
+          ok(
+            encodeCbor([
+              view().head.toBytes(),
+              device.publicKey.toBytes(),
+              [7, 2, commitment2.toBytes(), packet2],
+            ])
+          )
+        );
+      expect(Result.isSuccess(proposalFor(owner))).toBe(true);
+      expect(Result.isFailure(proposalFor(recovery))).toBe(true);
+      const deviceFixture = JSON.parse(readFileSync(join(dir, 'recovery-device.json'), 'utf8'));
+      deviceFixture.records = records.map((record) => Buffer.from(record).toString('hex'));
+      deviceFixture.checkpoint = {
+        head: Buffer.from(hashRecordBytes(epochOne).toBytes()).toString('hex'),
+        length: records.length,
+      };
+      writeFileSync(join(dir, 'recovery-device.json'), JSON.stringify(deviceFixture), {
+        mode: 0o600,
+      });
+      const slot1 = { ...slot, epoch: 1 };
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const keys = yield* makeSqliteProtectedEpochKeys({
+              path: file('owner-keys'),
+              mode: 'open',
+              genesis: genesis.genesis,
+              recipient: owner.publicKey,
+              ledger,
+              protector: syntheticProtector,
+            });
+            yield* keys.saveAndReload(1, key1);
+            const host = yield* makeSqliteKeyMailbox({
+              path: file('host'),
+              mode: 'open',
+              genesis: genesis.genesis,
+              ledger,
+            });
+            const http = yield* makeAuthenticatedLabMailbox({
+              directory: dir,
+              mode: 'open',
+              genesis: genesis.genesis,
+              ledger,
+              mailbox: host,
+            });
+            const ownerSession = yield* http.authenticate(owner);
+            const senderRemote = yield* makeLabMailboxRemote(ownerSession);
+            const sender = yield* makeSqliteKeyDistribution({
+              path: file('owner-receive'),
+              mode: 'open',
+              genesis: genesis.genesis,
+              signer: owner,
+              pair: ownerPair,
+              ledger,
+              remote: senderRemote,
+              keyStore: { path: file('owner-keys'), mode: 'open', protector: syntheticProtector },
+              repairStore: { path: file('owner-repair'), mode: 'open' },
+              sendStore: { path: file('owner-send'), mode: 'open' },
+              outboxStore: { path: file('owner-outbox'), mode: 'open' },
+              currentPublication: () => Effect.succeed(epochOne),
+            });
+            expect(yield* sender.reconcileCurrentEpoch()).toEqual({
+              scheduled: 1,
+              next: null,
+              blocked: [],
+            });
+            expect((yield* sender.resumePendingDeliveries()).blocked).toEqual([]);
+            expect((yield* senderRemote.status(slot1)).status).toBe('EnvelopeStored');
+            const receiverSession = yield* http.authenticate(recovery);
+            const receiverRemote = yield* makeLabMailboxRemote(receiverSession);
+            const retainedFrame1 = new Uint8Array(
+              (yield* receiverRemote.fetch(1, null, 100)).items[0]!.frame
+            );
+            const child = yield* runOwnedChild([
+              '--import',
+              'tsx',
+              fileURLToPath(new URL('./key-reopen.mts', import.meta.url)),
+              dir,
+              http.url.replace(`/v1/spaces/${slot.genesis}/key-mailbox`, ''),
+              'epoch1',
+            ]);
+            const completed = JSON.parse(child.trim()) as {
+              installed: { processed: number; next: string | null };
+              outcomes: string[];
+              beforeHistory: number[];
+              afterHistory: number[];
+              historyCommitmentMatchesOriginal: boolean;
+            };
+            expect(completed.installed).toEqual({ processed: 1, next: null });
+            expect(completed.outcomes).toEqual(['Reported']);
+            expect(completed.beforeHistory).toEqual([1]);
+            expect(completed.afterHistory).toEqual([0, 1]);
+            expect(completed.historyCommitmentMatchesOriginal).toBe(true);
+            expect((yield* senderRemote.status(slot1)).status).toBe('InstallationReported');
+            const db = new Database(file('epoch1-recovery-receive'), { fileMustExist: true });
+            try {
+              const row = db.prepare('SELECT phase,frame FROM receive_tasks').get() as {
+                phase: string;
+                frame: Uint8Array;
+              };
+              expect(row.phase).toBe('Reported');
+              expect(new Uint8Array(row.frame)).toEqual(retainedFrame1);
+            } finally {
+              db.close();
+            }
+            const reopened = yield* makeSqliteKeyDistribution({
+              path: file('epoch1-recovery-receive'),
+              mode: 'open',
+              genesis: genesis.genesis,
+              signer: recovery,
+              pair,
+              ledger,
+              remote: receiverRemote,
+              keyStore: {
+                path: file('epoch1-recovery-keys'),
+                mode: 'open',
+                protector: syntheticProtector,
+              },
+              repairStore: { path: file('epoch1-recovery-repair'), mode: 'open' },
+              sendStore: { path: file('epoch1-recovery-send'), mode: 'create' },
+              outboxStore: { path: file('epoch1-recovery-outbox'), mode: 'create' },
+              currentPublication: () => Effect.succeed(epochOne),
+            });
+            expect(yield* reopened.reconcileCurrentEpoch()).toEqual({
+              scheduled: 0,
+              next: null,
+              blocked: [],
+            });
+            expect((yield* senderRemote.status(slot1)).status).toBe('InstallationReported');
           })
         )
       );

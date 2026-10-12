@@ -40,6 +40,8 @@ Flock 0.4.3 没有公开的确定性 free/dispose；关闭 SDK 订阅、丢弃�
 实现，不声称确定性释放 Wasm 分配。permit runtime 要求显式 mode/time/fetch，
 已弃用的 Promise bridge 仅用于 SDK 回调；纯 scheduler 使用类型化 Result。
 
+原有密钥轮次还覆盖真实签名的合成 epoch1 记录、Owner 实际分发、新 HTTP 凭据和 OS 子进程只安装 key1。公开历史恢复从已安装钥和认证历史包取得 key0；父端检查实际 SQLite 行从 [1] 变为 [0,1]、承诺一致、原密文 frame 和安装回执。同一合法 epoch2 提案 Owner 可准备、R 被拒绝，R 仍不能发送。完整签名历史由 fixture 独立固定；这不代表 control-stream 发布、持久生产换代发布器、备份完成或恢复库格式。父端不向子进程提供旧钥。
+
 `authorizeLabStream` 先通过公开 core 检查 genuine 账本，再读取当前成员，
 绑定 credential/request Org，拒绝 R 发送或内容写入。它只做策略检查，
 不代表凭据认证、固定 CAS 或 payload 准入。`makeLabMailboxRemote` 通过 HTTP

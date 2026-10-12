@@ -92,6 +92,8 @@ fixture 失败、把协议 close 当 lifecycle 的 typing 失败保留，不据�
 待人选择 A保留 personal-only+未独立确认 host observations，或 B另定 machine inert DTO；
 R 不发送。协调者推荐 A 不等于 human approval，也不自动独立确认。
 
+原有密钥轮次还覆盖真实签名的合成 epoch1 记录、Owner 实际分发、新 HTTP 凭据和 OS 子进程只安装 key1。公开历史恢复从已安装钥和认证历史包取得 key0；父端检查实际 SQLite 行从 [1] 变为 [0,1]、承诺一致、原密文 frame 和安装回执。同一合法 epoch2 提案 Owner 可准备、R 被拒绝，R 仍不能发送。完整签名历史由 fixture 独立固定；这不代表 control-stream 发布、持久生产换代发布器、备份完成或恢复库格式。父端不向子进程提供旧钥。 本次整树 core302/Lab67、format/docs/public boundary7017files/27manifests 通过，59Lab输入SHA不变；固定head负控和完整actor/轮换验收仍待完成。
+
 ## 密钥、原生内容与恢复
 
 真实公开 HPKE/distributor/receiver、SQLite install/readback/report 与实际 challenge/bearer
