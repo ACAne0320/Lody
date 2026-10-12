@@ -22,9 +22,12 @@ import {
   type LoroStreamsTokenFailure,
   type LoroStreamsTokenProviderEvent,
 } from '../loro-streams-auth';
+import { LoroStreamsTokenReleaseFailed } from './io';
 
 export interface LoroStreamsAuthContext {
+  /** Only unauthorized rejects a JWT. Other protocol reasons use normal refresh/cache admission. */
   readonly reason: string;
+  /** Explicit rejected JWT; otherwise a long-lived auth callback uses its last successful JWT. */
   readonly previousToken?: string;
 }
 
@@ -37,13 +40,48 @@ export interface LoroStreamsTokenProviderOptions {
   readonly onEvent?: (event: LoroStreamsTokenProviderEvent) => void;
 }
 
-type TokenFailure = LoroStreamsTokenFailure | Cause.TimeoutError;
+export type LoroStreamsTokenReadFailure = LoroStreamsTokenFailure | Cause.TimeoutError;
+type TokenFailure = LoroStreamsTokenReadFailure;
+export type LoroStreamsTokenAuth = (
+  context?: LoroStreamsAuthContext
+) => Effect.Effect<string, LoroStreamsTokenReadFailure>;
+
+export type LoroStreamsTokenFailureKind =
+  | 'auth'
+  | 'credential'
+  | 'http'
+  | 'response'
+  | 'superseded'
+  | 'closed'
+  | 'timeout'
+  | 'interruption'
+  | 'release'
+  | 'defect'
+  | 'unknown-failure';
+
+/** Safe for logging: no tokens, credentials, URLs, messages, stacks, Causes or owners. */
+export interface LoroStreamsTokenErrorContext {
+  readonly kinds: ReadonlyArray<LoroStreamsTokenFailureKind>;
+  readonly authStatuses: ReadonlyArray<401 | 403>;
+}
+
+export interface LoroStreamsTokenHealth {
+  readonly state: 'open' | 'closing' | 'closed' | 'release-failed';
+  readonly closed: boolean;
+  readonly generation: number;
+  readonly activeReads: number;
+  readonly leases: number;
+  readonly refreshRunning: boolean;
+  readonly pendingRawWork: boolean;
+  readonly hasCachedToken: boolean;
+  readonly terminalAuthStatus: 401 | 403 | undefined;
+  readonly cleanupError: LoroStreamsTokenErrorContext | undefined;
+}
 
 export interface LoroStreamsTokenProvider {
-  readonly getToken: (context?: LoroStreamsAuthContext) => Effect.Effect<string, TokenFailure>;
-  readonly createAuthCallback: () => (
-    context?: LoroStreamsAuthContext
-  ) => Effect.Effect<string | undefined, TokenFailure>;
+  readonly getToken: LoroStreamsTokenAuth;
+  readonly createAuthCallback: () => LoroStreamsTokenAuth;
+  readonly health: Effect.Effect<LoroStreamsTokenHealth>;
   readonly invalidate: (reason?: 'manual' | 'unauthorized') => Effect.Effect<void>;
   readonly getGatewayBaseUrl: () => string | undefined;
   readonly getShardHostSuffix: () => string | undefined;
@@ -55,6 +93,58 @@ export interface LoroStreamsTokenProvider {
 export class LoroStreamsTokenShutdownFailed extends Data.TaggedError(
   'LoroStreamsTokenShutdownFailed'
 )<{ readonly cause: Cause.Cause<unknown>; readonly owner: LoroStreamsTokenProvider }> {}
+
+/** Classifies the entire Cause without serializing external error payloads or recovery owners. */
+export function describeLoroStreamsTokenCause(
+  cause: Cause.Cause<unknown>
+): LoroStreamsTokenErrorContext {
+  const kinds = new Set<LoroStreamsTokenFailureKind>();
+  const authStatuses = new Set<401 | 403>();
+  const seen = new Set<Cause.Cause<unknown>>();
+  const pending = [cause];
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current || seen.has(current)) continue;
+    seen.add(current);
+    for (const reason of current.reasons) {
+      if (Cause.isInterruptReason(reason)) {
+        kinds.add('interruption');
+      } else if (Cause.isDieReason(reason)) {
+        if (reason.defect instanceof LoroStreamsTokenShutdownFailed) {
+          kinds.add('release');
+          if (Cause.isCause(reason.defect.cause)) pending.push(reason.defect.cause);
+        } else if (reason.defect instanceof LoroStreamsTokenReleaseFailed) {
+          kinds.add('release');
+        } else {
+          kinds.add('defect');
+        }
+      } else if (Cause.isFailReason(reason)) {
+        if (reason.error instanceof LoroStreamsTokenAuthError) {
+          kinds.add('auth');
+          if (reason.error.status === 401 || reason.error.status === 403)
+            authStatuses.add(reason.error.status);
+        } else if (Cause.isTimeoutError(reason.error)) {
+          kinds.add('timeout');
+        } else if (reason.error instanceof LoroStreamsTokenError) {
+          switch (reason.error.reason) {
+            case 'credential':
+            case 'http':
+            case 'response':
+            case 'superseded':
+            case 'closed':
+              kinds.add(reason.error.reason);
+              break;
+            default:
+              kinds.add('unknown-failure');
+          }
+        } else {
+          kinds.add('unknown-failure');
+        }
+      }
+    }
+  }
+  return { kinds: [...kinds].sort(), authStatuses: [...authStatuses].sort() };
+}
 
 export class LoroStreamsTokens extends Context.Service<
   LoroStreamsTokens,
@@ -191,10 +281,40 @@ export const makeLoroStreamsTokenProvider = Effect.fnUntraced(function* (
             message: 'Invalid Streams workspace id',
           }),
       });
-      const response = yield* ports.request(options.endpoint, auth, {
-        workspaceId: workspace,
-        ...(sent ? { rejectedToken: sent } : {}),
-      });
+      const response = yield* ports
+        .request(options.endpoint, auth, {
+          workspaceId: workspace,
+          ...(sent ? { rejectedToken: sent } : {}),
+        })
+        .pipe(
+          Effect.catchCause((cause) => {
+            const failedStatus = cause.reasons.find(
+              (reason) =>
+                Cause.isFailReason(reason) &&
+                reason.error instanceof LoroStreamsTokenError &&
+                (reason.error.status === 401 || reason.error.status === 403)
+            );
+            if (
+              !failedStatus ||
+              !Cause.isFailReason(failedStatus) ||
+              !(failedStatus.error instanceof LoroStreamsTokenError)
+            )
+              return Effect.failCause(cause);
+            const status = failedStatus.error.status!;
+            return Effect.gen(function* () {
+              yield* assertCurrent.pipe(
+                Effect.catchCause((check) => Effect.failCause(Cause.combine(cause, check)))
+              );
+              terminal = new LoroStreamsTokenAuthError(
+                `Loro Streams token authorization failed (status=${status})`,
+                status
+              );
+              // A failed error-body release does not erase either authorization or
+              // I/O failure; terminal suppression still belongs to this credential.
+              return yield* Effect.failCause(Cause.combine(Cause.fail(terminal), cause));
+            });
+          })
+        );
       yield* assertCurrent;
       if (response.status < 200 || response.status >= 300) {
         if (response.status === 401 || response.status === 403) {
@@ -361,14 +481,23 @@ export const makeLoroStreamsTokenProvider = Effect.fnUntraced(function* (
             }
             const epoch = generation;
             const program = produce(login, epoch).pipe(
-              Effect.tapCause((cause) =>
-                Effect.sync(() =>
-                  emit({
-                    type: 'fetch-failure',
-                    workspaceId: options.workspaceId,
-                    error: cause,
-                    status: terminal?.status,
-                  })
+              Effect.catchCause((cause) =>
+                Effect.uninterruptible(
+                  Effect.sync(() =>
+                    emit({
+                      type: 'fetch-failure',
+                      workspaceId: options.workspaceId,
+                      error: cause,
+                      status: terminal?.status,
+                    })
+                  ).pipe(
+                    Effect.exit,
+                    Effect.flatMap((observed) =>
+                      Effect.failCause(
+                        Exit.isFailure(observed) ? Cause.combine(cause, observed.cause) : cause
+                      )
+                    )
+                  )
                 )
               ),
               Effect.interruptible
@@ -424,6 +553,12 @@ export const makeLoroStreamsTokenProvider = Effect.fnUntraced(function* (
               reason: 'closed',
               message: 'Loro Streams token provider closed',
             })
+          );
+        // Retained release failure fences admission before starting another
+        // credential read, not only before replacing the refresh producer.
+        if (releaseFailure)
+          return yield* Effect.die(
+            new LoroStreamsTokenShutdownFailed({ cause: releaseFailure, owner: provider })
           );
         let operation: Fiber.Fiber<string, TokenFailure> | undefined;
         operation = yield* Effect.forkIn(
@@ -548,17 +683,34 @@ export const makeLoroStreamsTokenProvider = Effect.fnUntraced(function* (
             Effect.sync(() => {
               lastToken = token;
             })
-          ),
-          Effect.catchCause((cause) =>
-            cause.reasons.every(
-              (reason) =>
-                Cause.isFailReason(reason) && reason.error instanceof LoroStreamsTokenAuthError
-            )
-              ? Effect.succeed(undefined)
-              : Effect.failCause(cause)
           )
         );
     },
+    health: Effect.sync(() => {
+      const failure =
+        closeFailure && releaseFailure
+          ? Cause.combine(closeFailure, releaseFailure)
+          : (closeFailure ?? releaseFailure);
+      return {
+        state: failure
+          ? 'release-failed'
+          : closed
+            ? closing && !Deferred.isDoneUnsafe(closing)
+              ? 'closing'
+              : 'closed'
+            : 'open',
+        closed,
+        generation,
+        activeReads: operations.size,
+        leases: task?.leases ?? 0,
+        refreshRunning: task !== undefined && task.fiber.pollUnsafe() === undefined,
+        pendingRawWork: ports.hasPending(),
+        hasCachedToken: cached !== null,
+        terminalAuthStatus:
+          terminal?.status === 401 || terminal?.status === 403 ? terminal.status : undefined,
+        cleanupError: failure ? describeLoroStreamsTokenCause(failure) : undefined,
+      };
+    }),
     invalidate: (reason = 'manual') =>
       Effect.gen(function* () {
         if (reason === 'unauthorized') rejectedToken = cached?.token ?? rejectedToken;
@@ -577,7 +729,11 @@ export const makeLoroStreamsTokenProvider = Effect.fnUntraced(function* (
   };
   yield* Effect.addFinalizer(() => close);
   return provider;
-});
+}) satisfies (
+  options: LoroStreamsTokenProviderOptions
+) => Effect.Effect<LoroStreamsTokenProvider, never, LoroStreamsTokenPorts | Scope.Scope>;
 
-export const LoroStreamsTokensLive = (options: LoroStreamsTokenProviderOptions) =>
+export const LoroStreamsTokensLive = (
+  options: LoroStreamsTokenProviderOptions
+): Layer.Layer<LoroStreamsTokens, never, LoroStreamsTokenPorts> =>
   Layer.effect(LoroStreamsTokens, makeLoroStreamsTokenProvider(options));

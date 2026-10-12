@@ -10,7 +10,7 @@ export interface LoroStreamsRawOwner {
 
 export class LoroStreamsTokenReleaseFailed extends Data.TaggedError(
   'LoroStreamsTokenReleaseFailed'
-)<{ readonly owner: LoroStreamsRawOwner; readonly message: string }> {}
+)<{ readonly owner: LoroStreamsRawOwner; readonly message: string; readonly cause?: unknown }> {}
 
 /** Only used at real Promise I/O / explicitly registered Legacy credential boundaries. */
 export function makeLoroStreamsRawIo(cleanupTimeoutMs: number) {
@@ -39,11 +39,13 @@ export function makeLoroStreamsRawIo(cleanupTimeoutMs: number) {
   const fromPromise = <A, E>(
     label: string,
     start: (signal: AbortSignal) => PromiseLike<A>,
-    failure: (error: unknown) => E
+    failure: (error: unknown) => E,
+    isReleaseFailure: (error: unknown) => boolean = () => false
   ): Effect.Effect<A, E> =>
     Effect.callback<A, E>((resume) => {
       const controller = new AbortController();
       let settled = false;
+      let releaseError: LoroStreamsTokenReleaseFailed | undefined;
       const observers = new Set<() => void>();
       const owner: LoroStreamsRawOwner = {
         label,
@@ -51,10 +53,10 @@ export function makeLoroStreamsRawIo(cleanupTimeoutMs: number) {
         abort: () => controller.abort(),
         awaitSettled: Effect.callback<void>((done) => {
           if (settled) {
-            done(Effect.void);
+            done(releaseError ? Effect.die(releaseError) : Effect.void);
             return Effect.void;
           }
-          const notify = () => done(Effect.void);
+          const notify = () => done(releaseError ? Effect.die(releaseError) : Effect.void);
           observers.add(notify);
           return Effect.sync(() => observers.delete(notify));
         }),
@@ -62,25 +64,37 @@ export function makeLoroStreamsRawIo(cleanupTimeoutMs: number) {
       pending.add(owner);
       const complete = (result: Effect.Effect<A, E>) => {
         settled = true;
-        pending.delete(owner);
+        if (!releaseError) pending.delete(owner);
         for (const notify of observers) notify();
         observers.clear();
         resume(result);
       };
+      const failed = (error: unknown) => {
+        const mapped = failure(error);
+        if (isReleaseFailure(error)) {
+          releaseError = new LoroStreamsTokenReleaseFailed({
+            owner,
+            message: `Loro Streams ${label} release failed`,
+            cause: mapped,
+          });
+          complete(Effect.failCause(Cause.combine(Cause.fail(mapped), Cause.die(releaseError))));
+        } else complete(Effect.fail(mapped));
+      };
       try {
         // Creation and observation are in the same register step. The raw receipt
         // survives interruption; cancellation is not proof that the Promise ended.
-        start(controller.signal).then(
-          (value) => complete(Effect.succeed(value)),
-          (error) => complete(Effect.fail(failure(error)))
-        );
+        start(controller.signal).then((value) => complete(Effect.succeed(value)), failed);
       } catch (error) {
-        complete(Effect.fail(failure(error)));
+        failed(error);
       }
       return Effect.gen(function* () {
-        if (settled) return;
+        if (settled) {
+          if (releaseError) return yield* Effect.die(releaseError);
+          return undefined;
+        }
         controller.abort();
         yield* join(owner);
+        return undefined;
       });
     });
   return {
@@ -90,9 +104,23 @@ export function makeLoroStreamsRawIo(cleanupTimeoutMs: number) {
       const owners = [...pending];
       for (const owner of owners) owner.abort();
       return Effect.gen(function* () {
-        const exits = yield* Effect.forEach(owners, (owner) => join(owner).pipe(Effect.exit), {
-          concurrency: 'unbounded',
-        });
+        const exits = yield* Effect.forEach(
+          owners,
+          (owner) =>
+            join(owner).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  // Report a failed release with its full owner/Cause before retiring
+                  // its settled receipt. Unsettled raw work always remains retained.
+                  if (owner.settled()) pending.delete(owner);
+                })
+              ),
+              Effect.exit
+            ),
+          {
+            concurrency: 'unbounded',
+          }
+        );
         const failures = exits.filter(Exit.isFailure);
         if (failures.length)
           return yield* Effect.failCause(

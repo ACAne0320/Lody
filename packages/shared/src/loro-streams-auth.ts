@@ -331,21 +331,42 @@ export const makeLoroStreamsTokenWebPorts = (options: {
       ? raw.fromPromise('credential', options.resolveCredentialLegacy, ioError('credential'))
       : options.credential,
     request: (endpoint, credential, request) =>
-      raw.fromPromise(
-        'HTTP',
-        async (signal) => {
-          const response = await (options.fetchImpl ?? fetch)(endpoint, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(request),
-            signal,
-          });
-          // Error bodies can contain secrets. Body consumption remains owned by
-          // the same abortable raw operation as fetch.
-          return { status: response.status, body: response.ok ? await response.json() : undefined };
-        },
-        ioError('http')
-      ),
+      Effect.suspend(() => {
+        let status: number | undefined;
+        let releasingBody = false;
+        return raw.fromPromise(
+          'HTTP',
+          async (signal) => {
+            const response = await (options.fetchImpl ?? fetch)(endpoint, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${credential}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(request),
+              signal,
+            });
+            status = response.status;
+            // Error bodies can contain secrets. Body consumption remains owned by
+            // the same abortable raw operation as fetch.
+            if (!response.ok) {
+              releasingBody = true;
+              await response.body?.cancel();
+              releasingBody = false;
+              return { status: response.status };
+            }
+            return { status: response.status, body: await response.json() };
+          },
+          (cause) =>
+            new LoroStreamsTokenError({
+              reason: 'http',
+              message: 'Loro Streams HTTP/body request failed',
+              cause,
+              status,
+            }),
+          () => releasingBody
+        );
+      }),
     now: Clock.currentTimeMillis.pipe(Effect.map((now) => now + getServerTimeOffset())),
     storage: options.storage ?? getLocalStorage(),
     encrypt: (namespace, credential, token) =>
@@ -384,10 +405,16 @@ export {
   LoroStreamsTokens,
   LoroStreamsTokensLive,
   LoroStreamsTokenShutdownFailed,
+  describeLoroStreamsTokenCause,
 } from './loro-streams-token/service';
 export type {
   LoroStreamsTokenProvider,
   LoroStreamsTokenProviderOptions,
   LoroStreamsAuthContext,
+  LoroStreamsTokenAuth,
+  LoroStreamsTokenReadFailure,
+  LoroStreamsTokenFailureKind,
+  LoroStreamsTokenErrorContext,
+  LoroStreamsTokenHealth,
 } from './loro-streams-token/service';
 export { createLoroStreamsTokenProviderLegacy } from './loro-streams-token/legacy';
