@@ -354,7 +354,7 @@ generation Scopes, while `presence-replica.ts` keeps CRDT state synchronous.
 coordinator. Delete the sole Legacy door when doc/Session/reader consumers directly
 compose the service. Full Causes and retained cleanup owners survive root disposal;
 explicit retry proves actual SDK and token cleanup before handoff. Session-active
-leases and local relay pacing remain P6/P7. See the
+leases remain P6; the local relay's upper owners remain pending. See the
 [decision](../notes/implemented/architecture/2026-10-12-effect-workspace-presence.md).
 
 ## Local presence and the shared connection writer

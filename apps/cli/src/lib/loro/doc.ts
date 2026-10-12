@@ -202,8 +202,7 @@ const createLocalLoroDataPlaneServer = (
       encodeAll: () => machineMonitorRuntime.encodeLocalState(),
       subscribe: (listener) => machineMonitorRuntime.subscribeLocalState(listener),
     },
-    // All workspace engines share one fair scheduler: bulk work runs after the
-    // poll phase, one quantum at a time.
+    // All workspace lanes share the physical socket writer and host-turn pacer.
     writerLegacy: getProcessLocalLoroWriterLegacy(LocalLoroWriterNodeTurn),
   });
 
