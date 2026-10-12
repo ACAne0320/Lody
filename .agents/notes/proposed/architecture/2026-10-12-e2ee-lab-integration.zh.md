@@ -163,3 +163,8 @@ manifest 补齐原 DemoSession 的全部方法及源成员指纹：含 construct
 入口和 12 个私有辅助方法。每项列拥有模块、尚缺的真实 session 组合或人类决定；模块
 已有用例不等于对应 session 方法完成。明文 epoch JSON 不作为普通存钥方案迁回，旧
 移除继续等待 D12。源字段和完整 actor/replay 组合仍是独立未完成项。
+
+已有材料的事件比较覆盖全部 LabEvent 字段，包括 eventId、step。先比较可选 parent
+原值再格式化诊断，缺失值不会等于字面字符串 "none"。这里只比较有类型的静态材料，
+不验证 repro 格式、不执行 captured 动作/加密。eventSignature 仍为 actor/operation/
+phase/status 的粗略诊断投影，不能作为精确 replay 相等证据。

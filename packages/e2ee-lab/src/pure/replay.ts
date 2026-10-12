@@ -36,11 +36,25 @@ export function firstDivergence(
         actual: right ? right.eventId : 'missing',
       };
     }
-    for (const field of ['actor', 'operation', 'phase', 'status', 'parent', 'time'] as const) {
-      const expectedValue = left[field] === undefined ? 'none' : String(left[field]);
-      const actualValue = right[field] === undefined ? 'none' : String(right[field]);
+    for (const field of [
+      'eventId',
+      'step',
+      'actor',
+      'operation',
+      'phase',
+      'status',
+      'parent',
+      'time',
+    ] as const) {
+      const expectedValue = left[field];
+      const actualValue = right[field];
       if (expectedValue !== actualValue) {
-        return { index, field, expected: expectedValue, actual: actualValue };
+        return {
+          index,
+          field,
+          expected: expectedValue === undefined ? 'undefined' : JSON.stringify(expectedValue),
+          actual: actualValue === undefined ? 'undefined' : JSON.stringify(actualValue),
+        };
       }
     }
   }

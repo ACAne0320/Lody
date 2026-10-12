@@ -136,3 +136,8 @@ control 网关放行已定的 Recovery 例外：授权本人的新个人设备�
 公开 submission 验证。真实新鲜 possession/bearer HTTP、已发布 StreamsClient 与
 原生 SQLite 用例确认：错误成员的持钥证明、R 禁止操作和坏签名不改变远端字节/尾游标，
 撤权 R 被拒绝。这只是设备登记，不代表恢复库、备份、内容恢复或生产存钥完成。
+
+已有材料的事件比较覆盖全部 LabEvent 字段，包括 eventId、step。先比较可选 parent
+原值再格式化诊断，缺失值不会等于字面字符串 "none"。这里只比较有类型的静态材料，
+不验证 repro 格式、不执行 captured 动作/加密。eventSignature 仍为 actor/operation/
+phase/status 的粗略诊断投影，不能作为精确 replay 相等证据。

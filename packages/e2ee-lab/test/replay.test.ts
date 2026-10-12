@@ -60,9 +60,23 @@ describe('recorded fixture replay comparison without resealing', () => {
       );
       expect(divergent.expected).not.toBe(divergent.actual);
     }
-    const event = material();
-    event.events[0] = { ...event.events[0]!, phase: 'persist' };
-    expect(firstReplayDivergence(expected, event)?.field).toBe('phase');
+    for (const [field, value] of [
+      ['eventId', 'e2'],
+      ['step', 1],
+      ['time', 101],
+      ['actor', 'bob'],
+      ['operation', 'push'],
+      ['phase', 'persist'],
+      ['status', 'requested'],
+      ['parent', 'none'],
+    ] as const) {
+      const event = material();
+      event.events[0] = { ...event.events[0]!, [field]: value };
+      const divergent = firstReplayDivergence(expected, event)!;
+      expect(divergent.index).toBe(0);
+      expect(divergent.field).toBe(field);
+      expect(divergent.expected).not.toBe(divergent.actual);
+    }
     const missing = material();
     missing.entropy.length = 0;
     expect(firstReplayDivergence(expected, missing)?.field).toBe('entropy');

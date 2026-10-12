@@ -172,3 +172,10 @@ instance, new-device PoP and pinned SDK CAS. Actual fresh possession/bearer HTTP
 released StreamsClient/native SQLite tests retain remote bytes/tail on foreign-member
 PoP, forbidden R operations and invalid signatures; revoked R is refused. This is
 device registration, not recovery vault, backup, restored content or production custody.
+
+Recorded-material event comparison covers every existing LabEvent field, including
+eventId and step. It compares optional parent values before formatting diagnostics,
+so missing parent cannot equal the literal string "none". This compares typed inert
+materials; it validates no repro schema and executes no captured actions/crypto.
+eventSignature remains a coarse actor/operation/phase/status diagnostic projection,
+not exact replay equality.

@@ -227,3 +227,10 @@ Primitive/module coverage does not close the corresponding honest session method
 plaintext epoch JSON helpers are retired as ordinary custody, and old removal stays
 blocked on D12. Source fields and complete actor/replay composition remain separate
 uncompleted work.
+
+Recorded-material event comparison covers every existing LabEvent field, including
+eventId and step. It compares optional parent values before formatting diagnostics,
+so missing parent cannot equal the literal string "none". This compares typed inert
+materials; it validates no repro schema and executes no captured actions/crypto.
+eventSignature remains a coarse actor/operation/phase/status diagnostic projection,
+not exact replay equality.
