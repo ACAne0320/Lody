@@ -273,3 +273,10 @@ and OS-child key tests consume it; response alteration/over-limit streams are
 explicit transport instrumentation, not an implementation of product custody or
 a forever-native bounded shutdown guarantee. Full honest startup/re-auth/adoption
 facade and trusted durable checkpoint acquisition remain incomplete.
+
+Authenticated ./http-identity discoverGenesis consumes the existing metadata route
+with a bounded 20KiB body (records remain limited to 8KiB). It checks the requested
+hash, genesis record type and real public ledger signature, and returns an owned
+original record only. Unbound joiners still work. Host storage corruption and
+hostile metadata refuse discovery; no current authority, durable checkpoint,
+control publication or Genesis layout selection follows from this response.

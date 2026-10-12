@@ -1,5 +1,6 @@
 import { Data, Effect, Result, Schema } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
+import { decodeRecord, hashRecordBytes, verifyLedger } from '@lody/e2ee-core/ledger';
 import { signVerified, type DeviceSigner } from '@lody/e2ee-core/signing';
 import { labPossessionMessage } from './credentials';
 import { makeLabSdkOwner } from './sdk-owner';
@@ -23,7 +24,10 @@ const Credential = Schema.Struct({
   issuedAt: Timestamp,
   expiresAt: Timestamp,
 });
-const maxReplyBytes = 16 * 1024;
+const GenesisReply = Schema.Struct({
+  genesis: Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{2}){1,8192}$/)),
+});
+const maxReplyBytes = 20 * 1024;
 
 /** Synthetic local possession/bearer client, not product identity or key custody.
  * Scope owns credential fetch AND bounded response body. Native SDK fetch ports
@@ -57,15 +61,9 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
   const owner = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
   const genesisHex = hex(genesis.toBytes());
   const url = `${origin}/v1/spaces/${genesisHex}/key-mailbox`;
-  const post = Effect.fnUntraced(function* (path: string, value: unknown) {
+  const readJson = Effect.fnUntraced(function* (request: () => Promise<Response>, limit: number) {
     const reply = yield* owner.invoke(async () => {
-      const response = await transport(origin + path, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        redirect: 'error',
-        signal: owner.signal,
-        body: JSON.stringify(value),
-      });
+      const response = await request();
       if (response.status !== 200) {
         await response.body?.cancel();
         return { refused: true as const };
@@ -83,7 +81,7 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
             break;
           }
           count += part.value.length;
-          if (count > maxReplyBytes) return { oversized: true as const };
+          if (count > limit) return { oversized: true as const };
           chunks.push(new Uint8Array(part.value));
         }
         const bytes = new Uint8Array(count);
@@ -108,6 +106,18 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
       catch: () => fail('invalid-response'),
     });
   });
+  const post = (path: string, value: unknown) =>
+    readJson(
+      () =>
+        transport(origin + path, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          redirect: 'error',
+          signal: owner.signal,
+          body: JSON.stringify(value),
+        }),
+      16 * 1024
+    );
   return Object.freeze({
     url,
     authenticate: Effect.fnUntraced(function* (
@@ -176,7 +186,37 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
           })
         );
       };
-      return Object.freeze({ url, fetch: authenticatedFetch });
+      const discoverGenesis = Effect.fnUntraced(function* () {
+        if (owner.signal.aborted) return yield* fail('closed');
+        const reply = yield* Effect.fromResult(
+          Result.mapError(
+            Schema.decodeUnknownResult(GenesisReply)(
+              yield* readJson(
+                () => authenticatedFetch(`${origin}/v1/spaces/${genesisHex}/genesis`),
+                maxReplyBytes
+              )
+            ),
+            () => fail('invalid-response')
+          )
+        );
+        const record = new Uint8Array(Buffer.from(reply.genesis, 'hex'));
+        const head = hashRecordBytes(record);
+        if (!Buffer.from(head.toBytes()).equals(Buffer.from(genesis.toBytes())))
+          return yield* fail('invalid-response');
+        const decoded = yield* Effect.fromResult(decodeRecord(record));
+        if (decoded.body.type !== 'genesis') return yield* fail('invalid-response');
+        yield* Effect.fromResult(
+          verifyLedger({
+            anchor: genesis,
+            records: [record],
+            checkpoint: { head, length: 1 },
+          })
+        );
+        // Own original metadata only. Do not expose the one-record verifier view
+        // as current membership, endpoint, cursor, custody or control bootstrap.
+        return Object.freeze({ anchor: genesis, record });
+      });
+      return Object.freeze({ url, fetch: authenticatedFetch, discoverGenesis });
     }),
   });
 });

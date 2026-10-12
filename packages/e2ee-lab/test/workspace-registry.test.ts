@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import { Effect, Result } from 'effect';
 import { describe, it, expect } from 'vitest';
 import { Bytes } from '@lody/e2ee-core';
+import { hashRecordBytes } from '@lody/e2ee-core/ledger';
+import { makeLabHttpIdentity } from '../src/platform/http-identity';
 import { history } from './ledger-fixture';
 import { makeLabWorkspaceRegistry } from '../src/platform/workspace-registry';
 const ok = Result.getOrThrow;
@@ -186,6 +188,52 @@ describe('public genesis workspace metadata', () => {
               workspaces: registry,
             });
             const auth = yield* host.authenticate(f.owner, 'unbound');
+            const saved = yield* auth.discoverGenesis();
+            expect(saved.anchor.equals(f.anchor)).toBe(true);
+            expect(saved.record).toEqual(f.genesis);
+            saved.record.fill(0);
+            expect((yield* auth.discoverGenesis()).record).toEqual(f.genesis);
+            // Actual host responses are explicitly replaced only at discovery.
+            // This models hostile metadata, without replacing crypto or authority.
+            const attacked = (anchor: Bytes.GenesisHash, payload: unknown) =>
+              Effect.gen(function* () {
+                const client = yield* makeLabHttpIdentity({
+                  baseUrl: new URL(host.url).origin,
+                  genesis: anchor,
+                  fetch: async (request, init) => {
+                    const response = await fetch(request, init);
+                    const target = request instanceof Request ? request.url : String(request);
+                    if (!target.endsWith('/genesis')) return response;
+                    await response.body?.cancel();
+                    return new Response(JSON.stringify(payload));
+                  },
+                });
+                const unbound = yield* client.authenticate(f.owner, 'unbound');
+                return yield* Effect.result(unbound.discoverGenesis());
+              });
+            expect(Result.isFailure(yield* attacked(f.anchor, { genesis: 'zz' }))).toBe(true);
+            const bad = new Uint8Array(f.genesis);
+            bad[bad.length - 1] ^= 1;
+            const badAnchor = ok(Bytes.genesisHash(hashRecordBytes(bad).toBytes()));
+            expect(
+              Result.isFailure(
+                yield* attacked(badAnchor, { genesis: Buffer.from(bad).toString('hex') })
+              )
+            ).toBe(true);
+            expect(
+              Result.isFailure(
+                yield* attacked(badAnchor, { genesis: Buffer.from(f.genesis).toString('hex') })
+              )
+            ).toBe(true);
+            const nonGenesis = f.records[1];
+            const wrongTypeAnchor = ok(Bytes.genesisHash(hashRecordBytes(nonGenesis).toBytes()));
+            expect(
+              Result.isFailure(
+                yield* attacked(wrongTypeAnchor, {
+                  genesis: Buffer.from(nonGenesis).toString('hex'),
+                })
+              )
+            ).toBe(true);
             const url = host.url.replace('/key-mailbox', '/genesis');
             const lease = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
             const get = (target: string, transport: typeof fetch) =>
@@ -211,6 +259,7 @@ describe('public genesis workspace metadata', () => {
               db.close();
             }
             expect((yield* get(url, auth.fetch)).status).toBe(500);
+            expect(Result.isFailure(yield* Effect.result(auth.discoverGenesis()))).toBe(true);
           })
         )
       );

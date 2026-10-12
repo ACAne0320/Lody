@@ -6699,10 +6699,11 @@
             "sha256": "60de0db846233ff8f91673c4739fce6c639542eef43e8a9d990c5acab446a212",
             "targetPaths": [
               "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/workspace-registry.ts"
+              "packages/e2ee-lab/src/platform/workspace-registry.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Verified original signer/hash/metadata persistence module exists. Actual host adoption plus client ledger bootstrap depends on selected genesis layout; hash alone is not membership/current trust."
+            "reason": "Verified original signer/hash/metadata persistence module exists. Actual host adoption plus client ledger bootstrap depends on selected genesis layout; hash alone is not membership/current trust. Public authenticated discovery now verifies original signature as well as hash/type with bounded body and owned record. Metadata is not current authorization; keyring/session/ledger initialization still pending human bootstrap layout."
           },
           {
             "name": "submit",
@@ -9165,7 +9166,7 @@
     "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
     "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "Current public HTTP identity client full root core302/Lab89, format/docs/publicboundary7024files/27manifests pass; all66 Lab input SHA unchanged. Real bounded body/receipt identity/signer snapshot/native foreign sink/closed request and HTTP HPKE OS-child consumers pass. Full original Lab2/honest actor, exact final stack CI and independent review remain pending; earlier ed9986e and other fixed evidence kept separate.",
+    "authorRootCheck": "Current authenticated genesis discovery full root core302/Lab89, format/docs/publicboundary7024files/27manifests pass; all66 Lab input SHA unchanged. Actual loopback/SQLite discovery verifies original signature and requested hash, refuses wrong type/malformed hex/corrupt persisted row, returns owned metadata only. Earlier ef459a2 identity/key-round and older evidence remain separate; full original Lab2/actor/final stack CI/independent review unfinished.",
     "lastFetchedMain": {
       "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
       "tree": "f3168cbda928a4f9866fba330c8278bbbb09d5ef",
@@ -9199,6 +9200,7 @@
     "referenceModel": "All14 original pure exports retained, independent owned synthetic observations plus public metadata-only fact adapter; rotation blocks new seal, missing rotation/kind/cursor/retry stays unmeasured, legacy bool not agreement, snapshot eligibility not full snapshot trust. Actual actor/reference correspondence incomplete.",
     "keyRound": "One finite application pass now consumes unchanged public distributor with real Owner epoch0/1 and reopened R HTTP/HPKE/SQLite/OS-child evidence. Bad-frame/install failures propagate without next; invalid budget leaves actual native task/mailbox untouched. Startup/re-auth/bootstrap/session class and automatic pagination remain incomplete.",
     "sessionInventory": "All43 methods (31 public inclconstructor,12private) and29 declared fields + constructor options have source member SHA/destinations; raw ordinary key maps/private point cache replaced by public owners, synthetic adversary fixtures explicitly retained. Inventory is not facade completion.",
-    "httpIdentity": "Actual bounded local native possession/bearer client extracted from test helper; public verifier/provenance-safe signer capture, Schema account/device/Org/token/timestamp response validation, original lease policy retained, same-origin/redirect/closed guard. Native transport instrumentation is explicit; full application identity/re-auth/facade and forever-native bounded finalizer remain incomplete."
+    "httpIdentity": "Actual bounded local native possession/bearer client extracted from test helper; public verifier/provenance-safe signer capture, Schema account/device/Org/token/timestamp response validation, original lease policy retained, same-origin/redirect/closed guard. Native transport instrumentation is explicit; full application identity/re-auth/facade and forever-native bounded finalizer remain incomplete.",
+    "genesisConsumer": "Authenticated bounded existing metadata discovery verifies requested hash/type/real original signature and returns owned original bytes only. Unbound joiners preserved; not current authority or selected Genesis/control bootstrap. Full adopt/session keyring and ledger initialization incomplete."
   }
 }

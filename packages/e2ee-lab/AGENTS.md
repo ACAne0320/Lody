@@ -36,3 +36,6 @@ not prove agreement. Snapshot eligibility alone never admits a snapshot.
 Credential clients capture signer bindings before await, bound credential body
 reads, validate returned identity and refuse bearer forwarding to another origin
 or after close. SDK transport callbacks keep explicit caller ownership.
+
+Genesis metadata clients verify canonical original signatures and requested hash.
+A discovery record is not a current ledger view, checkpoint or authority.

@@ -165,3 +165,8 @@ redirect 和关闭后请求。SDK 的 Promise fetch 端口借用 identity signal
 OS-child 密钥用例直接消费它。改写回执/超预算 stream 明确是 transport 测试插桩，
 不是产品存钥或永不结束 native 的有界关闭保证。完整 startup/reauth/adoption facade
 和可信持久 checkpoint 获取仍未完成。
+
+已认证 ./http-identity discoverGenesis 消费现有元数据路由，响应体上限20KiB
+（记录仍限8KiB）。它检查请求哈希、genesis记录类型及公开账本真实签名，仅返回
+独立拥有的原始记录。未绑定workspace的joiner仍可发现。坏存储和敌意元数据拒绝；
+响应不提供当前权限、持久checkpoint、控制流发布或Genesis布局选择。

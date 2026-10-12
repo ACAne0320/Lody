@@ -20,10 +20,10 @@
   "implementation": "Public core/released SDK consumers with partial actual loopback credentials/control/mailbox/joins routes. HPKE installation and signed join metadata use real possession/bearer HTTP; synthetic identity/wrapping and full Lab remaining explicit. No copied core. Finite signed synthetic epoch1 distribution/install/history restoration in an OS child; production producer/backup and full control history host remain pending.",
   "originalFailures": "Immutable original Lab2 baseline is retained. New consumer probes pass; full original host/actor scenarios are not closed.",
   "targetFingerprints": {
-    "AGENTS.md": "ed37d4aaede3855c0178d0f4171e65b83f6227f178e175eff19c3d2b1a0cc26d",
-    "CLAUDE.md": "ed37d4aaede3855c0178d0f4171e65b83f6227f178e175eff19c3d2b1a0cc26d",
-    "README.md": "4e639ef8e7a8148b6c03efd79aeb57404324f68a44349db2a1bb5687222ca71e",
-    "README.zh.md": "8c077f81c51717af156ca472a953a9212451b6785456439d83b54cf494d9a12f",
+    "AGENTS.md": "42aadd5a7d127a27d4d9cdc4e4c75be907be2dbf1010cc42e971c77b0b314207",
+    "CLAUDE.md": "42aadd5a7d127a27d4d9cdc4e4c75be907be2dbf1010cc42e971c77b0b314207",
+    "README.md": "9cbe437318143413fc6be345e0806a9c2da3b436bbb2b8713d78edb156ec35d8",
+    "README.zh.md": "738cb7d6e667059c8c2fe6ff06576e2100185488bc788ff9883e6caa4969e1c4",
     "package.json": "d25a825c3a5c2ed5e204deb4fce9c64604d4e03a571e507007c0091d2498f36e",
     "src/platform/content-provider.ts": "b4be8bfceb43a591097015499c10aefbd4ab870105d3569dddd7fa951ff9501d",
     "src/platform/content-session.ts": "7c22e34f85f2eabd79b472b861681127e7bb6b2ced687da3bc47c8eb415e6dfe",
@@ -58,7 +58,7 @@
     "test/credentials.test.ts": "6e0f9f5acee939cfb3f3e6e00681f8b59a094d608a0df361a1d44497adcc2b84",
     "test/driver.test.ts": "e8fd4e1d7986da517ca9cac3c0461195107fb97b035a229edc2287f0566f7d96",
     "test/gateway.test.ts": "20948f66cc48fd959223733b0a5663d82e4c6c690e1e73c08252cfcd9eb44df2",
-    "test/host.test.ts": "41c9853960a2003f69d2421c644eb8da7a809a009450ece91d2f211e13b262a5",
+    "test/host.test.ts": "6755e3edebf6e70d1acc16fb0f1b7952ea6288f4a8dbed8a7765150d3ffffd2b",
     "test/join-mailbox.test.ts": "e446dd1c1836fbf6093a54c2649cd659855556c710cee0e77b52f728f7db7386",
     "test/judge.test.ts": "d3054dcb2a5dc52790b8d30343d33b5adab0099cb86dc880a01dfc277c1e2ce7",
     "test/key-distribution.test.ts": "07676cf0dfa78def9ac2908811479416de275dcbcd5fac3d97d08f2ed20c527a",
@@ -77,7 +77,7 @@
     "test/scheduler.test.ts": "68ad31cf9cf10cbd1e27e3b99dfdb4b68c9c6033f73823fa892af6b742666c12",
     "test/stream-read.test.ts": "86d6a4f3a92b920a9aa06b38c7c88403cbe21799678ad8cce85452c23d632a4a",
     "test/workspace-registry-reopen.mts": "01bad80389bb3e671ecee1fc3f27f817adc6d892534b578b1b1307b6ffd28211",
-    "test/workspace-registry.test.ts": "a46d8be2875822c0206ba04d18be19a7acfa092c82e5cab6b35adaead7c64115",
+    "test/workspace-registry.test.ts": "7ebd6269531d835e5389928a10f6951dcf364c4c321e8440b35d4b33bee0d006",
     "tsconfig.json": "b88fb9865d3be1692d2db141b9f4bac2ceebfa4eaf31027ffa2991da2a6a756d",
     "src/platform/device.ts": "143763bfa64fdd40fc296cd81d5ebdbbe67ef28a58e1e6fd0a299f2bcfaa48e6",
     "src/pure/fingerprint.ts": "de366b38db2b81dc64fd353a05a63f991e1cbaf745f2d67e74b147682d0eaffb",
@@ -85,7 +85,7 @@
     "src/pure/reference-model.ts": "f603f10d197727f5fb9ec399bf1bc421622be67226880c10ed09e15b6691d619",
     "test/reference-model.test.ts": "3be46c65a2adbd89b92b7b8bc79333bd1ee034fd9f4df917616dfd7b117d1662",
     "src/platform/key-round.ts": "a11d48a996d0575d2a34ea7a0dce183d0f7d875a2687bb2f9340d32bf54b2ba0",
-    "src/platform/http-identity.ts": "491f523b5176543b4a5b99b65e4c719c48818c7b973a406ddb208a79906149b5"
+    "src/platform/http-identity.ts": "b1b41b29b10214ee12cd6102cfbc518f8d94d93528e9261aa17152cebcfce480"
   },
   "sourceSpecificFingerprints": {
     ".gitignore": {

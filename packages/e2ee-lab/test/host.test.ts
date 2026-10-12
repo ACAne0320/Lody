@@ -480,6 +480,8 @@ describe('public Lab credential client on actual local HTTP', () => {
       );
       expect(retained).toBeDefined();
       await expect(retained!.fetch(retained!.url)).rejects.toMatchObject({ code: 'closed' });
+      const afterClose = await Effect.runPromise(Effect.result(retained!.discoverGenesis()));
+      expect(Result.isFailure(afterClose)).toBe(true);
     } finally {
       await f.close();
     }
