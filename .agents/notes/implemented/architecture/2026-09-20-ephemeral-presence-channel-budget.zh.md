@@ -115,6 +115,8 @@ null 分支此前完全没有测试，而 `commands/agent-config.ts` 早已正�
 
 ## 事实纠正与诊断边界 — 2026-10-12
 
+诊断 PR：[#1503](https://github.com/LodyAI/Lody/pull/1503)。
+
 重新核对消费中的 streams-crdt 0.16.2 后纠正当前队列说明：内置
 `EphemeralStoreAdaptor` 会合并未发送的同 key set/delete 更新链；in-flight bytes 与
 不同 key、未知或多 key 写入仍彼此独立。上文 0.15.1 的检查是历史事实；速率、体积、来源

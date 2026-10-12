@@ -144,6 +144,8 @@ recorded in
 
 ## Correction and diagnostic boundary — 2026-10-12
 
+Diagnostic PR: [#1503](https://github.com/LodyAI/Lody/pull/1503).
+
 Reinspection of consumed streams-crdt 0.16.2 corrects the current queue description:
 its built-in `EphemeralStoreAdaptor` coalesces unsent same-key set/delete chains.
 In-flight bytes and distinct/unknown/multi-key writes remain independent. The
