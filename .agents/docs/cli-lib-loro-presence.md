@@ -15,7 +15,7 @@ perfectly while reading offline.
 
 One workspace owns ONE presence transport, and the machine heartbeat shares it with
 every other presence writer in that workspace. Publication is serial. In
-`@loro-dev/streams-crdt@0.16.0`, the built-in `EphemeralStoreAdaptor` supplies
+`@loro-dev/streams-crdt@0.16.2`, the built-in `EphemeralStoreAdaptor` supplies
 `localUpdateKey`: newer single-key set/delete updates replace older unsent updates
 for the same key, while in-flight and unknown/multi-key updates remain independent.
 All three Lody construction sites use that adaptor directly. Coalescing does not
@@ -101,16 +101,47 @@ machine online checks read presence only. Never reintroduce periodic doc-meta wr
 (`lastSeen` / `lastRunningSeen`): they stall Loro flush, and meta timestamps are
 written only at status transitions.
 
+## Diagnostics and their evidence boundaries
+
+`presence.ts` temporarily observes the existing auth and fetch boundaries; it does
+not duplicate the upstream queue. Each remote attachment has a diagnostic generation.
+Attempt numbers identify observed auth/fetch calls, not retries or heartbeat IDs;
+auth calls cannot be attributed to read versus write by the published callback.
+Successful individual events use trace (`LODY_LOG_TRACE=1`); slow completions use
+debug. The machine heartbeat samples health at most once per 30s: pending auth/POST
+ages or accumulated failures select warn, otherwise debug. Failures also request
+that rate-limited summary; a suppressed failure remains counted for the next one.
+
+| Stage / field | What is actually observed |
+| --- | --- |
+| `local_update` | Local store write; `pendingLocalCount` counts logical unacknowledged updates, including in-flight and superseded writes. It is not queue depth or queued-ahead count. |
+| `auth_start` / `auth_ready` / `auth_failed` | Actual callback starts/completes/rejects. `authPending` and `authAgeMs` retain still-pending raw callbacks. No token or callback context is logged. |
+| `post_start` / `post_response` / `post_failed` | Actual fetch starts, returns response headers, or rejects. HTTP 200/204 is accepted by this upstream writer; response timing is not the exact send time. `postPending`, `postAgeMs` and `sincePostResponseMs` describe observed requests. |
+| `read_response` | GET response headers, not SSE bootstrap, body consumption, or continuous read health. Workspace snapshots independently show received peer state. |
+| `barrier_complete` / `barrier_failed` | One `waitUntilSynced()` snapshot of chains completes/rejects. Same-key successors may replace the original heartbeat; later independent chains are excluded. `barrierAgeMs` is barrier latency, not heartbeat age on arrival. |
+| `queueAgeMs`, `retryAttempt`, `peerReceipt` | `unavailable`: the published ephemeral API exposes neither entry age/retry identity nor peer receipts. Auth/fetch attempt numbers cannot fill these gaps. |
+| `close_returned` | Upstream close returned. In 0.16.2 it rejects barriers and detaches local updates but can leave POST running without aborting its signal. This is not confirmed I/O cleanup. |
+
+The ephemeral subscription inherits optional `lastLocalAppendAtMs` and
+`lastWriteError` declarations but does not implement their getters in 0.16.2.
+Diagnostics do not read them. A joined read side can coexist with a blocked POST;
+bootstrap can also precede a stuck outbound flush while `join()` has not returned,
+so `room` and `pendingLocalCount` may be unavailable before acquisition completes.
+
+Effect logs route through the existing daemon file logger. The adapter reads v4
+annotations from the fiber reference and projects only known numeric fields and
+closed enums; Cause output contains reason categories, not error contents. No new
+telemetry sink is added. Log messages must themselves remain content-free.
+
+Replace the temporary auth/fetch observer when a pinned published upstream native
+API supplies equivalent safe stage events and truthful completion receipts. Preserve
+these real-boundary regressions while doing so. Presence/token/Turn ownership has
+not migrated here; the lifecycle gap remains for the native upstream and Lody owners.
+
 ## Diagnosing "machine shows offline"
 
-Keep these claims separate, in this order:
-
-1. Read liveness independently of the browser with `lody machine list --workspace <selector> --json`. A presence-room warning means unknown, not offline.
-2. Compare another workspace on the same machine. Each workspace has its own transport and queue, so one workspace offline while another is online points at a per-workspace publisher, not at the host.
-3. Read the counters on the heartbeat line itself. `writeMachineHeartbeat` appends `queued=` (shared-queue depth), `room=`, `sinceLastAppendMs=` (how long the write path has made no progress) and, when uploads are stuck, `writeError=`/`writeErrorRetryable=`. The line still proves only a LOCAL store write — it is emitted without awaiting any publish acknowledgement — but the counters describe the queue that write just entered.
-4. A `Loro presence machine heartbeat delivered` line reports `ageAtSendMs`, the heartbeat's age when it actually left the process, and `queuedAhead`. At or past the freshness window it is logged at WARN: that heartbeat reached readers already expired, so they still report this machine offline. One delivery probe runs at a time; while one is outstanding, later heartbeat lines carry `unackedHeartbeatSeq=`/`unackedForMs=`, which is how a permanently stalled queue surfaces instead of going silent.
-5. Count presence writes per second per session in `~/.lody/logs/`. Hundreds or thousands of writes from one session in a few seconds is the signature; correlate its onset with the offline interval.
-6. Room status `joined` with a backlog is indistinguishable from healthy on the room status alone. Connection health is not delivery freshness — read `queued=` and `ageAtSendMs` instead.
-
-Restarting the daemon destroys the evidence and the backlog returns with the next
-burst; it is not a fix.
+1. Read independently with `lody machine list --workspace <selector> --json`. A room warning means unknown, not offline. Compare another workspace on the same machine to isolate its transport.
+2. Read the rate-limited `health` records in the configured Lody data directory's logs. `room=joined` and growing `postAgeMs` isolate a pending POST; growing `authAgeMs` with no POST isolates a callback wait. Neither proves a production root cause.
+3. Enable trace for individual local/auth/POST/barrier events when needed. Check the diagnostic generation and attempt, never interpret a barrier as that heartbeat's exact send or a peer receipt. Slow/failed branches remain available without trace.
+4. Check publishers against the rate/size budget. Coalescing helps same-key unsent writes, but distinct-key traffic and in-flight bytes remain independent. Do not infer physical POST counts from `pendingLocalCount`.
+5. Keep transport status, local writes, server response, snapshot barrier completion and peer observation separate. Restarting destroys the evidence and does not fix a flooding writer.
