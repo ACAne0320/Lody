@@ -60,6 +60,10 @@ Renderer 拆除在丢弃 provider 前等待 close；官方 CLI root 在 dispose 
 
 ## 证据与限制
 
+PR：[#1506](https://github.com/LodyAI/Lody/pull/1506)（draft）。
+已验证源码 revision：b79eea2df26e5ecd0e796e9dfd9c32a75a4d13b7；
+后续仅文档改动补记审阅链接。
+
 Base：3ac76bad10f46720517a2ca6929f03de4ef5bb9b。Effect 保持 4.0.2，无 manifest、lockfile
 或 submodule gitlink 改动。已有 token suite 使用 HTTP/encryption/admission 显式 signals，原生
 时限由 TestClock 驱动，保留真实 WebCrypto/加密缓存回归。两项允许旧 raw 未清理便开始新工作的

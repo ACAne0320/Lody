@@ -85,6 +85,10 @@ this kernel. The root roadmap is maintained separately by the coordinator.
 
 ## Evidence and limits
 
+PR: [#1506](https://github.com/LodyAI/Lody/pull/1506) (draft).
+Tested source revision: `b79eea2df26e5ecd0e796e9dfd9c32a75a4d13b7`;
+subsequent documentation-only changes record this review link.
+
 Base: `3ac76bad10f46720517a2ca6929f03de4ef5bb9b`. Effect remains 4.0.2;
 no manifest, lockfile or submodule gitlink changes. The existing token suite uses
 explicit HTTP/encryption/admission signals and TestClock for native workflow
