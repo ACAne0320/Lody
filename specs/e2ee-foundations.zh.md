@@ -35,3 +35,19 @@ info `lody-e2ee/hpke-epoch/v1\0` 与账本规范四字段 AAD。只把 32 字节
 [模块入口](../packages/e2ee-core/README.md)、
 [固定向量与负例](../packages/e2ee-core/test/foundation.test.ts)、
 [来源指纹](../packages/e2ee-core/provenance.json)。
+
+## 本地 epoch 保护边界
+
+接收者须能重新打开已持久保留的安装密钥，不能要求原发送者一直有效。
+可信 host composition 可初始化一次原生 protect/unprotect 能力；普通消费者
+继续使用 opaque key。原生保护须将用途、Org genesis、接收者、epoch、commitment
+与密钥一起绑定。被攻破的 host 可以复制明文；此契约不宣称操作系统隔离，
+也不声称清零能追回这些副本。
+
+安装报告须晚于持久保存、实际回读／解封和独立 commitment 校验。失败不得
+宣称已报告安装。原生工作结束和临时清理须晚于取消请求、早于取消／Scope
+完成。禁止明文降级或生产装配。原生适配器选择、恢复文件／包装／并发及发布
+设备丢失后的备份仍是独立未决项。本 Spec 修订保持 draft；边界方向已定和合成
+测试通过，不代表整份修订获批或原生存钥通过验收。
+
+[Host 契约与验证边界](../packages/e2ee-core/src/keys/HOST-PROTECTION.md)。

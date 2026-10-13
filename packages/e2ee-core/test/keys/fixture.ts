@@ -19,7 +19,7 @@ export async function recipientPair(): Promise<CryptoKeyPair> {
     publicKey: await kem.deserializePublicKey(bytes(v.pkR)),
   };
 }
-export function envelopeFixture(kind: 0 | 1 | 2 = 0) {
+export function envelopeFixture(kind: 0 | 1 | 2 = 0, org = 100) {
   const ed = (n: number) => {
     const privateKey = createPrivateKey({
       key: Buffer.concat([
@@ -56,7 +56,7 @@ export function envelopeFixture(kind: 0 | 1 | 2 = 0) {
       owner.raw,
       new Uint8Array(32).fill(10),
       member,
-      new Uint8Array(32).fill(100),
+      new Uint8Array(32).fill(org),
       commitment.toBytes(),
     ]),
   ];

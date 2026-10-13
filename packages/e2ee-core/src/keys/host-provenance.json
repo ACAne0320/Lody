@@ -1,0 +1,26 @@
+{
+  "sourceCommit": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "sourceState": "frozen candidate plus captured staged patch",
+  "hashAlgorithm": "SHA-256",
+  "sources": {
+    "node-epoch-store.ts": "b4bd1e962dc24c3d8ce9dc3dcf60287e879e0cd8fa3d4e01dc2d8e7c64caf4d4",
+    "pure/epoch-keyring.ts": "8e542ff11d2625ae9cb15c6ed094f49d372d9250c14fa978fe4a5c4e1b4ead89",
+    "ports/epoch-rotation.ts": "3daf93950a8824d29c22320c31317c63e0b8c9c77deefa9f4659764861753573",
+    "platform/node-epoch-files.ts": "d440c53977145f12495210a918d5e7bae06f4fa9c844db971c8df106e144bd09",
+    "workflows/key-distribution.ts": "ff8c46814c2e2755e128aece4d7a3dd25e034ca82d098282d1d765c8e5b8b481"
+  },
+  "scope": "Host-only accepted epoch protection direction and recipient installed-key retention only; not the old JSON epoch journal, publisher candidate/backup, recovery vault, report workflow or platform assembly.",
+  "adaptations": [
+    "One trusted initialization-time protect/unprotect capability, no per-install callbacks in ordinary key APIs.",
+    "Protect complete purpose/Org/recipient/epoch/commitment/key local payload; preserve established ledger commitment, never infer Org from commitment zero.",
+    "Separate indexed opaque-blob SQLite schema, exclusive create, no plaintext JSON import/fallback, first original retained without a lifetime row cap.",
+    "Real verified current-recipient/prefix checks before and after native work, durable public authority pin; no journal role trust.",
+    "Scope-owned native leases, awaited native settlement and actual brackets wiping plaintext; no hidden Runtime/fiber.",
+    "Save actual blob then reload/unprotect/commitment check; installed report queue remains separate. Synthetic protector tests are not native OS custody acceptance."
+  ],
+  "destinationFingerprints": {
+    "src/keys/host-protection.ts": "c95d41df1144496517ed5399f9a04934034cd5b99665b52471f54db8b4a34289",
+    "src/keys/protected-sqlite.ts": "6a5a29a625a78a5d494f17e259e0672f9051e3e3139c4f9dd74a1177ec8ffe45"
+  },
+  "directParent": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b"
+}

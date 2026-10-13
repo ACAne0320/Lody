@@ -39,6 +39,25 @@ required; async native completion precedes temporary-buffer cleanup and cancella
 completion. Outer signatures, current eligibility and epoch commitments remain
 mandatory caller responsibilities; HPKE validity does not establish sender identity.
 
+## Local epoch protection boundary
+
+A recipient must be able to reopen a durably retained installed epoch key without
+requiring its original sender to remain active. Trusted host composition may
+initialize one native protect/unprotect capability; ordinary consumers continue
+using opaque keys. Native protection binds purpose, Org genesis, recipient, epoch
+and commitment together with the key. A compromised host can copy plaintext;
+this contract does not claim OS isolation or reversible erasure of those copies.
+
+Installation reporting must follow durable save, actual reload/unprotect and
+independent commitment verification. Failure must never claim reported installation.
+Native settlement and temporary cleanup precede cancellation/Scope completion.
+No plaintext fallback or production composition is allowed. Native adapter choice,
+recovery file/wrapping/concurrency and publisher-loss backup remain unresolved
+separate decisions. This Spec revision stays draft; accepted boundary direction
+and executed synthetic tests do not approve this entire revision or native custody.
+
+[Host contract and validation boundary](../packages/e2ee-core/src/keys/HOST-PROTECTION.md).
+
 ## Evidence
 
 [Module and entrypoints](../packages/e2ee-core/README.md),
