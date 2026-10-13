@@ -4104,8 +4104,6 @@
   "orchestration.operationCompleted": "操作已完成",
   "orchestration.operationFailed": "操作失败",
   "orchestration.operationCancelled": "操作已取消",
-  "orchestration.continuationNotStarted": "保存的 Agent 配置不可用，因此没有启动后续执行。",
-  "orchestration.continuationUncertain": "后续执行可能在中断前已经启动，因此没有自动重放。请检查现有输出，并在需要时手动继续。",
   "sessions.turnConfig.tooltipEmpty": "此轮没有记录运行配置",
   "sessions.turnConfig.tooltip": "查看运行配置",
   "sessions.turnConfig.open": "运行配置",
@@ -4930,6 +4928,8 @@
   "sessions.messageAuthor.on": "开启",
   "sessions.messageAuthor.off": "关闭",
   "settings.memory.rolePromptHint": "记忆 Provider 可能向提示词注入角色定义，请留意是否与 Lody 中的配置重复或冲突。",
+  "orchestration.batchResults": "{{count}} 项任务结果已完成",
+  "orchestration.batchResultsUnknown": "{{count}} 项结果已保存，模型是否收到尚不确定",
   "billing.invoiceReasonStarted": "首次订阅",
   "billing.invoiceReasonRenewed": "订阅续费",
   "billing.invoiceReasonSeatsAdded": "新增席位",
@@ -4960,5 +4960,11 @@
   "billing.seatRemovalConsequences": "本期费用不退，空出的席位在续费前可复用。",
   "billing.workspaceDeletionCharges": "删除后不再续费，已产生的费用仍会照常收取。",
   "billing.seatApprovalConfirm": "批准后对方立即获得访问权限。",
-  "billing.deletedWorkspaces": "已删除的工作区"
+  "billing.deletedWorkspaces": "已删除的工作区",
+  "sessions.inputTargetUnavailable": "这个对话已归档或删除，本地输入仍然保留。",
+  "sessions.inputTargetChanged": "对话的目标机器发生了变化，输入仍绑定原来的机器。",
+  "sessions.inputOwnerNeedsUpdate": "请更新会话所在的机器，再接收这条消息。",
+  "sessions.inputStorageUnavailable": "当前环境无法安全保存和投递这条消息。",
+  "sessions.inputOutcomeUnknown": "尚未收到会话所在机器对这条消息的确认，请检查原发送结果。",
+  "sessions.removeLocalInput": "移除本地记录"
 }

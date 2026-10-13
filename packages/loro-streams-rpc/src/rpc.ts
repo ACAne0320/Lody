@@ -55,6 +55,7 @@ import type {
   MachineAcpAuthenticateResponse,
   MachineAcpAuthenticationProgressMessage,
   MachineAcpCapabilitiesRefreshResponse,
+  MachineProviderRateLimitsRefreshResponse,
   MachinePiExtensionsResponse,
   RpcSecretEnvelope,
   RpcSecretPublicKey,
@@ -113,6 +114,7 @@ import {
   MachineAcpAuthenticateResponseSchema,
   MachineAcpAuthenticationProgressMessageSchema,
   MachineAcpCapabilitiesRefreshResponseSchema,
+  MachineProviderRateLimitsRefreshResponseSchema,
   MachinePiExtensionsResponseSchema,
   RpcSecretEnvelopeSchema,
   PreviewTargetSchema,
@@ -236,6 +238,7 @@ export const LoroStreamsRpcMethodSchema = z.enum([
   'machine/ping',
   'machine/restart',
   'machine/upgrade',
+  'machine/provider-rate-limits-refresh',
   'machine/acp-capabilities-refresh',
   'machine/acp-capabilities-refresh-cancel',
   'machine/acp-authenticate',
@@ -340,6 +343,11 @@ export const LoroMachineUpgradeRpcRequestSchema = BaseRpcRequestSchema.extend({
       targetVersion: z.string().trim().min(1).optional(),
     })
     .strict(),
+}).strict();
+
+export const LoroMachineProviderRateLimitsRefreshRpcRequestSchema = BaseRpcRequestSchema.extend({
+  method: z.literal('machine/provider-rate-limits-refresh'),
+  params: z.object({ configId: AgentConfigIdSchema }).strict(),
 }).strict();
 
 export const LoroMachineAcpCapabilitiesRefreshRpcRequestSchema = BaseRpcRequestSchema.extend({
@@ -524,6 +532,8 @@ export const LoroSessionCancelRpcRequestSchema = BaseRpcRequestSchema.extend({
     .object({
       sessionId: SessionIdSchema,
       turnId: z.string().trim().min(1),
+      cancelId: z.string().uuid().optional(),
+      pauseInbox: z.boolean().optional(),
       subagentTaskId: z.string().trim().min(1).optional(),
     })
     .strict(),
@@ -599,6 +609,7 @@ export const LoroSessionDispatchTurnRpcRequestSchema = BaseRpcRequestSchema.exte
       userTurnId: z.string().trim().min(1),
       userId: z.string().trim().min(1),
       timestamp: z.string().trim().min(1),
+      inputOrigin: z.enum(['human', 'agent']).optional(),
       // Opaque at the transport layer; the server normalizes it with
       // `normalizeSessionTurnInputConfig` before handing it to the CLI, the
       // same guard used for turn input configs read from CRDT history.
@@ -719,6 +730,7 @@ export const LoroStreamsRpcRequestSchema = z.discriminatedUnion('method', [
   LoroMachinePingRpcRequestSchema,
   LoroMachineRestartRpcRequestSchema,
   LoroMachineUpgradeRpcRequestSchema,
+  LoroMachineProviderRateLimitsRefreshRpcRequestSchema,
   LoroMachineAcpCapabilitiesRefreshRpcRequestSchema,
   LoroMachineAcpCapabilitiesRefreshCancelRpcRequestSchema,
   LoroMachineAcpAuthenticateRpcRequestSchema,
@@ -1587,6 +1599,7 @@ export type LoroMachineRpcResult =
   | CodeCollabV2RpcResponse
   | CodeCollabV2Error
   | FilePreviewV3Response
+  | MachineProviderRateLimitsRefreshResponse
   | MachineAcpCapabilitiesRefreshResponse
   | MachineAcpAuthenticateResponse
   | MachineAcpAuthenticationProgressMessage
@@ -2013,6 +2026,10 @@ const parseRpcSuccessResult = async (
   if (response.method === 'machine/upgrade') {
     const parsed = MachineUpgradeResponseSchema.safeParse(response.result);
     return parsed.success ? (parsed.data as MachineUpgradeResponse) : null;
+  }
+  if (response.method === 'machine/provider-rate-limits-refresh') {
+    const parsed = MachineProviderRateLimitsRefreshResponseSchema.safeParse(response.result);
+    return parsed.success ? (parsed.data as MachineProviderRateLimitsRefreshResponse) : null;
   }
   if (response.method === 'machine/acp-capabilities-refresh') {
     const parsed = MachineAcpCapabilitiesRefreshResponseSchema.safeParse(response.result);
@@ -2740,6 +2757,16 @@ export class LoroStreamsMachineRpcClient {
     })) as MachineUpgradeResponse | null;
   }
 
+  async requestMachineProviderRateLimitsRefresh(
+    configId: AgentConfigId
+  ): Promise<MachineProviderRateLimitsRefreshResponse | null> {
+    return (await this.sendRequest({
+      method: 'machine/provider-rate-limits-refresh',
+      params: { configId },
+      timeoutMs: 60_000,
+    })) as MachineProviderRateLimitsRefreshResponse | null;
+  }
+
   async requestMachineAcpCapabilitiesRefresh(options: {
     configId: AgentConfigId;
     force?: boolean;
@@ -2968,6 +2995,8 @@ export class LoroStreamsMachineRpcClient {
     turnId: string;
     subagentTaskId?: string;
     timeoutMs?: number;
+    cancelId?: string;
+    pauseInbox?: boolean;
   }): Promise<SessionCancelResponse | null> {
     const result = await this.sendRequest({
       method: 'session/cancel',
@@ -2976,6 +3005,8 @@ export class LoroStreamsMachineRpcClient {
         sessionId: options.sessionId,
         turnId: options.turnId,
         subagentTaskId: options.subagentTaskId,
+        ...(options.cancelId ? { cancelId: options.cancelId } : {}),
+        ...(options.pauseInbox === undefined ? {} : { pauseInbox: options.pauseInbox }),
       },
     });
     return result as SessionCancelResponse | null;
@@ -3091,6 +3122,7 @@ export class LoroStreamsMachineRpcClient {
     userTurnId: string;
     userId: string;
     timestamp: string;
+    inputOrigin?: 'human' | 'agent';
     inputConfig: SessionTurnInputConfig;
     timeoutMs?: number;
   }): Promise<SessionDispatchTurnResponse | null> {
@@ -3102,6 +3134,7 @@ export class LoroStreamsMachineRpcClient {
         userTurnId: options.userTurnId,
         userId: options.userId,
         timestamp: options.timestamp,
+        inputOrigin: options.inputOrigin,
         inputConfig: options.inputConfig,
       },
     })) as SessionDispatchTurnResponse | null;
@@ -3507,6 +3540,11 @@ export class LoroStreamsMachineRpcClient {
           };
         }
       | {
+          method: 'machine/provider-rate-limits-refresh';
+          timeoutMs: number;
+          params: { configId: AgentConfigId };
+        }
+      | {
           method: 'machine/acp-capabilities-refresh';
           timeoutMs: number;
           onAcpBinaryProgress?: (message: MachineAcpBinaryProgressMessage) => void;
@@ -3631,6 +3669,7 @@ export class LoroStreamsMachineRpcClient {
             userTurnId: string;
             userId: string;
             timestamp: string;
+            inputOrigin?: 'human' | 'agent';
             inputConfig: SessionTurnInputConfig;
           };
         }
@@ -3957,6 +3996,7 @@ export class LoroStreamsMachineRpcClient {
         case 'machine/upgrade':
           request = { ...envelope, method: args.method, params: args.params };
           break;
+        case 'machine/provider-rate-limits-refresh':
         case 'machine/acp-capabilities-refresh':
           request = { ...envelope, method: args.method, params: args.params };
           break;

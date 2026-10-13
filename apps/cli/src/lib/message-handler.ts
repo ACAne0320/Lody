@@ -53,7 +53,6 @@ import {
   SessionCreateRequestValidated,
   SessionChatRequestValidated,
   SessionCancelRequestValidated,
-  CliType,
   AgentConfigCliType,
   type AgentConfigId,
   type BuiltinRuntimeOverrides,
@@ -3162,6 +3161,8 @@ export class MessageHandler {
             this.triggerPendingProcessLifecycleAction(response.requestId);
           }
         },
+        refreshMachineProviderRateLimits: async (configId) =>
+          this.executionService.refreshProviderRateLimits(configId),
         refreshMachineAcpCapabilities: async ({ configId, force, onAcpBinaryProgress, signal }) =>
           await this.executionService.refreshMachineAcpCapabilities(
             {
@@ -3251,7 +3252,7 @@ export class MessageHandler {
             machineUserId: this.userId,
           });
         },
-        cancelSession: async ({ sessionId, turnId, subagentTaskId }) => {
+        cancelSession: async ({ sessionId, turnId, subagentTaskId, cancelId, pauseInbox }) => {
           const result = await this.executionService.cancelSession(
             {
               type: 'session/cancel',
@@ -3260,8 +3261,10 @@ export class MessageHandler {
               sessionId,
               turnId,
               subagentTaskId,
+              cancelId,
+              pauseInbox,
             },
-            { pendingInput: 'promote', prePromptSession: 'discard' }
+            { pendingInput: 'preserve', prePromptSession: 'discard' }
           );
           return {
             type: 'session/cancel_response' as const,
@@ -3290,12 +3293,20 @@ export class MessageHandler {
         terminateSession: async ({ sessionId }) => await this.terminateAcpSession(sessionId),
         forkSession: async (args) => await this.forkSessionWithAccessCheck(args),
         editAndResendSession: async (args) => await this.editAndResendSessionWithAccessCheck(args),
-        dispatchSessionTurn: async ({ sessionId, userTurnId, userId, timestamp, inputConfig }) => {
+        dispatchSessionTurn: async ({
+          sessionId,
+          userTurnId,
+          userId,
+          timestamp,
+          inputConfig,
+          inputOrigin,
+        }) => {
           const disposition = await this.sessionDispatchWatcher.offerRpcTurn({
             sessionId,
             userTurnId,
             userId,
             timestamp,
+            inputOrigin,
             inputConfig,
           });
           return {
@@ -3640,9 +3651,10 @@ export class MessageHandler {
       (
         machineId: MachineId,
         agentConfigId: AgentConfigId | undefined,
-        cliType: CliType,
+        cliType: string,
         limits: RateLimit
       ) => {
+        if (agentConfigId) this.executionService.noteProviderRateLimitsUpdate(agentConfigId);
         void this.workspaceDocument.updateRateLimits(machineId, agentConfigId, cliType, limits);
       }
     );
@@ -6427,10 +6439,17 @@ export class MessageHandler {
                 sessionId,
                 turnId: targetTurnId,
               },
-              { pendingInput: 'promote', prePromptSession: 'discard' }
+              { pendingInput: 'preserve', prePromptSession: 'discard', pauseInbox: false }
             );
           },
-          dispatchSession: async (sessionId) => {
+          dispatchSession: async (sessionId, input) => {
+            if (input?.inputOrigin === 'human')
+              await this.executionService.acceptInboxHumanInput({
+                sessionId,
+                inputId: input.inputId,
+                userId: input.userId,
+                config: input.config,
+              });
             void this.sessionDispatchWatcher.enqueueSessionCheck(sessionId);
           },
         },
@@ -6565,8 +6584,10 @@ export class MessageHandler {
             sessionId: request.params.sessionId,
             turnId: request.params.turnId,
             subagentTaskId: request.params.subagentTaskId,
+            cancelId: request.params.cancelId,
+            pauseInbox: request.params.pauseInbox,
           },
-          { pendingInput: 'promote', prePromptSession: 'discard' }
+          { pendingInput: 'preserve', prePromptSession: 'discard' }
         );
         return {
           type: 'session/cancel_response' as const,
@@ -6595,6 +6616,7 @@ export class MessageHandler {
           userTurnId: request.params.userTurnId,
           userId: request.params.userId,
           timestamp: request.params.timestamp,
+          inputOrigin: request.params.inputOrigin,
           inputConfig,
         });
         return {
@@ -6780,6 +6802,11 @@ export class MessageHandler {
       case 'machine/upgrade':
         await this.handleMachineUpgrade(message, context);
         break;
+      case 'machine/provider-rate-limits-refresh':
+        if (message.machineId !== this.machineId || message.workspaceId !== this.workspaceId)
+          return;
+        context.send(await this.executionService.refreshProviderRateLimits(message.configId));
+        break;
       case 'machine/acp-capabilities-refresh':
         await this.handleMachineAcpCapabilitiesRefresh(message, context);
         break;
@@ -6867,6 +6894,12 @@ export class MessageHandler {
             break;
           case 'readTurn':
             result = await history.readTurn(query.turnId);
+            break;
+          case 'inputAcceptance':
+            if (!backend.inputAcceptance) throw new Error('Input acceptance is unavailable');
+            result = await backend.inputAcceptance.lookup(
+              parseHistoryWrite(HistoryEntryWriteSchema, query.entry) as never
+            );
             break;
           case 'readRange':
             result = await history.readRange(query.from, query.to);
@@ -6976,6 +7009,12 @@ export class MessageHandler {
       const payload = rawPayload;
       let result: unknown;
       switch (operation) {
+        case 'accept_input':
+          if (!backend.inputAcceptance) throw new Error('Input acceptance is unavailable');
+          result = await backend.inputAcceptance.accept(
+            parseHistoryWrite(HistoryEntryWriteSchema, payload.entry) as never
+          );
+          break;
         case 'append':
           if (!('entry' in payload)) throw new Error('History append payload is missing entry');
           await backend.appendHistoryTurn(
@@ -8015,7 +8054,7 @@ export class MessageHandler {
           sessionId,
           turnId,
         },
-        { pendingInput: 'preserve', prePromptSession: 'discard' }
+        { pendingInput: 'preserve', prePromptSession: 'discard', pauseInbox: false }
       );
     }
   }
@@ -8075,7 +8114,7 @@ export class MessageHandler {
   ): Promise<void> {
     const { sessionId } = message;
     const result = await this.executionService.cancelSession(message, {
-      pendingInput: 'promote',
+      pendingInput: 'preserve',
       prePromptSession: 'discard',
     });
     dispatchContext.send({
@@ -9747,6 +9786,10 @@ export class MessageHandler {
    * Flush pending ACP updates and tear down session resources.
    */
   async cleanup(): Promise<void> {
+    const inboxShutdown = this.operationCoordinator.recoverStop();
+    void inboxShutdown.catch((cause) =>
+      this.logger.error('Inbox shutdown retains resources', cause)
+    );
     this.historyOwnerAbort.abort();
     await this.iosSimulatorService.closeAll();
     this.logger.debug('Cleaning up message handler resources');
@@ -9762,7 +9805,6 @@ export class MessageHandler {
     this.sessionFileBackfillStopped = true;
     this.cancelPendingPermissionRequests();
     this.machineRpcServer?.stop();
-    this.operationCoordinator.stop();
     this.sessionDispatchWatcher.stop();
     this.codeCollabV2Service.dispose();
     for (const handle of this.sessionLifecycleWatchHandles) handle.unsubscribe();
@@ -9783,6 +9825,7 @@ export class MessageHandler {
     // Turn finalizers can still write history/evidence after producers stop.
     // Keep every store open until their leases and monitoring actually release.
     await this.sessionActivePresence.close();
+    await inboxShutdown;
     await this.flushAllACPUpdates();
     // Wait for any in-flight flushes to complete
     const inFlightPromises = this.store

@@ -26,7 +26,6 @@ import {
   type MessageContent,
   SessionStatusFactory,
   MachineId,
-  CliType,
   getManagedBuiltinRuntimeByAgentType,
   getManagedBuiltinRuntimeByRuntimeName,
   isManagedBuiltinAgentType,
@@ -333,6 +332,9 @@ export interface ISession {
   getParentSessionId(): SessionId | undefined;
   applyExecutionPlaneLimits(limits: SessionSandboxLimits): Promise<void>;
   getMonitorRuntimeInfo(): Promise<SessionMonitorRuntimeInfo>;
+  watchInboxRecoveryResources?(
+    persist: (identity: import('./session-sandbox').SessionRecoveryResources) => void
+  ): Promise<() => void>;
   exec(command: string, args: string[], workdir: string, isAI: boolean): Promise<string>;
   terminate(force?: boolean): Promise<void>;
   /**
@@ -455,7 +457,7 @@ interface SessionManagerEvents {
   onRateLimitUpdate: (
     machineId: MachineId,
     agentConfigId: AgentConfigId | undefined,
-    cliType: CliType,
+    cliType: string,
     limits: RateLimit
   ) => void;
   onThreadGoalUpdated: (
@@ -1450,7 +1452,10 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       },
       onRateLimitUpdate: (limits: RateLimit) => {
         dispatchEvent(() => {
-          if (config.agentCliType === 'builtin' && isManagedBuiltinAgentType(config.agentType)) {
+          if (
+            config.agentConfigId ||
+            (config.agentCliType === 'builtin' && isManagedBuiltinAgentType(config.agentType))
+          ) {
             this.emit(
               'onRateLimitUpdate',
               this.machineId,
@@ -2422,18 +2427,18 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
   private async cleanupSessions(): Promise<void> {
     this.logger.debug('Cleaning up all sessions...');
 
-    const terminations = Array.from(this.sessions.values()).map((session) =>
-      session
-        .terminate(true)
-        .catch((error: unknown) =>
-          this.logger.error(
-            `[${session.sessionId}] Failed to terminate session: ${error instanceof Error ? error.message : 'Unknown error'}`
-          )
-        )
-    );
-
-    await Promise.allSettled(terminations);
-    this.sessions.clear();
+    const sessions = Array.from(this.sessions.values());
+    const outcomes = await Promise.allSettled(sessions.map((session) => session.terminate(true)));
+    const failures: unknown[] = [];
+    outcomes.forEach((outcome, index) => {
+      const session = sessions[index]!;
+      if (outcome.status === 'fulfilled') {
+        if (this.sessions.get(session.sessionId) === session)
+          this.sessions.delete(session.sessionId);
+      } else failures.push(outcome.reason);
+    });
+    if (failures.length)
+      throw new AggregateError(failures, 'Session cleanup retains unreleased resources');
   }
 
   hasSession(sessionId: SessionId): boolean {

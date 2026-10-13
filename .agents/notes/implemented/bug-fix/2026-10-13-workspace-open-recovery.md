@@ -17,9 +17,8 @@ offers a retry and the same page. A terminal local-storage failure gets one
 automatic cache clear per day, only online. Clears now restart into a fresh process
 on the desktop, verify what they deleted, and stay armed when they leave databases
 behind. The full reset uses the host's file-level wipe where one exists, which is what
-reinstalling did. The iOS shell's side of that wipe, `window.__LODY_NATIVE_RESET__`,
-is not implemented in this repository, and none of this is verified against a real
-stuck user yet.
+reinstalling did. The iOS shell implements that wipe, `window.__LODY_NATIVE_RESET__`,
+outside this repository. None of this is verified against a real stuck user yet.
 
 ## Problem
 
@@ -181,8 +180,9 @@ clear, which is part of why clear verification and the host wipe matter.
 - **Not verified:**
   - a real stuck device;
   - the desktop relaunch path end to end;
-  - the iOS host wipe, which needs `window.__LODY_NATIVE_RESET__` in the private
-    mobile shell. Until it ships, iOS falls back to the web wipe, which cannot delete
-    files the storage backend refuses to open.
+  - the iOS host wipe on a real device. The mobile shell implements
+    `window.__LODY_NATIVE_RESET__` outside this repository. Older shells without it
+    fall back to the web wipe, which cannot delete files the storage backend refuses
+    to open.
 - **Follow-up:** once the reports name the gates, fix their causes, for example a
   WebKit-specific failure of the v3→v4 upgrade.

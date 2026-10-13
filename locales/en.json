@@ -4104,8 +4104,6 @@
   "orchestration.operationCompleted": "Operation completed",
   "orchestration.operationFailed": "Operation failed",
   "orchestration.operationCancelled": "Operation cancelled",
-  "orchestration.continuationNotStarted": "The saved agent configuration is unavailable, so no continuation was started.",
-  "orchestration.continuationUncertain": "The continuation may have started before it was interrupted. It was not replayed; review the output and continue manually if needed.",
   "sessions.turnConfig.tooltipEmpty": "No run configuration recorded for this turn",
   "sessions.turnConfig.tooltip": "View turn configuration",
   "sessions.turnConfig.open": "Turn configuration",
@@ -4930,6 +4928,8 @@
   "sessions.messageAuthor.on": "On",
   "sessions.messageAuthor.off": "Off",
   "settings.memory.rolePromptHint": "Memory providers may inject role definitions into the prompt. Check for duplication or conflicts with your Lody configuration.",
+  "orchestration.batchResults": "{{count}} completed task results",
+  "orchestration.batchResultsUnknown": "{{count}} task results saved; model delivery is uncertain",
   "billing.invoiceReasonStarted": "Subscription started",
   "billing.invoiceReasonRenewed": "Subscription renewal",
   "billing.invoiceReasonSeatsAdded": "Seats added",
@@ -4960,5 +4960,11 @@
   "billing.seatRemovalConsequences": "This term isn't refunded; the seat can be reused until renewal.",
   "billing.workspaceDeletionCharges": "Renewal stops, but charges already accrued are still billed.",
   "billing.seatApprovalConfirm": "They get access right away.",
-  "billing.deletedWorkspaces": "Deleted workspaces"
+  "billing.deletedWorkspaces": "Deleted workspaces",
+  "sessions.inputTargetUnavailable": "This conversation was archived or deleted. The local input has been kept.",
+  "sessions.inputTargetChanged": "The conversation target changed. The input is still bound to its original machine.",
+  "sessions.inputOwnerNeedsUpdate": "Update the conversation machine to receive this message.",
+  "sessions.inputStorageUnavailable": "This environment cannot safely save and deliver the message.",
+  "sessions.inputOutcomeUnknown": "The conversation machine has not confirmed this message. Check the original send result.",
+  "sessions.removeLocalInput": "Remove local copy"
 }

@@ -10,7 +10,6 @@ import {
   AgentType,
   AcpCapabilityCacheEntry,
   BuiltinRuntimeOverrides,
-  CliType,
   CustomAcpLaunchSpec,
   LocalProjectHistoryProvider,
   LocalProjectId,
@@ -42,7 +41,7 @@ const PROVIDER_RATE_LIMIT_ENTRY_KEY_PREFIX = 'provider';
 export const CODEX_SPARK_LIMIT_ID = 'codex_bengalfox';
 
 export const getRateLimitEntryKey = (
-  cliType: CliType,
+  cliType: string,
   limitId: string | null | undefined,
   agentConfigId?: AgentConfigId | null
 ): string => {
@@ -51,7 +50,7 @@ export const getRateLimitEntryKey = (
     return [
       PROVIDER_RATE_LIMIT_ENTRY_KEY_PREFIX,
       encodeURIComponent(agentConfigId),
-      cliType,
+      encodeURIComponent(cliType),
       encodeURIComponent(id),
     ].join(RATE_LIMIT_ENTRY_KEY_SEPARATOR);
   }
@@ -76,7 +75,7 @@ export const parseRateLimitEntryKey = (
     try {
       return {
         agentConfigId: decodeURIComponent(parts[1]) as AgentConfigId,
-        cliType: parts[2],
+        cliType: decodeURIComponent(parts[2]),
         limitId: decodeURIComponent(parts[3]),
       };
     } catch {
@@ -404,6 +403,13 @@ const historyMessageItemSchema = schema
               )
               ? true
               : 'Missing operation progress metadata';
+          case 'operation_completion_batch':
+            return typeof v.batchId === 'string' &&
+              typeof v.memberCount === 'number' &&
+              Number.isInteger(v.memberCount) &&
+              v.memberCount > 0
+              ? true
+              : 'Missing operation batch metadata';
           case 'operation_completion':
             return typeof v.deliveryId === 'string' &&
               typeof v.operationId === 'string' &&
@@ -1097,7 +1103,7 @@ export type SessionMeta = {
   steerOperationLedger?: Record<string, SessionSteerOperationRecord>;
   /** Recoverable queue promotion receipts, keyed by the stable operation id. */
   queuePromotionLedger?: Record<string, SessionQueuePromotionRecord>;
-  /** Assistant turn id the client wants to stop; cancel is ignored unless it matches the machine's in-memory active turn. */
+  /** Stop request marker into the Session control doc; legacy values directly name the target turn. */
   lastCanceledTurn?: string;
   /** Latest user history entry id that the machine has fully handled. */
   lastHandledUserMsgId?: string;
@@ -1347,6 +1353,15 @@ export const sessionDocSchema = schema({
   session: sessionSchema,
   history: schema.LoroList(sessionHistorySchema, (item) => item.id),
   mq: schema.LoroMovableList(messageQueueItemSchema, (item) => item.$cid, { required: false }),
+  /** Explicit human-send outbox. Never inferred from user role or Agent authors. */
+  humanInputReceipts: schema
+    .LoroMap({}, { required: false })
+    .catchall(schema.LoroMap({ userId: schema.String() })),
+  /** Latest Stop only; metadata carries its marker, not its payload. */
+  cancelRequest: schema.LoroMap(
+    { id: schema.String(), turnId: schema.String() },
+    { required: false }
+  ),
   /** Temporary durable state for an asynchronous Session fork. Removed on success. */
   forkOperation: sessionForkOperationDocSchema,
   preview: sessionPreviewDocSchema,

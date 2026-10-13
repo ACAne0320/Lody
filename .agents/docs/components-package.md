@@ -87,6 +87,37 @@ Clears take effect at the next boot:
 A spent workspace-list retry burst retries again on `online`, on return to the
 foreground and every 30s. [Decision](../notes/implemented/bug-fix/2026-10-13-workspace-open-recovery.md).
 
+## Locally accepted messages
+
+Loro ready messages commit to the live local history document. A ready Roost
+input instead appears from the workspace's immutable input projection and saves
+to account/workspace-scoped IndexedDB without waiting for owner RPC. Normal rows
+reuse `UserChatBubble`, including ready media and mention spans, with no separate
+acceptance badge. First paint precedes the storage transaction and does not prove
+crash durability.
+
+Creating a Roost conversation commits routing metadata before admission, without
+opening its history store on that path. Background delivery persists the trusted
+`humanInputReceipts` control record before accepting owner history; Loro writes
+and control queues preserve the same provenance-before-activation ordering.
+Receipt lookup stays read-only.
+
+New input uses ordinary history-write normalization before storage validation,
+including ready file/image records with `text: undefined`. Persisted records still
+decode strictly, and same-ID content conflicts still fail. After attachment
+preparation hands input to the durable owner, retry targets that owner even while
+the memory queue awaits it; preparation-only failures still retry preparation.
+
+The workspace owns restoration, session Web Locks and input reconciliation.
+History operations resolve the fixed owner's current local/cloud plane, including
+after a late local identity probe; cached stores do not freeze that transport.
+Unknown history outcomes query or repeat the same immutable accept operation;
+execution delivery follows only its owner receipt. The projection stays until
+the authoritative view contains the same ID. Control queues keep the Loro writer
+and wait behind earlier input under the same lease. Unprepared attachments remain
+in the existing memory queue. Cache recovery preserves saved input; full reset
+may delete it. See the [owning decision](../notes/proposed/architecture/2026-10-13-backend-independent-send-acceptance.md).
+
 ## File preview versus Code Collab
 
 File routing, cache, and caller contracts live in

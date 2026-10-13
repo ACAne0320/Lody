@@ -8,6 +8,7 @@
 export type MachineProtocolCapabilities = Record<string, number>;
 
 export const MACHINE_PROTOCOL_CAPABILITIES = {
+  operationInbox: 'operationInbox',
   magpieImport: 'magpieImport',
   dshProviderIsolation: 'dshProviderIsolation',
   memoryProviders: 'memoryProviders',
@@ -31,10 +32,13 @@ export const MACHINE_PROTOCOL_CAPABILITIES = {
   iosSimulatorExterior: 'iosSimulatorExterior',
   piExtensions: 'piExtensions',
   acpCapabilityRefreshCache: 'acpCapabilityRefreshCache',
+  providerRateLimitsRefresh: 'providerRateLimitsRefresh',
   sessionHistory: 'sessionHistory',
+  sessionInputAcceptance: 'sessionInputAcceptance',
   sessionCollaborationControl: 'sessionCollaborationControl',
 } as const;
 
+export const OPERATION_INBOX_PROTOCOL_VERSION = 2;
 export const MEMORY_PROVIDERS_PROTOCOL_VERSION = 1;
 export const MCP_TOOL_DISCOVERY_PROTOCOL_VERSION = 1;
 export const LOCAL_PROJECT_HISTORY_PROVIDER_PROTOCOL_VERSION = 1;
@@ -56,6 +60,7 @@ export const IOS_SIMULATOR_CONTROLS_PROTOCOL_VERSION = 1;
 export const PI_EXTENSIONS_PROTOCOL_VERSION = 1;
 export const ACP_CAPABILITY_REFRESH_CACHE_PROTOCOL_VERSION = 1;
 export const SESSION_HISTORY_PROTOCOL_VERSION = 2;
+export const SESSION_INPUT_ACCEPTANCE_PROTOCOL_VERSION = 1;
 
 type MachineProtocolCapabilityCarrier = {
   protocolCapabilities?: MachineProtocolCapabilities;
@@ -105,6 +110,8 @@ export function machineSupportsSubagentCancellation(
  * in the "supported" direction and there is no version fallback to catch it.
  */
 export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities = {
+  [MACHINE_PROTOCOL_CAPABILITIES.operationInbox]: OPERATION_INBOX_PROTOCOL_VERSION,
+  providerRateLimitsRefresh: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.magpieImport]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.dshProviderIsolation]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.sessionCollaborationControl]: 1,
@@ -132,7 +139,14 @@ export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities 
   [MACHINE_PROTOCOL_CAPABILITIES.acpCapabilityRefreshCache]:
     ACP_CAPABILITY_REFRESH_CACHE_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.sessionHistory]: SESSION_HISTORY_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.sessionInputAcceptance]: SESSION_INPUT_ACCEPTANCE_PROTOCOL_VERSION,
 };
+
+export function machineSupportsSessionInputAcceptance(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return machineSupportsProtocolCapability(machine, MACHINE_PROTOCOL_CAPABILITIES.sessionInputAcceptance, SESSION_INPUT_ACCEPTANCE_PROTOCOL_VERSION);
+}
 
 /** Whether the target daemon exposes the Roost-backed session history RPC. */
 export function machineSupportsSessionHistoryProtocol(

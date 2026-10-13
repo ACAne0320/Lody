@@ -272,7 +272,7 @@ import { toast } from '@/lib/toast';
 import { SessionPlanBar } from '@/components/sessions/session-plan-bar';
 import { ContainerQueryProvider } from './container-query-provider';
 import { ScheduleProposalNotice } from '@/components/schedules/schedule-proposal-notice';
-import { shouldRenderSystemRowItem } from './message-content-guards';
+import { isOperationSurfaceItem, shouldRenderSystemRowItem } from './message-content-guards';
 import { getChatFailedDiagnosticCopy } from './chat-failed-diagnostic-copy';
 import {
   buildChatFailedErrorReport,
@@ -930,7 +930,10 @@ const ChatItem = memo(function ChatItem({
       <ConversationColumn
         {...stylex.props(
           conversationSurface.message,
-          msg.role === 'user' && conversationSurface.userMessage
+          msg.role === 'user' && conversationSurface.userMessage,
+          msg.role === 'system' &&
+            msg.items.some(isOperationSurfaceItem) &&
+            conversationSurface.operationSurface
         )}
       >
         {renderMessageRow({
@@ -2735,6 +2738,12 @@ const SystemMessageRowView = ({
             key={`worktree-script-${item.phase}-${itemIndex}`}
             script={item}
           />
+        ) : item.type === 'operation_completion_batch' ? (
+          <OperationCompletionBatchView
+            key={item.batchId}
+            batch={item}
+            onNavigateSession={onNavigateSession}
+          />
         ) : item.type === 'operation_progress' ? (
           <CreatedSessionList
             key={item.operationId}
@@ -2753,6 +2762,41 @@ const SystemMessageRowView = ({
           />
         )
       )}
+    </div>
+  );
+};
+
+const OperationCompletionBatchView = ({
+  batch,
+  onNavigateSession,
+}: {
+  batch: Extract<MessageContent, { type: 'operation_completion_batch' }>;
+  onNavigateSession?: (target: SessionNavigationTarget) => void;
+}) => {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div>
+        {t(
+          batch.deliveryStatus === 'unknown'
+            ? 'orchestration.batchResultsUnknown'
+            : 'orchestration.batchResults',
+          {
+            defaultValue:
+              batch.deliveryStatus === 'unknown'
+                ? '{{count}} task results saved; model delivery is uncertain'
+                : '{{count}} completed task results',
+            count: batch.memberCount,
+          }
+        )}
+      </div>
+      {(batch.members ?? []).map((member) => (
+        <OperationCompletionView
+          key={member.deliveryId}
+          completion={member}
+          onNavigateSession={onNavigateSession}
+        />
+      ))}
     </div>
   );
 };
@@ -2814,22 +2858,11 @@ const OperationCompletionView = ({
         ]
       : []
   );
-  const continuationNotice = completion.continuation
-    ? t(
-        completion.continuation.status === 'uncertain'
-          ? 'orchestration.continuationUncertain'
-          : 'orchestration.continuationNotStarted'
-      )
-    : null;
   // The status card carries only what the cards cannot: a whole-Operation
-  // failure or cancellation, targetless failures, the continuation outcome, or
+  // failure or cancellation, targetless failures, or
   // the plain outcome when there is no Session to show.
   const showStatusCard =
-    cards.length === 0 ||
-    failedCompletion ||
-    cancelledCompletion ||
-    untargetedProblems.length > 0 ||
-    continuationNotice !== null;
+    cards.length === 0 || failedCompletion || cancelledCompletion || untargetedProblems.length > 0;
 
   return (
     <div className="flex flex-col gap-2" data-operation-completion={completion.operationKind}>
@@ -2899,16 +2932,6 @@ const OperationCompletionView = ({
                 {problem.label ? `${problem.label}: ${problem.message}` : problem.message}
               </div>
             ))}
-            {continuationNotice ? (
-              <div
-                className={cn(
-                  stylex.props(activityTypography.footnote).className,
-                  'mt-0.5 text-muted-foreground'
-                )}
-              >
-                {continuationNotice}
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}
@@ -5682,7 +5705,7 @@ const AssistantChatItem = memo(function AssistantChatItem({
   );
 }, areAssistantChatItemPropsEqual);
 
-const UserChatBubble = ({
+export const UserChatBubble = ({
   message,
   sessionId,
   conversationFontSize,
@@ -5693,7 +5716,7 @@ const UserChatBubble = ({
    */
   variant = 'full',
 }: {
-  message: SessionHistoryParsed;
+  message: Pick<SessionHistoryParsed, 'id' | 'items'>;
   sessionId: SessionId;
   conversationFontSize: ConversationFontSize;
   variant?: 'full' | 'attachments';

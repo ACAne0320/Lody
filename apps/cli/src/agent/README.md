@@ -26,7 +26,10 @@ context/message-flow.md "Upstream".
   at `agentCapabilities._meta.lody`, session metadata at `_meta.lody`, and custom methods
   use the Core `_lody/...` names. Session initialization advertises Core answer notes
   alongside standard form elicitation; the shared Ask Question bridge retains the
-  selection and separately keyed note through durable permission history.
+  selection and separately keyed note through durable permission history. Core forms
+  use each property's `description` as the full question and `title` as its short
+  header, including single-question forms whose request message is generic. Legacy
+  Claude single-question forms retain their request-message prompt.
 - `acp-runner.ts` — process spawn/restart around the client. Spawn + initialize +
   `newSession`/`loadSession` share `acp-session-start-gate.ts`.
 - `acp-session-start-gate.ts` — process-wide start semaphore used by
@@ -345,3 +348,5 @@ OpenAI environment configuration and requires a user-installed ACP plugin.
 the native LoginShellCache runtime and waits for its producer at daemon/command exit.
 
 [Ownership decision](../../../../.agents/notes/implemented/architecture/2026-10-10-effect-login-shell-probe.md).
+
+Provider quota refresh uses `queryLocalAcpRateLimits`: initialize a separately owned ACP process, verify Core `rateLimits.query`, query without a session, and await process-tree cleanup. The session execution service owns Provider coalescing and guarded Flock publication. See the [quota refresh decision](../../../../.agents/notes/implemented/architecture/2026-10-13-provider-quota-refresh.md).

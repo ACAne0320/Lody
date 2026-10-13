@@ -104,8 +104,20 @@ record: [process tree layer](../../../../.agents/notes/implemented/architecture/
   `squashFileLockFailure` at Legacy boundaries to retain every lock cleanup owner
   alongside process leases and the original operation failure.
 
+## Supervised Inbox compatibility
+
+Supervisor launch contract v3 requires Inbox protocol v2. TS and CJS constants agree.
+A mismatched supervised worker exits 45 before host ownership/storage; do not downgrade
+to an earlier worker contract. Foreground arbitrary old binaries are unsupported.
+
 ## Local Loro writer boundary
 
 `local-loro-writer.ts` owns the real Node turn and socket write/drain adapters.
 Applications provide one process-wide writer; never add a workspace scheduler.
 Native workflow and release rules: [writer](../local-loro-writer/AGENTS.md).
+
+## Local session control
+
+Keep history requests and receipts aligned in the Zod protocol and both lightweight
+TS/CJS guards. The declared-operation suite must admit each supported operation;
+advertising a capability alone does not prove the local IPC path accepts it.

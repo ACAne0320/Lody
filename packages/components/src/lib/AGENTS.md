@@ -4,7 +4,9 @@ Rules bind callers too.
 Background: [components](../../../../.agents/docs/components-package.md),
 [files](../../../../.agents/docs/components-file-paths.md).
 
-- Send acceptance and RPC await local commits, never Repo-wide flush.
+- Send/RPC await local commits, never Repo flush. Save `humanInputReceipts` before activation; RPC is redundant.
+- Retry immutable Roost input; absent receipts stay unknown. Cache/refresh keeps
+  all input. Resolve owner routing per call.
 
 ## Electron IPC types
 
@@ -12,9 +14,8 @@ Background: [components](../../../../.agents/docs/components-package.md),
   registration with `import type` only. Browser/mobile bundles must erase the edge;
   never add an Electron runtime/package dependency or allow Node APIs in shared UI.
 - Keep `experimentalDecorators` and the direct catalog-pinned `@types/node` dependency
-  for the source declarations. Service classes and their single constructor list own
-  invoke signatures; never duplicate them in a handwritten contract, spec, or one-for-one
-  platform port. Fix resolution/erasure at this boundary or reconsider caller ownership.
+  for the source declarations. Service constructors own invoke signatures; never duplicate them in contracts,
+  Specs or platform ports. Fix resolution/erasure here or reconsider ownership.
   Push events and one-way sends stay in `@lody/shared/electron-ipc`.
 
 ## Crash recovery and diagnostics
@@ -32,12 +33,11 @@ Background: [components](../../../../.agents/docs/components-package.md),
   still signed in) and `startHardReset` (full wipe/sign-out, host-native first, own
   confirmation). Defer deletes to next boot (desktop: relaunch); clear synchronous
   storage BEFORE the flag. A clear that leaves databases stays armed ≤3 boots.
-- Cache-level clearing uses an explicit localStorage DELETE list, never a keep-allowlist,
-  including connection caches (Streams JWT/gateway, cursor-bypass, workspace-info map);
-  register new `lody:*` cache keys there. Auth tokens and preferences survive.
-- Copied reports include the `lib/session-render-trace.ts` tail (render/mount/navigation
-  ring). Writers append one compact line, never drive behavior from it; surface
-  mount/unmount uses a layout effect.
+- Cache clearing uses a localStorage DELETE list, never a keep-allowlist. Include
+  connection caches (Streams JWT/gateway, cursor-bypass, workspace-info) and new
+  `lody:*` cache keys; retain auth tokens and preferences.
+- Reports copy the `lib/session-render-trace.ts` tail; writers append one compact line,
+  never drive behavior from it; surface mount/unmount uses a layout effect.
 - `maybeClearLodyCacheOnBoot` runs once per page load, shared by `AppInitializer` and
   `RuntimeProvider`, which awaits it before opening repo IndexedDB.
 - Route waits are `BlockingWaitPlaceholder` (recovery at 30s), never bare
@@ -118,4 +118,4 @@ Background: [components](../../../../.agents/docs/components-package.md),
 - Before creating top-level or child sessions, call `filterAcpSessionConfigOptionValues()`
   so cached values outside the current selector schema are neither dispatched nor persisted.
 
-Attachment transfer lifecycle changes follow [workspace ownership](../providers/AGENTS.md#attachment-transfer-ownership).
+Attachment lifetime: [workspace ownership](../providers/AGENTS.md#attachment-transfer-ownership).

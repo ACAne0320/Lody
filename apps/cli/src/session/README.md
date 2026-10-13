@@ -42,8 +42,10 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
   state; it creates the assistant entry when it opens.
 - `session-execution-service.ts` — runs one turn end-to-end: ACP prompt, turn ids,
   lifecycle/error handling, GitHub/local project setup, and post-turn diffStats.
-- `acp-session-config-applier.ts` — applies turn configuration and reports rejected
-  model selections through the GUI warning path, retaining the agent's actual model.
+- `acp-session-config-applier.ts` — resolves top-level and config-option selections,
+  then applies mode, model, and dependent options in that order. This prevents model switches
+  from resetting an already-applied effort. Reports rejected model selections through the GUI
+  warning path, retaining the agent's actual model.
 - `session-execution-helpers.ts` — composes first-task prompt context, with branch-naming
   guidance only after execution verifies this Session's temporary branch in an ordinary
   new independent GitHub/local worktree.
@@ -166,9 +168,8 @@ applied processing record becomes canceled, never an ordinary replay.
 
 The execution service does not decide that interruption means non-delivery. AgentClient returns
 `applied`, `not-applied`, or `unknown`; only `not-applied` can move a steer back to ordinary
-dispatch, and only when the cancellation boundary selected `pendingInput: 'promote'`. User Stop
-selects promotion, while internal cancellation such as Edit & Resend and access revocation
-preserves the pending input. `unknown` becomes `delivery_unknown` in history. The UI offers a
+dispatch, and only when the cancellation boundary selected `pendingInput: 'promote'`. User Stop preserves history and cancels queued execution eligibility; Edit & Resend and
+access revocation also preserve pending input. Inbox recovery never revives pre-Stop input. `unknown` becomes `delivery_unknown` in history. The UI offers a
 confirmed fresh send with a duplicate-work warning, never an automatic retry. RPC application
 ACKs update presentation only; the execution service alone projects processing and terminal
 steer status, so delayed ACKs cannot resurrect canceled or completed history.
@@ -194,6 +195,11 @@ terminal, and removed entries are left alone; unknown delivery never takes this 
 Foreground ACP configuration runs with the owner Effect's `AbortSignal`. Each mutation checks
 that signal before the next mutation, so an old turn whose first configuration call finishes
 late cannot overwrite the configuration of the turn that started after Stop.
+
+Completion notifications use the exact completed invocation's input author, including
+steer handoffs. An Agent-authored input suppresses the user-facing completion notice;
+an earlier Agent input does not suppress a later human turn. Finalization, Operation
+results and Inbox scheduling still run. Cancellation is rechecked after the author read.
 
 ### Why resume reopens the assistant entry
 
@@ -338,6 +344,21 @@ Web/iOS clients need no Node addon. The owning machine must be available for RPC
 reads; browser-local IndexedDB replicas and offline sync are separate work.
 Runtime packaging and verification: [native runtime note](../../../../.agents/notes/proposed/architecture/2026-10-09-roost-native-runtime.md).
 
+### Immutable input acceptance
+
+Ready renderer input uses `SessionData.inputAcceptance`: `accept_input` writes
+one immutable operation receipt with its history mutation, and the
+`inputAcceptance` history query reads that original outcome. It is advertised
+separately as `sessionInputAcceptance` version 1. Older targets require an update;
+ordinary history capability alone does not imply support.
+
+The operation freezes user, turn ID and prepared content. Its digest excludes
+mutable parent/head placement. The owner checks current and retired history
+receipts before a write, so a retry converges with a delayed original after later
+appends or generation replacement. A removed accepted turn returns `active:false`
+and is never recreated. These receipts confirm owner history only; dispatch and
+guide application retain their existing execution boundaries.
+
 ### Roost writer identity
 
 Each Node history database has a separate host-private identity database at
@@ -478,3 +499,31 @@ Execution reads inherited flags before setup and ACP dispatch. Metadata updates
 cancel exact active turns with pending input preserved, while late completions are
 recorded without continuation. Users must explicitly restore collaboration; offline
 machines enforce the state after sync. See the [orchestration contract](../../../../specs/session-orchestration.md#user-controlled-conversation-tree-stop).
+
+## Operation result input
+
+The independent Inbox supplies one batch reference beside an intact ordinary input.
+All visible turns share its admission, including existing goal turns with their own
+synthetic input identity; goal controls/configuration are otherwise preserved. Stop
+persists pause and cancels pre-Stop queued eligibility. Fresh human entry may retry
+retained physical cleanup, but cannot dispatch until proof of release. Runtime ownership
+lasts through durable release/settlement, so a Stop during final release can veto the
+automatic intent. Post-fence human-plus-batch input cannot use stale-ACP replay.
+
+Human send authorization also lives in the Session control document's
+`humanInputReceipts` map. UI and non-delegated CLI entry points stamp it before
+activation; execution restores the matching receipt through ordinary history dispatch.
+RPC is redundant, including for large inputs. Generic history imports and Agent chat
+do not stamp this map, and canceled/terminal input IDs cannot clear a later pause.
+
+Stop details occupy one replaceable `cancelRequest` slot in the Session control doc.
+The existing `lastCanceledTurn` metadata field carries only `cancel-request:<id>`;
+legacy values still directly name a turn. Publish that marker after persisting the
+payload. The watcher waits for matching control data and checks control arrivals on
+its separate cancellation chain. RPC uses the same ID, so a late fallback cannot
+pause fresh input again; a second click gets a new ID even for the same target turn.
+
+The Session sandbox persists incomplete identity before spawn and continuously adds
+ACP/terminal process roots. Execution retains every attached Session owner until release,
+including replacements within one turn. Restart probes require explicit completeness and
+absence of every root/group; an initial snapshot alone is insufficient.

@@ -33,6 +33,7 @@ import { getIpcServices } from './electron-ipc-client';
 import { isWarmWindow } from './desktop-window';
 import { PROMPT_SHORTCUT_DATA_PREFIX } from './prompt-shortcut-storage';
 import { ROOST_HISTORY_CACHE_DB } from './roost-history-cache';
+import { SESSION_INPUT_DATABASE } from './session-input-storage';
 
 /**
  * Prefix for the per-workspace meta remote-cursor startup-bypass marker.
@@ -60,6 +61,7 @@ export type PendingLocalClearMode = 'cache' | 'hard';
 
 /** IndexedDB databases created with static names (not suffixed per workspace). */
 const KNOWN_INDEXEDDB_NAMES = [
+  SESSION_INPUT_DATABASE,
   ROOST_HISTORY_CACHE_DB,
   // Durable session-send journal of earlier builds; no longer written, but an
   // upgraded install may still hold it, and a cache clear should remove it.
@@ -248,7 +250,9 @@ export async function clearAllLodyLocalCache(extraNames: string[] = []): Promise
     // A Shortcut outbox may contain the only copy of an offline save. Only the
     // explicitly destructive hard reset below may remove these databases.
     failed = await deleteDatabases(
-      [...names].filter((name) => !name.startsWith(PROMPT_SHORTCUT_DATA_PREFIX))
+      [...names].filter(
+        (name) => !name.startsWith(PROMPT_SHORTCUT_DATA_PREFIX) && name !== SESSION_INPUT_DATABASE
+      )
     );
   }
 
@@ -704,7 +708,11 @@ export async function maybeClearLodyCacheOnBoot(extraNames: string[] = []): Prom
   // Nothing was pending, or this caller has no extra databases to contribute.
   if (!mode || extraNames.length === 0) return;
   const failed = await deleteDatabases(
-    extraNames.filter((name) => mode === 'hard' || !name.startsWith(PROMPT_SHORTCUT_DATA_PREFIX))
+    extraNames.filter(
+      (name) =>
+        mode === 'hard' ||
+        (!name.startsWith(PROMPT_SHORTCUT_DATA_PREFIX) && name !== SESSION_INPUT_DATABASE)
+    )
   );
   if (failed.length > 0) recordLateClearFailures(mode, failed.length);
 }

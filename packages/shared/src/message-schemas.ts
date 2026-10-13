@@ -650,6 +650,8 @@ export const SessionCancelRequestSchema = z
     machineId: MachineIdSchema,
     workspaceId: WorkspaceIdSchema,
     turnId: z.string(),
+    cancelId: z.string().uuid().optional(),
+    pauseInbox: z.boolean().optional(),
     subagentTaskId: z.string().trim().min(1).optional(),
   })
   .strict();
@@ -1268,6 +1270,7 @@ const AcpCapabilityCacheEntrySchema = z
     sessionFork: z.boolean().optional(),
     acknowledgedSteer: z.boolean().optional(),
     sessionTitle: z.boolean().optional(),
+    rateLimits: z.object({ version: z.literal(1), query: z.literal(true).optional() }).optional(),
     goalActions: z.array(z.enum(SESSION_GOAL_ACTIONS)).optional(),
     sessionForkWorktree: z.boolean().optional(),
     fetchedAt: z.number(),
@@ -1375,6 +1378,23 @@ const MachineAcpAuthenticationFormSchema = z
       }
     });
   });
+
+export const MachineProviderRateLimitsRefreshRequestSchema = z
+  .object({
+    type: z.literal('machine/provider-rate-limits-refresh'),
+    machineId: MachineIdSchema,
+    workspaceId: WorkspaceIdSchema,
+    configId: AgentConfigIdSchema,
+  })
+  .strict();
+export const MachineProviderRateLimitsRefreshResponseSchema = z
+  .object({
+    type: z.literal('machine/provider-rate-limits-refresh_response'),
+    machineId: MachineIdSchema,
+    configId: AgentConfigIdSchema,
+    success: z.boolean(),
+  })
+  .strict();
 
 export const MachineAcpCapabilitiesRefreshRequestSchema = z
   .object({
@@ -2047,6 +2067,7 @@ export const SessionHistoryReadQuerySchema = z
     z.object({ kind: z.literal('count') }).strict(),
     z.object({ kind: z.literal('readAt'), position: z.number().int().nonnegative() }).strict(),
     z.object({ kind: z.literal('readTurn'), turnId: z.string().trim().min(1) }).strict(),
+    z.object({ kind: z.literal('inputAcceptance'), entry: z.unknown() }).strict(),
     z
       .object({
         kind: z.literal('readRange'),
@@ -2170,6 +2191,7 @@ export const SessionHistoryReadResponseSchema = z
 
 export const SessionHistoryWriteOperationSchema = z.enum([
   'append',
+  'accept_input',
   'replace',
   'respond_permission',
   'apply_action',
@@ -2226,6 +2248,7 @@ export const LocalSessionControlRequestSchema = z.discriminatedUnion('type', [
   MachinePingRequestSchema,
   MachineRestartRequestSchema,
   MachineUpgradeRequestSchema,
+  MachineProviderRateLimitsRefreshRequestSchema,
   MachineAcpCapabilitiesRefreshRequestSchema,
   MachineAcpAuthenticateRequestSchema,
   MachineAcpBinaryStatusRequestSchema,
@@ -2254,6 +2277,7 @@ export const LocalSessionControlResponseSchema = z.discriminatedUnion('type', [
   MachinePingResponseSchema,
   MachineRestartResponseSchema,
   MachineUpgradeResponseSchema,
+  MachineProviderRateLimitsRefreshResponseSchema,
   MachineAcpCapabilitiesRefreshResponseSchema,
   MachineAcpAuthenticateResponseSchema,
   MachineAcpAuthenticationProgressMessageSchema,
@@ -3019,6 +3043,7 @@ export const ClientToServerSchema = z.discriminatedUnion('type', [
   MachinePingRequestSchema,
   MachineRestartRequestSchema,
   MachineUpgradeRequestSchema,
+  MachineProviderRateLimitsRefreshRequestSchema,
   MachineAcpCapabilitiesRefreshRequestSchema,
   MachineAcpAuthenticateRequestSchema,
   MachineAcpBinaryStatusRequestSchema,
@@ -3036,6 +3061,7 @@ export const ServerToClientSchema = z.discriminatedUnion('type', [
   MachinePingResponseSchema,
   MachineRestartResponseSchema,
   MachineUpgradeResponseSchema,
+  MachineProviderRateLimitsRefreshResponseSchema,
   MachineAcpCapabilitiesRefreshResponseSchema,
   MachineAcpAuthenticateResponseSchema,
   MachineAcpAuthenticationProgressMessageSchema,
@@ -3053,6 +3079,7 @@ export const MachineToServerSchema = z.discriminatedUnion('type', [
   MachinePingResponseSchema,
   MachineRestartResponseSchema,
   MachineUpgradeResponseSchema,
+  MachineProviderRateLimitsRefreshResponseSchema,
   MachineAcpCapabilitiesRefreshResponseSchema,
   MachineAcpAuthenticateResponseSchema,
   MachineAcpAuthenticationProgressMessageSchema,
@@ -3070,6 +3097,7 @@ export const ServerToMachineSchema = z.discriminatedUnion('type', [
   MachinePingRequestSchema,
   MachineRestartRequestSchema,
   MachineUpgradeRequestSchema,
+  MachineProviderRateLimitsRefreshRequestSchema,
   MachineAcpCapabilitiesRefreshRequestSchema,
   MachineAcpAuthenticateRequestSchema,
   MachineAcpBinaryStatusRequestSchema,
@@ -3093,7 +3121,9 @@ export const ServerReceiveMessageSchema = z.discriminatedUnion('type', [
   MachineRestartResponseSchema,
   MachineUpgradeRequestSchema,
   MachineUpgradeResponseSchema,
+  MachineProviderRateLimitsRefreshRequestSchema,
   MachineAcpCapabilitiesRefreshRequestSchema,
+  MachineProviderRateLimitsRefreshResponseSchema,
   MachineAcpCapabilitiesRefreshResponseSchema,
   MachineAcpAuthenticateRequestSchema,
   MachineAcpAuthenticateResponseSchema,
@@ -3124,7 +3154,9 @@ export const ServerSendMessageSchema = z.discriminatedUnion('type', [
   MachineRestartResponseSchema,
   MachineUpgradeRequestSchema,
   MachineUpgradeResponseSchema,
+  MachineProviderRateLimitsRefreshRequestSchema,
   MachineAcpCapabilitiesRefreshRequestSchema,
+  MachineProviderRateLimitsRefreshResponseSchema,
   MachineAcpCapabilitiesRefreshResponseSchema,
   MachineAcpAuthenticateRequestSchema,
   MachineAcpAuthenticateResponseSchema,
@@ -3491,6 +3523,20 @@ const SubagentItemIdentityShape = {
   nativeTurnId: z.string().optional(),
   messageId: z.string().optional(),
 };
+export const OperationCompletionContentSchema = z.object({
+  type: z.literal('operation_completion'),
+  deliveryId: z.string().trim().min(1),
+  operationId: LodyOperationIdSchema,
+  operationKind: z.enum([
+    'session_create',
+    'session_create_many',
+    'session_chat',
+    'session_chat_many',
+  ]),
+  progressMessageId: z.string().trim().min(1).optional(),
+  completion: LodyOperationCompletionSchema,
+});
+
 export const NonSystemNoticeMessageContentSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('text'),
@@ -3574,35 +3620,15 @@ export const NonSystemNoticeMessageContentSchema = z.discriminatedUnion('type', 
     commands: z.array(AvailableCommandSchema),
   }),
   z.object({
-    type: z.literal('operation_completion'),
-    deliveryId: z.string().trim().min(1),
-    operationId: LodyOperationIdSchema,
-    operationKind: z.enum([
-      'session_create',
-      'session_create_many',
-      'session_chat',
-      'session_chat_many',
-    ]),
-    progressMessageId: z.string().trim().min(1).optional(),
-    completion: LodyOperationCompletionSchema,
-    continuation: z
-      .object({
-        status: z.enum(['not_started', 'uncertain']),
-        reason: z
-          .object({
-            code: z.enum([
-              'CONFIGURATION_UNAVAILABLE',
-              'DELIVERY_ATTEMPTS_EXHAUSTED',
-              'DELIVERY_EXECUTION_UNCERTAIN',
-              'COLLABORATION_STOPPED',
-            ]),
-            message: z.string(),
-          })
-          .strict(),
-      })
-      .strict()
+    type: z.literal('operation_completion_batch'),
+    batchId: z.string().uuid(),
+    memberCount: z.number().int().positive(),
+    deliveryStatus: z
+      .enum(['prepared', 'submitted', 'unknown', 'settled', 'not_submitted'])
       .optional(),
+    members: z.array(OperationCompletionContentSchema).max(50).optional(),
   }),
+  OperationCompletionContentSchema,
   z.object({
     type: z.literal('operation_progress'),
     operationId: LodyOperationIdSchema,
