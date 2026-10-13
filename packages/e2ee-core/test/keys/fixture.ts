@@ -87,12 +87,12 @@ export function envelopeFixture(kind: 0 | 1 | 2 = 0, org = 100) {
     recipient: phone.publicKey,
   };
   const ledger = () => Effect.sync(view);
-  const prepare = () =>
+  const prepare = (lookup = ledger) =>
     Envelopes.prepareEpochEnvelope({
       context: envelopeContext,
       key: secret,
       signer: owner.signer,
-      ledger,
+      ledger: lookup,
     });
   const resign = (frame: Uint8Array) => {
     const unsigned = frame.subarray(0, -64);

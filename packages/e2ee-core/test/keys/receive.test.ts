@@ -539,7 +539,7 @@ describe('durable finite epoch receive and original-report queue', () => {
           });
           let frame: Uint8Array | undefined;
           for (let index = 0; index < 101; index++) {
-            frame = yield* f.prepare();
+            frame = yield* f.prepare(ledger);
             yield* sender.put(index.toString(16).padStart(32, '0'), frame);
             yield* receiver.receive(f.owner.publicKey, frame);
           }
