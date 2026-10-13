@@ -117,6 +117,7 @@ Lab 使用真实 HTTP/SQLite 持久化、进程重开、双端 Loro/Flock/Repo S
 | [#1485](https://github.com/LodyAI/Lody/pull/1485) | `e2ee-mailbox-repairs` | `680686d1442e7f8b12f6f8b84af3f17f3c514b97` | `14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8` |
 | [#1487](https://github.com/LodyAI/Lody/pull/1487) | `e2ee-recipient-mailbox` | `098e274221aae13305d29ff75629bee168678ded` | `680686d1442e7f8b12f6f8b84af3f17f3c514b97` |
 | [#1491](https://github.com/LodyAI/Lody/pull/1491) | `e2ee-ledger-sdk-cas` | `f82f8634743d5bc4dd8858cf6867b91d80c221ba` | `098e274221aae13305d29ff75629bee168678ded` |
+| [#1493](https://github.com/LodyAI/Lody/pull/1493) | `e2ee-sender-distribution` | `36ca2685b7eefeb15ebd041e50444796c2686652` | `f82f8634743d5bc4dd8858cf6867b91d80c221ba` |
 
 SDK 准备 #1433 与 submission #1434 已落地，后者 merge 为 `7c58cabe1d05f132b7133a52b45a16b79274ea6a`；本栈未改其实现。A 保护方向已明确：可信组合一次初始化 protect/unprotect，绑定用途／Org／接收者／epoch／commitment，真实保存重载后才报告。synthetic protector 不等于原生平台存钥。
 
@@ -124,8 +125,10 @@ L1d 的[全历史 feed](../../packages/e2ee-core/src/ledger/FEED.md)、L4g [持�
 
 ## 最新main核对与交付上限
 
-实际fetch main `e395d84f4f1b64440f887dce14ffbf061ce48ac1`，tree `ac964903fad38bc254c0335d5dbe339b00d772d4`。HPKE #1432、SDK准备 #1433、submission #1434都已是祖先。SDK准备提供测试和接缝，不是生产保护器。相对冻结stack底座984c，公共core/RPC文件没有新增交集。当前main CI38135946007成功；准确原组合CI38109831626仍为取消，后继871179 CI38109983563成功。不会仅因这次核对重跑不变攻击矩阵。
+实际fetch main `987962e77022df6a800f4e889f124b51f6eb8056`，tree `4601a3f2b65d122c5b314cab79dc275fba9af636`。HPKE #1432、SDK准备 #1433、submission #1434都已是祖先。SDK准备提供测试和接缝，不是生产保护器。相对冻结stack底座984c，公共core/RPC文件没有新增交集。当前main CI38151323459成功；准确原组合CI38109831626仍为取消，后继871179 CI38109983563成功。不会仅因这次核对重跑不变攻击矩阵。
 
-继续已有实施，整轮迁移PR最多24张，包含已列17张。剩余SDK、sender、内容／恢复消费者和Lab集中交付；保留协议决策门，新层都为Draft。当前head的独立审查与作者测试、CI分开报告。
+继续已有实施，整轮迁移PR最多24张，包含已有18张。剩余SDK、sender、内容／恢复消费者和Lab集中交付；保留协议决策门，新层都为Draft。当前head的独立审查与作者测试、CI分开报告。
 
 L4i适配[有限发送目标发现与投递](../../packages/e2ee-core/src/keys/DISTRIBUTION.md)：使用已提交、已保护的当前密钥，保留outbox原件和每个revision的task/result，由真实账本决定终态，并重建本机发布者报告。实际Lab消费和候选备份／轮换另有归属，新代码单独绑定当前head审查。
+
+L2 SDK update绑定使用 `./content/streams`、已定header3、真实公开内容工作流和本次操作密钥清理。直接父层为sender #1493 `36ca2685b7eefeb15ebd041e50444796c2686652`。快照wire／兼容仍待人决定；已发布SDK类型检查与实际Lab／transport验收分开，原provider迁移仍未完成。

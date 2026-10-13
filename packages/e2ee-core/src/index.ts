@@ -20,6 +20,7 @@ export {
 export { verifySignature, verifyContentSignature } from './signature';
 export {
   deriveContentKey,
+  disposeContentKey,
   sealContentAead,
   openContentAead,
   type ContentKey,
