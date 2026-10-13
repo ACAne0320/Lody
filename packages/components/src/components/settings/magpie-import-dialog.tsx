@@ -1,14 +1,18 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as stylex from '@stylexjs/stylex';
-import type { MagpieTarget } from '@lody/shared';
+import { magpieProviderSettings, type MagpieTarget } from '@lody/shared';
 import { Button } from '@lody/ui/button';
 import { Checkbox } from '@lody/ui/checkbox';
 import { Spinner } from '@lody/ui/spinner';
 import { colors } from '@lody/ui/tokens/colors.stylex';
-import { corner, radius, space, text } from '@lody/ui/tokens/scales.stylex';
+import { space, text } from '@lody/ui/tokens/scales.stylex';
+import magpieMark from '@/assets/magpie.svg?raw';
+import { AgentIcon } from '@/components/icons/agent-icon';
+import { InlineSvg } from '@/components/icons/inline-svg';
 import { Dialog } from '@/ui/dialog';
 import { FormMessage } from './form-primitives';
+import { settingsCatalog as catalog } from './surface';
 
 export interface MagpieImportOption {
   id: MagpieTarget;
@@ -54,61 +58,61 @@ export interface MagpieImportDialogProps {
 }
 
 const styles = stylex.create({
+  titleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: space[2],
+    minWidth: 0,
+  },
+  titleMark: {
+    display: 'flex',
+    flexShrink: 0,
+    alignItems: 'center',
+  },
   body: {
     display: 'flex',
     flexDirection: 'column',
-    gap: space[4],
-    minWidth: 0,
-  },
-  facts: {
-    display: 'flex',
-    flexDirection: 'column',
     gap: space[3],
-  },
-  fact: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: space[1],
     minWidth: 0,
   },
-  factLabel: {
+  /** The machine sits on the list, in the same type as a provider name. */
+  where: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: space[2],
+    minWidth: 0,
     margin: 0,
-    fontSize: text.captionSize,
-    lineHeight: text.captionLeading,
-    color: colors.secondaryLabel,
   },
-  factValue: {
-    margin: 0,
+  whereLabel: {
+    flexShrink: 0,
     fontSize: text.footnoteSize,
     lineHeight: text.footnoteLeading,
-    color: colors.label,
-    overflowWrap: 'anywhere',
+    color: colors.tertiaryLabel,
   },
-  gateway: {
-    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-  },
-  list: {
+  whereName: {
     minWidth: 0,
-    backgroundColor: `color-mix(in oklab, transparent, ${colors.label} 3%)`,
-    borderRadius: radius.medium,
-    cornerShape: corner.shape,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: text.footnoteSize,
+    lineHeight: text.footnoteLeading,
+    fontWeight: 500,
+    color: colors.label,
   },
+  list: { minWidth: 0 },
+  /** Same two-line row as a provider in the catalog: mark, name, one fact line. */
   row: {
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: space[2],
-    paddingInline: space[3],
-    paddingBlock: space[2],
+    alignItems: 'center',
+    gap: space[3],
+    minWidth: 0,
+    paddingBlock: space[3],
   },
   rowRuled: {
     boxShadow: `inset 0 1px 0 ${colors.separator}`,
   },
   rowEnabled: {
     cursor: 'pointer',
-    backgroundColor: {
-      default: 'transparent',
-      ':hover': colors.hoverFill,
-    },
   },
   rowDisabled: {
     cursor: 'default',
@@ -116,29 +120,29 @@ const styles = stylex.create({
   checkbox: {
     display: 'flex',
     flexShrink: 0,
-    marginTop: '2px',
   },
-  rowBody: {
+  icon: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    flexGrow: 1,
-    minWidth: 0,
-  },
-  rowName: {
-    fontSize: text.footnoteSize,
-    lineHeight: text.footnoteLeading,
-    fontWeight: 500,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '32px',
+    height: '32px',
     color: colors.label,
   },
+  glyph: { width: '20px', height: '20px' },
   rowNameDisabled: {
     color: colors.secondaryLabel,
   },
-  reason: {
+  env: {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
     fontSize: text.captionSize,
     lineHeight: text.captionLeading,
     color: colors.secondaryLabel,
-    overflowWrap: 'anywhere',
   },
   empty: {
     margin: 0,
@@ -179,6 +183,20 @@ function enabledIds(options: readonly MagpieImportOption[]): MagpieTarget[] {
   return uniqueOptions(options)
     .filter((option) => !option.disabledReason)
     .map((option) => option.id);
+}
+
+function providerFor(id: MagpieTarget, gatewayUrl: string) {
+  try {
+    return magpieProviderSettings(id, gatewayUrl);
+  } catch {
+    return null;
+  }
+}
+
+function formatEnv(env: Record<string, string>): string {
+  return Object.entries(env)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' · ');
 }
 
 function rejectionMessage(reason: unknown, fallback: string): string {
@@ -287,29 +305,29 @@ export function MagpieImportDialog({
   };
 
   const machine = machineName?.trim() || t('settings.magpieImport.thisMachine');
-  const gateway = gatewayUrl.trim();
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Content>
         <Dialog.Header>
-          <Dialog.Title>{t('settings.magpieImport.title')}</Dialog.Title>
+          <Dialog.Title>
+            <span {...stylex.props(styles.titleRow)}>
+              <span {...stylex.props(styles.titleMark)}>
+                <InlineSvg raw={magpieMark} />
+              </span>
+              {t('settings.magpieImport.title')}
+            </span>
+          </Dialog.Title>
           <Dialog.Description>{t('settings.magpieImport.description')}</Dialog.Description>
         </Dialog.Header>
 
         <div {...stylex.props(styles.body)}>
-          <div {...stylex.props(styles.facts)}>
-            <div {...stylex.props(styles.fact)}>
-              <p {...stylex.props(styles.factLabel)}>{t('settings.magpieImport.machineLabel')}</p>
-              <p {...stylex.props(styles.factValue)}>{machine}</p>
-            </div>
-            <div {...stylex.props(styles.fact)}>
-              <p {...stylex.props(styles.factLabel)}>{t('settings.magpieImport.gatewayLabel')}</p>
-              <p {...stylex.props(styles.factValue, styles.gateway)}>
-                {gateway || t('settings.magpieImport.gatewayMissing')}
-              </p>
-            </div>
-          </div>
+          <p {...stylex.props(styles.where)}>
+            <span {...stylex.props(styles.whereLabel)}>
+              {t('settings.magpieImport.machineLineLabel')}
+            </span>
+            <span {...stylex.props(styles.whereName)}>{machine}</span>
+          </p>
 
           {rows.length === 0 ? (
             <p {...stylex.props(styles.empty)}>{t('settings.magpieImport.empty')}</p>
@@ -322,11 +340,14 @@ export function MagpieImportDialog({
               {rows.map((option, index) => {
                 const disabled = Boolean(option.disabledReason) || active.submitting;
                 const checked = selected.includes(option.id);
+                const provider = providerFor(option.id, gatewayUrl);
                 const subtitle =
                   option.disabledReason ||
                   (['kimi', 'grok', 'bub'].includes(option.id)
                     ? t('settings.magpieImport.independentConfig')
-                    : '');
+                    : provider
+                      ? formatEnv(provider.env)
+                      : '');
                 return (
                   <label
                     key={option.id}
@@ -355,16 +376,29 @@ export function MagpieImportDialog({
                         }}
                       />
                     </span>
-                    <span {...stylex.props(styles.rowBody)}>
+                    <span {...stylex.props(styles.icon)}>
+                      <AgentIcon
+                        cliType="builtin"
+                        agentType={
+                          provider?.agentType ?? (option.id === 'dsh' ? 'deepseek' : option.id)
+                        }
+                        className={stylex.props(styles.glyph).className}
+                      />
+                    </span>
+                    <span {...stylex.props(catalog.body)}>
                       <span
                         {...stylex.props(
-                          styles.rowName,
+                          catalog.name,
                           Boolean(option.disabledReason) && styles.rowNameDisabled
                         )}
                       >
                         {option.name}
                       </span>
-                      {subtitle ? <span {...stylex.props(styles.reason)}>{subtitle}</span> : null}
+                      {subtitle ? (
+                        <span {...stylex.props(styles.env)} title={subtitle}>
+                          {subtitle}
+                        </span>
+                      ) : null}
                     </span>
                   </label>
                 );

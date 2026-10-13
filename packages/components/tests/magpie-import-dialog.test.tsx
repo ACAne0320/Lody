@@ -89,10 +89,20 @@ describe('MagpieImportDialog', () => {
   it('shows this machine, the gateway, and every Magpie runtime selected', async () => {
     const { onImport } = await render();
 
-    expect(text()).toContain('Import Magpie');
-    expect(text()).toContain('this machine only');
+    expect(text()).toContain('Import from Magpie');
+    const title = [...document.querySelectorAll('h2')].find((node) =>
+      node.textContent?.includes('Import from Magpie')
+    );
+    expect(title?.querySelector('svg')).toBeTruthy();
+    expect(text()).toContain(
+      'The following agent providers will be created automatically from the Magpie gateway configuration.'
+    );
+    expect(text()).toContain('Current machine');
     expect(text()).toContain('Studio Mac');
-    expect(text()).toContain('http://127.0.0.1:48723');
+    expect(text()).not.toContain('Gateway');
+    expect(text()).toContain('ANTHROPIC_BASE_URL=http://127.0.0.1:48723');
+    expect(text()).toContain('OPENAI_BASE_URL=http://127.0.0.1:48723/v1');
+    expect(text()).toContain('DEEPSEEK_BASE_URL=http://127.0.0.1:48723/v1');
     for (const name of ['Claude-magpie', 'Codex-magpie', 'Pi-magpie', 'DSH-magpie']) {
       expect(runtimeCheckbox(name).getAttribute('aria-checked')).toBe('true');
     }
@@ -101,6 +111,7 @@ describe('MagpieImportDialog', () => {
 
   it('names this machine when the host has no machine name', async () => {
     await render({ machineName: undefined });
+    expect(text()).toContain('Current machine');
     expect(text()).toContain('This machine');
   });
 
@@ -238,7 +249,9 @@ describe('MagpieImportDialog', () => {
 
     expect(previous).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    expect(text()).toContain('http://127.0.0.1:2');
+    expect(text()).toContain('Current machine');
+    expect(text()).toContain('Studio Mac');
+    expect(text()).toContain('ANTHROPIC_BASE_URL=http://127.0.0.1:2');
     expect(runtimeCheckbox('Pi-magpie').getAttribute('aria-checked')).toBe('true');
     expect(runtimeCheckbox('Claude-magpie').getAttribute('aria-checked')).toBe('true');
   });
