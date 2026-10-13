@@ -22,9 +22,9 @@
   "targetFingerprints": {
     "AGENTS.md": "769f0d68c1d8572e0081b1638c6e6384faeabcae87ba7a11bf53af452ba22f1b",
     "CLAUDE.md": "769f0d68c1d8572e0081b1638c6e6384faeabcae87ba7a11bf53af452ba22f1b",
-    "README.md": "dc1122ab7215b4f74c8c9ec717bad84d50f6647f570dc0d4f41bef1aad6ab47e",
-    "README.zh.md": "b926505777ebeb282f7c8199a4b9ed6fb66566efc3e2d744b5cf9ea34470f4ff",
-    "package.json": "a9071fd240cc135754cc1983cfbd2731f2e7fc00c7eeeba14bc42ea65c30d4e9",
+    "README.md": "24e09fa9278f3c2fb81a3334f429e87c3d798b6e0822425d80918c4446d0d7d9",
+    "README.zh.md": "cde3126243e237d5e570d83e94b419d36b5e7652e3b072484c5bc25467c30784",
+    "package.json": "3da215895acfc8d1b22b4f5a31e43eb35bb3e0d1256101ac456112acdfb7a15c",
     "src/platform/content-provider.ts": "b4be8bfceb43a591097015499c10aefbd4ab870105d3569dddd7fa951ff9501d",
     "src/platform/content-session.ts": "7c22e34f85f2eabd79b472b861681127e7bb6b2ced687da3bc47c8eb415e6dfe",
     "src/platform/content-trace.ts": "acb459c5e159d7b3b6688a3b8f0bdcff57339f61dff2093f4e5c7ac2a6202aa6",
@@ -456,5 +456,13 @@
     "mailbox": "Actual SQLite ignored protected-key insert retains original Install task/no terminal/no key; after closing parent receiver owners actual OS child reopens syntheticX25519/device/publicgenuine2records, realHPKEopens/saves/readbacks and reports through fresh challenge/bearer HTTP. Parent actualSQLite taskReported/frame bytecompare, original Recovery no-send/repair coverage retained. Synthetic device file0600 only, importedprivate handle nonextractable/publicextractable needed lockedHPKEserialize binding. Original nonextractable-public open-failed log retained, noalgorithm/corechange. Affected13/type + fresh e574/3SHA Lab52 pass, skipping actualinstall/report gives noReported directfail/nontimeout/restored. Full epochrotation/host/originalLab2/nativecustody pending.",
     "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work.",
     "judgeAndTrace": "WIP pure verdict18 exports ported: missing measurements/default baseline/mixed unavailable not all-pass, count-only history unavailable, measured new unauthorized acceptance violation with lawful admitted-history semantics unchanged, explicit insider freshness scope. Source4 old pure FAIL/new same probe PASS retained; new observer old original alias FAIL retained. Typed run-scoped bounded private synthetic trace provides original record/read/clear as methods, owned fields before budget/no returned alias/no cross-run clear/close and closed observation fails. No global plaintext registry, no attacker access or authority inference. Owning9/type pass; Root core302/Lab67, format/docs/publicboundary7017/27 pass; all59Lab inputSHA unchanged. Fixedhead and real actor/attack observation integration pending."
+  },
+  "dependencyAlignment": {
+    "streamsCrdt": "0.17.0",
+    "directStreamsClient": "0.9.0",
+    "transitiveCrdtStreamsClient": "0.10.0",
+    "effect": "4.0.2",
+    "source": "Existing main094 release records; explicit pins avoid stale catalog importer on combined tree",
+    "corePackageSha256": "f5c7ffc81f0d4ab0e411a8b6e920572a2028604cd1cf0e0571b6983d434b89ed"
   }
 }
