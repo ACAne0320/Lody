@@ -1351,6 +1351,11 @@
           "layer": "L4f",
           "target": "packages/e2ee-core/src/keys/receive-sqlite.ts",
           "scope": "Host-only finite recipient receipt/local-publication installation, real protected save/reload before original signed-report queue, exact report retry, indexed keyset task pages, genuine epoch/revocation disposition and explicit result acknowledgement. Source/signed bytes retained, no phase-derived authority or report-derived key possession. Sender discovery/scheduling, durable requestRepair coordination and fetch composition remain separate unfinished owners."
+        },
+        {
+          "layer": "L4g",
+          "target": "packages/e2ee-core/src/keys/repair-sqlite.ts",
+          "scope": "Actual stable-ID enqueue before dispatch, retained original-field binding, lost-ACK idempotent retry, genuine disposition, finite indexed pending/results and explicit acknowledgement; no sender discovery/outbox rounds/receive fetch or installed-key proof."
         }
       ]
     },
@@ -1633,6 +1638,11 @@
           "layer": "L4f",
           "target": "packages/e2ee-core/src/keys/receive-sqlite.ts",
           "scope": "Host-only finite recipient receipt/local-publication installation, real protected save/reload before original signed-report queue, exact report retry, indexed keyset task pages, genuine epoch/revocation disposition and explicit result acknowledgement. Source/signed bytes retained, no phase-derived authority or report-derived key possession. Sender discovery/scheduling, durable requestRepair coordination and fetch composition remain separate unfinished owners."
+        },
+        {
+          "layer": "L4g",
+          "target": "packages/e2ee-core/src/keys/repair-sqlite.ts",
+          "scope": "Actual stable-ID enqueue before dispatch, retained original-field binding, lost-ACK idempotent retry, genuine disposition, finite indexed pending/results and explicit acknowledgement; no sender discovery/outbox rounds/receive fetch or installed-key proof."
         }
       ]
     },
@@ -2101,6 +2111,11 @@
           "layer": "L4f",
           "target": "packages/e2ee-core/src/keys/receive-sqlite.ts",
           "scope": "Host-only finite recipient receipt/local-publication installation, real protected save/reload before original signed-report queue, exact report retry, indexed keyset task pages, genuine epoch/revocation disposition and explicit result acknowledgement. Source/signed bytes retained, no phase-derived authority or report-derived key possession. Sender discovery/scheduling, durable requestRepair coordination and fetch composition remain separate unfinished owners."
+        },
+        {
+          "layer": "L4g",
+          "target": "packages/e2ee-core/src/keys/repair-sqlite.ts",
+          "scope": "Actual stable-ID enqueue before dispatch, retained original-field binding, lost-ACK idempotent retry, genuine disposition, finite indexed pending/results and explicit acknowledgement; no sender discovery/outbox rounds/receive fetch or installed-key proof."
         }
       ]
     },

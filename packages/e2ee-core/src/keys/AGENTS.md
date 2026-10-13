@@ -30,3 +30,10 @@
 - Reported is local remote-ACK attempt history, never server/key-custody proof or
   current key availability. No document/transport cursor is advanced here. Retain
   source/report history and unconsumed results until explicit acknowledgement.
+
+- Repair enqueue durably binds stable caller IDs to this Org/device/epoch/rejected
+  digest before dispatch; retries never invent another ID. Only genuine ledger
+  changes terminate work. Keep original/result rows through explicit acknowledgement.
+  Repaired is local repair-ACK history, never key installation or custody proof.
+  This Scope owns the journal; callers cancel/await borrowed ledger/transport work
+  before destroying those owners. Closure guards reject late local ACK writes.

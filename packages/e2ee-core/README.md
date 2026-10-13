@@ -160,3 +160,5 @@ The host-only `./keys/host/receive/sqlite` adds [finite install and original-rep
 The explicit [full-history feed](src/ledger/FEED.md) composes framed SDK reads with
 verified ledger suffixes and atomic SQLite position persistence. The original Lab
 consumer, submission CAS adapter and snapshot bootstrap remain separately owned.
+
+The explicit [durable repair queue](src/keys/REPAIR.md) binds stable source request IDs before dispatch and retains local ACK history without claiming key installation. Sender discovery and receive-fetch composition remain separate.
