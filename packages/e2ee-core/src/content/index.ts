@@ -1,3 +1,4 @@
+import { historicalContentIdentity } from '../ledger/snapshot';
 import { Effect, Result } from 'effect';
 import * as Bytes from '../bytes';
 import { ContentError } from '../errors';
@@ -5,7 +6,7 @@ import { concat } from '../concat';
 import { keyId } from '../identifiers';
 import {
   contentPermissions,
-  historicalContentAuthor,
+  requireLedgerContinuation,
   epochHistoryPacket,
   type LedgerView,
 } from '../ledger';
@@ -47,7 +48,7 @@ function boundAuthority(
       return yield* fail('content-context-mismatch');
     if (!isDocumentPurpose(scope.purpose)) return yield* fail('invalid-document-purpose');
     const author = yield* Result.mapError(
-      historicalContentAuthor(view, signer),
+      historicalContentIdentity(view, signer),
       () => new ContentError({ code: 'unauthorized' })
     );
     if (writing) {
@@ -66,7 +67,7 @@ export function sealDocument(input: {
   readonly scope: ContentScope;
   readonly documentKey: DocumentKey;
   readonly signer: DeviceSigner;
-  /** Caller-owned synchronized view lookup; views still require real full verification. */
+  /** Caller-owned synchronized genuine view lookup, with explicit full/endorsed provenance. */
   readonly ledger: () => Effect.Effect<LedgerView, ContentError>;
   readonly plaintext: Uint8Array;
   readonly additionalData?: Uint8Array;
@@ -75,29 +76,50 @@ export function sealDocument(input: {
     Effect.gen(function* () {
       const scope = Object.freeze({ ...input.scope });
       const key = yield* Effect.fromResult(documentKeyForScope(input.documentKey, scope));
-      if (
-        !(input.plaintext instanceof Uint8Array) ||
-        input.plaintext.byteLength > MAX_CONTENT_BYTES
-      )
+      const source = input.plaintext;
+      if (!(source instanceof Uint8Array) || source.byteLength > MAX_CONTENT_BYTES)
         return yield* Effect.fail(new ContentError({ code: 'content-too-large' }));
       const binding = yield* Effect.fromResult(copyContentAdditionalData(input.additionalData));
-      const signer = yield* Effect.fromResult(
-        Bytes.signingPublicKey(input.signer.publicKey.toBytes())
+      const borrowed = input.signer;
+      const signer = yield* Effect.fromResult(Bytes.signingPublicKey(borrowed.publicKey.toBytes()));
+      const capability: DeviceSigner = Object.freeze({
+        publicKey: signer,
+        sign: borrowed.sign.bind(borrowed),
+      });
+      const lookup = input.ledger;
+      return yield* Effect.acquireUseRelease(
+        Effect.sync(() => new Uint8Array(source)),
+        (plaintext) =>
+          Effect.gen(function* () {
+            const view = yield* lookup();
+            yield* Effect.fromResult(boundAuthority(view, scope, signer, true));
+            const header: ContentHeader = {
+              ...scope,
+              docEpoch: 0,
+              device: keyId(signer.toBytes()),
+            };
+            const prefix = yield* Effect.fromResult(encodeContentHeader(header));
+            const sealed = yield* Effect.fromResult(
+              sealContentAead(key, header, plaintext, binding)
+            );
+            plaintext.fill(0);
+            const unsigned = concat([prefix, sealed.nonce, sealed.ciphertext]);
+            const message = yield* Effect.fromResult(contentSigningBytes(scope, unsigned, binding));
+            const signature = yield* signVerified(capability, message);
+            const frame = concat([unsigned, signature.toBytes()]);
+            yield* Effect.fromResult(verifyContentSignature(frame, scope, signer, binding));
+            const latest = yield* lookup();
+            yield* Effect.fromResult(
+              Result.mapError(
+                requireLedgerContinuation(view, latest),
+                () => new ContentError({ code: 'unauthorized' })
+              )
+            );
+            yield* Effect.fromResult(boundAuthority(latest, scope, signer, true));
+            return frame;
+          }),
+        (plaintext) => Effect.sync(() => plaintext.fill(0))
       );
-      const view = yield* input.ledger();
-      yield* Effect.fromResult(boundAuthority(view, scope, signer, true));
-      const header: ContentHeader = { ...scope, docEpoch: 0, device: keyId(signer.toBytes()) };
-      const prefix = yield* Effect.fromResult(encodeContentHeader(header));
-      const sealed = yield* Effect.fromResult(
-        sealContentAead(key, header, input.plaintext, binding)
-      );
-      const unsigned = concat([prefix, sealed.nonce, sealed.ciphertext]);
-      const message = yield* Effect.fromResult(contentSigningBytes(scope, unsigned, binding));
-      const signature = yield* signVerified(input.signer, message);
-      const frame = concat([unsigned, signature.toBytes()]);
-      yield* Effect.fromResult(verifyContentSignature(frame, scope, signer, binding));
-      yield* Effect.fromResult(boundAuthority(yield* input.ledger(), scope, signer, true));
-      return frame;
     })
   );
 }

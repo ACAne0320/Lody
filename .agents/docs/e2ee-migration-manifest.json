@@ -1001,12 +1001,13 @@
         "core": "0afee368139aa8217a2ebb5ee8803608c86da5d89a38bd518c4cc33f73f9720b",
         "candidate": "0afee368139aa8217a2ebb5ee8803608c86da5d89a38bd518c4cc33f73f9720b"
       },
-      "targetPath": "packages/e2ee-core/src/content/content.ts",
+      "targetPath": "packages/e2ee-core/src/content/index.ts",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract.",
       "coverage": {
-        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished.",
+        "L2c": "Historical document consumer preserves full member or qualified-snapshot retired device-only identity without guessed user/new write authority; captured bounded seal inputs/capabilities, resource cleanup and verified-prefix continuation. Generic non-document/SDK/Lab remain separate. Target: packages/e2ee-core/src/content/index.ts."
       }
     },
     {
@@ -1215,12 +1216,13 @@
         "core": "a959100ff9067cab17f0a74808312056dcc6aaead92e58bf76a766e3fa39c552",
         "candidate": "a959100ff9067cab17f0a74808312056dcc6aaead92e58bf76a766e3fa39c552"
       },
-      "targetPath": "packages/e2ee-core/src/content/content.ts",
+      "targetPath": "packages/e2ee-core/src/content/index.ts",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract.",
       "coverage": {
-        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished.",
+        "L2c": "Historical document consumer preserves full member or qualified-snapshot retired device-only identity without guessed user/new write authority; captured bounded seal inputs/capabilities, resource cleanup and verified-prefix continuation. Generic non-document/SDK/Lab remain separate. Target: packages/e2ee-core/src/content/index.ts."
       }
     },
     {
@@ -1409,7 +1411,8 @@
       "reason": "Extend hardened public verified view/history; fix constructor and verifier trust bypasses, never export arbitrary authority constructors.",
       "coverage": {
         "L1a": "Historical admission identity, signed epoch history packet facts and current write/seal gates migrated; snapshots, scope-bound workflows and new atomic removal remain separately owned.",
-        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished.",
+        "L2c": "Historical document consumer preserves full member or qualified-snapshot retired device-only identity without guessed user/new write authority; captured bounded seal inputs/capabilities, resource cleanup and verified-prefix continuation. Generic non-document/SDK/Lab remain separate. Target: packages/e2ee-core/src/content/index.ts."
       }
     },
     {
@@ -1914,7 +1917,8 @@
       "layer": "L2",
       "reason": "Reuse public v0 frame and crypto primitives; add caller-bound author/permission workflow and document-key contract.",
       "coverage": {
-        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
+        "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished.",
+        "L2c": "Historical document consumer preserves full member or qualified-snapshot retired device-only identity without guessed user/new write authority; captured bounded seal inputs/capabilities, resource cleanup and verified-prefix continuation. Generic non-document/SDK/Lab remain separate. Target: packages/e2ee-core/src/content/index.ts."
       },
       "additionalTargetPaths": [
         "packages/e2ee-core/src/content/document-key.ts",
@@ -3980,7 +3984,7 @@
         "core": "a4afb9fc0f8de7ea64b18495655cb5d43597bb6b7b22ebf90f7f101f51fcf8c1",
         "candidate": "a4afb9fc0f8de7ea64b18495655cb5d43597bb6b7b22ebf90f7f101f51fcf8c1"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
@@ -3991,7 +3995,7 @@
         "core": "1689b92843488c4cb44b664cb14fc7e7a4888ed97a8936d4f59c33501ac7d8b1",
         "candidate": "1689b92843488c4cb44b664cb14fc7e7a4888ed97a8936d4f59c33501ac7d8b1"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
@@ -4090,7 +4094,7 @@
         "core": "a5c0d9ffa2ee0bd1ab497d1ea42d7cec039971258ca2c269aa7312ba65124350",
         "candidate": "a5c0d9ffa2ee0bd1ab497d1ea42d7cec039971258ca2c269aa7312ba65124350"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
@@ -4101,7 +4105,7 @@
         "core": "4c2cd085f2d924db6a7a21374b2369d7743051d08c9e4bf959a0e63a4cc7530f",
         "candidate": "4c2cd085f2d924db6a7a21374b2369d7743051d08c9e4bf959a0e63a4cc7530f"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
@@ -4352,7 +4356,7 @@
       "fingerprints": {
         "candidate": "82b0009580b4390383a0cb9c7295d7e6c7a902a282ba772133158c3f297c9c45"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."
@@ -4362,7 +4366,7 @@
       "fingerprints": {
         "candidate": "d249b1f6d8446c5b2e17c4558f1ebe33e30a935f9f80946a29ce594cee5bed3f"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-content-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims."

@@ -5,6 +5,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Result } from 'effect';
 import * as Documents from '@lody/e2ee-core/content';
 import * as Signing from '@lody/e2ee-core/signing';
 import * as Ledger from '@lody/e2ee-core/ledger';
+import * as Snapshots from '@lody/e2ee-core/ledger/snapshot';
 import { encodeCbor, type CborValue } from '../src/cbor';
 import {
   Bytes,
@@ -492,6 +493,8 @@ describe('ledger-bound signed document workflows', () => {
     expect(read(verifyContentSignature(frame, f.scope, f.owner.publicKey, binding)).epoch).toBe(0);
     const opened = read(Documents.openDocument(f.view(), f.scope, f.key, frame, binding));
     expect(opened.plaintext).toEqual(plaintext);
+    expect(opened.author.kind).toBe('member');
+    if (opened.author.kind !== 'member') throw new Error('fixture full author');
     expect(hex(opened.author.actor.toBytes())).toBe('0a'.repeat(32));
     const exported = read(Documents.exportDocumentKey(f.key));
     expect(exported).toEqual(nativeKey(f.scope));
@@ -519,6 +522,148 @@ describe('ledger-bound signed document workflows', () => {
     expect(
       Result.isFailure(Documents.openDocument(f.view(), f.scope, f.key, frame, new Uint8Array([9])))
     ).toBe(true);
+  });
+  it('opens a retired author from endorsed snapshot as device-only without recovering write permission', async () => {
+    const f = ledgerFixture();
+    f.addPhone();
+    const input = {
+      scope: f.scope,
+      documentKey: f.key,
+      signer: f.phone.signer,
+      ledger: () => Effect.succeed(f.view()),
+      plaintext: new Uint8Array([4, 5]),
+    };
+    const frame = await Effect.runPromise(Documents.sealDocument(input));
+    f.append([5, f.phone.raw]);
+    const full = f.view();
+    const produced = await Effect.runPromise(
+      Snapshots.signLedgerSnapshot({ signer: f.owner.signer, ledger: () => Effect.succeed(full) })
+    );
+    const device = full.inspectState().devices.get(hex(f.owner.raw))!;
+    const trust: Snapshots.SnapshotTrust = {
+      source: 'external-confirmation',
+      genesis: full.genesis,
+      endorser: f.owner.publicKey,
+      head: full.head,
+      length: full.length,
+      headSignature: produced.headSignature,
+      membershipId: device.membershipId,
+      role: 'owner',
+      kind: 'personal',
+    };
+    const imported = read(Snapshots.verifyLedgerSnapshot({ snapshot: produced.snapshot, trust }));
+    const opened = read(Documents.openDocument(imported, f.scope, f.key, frame));
+    expect(opened.plaintext).toEqual(new Uint8Array([4, 5]));
+    expect(opened.author).toMatchObject({ kind: 'device-only', reason: 'missing-history-context' });
+    expect('actor' in opened.author).toBe(false);
+    expect(
+      Result.isFailure(
+        await result(Documents.sealDocument({ ...input, ledger: () => Effect.succeed(imported) }))
+      )
+    ).toBe(true);
+    const bad = new Uint8Array(frame);
+    bad[bad.length - 1] ^= 1;
+    expect(Result.isFailure(Documents.authenticateDocument(imported, f.scope, bad))).toBe(true);
+  });
+  it('captures all sealing bytes before a pending ledger lookup', async () => {
+    const f = ledgerFixture(),
+      plaintext = new Uint8Array([1, 2]),
+      binding = new Uint8Array([7]);
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reached = yield* Deferred.make<void>(),
+            release = yield* Deferred.make<void>();
+          let pause = true;
+          const lookup = () =>
+            Effect.gen(function* () {
+              if (pause) {
+                pause = false;
+                yield* Deferred.succeed(reached, undefined);
+                yield* Deferred.await(release);
+              }
+              return f.view();
+            });
+          const worker = yield* Effect.forkChild(
+            Documents.sealDocument({
+              scope: f.scope,
+              documentKey: f.key,
+              signer: f.owner.signer,
+              plaintext,
+              additionalData: binding,
+              ledger: lookup,
+            })
+          );
+          yield* Deferred.await(reached);
+          plaintext.fill(9);
+          binding.fill(8);
+          yield* Deferred.succeed(release, undefined);
+          const frame = yield* Fiber.join(worker);
+          expect(
+            read(Documents.openDocument(f.view(), f.scope, f.key, frame, new Uint8Array([7])))
+              .plaintext
+          ).toEqual(new Uint8Array([1, 2]));
+        })
+      )
+    );
+  });
+  it('keeps the initial signer, scope and lookup capability when the request object changes while waiting', async () => {
+    const f = ledgerFixture();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reached = yield* Deferred.make<void>(),
+            release = yield* Deferred.make<void>();
+          let pause = true;
+          const lookup = () =>
+            Effect.gen(function* () {
+              if (pause) {
+                pause = false;
+                yield* Deferred.succeed(reached, undefined);
+                yield* Deferred.await(release);
+              }
+              return f.view();
+            });
+          const request = {
+            scope: { ...f.scope },
+            documentKey: f.key,
+            signer: f.owner.signer,
+            plaintext: new Uint8Array([3]),
+            ledger: lookup,
+          };
+          const worker = yield* Effect.forkChild(Documents.sealDocument(request));
+          yield* Deferred.await(reached);
+          request.scope.resource = 'changed';
+          request.signer = f.attacker.signer;
+          request.ledger = () => Effect.succeed({ ...f.view() });
+          yield* Deferred.succeed(release, undefined);
+          const frame = yield* Fiber.join(worker);
+          expect(read(verifyContentSignature(frame, f.scope, f.owner.publicKey)).device).toBe(
+            hex(f.owner.raw)
+          );
+          expect(read(Documents.openDocument(f.view(), f.scope, f.key, frame)).plaintext).toEqual(
+            new Uint8Array([3])
+          );
+        })
+      )
+    );
+  });
+  it('rejects sealing when a later lookup rolls back the observed verified prefix', async () => {
+    const f = ledgerFixture(),
+      earlier = f.view();
+    f.addPhone();
+    const observed = f.view();
+    let calls = 0;
+    const outcome = await result(
+      Documents.sealDocument({
+        scope: f.scope,
+        documentKey: f.key,
+        signer: f.owner.signer,
+        plaintext: new Uint8Array([1]),
+        ledger: () => Effect.succeed(++calls === 1 ? observed : earlier),
+      })
+    );
+    expect(Result.isFailure(outcome)).toBe(true);
   });
   it('uses the actual non-extractable native signer and preserves caller bytes on native failure', async () => {
     const f = ledgerFixture();
