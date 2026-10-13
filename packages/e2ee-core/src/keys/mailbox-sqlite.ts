@@ -136,10 +136,12 @@ export function makeSqliteKeyMailbox<E, R>(input: {
         yield* sql(() => {
           guard();
           db.transaction(() => {
-            const pin = db.prepare('SELECT head,count FROM mailbox_meta WHERE id=1').get() as
-              | { head: unknown; count: unknown }
-              | undefined;
-            if (!pin) throw new MailboxError({ code: 'corrupt' });
+            const pin = db
+              .prepare(
+                "SELECT CASE WHEN length(genesis)=64 THEN genesis ELSE NULL END AS genesis,CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,count FROM mailbox_meta WHERE id=1"
+              )
+              .get() as { genesis: unknown; head: unknown; count: unknown } | undefined;
+            if (!pin || pin.genesis !== org) throw new MailboxError({ code: 'corrupt' });
             if (pin.head !== null) {
               if (
                 !(pin.head instanceof Uint8Array) ||
@@ -154,13 +156,35 @@ export function makeSqliteKeyMailbox<E, R>(input: {
               if (Result.isFailure(accepted) || !accepted.success)
                 throw new MailboxError({ code: 'rollback' });
             } else if (pin.count !== null) throw new MailboxError({ code: 'corrupt' });
-            db.prepare('UPDATE mailbox_meta SET head=?,count=? WHERE id=1').run(
-              view.head.toBytes(),
-              view.length
-            );
+            // Recheck shared memory at the synchronous transaction's actual write boundary.
+            if (observed && Result.isFailure(requireLedgerContinuation(observed, view)))
+              throw new MailboxError({ code: 'rollback' });
+            // Retain verified knowledge even when the following write fails.
+            observed = view;
+            if (
+              db
+                .prepare('UPDATE mailbox_meta SET head=?,count=? WHERE id=1')
+                .run(view.head.toBytes(), view.length).changes !== 1
+            )
+              throw new MailboxError({ code: 'corrupt' });
+            const saved = db
+              .prepare(
+                "SELECT CASE WHEN length(genesis)=64 THEN genesis ELSE NULL END AS genesis,CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,count FROM mailbox_meta WHERE id=1"
+              )
+              .get() as
+              | { genesis: unknown; recipient?: unknown; head: unknown; count: unknown }
+              | undefined;
+            if (
+              !saved ||
+              saved.genesis !== org ||
+              !(saved.head instanceof Uint8Array) ||
+              saved.head.length !== 32 ||
+              saved.count !== view.length ||
+              !view.head.equals(Result.getOrThrow(Bytes.recordHash(saved.head)))
+            )
+              throw new MailboxError({ code: 'corrupt' });
           }).immediate();
         });
-        observed = view;
         return view;
       });
     const slot = (epoch: number, recipient: string) => {
