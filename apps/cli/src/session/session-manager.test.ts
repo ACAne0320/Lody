@@ -1,3 +1,6 @@
+import { acquireSessionCredentialsLegacy } from './session-credentials';
+import { GitCredentialBroker } from '../lib/git-credential-broker';
+import type { CloudGithubTokenManager } from '@lody/platform';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -21,7 +24,7 @@ import {
   type WorkspaceId,
 } from '@lody/shared';
 import { deriveRepoIdFromLocalProjectPath } from '@lody/shared/node/worktree-paths';
-import { normalizeLocalProjectRootPath } from '@lody/shared/node/local-project';
+import { localProjectsLegacy } from '@lody/shared/node/local-project';
 
 import { getDefaultSessionWorkdir, Session } from './session';
 import { SessionManager, type ISession } from './session-manager';
@@ -757,7 +760,7 @@ describe('SessionManager worktree setup', () => {
 
   it('runs setup only after a speculative worktree is adopted by durable creation', async () => {
     const sourceDir = createLocalRepo(tempHome);
-    const originalRootPath = normalizeLocalProjectRootPath(sourceDir);
+    const originalRootPath = localProjectsLegacy.normalizeLocalProjectRootPath(sourceDir);
     const sessionId = 'setup-prepared-session' as SessionId;
     const localProjectId = 'local-project-prepared' as LocalProjectId;
     const repoId = deriveRepoIdFromLocalProjectPath(originalRootPath);
@@ -826,7 +829,7 @@ describe('SessionManager worktree setup', () => {
 
   it('retries setup after a durable create fails with a prepared worktree', async () => {
     const sourceDir = createLocalRepo(tempHome);
-    const originalRootPath = normalizeLocalProjectRootPath(sourceDir);
+    const originalRootPath = localProjectsLegacy.normalizeLocalProjectRootPath(sourceDir);
     const sessionId = 'setup-prepared-retry' as SessionId;
     const localProjectId = 'local-project-prepared-retry' as LocalProjectId;
     const repoId = deriveRepoIdFromLocalProjectPath(originalRootPath);
@@ -897,7 +900,7 @@ describe('SessionManager worktree setup', () => {
 
   it('rebuilds a prepared worktree whose directory disappeared before adoption', async () => {
     const sourceDir = createLocalRepo(tempHome);
-    const originalRootPath = normalizeLocalProjectRootPath(sourceDir);
+    const originalRootPath = localProjectsLegacy.normalizeLocalProjectRootPath(sourceDir);
     const sessionId = 'setup-prepared-vanished' as SessionId;
     const localProjectId = 'local-project-prepared-vanished' as LocalProjectId;
     const repoId = deriveRepoIdFromLocalProjectPath(originalRootPath);
@@ -1218,6 +1221,24 @@ describe('SessionManager durable create ownership', () => {
     expect(managerTerminated).toEqual([]);
   });
 
+  it('does not forward an old runtime exit as the replacement runtime death', async () => {
+    const manager = buildOwnershipManager();
+    const sessionId = 'runtime-generation-events' as SessionId;
+    const config = createSessionConfig({ sessionId });
+    const exits: string[] = [];
+    manager.on('exit', () => exits.push('exit'));
+    manager.on('terminated', () => exits.push('terminated'));
+    const previous = (await createSessionInner(manager, config)) as Session;
+    const replacement = await createSessionInner(manager, config);
+    previous.emit('exit', { sessionId, exitCode: 0 });
+    await previous.terminate(true);
+    expect(manager.getSession(sessionId)).toBe(replacement);
+    expect(exits).toEqual([]);
+    await replacement.terminate(true);
+    expect(manager.getSession(sessionId)).toBeNull();
+    expect(exits).toEqual(['terminated']);
+  });
+
   it('reports no entry to abandon when the create already settled', async () => {
     const manager = buildOwnershipManager();
     const sessionId = 'settled-create-session' as SessionId;
@@ -1271,7 +1292,20 @@ describe('SessionManager preparation compatibility', () => {
     );
     const sessionId = 'stale-prepared-git-identity' as SessionId;
     const config = createSessionConfig({ sessionId });
-    const preparedSession = new Session(config, logger, process.cwd(), createNoopSessionSandbox());
+    const credentials = acquireSessionCredentialsLegacy(
+      new GitCredentialBroker({
+        tokenManager: {} as CloudGithubTokenManager,
+        logger,
+      }),
+      { sessionId, requesterUserId: 'user-1', machineId: 'machine-1' }
+    );
+    const preparedSession = new Session(
+      config,
+      logger,
+      process.cwd(),
+      createNoopSessionSandbox(),
+      credentials
+    );
     const updateIdentity = vi.spyOn(preparedSession, 'updateGitIdentity');
     const dispose = vi.fn(async () => await preparedSession.terminate(true));
     const prepared = {
@@ -1312,6 +1346,10 @@ describe('SessionManager preparation compatibility', () => {
       config.requesterUserId,
       { preferMachineIdentity: true, personalIdentityEnabled: false }
     );
+    expect(preparedSession.getGitHubCredentials()).toBe(credentials);
+    expect(credentials.mode === 'managed' && credentials.lease.active).toBe(true);
+    await preparedSession.terminate(true);
+    expect(credentials.mode === 'managed' && credentials.lease.active).toBe(false);
   });
 
   it('rejects a prepared session with different initial config option values', async () => {
@@ -1375,7 +1413,7 @@ describe('SessionManager preparation compatibility', () => {
       coldSession
     );
     expect(prepared.dispose).toHaveBeenCalledTimes(1);
-    expect(coldCreate).toHaveBeenCalledWith(durableConfig, undefined);
+    expect(coldCreate).toHaveBeenCalledWith(durableConfig, undefined, undefined);
   });
 
   it('waits for a published preparation to release its worktree when durable launch config is absent', async () => {
@@ -1426,7 +1464,7 @@ describe('SessionManager preparation compatibility', () => {
 
     cleanup.resolve(undefined);
     await expect(result).resolves.toBe(coldSession);
-    expect(coldCreate).toHaveBeenCalledWith(config, undefined);
+    expect(coldCreate).toHaveBeenCalledWith(config, undefined, undefined);
   });
 
   it.each(['project', 'model'] as const)(
@@ -1501,7 +1539,7 @@ describe('SessionManager preparation compatibility', () => {
 
       cleanup.resolve(undefined);
       await expect(result).resolves.toBe(coldSession);
-      expect(coldCreate).toHaveBeenCalledWith(durableConfig, undefined);
+      expect(coldCreate).toHaveBeenCalledWith(durableConfig, undefined, undefined);
     }
   );
 
@@ -1562,7 +1600,12 @@ describe('SessionManager preparation compatibility', () => {
     await expect(internals.createSessionFromPreparationOrCold(durableConfig)).resolves.toBe(
       adoptedSession
     );
-    expect(finishPreparedSession).toHaveBeenCalledWith(durableConfig, prepared, undefined);
+    expect(finishPreparedSession).toHaveBeenCalledWith(
+      durableConfig,
+      prepared,
+      undefined,
+      undefined
+    );
     expect(coldCreate).not.toHaveBeenCalled();
   });
 

@@ -75,6 +75,14 @@ YAML/settings/history, and the installed pinned DSH 0.1.5-rc.2 native compositio
 base bundle → generated host bundle → user patch → host guard. A synthetic edited
 model survived while telemetry remained disabled and the ACP entry upgraded.
 
+The Harness 0.2 integration retains Provider-scoped homes and the upstream legacy
+settings reader without automatic migration. The final ACP guard no longer injects
+the disabled `settings` service; model routes and presets come from the adapter
+configuration. Session startup keeps the upstream credential leases and cancellation
+fences while forwarding Provider identity and Magpie metadata at runtime resolution.
+Native 0.2.0-rc.2 composition checks confirm user model preservation, disabled
+telemetry and an ACP entry without the removed service dependency.
+
 ## Ablation-backed cleanup
 
 Pinned DSH 0.1.5-rc.2 `prepareProfile` recreates `cordis.yml` before boot.

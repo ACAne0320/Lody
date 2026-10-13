@@ -29,6 +29,7 @@ import {
   findFreshSessionPresenceState,
   machineSupportsLocalProjectRemovalProtocol,
   resolveProjectGitHubRepo,
+  resolveSessionHistoryBackendKind,
   type LocalProjectId,
   type LocalProjectMeta,
   type LocalProjectWorktreeCleanupPreflightResult,
@@ -87,7 +88,8 @@ import { useWorkspaceRouteTargetSlug } from '../providers/workspace-route-target
 import { resolveWorkspaceDataScope } from '@/lib/workspace-data-scope';
 
 import { lodyConnectionUiStateAtom } from '@/atoms/control-connection';
-import { localMachineIdAtom } from '@/atoms/local-probe';
+import { lastKnownLocalMachineIdAtom, localMachineIdAtom } from '@/atoms/local-probe';
+import { compareSidebarMachineOrder } from './sidebar-machine-order';
 import { getLocalProjectVisibilityKey } from '@/lib/visible-local-project-index';
 import { selectAndWriteLocalProject } from '@/lib/local-project-import';
 import { importSidebarLocalProject } from '@/components/sidebar-local-project-import';
@@ -961,6 +963,7 @@ const LocalProjectSessionItem = memo(function LocalProjectSessionItem({
           repoFullName={prRepoFullName}
           folderName={projectName}
           machineName={machineName}
+          historyBackend={resolveSessionHistoryBackendKind(session)}
           branchName={session.branchName}
           prStatus={showPr ? prStatus : undefined}
           prCiState={prInfo.ciState}
@@ -1760,6 +1763,7 @@ export function LoroAppSidebar({
     enabled: workspaceDataReady,
   });
   const localMachineId = useAtomValue(localMachineIdAtom);
+  const lastKnownLocalMachineId = useAtomValue(lastKnownLocalMachineIdAtom);
   const onlineMachineIds = useOnlineMachineIds();
   const visibleMachineIds = useMemo(() => Array.from(machineMetaMap.keys()), [machineMetaMap]);
   const pendingLocalProjectRemovals = usePendingLocalProjectRemovals(visibleMachineIds);
@@ -2444,9 +2448,14 @@ export function LoroAppSidebar({
       .sort((left, right) => {
         const leftMachine = left[1][0]!.machine;
         const rightMachine = right[1][0]!.machine;
-        const byOwner =
-          Number(isTeammateMachine(leftMachine)) - Number(isTeammateMachine(rightMachine));
-        return byOwner || leftMachine.name.localeCompare(rightMachine.name);
+        // A missing CLI snapshot changes available actions, not the machine's
+        // position. The live identity still owns localSection above.
+        return compareSidebarMachineOrder(
+          leftMachine,
+          rightMachine,
+          lastKnownLocalMachineId,
+          userId
+        );
       })
       .map(([machineId, entries]) => {
         const machine = entries[0]!.machine;
@@ -2493,6 +2502,7 @@ export function LoroAppSidebar({
       }),
     }));
   }, [
+    lastKnownLocalMachineId,
     localMachineId,
     localProjectOrder,
     machineMetaMap,
@@ -2562,6 +2572,7 @@ export function LoroAppSidebar({
         sectionLabel: chatsLabel,
         subtitle: null,
         machineName: task.machineName ?? null,
+        historyBackend: task.historyBackend,
         latestMessageAt: task.latestMessageAt,
         isPinned: task.isPinned,
         isWorking: task.isWorking,
@@ -2588,6 +2599,7 @@ export function LoroAppSidebar({
         repoFullName: repoName || null,
         branchName: task.branchName,
         machineName: task.machineName ?? null,
+        historyBackend: task.historyBackend,
         latestMessageAt: task.latestMessageAt,
         isPinned: task.isPinned,
         isWorking: task.isWorking,
@@ -2636,6 +2648,7 @@ export function LoroAppSidebar({
             subtitle: project.name,
             repoFullName: resolveProjectGitHubRepo(session.project) ?? null,
             machineName: section.machineDisplayName,
+            historyBackend: resolveSessionHistoryBackendKind(session),
             owner: resolveSessionAuthor(session),
             latestMessageAt: activity.latestMessageAt,
             isPinned: Boolean(session.isPinned),

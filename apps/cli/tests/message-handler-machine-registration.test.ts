@@ -188,6 +188,7 @@ describe('MessageHandler machine registration', () => {
       magpieImport: 1,
       dshProviderIsolation: 1,
       memoryProviders: 1,
+      sessionHistory: 2,
       mcpToolDiscovery: 1,
       codexAuthProfiles: 1,
       ...(hostCapabilities.builtinPi ? { builtinPi: 1 } : {}),
@@ -207,6 +208,8 @@ describe('MessageHandler machine registration', () => {
       subagentEvents: 1,
       schedules: 2,
       preparedSessionInput: 1,
+      sessionInputAttachments: 1,
+      sessionCollaborationControl: 1,
     });
 
     await handler.cleanup();

@@ -22,3 +22,12 @@ A synthetic real-Codex 0.159.2 conversation recorded with one model was restored
 The 55 adapter and 53 host tests pass, along with CLI/adapter/Core type checks, adapter builds, targeted formatting/lint, and the public-boundary check. Documentation checking is blocked by six pre-existing links into the uninitialized Kimi/Pi submodules; no changed-topic document error remains. Source changes do not update an installed desktop. Both changed public submodules must accompany the host change when integrated.
 
 Companion PRs: [Core contract](https://github.com/LodyAI/acp-extension-core/pull/21) and [Codex adapter](https://github.com/LodyAI/acp-extension-codex/pull/66). The standalone adapter requires a Core release containing the new type before integration. Root `pnpm format` passes; full `pnpm check` stops at the documentation site because `fumadocs-mdx` is not installed in this checkout.
+
+## Integration correction
+
+The host integration initially retained Core `85ec3ab` and Codex `66c724b`.
+That pairing lacks both `LodySessionConfig` and its native startup consumer:
+CLI type checking fails, and removing the type assertion would leave startup
+selection unapplied. Pin Core `d7266e9` and Codex `60f1dc4` together, the exact
+companion commits above. These source pins do not publish a Core release or
+change the installed managed runtime.

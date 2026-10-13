@@ -297,6 +297,7 @@ Notable parameters:
 
 - `--workspace <idOrSlug>` chooses the target workspace
 - `--agent-config <idOrName>` chooses the agent config from [Agent Config](/docs/quickstart)
+- `--agent-role <idOrName>` creates from a workspace Agent Role; the Role's machine, agent config, and run configuration override `--machine`, `--agent`/`--agent-config`, `--mode`, `--model`, and `--config-option` (a warning lists the ignored flags)
 - `--repo <owner/repo>` attaches a GitHub repo
 - `--local-project <id|name|path>` attaches a previously registered local project
 - `--repo` and `--local-project` are mutually exclusive
@@ -331,6 +332,23 @@ Exact flags:
 ```bash
 lody session chat --help
 ```
+
+
+### Input attachments
+
+Both create and chat accept repeatable `--attach <path>`:
+
+```bash
+lody session create --machine remote --prompt "Analyze the data" --attach ./data.csv
+lody session chat <sessionId> --prompt "Use this screenshot too" --attach ./screen.png
+```
+
+Paths are read on the machine running the command, relative to its current directory.
+All attachments must finish preparation before the message is sent. Any failure
+aborts the send. Up to eight non-empty files, 100 MiB each, are supported.
+Supported images within the image size limit keep visual input; larger images are files.
+Text is optional when attachments are present. `--prompt-file` still reads prompt text.
+Rerunning a standalone CLI command sends a new message.
 
 ### session cancel
 

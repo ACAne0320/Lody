@@ -22,6 +22,7 @@ export const MACHINE_PROTOCOL_CAPABILITIES = {
   providerSetup: 'providerSetup',
   schedules: 'schedules',
   preparedSessionInput: 'preparedSessionInput',
+  sessionInputAttachments: 'sessionInputAttachments',
   localFileResources: 'localFileResources',
   acpProtocolAuthentication: 'acpProtocolAuthentication',
   previewControl: 'previewControl',
@@ -30,6 +31,8 @@ export const MACHINE_PROTOCOL_CAPABILITIES = {
   iosSimulatorExterior: 'iosSimulatorExterior',
   piExtensions: 'piExtensions',
   acpCapabilityRefreshCache: 'acpCapabilityRefreshCache',
+  sessionHistory: 'sessionHistory',
+  sessionCollaborationControl: 'sessionCollaborationControl',
 } as const;
 
 export const MEMORY_PROVIDERS_PROTOCOL_VERSION = 1;
@@ -44,6 +47,7 @@ export const PROVIDER_SETUP_PROTOCOL_VERSION = 1;
 // v2 preserves ACP string/boolean values and reads legacy stringified booleans.
 export const SCHEDULES_PROTOCOL_VERSION = 2;
 export const PREPARED_SESSION_INPUT_PROTOCOL_VERSION = 1;
+export const SESSION_INPUT_ATTACHMENTS_PROTOCOL_VERSION = 1;
 export const LOCAL_FILE_RESOURCES_PROTOCOL_VERSION = 1;
 export const ACP_PROTOCOL_AUTHENTICATION_VERSION = 2;
 export const PREVIEW_CONTROL_PROTOCOL_VERSION = 1;
@@ -51,6 +55,7 @@ export const IOS_SIMULATOR_PROTOCOL_VERSION = 1;
 export const IOS_SIMULATOR_CONTROLS_PROTOCOL_VERSION = 1;
 export const PI_EXTENSIONS_PROTOCOL_VERSION = 1;
 export const ACP_CAPABILITY_REFRESH_CACHE_PROTOCOL_VERSION = 1;
+export const SESSION_HISTORY_PROTOCOL_VERSION = 2;
 
 type MachineProtocolCapabilityCarrier = {
   protocolCapabilities?: MachineProtocolCapabilities;
@@ -102,6 +107,7 @@ export function machineSupportsSubagentCancellation(
 export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities = {
   [MACHINE_PROTOCOL_CAPABILITIES.magpieImport]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.dshProviderIsolation]: 1,
+  [MACHINE_PROTOCOL_CAPABILITIES.sessionCollaborationControl]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.memoryProviders]: MEMORY_PROVIDERS_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.mcpToolDiscovery]: MCP_TOOL_DISCOVERY_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.localProjectHistoryProvider]:
@@ -115,6 +121,8 @@ export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities 
   [MACHINE_PROTOCOL_CAPABILITIES.providerSetup]: PROVIDER_SETUP_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.schedules]: SCHEDULES_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.preparedSessionInput]: PREPARED_SESSION_INPUT_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.sessionInputAttachments]:
+    SESSION_INPUT_ATTACHMENTS_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.localFileResources]: LOCAL_FILE_RESOURCES_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.acpProtocolAuthentication]: ACP_PROTOCOL_AUTHENTICATION_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.previewControl]: PREVIEW_CONTROL_PROTOCOL_VERSION,
@@ -123,7 +131,35 @@ export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities 
   [MACHINE_PROTOCOL_CAPABILITIES.iosSimulatorExterior]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.acpCapabilityRefreshCache]:
     ACP_CAPABILITY_REFRESH_CACHE_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.sessionHistory]: SESSION_HISTORY_PROTOCOL_VERSION,
 };
+
+/** Whether the target daemon exposes the Roost-backed session history RPC. */
+export function machineSupportsSessionHistoryProtocol(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return machineSupportsProtocolCapability(
+    machine,
+    MACHINE_PROTOCOL_CAPABILITIES.sessionHistory,
+    SESSION_HISTORY_PROTOCOL_VERSION
+  );
+}
+
+/** Negotiate only a new session's preference, before persisting its immutable choice. */
+export function resolveNewSessionHistoryBackend(
+  machine: MachineProtocolCapabilityCarrier | null | undefined,
+  options: {
+    requested?: import('./schema').SessionHistoryBackendKind;
+    preferred?: import('./schema').SessionHistoryBackendKind;
+  }
+): import('./schema').SessionHistoryBackendKind {
+  const backend = options.requested ?? options.preferred ?? 'loro';
+  if (backend !== 'roost' || machineSupportsSessionHistoryProtocol(machine)) return backend;
+  if (options.requested === 'roost') {
+    throw new Error('This machine does not support Roost session history. Update the machine.');
+  }
+  return 'loro';
+}
 
 export function machineSupportsSubagentEvents(
   machine: MachineProtocolCapabilityCarrier | null | undefined

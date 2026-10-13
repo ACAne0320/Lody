@@ -22,3 +22,11 @@ Core 定义增量的 version-1 启动元数据类型。宿主使用驱动轮的�
 55 个 adapter 测试、53 个宿主测试，以及 CLI/adapter/Core 类型检查、adapter 构建、改动文件的格式与 lint、公开边界检查均通过。文档检查仍有六处指向未初始化 Kimi/Pi 子模块的既有链接错误，本次文档没有新增错误。源码修改不会更新已安装桌面版本；集成时两个公开子模块的改动须与宿主改动配套。
 
 配套 PR：[Core 合约](https://github.com/LodyAI/acp-extension-core/pull/21)及 [Codex adapter](https://github.com/LodyAI/acp-extension-codex/pull/66)。独立 adapter 集成前需要发布包含新类型的 Core 版本。根目录 `pnpm format` 通过；全仓 `pnpm check` 因当前检出未安装文档站的 `fumadocs-mdx` 而中止。
+
+## 集成修正
+
+宿主集成最初仍固定在 Core `85ec3ab` 和 Codex `66c724b`，既缺少
+`LodySessionConfig`，也缺少原生启动阶段的消费者。这会导致 CLI 类型检查失败；
+仅删除类型断言仍会让启动选择不生效。因此一起固定到上述配套提交
+Core `d7266e9` 和 Codex `60f1dc4`。这两处源码指针不会发布 Core 新版本，
+也不会更新已安装的托管运行时。

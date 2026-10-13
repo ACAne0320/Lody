@@ -17,6 +17,8 @@ import {
   computeTitleGenerationDefaults,
   DEEPSEEK_HARNESS_API_KEY_ENV,
   DEEPSEEK_HARNESS_BASE_URL_ENV,
+  DEEPSEEK_HARNESS_OFFICIAL_BASE_URL,
+  isDeepSeekOfficialBaseUrl,
   formatCustomAcpCommandLine,
   getAcpCapabilityCacheEntryAuthority,
   getAcpCapabilityCacheKey,
@@ -638,7 +640,6 @@ const styles = stylex.create({
 
 export const DEEPSEEK_CLAUDE_PRESET_ID = 'deepseek-over-claude-code';
 export const DEEPSEEK_REASONIX_PRESET_ID = 'deepseek-reasonix';
-const DEEPSEEK_OFFICIAL_BASE_URL = 'https://api.deepseek.com';
 const LEGACY_DSH_MODELS_ENV = 'ACP_EXTENSION_DSH_MODELS';
 type DeepSeekEndpointMode = 'official' | 'custom';
 export const MIMO_CLAUDE_PRESET_ID = 'mimo-over-claude-code';
@@ -1080,7 +1081,7 @@ const BUILTIN_OPTIONS: AgentTypeOption[] = [
     value: 'builtin:dimcode',
     label: 'Dimcode',
     descriptionKey: 'settings.agent.dialog.option.dimcode.description',
-    descriptionDefault: 'Dimcode coding agent over ACP',
+    descriptionDefault: 'Use your installed Dimcode (you manage its version)',
     cliType: 'builtin',
     agentType: 'dimcode',
     searchKeys: 'dimcode dim dimagent acp',
@@ -1364,27 +1365,6 @@ function getDeepSeekEndpointMode(form: AgentConfigFormData): DeepSeekEndpointMod
   return form.deepseekEndpointMode === 'custom' ? 'custom' : 'official';
 }
 
-/**
- * Official DeepSeek API, including trailing slashes and a bare `/v1` path.
- * Other hosts, ports, query strings, or extra path segments are custom.
- */
-function isDeepSeekOfficialBaseUrl(value: string | undefined): boolean {
-  const trimmed = value?.trim() ?? '';
-  if (!trimmed) return false;
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol !== 'https:') return false;
-    if (url.username || url.password) return false;
-    if (url.hostname.toLowerCase() !== 'api.deepseek.com') return false;
-    if (url.port !== '' && url.port !== '443') return false;
-    if (url.search !== '' || url.hash !== '') return false;
-    const path = url.pathname.replace(/\/+$/, '').toLowerCase();
-    return path === '' || path === '/v1';
-  } catch {
-    return false;
-  }
-}
-
 function resolveDeepSeekEndpointForm(
   env: Record<string, string>,
   explicit?: Pick<AgentConfigFormData, 'deepseekEndpointMode' | 'deepseekCustomBaseUrl'>
@@ -1438,7 +1418,7 @@ function buildDeepSeekSubmitEnv(formData: AgentConfigFormData): Record<string, s
   env[DEEPSEEK_HARNESS_BASE_URL_ENV] =
     getDeepSeekEndpointMode(formData) === 'custom'
       ? (formData.deepseekCustomBaseUrl ?? '').trim()
-      : DEEPSEEK_OFFICIAL_BASE_URL;
+      : DEEPSEEK_HARNESS_OFFICIAL_BASE_URL;
   return env;
 }
 

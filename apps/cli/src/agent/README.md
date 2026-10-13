@@ -31,10 +31,11 @@ context/message-flow.md "Upstream".
   `newSession`/`loadSession` share `acp-session-start-gate.ts`.
 - `acp-session-start-gate.ts` — process-wide start semaphore used by
   `Session.createAgent`, `startLocalAcpAgent`, and history-catalog ACP spawn.
-- `setting.ts` — launch resolution for every agent kind, including the pinned
-  `npx --prefer-offline -y dimcode@0.5.10 acp` builtin. Dimcode reuses the
-  profile-owned npm cache and startup recovery; credentials remain in its own
-  configuration or provider environment.
+- `setting.ts` — launch resolution for every agent kind, including the user-installed
+  `dimcode acp` builtin. Users manage Dimcode installation and versions; Lody disables
+  upstream auto-update in its child process and never downloads a fallback. Credentials
+  remain in Dimcode's own configuration or provider environment. Refresh capabilities
+  after upgrading. Existing registry configurations retain their saved launch contract.
 - `deepseek-harness-runtime.ts` — Provider-scoped Harness homes, atomic host bundles,
   and npx launch wrapper around the `packages/acp-extension-dsh` submodule. It converts
   the adapter entry to a file URL for Cordis ESM imports, including Windows drive paths,
@@ -52,7 +53,9 @@ context/message-flow.md "Upstream".
   registry launches.
 - `acp-capabilities.ts` / `acp-startup-monitor.ts` / `acp-analytics.ts` — capability cache,
   startup health, analytics.
-- `login-shell-env.ts` — login-shell env capture for spawned agents.
+- `login-shell-env.ts` — explicit Legacy cache over the shared native
+  LoginShellEnvironment probe; the three-second pending wait is distinct from
+  retained failure. [Decision](../../../../.agents/notes/implemented/architecture/2026-10-10-effect-login-shell-probe.md).
 - `fixtures/` — synthetic test fixtures.
 
 ## Background
@@ -144,7 +147,9 @@ builds copy the extension's pinned official presets beside `deepseek-acp.js`; th
 roster also discovers `$DSH_HOME/.agent-presets`. The host mounts Harness's file settings
 provider for each Provider's `$DSH_HOME/settings.yaml`; refresh provider
 capabilities after editing the model catalog. An explicit `DEEPSEEK_BASE_URL` still uses
-the endpoint's `/models` list rather than local catalog additions. Harness JSONL roots are single-encoding
+the endpoint's `/models` list rather than local catalog additions. Official Chat-era
+URLs are normalized by the extension to the Messages `/anthropic` root before provider
+construction; official model discovery always uses `https://api.deepseek.com/models`. Harness JSONL roots are single-encoding
 stores: an empty or zstd root uses upstream's `zstd`, a raw-only legacy root keeps `none`,
 and a mixed root fails with both paths named. Existing sessions/query data remain under
 the daemon's previous `DSH_HOME` (or `~/.dsh`). Old settings/profiles are left untouched;
@@ -260,7 +265,7 @@ override entries still apply only when their source-version suffix matches the s
 
 ### Session titles
 
-Providers advertising Core `agentCapabilities._meta.lody.sessionTitle: { version: 1 }`
+Except for builtin Codex, Providers advertising Core `agentCapabilities._meta.lody.sessionTitle: { version: 1 }`
 own automatic title generation. After the main ACP session initializes, dispatch
 uses its live capability to skip `title-generator.ts`; capability cache freshness
 cannot cause a duplicate process on the first launch. Probes and normal session
@@ -274,21 +279,29 @@ tags are rejected; user titles are preserved. The generated tag requires the
 capability. Legacy explicit tags remain compatible. Failed provider generation
 leaves the draft title; there is no timeout-triggered duplicate generation.
 
-The builtin Claude/Codex/Grok identity table remains compatibility for older
+The builtin Claude/Grok identity table remains compatibility for older
 managed runtimes. Overrides revoke that fallback, but can independently advertise
 the new capability. Only legacy Claude/Grok titles are trusted without a tag.
 See the [contract](../../../../specs/acp-session-titles.md) and
 [original compatibility decision](../../../../.agents/notes/implemented/architecture/2026-09-08-acp-owned-session-titles.md).
+
+Builtin Codex always uses `title-generator.ts`, including with an old title capability
+cache. Its Provider settings expose title configuration; absent a non-empty override,
+the isolated session selects `gpt-5.6-luna`, low reasoning, and full access. Unsupported
+requested options fail to the existing prompt-derived fallback. The bundled adapter
+has no automatic generator, so neither the main nor title session starts an extra
+naming turn. Main conversation settings and Provider authentication are preserved.
 
 The daemon does not name branches. A worktree session starts on the temporary branch
 `worktree-manager.ts` created for it (`session/<id>` for GitHub, `lody/<id>` for shared-local
 projects, with collision suffixes). [WorkspaceGitService](../session/workspace-git-service.ts)
 observes branch changes independently of GitHub; its lifecycle and activation triggers are
 defined by the [checkout branch contract](../../../../specs/workspace-branch-state.md).
-`NEW_WORKTREE_SYSTEM_COMMANDS` in `session/session-execution-helpers.ts` asks the agent to
+`newWorktreeSystemCommands` in `session/session-execution-helpers.ts` asks the agent to
 rename that temporary ref before starting the first task in an ordinary new independent
-GitHub or local worktree. Execution selects this guidance by logical first use, including
-prepared-worktree adoption; direct local directories, child Tabs, prior/resumed ACP
+GitHub or local worktree. Execution verifies the actual checkout after setup against this
+Session's allocation, then directly requests renaming that ref without an agent inspection.
+It applies only on logical first use, including prepared-worktree adoption; direct local directories, child Tabs, prior/resumed ACP
 Sessions, later turns, and the separate Fork path are excluded. Existing descriptive
 branches are preserved, and rename failures do not block work. This prompt is guidance,
 not a daemon-enforced rename; title notifications do not trigger it.
@@ -325,3 +338,10 @@ Magpie Provider launch preparation and isolated native catalogs are owned by
 defines its local-only endpoint and confirmation boundary. Claude/Codex/Pi/DSH,
 Kimi Code and Grok use their native endpoint/catalog contracts; Bub uses its
 OpenAI environment configuration and requires a user-installed ACP plugin.
+
+## Login-shell cache
+
+`login-shell-env.ts` contains only Legacy launcher/binding boundaries. CLI index owns
+the native LoginShellCache runtime and waits for its producer at daemon/command exit.
+
+[Ownership decision](../../../../.agents/notes/implemented/architecture/2026-10-10-effect-login-shell-probe.md).
