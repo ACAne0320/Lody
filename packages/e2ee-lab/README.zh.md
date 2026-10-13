@@ -205,4 +205,4 @@ restoreLabLedgerFromCacheOrHistory只接受独立选择的精确endpoint与genui
 
 用户已批准受限A（2026-10-12）：可信宿主一次注入保护，原生优先；复用公开keyring/receiver并绑定完整payload。./synthetic-protection现承接原固定AES-GCM合成fixture，不提供真实OS存钥。OS子进程在实际报告signer处、protected save/reload后硬退出；Install/source/原blob保留，无报告或远端installed，正常重开用同原blob完成。另一installed-only子进程在原发送者撤销后读keys0/1，不导入HPKE私钥且不调用网络，未加入B历史信封恢复。D12/header/vault/备份/严格B/生产门仍待定。platform身份port缺对称保护，现Electron字符串存储缺已审查的全payload完整性/backend失败adapter；明确该组合缺口，不擅选新算法。
 
-操作释放和父关闭共享真实子清理completion，包含失败原因。Lab每次执行一个测试文件，仍保留默认5秒用例预算；native／独立进程验证保持真实。准确head CI与固定版本独立finding分别报告。
+操作释放和父关闭共享真实子清理completion，包含失败原因。Lab每次执行一个测试文件，仍保留默认5秒用例预算；成本对照后的四进程集成例外为key15秒／workspace10秒；native／独立进程验证保持真实。准确head CI与固定版本独立finding分别报告。

@@ -675,5 +675,5 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });

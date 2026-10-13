@@ -9232,7 +9232,7 @@
       },
       "currentCi": "pending automatic run after this substantive repair",
       "desktopReviewedHead": "c33 smoke6scenarios/40steps PASS; not Lab/full-platform acceptance",
-      "timeoutRepair": "Serial Lab file execution, same5s budget, no assertion removal; root and new exactCI decide acceptance."
+      "timeoutRepair": "Serial files; default5s except measured four-process key15s/workspace10s budgets. Native settlement timings retained; no assertion removal. CI3006 remained red for these two cases, next exactCI decides acceptance."
     },
     "consumerTests": 94,
     "originalLabFailuresClosed": false,

@@ -243,3 +243,5 @@ restoreLabLedgerFromCacheOrHistory只接受独立选择的精确endpoint与genui
 独立c33审查发现第二次Scope.close不等待已开始的子清理，真实SQLite／Riverrun提前释放。每个操作现在只有一次不可中断的关闭completion，保留完整Exit／Cause；父关闭和操作释放等待同一结果。准入检查和登记仍同步完成。真实SQLite／SDK的oldfail／newpass及成功／defect交错补入所属runtime套件。复制原探针时，测试门须在父关闭进入后释放，而非等父关闭返回后释放，以免正确等待的新实现被测试门自身卡住；原失败断言保留。
 
 准确c33 CI四项5000ms超时，独立92通过。本地受影响12项通过，两worker时四项目标约0.7／0.7／1.7／2.9秒。这不能证明Linux成本或将超时归因于关闭竞争。Lab文件改为串行，减少同时native／Wasm／进程启动竞争；5秒限制和全部真实断言保留。仍须准确新CI确认，否则继续记阻塞。c33 Desktop smoke实际6场景／40步通过，不等Lab或生产验收。
+
+CI3006保留关闭修复但仍红：串行后Flock3096ms／gateway3320ms通过，两个含四次进程启动的用例仍超过5秒。本地key／workspace为2852／1712ms；已完成的Linux native对照约4至5倍成本，整项估计13／8秒。仅这两项既有OS进程集成用例采用有限15／10秒预算；全部断言及关闭竞争／其它测试5秒保留。native-child日志记录真实settlement耗时，仅诊断不作时间断言；新CI须核验估计并定位剩余等待。这是成本预算估计，不能证明所有超时根因都是CPU。旧红CI不改。
