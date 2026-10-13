@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Fiber, Scope } from 'effect';
+import { Cause, Data, Deferred, Effect, Exit, Fiber, Scope } from 'effect';
 export class LabOperationError extends Data.TaggedError('LabOperationError')<{
   readonly code: 'closed';
 }> {}
@@ -8,13 +8,16 @@ export class LabOperationError extends Data.TaggedError('LabOperationError')<{
 export function makeLabOperations() {
   return Effect.gen(function* () {
     const controller = new AbortController();
-    const active = new Set<Scope.Closeable>();
+    const active = new Set<{
+      readonly scope: Scope.Closeable;
+      readonly close: (exit: Exit.Exit<unknown, unknown>) => Effect.Effect<void>;
+    }>();
     yield* Effect.addFinalizer((parentExit) =>
       Effect.gen(function* () {
         controller.abort();
         const exits = yield* Effect.forEach(
           [...active],
-          (child) => Effect.exit(Scope.close(child, parentExit)),
+          (child) => Effect.exit(child.close(parentExit)),
           { concurrency: 'unbounded' }
         );
         const reasons = exits.flatMap((exit) => (Exit.isFailure(exit) ? exit.cause.reasons : []));
@@ -28,7 +31,26 @@ export function makeLabOperations() {
           Effect.try({
             try: () => {
               if (controller.signal.aborted) throw new LabOperationError({ code: 'closed' });
-              const child = Scope.makeUnsafe();
+              // Admission and registration are synchronous, so parent close cannot
+              // observe an empty set between a successful check and registration.
+              const scope = Scope.makeUnsafe();
+              const completed = Deferred.makeUnsafe<void>();
+              let closing = false;
+              const child = {
+                scope,
+                close: (exit: Exit.Exit<unknown, unknown>) =>
+                  Effect.uninterruptible(
+                    Effect.gen(function* () {
+                      if (!closing) {
+                        closing = true;
+                        const result = yield* Effect.exit(Scope.close(scope, exit));
+                        yield* Deferred.done(completed, result);
+                        active.delete(child);
+                      }
+                      return yield* Deferred.await(completed);
+                    })
+                  ),
+              };
               active.add(child);
               return child;
             },
@@ -36,18 +58,11 @@ export function makeLabOperations() {
           }),
           (child) =>
             work.pipe(
-              Effect.provideService(Scope.Scope, child),
-              Effect.forkIn(child),
+              Effect.provideService(Scope.Scope, child.scope),
+              Effect.forkIn(child.scope),
               Effect.flatMap(Fiber.join)
             ),
-          (child, exit) =>
-            Scope.close(child, exit).pipe(
-              Effect.ensuring(
-                Effect.sync(() => {
-                  active.delete(child);
-                })
-              )
-            )
+          (child, exit) => child.close(exit)
         ),
     });
   });

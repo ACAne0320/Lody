@@ -15,7 +15,9 @@ has its own durable file; replay never silently skips already committed hashes.
 Content native state and exact SDK cursor commit atomically per document. Failed
 full-history recovery retains the previous durable pair and stops only that document.
 SDK subscription precedes local edits; abort is not proof of stopped native work.
-Wait actual raw operations before closing SDK/storage or freeing Loro. Flock has
+Wait actual raw operations before closing SDK/storage or freeing Loro.
+Concurrent child-close callers share one completion including cleanup failures;
+a second Scope.close call alone is not a cleanup wait. Flock has
 no public deterministic free/dispose: close subscriptions and drop references.
 Never reset host earliest offsets or delete snapshots to make recovery tests pass.
 

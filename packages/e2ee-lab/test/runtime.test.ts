@@ -254,3 +254,90 @@ it('closes all operation children despite one native cleanup defect and waits an
     if (!closed) await f.close();
   }
 });
+
+it.each([false, true])(
+  'waits already-started operation cleanup before real SQLite/SDK owners (defect=%s)',
+  async (fails) => {
+    const f = await fixture();
+    const database = new Database(':memory:');
+    database.exec('CREATE TABLE retained(value); INSERT INTO retained VALUES(7)');
+    const defect = new Error('shared close result');
+    let childSettled = false,
+      closedEarly = false,
+      readOk = false;
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const parent = yield* Scope.make();
+            const entered = yield* Deferred.make<void>(),
+              release = yield* Deferred.make<void>(),
+              closingEntered = yield* Deferred.make<void>();
+            yield* Effect.addFinalizer(() => Deferred.succeed(release, undefined));
+            yield* Scope.addFinalizer(
+              parent,
+              Effect.promise(async () => {
+                closedEarly = !childSettled;
+                database.close();
+                await f.server.close();
+              })
+            );
+            const operations = yield* makeLabOperations().pipe(
+              Effect.provideService(Scope.Scope, parent)
+            );
+            operations.signal.addEventListener(
+              'abort',
+              () => Deferred.doneUnsafe(closingEntered, Effect.void),
+              { once: true }
+            );
+            const worker = yield* Effect.forkChild(
+              Effect.exit(
+                operations.run(
+                  Effect.gen(function* () {
+                    yield* Effect.addFinalizer(() =>
+                      Effect.gen(function* () {
+                        yield* Deferred.succeed(entered, undefined);
+                        yield* Deferred.await(release);
+                        expect(database.prepare('SELECT value FROM retained').get()).toEqual({
+                          value: 7,
+                        });
+                        const response = yield* Effect.promise(() =>
+                          f.sdk.read({ offset: '-1', signal: new AbortController().signal })
+                        );
+                        readOk = response.ok;
+                        childSettled = true;
+                        if (fails) yield* Effect.die(defect);
+                      })
+                    );
+                  })
+                )
+              )
+            );
+            yield* Deferred.await(entered);
+            const closing = yield* Effect.forkChild(Effect.exit(Scope.close(parent, Exit.void)));
+            yield* Deferred.await(closingEntered);
+            yield* Deferred.succeed(release, undefined);
+            const parentResult = yield* Fiber.join(closing),
+              workerResult = yield* Fiber.join(worker);
+            expect(closedEarly).toBe(false);
+            expect(childSettled).toBe(true);
+            expect(readOk).toBe(true);
+            expect(database.open).toBe(false);
+            for (const result of [parentResult, workerResult]) {
+              expect(Exit.isFailure(result)).toBe(fails);
+              if (Exit.isFailure(result))
+                expect(
+                  result.cause.reasons.some(
+                    (reason) => reason._tag === 'Die' && reason.defect === defect
+                  )
+                ).toBe(true);
+            }
+          })
+        )
+      );
+    } finally {
+      if (database.open) database.close();
+      await f.close();
+    }
+  }
+);

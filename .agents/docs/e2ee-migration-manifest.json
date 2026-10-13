@@ -9221,8 +9221,20 @@
   "labIntegrationWorkInProgress": {
     "branch": "e2ee-lab-integration",
     "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
-    "draftPr": null,
-    "consumerTests": 92,
+    "draftPr": 1526,
+    "reviewedHead": "c33dffede8d8fbd5187ea843c3cba6818c2a9cbd",
+    "reviewFindings": {
+      "P1": "Concurrent parent close must await already-started operation cleanup; author shared-completion fix awaits independent incremental verification.",
+      "oldCi": {
+        "run": 38333206761,
+        "conclusion": "FAILURE",
+        "lab": "88/92, four5000ms timeout"
+      },
+      "currentCi": "pending automatic run after this substantive repair",
+      "desktopReviewedHead": "c33 smoke6scenarios/40steps PASS; not Lab/full-platform acceptance",
+      "timeoutRepair": "Serial Lab file execution, same5s budget, no assertion removal; root and new exactCI decide acceptance."
+    },
+    "consumerTests": 94,
     "originalLabFailuresClosed": false,
     "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
     "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",

@@ -237,3 +237,9 @@ restoreLabLedgerFromCacheOrHistory只接受独立选择的精确endpoint与genui
 不是完整R/vault/key或protectedcontent快照恢复。
 
 用户已批准受限A（2026-10-12）：可信宿主一次注入保护，原生优先；复用公开keyring/receiver并绑定完整payload。./synthetic-protection现承接原固定AES-GCM合成fixture，不提供真实OS存钥。OS子进程在实际报告signer处、protected save/reload后硬退出；Install/source/原blob保留，无报告或远端installed，正常重开用同原blob完成。另一installed-only子进程在原发送者撤销后读keys0/1，不导入HPKE私钥且不调用网络，未加入B历史信封恢复。D12/header/vault/备份/严格B/生产门仍待定。platform身份port缺对称保护，现Electron字符串存储缺已审查的全payload完整性/backend失败adapter；明确该组合缺口，不擅选新算法。
+
+## 关闭竞争修复
+
+独立c33审查发现第二次Scope.close不等待已开始的子清理，真实SQLite／Riverrun提前释放。每个操作现在只有一次不可中断的关闭completion，保留完整Exit／Cause；父关闭和操作释放等待同一结果。准入检查和登记仍同步完成。真实SQLite／SDK的oldfail／newpass及成功／defect交错补入所属runtime套件。复制原探针时，测试门须在父关闭进入后释放，而非等父关闭返回后释放，以免正确等待的新实现被测试门自身卡住；原失败断言保留。
+
+准确c33 CI四项5000ms超时，独立92通过。本地受影响12项通过，两worker时四项目标约0.7／0.7／1.7／2.9秒。这不能证明Linux成本或将超时归因于关闭竞争。Lab文件改为串行，减少同时native／Wasm／进程启动竞争；5秒限制和全部真实断言保留。仍须准确新CI确认，否则继续记阻塞。c33 Desktop smoke实际6场景／40步通过，不等Lab或生产验收。
