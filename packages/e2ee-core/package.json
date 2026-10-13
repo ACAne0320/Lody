@@ -18,7 +18,9 @@
     "./ledger/snapshot": "./src/ledger/snapshot.ts",
     "./keys/reports": "./src/keys/reports.ts",
     "./keys/mailbox/sqlite": "./src/keys/mailbox-sqlite.ts",
-    "./ledger/admission": "./src/ledger/admission.ts"
+    "./ledger/admission": "./src/ledger/admission.ts",
+    "./keys/host": "./src/keys/host-protection.ts",
+    "./keys/host/sqlite": "./src/keys/protected-sqlite.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
