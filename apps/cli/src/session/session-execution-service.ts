@@ -659,6 +659,7 @@ export type SessionExecutionServiceDeps = {
     agentType: string;
     customAcp?: CustomAcpLaunchSpec;
     runtimeOverrides?: BuiltinRuntimeOverrides;
+    magpieGatewayUrl?: string;
     env?: Record<string, string>;
   }) => Promise<string | undefined>;
   /** Evict idle sessions if system memory is under pressure */
@@ -739,7 +740,13 @@ type AcpAuthenticationOptions = {
 type ResolvedMachineAcpCapabilitiesRefreshRequest = MachineAcpCapabilitiesRefreshRequestValidated &
   Pick<
     AgentConfigMeta,
-    'cliType' | 'agentType' | 'customAcp' | 'runtimeOverrides' | 'env' | 'codexAuth'
+    | 'cliType'
+    | 'agentType'
+    | 'customAcp'
+    | 'runtimeOverrides'
+    | 'magpieGatewayUrl'
+    | 'env'
+    | 'codexAuth'
   >;
 
 const summarizeAcpAuthMethod = (method: unknown): MachineAcpAuthMethodSummary => {
@@ -4854,6 +4861,8 @@ export class SessionExecutionService {
           mcpServerIds: acpSessionConfig.mcpServerIds ?? [],
           customAcp: resumeCustomAcp,
           runtimeOverrides: resumeRuntimeOverrides,
+          magpieGatewayUrl:
+            acpSessionConfig.magpieGatewayUrl ?? storedLaunchConfig.config?.magpieGatewayUrl,
           requesterUserId: userId,
           machineId: self.deps.machineId,
           assumeDocExisting: true,
@@ -5702,6 +5711,7 @@ export class SessionExecutionService {
       agentConfigId: existingMeta?.agentConfigId,
       customAcp: acpSessionConfig.customAcp,
       runtimeOverrides: acpSessionConfig.runtimeOverrides,
+      magpieGatewayUrl: acpSessionConfig.magpieGatewayUrl,
       requesterUserId: message.userId,
       machineId: this.deps.machineId,
       assumeDocExisting: true,
@@ -6447,6 +6457,7 @@ export class SessionExecutionService {
           agentType: config.agentType,
           customAcp: config.customAcp,
           runtimeOverrides: config.runtimeOverrides,
+          magpieGatewayUrl: config.magpieGatewayUrl,
           env: config.env,
         });
       const existing = await this.deps.workspaceDocument.getAcpCapabilities(
@@ -6487,6 +6498,7 @@ export class SessionExecutionService {
           env: config.env,
           customAcp: config.customAcp,
           runtimeOverrides: config.runtimeOverrides,
+          magpieGatewayUrl: config.magpieGatewayUrl,
         })
       );
     })().catch((error: unknown) => {
@@ -6585,11 +6597,13 @@ export class SessionExecutionService {
       });
     };
     const result = await this.acpAuthenticationManager.authenticate({
+      agentConfigId: config.id,
       requestId: message.requestId,
       cliType: config.cliType,
       agentType: config.agentType,
       customAcp: config.customAcp,
       runtimeOverrides: config.runtimeOverrides,
+      magpieGatewayUrl: config.magpieGatewayUrl,
       env: config.env,
       onProgress,
       codexProfile,
@@ -6628,6 +6642,7 @@ export class SessionExecutionService {
                     config.runtimeOverrides,
                     {
                       signal,
+                      magpieGatewayUrl: config.magpieGatewayUrl,
                       codexProfile: { profile: codexProfile, candidateKey },
                       verifyCodexCredential: true,
                     }
@@ -6662,6 +6677,7 @@ export class SessionExecutionService {
             agentType: config.agentType,
             customAcp: config.customAcp,
             runtimeOverrides: config.runtimeOverrides,
+            magpieGatewayUrl: config.magpieGatewayUrl,
             env: config.env,
             codexAuth: config.codexAuth,
             // Authentication changes what the agent will advertise (models and
@@ -6742,6 +6758,7 @@ export class SessionExecutionService {
         agentType: config.agentType,
         customAcp: config.customAcp,
         runtimeOverrides: config.runtimeOverrides,
+        magpieGatewayUrl: config.magpieGatewayUrl,
         env: config.env,
         codexAuth: config.codexAuth,
       },
@@ -6784,7 +6801,8 @@ export class SessionExecutionService {
       message.agentType,
       message.env,
       message.customAcp,
-      message.runtimeOverrides
+      message.runtimeOverrides,
+      message.magpieGatewayUrl
     );
 
     this.deps.logger.debug(
@@ -6894,6 +6912,7 @@ export class SessionExecutionService {
       agentType: message.agentType,
       customAcp: message.customAcp,
       runtimeOverrides: message.runtimeOverrides,
+      magpieGatewayUrl: message.magpieGatewayUrl,
       env: message.env,
     });
     const recordedFingerprint = this.acpCapabilityLaunchInputFingerprints.get(message.configId);
@@ -6962,6 +6981,8 @@ export class SessionExecutionService {
         message.customAcp,
         message.runtimeOverrides,
         {
+          agentConfigId: message.configId,
+          magpieGatewayUrl: message.magpieGatewayUrl,
           signal: options.signal,
           codexProfile: codexProfile ? { profile: codexProfile } : undefined,
           onManagedRuntimeProgress: (event) => {
@@ -6990,6 +7011,7 @@ export class SessionExecutionService {
             agentType: message.agentType,
             customAcp: message.customAcp,
             runtimeOverrides: message.runtimeOverrides,
+            magpieGatewayUrl: message.magpieGatewayUrl,
             env: message.env,
           }),
         modelReasoningEfforts,
@@ -7418,6 +7440,7 @@ const fingerprintAcpLaunchInputs = (inputs: {
   env?: Record<string, string>;
   customAcp?: CustomAcpLaunchSpec;
   runtimeOverrides?: BuiltinRuntimeOverrides;
+  magpieGatewayUrl?: string;
 }): string =>
   createHash('sha256')
     .update(
@@ -7427,7 +7450,8 @@ const fingerprintAcpLaunchInputs = (inputs: {
         inputs.agentType,
         inputs.env,
         inputs.customAcp,
-        inputs.runtimeOverrides
+        inputs.runtimeOverrides,
+        inputs.magpieGatewayUrl
       )
     )
     .digest('hex');
@@ -7438,7 +7462,8 @@ const computeAcpRefreshDedupeKey = (
   agentType: string,
   env: Record<string, string> | undefined,
   customAcp?: CustomAcpLaunchSpec,
-  runtimeOverrides?: BuiltinRuntimeOverrides
+  runtimeOverrides?: BuiltinRuntimeOverrides,
+  magpieGatewayUrl?: string
 ): string => {
   const sortedKeys = env ? Object.keys(env).sort() : [];
   const envSerialized = sortedKeys.map((k) => `${k}=${env![k]}`).join('\x01');
@@ -7454,7 +7479,7 @@ const computeAcpRefreshDedupeKey = (
         .map(([key, value]) => `${key}=${Array.isArray(value) ? JSON.stringify(value) : value}`)
         .join('\x01')
     : '';
-  return `${configId}\x00${cliType}\x00${agentType}\x00${envSerialized}\x00${customSerialized}\x00${runtimeOverrideSerialized}`;
+  return `${configId}\x00${cliType}\x00${agentType}\x00${envSerialized}\x00${customSerialized}\x00${runtimeOverrideSerialized}\x00${magpieGatewayUrl ?? ''}`;
 };
 import { getCodexProfileStore, type ResolvedCodexProfile } from '../agent/codex-profile-store';
 import { assertManagedCodexProfileConfig } from '@lody/shared';
