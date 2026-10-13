@@ -105,3 +105,5 @@ Lab 使用真实 HTTP/SQLite 持久化、进程重开、双端 Loro/Flock/Repo S
 快照 A 必须有独立来源的精确管理资格；B 从真正同点 view 派生信任；C 仅为签名证据。背书状态来源与未知历史前缀明确区分。mailbox reference 提供已认证主机 composition 绑定、固定准入、重复包去重、有界逐接收者读取、签名声明／修复；持久接收安装、分发调度、完整 engine／SDK／transport 恢复和 Lab 均未完。旧重复 stream 失败仍保留，仅新 mailbox 路径证据不能关闭全部旧路径／Lab 投递覆盖。
 
 Mailbox Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472), direct parent #1464 at `5d3967ec94e3b10fdec76220937e9fcfe2623590`.
+
+Document snapshot-identity/input follow-up Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474), direct parent #1472 at `ad4aed943928be69b0013445c2a38d86c7907fbe`.

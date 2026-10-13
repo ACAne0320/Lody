@@ -105,3 +105,5 @@ The implemented Draft chain is L0 [#1438](https://github.com/LodyAI/Lody/pull/14
 Snapshot A requires independently sourced exact management qualification; B derives genuine same-point trust; C is signature evidence only. Endorsed-state provenance and unknown historical prefix remain explicit. The mailbox reference supplies authenticated composition binding, fixed admission, duplicate deduplication, bounded recipient reads and signed claim/repair handling; durable recipient installation, distribution scheduling, full engine/SDK/transport recovery and Lab are unfinished. The old duplicate-stream failure is retained; new mailbox-path evidence alone does not close all legacy/Lab delivery coverage.
 
 Mailbox Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472), direct parent #1464 at `5d3967ec94e3b10fdec76220937e9fcfe2623590`.
+
+Document snapshot-identity/input follow-up Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474), direct parent #1472 at `ad4aed943928be69b0013445c2a38d86c7907fbe`.

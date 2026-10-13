@@ -26,3 +26,17 @@ Translation: current
 验证：包测试 140/140、类型检查通过；完整 `env -u GIT_EXEC_PATH PATH="/usr/bin:$PATH" pnpm check`、根格式、相对直接父层的文档检查及公开边界通过。保留早期 lint/native Git 失败日志；未改 Git 测试源码/断言，仅用系统 Git 环境后该套 6/6 通过。实际 SDK 0.16.2 的 provider 没有 AbortSignal 参数，后续桥接须拥有进行中的 Effect/native 操作并等待关闭。快照 offset 的服务端接纳绑定需独立格式决定，不能沿用只把 offset 藏在密文的方案。
 
 Draft: [#1442](https://github.com/LodyAI/Lody/pull/1442).
+
+## 快照作者与异步输入补齐
+
+文档认证／打开现消费 L1b 身份查询：真正完整历史保留原 actor／member；经过资格确认的背书快照中，已撤销设备的防重放事实只返回明确 device-only／missing-history-context。新封装仍要求当前权限，不恢复撤销作者的写权限。封装等待前捕获 scope／plaintext／additional data／signer／lookup，通过 acquireUseRelease 擦除自有明文，并要求最终真正 view 延续首次已知前缀；v0 wire／算法未改。直接父为 mailbox #1472 ad4aed943928be69b0013445c2a38d86c7907fbe。
+
+固定 13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf 的独立副本复现三项失败：快照已撤销作者不能打开旧文档、查询等待期间修改明文改变加密结果、后次前缀回退仍封装。原源文件／review 证据不改，另保留 old-fail／new-pass；覆盖真实签名快照与 Ed25519／AEAD、撤销后的新封装拒绝、坏签名、Deferred 控制输入及 capability 修改、真正账本回退。这仅是库的文档行为，不是 SDK／host 准入、生产信任来源或 Lab 验收。
+
+L2c 最终代码树：core 201/201 与 typecheck、native Git／本地 IPC 完整 root check、格式／文档／公共边界通过。作者 union 明确区分，原完整历史断言先确认 member；无生产消费者或 wire 变更。
+
+L2c Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474).
+
+已同步 #1472 的 6ed759f1c9081d2758311fde9bd5147e650e5df2 单页修复；组合 core 202/202 与 typecheck 通过，内容实现及四项回归未改。先前独立 READY 仅绑定其记录的 4319f6c0 head，新组合须限定复核。
+
+父同页一致性修复同步：直接纳入 mailbox 58cbd49c6869f28d09efb60d3b9a7ec10243e93a。content 实现和四项行为回归未变。准确组合 core203／typecheck／完整根 check 及根 format 通过；前 b270 组合的独立审查不改绑到此新 head。

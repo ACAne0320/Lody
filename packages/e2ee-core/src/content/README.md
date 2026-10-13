@@ -15,9 +15,13 @@ key objects live while reachable; this is not native secure custody or guarantee
 physical-memory erasure. Device private keys cannot be exported here.
 
 `sealDocument` returns an inert Effect. Inputs are read and bounded when it runs;
-callers retain input ownership and must not mutate them during the operation.
+caller-owned scope, plaintext, binding, signer and lookup capabilities are captured
+before the first async lookup. The scoped plaintext scratch is wiped after sealing
+and on failure/interruption; the caller buffer remains theirs.
 The caller supplies a borrowed DeviceSigner and a synchronized verified-view
-lookup. Each view must originate from full real ledger verification. Sealing binds
+lookup. Each view must be genuine full replay or explicitly qualified endorsed
+state, with its provenance preserved. Later lookups must extend the first verified
+prefix; known rollback/forks fail. Sealing binds
 the caller's genesis, resource, purpose and current epoch; active non-Guest
 personal/machine devices may seal only when rotation is not required. It checks
 before encryption and after asynchronous signing, and always verifies signer
@@ -27,7 +31,11 @@ returned bytes, rather than rerun encryption. No pending store is introduced.
 
 `authenticateDocument` returns only historical author/signature evidence relative
 to that verified view and caller scope. It authenticates revoked admitted authors;
-it does not establish current publication permission, ciphertext validity, global
+the returned author is a discriminated identity: full available history gives
+`kind: member` with the original actor/membership; snapshot replay-prevention
+facts for a retired device give only `kind: device-only`, device and
+`missing-history-context`. No original user is guessed and no new write right
+is restored. This does not establish current publication permission, ciphertext validity, global
 freshness or prior host admission. `openDocument` additionally verifies the AEAD
 and returns an owned plaintext buffer. Untrusted metadata cannot choose the
 trusted genesis/resource/purpose. Context, signature or tag failure returns no
@@ -43,9 +51,9 @@ must implement cancellation in their Effects. The factory validates key shape;
 `signVerified` proves the signature matches its expected public key, not ledger
 permission. Neither performs platform-specific secure storage.
 
-Non-document generic content, epoch-history encryption, signed ledger command
-preparation, published-SDK protection/admission, recovery and Lab composition are
-remaining migration owners. Presence/RPC machine-operation scope requires its
+Non-document generic content, published-SDK protection/admission, recovery and Lab
+composition remain separate migration owners. Canonical epoch history and ordinary
+ledger signing now have their own public subentries. Presence/RPC machine-operation scope requires its
 own decision. This module does not enable product E2EE or publish a package.
 
 Run package `typecheck` and `test`. The owning crypto suite uses fixed synthetic
