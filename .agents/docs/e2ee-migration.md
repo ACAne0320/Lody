@@ -116,6 +116,7 @@ This is the refreshed Draft stack snapshot before this layer. Parent head is the
 | [#1484](https://github.com/LodyAI/Lody/pull/1484) | `e2ee-ledger-feed` | `14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8` | `4134109a76739d8b36ff5a8a1209e37e16518703` |
 | [#1485](https://github.com/LodyAI/Lody/pull/1485) | `e2ee-mailbox-repairs` | `680686d1442e7f8b12f6f8b84af3f17f3c514b97` | `14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8` |
 | [#1487](https://github.com/LodyAI/Lody/pull/1487) | `e2ee-recipient-mailbox` | `098e274221aae13305d29ff75629bee168678ded` | `680686d1442e7f8b12f6f8b84af3f17f3c514b97` |
+| [#1491](https://github.com/LodyAI/Lody/pull/1491) | `e2ee-ledger-sdk-cas` | `f82f8634743d5bc4dd8858cf6867b91d80c221ba` | `098e274221aae13305d29ff75629bee168678ded` |
 
 SDK preparation #1433 and submission #1434 landed; the latter merge is `7c58cabe1d05f132b7133a52b45a16b79274ea6a`. Their implementation remains unchanged. Host protection direction A is settled: trusted composition initializes protect/unprotect once, binds purpose/Org/recipient/epoch/commitment and requires actual save/reload before reports. Synthetic protection is not native platform custody.
 
@@ -125,4 +126,6 @@ L1d [full-history feed](../../packages/e2ee-core/src/ledger/FEED.md), L4g [durab
 
 Fetch verified main `e395d84f4f1b64440f887dce14ffbf061ce48ac1`, tree `ac964903fad38bc254c0335d5dbe339b00d772d4`. All three prerequisites are ancestors: HPKE #1432, SDK preparation #1433 and submission #1434. SDK preparation supplies tests/seams, not a production protector. Since the frozen stack base984c, public core/RPC files have no new overlap. Current main CI38135946007 is successful; exact original combination CI38109831626 remains cancelled, while successor871179 CI38109983563 succeeded. No unchanged attack matrix is rerun on that evidence alone.
 
-Continue existing implementation with a maximum of24 migration PRs, including the16 already listed. Consolidate remaining SDK, sender, content/recovery consumers and Lab work; keep protocol gates explicit and all new layers Draft. Current-head independent review is separate from author checks and CI.
+Continue existing implementation with a maximum of24 migration PRs, including the17 already listed. Consolidate remaining SDK, sender, content/recovery consumers and Lab work; keep protocol gates explicit and all new layers Draft. Current-head independent review is separate from author checks and CI.
+
+L4i adapts [finite sender discovery and dispatch](../../packages/e2ee-core/src/keys/DISTRIBUTION.md) for already committed protected keys, retaining original outbox bytes, per-revision tasks/results, genuine disposition and own publication-report reconstruction. Actual Lab consumption and candidate backup/rotation remain separate; new source has its own current-head review.
