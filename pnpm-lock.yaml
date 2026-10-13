@@ -1573,8 +1573,8 @@ importers:
         version: 4.0.2
     devDependencies:
       '@loro-dev/streams-crdt':
-        specifier: 'catalog:'
-        version: 0.16.2(@loro-dev/flock-wasm@0.4.3)(loro-crdt@1.16.3)
+        specifier: 0.17.0
+        version: 0.17.0(@loro-dev/flock-wasm@0.4.3)(effect@4.0.2)(loro-crdt@1.16.3)
       '@loro-dev/streams-client':
         specifier: 'catalog:'
         version: 0.9.0
@@ -1896,6 +1896,11 @@ importers:
         version: 2.8.2
 
 packages:
+
+  '@loro-dev/streams-client@0.10.0':
+    resolution: {integrity: sha512-FWyrr7AnhJZXsrxubqjjgabD1aRksziU8HNR3WiJoYaPQEX0kDwiqqAJ53xgYI7MurQNfUcGVmSw0aD+TCNSMA==}
+    engines: {node: '>=18'}
+
 
   '@hpke/chacha20poly1305@1.8.0':
     resolution: {integrity: sha512-FcBfAQ+Y99vMNJP2yrZ9wpL8V0GOwp1+zMyzvc6alasrBygfFjFm1yeUtyADJCu/27C3Lm5mJzx6u7pwg+cX5w==}
@@ -3749,10 +3754,11 @@ packages:
     resolution: {integrity: sha512-Dlj78XQwugQS0IgKig6DL03U3QhSW10alBdopsFXPbVuKfDrGgL27TY02LnE2+1ptrX2BU7euWH5q4E/tFmR/Q==}
     engines: {node: '>=18'}
 
-  '@loro-dev/streams-crdt@0.16.2':
-    resolution: {integrity: sha512-zkGYSTHLwilqah7W8Tw2ezDGAyZQ9xqJVYLClM3q2dip5c3M7A+Gimqt4Ywjca3qmbmjyjuQ7F+gcFt+LqqW+A==}
+  '@loro-dev/streams-crdt@0.17.0':
+    resolution: {integrity: sha512-gsuEZgWV86g37ILdGYZP5NlF1hqi4tJ7fpk6IiaRdi0lyFjdVgN88jjqESYPbhVL6ypFhAXiTpX5307mRqLNYg==}
     peerDependencies:
       '@loro-dev/flock-wasm': ^0.4.0
+      effect: 4.0.2
       loro-crdt: ^1.10.3
     peerDependenciesMeta:
       '@loro-dev/flock-wasm':
@@ -14226,7 +14232,21 @@ packages:
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
+  '@loro-dev/streams-crdt@0.16.2':
+    resolution: {integrity: sha512-zkGYSTHLwilqah7W8Tw2ezDGAyZQ9xqJVYLClM3q2dip5c3M7A+Gimqt4Ywjca3qmbmjyjuQ7F+gcFt+LqqW+A==}
+    peerDependencies:
+      '@loro-dev/flock-wasm': ^0.4.0
+      loro-crdt: ^1.10.3
+    peerDependenciesMeta:
+      '@loro-dev/flock-wasm':
+        optional: true
+      loro-crdt:
+        optional: true
+
 snapshots:
+
+  '@loro-dev/streams-client@0.10.0': {}
+
 
   '@hpke/chacha20poly1305@1.8.0':
     dependencies:
@@ -16390,9 +16410,10 @@ snapshots:
 
   '@loro-dev/streams-client@0.9.0': {}
 
-  '@loro-dev/streams-crdt@0.16.2(@loro-dev/flock-wasm@0.4.3)(loro-crdt@1.16.3)':
+  '@loro-dev/streams-crdt@0.17.0(@loro-dev/flock-wasm@0.4.3)(effect@4.0.2)(loro-crdt@1.16.3)':
     dependencies:
-      '@loro-dev/streams-client': 0.9.0
+      '@loro-dev/streams-client': 0.10.0
+      effect: 4.0.2
     optionalDependencies:
       '@loro-dev/flock-wasm': 0.4.3
       loro-crdt: 1.16.3
@@ -28837,3 +28858,10 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.2.0)
 
   zwitch@2.0.4: {}
+
+  '@loro-dev/streams-crdt@0.16.2(@loro-dev/flock-wasm@0.4.3)(loro-crdt@1.16.3)':
+    dependencies:
+      '@loro-dev/streams-client': 0.9.0
+    optionalDependencies:
+      '@loro-dev/flock-wasm': 0.4.3
+      loro-crdt: 1.16.3
