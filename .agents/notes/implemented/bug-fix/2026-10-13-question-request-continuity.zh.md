@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+PR: https://github.com/LodyAI/Lody/pull/1533
+
 [English](2026-10-13-question-request-continuity.md)
 
 ## 摘要

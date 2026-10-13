@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+PR: https://github.com/LodyAI/Lody/pull/1533
+
 [中文](2026-10-13-queued-edit-operation-ownership.zh.md)
 
 ## Abstract
