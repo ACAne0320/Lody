@@ -56,7 +56,10 @@ naturally exceed the minimum; they must remain accessible and never overlap.
 Distances use component boxes, not visible glyph bounds.
 
 The Markdown renderer owns paragraph and list spacing; fenced code and other
-rich surfaces use `surfaceGap`. Rich content retains the existing reading rail.
+rich surfaces use `surfaceGap`. A system row carrying Operation completion or
+progress cards is such a surface between turns: it keeps the message pad above
+and reserves `surfaceGap` below, since the next turn's first row adds no top
+gap of its own. Rich content retains the existing reading rail.
 User avatars align with the bubble's first line; metadata stays above the bubble.
 User text preserves authored whitespace, chips, copy/search and native selection.
 Folding retains answer visibility, stable row keys and the existing scroll engine.
