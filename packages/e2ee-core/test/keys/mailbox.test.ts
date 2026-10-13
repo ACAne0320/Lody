@@ -555,3 +555,84 @@ describe('authenticated SQLite key mailbox', () => {
     );
   }, 30_000);
 });
+
+describe('verified mailbox observations across failed pin writes', () => {
+  it.each(['abort', 'ignore', 'rewrite-head', 'rewrite-context'] as const)(
+    'retains genuine revocation and rolls back %s metadata writes',
+    async (fault) => {
+      const f = envelopeFixture(),
+        old = f.view(),
+        dbPath = file();
+      let current = old;
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const host = yield* makeSqliteKeyMailbox({
+              path: dbPath,
+              mode: 'create',
+              genesis: f.context.genesis,
+              ledger: () => Effect.succeed(current),
+            });
+            const sender = ok(host.bind(f.owner.publicKey)),
+              receiver = ok(host.bind(f.phone.publicKey));
+            yield* sender.put('ae'.repeat(16), yield* f.prepare());
+            expect((yield* receiver.fetch(0, null, 100)).items).toHaveLength(1);
+            const db = new Database(dbPath);
+            try {
+              if (fault === 'abort' || fault === 'ignore')
+                db.exec(
+                  `CREATE TRIGGER fail_pin BEFORE UPDATE ON mailbox_meta BEGIN SELECT RAISE(${fault === 'abort' ? "ABORT,'fault'" : 'IGNORE'}); END`
+                );
+              else
+                db.exec(
+                  `CREATE TRIGGER fail_pin AFTER UPDATE ON mailbox_meta BEGIN UPDATE mailbox_meta SET ${fault === 'rewrite-head' ? `head=x'${hex(old.head.toBytes())}',count=2` : "genesis='" + '00'.repeat(32) + "'"} WHERE id=1; END`
+                );
+              f.append([5, f.phone.raw]);
+              current = f.view();
+              expect(Exit.isFailure(yield* Effect.exit(receiver.fetch(0, null, 100)))).toBe(true);
+              expect(db.prepare('SELECT genesis,count FROM mailbox_meta WHERE id=1').get()).toEqual(
+                { genesis: hex(f.context.genesis.toBytes()), count: 2 }
+              );
+              db.exec('DROP TRIGGER fail_pin');
+              current = old;
+              expect(
+                Exit.isFailure(yield* Effect.exit(receiver.fetch(0, null, 100))),
+                'in-memory verified revocation must survive storage failure'
+              ).toBe(true);
+              expect(db.prepare('SELECT COUNT(*) AS n FROM mailbox_envelopes').get()).toEqual({
+                n: 1,
+              });
+            } finally {
+              db.close();
+            }
+          })
+        )
+      );
+    }
+  );
+  it('does not pin a cloned view on storage failure paths', async () => {
+    const f = envelopeFixture(),
+      original = f.view(),
+      dbPath = file();
+    let current = original;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* makeSqliteKeyMailbox({
+            path: dbPath,
+            mode: 'create',
+            genesis: f.context.genesis,
+            ledger: () => Effect.succeed(current),
+          });
+          const sender = ok(host.bind(f.owner.publicKey)),
+            receiver = ok(host.bind(f.phone.publicKey));
+          yield* sender.put('be'.repeat(16), yield* f.prepare());
+          current = { ...original } as typeof original;
+          expect(Exit.isFailure(yield* Effect.exit(receiver.fetch(0, null, 100)))).toBe(true);
+          current = original;
+          expect((yield* receiver.fetch(0, null, 100)).items).toHaveLength(1);
+        })
+      )
+    );
+  });
+});
