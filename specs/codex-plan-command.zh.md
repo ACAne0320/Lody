@@ -13,4 +13,4 @@ Codex 适配器负责命令解析和模式设置，并声明可选的正文参�
 
 - [命令处理](../packages/acp-extension-codex/src/CodexCommands.ts)
 - [配置测试](../packages/acp-extension-codex/src/__tests__/CodexACPAgent/session-config-options.test.ts)
-- [ACP v2 生命周期测试](../packages/acp-extension-codex/src/__tests__/CodexACPAgent/prompt-v2.test.ts)
+- [ACP v2 生命周期测试](https://github.com/LodyAI/acp-extension-codex/blob/b67f2eaab63247159c8cbdbd4075334f69729daf/src/__tests__/CodexACPAgent/prompt-v2.test.ts) — 固定旧版本证据；当前所选适配器已不再包含此测试。
