@@ -16,8 +16,9 @@ five official correctness rules and a community function-style rule, displaying
 warnings through the existing static check paths. Compatible tools are pinned in
 that package
 and patched without changing TypeScript or Effect runtime versions. The initial
-policy is advisory: it exposes a baseline without turning integration into a
-repository-wide code migration, and does not prove complete lifecycle correctness.
+policy is advisory. The follow-up removes the reusable-generator wrapper
+warnings without changing lifecycle ownership; this does not prove complete
+lifecycle correctness.
 
 ## Decision
 
@@ -68,4 +69,24 @@ The initial isolated Linux probe verified both plugin namespaces together.
 `runSync` applied to an asynchronous constructor remains outside this rule set;
 [upstream proposal #430](https://github.com/Effect-TS/tsgo/issues/430) is not a
 coverage guarantee. Missing context/error rules and other platforms require
-separate verification before claiming coverage. No product lifecycle code changes.
+separate verification before claiming coverage.
+
+## Warning cleanup
+
+The initial public baseline contained 37 `prefer-effect-fn` warnings; the private
+workspace contained 34, all in its pinned public submodule. At the user's request,
+the public owner replaces those wrappers with `Effect.fnUntraced` and uses
+`Effect.fn.Return` for existing explicit generator channels. Bodies, resource
+ownership, cancellation, handoff and failure recovery stay the same; no new span
+or execution boundary is introduced. Host-key read helpers keep copying inputs
+at invocation, before lazy backend execution, with a behavioral regression test.
+The private PR must not commit a public-submodule pointer bump; its baseline is
+removed once the public fix lands and the normal separate pointer update occurs.
+Validate its lint against a local public-fix checkout in the meantime.
+
+On Linux, the cleanup passes `lint:effect --deny-warnings`, full typecheck,
+ordinary lint and the diagnostic fixtures. Shared tests pass 1,477 cases; host
+tests pass 27 with the macOS-only fixture skipped. The bulk CLI run passes 4,090
+cases and skips one, but its unchanged native-Git fixture still selects the
+session shim; the entire 18-case Git suite passes with system Git. The full bulk
+gate therefore remains unconfirmed; retain draft status and disclose that limit.
