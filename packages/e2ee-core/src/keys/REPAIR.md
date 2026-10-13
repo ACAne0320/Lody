@@ -50,3 +50,5 @@ retrying the same ID, server revision idempotency, rejected envelope exclusion,
 original-field replay refusal, registered Recovery repair, fake-view/revocation gates, ignored terminal
 writes and terminal/acknowledgement field rewrites, 102 tasks/blocked progress and late ACK after explicit Scope close. They
 are synthetic local host evidence, not HTTP/native/deployed backend acceptance.
+
+After genuine Org and known/persisted-prefix validation, failed pin UPDATE cannot erase the process-local observation. Recheck memory at the synchronous write boundary and read back fixed Org/recipient/head/count before persistence success. Failure makes no cross-process promise and must not dispatch via an older view.

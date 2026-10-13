@@ -38,3 +38,5 @@ Recovery 修复作者结果：准确 de3210a4 隔离 clone 加入相同正向断
 父层同步到 ledger14e，repair965 实现／测试不变。父层承担有界索引复制修复与两条真实别名回归。本组合须另绑作者／CI及独立整合证据，不继承任一旧审查结论。
 
 14e 父组合作者检查：repair10/core263、完整根检查、format/docs 通过；repair runtime／测试与965逐字一致。独立整合与准确组合 head CI 另核。
+
+深度审查修正：真实来源、固定Org与已有/磁盘前缀验证后，在同步事务写入边界重查共享内存并立即保留观察，再UPDATE。ABORT/IGNORE/检查点或context改写返回失败、回滚磁盘，但不抹掉进程内验证知识。有界读回同时检查固定Org/recipient与准确head/count，只有成功落盘才承诺重开保护。四类真实SQLite故障保留initial Pending，拒绝回退且远端revision不推进；回到真实高位撤销后只在本地结束、不dispatch。所属14项/类型通过；原review文件/5fail不改，独立增量待完成。不改发送资格、repair wire、vault、自动清理或文档游标。
