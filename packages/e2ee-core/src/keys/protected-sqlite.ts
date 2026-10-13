@@ -50,7 +50,8 @@ export function makeSqliteProtectedEpochKeys(input: {
       sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
       (handle) => sql(() => handle.close()).pipe(Effect.orDie)
     );
-    let closed = false;
+    let closed = false,
+      observed: LedgerView | undefined;
     const guard = () => {
       if (closed) throw fail('closed');
     };
@@ -92,14 +93,19 @@ export function makeSqliteProtectedEpochKeys(input: {
         yield* sql(guard);
         yield* Effect.fromResult(requireLedgerContinuation(view, view));
         if (!anchor.equals(view.genesis)) return yield* fail('rollback');
+        if (observed) yield* Effect.fromResult(requireLedgerContinuation(observed, view));
         yield* sql(() =>
           db
             .transaction(() => {
               guard();
               const pin = db
-                .prepare('SELECT head,count FROM protected_key_meta WHERE id=1')
-                .get() as { head: unknown; count: unknown } | undefined;
-              if (!pin) throw fail('corrupt');
+                .prepare(
+                  "SELECT CASE WHEN length(genesis)=64 THEN genesis ELSE NULL END AS genesis,CASE WHEN length(recipient)=64 THEN recipient ELSE NULL END AS recipient,CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,count FROM protected_key_meta WHERE id=1"
+                )
+                .get() as
+                | { genesis: unknown; recipient?: unknown; head: unknown; count: unknown }
+                | undefined;
+              if (!pin || pin.genesis !== org || pin.recipient !== self) throw fail('corrupt');
               if (pin.head !== null) {
                 if (
                   !(pin.head instanceof Uint8Array) ||
@@ -113,10 +119,34 @@ export function makeSqliteProtectedEpochKeys(input: {
                 const checked = hasVerifiedCheckpoint(view, { head, length: pin.count });
                 if (Result.isFailure(checked) || !checked.success) throw fail('rollback');
               } else if (pin.count !== null) throw fail('corrupt');
-              db.prepare('UPDATE protected_key_meta SET head=?,count=? WHERE id=1').run(
-                view.head.toBytes(),
-                view.length
-              );
+              // Recheck shared memory at the synchronous transaction's actual write boundary.
+              if (observed && Result.isFailure(requireLedgerContinuation(observed, view)))
+                throw fail('rollback');
+              // Retain verified knowledge even when the following write fails.
+              observed = view;
+              if (
+                db
+                  .prepare('UPDATE protected_key_meta SET head=?,count=? WHERE id=1')
+                  .run(view.head.toBytes(), view.length).changes !== 1
+              )
+                throw fail('corrupt');
+              const saved = db
+                .prepare(
+                  "SELECT CASE WHEN length(genesis)=64 THEN genesis ELSE NULL END AS genesis,CASE WHEN length(recipient)=64 THEN recipient ELSE NULL END AS recipient,CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,count FROM protected_key_meta WHERE id=1"
+                )
+                .get() as
+                | { genesis: unknown; recipient?: unknown; head: unknown; count: unknown }
+                | undefined;
+              if (
+                !saved ||
+                saved.genesis !== org ||
+                saved.recipient !== self ||
+                !(saved.head instanceof Uint8Array) ||
+                saved.head.length !== 32 ||
+                saved.count !== view.length ||
+                !view.head.equals(Result.getOrThrow(Bytes.recordHash(saved.head)))
+              )
+                throw fail('corrupt');
             })
             .immediate()
         );
@@ -132,6 +162,7 @@ export function makeSqliteProtectedEpochKeys(input: {
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closed = true;
+        observed = undefined;
       })
     );
     const load = (epoch: number) =>
