@@ -15,3 +15,12 @@ Follow the package [boundary](../../AGENTS.md) and [record/replay contract](READ
   or protection callbacks without the explicitly discussed host trust boundary.
 - Prepared ordinary records remain parent-relative; no implicit rebase/re-sign.
   Application Scope owns storage/network/native handles, cancellation and await.
+
+- Full-history feed entries retain original v1 frames and opaque offsets. Only the
+  initial exact genesis can be bound once; never skip known records or unknown
+  snapshot prefixes. A separately trusted endpoint is required, not inferred from
+  remote position. Persist records and cursor atomically; no progress on failure.
+  Local retention budgets fail closed, without deleting committed history.
+- Borrowed SDK reads propagate abort and are retained/awaited until settlement.
+  Close this Scope before destroying the SDK owner. ACK/CAS and snapshot bootstrap
+  remain separate contracts; no fallback append or new snapshot header.
