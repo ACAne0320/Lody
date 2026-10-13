@@ -17,9 +17,29 @@ const file = () => {
   dirs.push(dir);
   return path.join(dir, 'mailbox.sqlite');
 };
-afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+const ownedTestRuns = new Set<() => Promise<void>>();
+afterEach(async () => {
+  try {
+    for (const finish of ownedTestRuns) await finish();
+  } finally {
+    ownedTestRuns.clear();
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  }
 });
+const ownTestRun = () => {
+  const controller = new AbortController();
+  let active: Promise<unknown> | undefined;
+  ownedTestRuns.add(async () => {
+    controller.abort();
+    // The test already owns any failure; interruption cleanup must settle before file removal.
+    await active?.catch(() => undefined);
+  });
+  return <A, E>(effect: Effect.Effect<A, E>) => {
+    const result = Effect.runPromise(effect, { signal: controller.signal });
+    active = result;
+    return result;
+  };
+};
 const target = (f: ReturnType<typeof envelopeFixture>) => ({
   genesis: hex(f.context.genesis.toBytes()),
   epoch: 0,
@@ -201,12 +221,13 @@ describe('authenticated SQLite key mailbox', () => {
     }
   });
   it('deduplicates authenticated insider ciphertext and keeps an unrelated recipient readable', async () => {
+    const run = ownTestRun();
     const f = envelopeFixture(),
       dbPath = file(),
-      frame = await Effect.runPromise(f.prepare());
+      frame = await run(f.prepare());
     const verified = f.view(),
       ledger = () => Effect.succeed(verified);
-    const other = await Effect.runPromise(
+    const other = await run(
       Envelopes.prepareEpochEnvelope({
         context: { ...f.context, recipient: f.owner.publicKey },
         key: f.secret,
@@ -214,7 +235,7 @@ describe('authenticated SQLite key mailbox', () => {
         ledger,
       })
     );
-    await Effect.runPromise(
+    await run(
       Effect.scoped(
         Effect.gen(function* () {
           const host = yield* makeSqliteKeyMailbox({

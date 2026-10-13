@@ -28,3 +28,5 @@ Translation: current
 现有platform host-keys只有public identity创建/读取，没有认证的对称保护能力。现有Electron safeStorage字符串路径缺少已审查的全载荷完整性/backend失败adapter，开发路径还可明文，未在此接入。合格adapter须认证整个固定payload、拒绝不安全/不可用存储、保留未知写结果原件并等待实际操作。此处不宣称原生/Keychain/全平台验收，不另选算法。[Electron官方API](https://www.electronjs.org/docs/latest/api/safe-storage)说明平台安全差异及Linux basic_text回退；这是具体组合缺口，不是断言所有native后端都不安全。
 
 扩展真实SQLite owning用例：原发送者撤销后在另一个OS进程cold-reopen。protector明确synthetic；当前接收资格和独立genuine历史仍必须。安装context journal/readback/固定报告队列由后续receiver层负责，复用既有receive/HPKE/P09，不以旧Installed标签代替。D12 wire、SDK snapshot header、vault/新钥备份策略、严格B与生产启用仍未批准；L2c保持独立。
+
+CI固定夹具修正（2026-10-13）：顺序执行后#1480准确CI38349549813在500次去重用例仍耗32087ms而超30秒；紧接着原则验证5秒也失败，红日志保留。源码对照定位：本早层每次put都通过f.ledger重新验证同一份未变化的真实签名历史，#1487已有已审的genuine verified view提前捕获优化。将该既有优化带回本早层：固定夹具只验证一次相同历史，但全部500次公开put及每次真实信封验签、数据/断言仍保留；其他动态撤销授权夹具不变。撤回未推送45秒预算方案，原30秒/其余5秒/协议60秒/未批准严格B均不改。Vitest3.2.4 afterEach早于onTestFinished，在删除文件前显式取消并等待该用例Effect，让SQLite清理完成，不留超时任务影响下一用例。不是生产验证缓存或新权限语义，仍需新准确CI。
