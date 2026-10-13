@@ -13,4 +13,4 @@ The Codex adapter owns command parsing and mode changes. It advertises optional 
 
 - [Command handling](../packages/acp-extension-codex/src/CodexCommands.ts)
 - [Configuration tests](../packages/acp-extension-codex/src/__tests__/CodexACPAgent/session-config-options.test.ts)
-- [ACP v2 lifecycle tests](https://github.com/LodyAI/acp-extension-codex/blob/b67f2eaab63247159c8cbdbd4075334f69729daf/src/__tests__/CodexACPAgent/prompt-v2.test.ts) — Historical pinned evidence; the selected adapter no longer contains this test.
+- [Adapter lifecycle tests](../packages/acp-extension-codex/src/__tests__/CodexACPAgent/)
