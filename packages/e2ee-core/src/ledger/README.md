@@ -129,3 +129,7 @@ and upgrades no audit provenance. No new comparison wire/signature domain is add
 
 [Snapshot decision/evidence](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-authenticated-snapshots.md)
  · [Snapshot fingerprints](snapshot-provenance.json).
+
+## Admission consent and ordinary intent
+
+The explicit [`./ledger/admission`](ADMISSION.md) entry adds fixed-verified borrowed signing of joining consent/device possession proofs, genuine-view ordinary command preparation and v1 genesis production from an already retained initial epoch key. Account identity, expiry enforcement, durable key custody, publication and atomic-removal/rotation orchestration remain separate owners.

@@ -17,7 +17,8 @@
     "./keys/delivery/sqlite": "./src/keys/delivery-sqlite.ts",
     "./ledger/snapshot": "./src/ledger/snapshot.ts",
     "./keys/reports": "./src/keys/reports.ts",
-    "./keys/mailbox/sqlite": "./src/keys/mailbox-sqlite.ts"
+    "./keys/mailbox/sqlite": "./src/keys/mailbox-sqlite.ts",
+    "./ledger/admission": "./src/ledger/admission.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
