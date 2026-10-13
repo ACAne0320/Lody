@@ -185,6 +185,8 @@ describe('MessageHandler machine registration', () => {
     // version reach every client, so adding one must be acknowledged here.
     const hostCapabilities = getHostMachineProtocolCapabilities();
     expect(registeredMeta.protocolCapabilities).toEqual({
+      operationInbox: 2,
+      providerRateLimitsRefresh: 1,
       magpieImport: 1,
       dshProviderIsolation: 1,
       memoryProviders: 1,
