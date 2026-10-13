@@ -1809,7 +1809,8 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       if (credentials.lease.contextFilePath)
         sessionEnv[LODY_GIT_CRED_CONTEXT_FILE_ENV] = credentials.lease.contextFilePath;
       this.ensureGhShimSessionEnv(sessionEnv);
-      if (!credentials.lease.allowLocalAuth) applyNonOwnerShellEnv(sessionEnv, brokerStateFilePath);
+      if (!credentials.lease.allowLocalAuth)
+        applyNonOwnerShellEnv(sessionEnv, brokerStateFilePath, this.logger);
       // Native Git helper adapters keep remote URLs and wire protocols unchanged.
       // Save only caller config; each native attempt removes our SSH normalization.
       sessionEnv.LODY_GIT_LOCAL_CONFIG ??= JSON.stringify(
@@ -1908,7 +1909,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
 
   private ensureGhShimSessionEnv(sessionEnv: Record<string, string>): void {
     const statePath = this.gitCredentialBroker?.getStateFilePath();
-    ensureGhShimScript(statePath);
+    ensureGhShimScript(statePath, this.logger);
 
     sessionEnv.PATH = prependGhShimBinDirToPath(sessionEnv.PATH ?? process.env.PATH, statePath);
 

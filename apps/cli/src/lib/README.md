@@ -34,7 +34,10 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
   HTTP helper redispatch preserves the parent operation's read/write context;
   independent commands classify themselves, and missing/invalid helper context
   conservatively requires write access. Credential probes precede the single
-  native transfer.
+  native transfer. The one-time `git --exec-path` probe result is recorded in a
+  `lody-git-transport.json` marker: matching markers skip the probe, transient
+  spawn errors retry with bounded backoff, and a probe that still fails reuses
+  any usable recorded layout rather than blocking session startup.
 
 - `gh-pr-create-script.ts` — REST creation for managed `gh pr create/new` with
   explicit title and body/body-file; retains the selected credential for metadata.

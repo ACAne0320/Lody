@@ -15,7 +15,7 @@ import { GITHUB_CREDENTIAL_ENV_KEYS, LODY_MANAGED_GH_TOKEN_SHA256_ENV } from '@/
 import { getLodyDataDir } from '@lody/shared/node/installation-profile';
 import { githubCredentialRuntime } from './github-credential-runtime';
 import { ghPrCreateScript } from './gh-pr-create-script';
-import { ensureGitHubGitTransport } from './github-git-transport';
+import { ensureGitHubGitTransport, type GitTransportLogger } from './github-git-transport';
 
 const GH_SHIM_POSIX_BASENAME = 'gh';
 const GH_SHIM_WINDOWS_BASENAME = 'gh.cmd';
@@ -840,7 +840,10 @@ const ensureWritableShimTarget = (filePath: string): void => {
   }
 };
 
-export const ensureGhShimScript = (brokerStateFilePath?: string): void => {
+export const ensureGhShimScript = (
+  brokerStateFilePath?: string,
+  logger?: GitTransportLogger
+): void => {
   const source = buildGhShimSource(resolveRealGhPath(brokerStateFilePath), brokerStateFilePath);
   const shimTargets =
     process.platform === 'win32'
@@ -877,7 +880,8 @@ export const ensureGhShimScript = (brokerStateFilePath?: string): void => {
     ensureGitHubGitTransport(
       getGhShimHostBinDir(brokerStateFilePath),
       resolveBrokerStatePath(brokerStateFilePath),
-      realGit
+      realGit,
+      { logger }
     );
 };
 
