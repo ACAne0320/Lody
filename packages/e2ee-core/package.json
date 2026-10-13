@@ -26,7 +26,8 @@
     "./ledger/feed/sqlite": "./src/ledger/feed-sqlite.ts",
     "./keys/mailbox/repair/sqlite": "./src/keys/repair-sqlite.ts",
     "./keys/host/mailbox/sqlite": "./src/keys/mailbox-client.ts",
-    "./submission/streams": "./src/submission/streams.ts"
+    "./submission/streams": "./src/submission/streams.ts",
+    "./keys/host/distribution/sqlite": "./src/keys/distribution-sqlite.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

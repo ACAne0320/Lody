@@ -47,3 +47,10 @@
   before eligibility. Rejected revocation remains known; observation writes/readback
   preserve fixed Org/self/head/count, and failure rolls back without forgetting the
   genuine in-memory prefix. Fixed page counts cannot change while row getters run.
+
+- Sender distribution composes the actual receiver/protected store/outbox owners.
+  Discover targets from genuine current ledger, not a remote list. Preserve immutable
+  outbox ciphertext and every per-revision task/result through explicit acknowledgement.
+  Hints only trigger retries; only genuine epoch/revocation changes terminate tasks.
+  Exact readback is observation, never installation. Use already committed protected
+  keys; candidate backup/rotation/vault decisions remain separately gated.
