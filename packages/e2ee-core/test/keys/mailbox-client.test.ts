@@ -11,6 +11,8 @@ import {
 import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
 import { envelopeFixture, recipientPair } from './fixture';
 import { synthetic } from './protection-fixture';
+import { prepareEpochEnvelope } from '@lody/e2ee-core/keys/envelope';
+import { mailboxDigest } from '@lody/e2ee-core/keys/reports';
 const ok = Result.getOrThrow,
   hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
 const dirs: string[] = [];
@@ -93,6 +95,114 @@ describe('real recipient receive/repair/fetch composition', () => {
           expect((yield* client.repairResults()).items).toEqual([
             { id: 'local-loss', outcome: 'Repaired' },
           ]);
+        })
+      )
+    );
+  });
+  it('identifies a signed unopenable first envelope for durable targeted repair without skipping the page', async () => {
+    const f = envelopeFixture(),
+      dir = directory(),
+      pair = await recipientPair();
+    const original = await Effect.runPromise(f.prepare());
+    original[original.length - 65] ^= 1;
+    const bad = f.resign(original);
+    // Fixed synthetic sender keys determine the actual SQL order, independent of HPKE randomness.
+    expect(hex(f.owner.raw) < hex(f.phone.raw)).toBe(true);
+    const good = await Effect.runPromise(
+      prepareEpochEnvelope({
+        context: { ...f.context, sender: f.phone.publicKey },
+        key: f.secret,
+        signer: f.phone.signer,
+        ledger: f.ledger,
+      })
+    );
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* makeSqliteKeyMailbox({
+            path: path.join(dir, 'host.sqlite'),
+            mode: 'create',
+            genesis: f.context.genesis,
+            ledger: f.ledger,
+          });
+          const sender = ok(host.bind(f.owner.publicKey)),
+            remote = ok(host.bind(f.phone.publicKey));
+          yield* sender.put('af'.repeat(16), bad);
+          yield* remote.put('bf'.repeat(16), good);
+          expect((yield* remote.fetch(0, null, 100)).items.map((row) => row.sender)).toEqual([
+            hex(f.owner.raw),
+            hex(f.phone.raw),
+          ]);
+          const config = {
+            path: path.join(dir, 'receive.sqlite'),
+            mode: 'create' as const,
+            genesis: f.context.genesis,
+            signer: f.phone.signer,
+            pair,
+            ledger: f.ledger,
+            remote,
+            repairStore: { path: path.join(dir, 'repair.sqlite'), mode: 'create' as const },
+            keyStore: {
+              path: path.join(dir, 'keys.sqlite'),
+              mode: 'create' as const,
+              protector: synthetic().protector,
+            },
+          };
+          const scope = yield* Scope.make();
+          yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+          const client = yield* makeSqliteRecipientMailbox(config).pipe(Scope.provide(scope));
+          const failed = yield* Effect.result(client.fetchAndInstall());
+          expect(Result.isFailure(failed)).toBe(true);
+          if (!Result.isFailure(failed)) throw new Error('expected original receive failure');
+          expect(failed.failure).toMatchObject({
+            _tag: 'MailboxInstallError',
+            genesis: hex(f.context.genesis.toBytes()),
+            epoch: 0,
+            recipient: hex(f.phone.raw),
+            sender: hex(f.owner.raw),
+            frameDigest: mailboxDigest(bad),
+          });
+          expect(failed.failure).not.toHaveProperty('next');
+          expect(inspect(config.path)).toEqual([{ phase: 'Verify', report: null }]);
+          const keys = new Database(config.keyStore.path);
+          try {
+            expect(keys.prepare('SELECT COUNT(*) AS n FROM protected_epoch_keys').get()).toEqual({
+              n: 0,
+            });
+          } finally {
+            keys.close();
+          }
+          // Diagnose only: no remote rejection, successful next, or installation happens implicitly.
+          expect((yield* remote.fetch(0, null, 100)).items).toHaveLength(2);
+          const diagnosis = failed.failure as { frameDigest: string };
+          yield* client.enqueueRepair('unopenable-first', diagnosis.frameDigest);
+          yield* Scope.close(scope, Exit.void);
+          const reopened = yield* makeSqliteRecipientMailbox({
+            ...config,
+            mode: 'open',
+            repairStore: { ...config.repairStore, mode: 'open' },
+            keyStore: { ...config.keyStore, mode: 'open' },
+          });
+          yield* reopened.flushRepairs();
+          expect((yield* remote.fetch(0, null, 100)).items).toHaveLength(1);
+          expect(yield* reopened.fetchAndInstall()).toEqual({ processed: 1, next: null });
+          yield* reopened.flushReports();
+          expect(inspect(config.path).filter((row) => row.phase === 'Reported')).toHaveLength(1);
+          expect(
+            (yield* remote.status({
+              genesis: hex(f.context.genesis.toBytes()),
+              epoch: 0,
+              recipient: hex(f.phone.raw),
+            })).status
+          ).toBe('InstallationReported');
+          const db = new Database(path.join(dir, 'host.sqlite'));
+          try {
+            expect(db.prepare('SELECT COUNT(*) AS n FROM mailbox_envelopes').get()).toEqual({
+              n: 2,
+            });
+          } finally {
+            db.close();
+          }
         })
       )
     );
