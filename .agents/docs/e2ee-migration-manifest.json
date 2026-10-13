@@ -813,8 +813,8 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/sqlite.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "layer": "landed-1434-and-dependent-workflows",
+      "reason": "Submission #1434 is merged as 7c58cabe1d05f132b7133a52b45a16b79274ea6a. Reuse its public exact-byte pending/reopen contract unchanged; only dependent client, authenticated restore and command workflows remain to migrate."
     },
     {
       "sourcePath": "packages/e2ee-core/src/ledger/schema.ts",
@@ -853,8 +853,8 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "layer": "landed-1434-and-dependent-workflows",
+      "reason": "Submission #1434 is merged as 7c58cabe1d05f132b7133a52b45a16b79274ea6a. Reuse its public exact-byte pending/reopen contract unchanged; only dependent client, authenticated restore and command workflows remain to migrate."
     },
     {
       "sourcePath": "packages/e2ee-core/src/legacy.ts",
@@ -966,8 +966,8 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/sqlite.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "layer": "landed-1434-and-dependent-workflows",
+      "reason": "Submission #1434 is merged as 7c58cabe1d05f132b7133a52b45a16b79274ea6a. Reuse its public exact-byte pending/reopen contract unchanged; only dependent client, authenticated restore and command workflows remain to migrate."
     },
     {
       "sourcePath": "packages/e2ee-core/src/node-text-store.ts",
@@ -1087,8 +1087,8 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code.",
+      "layer": "landed-1434-and-dependent-workflows",
+      "reason": "Submission #1434 is merged as 7c58cabe1d05f132b7133a52b45a16b79274ea6a. Reuse its public exact-byte pending/reopen contract unchanged; only dependent client, authenticated restore and command workflows remain to migrate.",
       "coverage": {
         "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
       }
@@ -1141,7 +1141,7 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/sqlite.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
+      "layer": "landed-1434-and-dependent-workflows",
       "reason": "Submission #1434 is already in the pinned actual main. L1d adapts the independent full-history read/persist subset without changing P09. Snapshot qualification/bootstrap, CAS adapter and actual Lab consumer remain explicit unfinished scopes; legacy whole-JSON storage is retired without implicit import.",
       "coverage": [
         {
@@ -1367,8 +1367,8 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code.",
+      "layer": "landed-1434-and-dependent-workflows",
+      "reason": "Submission #1434 is merged as 7c58cabe1d05f132b7133a52b45a16b79274ea6a. Reuse its public exact-byte pending/reopen contract unchanged; only dependent client, authenticated restore and command workflows remain to migrate.",
       "coverage": {
         "L2a": "Four document-purpose workflows and scoped document leaf migration; non-document scopes, ledger command preparation and SDK composition remain unfinished."
       }
@@ -1421,7 +1421,7 @@
       },
       "targetPath": "packages/e2ee-core/src/ledger/admission.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
+      "layer": "landed-1434-and-dependent-workflows",
       "reason": "Settled ordinary intent and producer-only genesis migrated; obsolete RemoveMember cannot be revived. New atomic removal remains pending D12 format, and durable orchestration is separately owned.",
       "coverage": [
         {
@@ -1584,8 +1584,8 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "layer": "landed-1434-and-dependent-workflows",
+      "reason": "Submission #1434 is merged as 7c58cabe1d05f132b7133a52b45a16b79274ea6a. Reuse its public exact-byte pending/reopen contract unchanged; only dependent client, authenticated restore and command workflows remain to migrate."
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/journal.ts",
@@ -1595,7 +1595,7 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
+      "layer": "landed-1434-and-dependent-workflows",
       "reason": "Submission #1434 is already in the pinned actual main. L1d adapts the independent full-history read/persist subset without changing P09. Snapshot qualification/bootstrap, CAS adapter and actual Lab consumer remain explicit unfinished scopes; legacy whole-JSON storage is retired without implicit import.",
       "coverage": [
         {
@@ -1694,7 +1694,7 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
+      "layer": "landed-1434-and-dependent-workflows",
       "reason": "Submission #1434 is already in the pinned actual main. L1d adapts the independent full-history read/persist subset without changing P09. Snapshot qualification/bootstrap, CAS adapter and actual Lab consumer remain explicit unfinished scopes; legacy whole-JSON storage is retired without implicit import.",
       "coverage": [
         {
@@ -1846,8 +1846,8 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "layer": "landed-1434-and-dependent-workflows",
+      "reason": "Submission #1434 is merged as 7c58cabe1d05f132b7133a52b45a16b79274ea6a. Reuse its public exact-byte pending/reopen contract unchanged; only dependent client, authenticated restore and command workflows remain to migrate."
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/wire-crypto.ts",
@@ -1932,7 +1932,7 @@
       "targetPath": "packages/e2ee-core/src/submission/streams.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Submission #1434 owns the public transport contract. After it lands, migrate the published-SDK length-framing/read/CAS adapter against that contract; no copied candidate coordinator or fallback append."
+      "reason": "Submission #1434 is landed. L1e captures released SDK read/CAS against its contract, with read AbortSignal/settlement and non-abortable CAS retention/await. General pre-buffering bounded fetch/lease composition and actual Lab consumers remain separate unfinished scopes; no fallback append."
     },
     {
       "sourcePath": "packages/e2ee-core/src/streams.ts",
@@ -1943,12 +1943,17 @@
       "targetPath": "packages/e2ee-core/src/submission/streams.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Submission #1434 is already in the pinned actual main. L1d adapts the independent full-history read/persist subset without changing P09. Snapshot qualification/bootstrap, CAS adapter and actual Lab consumer remain explicit unfinished scopes; legacy whole-JSON storage is retired without implicit import.",
+      "reason": "L1d full-history read/persist and L1e actual released-SDK/P09 full-audit read/CAS are adapted without modifying P09. Qualified snapshot bootstrap, other legacy stream consumers and actual Lab remain unfinished; old whole-JSON persistence is retired without implicit import.",
       "coverage": [
         {
           "layer": "L1d",
           "target": "packages/e2ee-core/src/ledger/feed.ts + feed-page.ts + feed-reader.ts + feed-sqlite.ts",
           "scope": "Full-history suffix/initial genesis binding only; no known-record skipping. Original length-framed borrowed SDK reads cancel/await; new local journal atomically retains records/position with independently selected exact endpoint. P09 remains unchanged; Source qualified snapshot bootstrap and actual Lab consumers remain unfinished; legacy whole-JSON persistence is retired without implicit import."
+        },
+        {
+          "layer": "L1e",
+          "target": "packages/e2ee-core/src/submission/streams.ts",
+          "scope": "Independently selected checkpoint and verified full-history/opaque-offset CAS mapping; real ordinary signature/continuation before conditional append, no fallback or ACK-derived commitment. Scope retains/awaits non-abortable SDK0.9 writes; shared reader rejects partial-frame cycles and empty jumps. Actual registry SDK/loopback HTTP/SQLite/P09/OS-child evidence, not deployed or source Lab2 closure."
         }
       ]
     },
@@ -2150,8 +2155,8 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code.",
+      "layer": "landed-1434-and-dependent-workflows",
+      "reason": "Submission #1434 is merged as 7c58cabe1d05f132b7133a52b45a16b79274ea6a. Reuse its public exact-byte pending/reopen contract unchanged; only dependent client, authenticated restore and command workflows remain to migrate.",
       "coverage": [
         {
           "layer": "L2b",
@@ -2173,8 +2178,8 @@
       },
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
-      "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code.",
+      "layer": "landed-1434-and-dependent-workflows",
+      "reason": "Submission #1434 is merged as 7c58cabe1d05f132b7133a52b45a16b79274ea6a. Reuse its public exact-byte pending/reopen contract unchanged; only dependent client, authenticated restore and command workflows remain to migrate.",
       "coverage": [
         {
           "layer": "L2b",
@@ -4690,6 +4695,34 @@
       "baseRefName": "e2ee-ledger-feed",
       "isDraft": true,
       "parentHead": "14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8"
+    },
+    {
+      "number": 1487,
+      "headRefName": "e2ee-recipient-mailbox",
+      "headRefOid": "098e274221aae13305d29ff75629bee168678ded",
+      "baseRefName": "e2ee-mailbox-repairs",
+      "isDraft": true,
+      "parentHead": "680686d1442e7f8b12f6f8b84af3f17f3c514b97"
     }
-  ]
+  ],
+  "lastFetchedMain": {
+    "head": "e395d84f4f1b64440f887dce14ffbf061ce48ac1",
+    "tree": "ac964903fad38bc254c0335d5dbe339b00d772d4",
+    "stackFrozenMain": "984c35c5b30600d68abec1ec3e585eca73bcd4f0",
+    "ownedOverlapSinceFrozenMain": [],
+    "ci": {
+      "run": 38135946007,
+      "conclusion": "SUCCESS"
+    },
+    "originalCombinationCi": {
+      "run": 38109831626,
+      "conclusion": "CANCELLED"
+    },
+    "successorCi": {
+      "head": "871179e297a9a9f52f83d51a6038d1958c263139",
+      "run": 38109983563,
+      "conclusion": "SUCCESS"
+    }
+  },
+  "deliveryLimit": 24
 }

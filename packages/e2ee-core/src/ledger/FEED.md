@@ -64,3 +64,5 @@ readback or equal byte totals into false durable confirmation. The private origi
 list and published view change only after transaction success.
 
 Page copies read bounded array indices and construct fresh typed arrays without calling caller-provided array methods or iterators. The same owned copies are validated, written and retained; later caller mutation cannot alter expected history. An overridden input `.map` neither lends bytes to the journal nor suppresses validation.
+
+The SDK/CAS consuming layer also restores original transport-cycle screening: every partial-frame request tracks seen opaque offsets, and empty responses cannot change position. Complete assembled signed bytes do not validate a repeated intermediate position.
