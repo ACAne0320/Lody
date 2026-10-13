@@ -1376,10 +1376,17 @@
         "core": "810e3f4af37affe754556e1cff59c2b6d6a3d68af8beffdbf88997fab7855bda",
         "candidate": "810e3f4af37affe754556e1cff59c2b6d6a3d68af8beffdbf88997fab7855bda"
       },
-      "targetPath": "packages/e2ee-core/src/submission/index.ts",
+      "targetPath": "packages/e2ee-core/src/ledger/admission.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "reason": "Settled ordinary intent and producer-only genesis migrated; obsolete RemoveMember cannot be revived. New atomic removal remains pending D12 format, and durable orchestration is separately owned.",
+      "coverage": [
+        {
+          "layer": "L1c",
+          "target": "packages/e2ee-core/src/ledger/admission.ts",
+          "scope": "Public joining/device consent and five settled ordinary intent kinds use existing genuine-view/fixed-signature gates; v1 genesis producer computes real initial epoch-zero commitment and verifies full creation. No storage/remote publication/engine or backup claim; RemoveMember/new rotation format remain D12-gated."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/content-frame.ts",
@@ -1931,10 +1938,17 @@
         "core": "38f7fad7527b244003248f542c5f9e931085412a882e0ce05bc5ccbb9b42dae1",
         "candidate": "38f7fad7527b244003248f542c5f9e931085412a882e0ce05bc5ccbb9b42dae1"
       },
-      "targetPath": "packages/e2ee-core/src/workflows/enrollment.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/ledger/admission.ts",
+      "status": "已迁",
       "layer": "L1",
-      "reason": "Adapt to the single hardened public ledger implementation; preserve behavioral cases."
+      "reason": "Both settled consent/proof workflows adapted to root Effect 4.0.2, owned/captured fields and fixed signer-output verification. They grant neither account identity nor admission.",
+      "coverage": [
+        {
+          "layer": "L1c",
+          "target": "packages/e2ee-core/src/ledger/admission.ts",
+          "scope": "Public joining/device consent and five settled ordinary intent kinds use existing genuine-view/fixed-signature gates; v1 genesis producer computes real initial epoch-zero commitment and verifies full creation. No storage/remote publication/engine or backup claim; RemoveMember/new rotation format remain D12-gated."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/epoch-envelope.ts",
@@ -2038,6 +2052,11 @@
           "layer": "L2b",
           "target": "packages/e2ee-core/src/ledger/signing.ts",
           "scope": "Canonical ordinary-record permission/PoP preparation and fixed-verified borrowed signing; compose unchanged merged submission. Transport, snapshot restoration and high-level command/session workflows remain incomplete."
+        },
+        {
+          "layer": "L1c",
+          "target": "packages/e2ee-core/src/ledger/admission.ts",
+          "scope": "Public joining/device consent and five settled ordinary intent kinds use existing genuine-view/fixed-signature gates; v1 genesis producer computes real initial epoch-zero commitment and verifies full creation. No storage/remote publication/engine or backup claim; RemoveMember/new rotation format remain D12-gated."
         }
       ]
     },
