@@ -1,4 +1,4 @@
-# Restore the selected ACP dependency lock closure
+# Match the restored ACP gitlinks and dependency lock
 
 Status: implemented
 Translation: current
@@ -7,10 +7,8 @@ Translation: current
 
 ## Abstract
 
-Main 567afa18 selects Claude 2ff63b6 and Codex aae32a2 but retains older dependency importers. Complete fixed-submodule frozen installation fails before tests. Align only those two importers and add their required package/snapshot closure. Preserve all other importers, existing resolutions, catalogs, overrides, gitlinks and the seven-day release waiting rule. Exact waiting-rule exceptions cover only versions selected by those manifests and their matching platform/Vitest packages.
+Main c10ca856 restored four compatible ACP gitlinks, preserving the published runtime manifests. Its successor a4270dd8 still carries newer Claude/Codex lock importers and fails complete-submodule frozen installation on nine inverse Claude mismatches. Honor those restored gitlinks: restore only their previously compatible importers and add the exact missing resolution/snapshot closure. Preserve all other importers, existing current-main package/snapshot values, catalogs, overrides, waiting-rule exceptions, Specs and gitlinks.
 
-## Verification and limits
+## Evidence and limits
 
-The original complete-submodule frozen install fails with nine Claude specifier mismatches; Codex also changes its declared Codex range and cross-spawn dependencies. The final repaired lock passes actual frozen installation with all eight fixed gitlinks. Generating the candidate lock is preparation, not frozen-install evidence. Unrelated peer/importer drift from the generator was discarded, retaining the original entries and their complete old closures. Root checks and latest-main E2EE composition are reported separately, with exact heads and exit codes. This dependency repair grants no E2EE protocol or production authorization.
-
-The selected Codex gitlink removed the ACP v2 lifecycle test referenced by the plan-command Spec. Preserve that evidence at its original public b67f2ea commit and label it historical; neither claim current coverage nor alter the draft guarantee.
+The earlier candidate for main567afa targeted the then-selected newer adapters. The owner's main fix supersedes that version choice; no new-version quarantine exceptions or stale historical-link edits remain in the current main diff. Recursively resolve only the restored importer dependencies, using existing main definitions where present and the prior compatible main567afa closure only where absent, including platform aliases. Keep original failure and candidate evidence separate from final complete-submodule frozen installation. Final combination root/build/smoke and remote CI have their own fixed revisions and results; no runtime upload, protocol approval or production activation is authorized by this lock repair.

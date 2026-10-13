@@ -1,4 +1,4 @@
-# 修复已选 ACP 依赖的锁闭包
+# 对齐已恢复的 ACP gitlink 与依赖锁
 
 Status: implemented
 Translation: current
@@ -7,10 +7,8 @@ Translation: current
 
 ## 摘要
 
-main 567afa18 已选 Claude 2ff63b6、Codex aae32a2，但依赖 importer 仍旧，完整固定子模块的 frozen 安装因此在测试前失败。仅对齐这两个 importer 并补其必要 package/snapshot 闭包；保留其他 importer、已有依赖解析、catalog、overrides、gitlink 和七天发布等待规则。等待规则只增加这两个 manifest 已选版本及配套平台/Vitest 包的精确例外。
+main c10ca856 已恢复四个兼容 ACP gitlink，并保留已发布 runtime 清单。后继 a4270dd8 的锁仍是较新 Claude/Codex importer，完整固定子模块的 frozen 安装报告反向的九项 Claude 不匹配。本修复沿用原维护者恢复的 gitlink：仅还原其此前兼容的 importer，并补精确缺失的 resolution/snapshot 闭包。其他 importer、当前 main 已有 package/snapshot 值、catalog、overrides、等待期例外、Spec 和 gitlink 全部保留。
 
-## 验证与边界
+## 证据与边界
 
-原完整子模块 frozen 安装报告九项 Claude specifier 不匹配；Codex 也改变了声明的 Codex 版本范围，并增加 cross-spawn 依赖。最终修复锁在全部八个固定 gitlink 上实际 frozen 安装通过。候选锁生成只是准备，不能冒充 frozen 安装证据。生成器带来的无关 peer/importer 漂移已丢弃，原条目及旧闭包全部保留。root 检查与最新 main 的 E2EE 组合验证另记准确版本和退出码。本依赖修复不批准新 E2EE 协议或生产启用。
-
-所选 Codex gitlink 删除了规划命令 Spec 引用的 ACP v2 生命周期测试。证据保留为原公开 b67f2ea commit 的固定链接，并明确标为历史；不宣称当前覆盖，也不改 draft 约束。
+早期 main567afa 候选针对当时选定的较新适配器；原维护者的 main 修复已替代该版本选择。当前相对 main 的 diff 不含新版本等待期例外，也不含已失效的历史链接改动。递归只解析恢复的两个 importer 所需依赖，已有定义沿用 main，仅缺项取此前兼容 main567afa 的闭包，包含平台 alias。原失败及中间候选证据与最终完整 frozen 安装分列。最终组合 root/build/smoke 和远端 CI 各有准确版本与结果；此锁修复不授权 runtime 上传、新协议或生产启用。
