@@ -93,6 +93,8 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
 - `./keys/mailbox/sqlite` is a public local reference, never production authentication.
   Bind principals only from trusted composition; fixed-verify current envelope/report
   admission. Index recipient rows and deduplicate exact ciphertext; no global read limit.
+  Verified observations survive failed pin writes in the same owner; success requires
+  exact fixed-context/head/count readback. Failed persistence makes no reopen promise.
   Reports are signed claims, not custody proof. Repair retains history and invalidates
   prior report revision. Separate indexed schema rejects old JSON files without import.
   Scope closes storage; callers cancel/await their own borrowed async resources.
