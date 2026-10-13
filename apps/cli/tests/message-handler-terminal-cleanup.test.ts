@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { Effect, Exit, Scope } from 'effect';
+import type { SessionActivePresenceControllerLegacy } from '../src/lib/loro/session-active-presence-legacy';
 
 import {
   getMachineRoomId,
@@ -40,6 +42,7 @@ const createSilentLogger = (): Logger => ({
 });
 
 type MessageHandlerInternals = {
+  sessionActivePresence: SessionActivePresenceControllerLegacy;
   handleSessionArchived: (sessionId: SessionId) => Promise<void>;
   handleSessionDeleted: (sessionId: SessionId) => Promise<void>;
   discardLegacySessionCommands: () => Promise<void>;
@@ -169,7 +172,14 @@ function createHarness(options?: {
     deleteDoc: vi.fn(async () => {}),
     flush: vi.fn(async () => {}),
   };
+  const presenceEntries = new Map<SessionId, unknown>();
   const workspaceDocument = {
+    publishSessionPresence: (id: SessionId, _machine: unknown, status: unknown) => {
+      presenceEntries.set(id, status);
+    },
+    clearSessionPresence: (id: SessionId) => {
+      presenceEntries.delete(id);
+    },
     sessions: new Map<SessionId, unknown>(),
     repo,
     getOrCreateSessionDoc: vi.fn(async () => sessionDoc),
@@ -212,6 +222,7 @@ function createHarness(options?: {
 
   return {
     handler: internal,
+    presenceEntries,
     sessionId,
     childSessionIds,
     closeSessionTerminals,
@@ -227,6 +238,20 @@ function createHarness(options?: {
 }
 
 describe('MessageHandler terminal cleanup', () => {
+  it('keeps a native Turn lease through archive callbacks until its owning Scope releases', async () => {
+    const { handler, sessionId, presenceEntries } = createHarness();
+    const lease = Effect.runSync(Scope.make());
+    await Effect.runPromise(
+      Scope.provide(handler.sessionActivePresence.native.hold(sessionId), lease)
+    );
+    await handler.handleSessionArchived(sessionId);
+    expect(presenceEntries.get(sessionId)).toEqual({ type: 'running' });
+    expect(handler.sessionActivePresence.has(sessionId)).toBe(true);
+    await Effect.runPromise(Scope.close(lease, Exit.void));
+    expect(presenceEntries.has(sessionId)).toBe(false);
+    await handler.sessionActivePresence.close();
+  });
+
   it('releases the runtime when a session becomes archived, even without an active session', async () => {
     const { handler, sessionId, closeSessionTerminals, sessionManager } = createHarness();
 

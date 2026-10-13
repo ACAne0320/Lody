@@ -1,3 +1,4 @@
+import type { SessionActivePresencePhase } from '../src/lib/loro/session-active-presence';
 import { withHistoryPort } from './history-port-fixture';
 import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
@@ -43,10 +44,7 @@ import {
   type SessionStatus,
   type WorkspaceId,
 } from '@lody/shared';
-import {
-  SessionActivePresenceController,
-  type SessionActivePresencePhase,
-} from '../src/lib/loro/session-active-presence';
+import { SessionActivePresenceControllerLegacy } from '../src/lib/loro/session-active-presence-legacy';
 import type { SessionManager } from '../src/session/session-manager';
 import { MachineDocument, SessionDocument, type LoroDocumentManager } from '../src/lib/loro/doc';
 import { composeTestSessionDoc } from './session-doc-fixture';
@@ -197,8 +195,18 @@ const createGitLocalProject = (): string => {
 };
 
 const createBaseDeps = (
-  overrides: Partial<SessionExecutionServiceDeps>
-): SessionExecutionServiceDeps => {
+  overrides: Partial<SessionExecutionServiceDeps> & {
+    startSessionActivePresence?: (
+      sessionId: SessionId,
+      phase?: SessionActivePresencePhase | null
+    ) => void;
+  }
+): SessionExecutionServiceDeps & {
+  startSessionActivePresence: (
+    sessionId: SessionId,
+    phase?: SessionActivePresencePhase | null
+  ) => void;
+} => {
   const logger = createSilentLogger();
   const sessionManager = {
     getSession: vi.fn(() => null),
@@ -231,7 +239,14 @@ const createBaseDeps = (
     workspaceId: 'workspace-1' as WorkspaceId,
     preferredBaseBranch: 'main',
     touchSession: vi.fn(),
-    startSessionActivePresence: vi.fn(async () => {}),
+    startSessionActivePresence: vi.fn(() => {}),
+    holdSessionActivePresence: (id: SessionId, phase?: SessionActivePresencePhase | null) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          deps.startSessionActivePresence(id, phase);
+        }),
+        () => Effect.sync(() => deps.clearSessionActivePresence(id))
+      ).pipe(Effect.as({ awaitInitializationStall: Effect.never })),
     clearSessionActivePresence: vi.fn(),
     setSessionActivePresencePhase: vi.fn(),
     beginACPReplaySuppression: vi.fn(),
@@ -8047,7 +8062,7 @@ describe('SessionExecutionService', () => {
         validateSessionCredentials: vi.fn(async () => {}),
       } as unknown as SessionManager;
       const activePresence = new Map<SessionId, SessionStatus>();
-      const presence = new SessionActivePresenceController(
+      const presence = new SessionActivePresenceControllerLegacy(
         {
           publishSessionPresence: (id: SessionId, _machine: MachineId, value: SessionStatus) => {
             activePresence.set(id, value);
@@ -8059,9 +8074,9 @@ describe('SessionExecutionService', () => {
       );
       const deps = createBaseDeps({
         sessionManager,
-        startSessionActivePresence: (id, phase) => presence.start(id, phase),
+        holdSessionActivePresence: (id, phase) => presence.native.hold(id, phase),
         setSessionActivePresencePhase: (id, phase, detail) => presence.setPhase(id, phase, detail),
-        clearSessionActivePresence: (id) => presence.clear(id),
+        clearSessionActivePresence: (id) => presence.clearUnleased(id),
         beginConversationTurn: (_id, turn) => {
           activeTurnId = `assistant:${turn}`;
           return activeTurnId;
@@ -8211,7 +8226,7 @@ describe('SessionExecutionService', () => {
       } finally {
         rawPrompt.resolve();
         termination.resolve();
-        presence.clearAll();
+        await presence.close();
         vi.useRealTimers();
       }
     }
@@ -10161,14 +10176,12 @@ describe('SessionExecutionService initialization deadline', () => {
     | { kind: 'clear'; sessionId: string };
 
   /**
-   * Wires the REAL `SessionActivePresenceController` into the execution service
+   * Wires the REAL native session presence lease into the execution service
    * so presence is an observable output rather than a mock: the fake document
    * manager records every publish/clear exactly as production would drive it.
    *
-   * Only `setInterval` is faked. Effect's scheduler and promise microtasks stay
-   * real, so the turn fiber makes normal progress while the heartbeat clock is
-   * fully under the test's control, and `now` is injected so elapsed time never
-   * depends on wall-clock.
+   * Clock timers are fake and elapsed time is injected; timer/microtask
+   * advancement drives the real native heartbeat and visible Turn together.
    */
   const createDeadlineHarness = (options: {
     sessionId: string;
@@ -10183,13 +10196,9 @@ describe('SessionExecutionService initialization deadline', () => {
   }) => {
     const presenceEvents: PresenceEvent[] = [];
     let nowMs = 1_000_000;
-    // Only `setInterval` is faked, so a real `setTimeout(0)` still yields to
-    // Effect's scheduler: advancing the heartbeat clock and then letting the
-    // turn fiber run keeps every step ordered without a real sleep.
+    // Drain the controlled timer/microtask boundary without wall-clock sleeps.
     const settle = async () => {
-      for (let i = 0; i < 5; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
+      await vi.advanceTimersByTimeAsync(0);
     };
     const advance = async (ms: number) => {
       nowMs += ms;
@@ -10229,7 +10238,7 @@ describe('SessionExecutionService initialization deadline', () => {
     } as unknown as LoroDocumentManager;
 
     let service!: SessionExecutionService;
-    const presence = new SessionActivePresenceController(
+    const presence = new SessionActivePresenceControllerLegacy(
       workspaceDocument,
       'machine-1' as MachineId,
       { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as unknown as Logger,
@@ -10237,8 +10246,6 @@ describe('SessionExecutionService initialization deadline', () => {
         intervalMs: 10_000,
         now: () => nowMs,
         ...(options.stallBudgetsMs ? { stallBudgetsMs: options.stallBudgetsMs } : {}),
-        onInitializationStalled: (sessionId, stall) =>
-          service.notifyInitializationStalled(sessionId, stall),
       }
     );
 
@@ -10278,16 +10285,13 @@ describe('SessionExecutionService initialization deadline', () => {
         validateSessionCredentials: vi.fn(async () => {}),
       } as unknown as SessionManager,
       workspaceDocument,
-      startSessionActivePresence: (
-        sessionId: SessionId,
-        phase?: SessionActivePresencePhase | null
-      ) => presence.start(sessionId, phase),
+      holdSessionActivePresence: (sessionId, phase) => presence.native.hold(sessionId, phase),
       setSessionActivePresencePhase: (
         sessionId: SessionId,
         phase: SessionActivePresencePhase | null,
         detail?: string
       ) => presence.setPhase(sessionId, phase, detail),
-      clearSessionActivePresence: (sessionId: SessionId) => presence.clear(sessionId),
+      clearSessionActivePresence: (sessionId: SessionId) => presence.clearUnleased(sessionId),
     });
     service = new SessionExecutionService(deps);
 
@@ -10324,7 +10328,7 @@ describe('SessionExecutionService initialization deadline', () => {
   };
 
   it('fails a turn whose initialization dependency never returns, and stops its presence', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     try {
       const harness = createDeadlineHarness({
         sessionId: 'session-stalled-init',
@@ -10377,19 +10381,26 @@ describe('SessionExecutionService initialization deadline', () => {
   });
 
   it('lets the retry after a stall start a fresh create instead of the wedged one', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     try {
+      const promptStarted = createDeferred<void>();
+      const promptDone = createDeferred<object>();
+      let staleProgress: ((phase: SessionActivePresencePhase, detail?: string) => void) | undefined;
       const agentClient = {
         isCreated: vi.fn(() => true),
         cancel: vi.fn(async () => {}),
-        prompt: vi.fn(async () => ({})),
+        prompt: vi.fn(async () => {
+          promptStarted.resolve();
+          return await promptDone.promise;
+        }),
         currentModel: undefined,
       };
       const harness = createDeadlineHarness({
         sessionId: 'session-stall-then-retry',
-        onCreateSession: (_config, attempt) =>
+        onCreateSession: (config, attempt) => {
+          if (attempt === 1) staleProgress = config.onPresencePhase;
           // First attempt wedges forever; the second is a healthy create.
-          attempt === 1
+          return attempt === 1
             ? new Promise(() => {})
             : Promise.resolve({
                 sessionId: 'session-stall-then-retry' as SessionId,
@@ -10404,7 +10415,8 @@ describe('SessionExecutionService initialization deadline', () => {
                 updateGitIdentity: vi.fn(),
                 createAgent: vi.fn(async () => 'acp-1'),
                 applyExecutionPlaneLimits: vi.fn(async () => {}),
-              }),
+              });
+        },
       });
 
       const stalledTurn = harness.start();
@@ -10421,6 +10433,12 @@ describe('SessionExecutionService initialization deadline', () => {
       harness.appendUserTurn('turn-user-2');
       const retryTurn = harness.start('turn-user-2');
       await harness.settle();
+      await promptStarted.promise;
+      staleProgress?.('managed-runtime', 'Synthetic stale progress');
+      expect(harness.heartbeatsFor('session-stall-then-retry').at(-1)?.status).toEqual({
+        type: 'running',
+      });
+      promptDone.resolve({});
       await retryTurn;
 
       expect(agentClient.prompt).toHaveBeenCalled();
@@ -10433,7 +10451,7 @@ describe('SessionExecutionService initialization deadline', () => {
   });
 
   it('keeps a stage that reports progress alive past its budget, and fails it once it goes silent', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     try {
       let reportProgress!: (detail: string) => void;
       const harness = createDeadlineHarness({

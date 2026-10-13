@@ -95,7 +95,21 @@ makes the clear path unreliable and leaves sessions showing work that ended.
 Cancellation and initialization-stall finalizers run before the presence child Scope
 closes; the Turn slot is released afterward, so the previous release cannot clear
 a successor. Raw ACP drain retains presence until settlement or confirmed termination.
-The heartbeat controller itself remains Legacy pending P6.
+The lease kernel also owns native Clock/Schedule heartbeats and a per-generation
+Deferred initialization-stall signal. Phase/detail changes reset its silence budget;
+duplicate status does not. MessageHandler composes `holdSessionActivePresence` into the
+visible Turn's child Scope. Exit, archive and GC callbacks cannot release that lease.
+Late startup phase callbacks are fenced against the exact Turn runtime. Failed local
+clear keeps its generation and Cause, blocks new holds, and allows explicit local
+`retryRelease`; it does not automatically recover a failed upper Turn finalizer.
+
+`session-active-presence-legacy.ts` is the single MessageHandler execution entry and
+retains the existing analytics flush as unfinished Legacy orchestration. Native
+heartbeats only admit synchronous diagnostics. Shutdown retires new holds, stops
+SessionManager producers and flushes ACP/history before awaiting lease and monitoring
+release. Each observation is bounded at five seconds; timeout keeps the original
+owner and refuses document teardown. This completes the session lease/heartbeat
+responsibility, while full Session/Turn and daemon lifecycle migration remains pending.
 
 Its scope covers ALL turn-finalization stages, so optional cloud side effects inside
 it (usage flush, completion notification, Live Activity sync) MUST go through
