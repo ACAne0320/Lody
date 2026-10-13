@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+PR: https://github.com/LodyAI/Lody/pull/1528
+
 [English](2026-10-13-core-single-question-prompt.md)
 
 ## 摘要
