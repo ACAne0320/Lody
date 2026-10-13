@@ -6,7 +6,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { synthetic } from './protection-fixture';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { makeHostEpochProtection, type NativeEpochProtector } from '@lody/e2ee-core/keys/host';
 import { commitEpochKey } from '../../src/keys/history';
@@ -402,4 +402,143 @@ describe('host-only epoch protection', () => {
     );
     wiped(native.plains);
   });
+});
+
+describe('verified host observations and durable authority readback', () => {
+  it('does not pin a cloned view and remembers genuine revocation before missing-epoch rejection', async () => {
+    const f = envelopeFixture(),
+      native = synthetic(),
+      old = f.view();
+    let current = old;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* makeHostEpochProtection({
+            ...config(f, native.protector),
+            ledger: () => Effect.succeed(current),
+          });
+          const blob = yield* host.seal(0, f.secret);
+          current = { ...old } as typeof old;
+          expect(Exit.isFailure(yield* Effect.exit(host.open(1, blob)))).toBe(true);
+          current = old;
+          expect(ok(commitEpochKey(f.context.genesis, 0, yield* host.open(0, blob)))).toEqual(
+            ok(commitEpochKey(f.context.genesis, 0, f.secret))
+          );
+          f.append([5, f.phone.raw]);
+          current = f.view();
+          expect(Exit.isFailure(yield* Effect.exit(host.open(1, blob)))).toBe(true);
+          current = old;
+          expect(
+            Exit.isFailure(yield* Effect.exit(host.open(0, blob))),
+            'known genuine revocation cannot be forgotten due to unavailable epoch'
+          ).toBe(true);
+        })
+      )
+    );
+  });
+  it.each(['none', 'abort', 'ignore', 'rewrite-head', 'rewrite-context'] as const)(
+    'successful reads persist fixed authority; %s faults fail and retain knowledge',
+    async (fault) => {
+      const f = envelopeFixture(),
+        native = synthetic(),
+        old = f.view(),
+        dbPath = file();
+      let current = old;
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const store = yield* makeSqliteProtectedEpochKeys({
+              ...config(f, native.protector),
+              ledger: () => Effect.succeed(current),
+              path: dbPath,
+              mode: 'create',
+            });
+            yield* store.saveAndReload(0, f.secret);
+            const db = new Database(dbPath);
+            try {
+              const original = db
+                .prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0')
+                .get() as { blob: Uint8Array };
+              if (fault === 'abort' || fault === 'ignore')
+                db.exec(
+                  `CREATE TRIGGER fail_pin BEFORE UPDATE ON protected_key_meta BEGIN SELECT RAISE(${fault === 'abort' ? "ABORT,'fault'" : 'IGNORE'}); END`
+                );
+              if (fault === 'rewrite-head' || fault === 'rewrite-context')
+                db.exec(
+                  `CREATE TRIGGER fail_pin AFTER UPDATE ON protected_key_meta BEGIN UPDATE protected_key_meta SET ${fault === 'rewrite-head' ? `head=x'${Buffer.from(old.head.toBytes()).toString('hex')}',count=2` : "recipient='" + '00'.repeat(32) + "'"} WHERE id=1; END`
+                );
+              f.append([5, f.owner.raw]);
+              const high = f.view();
+              current = high;
+              const read = yield* Effect.exit(store.read(0));
+              const pin = db
+                .prepare('SELECT genesis,recipient,count FROM protected_key_meta WHERE id=1')
+                .get();
+              expect(
+                !Exit.isSuccess(read) || (pin as { count: number }).count === 3,
+                'a successful key read must not silently drop the durable authority pin'
+              ).toBe(true);
+              expect(Exit.isSuccess(read)).toBe(fault === 'none');
+              expect(pin).toEqual({
+                genesis: Buffer.from(f.context.genesis.toBytes()).toString('hex'),
+                recipient: Buffer.from(f.phone.raw).toString('hex'),
+                count: fault === 'none' ? 3 : 2,
+              });
+              if (fault !== 'none') {
+                db.exec('DROP TRIGGER fail_pin');
+                current = old;
+                expect(Exit.isFailure(yield* Effect.exit(store.read(0)))).toBe(true);
+                current = high;
+                const recovered = yield* store.read(0);
+                expect(ok(commitEpochKey(f.context.genesis, 0, recovered))).toEqual(
+                  ok(commitEpochKey(f.context.genesis, 0, f.secret))
+                );
+                expect(db.prepare('SELECT count FROM protected_key_meta WHERE id=1').get()).toEqual(
+                  { count: 3 }
+                );
+              }
+              expect(
+                (
+                  db.prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0').get() as {
+                    blob: Uint8Array;
+                  }
+                ).blob
+              ).toEqual(original.blob);
+            } finally {
+              db.close();
+            }
+          })
+        )
+      );
+      // Success, including retry after a failed write, must reject old authority in another OS process.
+      const child = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
+          dbPath,
+        ],
+        { encoding: 'utf8', timeout: 20_000 }
+      );
+      expect(child.error).toBeUndefined();
+      expect(child.status).not.toBeNull();
+      expect(child.status).not.toBe(0);
+      expect(child.stderr).toContain('unauthorized');
+      const allowed = execFileSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
+          dbPath,
+          'sender-revoked',
+        ],
+        { encoding: 'utf8', timeout: 20_000 }
+      );
+      expect(allowed.trim()).toBe(
+        Buffer.from(ok(commitEpochKey(f.context.genesis, 0, f.secret)).toBytes()).toString('hex')
+      );
+    }
+  );
 });

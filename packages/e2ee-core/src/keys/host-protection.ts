@@ -76,8 +76,8 @@ export function makeHostEpochProtection(input: {
         );
         const view = yield* lookup().pipe(Effect.mapError(() => error('unauthorized')));
         if (closed) return yield* error('closed');
-        const packet = yield* Effect.fromResult(
-          Result.mapError(epochHistoryPacket(view, epoch), () => error('unauthorized'))
+        yield* Effect.fromResult(
+          Result.mapError(requireLedgerContinuation(view, view), () => error('unauthorized'))
         );
         if (
           !anchor.equals(view.genesis) ||
@@ -85,6 +85,9 @@ export function makeHostEpochProtection(input: {
         )
           return yield* error('unauthorized');
         observed = view;
+        const packet = yield* Effect.fromResult(
+          Result.mapError(epochHistoryPacket(view, epoch), () => error('unauthorized'))
+        );
         const state = view.inspectState();
         const device = state.devices.get(keyId(recipient.toBytes()));
         if (!device || !state.members.has(keyId(device.membershipId.toBytes())))
