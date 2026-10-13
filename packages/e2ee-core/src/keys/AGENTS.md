@@ -4,9 +4,9 @@
 
 - Ordinary `./keys`, envelope/content/delivery consumers retain opaque epoch keys.
   Secret-bearing protection callbacks live only under explicit `./keys/host` and
-  `./keys/host/sqlite` and `./keys/host/receive/sqlite`, initialized once by trusted
-  host composition. Never accept
-  per-install arbitrary callbacks, add a generic secret export, or wire production.
+  `./keys/host/sqlite`, `./keys/host/receive/sqlite` and `./keys/host/mailbox/sqlite`,
+  initialized once by trusted host composition. Never accept per-install arbitrary
+  callbacks, add a generic secret export, or wire production.
 - Native protection must authenticate the entire fixed purpose/Org/recipient/epoch/
   commitment/key payload. Disk metadata and an epoch-zero commitment alone cannot
   bind Org. No plaintext fallback, new wire algorithm or recovery format.
@@ -37,3 +37,13 @@
   Repaired is local repair-ACK history, never key installation or custody proof.
   This Scope owns the journal; callers cancel/await borrowed ledger/transport work
   before destroying those owners. Closure guards reject late local ACK writes.
+
+- The recipient mailbox facade constructs actual receiver/protected store and repair
+  queue at host initialization. No arbitrary install callback. Own every fetched
+  row before async recheck; validate the whole bounded page before task writes.
+  Failed install returns no successful next hint; no durable cursor is saved.
+
+- Facade fetch and repair share the receiver’s genuine durable observation boundary
+  before eligibility. Rejected revocation remains known; observation writes/readback
+  preserve fixed Org/self/head/count, and failure rolls back without forgetting the
+  genuine in-memory prefix. Fixed page counts cannot change while row getters run.

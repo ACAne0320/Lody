@@ -145,14 +145,17 @@ export function makeSqliteEpochReceiver(input: {
         yield* Effect.fromResult(requireLedgerContinuation(view, view));
         if (!view.genesis.equals(anchor)) return yield* fail('context-changed');
         if (observed) yield* Effect.fromResult(requireLedgerContinuation(observed, view));
+        observed = view;
         yield* sql(() =>
           db
             .transaction(() => {
               guard();
-              const pin = db.prepare('SELECT head,count FROM receive_meta WHERE id=1').get() as
-                | { head: unknown; count: unknown }
+              const pin = db
+                .prepare('SELECT genesis,recipient,head,count FROM receive_meta WHERE id=1')
+                .get() as
+                | { genesis: unknown; recipient: unknown; head: unknown; count: unknown }
                 | undefined;
-              if (!pin) throw fail('corrupt');
+              if (!pin || pin.genesis !== org || pin.recipient !== self) throw fail('corrupt');
               if (pin.head !== null) {
                 if (
                   !(pin.head instanceof Uint8Array) ||
@@ -168,14 +171,28 @@ export function makeSqliteEpochReceiver(input: {
                 });
                 if (Result.isFailure(known) || !known.success) throw fail('rollback');
               } else if (pin.count !== null) throw fail('corrupt');
-              db.prepare('UPDATE receive_meta SET head=?,count=? WHERE id=1').run(
-                view.head.toBytes(),
-                view.length
-              );
+              if (
+                db
+                  .prepare('UPDATE receive_meta SET head=?,count=? WHERE id=1')
+                  .run(view.head.toBytes(), view.length).changes !== 1
+              )
+                throw fail('corrupt');
+              const saved = db
+                .prepare('SELECT genesis,recipient,head,count FROM receive_meta WHERE id=1')
+                .get() as
+                | { genesis: unknown; recipient: unknown; head: unknown; count: unknown }
+                | undefined;
+              if (
+                saved?.genesis !== org ||
+                saved.recipient !== self ||
+                !(saved.head instanceof Uint8Array) ||
+                saved.count !== view.length ||
+                !bytesEqual(saved.head, view.head.toBytes())
+              )
+                throw fail('corrupt');
             })
             .immediate()
         );
-        observed = view;
         return view;
       });
     const keys = yield* makeSqliteProtectedEpochKeys({
@@ -498,6 +515,8 @@ export function makeSqliteEpochReceiver(input: {
         return { processed: page.ids.length, blocked, next: page.next };
       });
     return Object.freeze({
+      /** Genuine public observation only; persists the known prefix, grants no eligibility. */
+      observeLedger: current,
       receive: (senderInput: Bytes.SigningPublicKey, inputFrame: Uint8Array) =>
         Effect.suspend(() =>
           Effect.gen(function* () {
