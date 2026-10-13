@@ -31,6 +31,8 @@
   current key availability. No document/transport cursor is advanced here. Retain
   source/report history and unconsumed results until explicit acknowledgement.
 
+- Repair retains validated observations across failed pin UPDATEs; never dispatch
+  via an older view. Successful pin persistence binds exact Org/self/head/count.
 - Repair enqueue durably binds stable caller IDs to this Org/device/epoch/rejected
   digest before dispatch; retries never invent another ID. Only genuine ledger
   changes terminate work. Keep original/result rows through explicit acknowledgement.
