@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+PR: [#1534](https://github.com/LodyAI/Lody/pull/1534)
+
 [English](2026-10-13-scroll-update-loop-guard.md)
 
 ## 摘要

@@ -3,6 +3,8 @@
 Status: proposed
 Translation: current
 
+PR: [#1534](https://github.com/LodyAI/Lody/pull/1534)
+
 [中文](2026-10-13-message-list-update-depth-investigation.zh.md)
 
 ## Abstract

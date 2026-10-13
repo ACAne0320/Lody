@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+PR: [#1534](https://github.com/LodyAI/Lody/pull/1534)
+
 [English](2026-10-13-completed-assistant-derived-state.md)
 
 ## 摘要
