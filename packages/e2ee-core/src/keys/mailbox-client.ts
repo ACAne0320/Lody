@@ -79,6 +79,7 @@ export function makeSqliteRecipientMailbox(
         return view;
       });
     return Object.freeze({
+      observeLedger: receiver.observeLedger,
       receive: receiver.receive,
       recordLocalInstallation: receiver.recordLocalInstallation,
       resume: receiver.resume,
