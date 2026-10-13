@@ -122,3 +122,5 @@ verified; authenticated principal binding and host admission remain adapter work
 Host-only initialization and durable recipient key retention now live under [`./keys/host` and `./keys/host/sqlite`](HOST-PROTECTION.md). Ordinary entries keep opaque keys. This does not choose an OS protector or complete installation reports/recovery backup.
 
 [Finite recipient installation and original-report queue](RECEIVE.md) uses explicit `./keys/host/receive/sqlite`. It composes the protected store with real HPKE/commitment and retains exact queued reports; sender/repair/SDK/Lab owners remain separate.
+
+The explicit [durable repair queue](REPAIR.md) binds stable source request IDs before dispatch and retains local ACK history without claiming key installation. Sender discovery and receive-fetch composition remain separate.
