@@ -262,3 +262,5 @@ non-user cancellation, errors and deadlines retain their reply rules.
 Verification: frozen install and complete pnpm check pass (4181 CLI tests, 4 skipped). The latest Inbox/coordinator intersection passes 96 cases, including a fault-injected tombstone rollback; shared HistoryWriter/peer projection tests pass 63 cases. These overlaps are not additive. Real model and desktop acceptance were not rerun for this receipt-policy change.
 
 Local cancellation authority precedes stale target history and deadline fallback through the native OperationRepository. A real SQLite/coordinator test covers a stopped input whose history still has partial terminal output at an expired deadline. Remote coordination uses the persisted history cause.
+
+Finalization rechecks Stop under the SQLite writer transaction and normalizes both stored items and completion before indexing. A precomputed success cannot overtake an already committed Stop. The full check still passes; the final 156-case Inbox/coordinator/store intersection also passes.

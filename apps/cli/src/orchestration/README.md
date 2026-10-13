@@ -174,7 +174,9 @@ requesters read its history projection. Cancellation history projects the same c
 queued/late history recovery and shallow Loro/Roost reads. This is a turn field,
 not Session metadata, so remote requesters can reconcile the frozen target input.
 The pure `operationInboxCompletion` filter omits these canceled targets from
-model receipts. The complete Operation remains queryable. Fully omitted results
+model receipts. Finalization rechecks local Stop under the writer lock and normalizes the stored
+items/completion, so a precomputed success cannot overtake a committed Stop.
+The complete Operation remains queryable. Fully omitted results
 have a consumed Inbox tombstone in the finish transaction: no intent, no future
 human batch, and no duplicate/restart replay, while normal retention still works.
 Partial batches deliver the remaining targets. Requester cancellation, failed

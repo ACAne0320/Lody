@@ -1594,20 +1594,29 @@ describe('manual Stop receipts', () => {
     target: { sessionId: 'B' as SessionId, userTurnId: 'b-input' },
   };
   it('persists exact Stop provenance, keeps cancellation queryable and never dispatches it after restart or a fresh message', () => {
-    const f = fixture();
+    const f = fixture(() => Date.parse('2026-10-12T00:00:00Z'));
     const target = { ...f.input, sessionId: 'B', inputId: 'b-input' };
     f.sql.accept(target);
     f.sql.begin(target, 'b-execution');
     expect(f.sql.pause(target, 'b-execution', [], 'user-stop')).toBe(true);
     expect(f.sql.inputCancellationReason('workspace', 'B', 'b-input')).toBe('user_stop');
-    f.add('silent', 0, [stopped]);
+    // A coordinator may have computed success before Stop; finalization must recheck under the writer lock.
+    f.add('silent', 0, [
+      {
+        status: 'succeeded',
+        target: { sessionId: 'B' as SessionId, userTurnId: 'b-input' },
+        assistantTurnId: 'partial-output',
+        output: { text: 'partial' },
+      },
+    ]);
+    expect(f.store.get(f.input.sessionId as SessionId, 'silent').items).toEqual([stopped]);
     expect(f.store.get(f.input.sessionId as SessionId, 'silent')).toMatchObject({
       state: 'finished',
       completion: { value: { items: [stopped] } },
     });
     expect(f.sql.pending('workspace')).toEqual([]);
     f.store.close();
-    const reopened = new LodyOperationStore(f.filename);
+    const reopened = new LodyOperationStore(f.filename, () => Date.parse('2026-10-12T00:00:00Z'));
     stores.push(reopened);
     reopened.inbox.activate('workspace', 'replacement');
     expect(reopened.inbox.inputCancellationReason('workspace', 'B', 'b-input')).toBe('user_stop');
@@ -1629,7 +1638,7 @@ describe('manual Stop receipts', () => {
     expect(reopened.inbox.prepare(fresh, 'replacement')).toBeUndefined();
   });
   it('rolls back silent terminalization if its tombstone cannot be saved, then settles exactly once', () => {
-    const f = fixture();
+    const f = fixture(() => Date.parse('2026-10-12T00:00:00Z'));
     const completion = { type: 'result' as const, value: { items: [stopped] } };
     const accepted = f.store.accept({
       workspaceId: 'workspace' as WorkspaceId,
@@ -1670,7 +1679,7 @@ describe('manual Stop receipts', () => {
     }
   });
   it('filters only manually stopped targets while preserving the complete Operation result', () => {
-    const f = fixture();
+    const f = fixture(() => Date.parse('2026-10-12T00:00:00Z'));
     const completed: LodyOperationItemResult = {
       status: 'succeeded',
       target: { sessionId: 'C' as SessionId, userTurnId: 'c-input' },
@@ -1692,7 +1701,7 @@ describe('manual Stop receipts', () => {
     });
   });
   it('still returns non-user cancellation and persists no user-stop cause for it', () => {
-    const f = fixture();
+    const f = fixture(() => Date.parse('2026-10-12T00:00:00Z'));
     const target = { ...f.input, sessionId: 'B', inputId: 'b-input' };
     f.sql.accept(target);
     f.sql.begin(target, 'b-execution');

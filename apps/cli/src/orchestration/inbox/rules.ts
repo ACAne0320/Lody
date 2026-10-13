@@ -1,4 +1,4 @@
-import type { LodyOperationCompletion } from '@lody/shared';
+import type { LodyOperationCompletion, LodyOperationItemTarget } from '@lody/shared';
 import type { InboxBatch, InboxInput } from './model';
 
 export type SessionFenceState = {
@@ -48,4 +48,33 @@ export const operationInboxCompletion = (
   );
   if (items.length === completion.value.items.length) return completion;
   return items.length ? { ...completion, value: { ...completion.value, items } } : undefined;
+};
+
+/** Apply the Stop records captured inside the final completion transaction. */
+export const cancelManuallyStoppedTargets = (
+  completion: LodyOperationCompletion,
+  stopped: readonly LodyOperationItemTarget[]
+): LodyOperationCompletion => {
+  if (completion.type !== 'result' || stopped.length === 0) return completion;
+  return {
+    ...completion,
+    value: {
+      ...completion.value,
+      items: completion.value.items.map((item) =>
+        item.target &&
+        stopped.some(
+          (target) =>
+            target.sessionId === item.target?.sessionId &&
+            target.userTurnId === item.target?.userTurnId
+        )
+          ? {
+              status: 'cancelled',
+              cancellationReason: 'user_stop',
+              target: item.target,
+              ...(item.label ? { label: item.label } : {}),
+            }
+          : item
+      ),
+    },
+  };
 };
