@@ -23,7 +23,8 @@
     "./keys/host/sqlite": "./src/keys/protected-sqlite.ts",
     "./keys/host/receive/sqlite": "./src/keys/receive-sqlite.ts",
     "./ledger/feed": "./src/ledger/feed.ts",
-    "./ledger/feed/sqlite": "./src/ledger/feed-sqlite.ts"
+    "./ledger/feed/sqlite": "./src/ledger/feed-sqlite.ts",
+    "./keys/mailbox/repair/sqlite": "./src/keys/repair-sqlite.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

@@ -1,0 +1,17 @@
+{
+  "frozenCandidateHead": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "directParent": "14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8",
+  "sources": {
+    "workflows/key-distribution.ts": "ff8c46814c2e2755e128aece4d7a3dd25e034ca82d098282d1d765c8e5b8b481",
+    "pure/key-distribution.ts": "96e6e88eb20228c4d47eee03023e0b859e43e0d9a0a16b7214d90463e56c7290",
+    "ports/key-mailbox.ts": "08457c2e57c85100e8b67bad7445047e89746af5808da5229a5ea0f8e4afc30e"
+  },
+  "scope": "Stable-ID repair enqueue/flush/results only; no key installation or full distribution ownership.",
+  "destinationFingerprints": {
+    "src/keys/repair-sqlite.ts": "9b6f6246431935aab179816b9e9c4a1ca9b686db7bfc320a0e3cc87aa59a1603"
+  },
+  "extractionDestinationFingerprints": {
+    "src/keys/repair-sqlite.ts": "334516722e0844ba2f17ec35168603aa8f19663f4818e6ff72b44f6819fab7aa"
+  },
+  "extractionDirectParent": "dd2975419c49bf129eff9b037239dac2a64a7bbc"
+}
