@@ -204,6 +204,7 @@ describe('MessageHandler machine registration', () => {
       providerSetup: 1,
       acpProtocolAuthentication: 2,
       acpCapabilityRefreshCache: 1,
+      providerRateLimitsRefresh: 1,
       subagentCancellation: 1,
       subagentEvents: 1,
       schedules: 2,

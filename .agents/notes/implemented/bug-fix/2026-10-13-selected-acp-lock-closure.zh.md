@@ -12,3 +12,5 @@ main c10ca856 已恢复四个兼容 ACP gitlink，并保留已发布 runtime 清
 ## 证据与边界
 
 早期 main567afa 候选针对当时选定的较新适配器；原维护者的 main 修复已替代该版本选择。当前相对 main 的 diff 不含新版本等待期例外，也不含已失效的历史链接改动。递归只解析恢复的两个 importer 所需依赖，已有定义沿用 main，仅缺项取此前兼容 main567afa 的闭包，包含平台 alias。原失败及中间候选证据与最终完整 frozen 安装分列。最终组合 root/build/smoke 和远端 CI 各有准确版本与结果；此锁修复不授权 runtime 上传、新协议或生产启用。
+
+main1535 已声明 providerRateLimitsRefresh 版本1，但机器注册的穷举期望表遗漏此键。本修复补该显式期望，保留整表严格相等断言；不改生产协商或行为。
