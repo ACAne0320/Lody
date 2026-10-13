@@ -92,6 +92,8 @@ export const operationInboxLegacy = (options: {
   return {
     preferredHumanInput: (w: string, s: string) =>
       Effect.runSync(queries.preferredHumanInput(w, s)),
+    inputCancellationReason: (w: string, s: string, id: string) =>
+      Effect.runSync(queries.inputCancellationReason(w, s, id)),
     inputCanceled: (w: string, s: string, id: string) =>
       Effect.runSync(queries.inputCanceled(w, s, id)),
     inputKind: (s: InboxScope, id: string) => Effect.runSync(queries.inputKind(s, id)),
@@ -136,8 +138,10 @@ export const operationInboxLegacy = (options: {
       };
     },
     quiesce: () => runtime.runPromise(Effect.flatMap(OperationInbox, (i) => i.quiesce)),
-    cancelExecution: (scope: InboxScope, id: string) =>
-      runtime.runPromise(Effect.flatMap(OperationInbox, (i) => i.cancelExecution(scope, id))),
+    cancelExecution: (scope: InboxScope, id: string, reason?: 'user_stop') =>
+      runtime.runPromise(
+        Effect.flatMap(OperationInbox, (i) => i.cancelExecution(scope, id, reason))
+      ),
     wake: () => runtime.runPromise(Effect.flatMap(OperationInbox, (i) => i.wake)),
     accept: (input: InboxInput) =>
       runtime.runPromise(Effect.flatMap(OperationInbox, (i) => i.accept(input))),

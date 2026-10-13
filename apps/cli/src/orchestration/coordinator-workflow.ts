@@ -300,6 +300,20 @@ export class CoordinatorWorkflow {
       if (item.status !== 'active') return item;
       if (signal.aborted) return item;
       const target = item.target;
+      // Local Stop is authoritative even if cancellation history has not flushed yet.
+      if (
+        (yield* this.operations.inputCancellationReason(
+          operation.workspaceId,
+          target.sessionId,
+          target.userTurnId
+        )) === 'user_stop'
+      )
+        return {
+          status: 'cancelled',
+          cancellationReason: 'user_stop',
+          target,
+          ...(item.label ? { label: item.label } : {}),
+        };
       if (!item.inputDurable) {
         let alreadyMaterialized = yield* this.isTargetInputDurable(
           target.sessionId,
@@ -427,6 +441,9 @@ export class CoordinatorWorkflow {
       if (userTurn?.status === 'canceled') {
         return {
           status: 'cancelled',
+          ...(userTurn.cancellationReason
+            ? { cancellationReason: userTurn.cancellationReason }
+            : {}),
           ...(item.label ? { label: item.label } : {}),
           target: item.target,
         };

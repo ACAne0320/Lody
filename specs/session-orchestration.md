@@ -225,3 +225,15 @@ transport failure, claim/settlement races, restart and result expiry.
 
 This draft records the requested limit of 16. Runtime and deployed-client
 acceptance remain to be verified after dependencies are installed.
+
+## User Stop of delegated work
+
+When a user manually stops the exact input delegated to a target Session, that
+target is terminally cancelled and remains queryable, but its cancellation is
+not an automatic receipt to the delegating Agent. It cannot enter a later human
+or automatic batch, including after restart or deadline reconciliation. A new
+user message in the target starts independent work and never revives this receipt.
+In a multi-target Operation, only the manually stopped targets are omitted from
+the automatic receipt; other targets retain normal result delivery. If all
+targets are omitted, no receipt or wake is created. Errors, deadlines, and
+explicit requester Operation cancellation keep their existing behavior.

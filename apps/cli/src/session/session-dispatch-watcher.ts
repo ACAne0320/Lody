@@ -2318,7 +2318,15 @@ export class SessionDispatchWatcher {
         if (canceled) {
           await backend.applyHistoryAction({
             kind: 'upsert-turn',
-            turn: { ...canceled, status: 'canceled', read: true },
+            turn: {
+              ...canceled,
+              status: 'canceled',
+              read: true,
+              cancellationReason: this.deps.executionService.getInboxInputCancellationReason?.(
+                meta.id,
+                queuedTurnId
+              ),
+            },
           });
           await backend.removeMessageQueueItem(queuedItem.$cid);
         }
@@ -2966,8 +2974,16 @@ export class SessionDispatchWatcher {
             kind: 'user-status',
             turnId: entry.id,
             status: 'canceled',
+            cancellationReason: this.deps.executionService.getInboxInputCancellationReason?.(
+              meta.id,
+              entry.id
+            ),
           });
           entry.status = 'canceled';
+          entry.cancellationReason = this.deps.executionService.getInboxInputCancellationReason?.(
+            meta.id,
+            entry.id
+          );
         }
       }
       let preferred = this.deps.executionService.getPreferredInboxHumanInput?.(meta.id);
@@ -3055,6 +3071,8 @@ export class SessionDispatchWatcher {
       sessionId,
       turn.id
     );
+    if (this.deps.executionService.isInboxInputCanceled?.(sessionId, turn.id))
+      terminalStatus = 'canceled';
     if (!terminalStatus && ['pending', 'seen', 'processing'].includes(turn.status ?? '')) {
       // Restart backstop (in-memory record is gone): a completed assistant
       // entry linked to this user turn is positive proof it ran to completion.
@@ -3091,6 +3109,10 @@ export class SessionDispatchWatcher {
       kind: 'user-status',
       turnId: turn.id,
       status,
+      cancellationReason:
+        status === 'canceled'
+          ? this.deps.executionService.getInboxInputCancellationReason?.(sessionId, turn.id)
+          : undefined,
     });
     this.deps.executionService.clearTerminalUserTurnStatusWithoutEntry?.(sessionId, turn.id);
     this.consumeStashedRpcTurn(sessionId, turn.id);

@@ -11,6 +11,7 @@ export const operationRepositoryLayer = (store: LodyOperationStore) => {
   return Layer.succeed(OperationRepository, {
     accept: (i, o) => io(() => store.accept(i, o)),
     get: (s, id) => io(() => store.get(s, id)),
+    inputCancellationReason: (w, s, id) => io(() => store.inbox.inputCancellationReason(w, s, id)),
     finish: (s, id, c) => io(() => store.finish(s, id, c)),
     updateItems: (s, id, items) => io(() => store.updateItems(s, id, items)),
     listActive: (w, m) => io(() => store.listActive(w, m)),

@@ -67,6 +67,7 @@ export const LodyOperationItemSchema = z.discriminatedUnion('status', [
   z
     .object({
       status: z.literal('cancelled'),
+      cancellationReason: z.literal('user_stop').optional(),
       label: z.string().optional(),
       target: OperationTargetSchema.optional(),
     })
@@ -168,6 +169,7 @@ export type LodyOperationItemResult =
     }
   | {
       status: 'cancelled';
+      cancellationReason?: 'user_stop';
       label?: string;
       target?: LodyOperationItemTarget;
     };

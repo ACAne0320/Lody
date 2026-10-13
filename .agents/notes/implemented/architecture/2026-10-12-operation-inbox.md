@@ -244,3 +244,21 @@ its smoke suite passes all 6 scenarios / 40 steps. Validation uses Node 22.23.1,
 native Git helpers and CI's signing configuration. No runtime guard, release-age
 policy or test assertion was weakened. Matching pushed-head Actions and real
 model/cloud product acceptance remain separate evidence.
+
+## Silent manual target Stop (2026-10-14)
+
+The user requested that stopping B's delegated turn not wake its requester A.
+Keep cancellation observable through Operation lookup, but filter manual-stop
+targets from automatic model receipts, including mixed batches. Stop journals
+the cause in machine-local Inbox input state; HistoryWriter projects it on the
+exact user turn for remote reconciliation and late-input recovery. No Session
+metadata field or new RPC is introduced. The Effect admission/SQL transaction
+boundary is retained; filtering is pure and I/O remains in the existing platform
+adapters. A consumed result tombstone is committed with terminalization, so
+restart, duplicate finish and a subsequent user input cannot recover a silent
+receipt. It also preserves retention eligibility. New target work is independent;
+non-user cancellation, errors and deadlines retain their reply rules.
+
+Verification: frozen install and complete pnpm check pass (4181 CLI tests, 4 skipped). The latest Inbox/coordinator intersection passes 96 cases, including a fault-injected tombstone rollback; shared HistoryWriter/peer projection tests pass 63 cases. These overlaps are not additive. Real model and desktop acceptance were not rerun for this receipt-policy change.
+
+Local cancellation authority precedes stale target history and deadline fallback through the native OperationRepository. A real SQLite/coordinator test covers a stopped input whose history still has partial terminal output at an expired deadline. Remote coordination uses the persisted history cause.

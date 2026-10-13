@@ -6,6 +6,11 @@ export interface InboxQueries {
     workspaceId: string,
     sessionId: string
   ): Effect.Effect<string | undefined, unknown>;
+  inputCancellationReason(
+    workspaceId: string,
+    sessionId: string,
+    id: string
+  ): Effect.Effect<'user_stop' | undefined, unknown>;
   inputCanceled(
     workspaceId: string,
     sessionId: string,

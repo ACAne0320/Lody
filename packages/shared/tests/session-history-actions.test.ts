@@ -442,3 +442,18 @@ it('updates one matching batch receipt while preserving the original user input 
     ).matched
   ).toBe(false);
 });
+
+
+it('keeps manual Stop provenance on the exact user turn across peer import and shallow output reads', async () => {
+  const doc = new LoroDoc();
+  const data = createLoroSessionData({ sessionId: sid, doc });
+  await data.commands.appendTurn({ ...row('stopped','user'),status:'processing' });
+  await data.commands.appendTurn({ ...row('other','user'),status:'pending' });
+  await data.commands.applyHistoryAction({ kind:'user-status',turnId:'stopped',status:'canceled',cancellationReason:'user_stop' });
+  const peer = new LoroDoc();
+  peer.import(doc.export({mode:'snapshot'}));
+  const copy = createLoroSessionData({sessionId:sid,doc:peer});
+  expect((await copy.history.readTurnOutput('stopped'))[0]).toMatchObject({id:'stopped',status:'canceled',cancellationReason:'user_stop'});
+  expect((await copy.history.readTurn('other'))).toMatchObject({state:'ready',turn:{status:'pending'}});
+  expect((await copy.history.readTurn('other'))).not.toHaveProperty('turn.cancellationReason');
+});

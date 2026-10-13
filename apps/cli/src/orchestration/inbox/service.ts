@@ -11,7 +11,11 @@ import {
 type Repository = {
   abandon(workspaceId: string, sessionId: string, id: string): Effect.Effect<void, unknown>;
   deactivate(workspaceId: string, owner: string): Effect.Effect<void, unknown>;
-  cancelExecution(scope: InboxScope, id: string): Effect.Effect<boolean, unknown>;
+  cancelExecution(
+    scope: InboxScope,
+    id: string,
+    reason?: 'user_stop'
+  ): Effect.Effect<boolean, unknown>;
   adopt(previous: InboxInput, next: InboxInput, id: string): Effect.Effect<boolean, unknown>;
   canSubmit(scope: InboxScope, executionId: string, owner: string): Effect.Effect<boolean, unknown>;
   accept(input: InboxInput): Effect.Effect<boolean, unknown>;
@@ -65,7 +69,11 @@ export class OperationInbox extends Context.Service<
     abandon(workspaceId: string, sessionId: string, id: string): Effect.Effect<void, unknown>;
     wake: Effect.Effect<void>;
     quiesce: Effect.Effect<void, unknown>;
-    cancelExecution(scope: InboxScope, id: string): Effect.Effect<boolean, unknown>;
+    cancelExecution(
+      scope: InboxScope,
+      id: string,
+      reason?: 'user_stop'
+    ): Effect.Effect<boolean, unknown>;
     accept(input: InboxInput): Effect.Effect<boolean, unknown>;
     begin(scope: InboxScope, executionId: string): Effect.Effect<boolean, unknown>;
     pause(
@@ -267,7 +275,7 @@ export class OperationInbox extends Context.Service<
               })
             )
           ),
-          cancelExecution: (s, id) => withGate(s, repo.cancelExecution(s, id)),
+          cancelExecution: (s, id, reason) => withGate(s, repo.cancelExecution(s, id, reason)),
           prepare,
           submit,
           accept: Effect.fn('OperationInbox.accept')(function* (i: InboxInput) {

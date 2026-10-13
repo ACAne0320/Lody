@@ -1,4 +1,4 @@
-import type { MachineId, SessionId, WorkspaceId } from '@lody/shared';
+import type { LodyOperationItemResult, MachineId, SessionId, WorkspaceId } from '@lody/shared';
 import Database from 'better-sqlite3';
 import { Context, Deferred, Effect, Fiber, Layer, Scheduler } from 'effect';
 import { execFile } from 'node:child_process';
@@ -42,7 +42,7 @@ function fixture(now?: () => number) {
   };
   const sql = store.inbox;
   sql.activate(input.workspaceId, 'owner');
-  const add = (id: string, depth = 0) => {
+  const add = (id: string, depth = 0, items: LodyOperationItemResult[] = []) => {
     store.accept({
       workspaceId: input.workspaceId as WorkspaceId,
       ownerMachineId: 'machine' as MachineId,
@@ -58,9 +58,9 @@ function fixture(now?: () => number) {
       initiatorChainDepth: depth,
       createdAt: '2026-10-12T00:00:00.000Z',
       deadlineAt: '2026-10-13T00:00:00.000Z',
-      items: [],
+      items,
     });
-    store.finish(input.sessionId as SessionId, id, { type: 'result', value: { items: [] } });
+    store.finish(input.sessionId as SessionId, id, { type: 'result', value: { items } });
   };
   const release = (outcome: InboxRelease['outcome'] = 'normal', executionId = 'execution-1') =>
     sql.release({ ...input, executionId, outcome });
@@ -1584,5 +1584,121 @@ describe('blocked execution operator recovery', () => {
     } finally {
       db.close();
     }
+  });
+});
+
+describe('manual Stop receipts', () => {
+  const stopped: LodyOperationItemResult = {
+    status: 'cancelled',
+    cancellationReason: 'user_stop',
+    target: { sessionId: 'B' as SessionId, userTurnId: 'b-input' },
+  };
+  it('persists exact Stop provenance, keeps cancellation queryable and never dispatches it after restart or a fresh message', () => {
+    const f = fixture();
+    const target = { ...f.input, sessionId: 'B', inputId: 'b-input' };
+    f.sql.accept(target);
+    f.sql.begin(target, 'b-execution');
+    expect(f.sql.pause(target, 'b-execution', [], 'user-stop')).toBe(true);
+    expect(f.sql.inputCancellationReason('workspace', 'B', 'b-input')).toBe('user_stop');
+    f.add('silent', 0, [stopped]);
+    expect(f.store.get(f.input.sessionId as SessionId, 'silent')).toMatchObject({
+      state: 'finished',
+      completion: { value: { items: [stopped] } },
+    });
+    expect(f.sql.pending('workspace')).toEqual([]);
+    f.store.close();
+    const reopened = new LodyOperationStore(f.filename);
+    stores.push(reopened);
+    reopened.inbox.activate('workspace', 'replacement');
+    expect(reopened.inbox.inputCancellationReason('workspace', 'B', 'b-input')).toBe('user_stop');
+    reopened.finish(f.input.sessionId as SessionId, 'silent', {
+      type: 'result',
+      value: { items: [stopped] },
+    });
+    reopened.finish(f.input.sessionId as SessionId, 'silent', {
+      type: 'error',
+      error: { code: 'TARGET_TIMEOUT', message: 'Late deadline', retryable: false },
+    });
+    expect(reopened.get(f.input.sessionId as SessionId, 'silent').completion).toEqual({
+      type: 'result',
+      value: { items: [stopped] },
+    });
+    expect(reopened.inbox.pending('workspace')).toEqual([]);
+    const fresh = { ...f.input, inputId: 'next-human' };
+    reopened.inbox.accept(fresh);
+    expect(reopened.inbox.prepare(fresh, 'replacement')).toBeUndefined();
+  });
+  it('rolls back silent terminalization if its tombstone cannot be saved, then settles exactly once', () => {
+    const f = fixture();
+    const completion = { type: 'result' as const, value: { items: [stopped] } };
+    const accepted = f.store.accept({
+      workspaceId: 'workspace' as WorkspaceId,
+      ownerMachineId: 'machine' as MachineId,
+      requesterSessionId: 'A' as SessionId,
+      requesterUserId: 'human',
+      operationId: 'silent-failure',
+      kind: 'session_chat',
+      canonicalCommand: {},
+      frozenContinuationConfig: { inputConfig: {} },
+      initiatorChainDepth: 0,
+      createdAt: '2026-10-12T00:00:00Z',
+      deadlineAt: '2026-10-13T00:00:00Z',
+      items: [stopped],
+    });
+    const db = new Database(f.filename);
+    try {
+      db.exec(
+        "CREATE TRIGGER reject_silent BEFORE INSERT ON inbox_results BEGIN SELECT RAISE(ABORT,'disk failure'); END"
+      );
+      expect(() =>
+        f.store.finish(accepted.operation.requesterSessionId, 'silent-failure', completion)
+      ).toThrow('disk failure');
+      expect(f.store.get(accepted.operation.requesterSessionId, 'silent-failure').state).toBe(
+        'active'
+      );
+      expect(db.prepare('SELECT COUNT(*) AS count FROM inbox_results').get()).toEqual({ count: 0 });
+      db.exec('DROP TRIGGER reject_silent');
+      f.store.finish(accepted.operation.requesterSessionId, 'silent-failure', completion);
+      f.store.finish(accepted.operation.requesterSessionId, 'silent-failure', completion);
+      expect(db.prepare('SELECT consumed,COUNT(*) AS count FROM inbox_results').get()).toEqual({
+        consumed: 1,
+        count: 1,
+      });
+      expect(f.sql.pending('workspace')).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+  it('filters only manually stopped targets while preserving the complete Operation result', () => {
+    const f = fixture();
+    const completed: LodyOperationItemResult = {
+      status: 'succeeded',
+      target: { sessionId: 'C' as SessionId, userTurnId: 'c-input' },
+      assistantTurnId: 'c-output',
+      output: { text: 'done' },
+    };
+    f.add('mixed', 0, [stopped, completed]);
+    const intent = f.sql.pending('workspace')[0];
+    if (!intent) throw Error('missing wake');
+    const batch = f.sql.prepare(intent.input, 'owner', intent.intentId);
+    if (!batch) throw Error('missing batch');
+    expect(f.sql.members(batch)[0]?.completion).toEqual({
+      type: 'result',
+      value: { items: [completed] },
+    });
+    expect(f.store.get(f.input.sessionId as SessionId, 'mixed').completion).toEqual({
+      type: 'result',
+      value: { items: [stopped, completed] },
+    });
+  });
+  it('still returns non-user cancellation and persists no user-stop cause for it', () => {
+    const f = fixture();
+    const target = { ...f.input, sessionId: 'B', inputId: 'b-input' };
+    f.sql.accept(target);
+    f.sql.begin(target, 'b-execution');
+    f.sql.cancelExecution(target, 'b-execution');
+    expect(f.sql.inputCancellationReason('workspace', 'B', 'b-input')).toBeUndefined();
+    f.add('agent-cancel', 0, [{ status: 'cancelled', target: stopped.target }]);
+    expect(f.sql.pending('workspace')).toHaveLength(1);
   });
 });

@@ -1,3 +1,4 @@
+import type { LodyOperationCompletion } from '@lody/shared';
 import type { InboxBatch, InboxInput } from './model';
 
 export type SessionFenceState = {
@@ -36,3 +37,15 @@ export const canFenceBatch = (
   state.active_execution === id &&
   count > 0 &&
   count === batch.memberCount;
+
+/** Preserve queryable cancellation, but user Stop is not an Agent continuation. */
+export const operationInboxCompletion = (
+  completion: LodyOperationCompletion
+): LodyOperationCompletion | undefined => {
+  if (completion.type !== 'result') return completion;
+  const items = completion.value.items.filter(
+    (item) => item.status !== 'cancelled' || item.cancellationReason !== 'user_stop'
+  );
+  if (items.length === completion.value.items.length) return completion;
+  return items.length ? { ...completion, value: { ...completion.value, items } } : undefined;
+};
