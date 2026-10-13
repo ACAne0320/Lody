@@ -13,6 +13,9 @@
 - Await non-cancellable native settlement and wipe operation-owned plaintext on
   success, failure and interruption. Application Scope closes admission, waits
   native leases and closes storage; a timeout does not prove native work stopped.
+- Record genuine fixed-Org/known-prefix observations before business rejection or
+  pin UPDATE. Failed writes retain memory; successful persistence requires one row
+  and exact bounded context/head/count readback, without a failed-write reopen claim.
 - Save/reload/unprotect/commitment verification precedes any installation report
   queue. Signed reports remain claims. Failed uncertain writes retain originals;
   no implicit delete/replace/legacy import. Durable public authority observations
@@ -31,6 +34,8 @@
   current key availability. No document/transport cursor is advanced here. Retain
   source/report history and unconsumed results until explicit acknowledgement.
 
+- Repair retains validated observations across failed pin UPDATEs; never dispatch
+  via an older view. Successful pin persistence binds exact Org/self/head/count.
 - Repair enqueue durably binds stable caller IDs to this Org/device/epoch/rejected
   digest before dispatch; retries never invent another ID. Only genuine ledger
   changes terminate work. Keep original/result rows through explicit acknowledgement.

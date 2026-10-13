@@ -482,3 +482,82 @@ describe('durable stable-ID mailbox repair episodes', () => {
     );
   });
 });
+
+describe('repair authority observations survive failed pin writes', () => {
+  it.each(['abort', 'ignore', 'rewrite-head', 'rewrite-context'] as const)(
+    'does not dispatch through rollback after %s',
+    async (fault) => {
+      const f = envelopeFixture(),
+        old = f.view(),
+        dir = directory(),
+        journal = path.join(dir, 'repair.sqlite');
+      let current = old;
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            // The remote deliberately remains on old genuine history; it cannot supply our newer knowledge.
+            const host = yield* makeSqliteKeyMailbox({
+              path: path.join(dir, 'mailbox.sqlite'),
+              mode: 'create',
+              genesis: f.context.genesis,
+              ledger: () => Effect.succeed(old),
+            });
+            const remote = ok(host.bind(f.phone.publicKey));
+            const queue = yield* makeSqliteMailboxRepair({
+              path: journal,
+              mode: 'create',
+              genesis: f.context.genesis,
+              recipient: f.phone.publicKey,
+              ledger: () => Effect.succeed(current),
+              remote,
+            });
+            yield* queue.enqueue('initial');
+            const db = new Database(journal);
+            try {
+              if (fault === 'abort' || fault === 'ignore')
+                db.exec(
+                  `CREATE TRIGGER fail_pin BEFORE UPDATE ON repair_meta BEGIN SELECT RAISE(${fault === 'abort' ? "ABORT,'fault'" : 'IGNORE'}); END`
+                );
+              else
+                db.exec(
+                  `CREATE TRIGGER fail_pin AFTER UPDATE ON repair_meta BEGIN UPDATE repair_meta SET ${fault === 'rewrite-head' ? `head=x'${hex(old.head.toBytes())}',count=2` : "recipient='" + '00'.repeat(32) + "'"} WHERE id=1; END`
+                );
+              f.append([5, f.phone.raw]);
+              const high = f.view();
+              current = high;
+              expect(Exit.isFailure(yield* Effect.exit(queue.enqueue('rejected')))).toBe(true);
+              expect(
+                db.prepare('SELECT genesis,recipient,count FROM repair_meta WHERE id=1').get()
+              ).toEqual({
+                genesis: hex(f.context.genesis.toBytes()),
+                recipient: hex(f.phone.raw),
+                count: 2,
+              });
+              expect(db.prepare('SELECT id,phase FROM repair_tasks').all()).toEqual([
+                { id: 'initial', phase: 'Pending' },
+              ]);
+              db.exec('DROP TRIGGER fail_pin');
+              current = old;
+              expect((yield* queue.flush()).blocked).toEqual(['initial']);
+              expect(
+                (yield* remote.status(slot(f))).revision,
+                'known revoked recipient must not dispatch repair after earlier persistence failure'
+              ).toBe(0);
+              expect(db.prepare('SELECT id,phase FROM repair_tasks').all()).toEqual([
+                { id: 'initial', phase: 'Pending' },
+              ]);
+              current = high;
+              expect((yield* queue.flush()).blocked).toEqual([]);
+              expect((yield* remote.status(slot(f))).revision).toBe(0);
+              expect(db.prepare('SELECT id,phase FROM repair_tasks').all()).toEqual([
+                { id: 'initial', phase: 'Revoked' },
+              ]);
+            } finally {
+              db.close();
+            }
+          })
+        )
+      );
+    }
+  );
+});
