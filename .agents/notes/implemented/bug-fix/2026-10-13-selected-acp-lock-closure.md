@@ -12,3 +12,5 @@ Main 567afa18 selects Claude 2ff63b6 and Codex aae32a2 but retains older depende
 ## Verification and limits
 
 The original complete-submodule frozen install fails with nine Claude specifier mismatches; Codex also changes its declared Codex range and cross-spawn dependencies. The final repaired lock passes actual frozen installation with all eight fixed gitlinks. Generating the candidate lock is preparation, not frozen-install evidence. Unrelated peer/importer drift from the generator was discarded, retaining the original entries and their complete old closures. Root checks and latest-main E2EE composition are reported separately, with exact heads and exit codes. This dependency repair grants no E2EE protocol or production authorization.
+
+The selected Codex gitlink removed the ACP v2 lifecycle test referenced by the plan-command Spec. Preserve that evidence at its original public b67f2ea commit and label it historical; neither claim current coverage nor alter the draft guarantee.
