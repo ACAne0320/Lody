@@ -154,3 +154,5 @@ and supplies no persistence, rotation, delivery, recovery-vault format or backup
 The explicit Node [`./keys/mailbox/sqlite`](src/keys/MAILBOX.md) reference binds host-authenticated principals, admits fixed-verified current epoch envelopes and pages indexed recipient rows. [`./keys/reports`](src/keys/reports.ts) preserves signed installation-claim bytes. Reports are claims, not custody receipts; distribution/receive persistence and production authentication remain separate owners.
 
 Host-only epoch protection and recipient durable retention use explicit `./keys/host` and `./keys/host/sqlite` entries; see [boundary](src/keys/HOST-PROTECTION.md). The portable root stays unchanged. No production/native assembly, report queue or recovery format is introduced.
+
+The host-only `./keys/host/receive/sqlite` adds [finite install and original-report retry](src/keys/RECEIVE.md), without changing portable root, HPKE or submission. Remote ACK history never proves current key availability or server custody.
