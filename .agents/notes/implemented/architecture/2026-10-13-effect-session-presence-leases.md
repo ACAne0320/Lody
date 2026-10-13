@@ -77,8 +77,8 @@ owned by the merged workspace presence unit; it is not reimplemented here.
 
 ## Verification
 
-Base: main `7b540b10` (including #1518, #1519 and #1520). The independent clone preserves
-the original workspace and author checkouts. Frozen offline installation preserves all
+Base: main `d76690b6` (including #1518, #1519 and #1520). The independent clone preserves
+the original workspace and author checkouts. Frozen installation preserves all
 locked versions; consuming Effect 4.0.2 instructions/source were inspected.
 
 Behavioral acceptance uses TestClock, fake timers and explicit raw completion signals:
@@ -96,7 +96,8 @@ passes all seven actual-consumer suites (307 tests). The native/Legacy lease sui
 settlement after bounded close failure. Root typechecking, lint, format, document checks and every static boundary guard pass.
 `pnpm check` reached the full test phase but the unchanged code-review renderer suite
 failed with `act is not a function` under the inherited production React environment;
-this is the previously recorded validation limit, not a green full check. The seven
+this is the previously recorded validation limit, not a green full check. The unchanged review-helper package passes all 33 tests under `NODE_ENV=test`,
+confirming the production environment constraint. The seven
 P6 consumer suites pass 307 tests. Clean-environment CI must validate the final PR.
 Linux source-level evidence does not establish packaged desktop or production-load
 behavior, or native ownership of the remaining upper workflows.
