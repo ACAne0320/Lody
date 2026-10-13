@@ -116,10 +116,12 @@ export function makeSqliteMailboxRepair(input: {
               guard();
               const pin = db
                 .prepare(
-                  "SELECT CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,count FROM repair_meta WHERE id=1"
+                  "SELECT CASE WHEN length(genesis)=64 THEN genesis ELSE NULL END AS genesis,CASE WHEN length(recipient)=64 THEN recipient ELSE NULL END AS recipient,CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,count FROM repair_meta WHERE id=1"
                 )
-                .get() as { head: unknown; count: unknown } | undefined;
-              if (!pin) throw fail('corrupt');
+                .get() as
+                | { genesis: unknown; recipient?: unknown; head: unknown; count: unknown }
+                | undefined;
+              if (!pin || pin.genesis !== org || pin.recipient !== self) throw fail('corrupt');
               if (pin.head !== null) {
                 if (
                   !(pin.head instanceof Uint8Array) ||
@@ -134,6 +136,11 @@ export function makeSqliteMailboxRepair(input: {
                 });
                 if (Result.isFailure(checked) || !checked.success) throw fail('rollback');
               } else if (pin.count !== null) throw fail('corrupt');
+              // Recheck shared memory at the synchronous transaction's actual write boundary.
+              if (observed && Result.isFailure(requireLedgerContinuation(observed, view)))
+                throw fail('rollback');
+              // Retain verified knowledge even when the following write fails.
+              observed = view;
               if (
                 db
                   .prepare('UPDATE repair_meta SET head=?,count=? WHERE id=1')
@@ -142,11 +149,16 @@ export function makeSqliteMailboxRepair(input: {
                 throw fail('corrupt');
               const saved = db
                 .prepare(
-                  'SELECT CASE WHEN length(head)=32 THEN head ELSE NULL END AS head,count FROM repair_meta WHERE id=1'
+                  "SELECT CASE WHEN length(genesis)=64 THEN genesis ELSE NULL END AS genesis,CASE WHEN length(recipient)=64 THEN recipient ELSE NULL END AS recipient,CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,count FROM repair_meta WHERE id=1"
                 )
-                .get() as { head: unknown; count: unknown } | undefined;
+                .get() as
+                | { genesis: unknown; recipient: unknown; head: unknown; count: unknown }
+                | undefined;
               if (
-                !(saved?.head instanceof Uint8Array) ||
+                saved?.genesis !== org ||
+                saved.recipient !== self ||
+                !(saved.head instanceof Uint8Array) ||
+                saved.head.length !== 32 ||
                 saved.count !== view.length ||
                 !view.head.equals(Result.getOrThrow(Bytes.recordHash(saved.head)))
               )
@@ -154,7 +166,6 @@ export function makeSqliteMailboxRepair(input: {
             })
             .immediate()
         );
-        observed = view;
         return view;
       });
     const parse = (row: Record<string, unknown>): Task => {
