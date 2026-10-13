@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1547](https://github.com/LodyAI/Lody/pull/1547)
 
 [中文](2026-10-13-operation-reply-card-spacing.zh.md)
 
