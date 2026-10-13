@@ -129,3 +129,5 @@ main 的额度刷新合并在运行时 pin 回滚后重新带入升级过的 ACP
 原生 OperationRepository 在读取旧目标历史与 deadline 降级前核对精确输入的本地取消记录。真实 SQLite／Coordinator 测试覆盖了输入已停止、历史仍有部分终态输出且 deadline 已过的窗口；远端协调读取持久历史中的原因。
 
 完成事务持有 SQLite 写锁后重新核对 Stop，并在索引前同时规范化持久目标状态与完成结果；预先算出的成功不能越过已经提交的停止。完整检查仍通过，最终 Inbox／Coordinator／Store 交集 156 项也通过。
+
+后续实现：[PR #1553](https://github.com/LodyAI/Lody/pull/1553)。

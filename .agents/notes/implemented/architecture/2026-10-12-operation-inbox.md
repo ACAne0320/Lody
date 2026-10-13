@@ -264,3 +264,5 @@ Verification: frozen install and complete pnpm check pass (4181 CLI tests, 4 ski
 Local cancellation authority precedes stale target history and deadline fallback through the native OperationRepository. A real SQLite/coordinator test covers a stopped input whose history still has partial terminal output at an expired deadline. Remote coordination uses the persisted history cause.
 
 Finalization rechecks Stop under the SQLite writer transaction and normalizes both stored items and completion before indexing. A precomputed success cannot overtake an already committed Stop. The full check still passes; the final 156-case Inbox/coordinator/store intersection also passes.
+
+Follow-up implementation: [PR #1553](https://github.com/LodyAI/Lody/pull/1553).
