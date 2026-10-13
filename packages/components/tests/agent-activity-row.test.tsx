@@ -108,6 +108,8 @@ describe('live agent status', () => {
       Object.defineProperties(viewport, {
         clientHeight: { configurable: true, value: 400 },
         scrollHeight: { configurable: true, value: 1000 },
+        // The synthetic wheel must start somewhere it can actually scroll up.
+        scrollTop: { configurable: true, writable: true, value: 600 },
       });
       await act(async () => {
         viewport!.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -20 }));

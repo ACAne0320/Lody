@@ -45,6 +45,12 @@ a different explicit mode rather than silently overwriting it. An explicit Role
 remains authoritative: manual target and configuration fields are ignored before
 capability validation, command identity and dispatch.
 
+The CLI `lody session create --agent-role <idOrName>` resolves the same catalog
+Role by fixed id or unique name. The Role's machine, agent config, run
+configuration and Prompt prefix take precedence; overridden manual flags are
+reported as ignored, and the work-context flags (`--repo`, `--local-project`,
+`--branch`, `--worktree`) still apply.
+
 An explicit permission selection may be broader than the parent's. The caller
 must act within its user authorization. This interface introduces no permission
 ranking, escalation approval rule or safety boundary relative to CLI creation.
@@ -54,7 +60,18 @@ Explicit selectors participate in the canonical command fingerprint. Reordering
 map keys is the same request; changing selections under an accepted Operation id
 is `OPERATION_ID_REUSED`. Acceptance freezes each effective target dispatch config.
 Retry and recovery use that config rather than recomputing requester defaults or
-Role configuration. No Operation storage migration is required.
+Role configuration. Effective inherited mode/model/options retain internal provenance;
+replay keeps compatible values and drops incompatible inherited values, even when catalog
+freshness is unconfirmed. Current explicit selections remain strict. Effort and Fast use
+the effective target model on both initial validation and frozen replay.
+
+Internally synthesized builtin modes retain separate provenance so replay does not
+reinterpret a fallback default as an explicit user selection. Before the fixed UserTurn
+is authored, the default is re-derived against available capabilities. Interrupted
+materialization preserves only authored values reachable from its frozen inherited or
+synthesized provenance, without rewriting history or relaxing the complete immutable-input
+identity check. Provenance fields are not public MCP input or Session history. Existing
+stored inherited-default markers remain readable; no storage migration is required.
 
 ## Runtime model rejection
 

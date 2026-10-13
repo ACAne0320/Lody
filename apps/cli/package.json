@@ -101,6 +101,7 @@
     "posthog-node": "^5.38.8",
     "proxy-from-env": "^1.1.0",
     "rimraf": "^6.1.2",
+    "smol-toml": "^1.9.0",
     "tar": "^7.5.7",
     "tsx": "^4.23.5",
     "undici": "catalog:",
@@ -126,7 +127,7 @@
   ],
   "dependencies": {
     "@effect/platform-node-shared": "catalog:",
-    "@loro-dev/roost-node": "0.1.1",
+    "@loro-dev/roost-node": "0.1.2",
     "@lydell/node-pty": "1.2.0-beta.14",
     "@napi-rs/keyring": "2.1.0",
     "better-sqlite3": "catalog:",

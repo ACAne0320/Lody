@@ -1,4 +1,11 @@
+import type { SessionActivePresencePhase } from './loro/session-active-presence';
 import { fileLocksLegacy } from '@/utils/file-lock';
+import { Effect } from 'effect';
+import { awaitSessionHistoryOwner } from '@/session/session-history-owner';
+import {
+  getSessionHistoryRpcRejection,
+  putSessionHistoryRpcRejection,
+} from '@/session/session-history-rpc-rejections';
 import {
   SessionAttachmentTransfer,
   type UploadableImageFile,
@@ -19,6 +26,7 @@ import crypto from 'crypto';
 import { pathToFileURL } from 'url';
 
 import { v4 as uuidV4 } from 'uuid';
+import { describeRoostHistoryFailure } from '@/session/roost-history-diagnostics';
 import {
   createLoroStreamsJsonStreamClient,
   LoroStreamsMachineRpcServer,
@@ -194,7 +202,7 @@ import type {
   CloudNotificationsPort,
   CloudPort,
   CloudUsagePort,
-  LoroStreamsTokenProvider,
+  LoroStreamsTokenProviderLegacy,
 } from '@lody/platform';
 import { Logger } from '@/utils/logger';
 import { ProviderSetupManager } from './provider-setup-manager';
@@ -255,10 +263,7 @@ import type { AcpAgentEditEvidence, AcpStandardDiffBlockEvidence } from '@/lib/a
 import { mergeAcpRuntimeConfigUpdates } from '@/lib/acp/runtime-config';
 import { generateTitleIsolated, sanitizeTitle } from '@/agent/title-generator';
 import type { AgentSessionWarning } from '@/agent/agent-client';
-import {
-  SessionActivePresenceController,
-  type SessionActivePresencePhase,
-} from './loro/session-active-presence';
+import { SessionActivePresenceControllerLegacy } from './loro/session-active-presence-legacy';
 import {
   resolveImageGenerationPresencePhase,
   shouldRestoreRunningAfterPermission,
@@ -685,7 +690,8 @@ export class MessageHandler {
   private readonly machineLifecycleCapability: MachineLifecycleCapability;
   private pendingProcessLifecycleAction: MachineProcessLifecycleAction | null = null;
   private readonly store = new SessionTransientStore();
-  private sessionActivePresence!: SessionActivePresenceController;
+  private readonly historyOwnerAbort = new AbortController();
+  private sessionActivePresence!: SessionActivePresenceControllerLegacy;
   private readonly titleGenerationInFlight = new Map<SessionId, Promise<string | null>>();
   // Note: titleGenerationInFlight, archiveInFlight are self-cleaning
   // and stay as independent tracking. All other per-session state lives in this.store.
@@ -764,7 +770,7 @@ export class MessageHandler {
   private localProjectControlService: LocalProjectControlService;
   private localWorkspaceCatalog: LocalWorkspaceCatalogService;
   private machineRpcServer: LoroStreamsMachineRpcServer | null = null;
-  private machineRpcTokenProvider: LoroStreamsTokenProvider | null = null;
+  private machineRpcTokenProvider: LoroStreamsTokenProviderLegacy | null = null;
   private machineRpcGatewayBaseUrl: string | null = null;
   private machineRpcServerStartPromise: Promise<void> | null = null;
   private machineRpcServerRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2750,16 +2756,10 @@ export class MessageHandler {
     this.machineName = config.machineName;
     this.cliVersion = config.cliVersion;
     this.machineId = config.machineId as MachineId;
-    this.sessionActivePresence = new SessionActivePresenceController(
+    this.sessionActivePresence = new SessionActivePresenceControllerLegacy(
       this.workspaceDocument,
       this.machineId,
-      this.logger,
-      {
-        // Late-bound: the execution service is constructed further down this
-        // constructor, and the watchdog can only fire once a turn is running.
-        onInitializationStalled: (sessionId, stall) =>
-          this.executionService.notifyInitializationStalled(sessionId, stall),
-      }
+      this.logger
     );
     this.supportRegistryAgentTypes = config.supportRegistryAgentTypes ?? [];
     this.closeSessionTerminals = config.closeSessionTerminals;
@@ -2884,8 +2884,8 @@ export class MessageHandler {
       workspaceId: this.workspaceId,
       preferredBaseBranch: this.preferredBaseBranch,
       touchSession: (sessionId) => this.touchSession(sessionId),
-      startSessionActivePresence: (sessionId, phase) =>
-        this.startSessionActivePresence(sessionId, phase),
+      holdSessionActivePresence: (sessionId, phase) =>
+        this.sessionActivePresence.native.hold(sessionId, phase),
       clearSessionActivePresence: (sessionId) => this.clearSessionActivePresence(sessionId),
       setSessionActivePresencePhase: (sessionId, phase, detail) =>
         this.setSessionActivePresencePhase(sessionId, phase, detail),
@@ -3084,7 +3084,7 @@ export class MessageHandler {
       this.logger.debug(
         `[rpc-server:${this.machineId}] using Loro Streams RPC connect timeout ${rpcConnectTimeoutMs}ms`
       );
-      const streamsTokenProvider = streamsTokens.createTokenProvider({
+      const streamsTokenProvider = streamsTokens.createTokenProviderLegacy({
         workspaceId: this.workspaceId,
       });
       this.machineRpcTokenProvider = streamsTokenProvider;
@@ -3106,6 +3106,25 @@ export class MessageHandler {
         rpcVersion: LORO_STREAMS_RPC_VERSION,
         retentionSeconds: LORO_STREAMS_RPC_RETENTION_SECONDS,
         now: getServerNow,
+        historyRequestRejections: {
+          get: (request) =>
+            Effect.runPromise(
+              getSessionHistoryRpcRejection(
+                path.join(getLodyDataDir(), 'session-history-rpc-rejections.sqlite3'),
+                request,
+                getServerNow()
+              )
+            ),
+          put: (request, rejection) =>
+            Effect.runPromise(
+              putSessionHistoryRpcRejection(
+                path.join(getLodyDataDir(), 'session-history-rpc-rejections.sqlite3'),
+                request,
+                rejection,
+                getServerNow()
+              )
+            ),
+        },
         getMachineStatus: async () =>
           await this.executionService.getMachineStatus({
             type: 'machine/status',
@@ -5633,7 +5652,7 @@ export class MessageHandler {
   }
 
   private clearSessionActivePresence(sessionId: SessionId): void {
-    this.sessionActivePresence.clear(sessionId);
+    this.sessionActivePresence.clearUnleased(sessionId);
   }
 
   private createRuntimeDispatchContext(): MessageDispatchContext {
@@ -6807,17 +6826,16 @@ export class MessageHandler {
   }
 
   private readonly resolveSessionHistoryOwnerSessionId = async (
-    sessionId: SessionId
+    sessionId: SessionId,
+    options?: { signal?: AbortSignal }
   ): Promise<SessionId> => {
-    const metaRecord = await this.workspaceDocument.repo.getDocMeta(getSessionRoomId(sessionId));
-    if (!metaRecord?.meta || isLoroRepoDocDeleted(metaRecord)) {
-      throw new Error(`Session ${sessionId} is not available on this machine.`);
-    }
-    const meta = metaRecord.meta as SessionMeta;
-    if (meta.machineId !== this.machineId) {
-      throw new Error(`Session ${sessionId} is owned by another machine.`);
-    }
-    return sessionId;
+    const signal = options?.signal
+      ? AbortSignal.any([options.signal, this.historyOwnerAbort.signal])
+      : this.historyOwnerAbort.signal;
+    return await Effect.runPromise(
+      awaitSessionHistoryOwner(this.workspaceDocument.repo, sessionId, this.machineId, this.logger),
+      { signal }
+    );
   };
 
   private async readSessionHistoryForRpc(
@@ -6926,12 +6944,18 @@ export class MessageHandler {
       }
       throw new Error('History changed during the read; retry the observation');
     } catch (error) {
-      this.logger.debug(`[${sessionId}] History read failed: ${formatErrorMessage(error)}`);
+      const detail =
+        describeRoostHistoryFailure(error, {
+          stage: 'read',
+          sessionId,
+          operation: query.kind,
+        }) ?? formatErrorMessage(error);
+      this.logger.debug(`[${sessionId}] History read failed: ${detail}`);
       return {
         type: 'session/history-read_response',
         sessionId,
         success: false,
-        error: formatErrorMessage(error),
+        error: detail,
       };
     }
   }
@@ -7046,15 +7070,19 @@ export class MessageHandler {
             }),
       };
     } catch (error) {
-      this.logger.debug(
-        `[${sessionId}] History write failed (${operation}): ${formatErrorMessage(error)}`
-      );
+      const detail =
+        describeRoostHistoryFailure(error, {
+          stage: 'write',
+          sessionId,
+          operation,
+        }) ?? formatErrorMessage(error);
+      this.logger.debug(`[${sessionId}] History write failed (${operation}): ${detail}`);
       return {
         type: 'session/history-write_response',
         sessionId,
         operation,
         success: false,
-        error: formatErrorMessage(error),
+        error: detail,
       };
     }
   }
@@ -9103,6 +9131,8 @@ export class MessageHandler {
         ? await getCodexProfileStore().resolve(this.workspaceId, provider)
         : undefined;
       const title = await generateTitleIsolated({
+        agentConfigId: provider?.id,
+        magpieGatewayUrl: provider?.magpieGatewayUrl,
         codexProfile: codexProfile ? { profile: codexProfile } : undefined,
         cliType,
         agentType,
@@ -9717,9 +9747,11 @@ export class MessageHandler {
    * Flush pending ACP updates and tear down session resources.
    */
   async cleanup(): Promise<void> {
+    this.historyOwnerAbort.abort();
     await this.iosSimulatorService.closeAll();
     this.logger.debug('Cleaning up message handler resources');
     this.cleanedUp = true;
+    this.sessionActivePresence.native.retire();
     this.cancelAllCodeCollabTurnRetryTimers();
     if (this.machineRpcServerRetryTimer) {
       clearTimeout(this.machineRpcServerRetryTimer);
@@ -9743,12 +9775,14 @@ export class MessageHandler {
     this.detachWorktreeGcSyncListener = null;
     this.machineFlockCommandWatcher.stop();
     this.providerSetupManager.stop();
-    this.sessionActivePresence.clearAll();
     // Terminating sessions is the producer barrier: agent callbacks may still
     // enqueue their final ACP notifications while termination is in progress,
     // but none can arrive after this await. Keep the document manager open so
     // those callbacks can be flushed below.
     await this.sessionManager.cleanUp({ keepWorkspaceDocumentOpen: true });
+    // Turn finalizers can still write history/evidence after producers stop.
+    // Keep every store open until their leases and monitoring actually release.
+    await this.sessionActivePresence.close();
     await this.flushAllACPUpdates();
     // Wait for any in-flight flushes to complete
     const inFlightPromises = this.store

@@ -45,8 +45,8 @@ Worktree rules: [worktree/AGENTS.md](worktree/AGENTS.md).
 
 - Gate turn-scoped LIST writes on user-entry sync (`turn-history-gate.ts`, 20s), never status/meta.
 - Goals obey [this contract](../../../../specs/session-goal-control.md).
-- Stop ends local steer waits, not the owner fiber. Drain raw prompt/steer/config work before
-  reuse, or confirm termination. Assistant ids use `userTurnId`.
+- Stop ends local steer waits, not the owner fiber. Drain raw ACP or confirm termination,
+  clear presence, then permit reuse. Assistant ids use `userTurnId`.
   `invocation` owns source Turn, requester and config atomically; steer replaces it before tools.
 - Publish `latestUserMsgId` in the SAME write as the history append (`appendUserTurn`). Only
   dispatch producers publish it. Renderer sends and queue promotion retain the missing-history
@@ -73,7 +73,8 @@ Worktree rules: [worktree/AGENTS.md](worktree/AGENTS.md).
 
 ## Lifecycle
 
-- For Roost reads and writes, follow [paging rules](README.md#roost-history-paging).
+- Roost: [contract](README.md#roost-history-paging). Await owner/backend meta;
+  no keyring/rotation/fallback/replay. Causes local, RPC stage/code/ID.
 
 - `Session.createAgent` gates each ACP spawn; failed spawns reject JSON-RPC. Terminals spawn
   protocol argv (`sh -c` only for unsplit commands). Managed Codex reused-refresh startup
@@ -82,8 +83,8 @@ Worktree rules: [worktree/AGENTS.md](worktree/AGENTS.md).
   the machine publishes `['dotlodyPath']` for frontends to derive them.
 - INVARIANT: any `sandbox.spawn` whose OUTPUT is the result must pass `captureOutput: true` (ACP
   stdio deliberately does not), and the capture buffer stays capped at 4 MiB.
-- Shutdown is two-phase: `cleanUp({ keepWorkspaceDocumentOpen: true })`, then plain `cleanUp()`
-  after MessageHandler's final flush. Never tear the document down first.
+- Shutdown: `cleanUp({ keepWorkspaceDocumentOpen: true })`, MessageHandler's final flush,
+  then `cleanUp()`; never close the doc first.
 
 ## Sagas
 
