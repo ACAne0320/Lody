@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+Implementation: [#1530](https://github.com/LodyAI/Lody/pull/1530)
+
 English | [中文](2026-10-13-effect-lint-integration.zh.md)
 
 ## Abstract
