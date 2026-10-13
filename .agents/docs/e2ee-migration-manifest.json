@@ -2100,7 +2100,7 @@
       "targetPath": "packages/e2ee-core/src/workflows/key-distribution.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Recipient install/report/result subset is adapted under host receive/sqlite. Sender target discovery/finite round, persistent repair requests and fetch composition remain unfinished; old whole-document task schema is not imported. Publisher loss/rotation backup remains gated separately.",
+      "reason": "Recipient install/report/result, stable-ID repair and finite copied fetch composition are adapted. Sender target discovery/current-key/outbox rounds remain unfinished; old whole-document task schema is not imported. Publisher permanent-loss backup/rotation remains separately gated.",
       "coverage": [
         {
           "layer": "L4e",
@@ -2116,6 +2116,11 @@
           "layer": "L4g",
           "target": "packages/e2ee-core/src/keys/repair-sqlite.ts",
           "scope": "Actual stable-ID enqueue before dispatch, retained original-field binding, lost-ACK idempotent retry, genuine disposition, finite indexed pending/results and explicit acknowledgement; no sender discovery/outbox rounds/receive fetch or installed-key proof."
+        },
+        {
+          "layer": "L4h",
+          "target": "packages/e2ee-core/src/keys/mailbox-client.ts",
+          "scope": "Actual host-only receiver/protection and repair composition; genuine current recipient/epoch before and after fetch; complete indexed page copy before install; any install failure returns no successful pagination-next, prior valid installs/originals retained. No arbitrary installer, durable document cursor, native adapter or production assembly."
         }
       ]
     },
@@ -3080,9 +3085,9 @@
         "candidate": "db4dbbc6e2b71c16cd9aec267c6c3e7bee20229f37ed1f3602605b5b219d0cdb"
       },
       "targetPath": "packages/e2ee-lab/src/entropy.ts",
-      "status": "需迁并修复",
+      "status": "待明确决定",
       "layer": "L6",
-      "reason": "Consume the public core and published SDK; retain local host, scheduler, replay, fixtures and real storage tests."
+      "reason": "Consume the public core and published SDK; retain local host, scheduler, replay, fixtures and real storage tests. Original labeled entropy/new-seal byte replay does not map to fixed secure randomness in new primitives; coordinator/user decision between captured-original replay and reviewed initialization-only test entropy capability remains required. No global crypto override or primitive change is made."
     },
     {
       "sourcePath": "packages/e2ee-lab/src/fingerprint.ts",
@@ -4669,6 +4674,22 @@
       "baseRefName": "e2ee-host-epoch-protection",
       "isDraft": true,
       "parentHead": "ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee"
+    },
+    {
+      "number": 1484,
+      "headRefName": "e2ee-ledger-feed",
+      "headRefOid": "14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8",
+      "baseRefName": "e2ee-epoch-receive-reports",
+      "isDraft": true,
+      "parentHead": "4134109a76739d8b36ff5a8a1209e37e16518703"
+    },
+    {
+      "number": 1485,
+      "headRefName": "e2ee-mailbox-repairs",
+      "headRefOid": "680686d1442e7f8b12f6f8b84af3f17f3c514b97",
+      "baseRefName": "e2ee-ledger-feed",
+      "isDraft": true,
+      "parentHead": "14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8"
     }
   ]
 }
