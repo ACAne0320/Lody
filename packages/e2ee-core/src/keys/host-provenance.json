@@ -19,8 +19,8 @@
     "Save actual blob then reload/unprotect/commitment check; installed report queue remains separate. Synthetic protector tests are not native OS custody acceptance."
   ],
   "destinationFingerprints": {
-    "src/keys/host-protection.ts": "c95d41df1144496517ed5399f9a04934034cd5b99665b52471f54db8b4a34289",
-    "src/keys/protected-sqlite.ts": "6a5a29a625a78a5d494f17e259e0672f9051e3e3139c4f9dd74a1177ec8ffe45"
+    "src/keys/host-protection.ts": "81424048c89c23dd610380c3da1bd05c8785b220cd9bba48e79f14c8b3a40938",
+    "src/keys/protected-sqlite.ts": "de678a431bc8e6d2ac3b10304b4a502299c6d789d1973a03e67185faf1398c37"
   },
   "directParent": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b"
 }
