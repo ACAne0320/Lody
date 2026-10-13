@@ -28,3 +28,7 @@ sender 发现／当前 key／outbox rounds、实际发布 SDK／CAS 消费方、
 dedf CI 确实因未改的500-put去重 case 在30秒失败，保留旧结果。只在该 case 中跨原500次真实签名 put 复用未变的真实已验证 fixture ledger，断言与 timeout 不改。focused mailbox11 通过（dedup约2.9秒）；不加超时，也不把作者结果当新 CI。SDK／CAS WIP 单独 stash 保留。
 
 修复最终作者检查：facade15／receiver15／mailbox11／core278、package typecheck、完整 root `pnpm check`、format/docs/public boundary 通过。仅绑定修复树；原 dedf NOT READY／CI失败保留。新精确 head 独立增量与 CI 尚待核验。
+
+失败诊断修正：前置的签名合法但打不开的信封会挡住整页，原错误没有给出现有定向 repair 所需的帧定位。`MailboxInstallError` 现绑定自有帧准确摘要与公开上下文，保留原 Cause 中的错误、取消和缺陷。不改发送资格、wire、自动拒绝或失败不返回 next。真实 SQLite 回归以固定合成发送者顺序，检查明确 repair 前无安装/报告，重开持久 repair 队列后核验后续合法安装/报告且两份原密文保留。旧断言在缺失诊断 tag 处失败；原 reviewer 证据未改。
+
+101 个 blocked 修订的接收回归保留全部真实 HPKE/信封/安装/报告及原 30 秒限制。准备 helper 接受接收者已有的真实验证且不变的 fixture lookup，避免每次重复回放同一历史。动态权限测试保留原查询；生产验证未变。单次本地成本从 4109ms 到 3538ms。所属接收/mailbox 测试 31/31 与类型检查通过；这是作者结果，不是独立关闭或永久稳定性。
