@@ -133,3 +133,12 @@ and upgrades no audit provenance. No new comparison wire/signature domain is add
 ## Admission consent and ordinary intent
 
 The explicit [`./ledger/admission`](ADMISSION.md) entry adds fixed-verified borrowed signing of joining consent/device possession proofs, genuine-view ordinary command preparation and v1 genesis production from an already retained initial epoch key. Account identity, expiry enforcement, durable key custody, publication and atomic-removal/rotation orchestration remain separate owners.
+
+## Full-history feed and durable position
+
+The explicit [`./ledger/feed`](FEED.md) and `./ledger/feed/sqlite` entries retain
+original v1 frames and atomically persist authenticated suffixes with opaque
+transport position. They reject repeated records and rollback pages, require a
+separately trusted exact endpoint, and retain/await borrowed SDK reads on close.
+No snapshot-prefix skipping, submission/CAS replacement or endpoint discovery is
+introduced. Local budgets retain history on failure.

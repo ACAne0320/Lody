@@ -109,5 +109,6 @@ export function envelopeFixture(kind: 0 | 1 | 2 = 0, org = 100) {
     prepare,
     resign,
     genesisRecord: new Uint8Array(records[0]!),
+    records: () => records.map((record) => new Uint8Array(record)),
   };
 }
