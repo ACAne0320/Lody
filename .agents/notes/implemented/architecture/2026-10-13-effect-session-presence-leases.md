@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1527](https://github.com/LodyAI/Lody/pull/1527)
 
 [中文](2026-10-13-effect-session-presence-leases.zh.md)
 
