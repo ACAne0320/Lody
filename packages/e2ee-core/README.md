@@ -162,3 +162,5 @@ verified ledger suffixes and atomic SQLite position persistence. The original La
 consumer, submission CAS adapter and snapshot bootstrap remain separately owned.
 
 The explicit [durable repair queue](src/keys/REPAIR.md) binds stable source request IDs before dispatch and retains local ACK history without claiming key installation. Sender discovery remains separate. The host-only [`./keys/host/mailbox/sqlite` facade](src/keys/RECIPIENT-MAILBOX.md) composes actual receive/protection and repair with finite copied fetch pages; failed installation returns no successful next hint. It saves no document/transport cursor and introduces no arbitrary install callback.
+
+The explicit [released-SDK submission adapter](src/submission/STREAMS.md) binds independently verified full history to CAS positions and retains raw non-abortable writes through Scope close. Snapshot bootstrap/provider and actual Lab remain separate.

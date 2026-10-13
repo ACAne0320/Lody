@@ -59,3 +59,5 @@ so these tests use Vitest with `Effect.scoped` and explicit Deferred signals.
 
 [Decision and limits](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-pending-recovery.md)
  · [Main source fingerprints](provenance.json).
+
+The explicit [`./submission/streams` adapter](STREAMS.md) supplies full-history released-SDK read/CAS with caller-selected checkpoints and verified offset mappings. It does not change P09 or fall back to ordinary append.

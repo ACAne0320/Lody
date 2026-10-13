@@ -25,7 +25,8 @@
     "./ledger/feed": "./src/ledger/feed.ts",
     "./ledger/feed/sqlite": "./src/ledger/feed-sqlite.ts",
     "./keys/mailbox/repair/sqlite": "./src/keys/repair-sqlite.ts",
-    "./keys/host/mailbox/sqlite": "./src/keys/mailbox-client.ts"
+    "./keys/host/mailbox/sqlite": "./src/keys/mailbox-client.ts",
+    "./submission/streams": "./src/submission/streams.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
@@ -49,6 +50,7 @@
     "vitest": "3.2.4",
     "oxfmt": "^0.65.0",
     "@types/better-sqlite3": "catalog:",
-    "tsx": "4.23.7"
+    "tsx": "4.23.7",
+    "@loro-dev/streams-client": "catalog:"
   }
 }
