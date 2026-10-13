@@ -39,7 +39,19 @@ export type WorkspaceMcpServerMeta = {
   createdAt: number;
   updatedAt: number;
   createdBy?: string;
+  /** Authenticated author proof over the complete row, excluding this field. */
+  executionAuthorization?: string;
+  /** Changes only when the user saves executable configuration, not preferences. */
+  executionRevision?: number;
 };
+
+export const mcpExecutionAuthorizationPayload = (entry: WorkspaceMcpServerMeta) => ({
+  id: entry.id,
+  name: entry.name,
+  transport: entry.transport,
+  connection: entry.connection,
+  executionRevision: entry.executionRevision,
+});
 
 export type ResolvedStdioMcpServer = {
   name: string;
@@ -149,7 +161,13 @@ export const isWorkspaceMcpServerMeta = (value: unknown): value is WorkspaceMcpS
     !Number.isFinite(value.updatedAt) ||
     (value.description !== undefined && typeof value.description !== 'string') ||
     (value.enabledByDefault !== undefined && typeof value.enabledByDefault !== 'boolean') ||
-    (value.createdBy !== undefined && typeof value.createdBy !== 'string')
+    (value.createdBy !== undefined && typeof value.createdBy !== 'string') ||
+    (value.executionRevision !== undefined &&
+      (typeof value.executionRevision !== 'number' || !Number.isFinite(value.executionRevision))) ||
+    (value.executionAuthorization !== undefined &&
+      (typeof value.executionAuthorization !== 'string' ||
+        value.executionAuthorization.length === 0 ||
+        value.executionAuthorization.length > 4096))
   ) {
     return false;
   }

@@ -2982,3 +2982,75 @@ it('round trips typed simulator commands and isolates unavailable and denied con
     server.stop();
   }
 });
+
+it.each(['intact', 'tampered', 'unsigned'] as const)(
+  'authenticates the complete RPC envelope before handling: %s',
+  async (scenario) => {
+    const { executionDigest } = await import('@lody/shared');
+    const requests = createFakeStreamClient();
+    const responses = createFakeStreamClient();
+    let handled = false;
+    const server = new LoroStreamsMachineRpcServer({
+      logger: createSilentLogger(),
+      workspaceId: 'workspace' as WorkspaceId,
+      machineId: 'machine' as MachineId,
+      streamClient: {
+        ...requests.streamClient,
+        appendJson: async (_stream, response) => {
+          responses.pushBatch({ messages: [response], nextOffset: '1', upToDate: true });
+          return '1';
+        },
+      },
+      authorizeRequest: async ({ executionAuthorization, ...payload }) => {
+        if (executionAuthorization !== `owner:${await executionDigest(payload)}`)
+          throw new Error('Invalid execution proof');
+      },
+      getMachineStatus: async () => {
+        handled = true;
+        return {
+          type: 'machine/status_response',
+          machineId: 'machine',
+          success: true,
+        } as MachineStatusResponse;
+      },
+      refreshMachineAcpCapabilities: vi.fn(),
+    });
+    const client = new LoroStreamsMachineRpcClient({
+      workspaceId: 'workspace',
+      machineId: 'machine',
+      authorizeRequest:
+        scenario === 'unsigned'
+          ? undefined
+          : async (request) => `owner:${await executionDigest(request)}`,
+      streamClient: {
+        ...responses.streamClient,
+        appendJson: async (_stream, request) => {
+          const payload = request as Record<string, unknown>;
+          requests.pushBatch({
+            messages: [
+              scenario === 'tampered'
+                ? { ...payload, sentAt: Number(payload.sentAt) + 1 }
+                : request,
+            ],
+            nextOffset: '1',
+            upToDate: true,
+          });
+          return '1';
+        },
+      },
+    });
+    await server.start();
+    try {
+      if (scenario === 'intact') expect((await client.requestMachineStatus())?.success).toBe(true);
+      else
+        expect(await client.requestMachineStatus()).toMatchObject({
+          success: false,
+          error: expect.stringContaining('Invalid execution proof'),
+        });
+      expect(handled).toBe(scenario === 'intact');
+    } finally {
+      client.stop();
+      server.stop();
+    }
+  }
+);

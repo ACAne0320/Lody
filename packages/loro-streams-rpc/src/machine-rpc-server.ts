@@ -102,6 +102,7 @@ import {
   type LoroSessionLiveStatusRpcResponse,
   LoroStreamsRpcRequestSchema,
   type LoroStreamsRpcMethod,
+  type LoroStreamsRpcRequest,
   getLoroMachineRpcRequestStreamId,
 } from './rpc';
 import {
@@ -150,6 +151,7 @@ const REQUEST_LOOP_REPEAT_WARN_INTERVAL_MS = 30_000;
 
 const redactRpcRequestForLog = (raw: unknown): unknown => {
   if (typeof raw !== 'object' || raw === null) return raw;
+  if ('executionAuthorization' in raw) raw = { ...raw, executionAuthorization: '[REDACTED]' };
   const request = raw as { method?: unknown; params?: unknown };
   if (
     typeof request.method === 'string' &&
@@ -312,6 +314,7 @@ type RpcServerDeps = {
    * Defaults to {@link DEFAULT_MAX_CONCURRENT_REQUESTS}.
    */
   maxConcurrentRequests?: number;
+  authorizeRequest?: (request: LoroStreamsRpcRequest) => Promise<void>;
   getMachineStatus: () => Promise<MachineStatusResponse>;
   getPreviewControl?: () => Promise<MachinePreviewControlResponse>;
   pingMachine?: (args: { requestId: string }) => Promise<MachinePingResponse>;
@@ -802,6 +805,7 @@ export class LoroStreamsMachineRpcServer {
 
     let codeCollabOwnerSessionId: string | undefined;
     try {
+      await this.deps.authorizeRequest?.(request);
       switch (request.method) {
         case 'machine/status': {
           const response = await this.deps.getMachineStatus();

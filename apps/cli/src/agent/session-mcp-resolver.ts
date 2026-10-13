@@ -9,6 +9,7 @@ import {
   type SessionId,
   type WorkspaceFlockReadableFlock,
   type WorkspaceId,
+  type WorkspaceMcpServerMeta,
 } from '@lody/shared';
 import { formatErrorMessage } from '@/utils/format-error';
 
@@ -30,6 +31,10 @@ export type LoadSessionMcpCatalogInput = {
   selectedIds: readonly McpServerId[];
   logger: { debug(message: string): void };
   env?: Readonly<Record<string, string | undefined>>;
+  resolveTrustedEntry?: (
+    id: McpServerId,
+    candidate: WorkspaceMcpServerMeta | undefined
+  ) => Promise<WorkspaceMcpServerMeta | null>;
 };
 
 const CATALOG_SYNC_TIMEOUT_MS = 5_000;
@@ -66,12 +71,37 @@ export const loadSessionMcpCatalog = async (
     }
   }
 
+  let catalog: Record<string, WorkspaceMcpServerMeta> = {};
+  let catalogFailure: string | undefined;
   try {
     const handle = await input.repo.openFlockDoc(docId);
-    const catalog = getWorkspaceMcpCatalog(readWorkspaceFlockRowsFromFlock(handle.flock));
+    catalog = getWorkspaceMcpCatalog(readWorkspaceFlockRowsFromFlock(handle.flock));
+  } catch (error) {
+    catalogFailure = formatErrorMessage(error);
+    logger.debug(`[${sessionId}] Workspace MCP catalog read failed: ${catalogFailure}`);
+    if (!input.resolveTrustedEntry) {
+      const reason = catalogFailure;
+      return () => ({ servers: [], problems: [{ kind: 'catalog_unavailable', reason }] });
+    }
+  }
+
+  try {
+    if (input.resolveTrustedEntry) {
+      const accepted: Record<string, WorkspaceMcpServerMeta> = {};
+      for (const id of selectedIds) {
+        const entry = await input.resolveTrustedEntry(id, catalog[id]);
+        if (entry) accepted[id] = entry;
+      }
+      catalog = accepted;
+    }
     const env = input.env ?? process.env;
-    return (agentCapabilities) =>
-      resolveSessionMcpServers({ catalog, selectedIds, agentCapabilities, env });
+    return (agentCapabilities) => {
+      const result = resolveSessionMcpServers({ catalog, selectedIds, agentCapabilities, env });
+      if (catalogFailure && selectedIds.some((id) => !catalog[id])) {
+        result.problems.push({ kind: 'catalog_unavailable', reason: catalogFailure });
+      }
+      return result;
+    };
   } catch (error) {
     const reason = formatErrorMessage(error);
     logger.debug(`[${sessionId}] Workspace MCP catalog read failed: ${reason}`);

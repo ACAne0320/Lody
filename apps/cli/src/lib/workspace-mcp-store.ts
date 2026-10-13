@@ -83,8 +83,12 @@ export async function upsertWorkspaceMcpCatalogEntry(
   repo: WorkspaceMcpRepo,
   workspaceId: WorkspaceId,
   entry: WorkspaceMcpServerMeta,
-  options: { sync?: boolean } = {}
+  options: {
+    sync?: boolean;
+    authorize?: (entry: WorkspaceMcpServerMeta) => Promise<WorkspaceMcpServerMeta>;
+  } = {}
 ): Promise<McpCatalogWriteResult> {
+  if (options.authorize) entry = await options.authorize(entry);
   return commitCatalogChange(repo, workspaceId, options, (flock) =>
     writeWorkspaceMcpServerToFlock(flock, entry)
   );

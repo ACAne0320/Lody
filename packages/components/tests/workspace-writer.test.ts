@@ -45,6 +45,87 @@ const anchor: MinimalVisualAnnotationAnchor = {
 };
 
 describe('createDirectWorkspaceWriter', () => {
+  it('does not authorize inherited Provider launch fields during migration or setup retry', async () => {
+    const flock = new Flock('provider-authoring');
+    const writer = createDirectWorkspaceWriter({
+      repo: { openFlockDoc: async () => ({ flock }) } as never,
+      authorizeProvider: async (value) => ({
+        ...(value as object),
+        executionAuthorization: 'owner-approved',
+      }),
+      acquireSessionStore: async () => {
+        throw new Error('unused');
+      },
+      releaseSessionStoreRef: () => {},
+      acquirePreviewVisualCommentStore: async () => {
+        throw new Error('unused');
+      },
+      releasePreviewVisualCommentStoreRef: () => {},
+    });
+    const peer = { id: 'provider', customAcp: { command: '/peer-command' } };
+    // Automatic legacy migration copies the catalog without granting authority.
+    await writer.flockRowPut('machine', ['agentConfig', 'provider'], peer);
+    expect(flock.get(['agentConfig', 'provider'])).toEqual(peer);
+    // Partial provider migrations also must not authorize inherited launch fields.
+    await writer.flockRowUpdate('machine', ['agentConfig', 'provider'], (current) => ({
+      ...(current as object),
+      agentType: 'pi',
+    }));
+    expect(flock.get(['agentConfig', 'provider'])).toEqual({ ...peer, agentType: 'pi' });
+    await writer.flockRowPutIfAbsent('machine', ['agentConfig', 'another'], peer);
+    expect(flock.get(['agentConfig', 'another'])).toEqual(peer);
+    const retry = { config: peer, attempt: 2, status: 'queued' };
+    await writer.flockRowPut('machine', ['providerSetup', 'provider'], retry);
+    expect(flock.get(['providerSetup', 'provider'])).toEqual(retry);
+    const edited = { ...peer, customAcp: { command: '/owner-command' } };
+    await writer.flockRowPut('machine', ['agentConfig', 'provider'], edited, {
+      authorizeProvider: true,
+    });
+    expect(flock.get(['agentConfig', 'provider'])).toEqual({
+      ...edited,
+      executionAuthorization: 'owner-approved',
+    });
+    await writer.flockRowPut(
+      'machine',
+      ['providerSetup', 'provider'],
+      { config: edited },
+      { authorizeProvider: true }
+    );
+    expect(flock.get(['providerSetup', 'provider'])).toEqual({
+      config: { ...edited, executionAuthorization: 'owner-approved' },
+    });
+  });
+  it('does not authorize peer executable fields when changing MCP defaults', async () => {
+    const flock = new Flock('mcp-authoring');
+    const writer = createDirectWorkspaceWriter({
+      repo: { openFlockDoc: async () => ({ flock }) } as never,
+      authorizeMcp: async (value) => ({
+        ...(value as object),
+        executionAuthorization: 'owner-approved',
+      }),
+      acquireSessionStore: async () => {
+        throw new Error('unused');
+      },
+      releaseSessionStoreRef: () => {},
+      acquirePreviewVisualCommentStore: async () => {
+        throw new Error('unused');
+      },
+      releasePreviewVisualCommentStoreRef: () => {},
+    });
+    const peer = {
+      id: 'mcp',
+      connection: { transport: 'stdio', command: '/peer-command' },
+      enabledByDefault: false,
+    };
+    await writer.flockRowPut('catalog', ['mcpServer', 'mcp'], { ...peer, enabledByDefault: true });
+    expect(flock.get(['mcpServer', 'mcp'])).toEqual({ ...peer, enabledByDefault: true });
+    const edited = { ...peer, connection: { transport: 'stdio', command: '/owner-command' } };
+    await writer.flockRowPut('catalog', ['mcpServer', 'mcp'], edited, { authorizeMcp: true });
+    expect(flock.get(['mcpServer', 'mcp'])).toEqual({
+      ...edited,
+      executionAuthorization: 'owner-approved',
+    });
+  });
   it.each(['unchanged', 'edited', 'deleted', 'cancelled', 'other-owner', 'write-failure'] as const)(
     'reconciles the durable role without overwriting intervening changes: %s',
     async (scenario) => {
@@ -305,4 +386,82 @@ it('persists machine memory associations through the real Flock writer without t
   expect(await read('machine-b')).toEqual([{ ...entry, machineId: 'machine-b' }]);
   await expect(editMemoryAssociation(runtime, entry)).rejects.toThrow('no longer exists');
   expect(await read('machine-a')).toEqual([]);
+});
+
+it('preserves owner authorization through queue edits, mirror IDs and history promotion', async () => {
+  const { buildQueuedSessionTurn, executionDigest, executionTurnPayload } =
+    await import('@lody/shared');
+  const doc = new LoroDoc();
+  const meta = {
+    id: 'session',
+    machineId: 'machine',
+    userId: 'owner',
+    cliType: 'builtin',
+    agentType: 'codex',
+  } as import('@lody/shared').SessionMeta;
+  const mirror = createSessionMirror({
+    doc,
+    initialState: { session: { id: 'session' as never }, history: [], mq: [] },
+  });
+  const data = createLoroSessionData({
+    sessionId: 'session' as never,
+    doc,
+    writer: mirror.historyWriter,
+  });
+  const writer = createDirectWorkspaceWriter({
+    repo: { getDocMeta: async () => ({ meta }), upsertDocMeta: async () => {} } as never,
+    acquireSessionStore: async () => ({ ...mirror, sessionData: data }) as never,
+    releaseSessionStoreRef: () => {},
+    acquirePreviewVisualCommentStore: async () => {
+      throw new Error('unused');
+    },
+    releasePreviewVisualCommentStoreRef: () => {},
+    authorizeTurn: async (sessionMeta, entry) => ({
+      ...entry,
+      inputConfig: {
+        ...entry.inputConfig,
+        executionAuthorization: await executionDigest(executionTurnPayload(sessionMeta, entry)),
+      },
+    }),
+  });
+  await writer.enqueueSessionMessage('session', {
+    task: 'review',
+    userId: 'owner',
+    userTurnId: 'turn',
+    timestamp: 'synthetic',
+    project: undefined,
+    acpSessionConfig: {
+      prompt: 'review',
+      cliType: 'builtin',
+      agentType: 'codex',
+      issuePRMentions: [
+        { type: 'pr', number: 1, title: 'Review', url: 'https://example.test/pr/1' },
+      ],
+    },
+  } as never);
+  let queued = mirror.getState().mq![0]!;
+  await writer.updateSessionMessage('session', queued.$cid!, { task: 'updated', isEditing: false });
+  queued = mirror.getState().mq![0]!;
+  const promoted = buildQueuedSessionTurn(queued, meta, 'turn')!;
+  // Promotion goes through the production history writer, which removes mirror IDs.
+  await data.commands.appendTurn(promoted);
+  const stored = doc.toJSON().history[0];
+  expect(stored.inputConfig.executionAuthorization).toBe(
+    await executionDigest(executionTurnPayload(meta, stored))
+  );
+  expect(stored.inputConfig.issuePRMentions).toEqual([
+    { type: 'pr', number: 1, title: 'Review', url: 'https://example.test/pr/1' },
+  ]);
+  for (const changed of [
+    { ...stored, userId: 'peer' },
+    { ...stored, inputConfig: { ...stored.inputConfig, prompt: 'run a different command' } },
+    { ...stored, inputConfig: { ...stored.inputConfig, mcpServerIds: ['peer-mcp'] } },
+  ])
+    expect(await executionDigest(executionTurnPayload(meta, changed))).not.toBe(
+      stored.inputConfig.executionAuthorization
+    );
+  expect(
+    await executionDigest(executionTurnPayload({ ...meta, machineId: 'other' }, stored))
+  ).not.toBe(stored.inputConfig.executionAuthorization);
+  mirror.dispose();
 });

@@ -109,6 +109,15 @@ export const SessionToolResultSchema = z
 
 export const LocalMachineRpcRequestSchema = z.discriminatedUnion('method', [
   BaseLocalMachineRpcRequestSchema.extend({
+    method: z.literal('machine/authorize-execution'),
+    params: z
+      .object({
+        purpose: z.enum(['turn', 'provider', 'mcp']),
+        digest: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict(),
+  }).strict(),
+  BaseLocalMachineRpcRequestSchema.extend({
     method: z.literal('ios-simulator/agent-control'),
     params: z.object({ sessionId: SessionIdSchema, command: IosSimulatorCommandSchema }).strict(),
   }).strict(),
@@ -346,6 +355,13 @@ export type LocalMachineRpcRequest = z.infer<typeof LocalMachineRpcRequestSchema
 export type LocalMachineRpcRequestValidated = LocalMachineRpcRequest;
 
 export const LocalMachineRpcResultSchema = z.union([
+  z
+    .object({
+      type: z.literal('machine/execution-authorization'),
+      requestToken: z.string(),
+      requesterUserId: z.string(),
+    })
+    .strict(),
   MemoryProviderResponseSchema,
   IosSimulatorResponseSchema,
   McpToolListResultSchema,

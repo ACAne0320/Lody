@@ -2,6 +2,10 @@
 
 Parent `AGENTS.md` files also apply.
 
+MCP/Provider execution proofs require explicit full configuration saves. Generic
+catalog writes, migrations, preference edits and retries never authorize inherited
+executable fields. Preserve existing proofs in local caches.
+
 ## Session turns have one read path and one write path
 
 A session document's `history` is the one piece of state that grows without

@@ -94,6 +94,8 @@ const createSessionDoc = (meta?: SessionMeta): FakeSessionDoc => ({
 
 const createWorkspaceDocument = (docs: Map<SessionId, FakeSessionDoc>) =>
   ({
+    allowsWorkspaceExecutables: vi.fn(async () => true),
+    getAgentConfigForMachineLaunch: vi.fn(async () => null),
     getAgentConfigById: vi.fn(async () => null),
     getOrCreateSessionDoc: vi.fn(async (sessionId: SessionId) => {
       const existing = docs.get(sessionId);
@@ -273,7 +275,7 @@ describe('SessionManager Codex provider binding', () => {
       await store.withApiKeyCandidate(readyProfile, 'synthetic-key', async () => undefined);
 
       const workspaceDocument = createWorkspaceDocument(new Map());
-      const getProvider = vi.mocked(workspaceDocument.getAgentConfigById);
+      const getProvider = vi.mocked(workspaceDocument.getAgentConfigForMachineLaunch);
       const manager = new SessionManager(
         createLogger(),
         'test-token',
@@ -1783,4 +1785,58 @@ describe('SessionManager failed agent creation', () => {
     expect(terminated).toHaveBeenCalledWith(expect.objectContaining({ sessionId }));
     expect(manager.getSession(sessionId)).toBeNull();
   });
+});
+
+it('replaces peer-controlled executable fields at private-machine final launch', async () => {
+  const workspaceDocument = createWorkspaceDocument(new Map());
+  vi.mocked(workspaceDocument.allowsWorkspaceExecutables).mockResolvedValue(false);
+  vi.mocked(workspaceDocument.getAgentConfigForMachineLaunch).mockResolvedValue({
+    id: 'approved-provider' as AgentConfigId,
+    machineId: 'machine-1' as MachineId,
+    name: 'Approved',
+    description: undefined,
+    cliType: 'custom',
+    agentType: 'approved',
+    customAcp: { command: '/approved', args: [] },
+    env: { SAFE: 'yes' },
+  });
+  const manager = new SessionManager(
+    createLogger(),
+    'token',
+    'machine-1' as MachineId,
+    'workspace-1' as WorkspaceId,
+    workspaceDocument,
+    {
+      sessionSandboxFactory: async () => createNoopSessionSandbox(),
+      cloudPort: createTestCloudPort(),
+    }
+  );
+  const runtime = manager as unknown as {
+    cloudPort: { kind: string };
+    createSessionFromPreparationOrCold(config: SessionConfig): Promise<unknown>;
+  };
+  runtime.cloudPort = { kind: 'cloud' };
+  let launched: SessionConfig | undefined;
+  const result = { approved: true };
+  runtime.createSessionFromPreparationOrCold = async (config) => {
+    launched = config;
+    return result;
+  };
+  expect(
+    await manager.createSession(
+      createSessionConfig({
+        sessionId: 'private-session' as SessionId,
+        assumeDocExisting: true,
+        agentConfigId: 'approved-provider' as AgentConfigId,
+        customAcp: { command: '/peer-payload', args: [] },
+        env: { STEAL: 'secret' },
+        runtimeOverrides: { codex: { command: '/peer-runtime' } } as never,
+        worktreeSetup: { scripts: { bash: 'peer script' } },
+      })
+    )
+  ).toBe(result);
+  expect(launched?.customAcp?.command).toBe('/approved');
+  expect(launched?.env).toEqual({ SAFE: 'yes' });
+  expect(launched?.runtimeOverrides).toBeUndefined();
+  expect(launched?.worktreeSetup).toBeUndefined();
 });

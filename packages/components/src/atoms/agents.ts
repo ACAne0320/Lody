@@ -45,20 +45,18 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 
 export async function writeAgentConfigToMachineFlock(
   runtime: WorkspaceRuntime,
-  config: AgentConfigMeta
+  config: AgentConfigMeta,
+  options?: { authorizeProvider?: boolean }
 ): Promise<MachineFlockRowMap> {
   const flockDocId = getMachineFlockDocId(runtime.workspaceId, config.machineId);
   const key = machineFlockKeys.agentConfig(config.id);
   assertManagedCodexProfileConfig(config);
-  await runtime.writer.flockRowPut(flockDocId, key, encodeCodexProfileConfig(config));
-  // The write goes through the writer seam (in local-first mode the CLI is the
-  // sole author and the row syncs back into the local mirror asynchronously).
-  // Read back the current rows from the local mirror and overlay the just-written
-  // row so the optimistic jotai cache reflects it immediately in both modes.
+  await runtime.writer.flockRowPut(flockDocId, key, encodeCodexProfileConfig(config), options);
+  // The writer commits to this same local replica. Keep its authorization proof
+  // in the cache instead of replacing the committed row with the unsigned input.
   const handle = await runtime.repo.openFlockDoc(flockDocId);
   const rows: MachineFlockRowMap = {
     ...readMachineFlockRowsFromFlock(handle.flock),
-    [serializeMachineFlockKey(key)]: { key, value: config },
   };
   // Adding a builtin provider explicitly retracts the earlier removal. Check the
   // local mirror first so the steady state (no opt-out) costs no extra writer round trip.
@@ -94,19 +92,24 @@ async function deleteAgentConfigFromMachineFlock(
 
 async function writeProviderSetupToMachineFlock(
   runtime: WorkspaceRuntime,
-  setup: ProviderSetupTask
+  setup: ProviderSetupTask,
+  options?: { authorizeProvider?: boolean }
 ): Promise<MachineFlockRowMap> {
   const flockDocId = getMachineFlockDocId(runtime.workspaceId, setup.machineId);
   const key = machineFlockKeys.providerSetup(setup.id);
   assertManagedCodexProfileConfig(setup.config);
-  await runtime.writer.flockRowPut(flockDocId, key, {
-    ...setup,
-    config: encodeCodexProfileConfig(setup.config),
-  });
+  await runtime.writer.flockRowPut(
+    flockDocId,
+    key,
+    {
+      ...setup,
+      config: encodeCodexProfileConfig(setup.config),
+    },
+    options
+  );
   const handle = await runtime.repo.openFlockDoc(flockDocId);
   return {
     ...readMachineFlockRowsFromFlock(handle.flock),
-    [serializeMachineFlockKey(key)]: { key, value: setup },
   };
 }
 
@@ -368,7 +371,7 @@ export const cmdCreateAgentConfigAtom = atom(
     const runtime = get(activeWorkspaceRuntimeAtom);
     if (!runtime) throw new Error('Runtime not ready');
     if (!config.machineId) throw new Error('machineId is required to create an agent config');
-    const rows = await writeAgentConfigToMachineFlock(runtime, config);
+    const rows = await writeAgentConfigToMachineFlock(runtime, config, { authorizeProvider: true });
     // Replace rather than merge: merge cannot drop a key, so a retracted opt-out would
     // linger in the cache until the next sync.
     _set(setMachineFlockRowsForMachineAtom, {
@@ -401,7 +404,7 @@ export const cmdCreateProviderSetupAtom = atom(null, async (get, set, config: Ag
     createdAt: now,
     updatedAt: now,
   };
-  const rows = await writeProviderSetupToMachineFlock(runtime, setup);
+  const rows = await writeProviderSetupToMachineFlock(runtime, setup, { authorizeProvider: true });
   set(setMachineFlockRowsForMachineAtom, {
     workspaceId: runtime.workspaceId,
     machineId: setup.machineId,
@@ -468,7 +471,7 @@ export const cmdUpdateAgentConfigAtom = atom(null, async (get, _set, config: Age
   if (!runtime) throw new Error('Runtime not ready');
   const roomId = getAgentConfigRoomId(config.id);
   const existing = await runtime.repo.getDocMeta(roomId);
-  const rows = await writeAgentConfigToMachineFlock(runtime, config);
+  const rows = await writeAgentConfigToMachineFlock(runtime, config, { authorizeProvider: true });
   _set(setMachineFlockRowsForMachineAtom, {
     workspaceId: runtime.workspaceId,
     machineId: config.machineId,

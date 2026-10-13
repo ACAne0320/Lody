@@ -32,6 +32,9 @@ export type AgentConfigLaunchFields = Pick<
 >;
 
 type WorkspaceDocumentLike = {
+  getTrustedSessionLaunchConfig?(
+    meta: SessionMeta | undefined
+  ): Promise<SessionLaunchConfig | null | undefined>;
   repo: RepoLike;
   getAgentConfigById(
     agentConfigId: AgentConfigId,
@@ -154,6 +157,8 @@ export async function resolveSessionLaunchConfig(input: {
   sessionMeta: SessionMeta | undefined;
   logger: LoggerLike;
 }): Promise<SessionLaunchConfigResolution> {
+  const trusted = await input.workspaceDocument.getTrustedSessionLaunchConfig?.(input.sessionMeta);
+  if (trusted !== undefined) return { config: trusted ?? undefined, source: 'agent-config' };
   const machineId = input.sessionMeta?.machineId ?? input.machineId;
   let snapshot: MachineSessionLaunchSnapshot;
   try {

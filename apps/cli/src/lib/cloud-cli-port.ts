@@ -1,4 +1,5 @@
 import { SessionAttachmentTransfer } from './session-attachment-transfer';
+import { requestMachineExecutionAuthority } from '@lody/shared';
 import { getCliPlatformKind } from './cli-platform';
 import { LODY_SERVER_URL } from '@/utils/const';
 import { SimulatorIceServersSchema } from '@/ios-simulator/webrtc-protocol';
@@ -148,6 +149,28 @@ export function createCloudCliPort(options: CloudCliPortOptions): CloudPort {
     sessionSharing: createCloudSessionSharingPort(options),
     identity: options.identity,
     access: {
+      executionPolicy: (workspaceId, machineId) =>
+        subscriptionClient.query(api.machines.executionPolicyFromCliToken, {
+          cliToken: options.token,
+          workspaceId,
+          machineId,
+        }),
+      authorizeExecution: (intent, delegatedRequesterUserId) =>
+        requestMachineExecutionAuthority({
+          baseUrl: authSiteUrl,
+          credential: options.token,
+          action: 'authorize',
+          intent,
+          delegatedRequesterUserId,
+        }),
+      verifyExecution: (intent, requestToken) =>
+        requestMachineExecutionAuthority({
+          baseUrl: authSiteUrl,
+          credential: options.token,
+          action: 'verify',
+          intent,
+          requestToken,
+        }),
       watchWorkspaceAccess: (listener, onError) =>
         subscriptionClient.onUpdate(
           api.deviceAuth.listMyWorkspacesForCliToken,

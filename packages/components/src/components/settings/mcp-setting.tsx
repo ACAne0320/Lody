@@ -152,7 +152,7 @@ export function McpSetting() {
     try {
       // Resolves on durability: the row exists, so the editor is done. The
       // upload runs on its own and is deliberately not reported.
-      await upsert(entry);
+      await upsert(entry, { authorizeMcp: true });
       if (editor?.mode === 'add') {
         capturePostHogEvent(postHog, 'workspace/mcp_created', {
           source: 'settings',

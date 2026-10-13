@@ -5,6 +5,7 @@ import type {
   SessionId,
   WorkspaceFlockReadableFlock,
   WorkspaceId,
+  WorkspaceMcpServerMeta,
 } from '@lody/shared';
 import { loadSessionMcpCatalog } from './session-mcp-resolver';
 
@@ -124,5 +125,43 @@ describe('loadSessionMcpCatalog', () => {
     expect(order).toEqual(['sync', 'open']);
     expect(syncFlockDoc).toHaveBeenCalledWith('workspace-1:wf:workspace', { timeoutMs: 5_000 });
     expect(select(undefined).servers).toHaveLength(1);
+  });
+
+  it('uses only trusted snapshots when the catalog cannot be opened', async () => {
+    const accepted: WorkspaceMcpServerMeta = {
+      id: selectedId,
+      name: 'accepted',
+      transport: 'stdio',
+      connection: { transport: 'stdio', command: 'node', args: ['approved.js'] },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const load = (selectedIds: McpServerId[]) =>
+      loadSessionMcpCatalog({
+        repo: {
+          openFlockDoc: async () => {
+            throw new Error('database unavailable');
+          },
+        },
+        workspaceId,
+        sessionId,
+        selectedIds,
+        logger: { debug: vi.fn() },
+        resolveTrustedEntry: async (id, candidate) => {
+          expect(candidate).toBeUndefined();
+          return id === selectedId ? accepted : null;
+        },
+      });
+    const select = await load([selectedId]);
+    expect(select(undefined)).toEqual({
+      servers: [{ name: 'accepted', command: 'node', args: ['approved.js'], env: [] }],
+      problems: [],
+    });
+    const partial = await load([selectedId, 'unknown' as McpServerId]);
+    expect(partial(undefined).servers).toEqual(select(undefined).servers);
+    expect(partial(undefined).problems).toContainEqual({
+      kind: 'catalog_unavailable',
+      reason: 'database unavailable',
+    });
   });
 });

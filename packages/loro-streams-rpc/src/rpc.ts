@@ -262,6 +262,7 @@ export const LoroStreamsRpcErrorSchema = z
 
 const BaseRpcRequestSchema = z
   .object({
+    executionAuthorization: z.string().min(1).max(4096).optional(),
     jsonrpc: z.literal(JSON_RPC_VERSION),
     id: z.string().trim().min(1),
     method: LoroStreamsRpcMethodSchema,
@@ -2567,6 +2568,7 @@ export class LoroStreamsMachineRpcClient {
       rpcVersion?: string;
       retentionSeconds?: number;
       trace?: LoroStreamsMachineRpcTrace;
+      authorizeRequest?: (request: LoroStreamsRpcRequest) => Promise<string>;
     }
   ) {
     this.requestStreamId = getLoroMachineRpcRequestStreamId(options.workspaceId, options.machineId);
@@ -3402,6 +3404,8 @@ export class LoroStreamsMachineRpcClient {
       expiresAt: now + 30_000,
       params: { requestId },
     };
+    if (this.options.authorizeRequest)
+      request.executionAuthorization = await this.options.authorizeRequest(request);
     await this.options.streamClient.appendJson(this.requestStreamId, request);
   }
 
@@ -4044,6 +4048,9 @@ export class LoroStreamsMachineRpcClient {
         responseStreamId: this.responseDispatcher.getResponseStreamId(),
       });
       const appendPromise = (async () => {
+        if (this.options.authorizeRequest) {
+          request.executionAuthorization = await this.options.authorizeRequest(request);
+        }
         await this.options.streamClient.appendJson(this.requestStreamId, request);
         requestAppended = true;
         this.responseDispatcher.markAppendFinished(requestId);

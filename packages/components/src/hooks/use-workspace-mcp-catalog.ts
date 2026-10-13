@@ -25,14 +25,14 @@ export function useWorkspaceMcpCatalog(): WorkspaceMcpCatalogSnapshot {
 
 export function useWorkspaceMcpCatalogActions(): {
   /** Resolves on durability; the upload runs on its own and is not reported. */
-  upsert: (entry: WorkspaceMcpServerMeta) => Promise<void>;
+  upsert: (entry: WorkspaceMcpServerMeta, options?: { authorizeMcp?: boolean }) => Promise<void>;
   remove: (id: McpServerId) => Promise<void>;
 } {
   const runtime = useAtomValue(activeWorkspaceRuntimeAtom);
   const upsert = useCallback(
-    async (entry: WorkspaceMcpServerMeta) => {
+    async (entry: WorkspaceMcpServerMeta, options?: { authorizeMcp?: boolean }) => {
       if (!runtime) throw new Error('Workspace runtime is unavailable');
-      return putWorkspaceMcpServer(runtime, entry);
+      return putWorkspaceMcpServer(runtime, entry, options);
     },
     [runtime]
   );

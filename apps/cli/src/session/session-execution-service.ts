@@ -119,10 +119,7 @@ import { createSessionBackend, getSteerOperationId, type SessionBackend } from '
 import { buildPrompt } from './session-execution-helpers';
 import { isAllocatedSessionBranchName } from './worktree/branch-name-allocation';
 import type { MemoryPressureEvictionResult } from '@/lib/session-gc-manager';
-import {
-  resolveDispatchAcpSessionId,
-  resolveResumableAcpSessionId,
-} from './session-dispatch-logic';
+import {} from './session-dispatch-logic';
 import { resolveSessionLaunchConfig } from './session-launch-config-resolver';
 import type { MachineAccessVerification } from './session-access-retry';
 import {
@@ -1413,7 +1410,7 @@ export class SessionExecutionService {
     if (!meta.cliType || !meta.agentType) {
       throw new Error(`Session ${sessionId} has no agent configuration`);
     }
-    const resumeAcpSessionId = resolveDispatchAcpSessionId(meta);
+    const resumeAcpSessionId = await this.deps.workspaceDocument.resolveExecutionResume(meta);
     let claimed = false;
     await this.continueSession(
       {
@@ -4773,7 +4770,9 @@ export class SessionExecutionService {
         );
 
         const requestedResumeSessionId = acpSessionConfig.resume;
-        const storedResumeSessionId = resolveResumableAcpSessionId(meta);
+        const storedResumeSessionId = yield* self.tryPromise(() =>
+          self.deps.workspaceDocument.resolveExecutionResume(meta ?? undefined)
+        );
         const resumeSessionId = requestedResumeSessionId ?? storedResumeSessionId;
         const resumeSource = requestedResumeSessionId
           ? 'request'
@@ -4877,6 +4876,9 @@ export class SessionExecutionService {
                 excludeTurnId: message.userTurnId,
               });
               if (replayPromptResult.stats.messagesIncluded > 0) {
+                yield* self.tryPromise(() =>
+                  self.deps.workspaceDocument.assertHistoryReplayAllowed()
+                );
                 usedHistoryReplay = true;
                 self.deps.logger.debug(
                   `[${sessionId}] Built replay prompt for fresh ACP restore (chars=${replayPromptResult.stats.usedChars} messages=${replayPromptResult.stats.messagesIncluded} paths=${replayPromptResult.stats.pathsCount} truncated=${replayPromptResult.stats.truncated} terminalOmitted=${replayPromptResult.stats.terminalOmitted} thinkingOmitted=${replayPromptResult.stats.thinkingOmitted})`
@@ -4910,6 +4912,9 @@ export class SessionExecutionService {
                 isAuthenticationRequiredACPError(error);
 
               if (isAcpResumeError && resumeSessionId && !needsAuthentication) {
+                yield* self.tryPromise(() =>
+                  self.deps.workspaceDocument.assertHistoryReplayAllowed()
+                );
                 self.deps.logger.debug(
                   `[${sessionId}] ACP resume failed, attempting fallback with chat history replay`
                 );

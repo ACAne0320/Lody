@@ -526,6 +526,8 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       throw new Error('SessionManager requires an assembled CloudPort');
     }
     this.cloudPort = options.cloudPort;
+    if (this.cloudPort.kind === 'cloud')
+      workspaceDocument.configureExecutionAuthority(this.cloudPort.access, machineId);
     this.sessionSandboxFactory =
       options.sessionSandboxFactory ?? createSessionSandboxFactory({ logger: this.logger });
     this.preparationUserResolver = new SessionUserResolver(
@@ -723,7 +725,34 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
     // deduplicating concurrent creates, this prevents an abandoned preparation
     // from deleting a default workdir that the authoritative create is taking over.
     const promise = Promise.resolve()
-      .then(async () => await this.createSessionFromPreparationOrCold(config, agentStart))
+      .then(async () => {
+        // Resolve executable fields at the final launch boundary as well: restore,
+        // fork and direct callers must not override the private machine's authority.
+        if (
+          this.cloudPort.kind === 'cloud' &&
+          !(await this.workspaceDocument.allowsWorkspaceExecutables())
+        ) {
+          if (!config.agentConfigId) throw new Error('Private machines require a trusted Provider');
+          const trusted = await this.workspaceDocument.getAgentConfigForMachineLaunch(
+            config.agentConfigId,
+            this.machineId
+          );
+          if (!trusted) throw new Error('Provider has not been approved by the machine owner');
+          config = {
+            ...config,
+            agentCliType: trusted.cliType,
+            agentType: trusted.agentType,
+            customAcp: trusted.customAcp,
+            runtimeOverrides: trusted.runtimeOverrides,
+            env: trusted.env,
+            codexAuth: trusted.codexAuth,
+            codexProfile: undefined,
+            worktreeSetup: undefined,
+            worktreeCleanup: undefined,
+          };
+        }
+        return await this.createSessionFromPreparationOrCold(config, agentStart);
+      })
       .finally(() => {
         if (this.pendingSessionCreates.get(sessionId) === promise) {
           this.pendingSessionCreates.delete(sessionId);
@@ -985,8 +1014,18 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       spec.agentConfigId as AgentConfigId,
       this.machineId
     );
+    if (
+      this.cloudPort.kind === 'cloud' &&
+      !(await this.workspaceDocument.allowsWorkspaceExecutables())
+    ) {
+      agentConfig = await this.workspaceDocument.getAgentConfigForMachineLaunch(
+        spec.agentConfigId as AgentConfigId,
+        this.machineId
+      );
+      readCurrentLaunchConfig = undefined;
+    }
     if (!agentConfig) {
-      throw new Error(`Agent config not found: ${spec.agentConfigId}`);
+      throw new Error(`Agent config not found or not trusted: ${spec.agentConfigId}`);
     }
     if (!agentConfigMatchesPreparation(agentConfig, spec, this.machineId)) {
       throw new Error(`Agent config no longer matches preparation ${spec.preparationId}`);
@@ -1438,8 +1477,8 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
         dispatchEvent(() => this.emit('onSessionTitleUpdate', sessionId, title)),
       onAgentWarning: (warning) =>
         dispatchEvent(() => this.emit('onAgentWarning', sessionId, warning)),
-      loadExternalMcpServers: () =>
-        loadSessionMcpCatalog({
+      loadExternalMcpServers: async () => {
+        return loadSessionMcpCatalog({
           repo: this.workspaceDocument.repo,
           syncFlockDoc: (docId, { timeoutMs }) =>
             this.workspaceDocument.syncFlockDocOrThrow(docId, {
@@ -1449,8 +1488,11 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
           workspaceId: this.workspaceId,
           sessionId,
           selectedIds: config.mcpServerIds,
+          resolveTrustedEntry: (id, candidate) =>
+            this.workspaceDocument.getTrustedMcpConfig(id, candidate),
           logger: this.logger,
-        }),
+        });
+      },
       onImageGenerationBegin: (event) =>
         dispatchEvent(() => this.emit('onImageGenerationBegin', sessionId, event)),
       onImageGenerationEnd: (event) =>
@@ -1651,7 +1693,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
     if (config.agentCliType !== 'builtin' || config.agentType !== 'codex') return;
     const store = getCodexProfileStore();
     if (config.agentConfigId) {
-      const provider = await this.workspaceDocument.getAgentConfigById(
+      const provider = await this.workspaceDocument.getAgentConfigForMachineLaunch(
         config.agentConfigId,
         this.machineId
       );
@@ -2166,6 +2208,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       return await readLocalProjectWorktreeSetup(config.project.localProjectId);
     }
     if (config.project?.kind === 'github') {
+      if (!(await this.workspaceDocument.allowsWorkspaceExecutables())) return null;
       return (
         config.worktreeSetup ??
         (

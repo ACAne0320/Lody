@@ -53,9 +53,10 @@ export const uploadWorkspaceCatalog = async (deps: WorkspaceCatalogWriteDeps): P
 const putRow = async (
   deps: WorkspaceCatalogWriteDeps,
   key: Parameters<WorkspaceRuntime['writer']['flockRowPut']>[1],
-  value: unknown
+  value: unknown,
+  options?: { authorizeMcp?: boolean }
 ): Promise<void> => {
-  await deps.writer.flockRowPut(getWorkspaceFlockDocId(deps.workspaceId), key, value);
+  await deps.writer.flockRowPut(getWorkspaceFlockDocId(deps.workspaceId), key, value, options);
   void uploadWorkspaceCatalog(deps);
 };
 
@@ -69,8 +70,9 @@ const deleteRow = async (
 
 export const putWorkspaceMcpServer = (
   deps: WorkspaceCatalogWriteDeps,
-  entry: WorkspaceMcpServerMeta
-): Promise<void> => putRow(deps, workspaceFlockKeys.mcpServer(entry.id), entry);
+  entry: WorkspaceMcpServerMeta,
+  options?: { authorizeMcp?: boolean }
+): Promise<void> => putRow(deps, workspaceFlockKeys.mcpServer(entry.id), entry, options);
 
 export const deleteWorkspaceMcpServer = (
   deps: WorkspaceCatalogWriteDeps,

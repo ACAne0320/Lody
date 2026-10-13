@@ -19,6 +19,7 @@ import {
   resolveWorkspaceOrThrow,
   runOneShotCommand,
   withWorkspaceManager,
+  authorizeWorkspaceMcpConfig,
   type CommonCommandOptions,
 } from '@/lib/command-runtime';
 import {
@@ -32,6 +33,7 @@ import type { LoroDocumentManager } from '@/lib/loro/doc';
 import { parseEnvAssignments } from './agent-config';
 import { formatErrorMessage } from '@/utils/format-error';
 import { captureCli } from '@/lib/analytics/posthog';
+import { TrustedMcpConfigStore } from '@/lib/trusted-machine-config';
 
 type ConnectionOptions = {
   command?: string;
@@ -188,7 +190,10 @@ type McpCatalogContext = {
   /** The catalog as it stood after the pre-read sync. */
   servers: WorkspaceMcpServerMeta[];
   /** Writes inherit the command's `--offline` choice. */
-  writeOptions: { sync: boolean };
+  writeOptions: {
+    sync: boolean;
+    authorize: (entry: WorkspaceMcpServerMeta) => Promise<WorkspaceMcpServerMeta>;
+  };
 };
 
 /**
@@ -219,7 +224,10 @@ async function withMcpCatalog(
         workspaceId,
         userId: auth.userId,
         servers: await listWorkspaceMcpCatalog(manager.repo, workspaceId),
-        writeOptions: { sync: !options.offline },
+        writeOptions: {
+          sync: !options.offline,
+          authorize: (entry) => authorizeWorkspaceMcpConfig(auth, workspaceId, entry),
+        },
       });
     });
   });
@@ -321,11 +329,18 @@ const setCommand = addConnectionOptions(
   .option('--default', 'Select this server by default for new sessions')
   .option('--no-default', 'Do not select this server by default for new sessions')
   .action(async (selector: string, options: McpSetOptions) => {
-    await withMcpCatalog(options, async ({ repo, workspaceId, servers, writeOptions }) => {
+    await withMcpCatalog(options, async ({ repo, workspaceId, userId, servers, writeOptions }) => {
       const current = findByIdOrName(servers, selector);
       const name = options.name === undefined ? current.name : normalizeName(options.name);
       assertUniqueName(servers, name, current.id);
-      const connection = buildMcpConnectionFromOptions(options, current.connection);
+      const changesConnection = hasStdioOptions(options) || hasHttpOptions(options);
+      const trusted = changesConnection
+        ? await new TrustedMcpConfigStore().read(workspaceId, userId, current.id)
+        : null;
+      const connection = buildMcpConnectionFromOptions(
+        options,
+        changesConnection ? trusted?.connection : current.connection
+      );
       const next: WorkspaceMcpServerMeta = {
         ...current,
         name,
@@ -343,7 +358,11 @@ const setCommand = addConnectionOptions(
       if (!isDeepStrictEqual(next, current)) {
         next.updatedAt = getServerNow();
       }
-      const result = await upsertWorkspaceMcpCatalogEntry(repo, workspaceId, next, writeOptions);
+      const result = await upsertWorkspaceMcpCatalogEntry(repo, workspaceId, next, {
+        ...writeOptions,
+        // Metadata/default toggles must never approve inherited executable fields.
+        authorize: changesConnection ? writeOptions.authorize : undefined,
+      });
       reportWrite(
         options,
         { workspaceId, server: next },

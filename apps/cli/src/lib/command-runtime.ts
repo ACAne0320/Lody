@@ -64,6 +64,32 @@ export function getCommandSessionSharingPort(): CloudSessionSharingPort | null {
   return createCloudSessionSharingPort({ token: auth.token, authBaseUrl: LODY_AUTH_URL });
 }
 
+export async function authorizeWorkspaceMcpConfig(
+  auth: AuthContext,
+  workspaceId: WorkspaceId,
+  entry: import('@lody/shared').WorkspaceMcpServerMeta
+): Promise<import('@lody/shared').WorkspaceMcpServerMeta> {
+  if (!LODY_AUTH_URL) throw new Error('Cloud MCP authorization is not configured');
+  const { executionDigest, requestMachineExecutionAuthority, mcpExecutionAuthorizationPayload } =
+    await import('@lody/shared');
+  const { executionAuthorization: _proof, ...snapshot } = entry;
+  snapshot.executionRevision = getServerNow();
+  const { requestToken } = await requestMachineExecutionAuthority<{ requestToken: string }>({
+    baseUrl: LODY_AUTH_SITE_URL || LODY_AUTH_URL,
+    credential: auth.token,
+    action: 'authorize',
+    intent: {
+      workspaceId,
+      machineId: '*',
+      purpose: 'mcp',
+      digest: await executionDigest(mcpExecutionAuthorizationPayload(snapshot)),
+    },
+  });
+  const { TrustedMcpConfigStore } = await import('./trusted-machine-config');
+  await new TrustedMcpConfigStore().write(workspaceId, auth.userId, snapshot);
+  return { ...snapshot, executionAuthorization: requestToken };
+}
+
 export { listAliveRoomIds } from '@/lib/loro/repo-existence';
 
 const DEFAULT_LOCAL_CONTROL_TIMEOUT_MS = 30_000;
@@ -277,6 +303,24 @@ export async function withMachineRpcClient<T>(
     timeout: { connectTimeoutMs: configuredTimeout > 0 ? configuredTimeout : 30_000 },
   });
   const client = new LoroStreamsMachineRpcClient({
+    authorizeRequest: async (request) => {
+      const { executionDigest, requestMachineExecutionAuthority } = await import('@lody/shared');
+      const params = request.params as Record<string, unknown>;
+      const claimed = params.userId ?? params.requesterUserId ?? params.requestedByUserId;
+      const result = await requestMachineExecutionAuthority<{ requestToken: string }>({
+        delegatedRequesterUserId: typeof claimed === 'string' ? claimed : undefined,
+        baseUrl: LODY_AUTH_SITE_URL || LODY_AUTH_URL!,
+        credential: args.auth.token,
+        action: 'authorize',
+        intent: {
+          workspaceId: args.workspaceId,
+          machineId: args.machineId,
+          purpose: 'rpc',
+          digest: await executionDigest(request),
+        },
+      });
+      return result.requestToken;
+    },
     workspaceId: args.workspaceId,
     machineId: args.machineId,
     streamClient,

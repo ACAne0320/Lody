@@ -210,6 +210,8 @@ const createBaseDeps = (
     validateSessionCredentials: vi.fn(async () => {}),
   } as unknown as SessionManager;
   const workspaceDocument = {
+    resolveExecutionResume: async (meta: SessionMeta | undefined, requested?: string) =>
+      requested ?? meta?.acpSessionId ?? undefined,
     repo: {
       upsertDocMeta: vi.fn(async () => {}),
       getDocMeta: vi.fn(async () => undefined),
@@ -281,6 +283,11 @@ const createBaseDeps = (
     ...overrides,
   };
 
+  deps.workspaceDocument.assertHistoryReplayAllowed ??= async () => {};
+  deps.workspaceDocument.resolveExecutionResume ??= async (meta, requested) =>
+    (requested ?? meta?.acpSessionId ?? undefined) as
+      | import('@lody/shared').ACPSessionId
+      | undefined;
   const repo = (deps.workspaceDocument as unknown as { repo?: Record<string, unknown> }).repo;
   if (repo && !('openFlockDoc' in repo)) {
     repo.openFlockDoc = vi.fn(async () => ({
@@ -4478,111 +4485,124 @@ describe('SessionExecutionService', () => {
     expect(deps.clearSessionActivePresence).toHaveBeenCalledTimes(1);
   });
 
-  it('replays durable history when a fresh ACP restore has no resumable session id', async () => {
-    const meta = {
-      repoFullName: 'owner/repo',
-      isArchived: false,
-    };
-    let history: SessionHistoryInput[] = [
-      {
-        id: 'turn-startup-failed',
-        role: 'user',
-        timestamp: '2026-08-05T05:30:00.000Z',
-        status: 'failed',
-        fileDiff: [],
-        items: [{ type: 'text', text: 'Build this on the two MIT packages.' }],
-      },
-      {
-        id: 'turn-current',
-        role: 'user',
-        timestamp: '2026-08-05T05:31:00.000Z',
-        status: 'pending',
-        fileDiff: [],
-        items: [{ type: 'text', text: '?' }],
-      },
-    ];
-    const sessionDoc = withHistoryPort({
-      getMetaState: vi.fn(async () => meta),
-      setStatus: vi.fn(async () => {}),
-      setBaseBranch: vi.fn(async () => {}),
-      getHistory: vi.fn(() => history),
-      updateHistory: vi.fn(
-        async (updater: (prev: SessionHistoryInput[]) => SessionHistoryInput[]) => {
-          history = updater(history);
-        }
-      ),
-    });
-    const agentClient = {
-      isCreated: vi.fn(() => true),
-      cancel: vi.fn(async () => {}),
-      prompt: vi.fn(async () => ({})),
-      currentModel: undefined,
-    };
-    const restoredSession = {
-      sessionId: 'session-fresh-restore' as SessionId,
-      acpSessionId: 'acp-fresh-restore' as ACPSessionId,
-      agentClient,
-      terminalManager: {} as unknown,
-      getWorkdir: () => '/tmp',
-      getHostWorkdir: () => '/tmp',
-      getParentSessionId: () => undefined,
-      exec: vi.fn(async () => ''),
-      terminate: vi.fn(async () => {}),
-      updateGitIdentity: vi.fn(),
-      createAgent: vi.fn(async () => 'acp-fresh-restore'),
-      applyExecutionPlaneLimits: vi.fn(async () => {}),
-    };
-    const buildAcpPromptBlocks = vi.fn(async () => [{ type: 'text', text: 'built prompt' }] as any);
-    const deps = createBaseDeps({
-      sessionManager: {
-        getSession: vi.fn(() => null),
-        getPendingSession: vi.fn(() => null),
-        createSession: vi.fn(async () => restoredSession as unknown),
-        setSessionError: vi.fn(),
-        terminateSession: vi.fn(),
-        validateSessionCredentials: vi.fn(async () => {}),
-      } as unknown as SessionManager,
-      workspaceDocument: {
-        repo: {
-          upsertDocMeta: vi.fn(async () => {}),
-          getDocMeta: vi.fn(async () => undefined),
+  it.each([true, false])(
+    'gates fresh ACP history replay on workspace execution consent: %s',
+    async (allowed) => {
+      const meta = {
+        repoFullName: 'owner/repo',
+        isArchived: false,
+      };
+      let history: SessionHistoryInput[] = [
+        {
+          id: 'turn-startup-failed',
+          role: 'user',
+          timestamp: '2026-08-05T05:30:00.000Z',
+          status: 'failed',
+          fileDiff: [],
+          items: [{ type: 'text', text: 'Build this on the two MIT packages.' }],
         },
-        getOrCreateSessionDoc: vi.fn(async () => sessionDoc),
-        updateAcpCapabilities: vi.fn(async () => {}),
-      } as unknown as LoroDocumentManager,
-      buildAcpPromptBlocks,
-    });
+        {
+          id: 'turn-current',
+          role: 'user',
+          timestamp: '2026-08-05T05:31:00.000Z',
+          status: 'pending',
+          fileDiff: [],
+          items: [{ type: 'text', text: '?' }],
+        },
+      ];
+      const sessionDoc = withHistoryPort({
+        getMetaState: vi.fn(async () => meta),
+        setStatus: vi.fn(async () => {}),
+        setBaseBranch: vi.fn(async () => {}),
+        getHistory: vi.fn(() => history),
+        updateHistory: vi.fn(
+          async (updater: (prev: SessionHistoryInput[]) => SessionHistoryInput[]) => {
+            history = updater(history);
+          }
+        ),
+      });
+      const agentClient = {
+        isCreated: vi.fn(() => true),
+        cancel: vi.fn(async () => {}),
+        prompt: vi.fn(async () => ({})),
+        currentModel: undefined,
+      };
+      const restoredSession = {
+        sessionId: 'session-fresh-restore' as SessionId,
+        acpSessionId: 'acp-fresh-restore' as ACPSessionId,
+        agentClient,
+        terminalManager: {} as unknown,
+        getWorkdir: () => '/tmp',
+        getHostWorkdir: () => '/tmp',
+        getParentSessionId: () => undefined,
+        exec: vi.fn(async () => ''),
+        terminate: vi.fn(async () => {}),
+        updateGitIdentity: vi.fn(),
+        createAgent: vi.fn(async () => 'acp-fresh-restore'),
+        applyExecutionPlaneLimits: vi.fn(async () => {}),
+      };
+      const buildAcpPromptBlocks = vi.fn(
+        async () => [{ type: 'text', text: 'built prompt' }] as any
+      );
+      const deps = createBaseDeps({
+        sessionManager: {
+          getSession: vi.fn(() => null),
+          getPendingSession: vi.fn(() => null),
+          createSession: vi.fn(async () => restoredSession as unknown),
+          setSessionError: vi.fn(),
+          terminateSession: vi.fn(),
+          validateSessionCredentials: vi.fn(async () => {}),
+        } as unknown as SessionManager,
+        workspaceDocument: {
+          repo: {
+            upsertDocMeta: vi.fn(async () => {}),
+            getDocMeta: vi.fn(async () => undefined),
+          },
+          getOrCreateSessionDoc: vi.fn(async () => sessionDoc),
+          updateAcpCapabilities: vi.fn(async () => {}),
+        } as unknown as LoroDocumentManager,
+        buildAcpPromptBlocks,
+      });
 
-    const service = new SessionExecutionService(deps);
-    await service.continueSession({
-      type: 'session/chat',
-      sessionId: 'session-fresh-restore' as SessionId,
-      machineId: 'machine-1',
-      workspaceId: 'workspace-1' as WorkspaceId,
-      project: { kind: 'github', repoFullName: 'owner/repo', branch: 'main' },
-      acpSessionConfig: { prompt: '?', cliType: 'builtin', agentType: 'codex' },
-      userTurnId: 'turn-current',
-      userId: 'user-1',
-      userName: 'User',
-      userEmail: 'user@example.com',
-    });
+      deps.workspaceDocument.assertHistoryReplayAllowed = async () => {
+        if (!allowed) throw new Error('Private machine history replay denied');
+      };
+      const service = new SessionExecutionService(deps);
+      await service.continueSession({
+        type: 'session/chat',
+        sessionId: 'session-fresh-restore' as SessionId,
+        machineId: 'machine-1',
+        workspaceId: 'workspace-1' as WorkspaceId,
+        project: { kind: 'github', repoFullName: 'owner/repo', branch: 'main' },
+        acpSessionConfig: { prompt: '?', cliType: 'builtin', agentType: 'codex' },
+        userTurnId: 'turn-current',
+        userId: 'user-1',
+        userName: 'User',
+        userEmail: 'user@example.com',
+      });
 
-    expect(buildAcpPromptBlocks).toHaveBeenCalledWith(
-      expect.objectContaining({
-        replayPromptText: expect.stringContaining('Build this on the two MIT packages.'),
-      })
-    );
-    expect(buildAcpPromptBlocks).toHaveBeenCalledWith(
-      expect.objectContaining({
-        replayPromptText: expect.not.stringContaining('[User]\n?'),
-      })
-    );
-    expect(agentClient.prompt).toHaveBeenCalledWith(
-      'acp-fresh-restore',
-      [{ type: 'text', text: 'built prompt' }],
-      { signal: expect.any(AbortSignal) }
-    );
-  });
+      if (!allowed) {
+        expect(agentClient.prompt).not.toHaveBeenCalled();
+        expect(history.find((turn) => turn.id === 'turn-current')?.status).toBe('failed');
+        return;
+      }
+      expect(buildAcpPromptBlocks).toHaveBeenCalledWith(
+        expect.objectContaining({
+          replayPromptText: expect.stringContaining('Build this on the two MIT packages.'),
+        })
+      );
+      expect(buildAcpPromptBlocks).toHaveBeenCalledWith(
+        expect.objectContaining({
+          replayPromptText: expect.not.stringContaining('[User]\n?'),
+        })
+      );
+      expect(agentClient.prompt).toHaveBeenCalledWith(
+        'acp-fresh-restore',
+        [{ type: 'text', text: 'built prompt' }],
+        { signal: expect.any(AbortSignal) }
+      );
+    }
+  );
 
   it('waits for late-syncing history before replacing an unresumable ACP session', async () => {
     // Reproduces the daemon-restart race: the turn is delivered over RPC before
@@ -10080,6 +10100,8 @@ describe('SessionExecutionService initialization deadline', () => {
     });
 
     const workspaceDocument = {
+      resolveExecutionResume: async (meta: SessionMeta | undefined, requested?: string) =>
+        requested ?? meta?.acpSessionId ?? undefined,
       repo: {
         upsertDocMeta: vi.fn(async () => {}),
         getDocMeta: vi.fn(async () => undefined),

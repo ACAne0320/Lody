@@ -1,4 +1,5 @@
 export * from './preview-control';
+export * from './machine-execution-authority';
 import { CliType } from './ai';
 export * from './history-writer';
 export * from './history-write-schema';
@@ -493,3 +494,5 @@ export * from './session-acp-identity';
 
 export * from './memory-provider';
 export * from './message-author';
+
+export * from './queued-session-turn';

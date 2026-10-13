@@ -39,7 +39,12 @@ export interface WorkspaceWriter {
   deleteDoc(roomId: string): Promise<void>;
 
   /** Flock-doc row put (agent config, machine command queue, external history). */
-  flockRowPut(flockDocId: string, key: readonly string[], value: unknown): Promise<void>;
+  flockRowPut(
+    flockDocId: string,
+    key: readonly string[],
+    value: unknown,
+    options?: { authorizeMcp?: boolean; authorizeProvider?: boolean }
+  ): Promise<void>;
 
   /** Compute a replacement against the current row in one local transaction.
    * Return undefined to leave the row untouched (including an absent row).

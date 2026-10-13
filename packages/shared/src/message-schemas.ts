@@ -404,7 +404,10 @@ export const SessionHistoryDeliveryKindSchema = z.literal('steer');
 export type SessionHistoryDeliveryKind = z.infer<typeof SessionHistoryDeliveryKindSchema>;
 
 export const SessionHistoryInputConfigSchema = ACPTurnConfigSchema.partial()
-  .extend({ _lodyDeliveryKind: SessionHistoryDeliveryKindSchema.optional() })
+  .extend({
+    _lodyDeliveryKind: SessionHistoryDeliveryKindSchema.optional(),
+    executionAuthorization: z.string().min(1).max(4096).optional(),
+  })
   .strip();
 
 const LooseSessionTurnInputConfigSchema = SessionHistoryInputConfigSchema.passthrough();
@@ -534,6 +537,13 @@ export const normalizeSessionTurnInputConfig = (
   if (deliveryKind !== undefined) {
     normalized._lodyDeliveryKind = deliveryKind;
   }
+
+  const executionAuthorization = maybeParseField(
+    z.string().min(1).max(4096),
+    record.executionAuthorization
+  );
+  if (executionAuthorization !== undefined)
+    normalized.executionAuthorization = executionAuthorization;
 
   const looseParsed = LooseSessionTurnInputConfigSchema.safeParse(record);
   if (!looseParsed.success && Object.keys(normalized).length === 0) {

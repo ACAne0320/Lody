@@ -1,5 +1,7 @@
 import {
   applyPreviewVisualCommentMutation,
+  buildQueuedSessionTurn,
+  type SessionMeta,
   getServerNow,
   getSessionRoomId,
   type MessageQueueItem,
@@ -22,6 +24,12 @@ import type { WorkspaceWriter } from './workspace-writer';
 
 /** Deps the writer needs from the runtime (repo + session stores). */
 export type DirectWorkspaceWriterDeps = {
+  authorizeTurn?: (
+    meta: Record<string, unknown>,
+    entry: import('@lody/shared').SessionHistory
+  ) => Promise<import('@lody/shared').SessionHistory>;
+  authorizeProvider?: (value: unknown) => Promise<unknown>;
+  authorizeMcp?: (value: unknown) => Promise<unknown>;
   repo: LoroRepo;
   acquireSessionStore: (sessionId: SessionId) => Promise<SessionDocStore>;
   releaseSessionStoreRef: (sessionId: SessionId) => void;
@@ -68,12 +76,28 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
     }
   };
 
+  const authorizeQueueItem = async (sessionId: string, item: Record<string, unknown>) => {
+    if (!deps.authorizeTurn) return item;
+    const meta = await deps.repo.getDocMeta(getSessionRoomId(sessionId as SessionId));
+    if (!meta?.meta || typeof item.userTurnId !== 'string' || !item.userTurnId)
+      throw new Error('Queue identity is unavailable.');
+    const entry = buildQueuedSessionTurn(
+      item as unknown as MessageQueueItem,
+      meta.meta as SessionMeta,
+      item.userTurnId
+    );
+    if (!entry) throw new Error('Queue input is unavailable.');
+    const signed = await deps.authorizeTurn(meta.meta, entry);
+    return { ...item, executionAuthorization: signed.inputConfig?.executionAuthorization };
+  };
+
   return {
     async upsertDocMeta(roomId, patch) {
       await deps.repo.upsertDocMeta(roomId, patch as Parameters<LoroRepo['upsertDocMeta']>[1]);
     },
 
     async startSession(sessionId, meta, entry, dispatch) {
+      if (deps.authorizeTurn) entry = await deps.authorizeTurn(meta, entry);
       // Backend selection is part of the session identity. Publish metadata
       // before the first history write so a crash cannot leave an orphaned
       // document that a later opener interprets as legacy Loro.
@@ -91,7 +115,15 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
       await deps.repo.deleteDoc(roomId);
     },
 
-    async flockRowPut(flockDocId, key, value) {
+    async flockRowPut(flockDocId, key, value, options) {
+      if (key[0] === 'mcpServer' && options?.authorizeMcp && deps.authorizeMcp)
+        value = await deps.authorizeMcp(value);
+      if (key[0] === 'agentConfig' && options?.authorizeProvider && deps.authorizeProvider)
+        value = await deps.authorizeProvider(value);
+      if (key[0] === 'providerSetup' && options?.authorizeProvider && deps.authorizeProvider) {
+        const setup = value as { config: unknown };
+        value = { ...setup, config: await deps.authorizeProvider(setup.config) };
+      }
       const handle = await deps.repo.openFlockDoc(flockDocId);
       handle.flock.set([...key], value as Parameters<typeof handle.flock.set>[1]);
       handle.flock.commit();
@@ -131,6 +163,11 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
     },
 
     async appendSessionTurn(sessionId, entry, dispatch) {
+      if (deps.authorizeTurn && entry.role === 'user') {
+        const meta = await deps.repo.getDocMeta(getSessionRoomId(sessionId as SessionId));
+        if (!meta?.meta) throw new Error('Session metadata is unavailable.');
+        entry = await deps.authorizeTurn(meta.meta, entry);
+      }
       await withSessionStore(sessionId, async (store) => {
         await store.sessionData.commands.appendTurn(entry);
       });
@@ -140,12 +177,22 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
     },
 
     async appendSessionHistory(sessionId, entry) {
+      if (deps.authorizeTurn && entry.role === 'user') {
+        const meta = await deps.repo.getDocMeta(getSessionRoomId(sessionId as SessionId));
+        if (!meta?.meta) throw new Error('Session metadata is unavailable.');
+        entry = await deps.authorizeTurn(meta.meta, entry);
+      }
       await withSessionStore(sessionId, async (store) => {
         await store.sessionData.commands.appendTurn(entry);
       });
     },
 
     async updateSessionHistory(sessionId, entryId, entry) {
+      if (deps.authorizeTurn && entry.role === 'user') {
+        const meta = await deps.repo.getDocMeta(getSessionRoomId(sessionId as SessionId));
+        if (!meta?.meta) throw new Error('Session metadata is unavailable.');
+        entry = await deps.authorizeTurn(meta.meta, entry);
+      }
       await withSessionStore(sessionId, async (store) => {
         await store.sessionData.commands.replaceTurn(entryId, entry);
       });
@@ -159,6 +206,7 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
     },
 
     async enqueueSessionMessage(sessionId, item) {
+      item = await authorizeQueueItem(sessionId, item);
       await withSessionStore(sessionId, (store) => {
         store.setState((draft: SessionDocDraft) => {
           const mq = (draft.mq ?? []) as MessageQueueItem[];
@@ -191,12 +239,15 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
     },
 
     async updateSessionMessage(sessionId, itemId, patch) {
-      await withSessionStore(sessionId, (store) => {
+      await withSessionStore(sessionId, async (store) => {
+        const original = store.getState().mq?.find((item) => item.$cid === itemId);
+        if (!original) return;
+        const signed = await authorizeQueueItem(sessionId, { ...original, ...patch });
         store.setState((draft: SessionDocDraft) => {
           const mq = (draft.mq ?? []) as MessageQueueItem[];
           draft.mq = mq.map((item) =>
             item.$cid === itemId
-              ? ({ ...item, ...patch, $cid: item.$cid } as MessageQueueItem)
+              ? ({ ...item, ...signed, $cid: item.$cid } as MessageQueueItem)
               : item
           );
         });

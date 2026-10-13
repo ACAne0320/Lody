@@ -1564,7 +1564,7 @@ const normalizeLocalProjectMeta = (value: unknown): LocalProjectMeta | undefined
   return project;
 };
 
-const normalizeAgentConfigMeta = (value: unknown): AgentConfigMeta | undefined => {
+export const normalizeAgentConfigMeta = (value: unknown): AgentConfigMeta | undefined => {
   if (
     !isRecord(value) ||
     !isNonEmptyString(value.id) ||
@@ -1586,6 +1586,12 @@ const normalizeAgentConfigMeta = (value: unknown): AgentConfigMeta | undefined =
     agentType: value.agentType as AgentType,
     env: value.env,
   } as AgentConfigMeta;
+
+  if (
+    typeof value.executionAuthorization === 'string' &&
+    value.executionAuthorization.length <= 4096
+  )
+    config.executionAuthorization = value.executionAuthorization;
 
   if (typeof value.description === 'string') {
     config.description = value.description;

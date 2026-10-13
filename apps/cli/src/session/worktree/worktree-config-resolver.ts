@@ -63,6 +63,7 @@ export async function resolveSessionWorktreeCleanupConfig(input: {
   }
 
   const repoFullName = resolveProjectGitHubRepo(sessionMeta?.project) ?? sessionMeta?.repoFullName;
+  if (!(await input.workspaceDocument.allowsWorkspaceExecutables())) return null;
   return (
     (
       await resolveGitHubRepoWorktreeConfig({

@@ -888,6 +888,21 @@ async function withWorkspaceManager<T>(
     cloudBilling: createCloudBillingPort({ token: auth.token }),
     sessionHistoryFactory,
   });
+  manager.configureExecutionAuthority(
+    {
+      authorizeExecution: async (intent, delegatedRequesterUserId) => {
+        const { requestMachineExecutionAuthority } = await import('@lody/shared');
+        return requestMachineExecutionAuthority({
+          baseUrl: LODY_AUTH_SITE_URL || LODY_AUTH_URL!,
+          credential: auth.token,
+          action: 'authorize',
+          intent,
+          delegatedRequesterUserId,
+        });
+      },
+    },
+    auth.machineId
+  );
   try {
     return await fn(manager);
   } finally {
@@ -1340,7 +1355,14 @@ export async function appendUserPromptHistory(args: {
           )
         ) ||
         !isDeepStrictEqual(
-          JSON.parse(JSON.stringify(normalizeSessionTurnInputConfig(existing.inputConfig) ?? {})),
+          JSON.parse(
+            JSON.stringify(
+              normalizeSessionTurnInputConfig({
+                ...existing.inputConfig,
+                executionAuthorization: undefined,
+              }) ?? {}
+            )
+          ),
           JSON.parse(JSON.stringify(normalizeSessionTurnInputConfig(inputConfig) ?? {}))
         )
       ) {
@@ -1354,7 +1376,7 @@ export async function appendUserPromptHistory(args: {
     }
   }
   const timestamp = new Date(getServerNow()).toISOString();
-  const entry: SessionHistoryInput = {
+  let entry: SessionHistoryInput = {
     id: historyId,
     role: 'user',
     author: args.author ?? { v: 1, kind: 'human', userId },
@@ -1367,11 +1389,12 @@ export async function appendUserPromptHistory(args: {
     fileDiff: [],
     finished: true,
   };
+  entry = (await sessionDoc.authorizeAuthoredTurn?.(entry)) ?? entry;
   await backend.appendUserTurn(entry);
   return {
     id: historyId,
     timestamp,
-    ...(inputConfig ? { inputConfig: inputConfig as SessionTurnInputConfig } : {}),
+    ...(entry.inputConfig ? { inputConfig: entry.inputConfig as SessionTurnInputConfig } : {}),
   };
 }
 

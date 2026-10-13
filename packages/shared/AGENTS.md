@@ -18,11 +18,9 @@ Exact deletion bypasses discovery: [relations](../../specs/session-relations.md)
   unchanged history. Invalid commands preserve the old values and throw content-free
   diagnostics; they must not leave partial history writes. Keep stored unknown fields
   and unchanged opaque items; do not sanitize/rewrite a whole stored document.
-- New inputs use the shared message parsers. Known protocol extension dictionaries
-  retain JSON data, not arbitrary JS objects. Storage layout is an insertion policy in
-  `schema.ts`: new metadata strings stay primitive and `LoroText` is declared only for
-  streaming fields, at every nesting level. Stored values keep their representation and
-  opening never rewrites them.
+- New input uses shared parsers; extension dictionaries retain JSON only. `schema.ts`
+  governs insertion: metadata strings stay primitive; only streaming fields use
+  `LoroText`, at every level. Opening never rewrites stored representations.
 
 - Parser coverage must include nested discriminators (`system_notice.name`) and
   correlated metadata, not just item `type`. Fork regression tests must cross the
@@ -47,18 +45,15 @@ Exact deletion bypasses discovery: [relations](../../specs/session-relations.md)
   and extension keys; closed execution configuration still selects declared fields.
 - Steer provenance is a declared history input-config field, not an unknown extension.
   Both new writes and read normalization must retain it for edit-and-resend checks.
-- Scalar/fileDiff writes read and diff only the requested field, never the turn's items.
-  Writer input parsers derive from schema definitions with all refinements retained;
-  never mutate the original RPC schemas. Parsing filters and validates in one pass.
-  `readStored` returns detached JSON for hashing, not stored-copy provenance. Keep `capture`
-  protection for callers that can author copies from an old snapshot.
+- Scalar/fileDiff writes read/diff only that field, never items. Writer parsers retain
+  schema refinements; never mutate RPC schemas. Parse/filter in one pass. `readStored`
+  gives detached JSON for hashes, not copy provenance; old-snapshot copies need `capture`.
 - Target-local streaming uses `updateEntry`; it must not produce/plan the entire history.
   Resolve the live turn on each call, preserve immutable ids, and preflight before writing.
   Generic history updates remain for operations with cross-turn ownership or structural edits.
 - Permission responses inspect request metadata and materialize only the matching turn;
   a supplied turn id restricts lookup to that turn. Preserve legacy JSON metadata on lookup.
-- Mirror's text-event optimization ships upstream in pinned `loro-mirror`; no local patch
-  exists and no storage schema or write validation depends on it.
+- Text-event optimization lives in pinned `loro-mirror`; no local patch, schema or validation dependency.
 - Subagent events must preserve run identity and root ownership.
 
 ## Machine protocol negotiation
@@ -117,3 +112,6 @@ Exact deletion bypasses discovery: [relations](../../specs/session-relations.md)
   mapping follow the [memory contract](../../specs/agent-role-memory.md).
 - Keep `author`, human `userId`, and recipient execution config separate.
   [Contract](../../specs/message-author-identity.md).
+
+- Cloud execution binds normalized content and authenticated identity; queue paths share
+  `buildQueuedSessionTurn`. [Authority](../../specs/machine-execution-authority.md).

@@ -658,6 +658,12 @@ export type CloudApi = {
     getRequest: Query<{ requestId: string }, MachinePairingView | null>;
   };
   machines: {
+    executionPolicyFromCliToken: FunctionReference<
+      'query',
+      'public',
+      { cliToken: string; workspaceId: string; machineId: string },
+      { ownerUserId: string; sharedWithTeam: boolean }
+    >;
     listVisibleMachines: Query<
       { workspaceId: string },
       Array<{

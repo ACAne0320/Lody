@@ -1,4 +1,15 @@
+import {
+  normalizeAgentConfigMeta,
+  isWorkspaceMcpServerMeta,
+  mcpExecutionAuthorizationPayload,
+} from '@lody/shared';
 import { createWorkspacePendingSends } from './workspace-pending-sends';
+import {
+  executionDigest,
+  executionTurnPayload,
+  requestMachineExecutionAuthority,
+} from '@lody/shared';
+import { requireCloudAuthBaseUrl } from '@/lib/cloud-http-port';
 import { createLoroSyncErrorTools } from '@lody/shared/loro-sync-errors';
 import { migrateLegacySessionSends } from '../lib/legacy-session-send-migration';
 import { createSessionSendResources } from '@/lib/session-send-resources';
@@ -1780,6 +1791,21 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     }
 
     const next = new LoroStreamsMachineRpcClient({
+      authorizeRequest: async (request) => {
+        if (!authToken) throw new Error('Sign in to authorize remote execution.');
+        const result = await requestMachineExecutionAuthority<{ requestToken: string }>({
+          baseUrl: requireCloudAuthBaseUrl('remoteMachines'),
+          credential: authToken,
+          action: 'authorize',
+          intent: {
+            workspaceId,
+            machineId,
+            purpose: 'rpc',
+            digest: await executionDigest(request),
+          },
+        });
+        return result.requestToken;
+      },
       workspaceId,
       machineId,
       streamClient,
@@ -4500,7 +4526,90 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   // Dual-author: every client direct-authors its own durable writes and uploads
   // them over its own cloud connection; local targets additionally converge with
   // the CLI over the local plane (specs/local-first-two-plane.md 作者规则).
+  const authorizeOwnedExecution = async (intent: import('@lody/shared').MachineExecutionIntent) => {
+    if (
+      intent.purpose !== 'rpc' &&
+      intent.machineId !== '*' &&
+      targetRouter.getPlaneForMachine(intent.machineId as MachineId) === 'local'
+    ) {
+      const sender = getIpcServices()?.machineRpc.send;
+      if (!sender) throw new Error('Local execution authorization is unavailable');
+      const response = await sender({
+        workspaceId,
+        machineId: intent.machineId,
+        method: 'machine/authorize-execution',
+        params: { purpose: intent.purpose, digest: intent.digest },
+      });
+      if (!response.ok) throw new Error(response.error);
+      if (
+        !('type' in response.result) ||
+        response.result.type !== 'machine/execution-authorization'
+      )
+        throw new Error('Unexpected local execution authorization response');
+      return response.result;
+    }
+    if (!authToken) throw new Error('Execution authorization requires sign-in');
+    return requestMachineExecutionAuthority<{ requestToken: string; requesterUserId: string }>({
+      baseUrl: requireCloudAuthBaseUrl('remoteMachines'),
+      credential: authToken,
+      action: 'authorize',
+      intent,
+    });
+  };
   const workspaceWriter = createDirectWorkspaceWriter({
+    authorizeMcp: cloudPlaneEnabled
+      ? async (value) => {
+          if (!authToken || !isWorkspaceMcpServerMeta(value))
+            throw new Error('MCP authorization unavailable');
+          const { executionAuthorization: _proof, ...snapshot } = value;
+          snapshot.executionRevision = getServerNow();
+          const result = await requestMachineExecutionAuthority<{ requestToken: string }>({
+            baseUrl: requireCloudAuthBaseUrl('remoteMachines'),
+            credential: authToken,
+            action: 'authorize',
+            intent: {
+              workspaceId,
+              machineId: '*',
+              purpose: 'mcp',
+              digest: await executionDigest(mcpExecutionAuthorizationPayload(snapshot)),
+            },
+          });
+          return { ...snapshot, executionAuthorization: result.requestToken };
+        }
+      : undefined,
+    authorizeProvider: cloudPlaneEnabled
+      ? async (value) => {
+          if (!value || typeof value !== 'object')
+            throw new Error('Provider authorization unavailable');
+          const normalized = normalizeAgentConfigMeta(value);
+          if (!normalized) throw new Error('Invalid Provider configuration');
+          const { executionAuthorization: _proof, ...snapshot } = normalized;
+          const result = await authorizeOwnedExecution({
+            workspaceId,
+            machineId: String(snapshot.machineId ?? ''),
+            purpose: 'provider',
+            digest: await executionDigest(snapshot),
+          });
+          return { ...snapshot, executionAuthorization: result.requestToken };
+        }
+      : undefined,
+    authorizeTurn: cloudPlaneEnabled
+      ? async (meta, entry) => {
+          const machineId = String(meta.machineId ?? '');
+          const result = await authorizeOwnedExecution({
+            workspaceId,
+            machineId,
+            purpose: 'turn',
+            digest: await executionDigest(executionTurnPayload(meta, entry)),
+          });
+          if (result.requesterUserId !== entry.userId)
+            throw new Error('Execution requester does not match the signed-in user.');
+          return {
+            ...entry,
+            inputConfig: { ...entry.inputConfig, executionAuthorization: result.requestToken },
+          };
+        }
+      : undefined,
     repo,
     acquireSessionStore: sessionStoreCache.acquire,
     releaseSessionStoreRef: sessionStoreCache.releaseRef,

@@ -1,3 +1,4 @@
+import { MachineExecutionReceipts, LocalExecutionAuthority } from './trusted-machine-config';
 import {
   SessionAttachmentTransfer,
   type UploadableImageFile,
@@ -6,6 +7,7 @@ import {
   type UploadedSessionFile,
 } from './session-attachment-transfer';
 import { handleMemoryProviderRequest } from './memory-providers';
+import { executionDigest, executionTurnPayload } from '@lody/shared';
 import { readMessageAuthor } from '@lody/shared';
 import { resolveSessionMessageAuthor } from '@/session/message-author';
 import { IosSimulatorService } from '@/ios-simulator/service';
@@ -751,6 +753,8 @@ export class MessageHandler {
     evictedSessionIds: [],
     pressureReason: null,
   });
+  private readonly executionReceipts = new MachineExecutionReceipts();
+  private readonly localExecutionAuthority = new LocalExecutionAuthority();
   private executionService: SessionExecutionService;
   private providerSetupManager: ProviderSetupManager;
   private previewService: PreviewService;
@@ -2981,6 +2985,8 @@ export class MessageHandler {
         await this.evictForMemoryPressureFn(excludeSessionId),
     });
     this.providerSetupManager = new ProviderSetupManager({
+      authorizeSetup: async (setup) =>
+        !!(await this.workspaceDocument.getAgentConfigForMachineLaunch(setup.id, this.machineId)),
       repo: this.workspaceDocument.repo,
       workspaceId: this.workspaceId,
       machineId: this.machineId,
@@ -3099,6 +3105,30 @@ export class MessageHandler {
         },
       });
       this.machineRpcServer = new LoroStreamsMachineRpcServer({
+        authorizeRequest: async (request) => {
+          const { executionAuthorization, ...payload } = request;
+          if (!executionAuthorization || !this.cloudPort.access.verifyExecution)
+            throw new Error('Authenticated machine execution proof required. Update the client.');
+          const verified = await this.cloudPort.access.verifyExecution(
+            {
+              workspaceId: this.workspaceId,
+              machineId: this.machineId,
+              purpose: 'rpc',
+              digest: await executionDigest(payload),
+            },
+            executionAuthorization
+          );
+          const params = request.params as Record<string, unknown>;
+          for (const identity of [params, params.request, params.spec]) {
+            if (!identity || typeof identity !== 'object') continue;
+            for (const key of ['userId', 'requesterUserId', 'requestedByUserId']) {
+              const claimed = (identity as Record<string, unknown>)[key];
+              if (claimed !== undefined && claimed !== verified.requesterUserId)
+                throw new Error('RPC requester does not match authenticated identity.');
+            }
+          }
+          await this.executionReceipts.claim([this.workspaceId, this.machineId, 'rpc', request.id]);
+        },
         logger: this.logger,
         workspaceId: this.workspaceId,
         machineId: this.machineId,
@@ -3391,6 +3421,62 @@ export class MessageHandler {
       this.userId
     );
     this.sessionDispatchWatcher = new SessionDispatchWatcher({
+      claimTurn:
+        this.cloudPort.kind === 'cloud'
+          ? async (sessionId, turnId) => {
+              await this.executionReceipts.claim([
+                this.workspaceId,
+                this.machineId,
+                'turn',
+                sessionId,
+                turnId,
+              ]);
+            }
+          : undefined,
+      verifyTurn:
+        this.cloudPort.kind === 'cloud'
+          ? async (meta, turn) => {
+              const proof = turn.inputConfig?.executionAuthorization;
+              if (proof?.startsWith('local-execution-v1.')) {
+                const allowed =
+                  turn.userId === this.userId &&
+                  (await this.localExecutionAuthority.verify(
+                    {
+                      workspaceId: this.workspaceId,
+                      machineId: this.machineId,
+                      purpose: 'turn',
+                      digest: await executionDigest(executionTurnPayload(meta, turn)),
+                    },
+                    this.userId,
+                    proof
+                  ));
+                return allowed
+                  ? { outcome: 'allowed' }
+                  : { outcome: 'denied', reason: 'not_visible' };
+              }
+              if (!proof || !this.cloudPort.access.verifyExecution)
+                return { outcome: 'denied', reason: 'not_visible' };
+              try {
+                const verified = await this.cloudPort.access.verifyExecution(
+                  {
+                    workspaceId: this.workspaceId,
+                    machineId: this.machineId,
+                    purpose: 'turn',
+                    digest: await executionDigest(executionTurnPayload(meta, turn)),
+                  },
+                  proof
+                );
+                return verified.requesterUserId === turn.userId
+                  ? { outcome: 'allowed' }
+                  : { outcome: 'denied', reason: 'not_visible' };
+              } catch (error) {
+                const message = formatErrorMessage(error);
+                if (/\((400|401|403)\)/.test(message))
+                  return { outcome: 'denied', reason: 'not_visible' };
+                return { outcome: 'indeterminate', cause: 'network', error: message };
+              }
+            }
+          : undefined,
       logger: this.logger,
       machineId: this.machineId,
       workspaceId: this.workspaceId,
@@ -6439,6 +6525,23 @@ export class MessageHandler {
     };
 
     switch (request.method) {
+      case 'machine/authorize-execution': {
+        if (request.workspaceId !== this.workspaceId || request.machineId !== this.machineId)
+          throw new Error('Execution authorization target mismatch');
+        return {
+          type: 'machine/execution-authorization',
+          requesterUserId: this.userId,
+          requestToken: await this.localExecutionAuthority.authorize(
+            {
+              workspaceId: this.workspaceId,
+              machineId: this.machineId,
+              purpose: request.params.purpose,
+              digest: request.params.digest,
+            },
+            this.userId
+          ),
+        };
+      }
       case 'mcp/list-tools':
         return await listMcpTools(request.params.server);
       case 'session/call-tool': {

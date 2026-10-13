@@ -149,6 +149,7 @@ export type TitleGenerationConfig = {
 };
 
 export type AgentConfigMeta = {
+  executionAuthorization?: string;
   codexAuth?: import('./codex-auth-profile').CodexAuthProfile;
   id: AgentConfigId;
   /**
@@ -1241,6 +1242,7 @@ export const sessionSchema = schema.LoroMap({
 });
 
 export const messageQueueItemSchema = schema.LoroMap({
+  executionAuthorization: schema.String({ required: false }),
   task: schema.String(),
   project: schema.Any({ required: false }),
   userId: schema.String(),
@@ -1262,8 +1264,9 @@ export type MessageQueueItem = Omit<InferType<typeof messageQueueItemSchema>, 'p
 };
 export type MessageQueueItemInput = Omit<
   InferInputType<typeof messageQueueItemSchema>,
-  'project'
+  'project' | 'executionAuthorization'
 > & {
+  executionAuthorization?: string;
   project: ProjectRef | undefined;
 };
 

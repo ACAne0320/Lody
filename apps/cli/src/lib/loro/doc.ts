@@ -7,6 +7,7 @@ import {
   ACPSessionId,
   AgentConfigCliType,
   AgentType,
+  isBuiltinAgentType,
   CliType,
   collectOnlineMachineIdsFromPresence,
   createHistoryWriter,
@@ -26,6 +27,7 @@ import {
   isCodeCollabFileIndexSignalFlockDocId,
   CODE_COLLAB_FILE_INDEX_FLOCK_TTL_MS,
   SessionMeta,
+  type SessionLaunchConfig,
   type SessionHistoryBackendKind,
   type SessionQueuePromotionRecord,
   type SessionSteerOperationRecord,
@@ -72,6 +74,10 @@ import {
   isSensitiveAcpConfigOptionId,
   BuiltinRuntimeOverridesSchema,
   CustomAcpLaunchSpecSchema,
+  type McpServerId,
+  type WorkspaceMcpServerMeta,
+  mcpExecutionAuthorizationPayload,
+  type MachineExecutionIntent,
 } from '@lody/shared';
 import { LocalLoroDataPlaneServer } from '@lody/shared/local-loro-data-plane-server';
 import { createLocalLoroDataPlaneScheduler } from '@lody/shared/local-loro-data-plane-scheduler';
@@ -131,6 +137,14 @@ import {
 } from '@/lib/agent-config-machine-flock';
 import { installCliHttpGlobalDispatcher } from '@/utils/http-transport';
 import { createCliStreamsTransport } from './streams-transport';
+import {
+  TrustedNativeSessions,
+  TrustedMachineConfigStore,
+  TrustedMcpConfigStore,
+  LocalExecutionAuthority,
+} from '../trusted-machine-config';
+import { executionDigest, executionTurnPayload } from '@lody/shared';
+import type { CloudAccessPort } from '@lody/platform';
 
 const isValidDaemonLaunchConfig = (
   config: AgentConfigMeta,
@@ -351,6 +365,145 @@ export type LoroRepoPersistReason =
   | 'session-edit-and-resend-rollback';
 
 export class LoroDocumentManager {
+  private executionAccess?: Pick<
+    CloudAccessPort,
+    'executionPolicy' | 'authorizeExecution' | 'verifyExecution'
+  >;
+  private executionMachineId?: MachineId;
+  private readonly trustedMachineConfigs = new TrustedMachineConfigStore();
+  private readonly trustedMcpConfigs = new TrustedMcpConfigStore();
+  private readonly localExecutionAuthority = new LocalExecutionAuthority();
+
+  private async verifyExecutionProof(intent: MachineExecutionIntent, proof: string) {
+    if (proof.startsWith('local-execution-v1.')) {
+      if (!(await this.localExecutionAuthority.verify(intent, this.userId, proof)))
+        throw new Error('Invalid local execution proof');
+      return { requesterUserId: this.userId, sharedWithTeam: false };
+    }
+    if (!this.executionAccess?.verifyExecution)
+      throw new Error('Execution verification unavailable');
+    return this.executionAccess.verifyExecution(intent, proof);
+  }
+  private readonly trustedNativeSessions = new TrustedNativeSessions();
+
+  async resolveExecutionResume(
+    meta: SessionMeta | undefined,
+    requested?: string
+  ): Promise<ACPSessionId | undefined> {
+    if (requested) return requested as ACPSessionId;
+    if (!meta) return undefined;
+    if (!this.executionAccess) return meta.acpSessionId ?? undefined;
+    return (await this.trustedNativeSessions.read([this.workspaceId, meta.machineId, meta.id])) as
+      | ACPSessionId
+      | undefined;
+  }
+
+  configureExecutionAuthority(
+    access: Pick<CloudAccessPort, 'executionPolicy' | 'authorizeExecution' | 'verifyExecution'>,
+    machineId: MachineId
+  ): void {
+    this.executionAccess = access;
+    this.executionMachineId = machineId;
+  }
+
+  async allowsWorkspaceExecutables(): Promise<boolean> {
+    if (!this.executionAccess) return true; // Local-only composition.
+    if (!this.executionMachineId || !this.executionAccess.executionPolicy) return false;
+    try {
+      return (await this.executionAccess.executionPolicy(this.workspaceId, this.executionMachineId))
+        .sharedWithTeam;
+    } catch {
+      return false;
+    }
+  }
+
+  async assertHistoryReplayAllowed(): Promise<void> {
+    if (!(await this.allowsWorkspaceExecutables())) {
+      throw new Error(
+        'Automatic replay of workspace history is disabled on private machines. Resume the original agent session or start a new conversation.'
+      );
+    }
+  }
+
+  async getTrustedMcpConfig(
+    id: McpServerId,
+    candidate: WorkspaceMcpServerMeta | undefined
+  ): Promise<WorkspaceMcpServerMeta | null> {
+    if (await this.allowsWorkspaceExecutables()) return candidate ?? null;
+    const trusted = await this.trustedMcpConfigs.read(this.workspaceId, this.userId, id);
+    if (
+      !candidate ||
+      candidate.id !== id ||
+      !candidate.executionAuthorization ||
+      !this.executionAccess?.verifyExecution ||
+      !this.executionMachineId
+    )
+      return trusted;
+    const { executionAuthorization: proof, ...snapshot } = candidate;
+    // Replayed older catalog revisions must not roll back an accepted owner update.
+    if (trusted && (snapshot.executionRevision ?? 0) <= (trusted.executionRevision ?? 0))
+      return trusted;
+    try {
+      const verified = await this.verifyExecutionProof(
+        {
+          workspaceId: this.workspaceId,
+          machineId: this.executionMachineId,
+          purpose: 'mcp',
+          digest: await executionDigest(mcpExecutionAuthorizationPayload(snapshot)),
+        },
+        proof
+      );
+      if (verified.requesterUserId === this.userId) {
+        return this.trustedMcpConfigs.write(this.workspaceId, this.userId, snapshot);
+      }
+    } catch {
+      // Availability or a peer replacement cannot revoke the already accepted command.
+    }
+    return trusted;
+  }
+
+  async authorizeAuthoredTurn(
+    meta: SessionMeta,
+    entry: SessionHistoryInput
+  ): Promise<SessionHistoryInput> {
+    if (!this.executionAccess) return entry;
+    if (!this.executionAccess.authorizeExecution)
+      throw new Error('Execution authorization unavailable');
+    const result = await this.executionAccess.authorizeExecution(
+      {
+        workspaceId: this.workspaceId,
+        machineId: meta.machineId,
+        purpose: 'turn',
+        digest: await executionDigest(executionTurnPayload(meta, entry)),
+      },
+      entry.userId
+    );
+    if (result.requesterUserId !== entry.userId)
+      throw new Error('Delegated execution requires authenticated requester proof');
+    return {
+      ...entry,
+      inputConfig: { ...entry.inputConfig, executionAuthorization: result.requestToken },
+    };
+  }
+
+  async getTrustedSessionLaunchConfig(
+    meta: SessionMeta | undefined
+  ): Promise<SessionLaunchConfig | null | undefined> {
+    if (await this.allowsWorkspaceExecutables()) return undefined;
+    if (!meta?.agentConfigId)
+      throw new Error('Private machines require a locally trusted Provider');
+    const config = await this.getAgentConfigForMachineLaunch(meta.agentConfigId, meta.machineId);
+    if (!config)
+      throw new Error(
+        'Review and save this Provider as the machine owner before running it on a private machine'
+      );
+    return {
+      customAcp: config.customAcp,
+      runtimeOverrides: config.runtimeOverrides,
+      env: config.env,
+      codexAuth: config.codexAuth,
+    };
+  }
   public readonly repo: LoroRepo;
   sessions: Map<SessionId, SessionDocument> = new Map();
   machine: MachineDocument | null = null;
@@ -1270,6 +1423,18 @@ export class LoroDocumentManager {
         this.logger,
         this.sessionHistoryFactory
       );
+      sessionDoc.rememberNativeSession = async (nativeId) => {
+        if (this.executionMachineId)
+          await this.trustedNativeSessions.write(
+            [this.workspaceId, this.executionMachineId, sessionId],
+            nativeId
+          );
+      };
+      sessionDoc.authorizeAuthoredTurn = async (entry) => {
+        const meta = await sessionDoc.getMetaState();
+        if (!meta) throw new Error('Session metadata unavailable');
+        return this.authorizeAuthoredTurn(meta, entry);
+      };
       const meta = options.historyBackend ? undefined : await this.repo.getDocMeta(docId);
       const historyBackend =
         options.historyBackend ??
@@ -1442,26 +1607,73 @@ export class LoroDocumentManager {
     agentConfigId: AgentConfigId,
     machineId: MachineId
   ): Promise<AgentConfigMeta | null> {
-    const config = await this.getAgentConfigById(agentConfigId, machineId);
-    if (config) {
-      return isValidDaemonLaunchConfig(config, agentConfigId, machineId) ? config : null;
+    let config = await this.getAgentConfigById(agentConfigId, machineId);
+    if (!config) {
+      const handle = await this.repo.openFlockDoc(
+        getMachineFlockDocId(this.workspaceId, machineId)
+      );
+      const rows = readMachineFlockRowsFromFlock(handle.flock, {
+        prefixes: [
+          machineFlockKeys.providerSetup(agentConfigId),
+          machineFlockKeys.providerSetupCancellation(agentConfigId),
+        ],
+      });
+      if (getMachineFlockProviderSetupCancellations(rows)[agentConfigId]) return null;
+      const setup = getMachineFlockProviderSetups(rows)[agentConfigId];
+      config = setup?.machineId === machineId ? setup.config : null;
     }
-
-    const handle = await this.repo.openFlockDoc(getMachineFlockDocId(this.workspaceId, machineId));
-    const rows = readMachineFlockRowsFromFlock(handle.flock, {
-      prefixes: [
-        machineFlockKeys.providerSetup(agentConfigId),
-        machineFlockKeys.providerSetupCancellation(agentConfigId),
-      ],
-    });
-    if (getMachineFlockProviderSetupCancellations(rows)[agentConfigId]) {
-      return null;
+    if (!config || !isValidDaemonLaunchConfig(config, agentConfigId, machineId)) return null;
+    if (await this.allowsWorkspaceExecutables()) return config;
+    const trusted = await this.trustedMachineConfigs.read(
+      this.workspaceId,
+      machineId,
+      agentConfigId
+    );
+    if (config.executionAuthorization && this.executionAccess?.verifyExecution) {
+      const { executionAuthorization: proof, ...snapshot } = config;
+      try {
+        const verified = await this.verifyExecutionProof(
+          {
+            workspaceId: this.workspaceId,
+            machineId,
+            purpose: 'provider',
+            digest: await executionDigest(snapshot),
+          },
+          proof
+        );
+        if (verified.requesterUserId === this.userId) {
+          await this.trustedMachineConfigs.write(this.workspaceId, machineId, snapshot);
+          return snapshot;
+        }
+      } catch {
+        /* Peer edits cannot replace the last locally trusted specification. */
+      }
     }
-    const setup = getMachineFlockProviderSetups(rows)[agentConfigId];
-    return setup?.machineId === machineId &&
-      isValidDaemonLaunchConfig(setup.config, agentConfigId, machineId)
-      ? setup.config
-      : null;
+    if (trusted) return trusted;
+    // Existing uncustomized builtins contain no workspace-supplied executable
+    // or environment. Bootstrap those using the host's static implementation;
+    // customized/registry Providers still require an authenticated owner save.
+    if (
+      config.cliType === 'builtin' &&
+      isBuiltinAgentType(config.agentType) &&
+      !config.customAcp &&
+      !config.runtimeOverrides &&
+      !config.codexAuth &&
+      Object.keys(config.env).length === 0
+    ) {
+      const builtin: AgentConfigMeta = {
+        id: config.id,
+        machineId,
+        name: config.name,
+        description: undefined,
+        cliType: 'builtin',
+        agentType: config.agentType,
+        env: {},
+      };
+      await this.trustedMachineConfigs.write(this.workspaceId, machineId, builtin);
+      return builtin;
+    }
+    return null;
   }
 
   async createAgentConfig(
@@ -1485,6 +1697,15 @@ export class LoroDocumentManager {
       } satisfies AgentConfigMeta,
       { sync: this, reason: 'agent-config-upsert' }
     );
+    await this.trustedMachineConfigs.write(this.workspaceId, machineId, {
+      id: agentConfigId,
+      machineId,
+      name: name ?? agentType,
+      description: undefined,
+      cliType,
+      agentType,
+      env: {},
+    });
     return agentConfigId;
   }
 
@@ -1814,6 +2035,8 @@ export function subscribeSessionChanges(
 }
 
 export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'history'>, SessionMeta> {
+  rememberNativeSession?: (nativeId: ACPSessionId) => Promise<void>;
+  authorizeAuthoredTurn?: (entry: SessionHistoryInput) => Promise<SessionHistoryInput>;
   private mirror: SessionControlPlaneMirror | null = null;
   handle: RepoDocHandle | null = null;
   docSub: RepoRoomSubscription | null = null;
@@ -2620,6 +2843,7 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
   }
 
   async setACPSessionId(acpSessionId: ACPSessionId) {
+    await this.rememberNativeSession?.(acpSessionId);
     if (!this.mirror) {
       throw new Error('SessionDocument not initialized');
     }

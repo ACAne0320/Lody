@@ -1,16 +1,13 @@
-import { MemoryBindingSchema } from '@lody/shared';
+import { buildQueuedSessionTurn } from '@lody/shared';
 import type { RepoTransportRoomStatus, RepoWatchHandle } from 'loro-repo';
 import { Effect, Fiber } from 'effect';
 import {
   buildMissingEmail,
   buildPendingUserHistoryEntry,
-  buildSessionTurnInputConfig,
-  normalizeSessionTurnInputConfig,
   getSessionRoomId,
   type ChatFailedReason,
   isLoroRepoDocDeleted,
   isSessionDocRoomId,
-  type AcpConfigOptionValue,
   type MachineId,
   SESSION_DOC_PREFIX,
   SessionCreateRequestValidated,
@@ -23,7 +20,6 @@ import {
   SessionStatusFactory,
   type SessionTurnInputConfig,
   type WorkspaceId,
-  normalizeMcpServerIdSelection,
   getPendingUserTurnActivationId,
   hasPendingUserTurnActivation,
   resolveSessionHistoryStatus,
@@ -34,10 +30,7 @@ import { startTraceSpan, traceAsync } from '@/utils/trace-span';
 import type { LoroDocumentManager } from '@/lib/loro/doc';
 import { subscribeSessionChanges } from '@/lib/loro/doc';
 import { SessionExecutionService, type SessionDispatchSource } from './session-execution-service';
-import {
-  extractPromptPreviewFromInputBlocks,
-  normalizeSessionInputBlocks,
-} from './session-execution-helpers';
+import { normalizeSessionInputBlocks } from './session-execution-helpers';
 import type { SessionUserResolver, SessionUserProfile } from './session-user-resolver';
 import {
   findNextDispatchableUserTurn,
@@ -45,7 +38,6 @@ import {
   isActivationAwaitingHistory,
   resolveDispatchTurnInput,
   resolveDispatchAcpSessionId,
-  resolveResumableAcpSessionId,
   resolveSessionCancelAction,
   resolveSessionDispatchAction,
   shouldWatchSession,
@@ -78,6 +70,8 @@ type SessionDispatchWatcherDeps = {
   // instead of the daemon host's git config.
   userResolver: SessionUserResolverLike;
   accessPolicy?: SessionAccessPolicyService;
+  claimTurn?: (sessionId: SessionId, turnId: string) => Promise<void>;
+  verifyTurn?: (meta: SessionMeta, turn: SessionHistoryInput) => Promise<MachineAccessVerification>;
   getPreparedSessionLaunchConfig?: (input: {
     sessionMeta: SessionMeta;
     requesterUserId: string;
@@ -203,17 +197,6 @@ type SessionReconcilePhase =
   | 'enqueue-session-checks';
 
 type SessionDocumentHandle = Awaited<ReturnType<LoroDocumentManager['getOrCreateSessionDoc']>>;
-
-const isConfigOptionValueRecord = (
-  value: unknown
-): value is Record<string, AcpConfigOptionValue> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  return Object.values(value as Record<string, unknown>).every(
-    (item) => typeof item === 'string' || typeof item === 'boolean'
-  );
-};
 
 /**
  * ## Session Dispatch Watcher — Behavioral Design
@@ -724,6 +707,12 @@ export class SessionDispatchWatcher {
         return finish('duplicate');
       }
 
+      // The writer signs the durable row asynchronously; an unsigned fast-path
+      // offer must only wake the watcher, never race that row into a denial.
+      if (this.deps.verifyTurn && !offer.inputConfig.executionAuthorization) {
+        this.activateRpcTurn(sessionId);
+        return finish('accepted');
+      }
       const inputBlocks = normalizeSessionInputBlocks(
         offer.inputConfig.inputBlocks,
         offer.inputConfig.prompt ?? ''
@@ -1536,6 +1525,10 @@ export class SessionDispatchWatcher {
 
       const accessPromise = dispatchTurnPromise.then(async (turn) => {
         ensureActive();
+        if (this.deps.verifyTurn) {
+          const verified = await this.deps.verifyTurn(turn.freshMeta, turn.nextUserTurn);
+          if (verified.outcome !== 'allowed') return verified;
+        }
         const access = await traceAsync(
           this.deps.logger,
           'dispatch.verify_machine_access',
@@ -1558,7 +1551,7 @@ export class SessionDispatchWatcher {
       // dominant "owner sending to their own machine" case skips the blocking wait
       // while still using the prepared-turn execution path.
       const localAccess =
-        this.deps.accessPolicy && this.deps.currentUserId
+        !this.deps.verifyTurn && this.deps.accessPolicy && this.deps.currentUserId
           ? await Effect.runPromise(
               this.deps.accessPolicy.decide({
                 workspaceId: this.deps.workspaceId,
@@ -1620,6 +1613,7 @@ export class SessionDispatchWatcher {
             requestPromise,
             onAccessAllowed: async () => {
               ensureActive();
+              await this.deps.claimTurn?.(sessionId, nextUserTurn.id);
               this.interruptAccessRetry(sessionId);
               this.takeTurnSourceHint(sessionId, nextUserTurn.id);
               this.consumeStashedRpcTurn(sessionId, nextUserTurn.id);
@@ -2011,7 +2005,12 @@ export class SessionDispatchWatcher {
         agentRoleRevision: entry.inputConfig?.agentRoleRevision,
         agentRoleSnapshot: entry.inputConfig?.agentRoleSnapshot,
         issuePRMentions: entry.inputConfig?.issuePRMentions,
-        resume: entry.inputConfig?.resume ?? resolveDispatchAcpSessionId(meta),
+        resume: this.deps.verifyTurn
+          ? await this.deps.workspaceDocument.resolveExecutionResume(
+              meta,
+              entry.inputConfig?.resume
+            )
+          : (entry.inputConfig?.resume ?? resolveDispatchAcpSessionId(meta)),
       },
       userTurnId: entry.id,
       userId: entry.userId ?? meta.userId,
@@ -2096,40 +2095,7 @@ export class SessionDispatchWatcher {
     meta: SessionMeta,
     queuedTurnId: string
   ): SessionHistoryInput | null {
-    const inputBlocks = normalizeSessionInputBlocks(
-      queuedItem.acpSessionConfig?.inputBlocks,
-      queuedItem.acpSessionConfig?.prompt ?? queuedItem.task
-    );
-    const inputConfig = buildSessionTurnInputConfig({
-      inputBlocks,
-      prompt:
-        queuedItem.acpSessionConfig?.prompt ?? extractPromptPreviewFromInputBlocks(inputBlocks),
-      cliType: queuedItem.acpSessionConfig?.cliType ?? meta.cliType,
-      agentType: queuedItem.acpSessionConfig?.agentType ?? meta.agentType,
-      modeId: queuedItem.acpSessionConfig?.modeId,
-      modelId: queuedItem.acpSessionConfig?.modelId,
-      configOptionValues: isConfigOptionValueRecord(queuedItem.acpSessionConfig?.configOptionValues)
-        ? queuedItem.acpSessionConfig.configOptionValues
-        : undefined,
-      memory:
-        queuedItem.acpSessionConfig?.memory === undefined
-          ? undefined
-          : MemoryBindingSchema.parse(queuedItem.acpSessionConfig.memory),
-      mcpServerIds: normalizeMcpServerIdSelection(queuedItem.acpSessionConfig?.mcpServerIds) ?? [],
-      agentRoleId: queuedItem.acpSessionConfig?.agentRoleId,
-      agentRoleRevision: queuedItem.acpSessionConfig?.agentRoleRevision,
-      agentRoleSnapshot: normalizeSessionTurnInputConfig(queuedItem.acpSessionConfig)
-        ?.agentRoleSnapshot,
-      issuePRMentions: queuedItem.acpSessionConfig?.issuePRMentions,
-      resume: resolveResumableAcpSessionId(meta),
-    });
-    const pendingEntry = buildPendingUserHistoryEntry({
-      userId: queuedItem.userId ?? meta.userId,
-      inputBlocks,
-      timestamp: queuedItem.timestamp,
-      inputConfig,
-    });
-    return pendingEntry ? { ...pendingEntry, id: queuedTurnId } : null;
+    return buildQueuedSessionTurn(queuedItem, meta, queuedTurnId);
   }
 
   /**

@@ -7,15 +7,12 @@ Worktree rules: [worktree/AGENTS.md](worktree/AGENTS.md).
 
 ## Authorization and identity
 
-- Authorize the target machine through the injected access capability with the source CLI token;
-  MCP delegation verifies the frozen Turn requester; Operation-side rules are in
-  [../mcp/AGENTS.md](../mcp/AGENTS.md).
-- Never send an untrusted requester through workspace Machine RPC: it authenticates no member
-  identity.
-- Live status is a target-daemon Machine RPC read; durable metadata is not a live-presence
-  substitute.
-- Derive the human identity from the active dispatch/execution runtime and fail closed when none
-  exists; retries and recovery never reread mutable history.
+- Authorize targets through the access port with the source CLI token and frozen Turn
+  requester. [MCP rules](../mcp/AGENTS.md).
+- Cloud Machine RPC requires a content-bound authenticated requester proof.
+- Read live status through target-daemon RPC, never durable metadata.
+- Human identity comes from active execution; missing identity fails closed. Retries/recovery
+  never reread mutable history.
 - Machine/Provider credentials stay host-scoped. Attribution, authorization and commits
   use the frozen Turn identity; GitHub network auth uses the trusted conversation owner.
 - Git: owner uses local config, no profile query; others never read it.
@@ -25,21 +22,19 @@ Worktree rules: [worktree/AGENTS.md](worktree/AGENTS.md).
 ## Dispatch
 
 - Queue promotion preserves frozen fields; remove its row only after history and activation succeed.
-- Absent session meta is "unknown", not foreign: hold the TTL-bounded RPC stash until meta lands;
-  drop it only on a definitive verdict.
+- Missing meta is unknown: retain the TTL-bounded RPC stash until a definitive verdict.
 - Subscribe to RPC offers BEFORE awaiting Doc Room join/sync and never dispatch from the RPC
   handler; history sync is the durable fallback, not a fast path.
-- Missing-history recovery never advances `lastHandledUserMsgId`: set the permanent one-shot
-  `lastMissingHistoryUserMsgId` ack for that turn and surface `chat_failed`.
+- Missing history: never advance `lastHandledUserMsgId`; set the one-shot permanent
+  `lastMissingHistoryUserMsgId` ack and surface `chat_failed`.
 - Retire an already-terminal stale activation into `settledActivationUserMsgId`; never claim the
   marker or rewrite `latestUserMsgId`, and report settled only if none survives.
 - Never replay late history; recovery is a new send. Use last row per ID; stop no-progress repairs.
 - `hasPendingUserTurnActivation` is the ONLY pending-turn predicate; never compare those two
   pointers in a consumer.
-- Never inspect historical Session documents to infer work, or publish or clear active presence
-  here (`../lib/loro/session-active-presence.ts`).
-- Keep bootstrap and live reconciliation bounded as README describes; add no per-trigger scan or
-  extra throttle.
+- Never infer work from historical documents or change presence here;
+  `../lib/loro/session-active-presence.ts` owns it.
+- Keep reconciliation bounded per README; no per-trigger scans or extra throttles.
 
 ## Turn execution
 
@@ -68,8 +63,8 @@ Worktree rules: [worktree/AGENTS.md](worktree/AGENTS.md).
 - A turn with no ACP updates takes `recordSilentTurnFailure`, not `setDispatchHandled`.
   Read `turnProducedVisibleOutput` before `finalizeTurn` clears it; still finalize, advance
   the pointer, and fail open.
-- Diff content comes only from the CLI-local ACP evidence store; GitHub `diffStats` use PR compare
-  semantics, and `session-diff-stats-target.ts` skips rather than overwrites a good total.
+- Diffs use CLI-local ACP evidence. GitHub `diffStats` use PR compare semantics;
+  `session-diff-stats-target.ts` never overwrites a good total.
 
 ## Lifecycle
 
@@ -120,3 +115,7 @@ Worktree rules: [worktree/AGENTS.md](worktree/AGENTS.md).
 - Every owner-allowed dispatch fires `fireOwnerAccessRecheck` with `forceBackendVerification`; a
   confirmed online allow is the ONLY writer of the access snapshot and `verifiedAt`, a deny clears
   it, `indeterminate` writes nothing.
+
+- Private cloud launches use host-trusted Providers/native resume targets, including
+  preparation/restore. Private MCP uses owner-approved snapshots; GitHub scripts require sharing.
+  [Authority](../../../../specs/machine-execution-authority.md).

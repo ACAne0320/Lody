@@ -39,6 +39,7 @@ type ProviderSetupSyncScheduler = {
 };
 
 export type ProviderSetupManagerOptions = {
+  authorizeSetup?: (setup: ProviderSetupTask) => Promise<boolean>;
   repo: LoroRepo;
   workspaceId: WorkspaceId;
   machineId: MachineId;
@@ -85,6 +86,7 @@ const isMissingDimcodeRuntimeError = (error: string | undefined): boolean => {
  * explicitly resumes them.
  */
 export class ProviderSetupManager {
+  private readonly authorizeSetup?: ProviderSetupManagerOptions['authorizeSetup'];
   private readonly repo: LoroRepo;
   private readonly workspaceId: WorkspaceId;
   private readonly machineId: MachineId;
@@ -97,6 +99,7 @@ export class ProviderSetupManager {
   private cleanupRetry: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: ProviderSetupManagerOptions) {
+    this.authorizeSetup = options.authorizeSetup;
     this.repo = options.repo;
     this.workspaceId = options.workspaceId;
     this.machineId = options.machineId;
@@ -171,6 +174,8 @@ export class ProviderSetupManager {
     if (!setup || setup.attempt !== snapshot.attempt || !RESUMABLE_STATUSES.has(setup.status)) {
       return;
     }
+
+    if (this.authorizeSetup && !(await this.authorizeSetup(setup))) return;
 
     const existingConfig = await this.readAgentConfig(setup.id);
     if (existingConfig) {

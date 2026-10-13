@@ -119,6 +119,18 @@ export type CloudAccessSnapshot =
  * local catalog, the owner is always allowed, and no network I/O happens.
  */
 export interface CloudAccessPort {
+  executionPolicy?(
+    workspaceId: string,
+    machineId: string
+  ): Promise<{ ownerUserId: string; sharedWithTeam: boolean }>;
+  authorizeExecution?(
+    intent: import('@lody/shared').MachineExecutionIntent,
+    delegatedRequesterUserId?: string
+  ): Promise<{ requestToken: string; requesterUserId: string }>;
+  verifyExecution?(
+    intent: import('@lody/shared').MachineExecutionIntent,
+    requestToken: string
+  ): Promise<import('@lody/shared').MachineExecutionVerification>;
   /**
    * Emits the current workspace set immediately and on every change.
    */
