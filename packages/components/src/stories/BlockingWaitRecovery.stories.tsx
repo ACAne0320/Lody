@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import type { WorkspaceId } from '@lody/shared';
 import type { WorkspaceRuntime } from '@/atoms/runtime';
-import { WorkspaceOpenRecoveryPage } from '@/components/workspace-open-placeholder';
+import { RecoveryPage } from '@/components/blocking-wait-placeholder';
 import type { WorkspaceDataScopeObservation } from '@/hooks/use-workspace-data-scope-state';
 
 const runtime = {
@@ -22,11 +22,12 @@ function observation(
   };
 }
 
-const meta: Meta<typeof WorkspaceOpenRecoveryPage> = {
-  title: 'Components/WorkspaceOpenRecovery',
-  component: WorkspaceOpenRecoveryPage,
+const meta: Meta<typeof RecoveryPage> = {
+  title: 'Components/BlockingWaitRecovery',
+  component: RecoveryPage,
   args: {
     layout: 'pane',
+    gate: 'workspace_data',
     failed: true,
     observation: observation('doc_meta_scan_failed'),
     waitStartedAt: Date.now() - 4_000,
@@ -42,7 +43,7 @@ const meta: Meta<typeof WorkspaceOpenRecoveryPage> = {
 };
 
 export default meta;
-type Story = StoryObj<typeof WorkspaceOpenRecoveryPage>;
+type Story = StoryObj<typeof RecoveryPage>;
 
 /** The local copy could not be read, and today's automatic repair already ran. */
 export const Failed: Story = {};
@@ -59,4 +60,21 @@ export const Slow: Story = {
 /** Before any workspace layout exists: the page is the whole window. */
 export const FailedAtBoot: Story = {
   args: { layout: 'window' },
+};
+
+/** A wait outside any workspace (signing in, loading the workspace list). */
+export const SlowBeforeAnyWorkspace: Story = {
+  args: {
+    layout: 'window',
+    gate: 'session_loading',
+    failed: false,
+    observation: {
+      targetSlug: null,
+      scope: null,
+      workspaceId: null,
+      organizationsReady: false,
+      docMetaScanErrorType: null,
+      runtimeInitErrorType: null,
+    },
+  },
 };

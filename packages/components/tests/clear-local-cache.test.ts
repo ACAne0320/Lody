@@ -7,8 +7,10 @@ import {
   armAutomaticCacheClear,
   markCacheClearPending,
   maybeClearLodyCacheOnBoot,
+  readLastLocalClear,
   readPendingLocalClearMode,
   resetBootClearMemoForTests,
+  restartIntoCacheClear,
   startHardReset,
 } from '../src/lib/clear-local-cache';
 import { registerAuthClient } from '../src/lib/auth-client-singleton';
@@ -20,6 +22,8 @@ let deletedDatabases: string[];
 let deletedCaches: string[];
 let presentDatabases: string[];
 let presentCaches: string[];
+/** Databases whose delete request errors, as on a storage backend that cannot open them. */
+let failingDatabases: Set<string>;
 
 type Listener = () => void;
 
@@ -29,10 +33,19 @@ function installFakeIndexedDb() {
     deleteDatabase: (name: string) => {
       deletedDatabases.push(name);
       const listeners = new Map<string, Listener>();
+      const failing = failingDatabases.has(name);
       // Resolve on the microtask queue: the helper races a 3s timeout, so this
       // keeps the test off real timers.
-      void Promise.resolve().then(() => listeners.get('success')?.());
+      void Promise.resolve().then(() => {
+        if (failing) {
+          listeners.get('error')?.();
+          return;
+        }
+        presentDatabases = presentDatabases.filter((present) => present !== name);
+        listeners.get('success')?.();
+      });
       return {
+        error: failing ? new DOMException('backing store', 'UnknownError') : null,
         addEventListener: (type: string, listener: Listener) => listeners.set(type, listener),
       };
     },
@@ -57,6 +70,7 @@ beforeEach(() => {
   deletedCaches = [];
   presentDatabases = ['lody:repo-file-paths', 'lody-loro-repo-db-ws1', 'someone-elses-db'];
   presentCaches = ['lody-avatars', 'unrelated-cache'];
+  failingDatabases = new Set();
   localStorage.clear();
   sessionStorage.clear();
   installFakeIndexedDb();
@@ -217,8 +231,9 @@ describe('maybeClearLodyCacheOnBoot', () => {
 describe('armAutomaticCacheClear', () => {
   const NOW = Date.UTC(2026, 9, 13, 12);
 
-  it('arms one cache clear, and refuses again until the cooldown has passed', async () => {
+  it('allows one automatic clear, and refuses again until the cooldown has passed', async () => {
     expect(armAutomaticCacheClear(NOW)).toBe(true);
+    expect(await restartIntoCacheClear()).toBe(true);
     expect(readPendingLocalClearMode()).toBe('cache');
 
     // The armed clear runs at boot; the record of it has to survive that clear.
@@ -226,17 +241,13 @@ describe('armAutomaticCacheClear', () => {
     expect(readPendingLocalClearMode()).toBeNull();
 
     expect(armAutomaticCacheClear(NOW + AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS - 1)).toBe(false);
-    expect(readPendingLocalClearMode()).toBeNull();
     expect(armAutomaticCacheClear(NOW + AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS)).toBe(true);
-    expect(readPendingLocalClearMode()).toBe('cache');
   });
 
   it('refuses when the clock moved back behind the last automatic clear', () => {
     expect(armAutomaticCacheClear(NOW)).toBe(true);
-    localStorage.removeItem(CACHE_CLEAR_FLAG);
 
     expect(armAutomaticCacheClear(NOW - 60_000)).toBe(false);
-    expect(readPendingLocalClearMode()).toBeNull();
   });
 
   it('refuses when it cannot record the clear, so a failing clear cannot loop', () => {
@@ -245,7 +256,62 @@ describe('armAutomaticCacheClear', () => {
     });
 
     expect(armAutomaticCacheClear(NOW)).toBe(false);
+  });
+});
+
+describe('a boot clear that cannot delete everything', () => {
+  it('records a complete clear and consumes the flag', async () => {
+    markCacheClearPending();
+
+    await maybeClearLodyCacheOnBoot();
+
+    expect(readLastLocalClear()).toMatchObject({ mode: 'cache', ok: true, attempts: 1 });
     expect(readPendingLocalClearMode()).toBeNull();
+  });
+
+  it('stays armed for a bounded number of boots, then gives up visibly', async () => {
+    failingDatabases.add('lody-loro-repo-db-ws1');
+    markCacheClearPending();
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      resetBootClearMemoForTests();
+      await maybeClearLodyCacheOnBoot();
+      expect(readLastLocalClear()).toMatchObject({
+        mode: 'cache',
+        ok: false,
+        failedCount: 1,
+        attempts: attempt,
+      });
+      // Retried at the next boot until the third attempt, then left to the user.
+      expect(readPendingLocalClearMode()).toBe(attempt < 3 ? 'cache' : null);
+    }
+  });
+
+  it('counts a database that still exists after a reported success as not cleared', async () => {
+    const deleteDatabase = indexedDB.deleteDatabase.bind(indexedDB);
+    const stubborn = 'lody-loro-repo-db-ws1';
+    (indexedDB as unknown as { deleteDatabase: (name: string) => unknown }).deleteDatabase = (
+      name: string
+    ) => {
+      const request = deleteDatabase(name);
+      if (name === stubborn) void Promise.resolve().then(() => presentDatabases.push(stubborn));
+      return request;
+    };
+    markCacheClearPending();
+
+    await maybeClearLodyCacheOnBoot();
+
+    expect(readLastLocalClear()).toMatchObject({ ok: false, failedCount: 1 });
+  });
+
+  it('keeps the record of a failed hard wipe through the wipe itself', async () => {
+    failingDatabases.add('someone-elses-db');
+    localStorage.setItem(CACHE_CLEAR_FLAG, 'all');
+
+    await maybeClearLodyCacheOnBoot();
+
+    expect(readLastLocalClear()).toMatchObject({ mode: 'hard', ok: false, attempts: 1 });
+    expect(readPendingLocalClearMode()).toBe('hard');
   });
 });
 
@@ -322,6 +388,55 @@ describe('a clear armed from the CLI', () => {
 describe('startHardReset sign-out', () => {
   afterEach(() => {
     registerAuthClient(null as unknown as LodyAuthClient);
+    delete (window as { __LODY_NATIVE_RESET__?: unknown }).__LODY_NATIVE_RESET__;
+    delete (window as { ipc?: unknown }).ipc;
+  });
+
+  it('hands the wipe to a native shell that can delete at the file level', async () => {
+    localStorage.setItem('lody:auth-token', 'token');
+    const resets: string[] = [];
+    (window as { __LODY_NATIVE_RESET__?: unknown }).__LODY_NATIVE_RESET__ = {
+      version: 1,
+      resetAllData: async () => {
+        resets.push(localStorage.getItem('lody:auth-token') ?? 'gone');
+      },
+    };
+
+    await startHardReset();
+
+    expect(resets).toEqual(['token']);
+    // The shell owns the wipe and the reload; nothing was armed for a web wipe.
+    expect(readPendingLocalClearMode()).toBeNull();
+  });
+
+  it('falls back to the web wipe when the native shell refuses', async () => {
+    localStorage.setItem('lody:auth-token', 'token');
+    (window as { __LODY_NATIVE_RESET__?: unknown }).__LODY_NATIVE_RESET__ = {
+      version: 1,
+      resetAllData: async () => {
+        throw new Error('not now');
+      },
+    };
+
+    await startHardReset();
+
+    expect(localStorage.getItem('lody:auth-token')).toBeNull();
+    expect(readPendingLocalClearMode()).toBe('hard');
+  });
+
+  it('relaunches the desktop into its native wipe instead of wiping from the page', async () => {
+    localStorage.setItem('lody:auth-token', 'token');
+    const calls: Array<[string, unknown[]]> = [];
+    (window as unknown as { ipc: unknown }).ipc = {
+      invoke: async (channel: string, ...args: unknown[]) => {
+        calls.push([channel, args]);
+      },
+    };
+
+    await startHardReset();
+
+    expect(calls).toContainEqual(['app.relaunchIntoLocalReset', ['hard']]);
+    expect(readPendingLocalClearMode()).toBeNull();
   });
 
   it('revokes the server session before deleting the local token', async () => {

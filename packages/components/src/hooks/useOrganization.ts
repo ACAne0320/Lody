@@ -63,6 +63,9 @@ function getResponseErrorMessage(response: unknown): string | null {
   return 'Failed to switch organization';
 }
 
+/** Spacing of the single retries a spent organization-list retry burst still gets. */
+export const ORGANIZATIONS_SLOW_RETRY_MS = 30_000;
+
 async function setActiveOrganizationOnce(
   authClient: LodyAuthClient,
   userId: string,
@@ -353,6 +356,27 @@ function useCloudOrganizationState(options?: UseOrganizationOptions) {
     organizationsRetryCount >= maxOrganizationsRetries;
 
   const organizationsFailureFinal = organizationsErrorFinal || organizationsIdleFinal;
+
+  // A failed list must not stay failed for the life of the page: with no cached
+  // workspace id, the route has nothing else to open with. After the retry burst
+  // is spent, allow one more attempt when the network returns, when the app
+  // comes back to the foreground (a phone resuming after a long absence often
+  // fails its first requests), or every `ORGANIZATIONS_SLOW_RETRY_MS`.
+  useEffect(() => {
+    if (!organizationsFailureFinal || typeof window === 'undefined') return undefined;
+    const retryOnce = () => setOrganizationsRetryCount(maxOrganizationsRetries - 1);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') retryOnce();
+    };
+    const timer = setTimeout(retryOnce, ORGANIZATIONS_SLOW_RETRY_MS);
+    window.addEventListener('online', retryOnce);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('online', retryOnce);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [maxOrganizationsRetries, organizationsFailureFinal]);
 
   const organizations = useMemo(() => {
     if (!user) return undefined;

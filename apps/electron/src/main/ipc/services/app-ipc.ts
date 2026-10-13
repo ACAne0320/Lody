@@ -1,10 +1,10 @@
 import { assertProductWindowSender } from '../assert-sender'
 import { parseSessionLink, INSTALLATION_LINK_SCHEMES } from '@lody/shared/session-link'
-import { desktopInstallationProfile } from '../../platform'
+import { desktopInstallationProfile, mainPlatformKind } from '../../platform'
 import { getDesktopCallbackProtocol } from '../../desktop-channel'
 import { isDefaultLodyProtocolClient, setDefaultLodyProtocolClient } from '../../protocol-client'
 import { parseAppIconName } from '../../services/app-icon-core'
-import { productWindows } from '../../window-state'
+import { productWindows, setAppQuitting } from '../../window-state'
 import { parseWindowTarget, openSessionWindow, type WindowTarget } from '../../session-windows'
 import { access } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
@@ -34,6 +34,7 @@ import { setMenuLanguage } from '../../menu'
 import { localFileActionError } from '../../services/local-file-action-error'
 import { hasPathLauncher, launchLocalPath } from '../../services/local-path-launcher-service'
 import { takePendingRendererLocalClear } from '../../services/local-reset-service'
+import { writeDesktopLocalResetRequest } from '@lody/shared/node/desktop-local-reset'
 import { parseWindowBadge } from '../../services/window-badge-service'
 import {
   findWindow,
@@ -199,6 +200,23 @@ export class AppIpc extends IpcService {
     for (const window of productWindows) {
       if (window.webContents !== event.sender) window.destroy()
     }
+  }
+
+  /**
+   * Arms the same one-shot reset `lody app reset-cache` writes, then relaunches.
+   * A renderer reload keeps the main process and Chromium's storage backend, so
+   * a backing store that failed in this process would fail the clear as well; a
+   * relaunch applies it in a fresh process, before any window loads.
+   */
+  @IpcMethod()
+  async relaunchIntoLocalReset(mode: unknown) {
+    const { event } = getIpcContext()
+    assertProductWindowSender(event)
+    if (mode !== 'cache' && mode !== 'hard') throw new Error('Invalid local reset mode')
+    await writeDesktopLocalResetRequest({ mode, platform: mainPlatformKind })
+    setAppQuitting(true)
+    app.relaunch()
+    app.quit()
   }
 
   /**

@@ -1,152 +1,188 @@
-# Recovering a workspace that never opens
+# Recovering from screens that only a reinstall could fix
 
 Status: implemented
 Translation: current
+PR: https://github.com/LodyAI/Lody/pull/1531
 
 [中文](2026-10-13-workspace-open-recovery.zh.md)
 
 ## Abstract
 
-Some users open Lody and stay on "Switching workspace" on every launch until they
-reinstall, because a damaged local copy of the workspace makes the runtime or its first
-metadata scan reject, and nothing retried either one. The only working fix, Settings →
-Clear local cache, cannot be reached from that screen. The placeholder now names those
-two failures as terminal. On either one it clears the local cache once and reloads,
-which the existing boot-time clear can do safely. If that does not help, or the wait
-just runs long, it offers clear-cache, reload, copyable diagnostics and the full reset
-on the screen itself. The automatic clear is limited to once per 24 hours and only
-runs online. A scan that hangs instead of failing gets the manual page, not an
-automatic clear. That case is not verified against real stuck users yet.
+Some users, mostly on iOS after not opening the app for a long time, stay on
+"Switching workspace" on every launch until they reinstall; clearing the cache in the
+app does not help. The root cause is not pinned down, and about twenty route screens
+could wait forever or fail with no way forward. So the fix is structural: every
+blocking route wait becomes a recovery page after 30 seconds, and every route failure
+offers a retry and the same page. A terminal local-storage failure gets one
+automatic cache clear per day, only online. Clears now restart into a fresh process
+on the desktop, verify what they deleted, and stay armed when they leave databases
+behind. The full reset uses the host's file-level wipe where one exists, which is what
+reinstalling did. The iOS shell's side of that wipe, `window.__LODY_NATIVE_RESET__`,
+is not implemented in this repository, and none of this is verified against a real
+stuck user yet.
 
 ## Problem
 
-`resolveWorkspaceDataScope` holds the content pane on the "Switching workspace"
-placeholder until runtime, route and doc-metadata ownership agree. The
-[stuck-sync telemetry](../feature/2026-09-26-workspace-sync-stuck-telemetry.md)
-already named the blocker but deliberately changed no behavior. Two paths were dead
-ends that survive restart, because the state that causes them persists in Chromium
-storage:
+Reinstalling an app on iOS deletes the WebView's whole data directory, signs the user
+out, and works whichever screen they were stuck on. The in-app options could match
+none of those three:
 
-- **The first doc-metadata scan rejects** (`doc_meta_scan_failed`). This happens when
-  the repo IndexedDB is corrupt, over quota, or its connection is dying. The scope keeps
-  `scanFailure`, and nothing rescans until the runtime is replaced.
-- **Creating the runtime rejects.** `LoroRepo.create` opens and reads the repo IndexedDB
-  before anything renders. `RuntimeProvider` only logged the error, set the runtime to
-  null and the control connection to `error`. The scope then read `runtime_missing`,
-  which looks the same as an ordinary wait.
+- **Not reachable.** The ways out lived in Settings and on the crash screen. A route
+  wait (signing in, loading the workspace list, waiting for the active organization,
+  opening workspace data) could spin forever without either. Several route failures
+  told mobile users to "refresh the page".
+- **Not verified.** The boot clear treated a delete error like a success and consumed
+  its flag either way. On a storage backend that cannot open a database (which also
+  cannot delete it), a clear did nothing and looked as if it ran. On the desktop the
+  clear ran after a renderer reload, in the same process whose storage backend had
+  failed.
+- **Not strong enough.** Every in-app wipe went through web storage APIs. Only the host
+  can delete the files.
 
-The cache clear removes exactly the poisoned state: every `lody*` database, the
-slug→id map, the Streams tokens and the cursor-bypass markers. But the user could
-only find it in Settings or with the CLI, so reinstalling became the obvious fix.
+Two specific dead ends were also found:
+
+- **The workspace data scope.** A rejected first doc-metadata scan
+  (`doc_meta_scan_failed`) or a rejected runtime creation stayed stuck for the page
+  lifetime. The runtime case even read as an ordinary `runtime_missing` wait.
+- **The workspace list.** After five failed attempts (about 10 seconds),
+  `useOrganization` stopped retrying for the rest of the page lifetime. A cache clear
+  deletes the slug→id map that let the app open a workspace without that list. So
+  after a clear, a launch whose first requests failed stayed stuck, which matches
+  "clearing the cache does not help".
 
 ## Decisions
 
+- **Every route wait has a timeout to recovery.** The three route files render
+  `BlockingWaitPlaceholder` with a `gate` naming the wait, instead of a bare
+  `LoadingPlaceholder` or `BootShell`. After 30 seconds it shows the recovery page:
+  1. reload;
+  2. clear the local cache (the same confirmation as Settings);
+  3. copy diagnostics: gate, scope blocker, error names, connection, idle gap before
+     launch, last automatic and boot clears, build, render trace;
+  4. clear all local data and sign out.
+
+  The timeout is a property of waiting, not a diagnosis, so gates added later and
+  causes not found yet still get a way out.
+
+- **Every route failure has a way forward.** `RouteMessage` requires `gate`. A failure
+  always shows a retry (a reload when the caller has none) and "More ways to recover",
+  which opens the same page. `gate: null` marks a message that is not a failure, such
+  as the mobile workspace limit, and keeps the old behavior. Making the prop required
+  surfaced four more failure screens outside the workspace routes.
 - **Make runtime creation failure visible.** `RuntimeProvider` records
-  `workspaceRuntimeInitFailureAtom` (`{ workspaceSlug, errorType }`) when creation
-  rejects, and clears it at the start of every attempt. The scope reports
-  `runtime_init_failed` when the failure belongs to the target slug, so the stuck-sync
-  report counts it apart from an ordinary wait. Like the scan failure, it keeps only
-  the error name. `describeErrorType` reads `name` off any object because a
-  `DOMException` is not an `Error` in every engine.
+  `workspaceRuntimeInitFailureAtom` (`{ workspaceSlug, errorType }`), so the scope
+  reports `runtime_init_failed`. `describeErrorType` keeps only the error name,
+  reading `name` off any object because a `DOMException` is not an `Error` in every
+  engine.
 - **One automatic cache clear for a terminal blocker.** On `runtime_init_failed` or
-  `doc_meta_scan_failed`, the placeholder calls `armAutomaticCacheClear` and reloads.
-  That function arms the existing boot flag, so the delete still runs at boot, before
-  the runtime reopens the databases. It refuses:
-  - in the hidden warm spare, whose boot does not consume the flag;
-  - within 24 hours of the last automatic clear, including when the clock moved
-    backwards;
-  - whenever the `lody:automaticCacheClearAt` marker cannot be written and read back.
+  `doc_meta_scan_failed`, `armAutomaticCacheClear` claims the clear, and the
+  placeholder restarts into it. It refuses:
+  - in the desktop's hidden warm spare;
+  - within 24 hours of the last automatic clear, including after a clock change;
+  - offline, because a clear deletes every workspace's offline copy;
+  - when the `lody:automaticCacheClearAt` marker cannot be written and read back.
 
-  The marker is deliberately not in the cache-clear DELETE list, so it survives the
-  clear it records. Without it, a clear that does not fix the problem would reload
-  forever.
+  The marker stays out of the DELETE list so it survives the clear it records.
+  Without it, a clear that did not help would restart forever. Nothing else is
+  automatic: a wait that never settles gets the page, never a clear, because slow is
+  not broken.
 
-- **Never automatically while offline.** A clear deletes every workspace's offline
-  copy, and offline none of them can download again. The manual actions still show.
-- **The ways out are on the placeholder.** After a terminal blocker the automatic clear
-  is declined. After any wait of 20 seconds the placeholder becomes a status page with:
-  - "Clear local cache and retry", the same confirmation dialog as Settings;
-  - "Reload Lody";
-  - "Copy diagnostics" and a technical details block: blocker, error names, workspace,
-    wait time, connection states, the last automatic clear, build context, and the
-    session render trace;
-  - the existing hard-reset dialog as a quiet footnote link.
+- **Restart into clears.** `restartIntoCacheClear` relaunches the desktop through the
+  one-shot request file that `lody app reset-cache` already uses
+  (`app.relaunchIntoLocalReset`), so the clear runs in a fresh process before any
+  window loads. Web and mobile set the boot flag and reload. Settings and the
+  recovery page both use it.
+- **Verify clears.** The boot clear records each delete's outcome, re-enumerates the
+  databases, and also counts failures in the extra databases `RuntimeProvider` passes.
+  It writes `lody:lastLocalClear`, which is kept outside the DELETE list and rewritten
+  after a hard wipe. A clear that left databases behind stays armed for up to three
+  boots, and the recovery page says it was incomplete.
+- **Hard reset prefers the host.** After revoking the server session, `startHardReset`
+  first tries a file-level wipe from the host:
+  - **Desktop:** relaunches into the native `hard` wipe the CLI already applies.
+  - **Mobile shell:** calls `window.__LODY_NATIVE_RESET__.resetAllData()`.
 
-  Both the authenticated content placeholder and the no-token boot placeholder in
-  `$workspaceName/_auth.tsx` use it.
+  Only when no host wipe exists, or the host refuses, does it fall back to the web
+  wipe. This is a stronger version of the same step at the same cost (signed out,
+  everything local gone). It is not shown as a separate fourth button.
 
-- **A hang is shown, not cleared.** A scan or runtime that never settles only gets the
-  manual page. Clearing cannot unblock a database another window holds open, and a slow
-  machine with a large workspace is not broken.
+- **The workspace list keeps trying.** After the retry burst, one more attempt runs on
+  `online`, on return to the foreground, and every 30 seconds.
+- **Reports name the gate.** `workspace/boot_wait_stuck` is sent when a recovery page
+  appears, with the gate, blocker, idle gap and app version. The idle gap tests the
+  "long unused" pattern. `workspace/recovery_outcome` is sent after a boot clear:
+  `ready` when the workspace opened, `stuck_again` when another recovery page
+  appeared. That tells whether a clear is enough or the host wipe is needed.
 
 ## Alternatives not taken
 
-- **Retrying the scan or runtime in place.** It does not help: the failures that reach
-  here are persisted damage or a dying connection that a reload does not repair. It
-  would also add the retry storm the telemetry note warned about.
-- **A scan timeout that clears automatically.** The issue suggested it. It would wipe
-  healthy caches on slow devices, and a blocked open cannot be cleared anyway. The
-  20-second manual offer covers this case.
-- **Waiting for the storage-crisis breaker (#438).** That PR classifies quota and
-  dead-connection failures and asks for an app restart. It is still open, and it does
-  not cover corrupt data or scan failures. This change does not depend on it. Once it
-  lands, its crisis screen covers its own failures, which are raised above this
-  placeholder.
+- **Fixing each gate separately.** The cause is still unknown, so a per-gate fix would
+  leave the next unknown gate stuck. Each gate still reports its name for later fixes.
+- **A separate fourth "reset natively" button shown only after the third fails.** The
+  host wipe has the same cost as the web wipe and is strictly stronger, so the web
+  wipe is kept only as its fallback.
+- **Removing the slug→id map from the DELETE list.** That would keep offline-first
+  starts after a clear. But the DELETE list is a written rule against stale
+  connection state, and a workspace list that keeps retrying removes the need.
+- **A scan timeout that clears automatically.** It would wipe healthy caches on slow
+  devices, and a blocked open cannot be cleared anyway.
+- **Waiting for the storage-crisis breaker (#438).** It explains quota and
+  dead-connection failures and asks for a restart. It is still open, and it covers
+  neither corrupt data nor non-storage gates.
 
 ## Investigated cause: repo storage upgrades
 
-Affected iOS users report the hang after not opening the app for a long time. That
-matches a jump across several loro-repo storage changes. Users who last opened
-the app before 0.20.3 (2026-09-27) still hold a schema-v3 repo database, so their
-next launch runs the v3→v4 IndexedDB upgrade.
+Affected users report the hang after a long absence. Users who last opened the app
+before 0.20.3 (2026-09-27) still hold a schema-v3 repo database, so their next launch
+runs the v3→v4 IndexedDB upgrade.
 
 An experiment ruled this out under fake-indexeddb:
 
-- **Write:** each shipped version (0.19.1, 0.20.0, 0.20.3, 0.21.0–0.21.2, 0.22.0),
-  with the `loro-crdt` and Flock versions it shipped with, wrote session and machine
-  metadata with repeated patches and deletions, plus a document and a Flock
-  document. Some databases were closed cleanly and some were left without a
-  repo shutdown.
-- **Read:** 0.22.0 opened each database with the runtime's options and ran the
-  real `docMetaSubscriptionAtom` scan.
-- **Result:** every database upgraded to v4 and reached a ready scope with the
-  expected sessions, deletions, document and Flock values. It was still readable
-  on a second launch. 3,000 sessions written by 0.19.1 opened and scanned in about
-  0.6 s.
-- **Negative control:** corrupting the metadata snapshot made `LoroRepo.create`
-  throw `Failed to hydrate metadata snapshot`. That is a `runtime_init_failed`,
-  not a hung scan, so the harness does detect an incompatibility.
+- **Write:** each shipped loro-repo version (0.19.1, 0.20.0, 0.20.3, 0.21.0–0.21.2,
+  0.22.0), with the `loro-crdt` and Flock versions it shipped with, wrote session and
+  machine metadata with patches and deletions, plus a document and a Flock document.
+  Some databases were closed cleanly and some without a repo shutdown.
+- **Read:** 0.22.0 opened each database with the runtime's options and ran the real
+  `docMetaSubscriptionAtom` scan.
+- **Result:** every database upgraded to v4 and reached a ready scope with the expected
+  values, also on a second launch. 3,000 sessions from 0.19.1 opened and scanned in
+  about 0.6 s.
+- **Negative control:** corrupting the metadata snapshot made `LoroRepo.create` throw
+  `Failed to hydrate metadata snapshot`, so the harness does detect an incompatibility.
 
-Limits: WebKit's IndexedDB is not fake-indexeddb, and only locally written
-metadata was exercised, not metadata imported from Streams.
-
-A local schema incompatibility would also be removed by a cache clear, which
-reportedly does not help. Two causes remain open:
-
-- a WebKit-specific failure of the v3→v4 upgrade itself;
-- state that survives a cache clear. `useOrganization` stops retrying the workspace
-  list after five attempts, and a cache clear deletes the cached slug→id map that
-  let the app start without that list.
+Limits: WebKit's IndexedDB is not fake-indexeddb, and metadata imported from Streams
+was not exercised. A local incompatibility would also be removed by a working cache
+clear, which is part of why clear verification and the host wipe matter.
 
 ## Verification
 
-- `tests/workspace-open-placeholder.test.tsx`:
-  - a failed scan or runtime arms the clear, reloads, and reports
-    `workspace/auto_cache_clear`;
-  - a second failure inside the cooldown shows the manual page and arms nothing;
-  - nothing is armed while offline;
-  - a pending scan turns into the slow page exactly at the delay, without clearing;
-  - the diagnostics carry the blocker, the error and the last automatic clear.
-- `tests/clear-local-cache.test.ts`: the cooldown, survival of the marker through the
-  boot clear, a backwards clock, and an unwritable marker.
-- `tests/runtime-provider.test.tsx`: a rejected creation is recorded and cleared by the
-  next attempt. `tests/workspace-data-scope.test.ts`: `runtime_init_failed` applies only
-  to the target slug.
-- Not verified: a real poisoned or quota-filled profile in Electron. In production, the
-  `workspace/sync_stuck` blocker counts and `workspace/auto_cache_clear` events will
-  show whether one automatic clear is enough.
-- Known limit: a dying IndexedDB connection is bound to the renderer process, so a
-  reload may not repair it, and nothing here restarts the app. Such a user still lands
-  on the manual page and needs a restart, which #438 is meant to explain.
-- Follow-ups: per-blocker escapes for `workspace_not_in_organizations`, and Phase 2 of
-  #417.
+- `tests/blocking-wait-placeholder.test.tsx`:
+  - automatic clear on both terminal blockers, refused inside the cooldown and
+    offline;
+  - a workspace wait and a non-workspace wait each time out to recovery exactly at
+    the delay;
+  - the incomplete-clear notice and the `stuck_again` outcome after a real boot clear;
+  - diagnostics content;
+  - `RouteMessage` with and without a gate.
+- `tests/clear-local-cache.test.ts`:
+  - a complete clear;
+  - a failing delete stays armed for exactly three boots;
+  - a database that survives a reported success counts as a failure;
+  - a failed hard wipe keeps its record;
+  - the native bridge and the desktop relaunch replace the web wipe, and the web wipe
+    is the fallback when the bridge refuses.
+- `tests/useOrganization.test.tsx`: after the burst, the list loads when the network
+  returns, and on the 30-second retry. Both tests fail with the new effect disabled.
+- `tests/runtime-provider.test.tsx` and `tests/workspace-data-scope.test.ts`:
+  `runtime_init_failed` is recorded, cleared on the next attempt, and applies only to
+  the target slug.
+- Recovery pages and `RouteMessage` were checked in Storybook in light, dark and
+  zh_CN. Electron's main-process tests and both typechecks pass.
+- **Not verified:**
+  - a real stuck device;
+  - the desktop relaunch path end to end;
+  - the iOS host wipe, which needs `window.__LODY_NATIVE_RESET__` in the private
+    mobile shell. Until it ships, iOS falls back to the web wipe, which cannot delete
+    files the storage backend refuses to open.
+- **Follow-up:** once the reports name the gates, fix their causes, for example a
+  WebKit-specific failure of the v3→v4 upgrade.

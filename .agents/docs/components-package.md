@@ -51,16 +51,41 @@ opened before the pending clear has run.
 failure: the banner offers the cache-clear flow after 45s of continuous `loading` while
 the connection attempt completes exactly as it would without it.
 
-`workspace-open-placeholder.tsx` is the content placeholder shown while the route's
-workspace scope is not ready. It stays a spinner until the wait fails or lasts 20s,
-then offers clear-cache, reload, copyable diagnostics and the hard reset, because
-Settings is unreachable from there. The two blockers nothing retries within a page
-load, `runtime_init_failed` and `doc_meta_scan_failed`, are local-storage read
-failures. For those it arms one automatic cache clear through `armAutomaticCacheClear`
-and reloads, but only while online and at most once per 24 hours: the
-`lody:automaticCacheClearAt` marker is kept out of the cache-clear DELETE list so it
-survives the clear it records. A wait that never settles is never cleared
-automatically; slow is not broken. [Decision](../notes/implemented/bug-fix/2026-10-13-workspace-open-recovery.md).
+No screen may leave a user with reinstalling as the only way out. Every route wait
+(`routes/index.tsx`, `$workspaceName.tsx`, `$workspaceName/_auth.tsx`) renders
+`blocking-wait-placeholder.tsx` with a `gate` naming what it waits for. It stays a
+spinner until the wait fails or lasts 30s, then becomes a recovery page:
+
+1. reload;
+2. clear the local cache;
+3. copy diagnostics: gate, scope blocker, idle gap before launch, last clear;
+4. clear all local data and sign out.
+
+Route failures go through `RouteMessage` with a `gate`. It always offers a retry
+(reload when the caller has none, since the mobile app cannot refresh) and the same
+recovery page. `gate: null` marks a message that is not a failure, such as a plan limit.
+
+The two scope blockers nothing retries within a page load, `runtime_init_failed` and
+`doc_meta_scan_failed`, are local-storage read failures. For those the placeholder
+claims one automatic cache clear (`armAutomaticCacheClear`): only online, at most once
+per 24 hours. The `lody:automaticCacheClearAt` marker stays out of the DELETE list so
+it survives the clear it records. A wait that never settles is never cleared
+automatically; slow is not broken.
+
+Clears take effect at the next boot:
+
+- **Restarting into a clear.** The desktop relaunches through the same one-shot request
+  as `lody app reset-cache`, because a backing store that failed in this process would
+  fail the deletes too. Web and mobile reload.
+- **Verifying a clear.** The boot clear re-enumerates databases and writes
+  `lody:lastLocalClear`. A clear that left databases behind stays armed for up to
+  three boots, and the recovery page says so.
+- **Hard reset.** It prefers the host: the desktop relaunches into the native wipe, and
+  a mobile shell implements `window.__LODY_NATIVE_RESET__`. Only those delete at the
+  file level, which is what reinstalling did.
+
+A spent workspace-list retry burst retries again on `online`, on return to the
+foreground and every 30s. [Decision](../notes/implemented/bug-fix/2026-10-13-workspace-open-recovery.md).
 
 ## File preview versus Code Collab
 

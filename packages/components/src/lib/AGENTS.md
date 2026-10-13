@@ -19,32 +19,31 @@ Background: [components](../../../../.agents/docs/components-package.md),
 
 ## Crash recovery and diagnostics
 
-- `ErrorBoundary`'s `error-boundary-fallback.tsx` displays the real error and one-click
-  full-report copy on every build. Details default visible (`showErrorDetails` opts out);
-  `lib/error-boundary-report.ts` is the pure copy builder.
+- `ErrorBoundary`'s `error-boundary-fallback.tsx` shows the real error and one-click
+  full-report copy on every build; details visible by default (`showErrorDetails` opts
+  out). `lib/error-boundary-report.ts` is the pure copy builder.
 - Error/not-found screens use `components/status-page.tsx`; pre-React `boot-failure.ts`
   draws that column in plain DOM with copied V2 token values, never React/StyleX/Tailwind.
 - Crash screens never reload/restart/reset themselves. `resetKeys` must not clear a captured
-  error; the copyable fallback stays visible until the user presses a recovery button.
+  error; the copyable fallback stays until the user presses a recovery button.
 - A cloud query throws into render and keeps throwing. An optional surface inside a larger
-  boundary owns an inline `ErrorBoundary`, so a backend failure degrades locally instead of
-  replacing the host subtree.
-- `lib/clear-local-cache.ts` owns `markCacheClearPending` (recoverable `lody*` caches,
-  still signed in) and `startHardReset` (full wipe/sign-out with its own confirmation
-  dialog). Defer asynchronous deletes to next boot; clear synchronous storage BEFORE
-  writing the boot flag.
-- Cache-level clearing uses an explicit localStorage DELETE list, never a keep-allowlist.
-  Include connection caches (Streams JWT/gateway, cursor-bypass markers, workspace-info
-  map); register new `lody:*` cache keys there. Auth tokens and preferences survive.
-- Copied reports include the tail of `lib/session-render-trace.ts`, a module-level
-  render/mount/navigation ring. Writers append one compact line and never drive
-  behavior from the trace; surface mount/unmount uses a layout effect.
-- `maybeClearLodyCacheOnBoot` runs once at most per page load, shared by `AppInitializer`
-  and `RuntimeProvider`; the latter awaits it before opening repo IndexedDB.
-- Stall UIs offer the cache-clear flow and never interrupt, retry or time out the
-  attempt: `stuck-connection-banner.tsx` (in `MainLayout`, 45s `loading`) and
-  `workspace-open-placeholder.tsx`. Only `armAutomaticCacheClear` self-clears
-  (terminal open failure, online, once per 24h).
+  boundary owns an inline `ErrorBoundary`, so a backend failure degrades locally.
+- `lib/clear-local-cache.ts` owns `restartIntoCacheClear` (recoverable `lody*` caches,
+  still signed in) and `startHardReset` (full wipe/sign-out, host-native first, own
+  confirmation). Defer deletes to next boot (desktop: relaunch); clear synchronous
+  storage BEFORE the flag. A clear that leaves databases stays armed ≤3 boots.
+- Cache-level clearing uses an explicit localStorage DELETE list, never a keep-allowlist,
+  including connection caches (Streams JWT/gateway, cursor-bypass, workspace-info map);
+  register new `lody:*` cache keys there. Auth tokens and preferences survive.
+- Copied reports include the `lib/session-render-trace.ts` tail (render/mount/navigation
+  ring). Writers append one compact line, never drive behavior from it; surface
+  mount/unmount uses a layout effect.
+- `maybeClearLodyCacheOnBoot` runs once per page load, shared by `AppInitializer` and
+  `RuntimeProvider`, which awaits it before opening repo IndexedDB.
+- Route waits are `BlockingWaitPlaceholder` (recovery at 30s), never bare
+  `LoadingPlaceholder`/`BootShell`; failures are `RouteMessage` with a `gate` (`null`:
+  not a failure). `stuck-connection-banner.tsx` (`MainLayout`, 45s `loading`) only
+  offers the clear; only `armAutomaticCacheClear` self-clears (terminal, online, 1/day).
 
 ## File Preview and Code Collab
 
