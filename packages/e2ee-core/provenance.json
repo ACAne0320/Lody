@@ -12,14 +12,16 @@
     "pure/epoch-key.ts": {
       "sha256": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3",
       "destination": "src/epoch-key.ts",
-      "scope": "Opaque EpochKey parser; material accessor kept internal",
-      "destinationSha256": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3"
+      "scope": "Opaque epoch key parser and package-internal material copy; private WeakMap replaces reflected symbol accessor; operation-owned opened key disposal on failed/cancelled verification",
+      "destinationSha256": "ad21b5e661b3d6bb7ef483658e912039fbdfc07588d3a960a86e85fc2d727628",
+      "extractionDestinationSha256": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3"
     },
     "pure/cbor.ts": {
       "sha256": "10a793aace02c1fce9cad249dd3b7d3c8b8ab92d86b85a88917230c881ea8337",
       "destination": "src/cbor.ts",
       "scope": "8192-byte canonical array/scalar codec only; snapshot codec and schema helpers omitted",
-      "destinationSha256": "0323f14ebe715cb4d202f329f1d7092f5adab4681f62d0d92030af76d5eab425"
+      "destinationSha256": "69390d017bde12323bdfde6eb2036bc7c447051fe87043dc1f7f88bd1007c834",
+      "extractionDestinationSha256": "0323f14ebe715cb4d202f329f1d7092f5adab4681f62d0d92030af76d5eab425"
     },
     "pure/identifiers.ts": {
       "sha256": "d1e429c816119b5cb3a8b4edcebce88b3c1396829741a89b894e010115b7ac22",
@@ -57,13 +59,16 @@
     "Return a fresh HKDF salt array instead of mutable exported bytes; domains and algorithms unchanged.",
     "Expose stateless signature verification as Result; add caller-context content signature check.",
     "No signing, private-key export, ledger, Lab, Node host, transport or storage entrypoints.",
-    "Bound encoding traversal and copies by expanded canonical wire size before serialization; preserve valid shared values and reject cycles. No wire or algorithm change."
+    "Bound encoding traversal and copies by expanded canonical wire size before serialization; preserve valid shared values and reject cycles. No wire or algorithm change.",
+    "L4a makes EpochKey material private WeakMap state: reflected material symbols/structural fakes no longer export or substitute secret material; wire/algorithms unchanged.",
+    "L4b adds internal EpochKey disposal for failed/cancelled post-HPKE checks; no public material export or change to merged HPKE primitive.",
+    "L1b shares bounded encoder traversal with separate fixed 2MiB/16384-array snapshot budgets; ordinary record/root limits unchanged."
   ],
-  "migratedScopeSha256": "c3c7f53f3716d6f96f94f50e8ee710853b1d3bd5a400464c6d56f0b65d536d77",
+  "migratedScopeSha256": "1b5d3c2de4262e6cc247aab48831fbaa76bd5be2b0ed30d38fcc4e0604fb850f",
   "scopeHashEncoding": "UTF-8, destination paths sorted ascending, one line: <destinationSha256>  <destination>\\n",
   "cryptoExtraction": {
     "destination": "src/crypto/content.ts",
-    "destinationSha256": "25fc404916ac933c1b35aa076028deac80717d83c9203ccd2898cb9b9cac4340",
+    "destinationSha256": "088349bac3a187f70aee8a79a515f8331cff38654305c29ac945ad75f662b4a0",
     "sources": {
       "pure/content-frame.ts": "022ef814d7d82f684d6ce39ae78561c9f3e240033b2faff29c0854f808d4b65f",
       "platform/content.ts": "0afee368139aa8217a2ebb5ee8803608c86da5d89a38bd518c4cc33f73f9720b"
@@ -74,8 +79,11 @@
       "Opaque context-bound derived ContentKey; leaf import/export remains outside this slice.",
       "Bound and classify AEAD inputs before copying; use host secure randomness only with a typed unavailable result.",
       "Wipe temporary epoch/key/PRK/plaintext copies; no signing private key or runtime service.",
-      "Run ordinary try/finally cleanup before yielding Results: Effect 4.0.2 Result.gen does not close its iterator on typed failure."
-    ]
+      "Run ordinary try/finally cleanup before yielding Results: Effect 4.0.2 Result.gen does not close its iterator on typed failure.",
+      "L2a adds package-internal context-bound leaf import/export used only by the explicit document workflow entry; original primitive behavior and wire algorithms unchanged.",
+      "Operation-owned opaque content leaves now support idempotent disposal; fixed HKDF/AEAD algorithms and HPKE extraction remain unchanged."
+    ],
+    "extractionDestinationSha256": "25fc404916ac933c1b35aa076028deac80717d83c9203ccd2898cb9b9cac4340"
   },
   "hpkeExtraction": {
     "destination": "src/crypto/hpke.ts",

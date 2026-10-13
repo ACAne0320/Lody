@@ -30,9 +30,9 @@ P14 can consume `Bytes.SigningPublicKey`, `Bytes.EncryptionPublicKey`,
 `Bytes.Signature` and the validators from this root entry. Private keys and native
 handles stay in the platform owner. `EncryptionPublicKey` preserves the candidate's
 32-byte, nonzero wire-shape check; it is not proof of safe X25519 agreement or
-possession. Do not use it as one. No generic signer or key export is introduced.
-Full signed HPKE delivery, document-key import/export and signed content workflows
-remain future slices; no SDK or repo dependency is needed here.
+possession. Do not use it as one. The root foundation has no signer or key export.
+Full signed HPKE delivery, generic non-document content and SDK workflows remain
+subsequent slices; no SDK or repo dependency is needed by the foundation.
 
 Source files and exact input SHA-256 values are in [provenance.json](provenance.json).
 Extraction omits ledger/snapshot schemas, trust caches, injected executors,
@@ -93,8 +93,9 @@ package. Runtime tests consume the checked-in JSON; Python is not a project depe
 
 The separate [`@lody/e2ee-core/ledger`](src/ledger/README.md) subentry now
 provides strict records, signature/chain verification and deterministic permission
-replay from caller-pinned trust. It has no snapshot, CAS, journal or production
-consumer. The root exports and crypto modules remain unchanged. Ledger extraction
+replay from caller-pinned trust. Snapshot qualification and local submission use
+explicit separate subentries; there is no production consumer. Root crypto exports
+remain independent. Ledger extraction
 fingerprints are [separate](src/ledger/provenance.json).
 
 The [submission subentry](src/submission/README.md) adds finite persistent recovery
@@ -132,3 +133,36 @@ and recheck authority after async operations. Those workflows remain separate.
 The primitive exposes no transport, ledger shortcut, recovery format or production
 switch. [HPKE tests](test/hpke.test.ts) cover independently encoded RFC/Python
 vectors, trusted-context mismatch, lengths, randomness failure and interruption.
+
+## Signed document workflows
+
+The explicit [`./content` and `./signing` entries](src/content/README.md) add
+ledger-bound document sealing/authentication/opening and borrowed Ed25519 signing.
+They reuse these primitives and require opaque verified views; the root remains
+unchanged. Native key custody, generic non-document policy, SDK protection,
+distribution, recovery and Lab acceptance remain later migration owners.
+
+## Canonical epoch history
+
+The explicit [`./keys` entry](src/keys/README.md) preserves ledger v1 commitment
+and 72-byte history, verifies every reverse link/commitment and supplies an
+application-scoped volatile verified key cache. It grants no document-write rights
+and supplies no persistence, rotation, delivery, recovery-vault format or backup.
+
+## Local authenticated key mailbox
+
+The explicit Node [`./keys/mailbox/sqlite`](src/keys/MAILBOX.md) reference binds host-authenticated principals, admits fixed-verified current epoch envelopes and pages indexed recipient rows. [`./keys/reports`](src/keys/reports.ts) preserves signed installation-claim bytes. Reports are claims, not custody receipts; distribution/receive persistence and production authentication remain separate owners.
+
+Host-only epoch protection and recipient durable retention use explicit `./keys/host` and `./keys/host/sqlite` entries; see [boundary](src/keys/HOST-PROTECTION.md). The portable root stays unchanged. No production/native assembly, report queue or recovery format is introduced.
+
+The host-only `./keys/host/receive/sqlite` adds [finite install and original-report retry](src/keys/RECEIVE.md), without changing portable root, HPKE or submission. Remote ACK history never proves current key availability or server custody.
+
+The explicit [full-history feed](src/ledger/FEED.md) composes framed SDK reads with
+verified ledger suffixes and atomic SQLite position persistence. The original Lab
+consumer, submission CAS adapter and snapshot bootstrap remain separately owned.
+
+The explicit [durable repair queue](src/keys/REPAIR.md) binds stable source request IDs before dispatch and retains local ACK history without claiming key installation. Sender discovery remains separate. The host-only [`./keys/host/mailbox/sqlite` facade](src/keys/RECIPIENT-MAILBOX.md) composes actual receive/protection and repair with finite copied fetch pages; failed installation returns no successful next hint. It saves no document/transport cursor and introduces no arbitrary install callback.
+
+The explicit [released-SDK submission adapter](src/submission/STREAMS.md) binds independently verified full history to CAS positions and retains raw non-abortable writes through Scope close. Snapshot bootstrap/provider and actual Lab remain separate.
+
+The explicit [host distribution entry](src/keys/DISTRIBUTION.md) `./keys/host/distribution/sqlite` combines actual receiver/protected-key/outbox owners with finite verified-target sender rounds. It uses already committed keys and preserves original tasks/results/ciphertexts; it does not select backup/rotation/vault formats or enable production.

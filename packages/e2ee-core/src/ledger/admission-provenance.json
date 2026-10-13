@@ -1,0 +1,22 @@
+{
+  "sourceCommit": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "sourceState": "frozen candidate plus captured staged patch",
+  "hashAlgorithm": "SHA-256",
+  "sources": {
+    "workflows/enrollment.ts": "38f7fad7527b244003248f542c5f9e931085412a882e0ce05bc5ccbb9b42dae1",
+    "pure/commands.ts": "810e3f4af37affe754556e1cff59c2b6d6a3d68af8beffdbf88997fab7855bda",
+    "workflows/ledger-client.ts": "eecd282404c3f8cb378e7a4ab9c4aaa9bcae4c7ff36406dc7b797cfab628cedc"
+  },
+  "directParent": "f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08",
+  "scope": "Settled joining/device consent, ordinary intent and producer-only v1 genesis. No storage/publication/runtime, removed tag2, rotation orchestration or new custody boundary.",
+  "adaptations": [
+    "Fixed public verifier and captured borrowed signer replace injectable verification service.",
+    "Existing join/v1, possess/v2 and genesis v1 bytes/domains preserved; no expiry/deadline policy.",
+    "Ordinary command creates genuine-view private prepared proposal via existing proof/permission gate; no rebase/re-sign.",
+    "Genesis initial opaque key produces established epoch-zero commitment; complete signature/genesis rules verified. Caller already retains key; no durability/backup claim.",
+    "Old RemoveMember is runtime/type-rejected until D12 format decision; no old engine/protection/vault implementation copied."
+  ],
+  "destinations": {
+    "packages/e2ee-core/src/ledger/admission.ts": "adf2a93b566a3a2d325c4848fd72b9e97f986e54c71bf0bd1ab9b33879053f81"
+  }
+}

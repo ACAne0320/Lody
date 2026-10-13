@@ -1,0 +1,88 @@
+import { StreamsClient } from '@loro-dev/streams-client';
+import { Effect, Exit, Scope } from 'effect';
+import { Bytes } from '@lody/e2ee-core';
+import { hashRecordBytes, type LedgerCheckpoint } from '@lody/e2ee-core/ledger';
+import { LedgerFeedError } from '@lody/e2ee-core/ledger/feed';
+import type { DeviceSigner } from '@lody/e2ee-core/signing';
+import { makeLabHttpIdentity } from './http-identity';
+import { makeLabLedgerActor } from './ledger-actor';
+
+/** Already-admitted synthetic workspace, existing signed full-prefix stream only.
+ * Independently supplied checkpoint authority is never inferred from HTTP metadata,
+ * SDK offsets or counts. Caller retains identity. No genesis publication, key/content
+ * startup, snapshot bootstrap, vault, custody or production feature is selected. */
+export const openLabExistingWorkspace = Effect.fnUntraced(function* (input: {
+  readonly baseUrl: string;
+  readonly genesis: Bytes.GenesisHash;
+  readonly signer: DeviceSigner;
+  readonly path: string;
+  readonly journalPath: string;
+  readonly mode: 'create' | 'open';
+  /** Separate trusted durable endpoint on reopen; never borrowed database metadata. */
+  readonly expected?: LedgerCheckpoint;
+  readonly checkpoint: () => Effect.Effect<LedgerCheckpoint, LedgerFeedError>;
+  readonly budget: { readonly maxRecords: number; readonly maxBytes: number };
+  readonly fetch?: typeof fetch;
+}) {
+  // Capture every mutable caller binding before the first native operation.
+  const genesis = yield* Effect.fromResult(Bytes.genesisHash(input.genesis.toBytes()));
+  const signer = Object.freeze({
+    publicKey: yield* Effect.fromResult(Bytes.signingPublicKey(input.signer.publicKey.toBytes())),
+    sign: input.signer.sign.bind(input.signer),
+  });
+  const { baseUrl, path, journalPath, mode, checkpoint } = input;
+  const transport = input.fetch;
+  const budget = Object.freeze({ ...input.budget });
+  const expected = input.expected
+    ? Object.freeze({
+        head: yield* Effect.fromResult(Bytes.recordHash(input.expected.head.toBytes())),
+        length: input.expected.length,
+      })
+    : undefined;
+  if (mode !== 'create' && mode !== 'open')
+    return yield* new LedgerFeedError({ code: 'invalid-frame' });
+  if (mode === 'open' && !expected) return yield* new LedgerFeedError({ code: 'wrong-parent' });
+  const scope = yield* Scope.make();
+  // Parent release, failed acquisition and explicit close share the same completion.
+  // A second Scope.close alone would not wait for the first close's finalizers.
+  const close = yield* Effect.cached(Scope.close(scope, Exit.void));
+  yield* Effect.addFinalizer(() => close);
+  return yield* Scope.provide(
+    Effect.gen(function* () {
+      const identity = yield* makeLabHttpIdentity({ baseUrl, genesis, fetch: transport });
+      const auth = yield* identity.authenticate(signer);
+      const original = yield* auth.discoverGenesis();
+      const origin = new URL(auth.url).origin;
+      const sdk = new StreamsClient({
+        url: `${origin}/ds/${Buffer.from(genesis.toBytes()).toString('hex')}/control`,
+        fetch: auth.fetch,
+        retry: { maxAttempts: 1 },
+      });
+      const control = yield* makeLabLedgerActor({
+        genesis,
+        genesisRecord: original.record,
+        path,
+        journalPath,
+        mode,
+        budget,
+        expected:
+          mode === 'create' ? { head: hashRecordBytes(original.record), length: 1 } : expected!,
+        checkpoint,
+        signer,
+        stream: { read: sdk.read.bind(sdk), appendCas: sdk.appendCas.bind(sdk) },
+      });
+      // SDK0.9 CAS has no per-call signal: revoke the native fetch admission before
+      // actor/remote finalizers await its raw request, then close SQLite and identity.
+      // StreamsClient.close publishes EOF and is never called here.
+      yield* Effect.addFinalizer(() => identity.stop());
+      yield* control.refresh();
+      return Object.freeze({
+        control,
+        identity: auth,
+        genesisRecord: () => new Uint8Array(original.record),
+        close: () => close,
+      });
+    }),
+    scope
+  ).pipe(Effect.onExit((exit) => (Exit.isFailure(exit) ? close : Effect.void)));
+});
