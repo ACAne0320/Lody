@@ -15,7 +15,6 @@ and durable state/cursor retention. This [P10 preparation](../notes/implemented/
 does not supply historical-author authorization, a production signer, host snapshot
 admission or client recovery from an unusable remote snapshot.
 
-
 ## Crash surfaces
 
 Recovery and diagnostic contracts, including callers outside `lib/`, are owned by
@@ -51,6 +50,17 @@ opened before the pending clear has run.
 `stuck-connection-banner.tsx` is observational because a slow first sync is not a
 failure: the banner offers the cache-clear flow after 45s of continuous `loading` while
 the connection attempt completes exactly as it would without it.
+
+`workspace-open-placeholder.tsx` is the content placeholder shown while the route's
+workspace scope is not ready. It stays a spinner until the wait fails or lasts 20s,
+then offers clear-cache, reload, copyable diagnostics and the hard reset, because
+Settings is unreachable from there. The two blockers nothing retries within a page
+load, `runtime_init_failed` and `doc_meta_scan_failed`, are local-storage read
+failures. For those it arms one automatic cache clear through `armAutomaticCacheClear`
+and reloads, but only while online and at most once per 24 hours: the
+`lody:automaticCacheClearAt` marker is kept out of the cache-clear DELETE list so it
+survives the clear it records. A wait that never settles is never cleared
+automatically; slow is not broken. [Decision](../notes/implemented/bug-fix/2026-10-13-workspace-open-recovery.md).
 
 ## File preview versus Code Collab
 

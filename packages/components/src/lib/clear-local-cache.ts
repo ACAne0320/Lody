@@ -355,6 +355,47 @@ export function markCacheClearPending(): void {
   writePendingFlag(CACHE_CLEAR_VALUE);
 }
 
+/**
+ * When Lody last armed a cache clear on its own. Deliberately absent from
+ * `LOCAL_STORAGE_CACHE_KEYS`: it must survive the clear it records, or a clear
+ * that does not fix the problem would repeat on every launch.
+ */
+const AUTOMATIC_CACHE_CLEAR_AT_KEY = 'lody:automaticCacheClearAt';
+/** At most one automatic clear per day; every later failure waits for the user. */
+export const AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Arm the recoverable-cache clear for the next boot without asking, at most
+ * once per cooldown. Returns whether it was armed; the caller reloads.
+ *
+ * Refuses in the hidden warm spare (the boot path would not consume it there),
+ * inside the cooldown (also when the clock moved backwards), and whenever the
+ * marker cannot be persisted, since an unrecorded clear is an unbounded one.
+ */
+export function armAutomaticCacheClear(nowMs: number): boolean {
+  if (isWarmWindow()) return false;
+  try {
+    const lastMs = Number(localStorage.getItem(AUTOMATIC_CACHE_CLEAR_AT_KEY));
+    if (lastMs > 0 && nowMs - lastMs < AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS) return false;
+    localStorage.setItem(AUTOMATIC_CACHE_CLEAR_AT_KEY, String(nowMs));
+    if (localStorage.getItem(AUTOMATIC_CACHE_CLEAR_AT_KEY) !== String(nowMs)) return false;
+  } catch {
+    return false;
+  }
+  markCacheClearPending();
+  return readPendingLocalClearMode() !== null;
+}
+
+/** When the last automatic clear was armed, for diagnostics; null if never. */
+export function readAutomaticCacheClearAt(): number | null {
+  try {
+    const lastMs = Number(localStorage.getItem(AUTOMATIC_CACHE_CLEAR_AT_KEY));
+    return lastMs > 0 ? lastMs : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Cap on how long the escape hatch waits for the server to revoke the session. */
 const SIGN_OUT_TIMEOUT_MS = 1500;
 

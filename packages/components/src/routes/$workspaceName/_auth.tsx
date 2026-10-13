@@ -38,6 +38,7 @@ import { isNativeIOSAppShell } from '@/lib/native-platform';
 import { isLocalAppPlatform } from '@/lib/app-platform';
 import { useResolvedWorkspaceScope } from '../../hooks/use-resolved-workspace-scope';
 import { WorkspaceSyncStuckReporter } from '@/components/workspace-sync-stuck-reporter';
+import { WorkspaceOpenPlaceholder } from '@/components/workspace-open-placeholder';
 import { useBillingOverviewPreload } from '../../hooks/use-billing-overview-preload';
 
 const AUTH_ROUTE_ONESIGNAL_LOGIN_IDLE_TIMEOUT_MS = 10_000;
@@ -380,7 +381,7 @@ function AuthedLayoutRoutes({
     if (!currentWorkspaceId) {
       return (
         <PreloadedMainLayout workspaceReady={false}>
-          <LoadingPlaceholder
+          <WorkspaceOpenPlaceholder
             variant="content"
             title={t('workspace.route.switchingTitle')}
             description={t('workspace.route.switchingDescription')}
@@ -448,7 +449,7 @@ function AuthedLayoutRoutes({
 
   if (!user || !currentWorkspaceId) {
     return (
-      <LoadingPlaceholder
+      <WorkspaceOpenPlaceholder
         variant="boot"
         title={t('workspace.route.loadingTitle')}
         description={t('workspace.route.setupLoadingDescription')}

@@ -36,15 +36,15 @@ Background: [components](../../../../.agents/docs/components-package.md),
 - Cache-level clearing uses an explicit localStorage DELETE list, never a keep-allowlist.
   Include connection caches (Streams JWT/gateway, cursor-bypass markers, workspace-info
   map); register new `lody:*` cache keys there. Auth tokens and preferences survive.
-- Include the tail of `lib/session-render-trace.ts` in copied reports. Its module-level
-  ring records render/mount/navigation, collapsing consecutive duplicates into ×N.
-  Writers append one compact diagnostic line, never drive behavior from the trace;
-  surface mount/unmount uses a layout effect.
+- Copied reports include the tail of `lib/session-render-trace.ts`, a module-level
+  render/mount/navigation ring. Writers append one compact line and never drive
+  behavior from the trace; surface mount/unmount uses a layout effect.
 - `maybeClearLodyCacheOnBoot` runs once at most per page load, shared by `AppInitializer`
   and `RuntimeProvider`; the latter awaits it before opening repo IndexedDB.
-- Mount `stuck-connection-banner.tsx` once in `MainLayout`. After 45s of continuous
-  control-connection `loading`, offer the same cache-clear flow; never interrupt,
-  retry, or time out the connection attempt.
+- Stall UIs offer the cache-clear flow and never interrupt, retry or time out the
+  attempt: `stuck-connection-banner.tsx` (in `MainLayout`, 45s `loading`) and
+  `workspace-open-placeholder.tsx`. Only `armAutomaticCacheClear` self-clears
+  (terminal open failure, online, once per 24h).
 
 ## File Preview and Code Collab
 

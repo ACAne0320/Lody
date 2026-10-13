@@ -3,6 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS,
+  armAutomaticCacheClear,
   markCacheClearPending,
   maybeClearLodyCacheOnBoot,
   readPendingLocalClearMode,
@@ -210,6 +212,41 @@ describe('maybeClearLodyCacheOnBoot', () => {
       expect(localStorage.getItem(CACHE_CLEAR_FLAG)).toBeNull();
     }
   );
+});
+
+describe('armAutomaticCacheClear', () => {
+  const NOW = Date.UTC(2026, 9, 13, 12);
+
+  it('arms one cache clear, and refuses again until the cooldown has passed', async () => {
+    expect(armAutomaticCacheClear(NOW)).toBe(true);
+    expect(readPendingLocalClearMode()).toBe('cache');
+
+    // The armed clear runs at boot; the record of it has to survive that clear.
+    await maybeClearLodyCacheOnBoot();
+    expect(readPendingLocalClearMode()).toBeNull();
+
+    expect(armAutomaticCacheClear(NOW + AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS - 1)).toBe(false);
+    expect(readPendingLocalClearMode()).toBeNull();
+    expect(armAutomaticCacheClear(NOW + AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS)).toBe(true);
+    expect(readPendingLocalClearMode()).toBe('cache');
+  });
+
+  it('refuses when the clock moved back behind the last automatic clear', () => {
+    expect(armAutomaticCacheClear(NOW)).toBe(true);
+    localStorage.removeItem(CACHE_CLEAR_FLAG);
+
+    expect(armAutomaticCacheClear(NOW - 60_000)).toBe(false);
+    expect(readPendingLocalClearMode()).toBeNull();
+  });
+
+  it('refuses when it cannot record the clear, so a failing clear cannot loop', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError');
+    });
+
+    expect(armAutomaticCacheClear(NOW)).toBe(false);
+    expect(readPendingLocalClearMode()).toBeNull();
+  });
 });
 
 describe('a clear armed from the CLI', () => {

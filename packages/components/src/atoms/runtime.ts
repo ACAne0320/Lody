@@ -538,6 +538,14 @@ export type WorkspaceRuntime = {
 
 export const runtimeAtom = atom<WorkspaceRuntime | null>(null);
 
+/**
+ * Why the last attempt to create a runtime rejected, kept until the next
+ * attempt. Only the error name is kept: a message can carry stream URLs.
+ */
+export type WorkspaceRuntimeInitFailure = { workspaceSlug: string; errorType: string };
+
+export const workspaceRuntimeInitFailureAtom = atom<WorkspaceRuntimeInitFailure | null>(null);
+
 export type ActiveWorkspaceRuntimeState =
   | { status: 'ready'; runtime: WorkspaceRuntime }
   | {
