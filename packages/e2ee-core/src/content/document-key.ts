@@ -1,8 +1,9 @@
-import { Result } from 'effect';
+import { Effect, Result } from 'effect';
 import type { EpochKey } from '../bytes';
 import { ContentError } from '../errors';
 import {
   deriveContentKey,
+  disposeContentKey,
   importContentKey,
   exportContentKey,
   type ContentKey,
@@ -24,6 +25,22 @@ function own(scope: DocumentScope, key: ContentKey): DocumentKey {
   const value = Object.freeze({}) as DocumentKey;
   keys.set(value, { key, scope: Object.freeze({ ...scope, docEpoch: 0 }) });
   return value;
+}
+/** Release only this owned leaf capability, not a borrowed epoch key. */
+export function disposeDocumentKey(key: DocumentKey): void {
+  const row = keys.get(key);
+  if (row) {
+    disposeContentKey(row.key);
+    keys.delete(key);
+  }
+}
+/** Scope owns one independently derived leaf, with no runtime or native key custody. */
+export function scopedDocumentKey(scope: DocumentScope, epochKey: EpochKey) {
+  const ownedScope = { ...scope };
+  return Effect.acquireRelease(
+    Effect.suspend(() => Effect.fromResult(deriveDocumentKey(ownedScope, epochKey))),
+    (key) => Effect.sync(() => disposeDocumentKey(key))
+  );
 }
 export function deriveDocumentKey(scope: DocumentScope, epochKey: EpochKey) {
   return Result.map(deriveContentKey(epochKey, leafScope(scope)), (key) => own(scope, key));

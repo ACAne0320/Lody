@@ -1838,10 +1838,13 @@
         "core": "148977e28dcad01a9212abaae9da80e387571dcda9a37403f3aa453e02cca4b1",
         "candidate": "148977e28dcad01a9212abaae9da80e387571dcda9a37403f3aa453e02cca4b1"
       },
-      "targetPath": "packages/e2ee-core/src/content/streams-content.ts",
+      "targetPath": "packages/e2ee-core/src/content/streams.ts",
       "status": "需迁并修复",
       "layer": "L2",
-      "reason": "Reuse v0 public crypto and published SDK; retain current-write gate and immutable historical author identity."
+      "reason": "Reuse v0 public crypto and published SDK; retain current-write gate and immutable historical author identity. Settled header3 update Effect binding and owned key cleanup implemented here; real SDK/Lab consumption and snapshot format remain incomplete. Do not treat type-contract tests as runnable whole-provider migration.",
+      "coveragePaths": [
+        "packages/e2ee-core/test/crypto.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/submit-outcome.ts",
@@ -1923,10 +1926,13 @@
         "core": "94b87cf3dc2bb48dddda0ad2b95c28e49e2c2253afedbb5af096cef3c40e5ee0",
         "candidate": "e75c8644f6644182de949199dab5c9542b25d916f19ba14ae8026fd398a59fb8"
       },
-      "targetPath": "packages/e2ee-core/src/content/streams-content.ts",
+      "targetPath": "packages/e2ee-core/src/content/streams.ts",
       "status": "待明确决定",
       "layer": "L2",
-      "reason": "Migrate real published-SDK protection bridge and cancellation ownership. Old snapshot header4 hides offset in ciphertext, so host cannot verify actual submission position. Discuss new offset-authenticated provider header or linked upstream SDK contract before implementing; update header3 is separately stable."
+      "reason": "Migrate real published-SDK protection bridge and cancellation ownership. Old snapshot header4 hides offset in ciphertext, so host cannot verify actual submission position. Discuss new offset-authenticated provider header or linked upstream SDK contract before implementing; update header3 is separately stable. Settled header3 update Effect binding and owned key cleanup implemented here; real SDK/Lab consumption and snapshot format remain incomplete. Do not treat type-contract tests as runnable whole-provider migration.",
+      "coveragePaths": [
+        "packages/e2ee-core/test/crypto.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/streams-fetch.ts",
@@ -2886,10 +2892,10 @@
         "core": "cc06625111ed6c2a77ea2259d9dbf2728a6cc8dbd3ca8bb7d51226a3e865b180",
         "candidate": "35b465f8d3755279a875f422b80fc175a60522c13bf64e86a428500b2848098b"
       },
-      "targetPath": "packages/e2ee-core/test/streams-content.test.ts",
+      "targetPath": "packages/e2ee-core/test/crypto.test.ts",
       "status": "需迁并修复",
       "layer": "L2",
-      "reason": "Port observable synthetic regression behavior into the owning suite and retain old-fail/new-pass evidence; consolidate duplicates only after behavior mapping."
+      "reason": "Port observable synthetic regression behavior into the owning suite and retain old-fail/new-pass evidence; consolidate duplicates only after behavior mapping. Update codec owns real crypto/ledger and resource behavior probes; original SDK snapshot/replay scenarios still require decision and Lab integration."
     },
     {
       "sourcePath": "packages/e2ee-core/test/streams.test.ts",
@@ -4721,15 +4727,23 @@
       "baseRefName": "e2ee-recipient-mailbox",
       "isDraft": true,
       "parentHead": "098e274221aae13305d29ff75629bee168678ded"
+    },
+    {
+      "number": 1493,
+      "headRefName": "e2ee-sender-distribution",
+      "headRefOid": "36ca2685b7eefeb15ebd041e50444796c2686652",
+      "baseRefName": "e2ee-ledger-sdk-cas",
+      "isDraft": true,
+      "parentHead": "f82f8634743d5bc4dd8858cf6867b91d80c221ba"
     }
   ],
   "lastFetchedMain": {
-    "head": "e395d84f4f1b64440f887dce14ffbf061ce48ac1",
-    "tree": "ac964903fad38bc254c0335d5dbe339b00d772d4",
+    "head": "987962e77022df6a800f4e889f124b51f6eb8056",
+    "tree": "4601a3f2b65d122c5b314cab79dc275fba9af636",
     "stackFrozenMain": "984c35c5b30600d68abec1ec3e585eca73bcd4f0",
     "ownedOverlapSinceFrozenMain": [],
     "ci": {
-      "run": 38135946007,
+      "run": 38151323459,
       "conclusion": "SUCCESS"
     },
     "originalCombinationCi": {
