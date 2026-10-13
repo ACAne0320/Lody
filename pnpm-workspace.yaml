@@ -26,7 +26,7 @@ catalog:
   '@devframes/plugin-inspect--assets': 1.0.0
   '@devframes/plugin-terminals': 1.0.0
   '@devframes/plugin-terminals--assets': 1.0.0
-  '@loro-dev/flock-wasm': ^0.4.3
+  '@loro-dev/flock-wasm': ^0.4.4
   '@loro-dev/loro-cli': 0.6.0
   '@loro-dev/sqlite-riverrun': 0.2.0
   '@loro-dev/streams-client': 0.9.0
@@ -160,6 +160,8 @@ minimumReleaseAgeExclude:
   - '@loro-dev/streams-client@0.9.0 || 0.10.0'
   # Reviewed host AAD helper and safe protection reasons (loro-dev/loro-repo#146).
   - loro-repo@0.22.0
+  # Reviewed upgrade; 0.4.4 was published today once the release pipeline was fixed.
+  - '@loro-dev/flock-wasm@0.4.4'
   # Adds the `remend` option the streaming Markdown renderer passes (lobehub/streamdown#5).
   - '@lobehub/streamdown@1.4.0'
   # Replaces the removed @lody/virtua fork: this release's source plus unused keyed changes.
