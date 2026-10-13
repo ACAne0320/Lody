@@ -36,3 +36,5 @@ SQL 单页增量修复：独立审查 ad4aed943928be69b0013445c2a38d86c7907fbe �
 同页一致性增量修复：payload、空页 offset 校验与 scalar continuation seek 共用一个 deferred WAL 读事务。真实 Worker 在两次查询之间执行两次认证后的公开 repair；该页仍是原投影，后续 fetch 看到两次已提交修复。原失败证据另行保留。密文读取上限仍是 100；不新增生产或跨请求快照承诺。
 
 作者验证：mailbox 11/11、完整 core 199/199、typecheck、根 format／docs check 与完整根 check 通过。首次 Worker fixture 对不同 digest 重用 repair ID，触发 replay；该 fixture 错误及 lint 命名失败单独保留，不混入产品 old-fail/new-pass。
+
+准确CI调度修正（2026-10-13）：同步后的1479/1480等准确CI在root rest两包并行、core两个测试文件并行时，500次真实验签去重超过原30秒，4096次真实持久写入超过原5秒；日志保留，不推断产品故障。core测试脚本改为文件顺序运行，显式减少并行资源竞争；全部500/4096真实调用、断言、超时和负控保持。没有缓存验证器、模拟SQLite、调整权限或wire。此调度修正需新准确CI确认；本地顺序通过不证明Linux永久没有超时。

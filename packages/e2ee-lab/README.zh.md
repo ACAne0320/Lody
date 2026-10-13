@@ -1,7 +1,7 @@
 # 公开 E2EE Lab（迁移中）
 
 这个可运行、private 的 workspace 消费公开 `@lody/e2ee-core` 和实际发布 SDK：
-streams-client 0.9.0、streams-crdt 0.16.2、Loro 1.16.3、Flock 0.4.3、
+streams-client 0.9.0、streams-crdt 0.17.0、Loro 1.16.3、Flock 0.4.3、
 SQLite Riverrun 0.3.0，以及根锁定的 Effect 4.0.2。不保留另一套复制 core。
 
 独立 checkout 使用仓库支持的 Node 和固定 pnpm，初始化公开 submodules、

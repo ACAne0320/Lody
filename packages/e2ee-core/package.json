@@ -32,7 +32,7 @@
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "format": "oxfmt 'src/**/*.ts' 'test/**/*.ts'",
     "format:check": "oxfmt --check 'src/**/*.ts' 'test/**/*.ts'"
   },
@@ -54,6 +54,6 @@
     "@types/better-sqlite3": "catalog:",
     "tsx": "4.23.7",
     "@loro-dev/streams-client": "catalog:",
-    "@loro-dev/streams-crdt": "catalog:"
+    "@loro-dev/streams-crdt": "0.17.0"
   }
 }

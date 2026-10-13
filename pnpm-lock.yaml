@@ -1577,7 +1577,7 @@ importers:
         version: 4.0.2
     devDependencies:
       '@loro-dev/streams-crdt':
-        specifier: 'catalog:'
+        specifier: 0.17.0
         version: 0.17.0(@loro-dev/flock-wasm@0.4.3)(effect@4.0.2)(loro-crdt@1.16.3)
       '@loro-dev/streams-client':
         specifier: 'catalog:'
@@ -1905,7 +1905,7 @@ importers:
         specifier: 'catalog:'
         version: 0.4.3
       '@loro-dev/streams-crdt':
-        specifier: 'catalog:'
+        specifier: 0.17.0
         version: 0.17.0(@loro-dev/flock-wasm@0.4.3)(effect@4.0.2)(loro-crdt@1.16.3)
       loro-crdt:
         specifier: 'catalog:'
@@ -14289,6 +14289,17 @@ packages:
   '@loro-dev/sqlite-riverrun@0.3.0':
     resolution: {integrity: sha512-UGolSlUDMfaRSGzhvwFmqC5HnM5Vs9mGEA8d6xyAB/pO9La+HPDhUCYdQ/wO2XJZVxiNVglIdT5W5iHO+FTr5Q==}
     engines: {node: '>=22'}
+
+  '@loro-dev/streams-crdt@0.16.2':
+    resolution: {integrity: sha512-zkGYSTHLwilqah7W8Tw2ezDGAyZQ9xqJVYLClM3q2dip5c3M7A+Gimqt4Ywjca3qmbmjyjuQ7F+gcFt+LqqW+A==}
+    peerDependencies:
+      '@loro-dev/flock-wasm': ^0.4.0
+      loro-crdt: ^1.10.3
+    peerDependenciesMeta:
+      '@loro-dev/flock-wasm':
+        optional: true
+      loro-crdt:
+        optional: true
 
 snapshots:
 
@@ -28911,4 +28922,11 @@ snapshots:
   '@loro-dev/sqlite-riverrun@0.3.0':
     dependencies:
       better-sqlite3: 13.0.3
+      loro-crdt: 1.16.3
+
+  '@loro-dev/streams-crdt@0.16.2(@loro-dev/flock-wasm@0.4.3)(loro-crdt@1.16.3)':
+    dependencies:
+      '@loro-dev/streams-client': 0.9.0
+    optionalDependencies:
+      '@loro-dev/flock-wasm': 0.4.3
       loro-crdt: 1.16.3

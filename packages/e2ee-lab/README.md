@@ -1,7 +1,7 @@
 # Public E2EE Lab (migration in progress)
 
 This private runnable workspace consumes public `@lody/e2ee-core` modules and
-released SDKs: streams-client 0.9.0, streams-crdt 0.16.2, Loro 1.16.3, Flock 0.4.3,
+released SDKs: streams-client 0.9.0, streams-crdt 0.17.0, Loro 1.16.3, Flock 0.4.3,
 SQLite Riverrun 0.3.0 and the root locked Effect 4.0.2. It has no copied core.
 
 From a standalone repository checkout with the supported Node and pinned pnpm,

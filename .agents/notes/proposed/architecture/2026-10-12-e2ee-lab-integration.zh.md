@@ -245,3 +245,5 @@ restoreLabLedgerFromCacheOrHistory只接受独立选择的精确endpoint与genui
 准确c33 CI四项5000ms超时，独立92通过。本地受影响12项通过，两worker时四项目标约0.7／0.7／1.7／2.9秒。这不能证明Linux成本或将超时归因于关闭竞争。Lab文件改为串行，减少同时native／Wasm／进程启动竞争；5秒限制和全部真实断言保留。仍须准确新CI确认，否则继续记阻塞。c33 Desktop smoke实际6场景／40步通过，不等Lab或生产验收。
 
 CI3006保留关闭修复但仍红：串行后Flock3096ms／gateway3320ms通过，两个含四次进程启动的用例仍超过5秒。本地key／workspace为2852／1712ms；已完成的Linux native对照约4至5倍成本，整项估计13／8秒。仅这两项既有OS进程集成用例采用有限15／10秒预算；全部断言及关闭竞争／其它测试5秒保留。native-child日志记录真实settlement耗时，仅诊断不作时间断言；新CI须核验估计并定位剩余等待。这是成本预算估计，不能证明所有超时根因都是CPU。旧红CI不改。
+
+依赖组合修正（2026-10-13）：两处streams-crdt条目都由本Lab整合引入，因此只修#1526，已同步父层head不再变动。core SDK测试和Lab依赖明确钉main已有0.17.0，复用main发布包的完整client0.10.0依赖图；直接使用的streams-client仍0.9.0，Effect4.0.2不变。包级明确版本避免旧catalog条目与GitHub合并树的main0.17 catalog错配，不改其他包catalog。保留旧0.16.2解析记录供当前冻结父链其他包使用；与main组合后两处引用一致。运行源码/wire无变化，已验证同一0.17实际依赖core302/Lab94证据可复用；新准确CI和独立组合增量仍分列。
