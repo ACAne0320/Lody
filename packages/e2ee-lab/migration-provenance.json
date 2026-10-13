@@ -463,6 +463,6 @@
     "transitiveCrdtStreamsClient": "0.10.0",
     "effect": "4.0.2",
     "source": "Existing main094 release records; explicit pins avoid stale catalog importer on combined tree",
-    "corePackageSha256": "f5c7ffc81f0d4ab0e411a8b6e920572a2028604cd1cf0e0571b6983d434b89ed"
+    "corePackageSha256": "8471b1892801a56c922de389839a57152d5a6d22d050c7c8bfe0e78a42a6091f"
   }
 }
