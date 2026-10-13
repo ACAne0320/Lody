@@ -161,6 +161,7 @@ catalogs:
       version: 3.6.0
 
 overrides:
+  '@loro-dev/sqlite-riverrun>better-sqlite3': 13.0.3
   '@peculiar/x509>@peculiar/asn1-schema': 2.10.0
   acp-extension-core: workspace:*
   electron-builder-squirrel-windows: ^26.15.3
@@ -1894,6 +1895,52 @@ importers:
       yaml:
         specifier: ^2.8.2
         version: 2.8.2
+
+  packages/e2ee-lab:
+    dependencies:
+      '@loro-dev/flock-wasm':
+        specifier: 'catalog:'
+        version: 0.4.3
+      '@loro-dev/streams-crdt':
+        specifier: 0.17.0
+        version: 0.17.0(@loro-dev/flock-wasm@0.4.3)(effect@4.0.2)(loro-crdt@1.16.3)
+      loro-crdt:
+        specifier: 'catalog:'
+        version: 1.16.3
+      '@lody/e2ee-core':
+        specifier: workspace:*
+        version: link:../e2ee-core
+      '@loro-dev/sqlite-riverrun':
+        specifier: 0.3.0
+        version: 0.3.0
+      '@loro-dev/streams-client':
+        specifier: 'catalog:'
+        version: 0.9.0
+      better-sqlite3:
+        specifier: 'catalog:'
+        version: 13.0.3
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.2
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: 'catalog:'
+        version: 7.6.13
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.10.12
+      oxfmt:
+        specifier: ^0.65.0
+        version: 0.65.0
+      tsx:
+        specifier: 4.23.7
+        version: 4.23.7
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.10.12)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.33.0)(terser@5.46.0)(tsx@4.23.7)(yaml@2.8.2)
 
 packages:
 
@@ -14231,6 +14278,10 @@ packages:
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
+
+  '@loro-dev/sqlite-riverrun@0.3.0':
+    resolution: {integrity: sha512-UGolSlUDMfaRSGzhvwFmqC5HnM5Vs9mGEA8d6xyAB/pO9La+HPDhUCYdQ/wO2XJZVxiNVglIdT5W5iHO+FTr5Q==}
+    engines: {node: '>=22'}
 
   '@loro-dev/streams-crdt@0.16.2':
     resolution: {integrity: sha512-zkGYSTHLwilqah7W8Tw2ezDGAyZQ9xqJVYLClM3q2dip5c3M7A+Gimqt4Ywjca3qmbmjyjuQ7F+gcFt+LqqW+A==}
@@ -28858,6 +28909,11 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.2.0)
 
   zwitch@2.0.4: {}
+
+  '@loro-dev/sqlite-riverrun@0.3.0':
+    dependencies:
+      better-sqlite3: 13.0.3
+      loro-crdt: 1.16.3
 
   '@loro-dev/streams-crdt@0.16.2(@loro-dev/flock-wasm@0.4.3)(loro-crdt@1.16.3)':
     dependencies:

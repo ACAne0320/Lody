@@ -7,3 +7,6 @@
 
 These drafts describe intended architecture and retain explicit unresolved decisions.
 They do not enable product E2EE or approve unfinished protocol formats.
+
+Unapproved interoperability/recovery proposals: [atomic removal](atomic-removal.md),
+[recovery vault](recovery-vault.md), [publisher key recoverability](publisher-key-recoverability.md).

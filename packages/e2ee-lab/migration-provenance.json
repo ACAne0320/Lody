@@ -1,0 +1,468 @@
+{
+  "sourceHead": "f1bc0c52649c21d2e9b620fe3558874c40545e38",
+  "sourceFingerprints": {
+    "src/platform/session.ts": "0dd6c102cd8a608bf7a31baa05549cc5b7320b7e51277e98bcf6ffcde120c60f",
+    "test/review2-b-sync.test.ts": "8f3e00b59eb4084b7c00ec12574669741663086ce792ff1966130b1db34079b9",
+    "package.json": "ee3d590fe8738e2b715561d92856d6618ae74c38df0928cceeb6961efeca99ec",
+    "AGENTS.md": "66d79c766d95312ae17a4a9d2b07cb902b20e5fa06b0e5a9c067289165d63731",
+    "src/scheduler.ts": "1b8012063c0281ca30e913840a8471e4e6c17e41aaf93272070c695989b73aaf",
+    "src/schedule.ts": "760cc54684912e06f582bb015a2efe7ddd2d37c51e8c4043e593c70f54bf7a4f",
+    "src/runtime.ts": "51e26c9eaf96b10a875f5f951eaf6fa200748d6221d7fcf52f8975ddd5351e63",
+    "src/services/run.ts": "d05a7592b08dda18ae5f2a0be9602d6554a978fb16b6fd1d65ea8fbc782294f7",
+    "src/driver.ts": "1e8cedca5dfece6fdc37d70b2eb91969829e48e2b10b807329c741e10e7a0bbd",
+    "src/judge.ts": "5d0c6b6c152e2aeb87c9e604c5d02ec8f9158563dc5f79a5b1cc9561b0949c18",
+    "src/content-trace.ts": "edf7216dc561dc9b615f9804205c001fe0764fc040ba49f06903e57838aa69e0",
+    "src/platform/device.ts": "495ef9b8e1b92e72502a43e8face42a0b9fd65f3457608777106304b28d1f1f5",
+    "src/fingerprint.ts": "2af8f33fbb702c7407a829d952f56e7dd825dbacb6e989bd5c8208df35b19d32",
+    "src/minimize.ts": "a1c9f3f2e84d5badf9e38dce165cd7ba8d95dfe57d1b478fda66a4dc2fb6277a",
+    "src/reference-model.ts": "328d426df98c6c6ef83540f44b656ece2a23573fbb534dba4ca9509b1424b2b0"
+  },
+  "implementation": "Public core/released SDK consumers with partial actual loopback credentials/control/mailbox/joins routes. HPKE installation and signed join metadata use real possession/bearer HTTP; synthetic identity/wrapping and full Lab remaining explicit. No copied core. Finite signed synthetic epoch1 distribution/install/history restoration in an OS child; production producer/backup and full control history host remain pending.",
+  "originalFailures": "Immutable original Lab2 baseline is retained. New consumer probes pass; full original host/actor scenarios are not closed.",
+  "targetFingerprints": {
+    "AGENTS.md": "769f0d68c1d8572e0081b1638c6e6384faeabcae87ba7a11bf53af452ba22f1b",
+    "CLAUDE.md": "769f0d68c1d8572e0081b1638c6e6384faeabcae87ba7a11bf53af452ba22f1b",
+    "README.md": "24e09fa9278f3c2fb81a3334f429e87c3d798b6e0822425d80918c4446d0d7d9",
+    "README.zh.md": "cde3126243e237d5e570d83e94b419d36b5e7652e3b072484c5bc25467c30784",
+    "package.json": "3da215895acfc8d1b22b4f5a31e43eb35bb3e0d1256101ac456112acdfb7a15c",
+    "src/platform/content-provider.ts": "b4be8bfceb43a591097015499c10aefbd4ab870105d3569dddd7fa951ff9501d",
+    "src/platform/content-session.ts": "7c22e34f85f2eabd79b472b861681127e7bb6b2ced687da3bc47c8eb415e6dfe",
+    "src/platform/content-trace.ts": "acb459c5e159d7b3b6688a3b8f0bdcff57339f61dff2093f4e5c7ac2a6202aa6",
+    "src/platform/control-gateway.ts": "d1d5cdff34e58f892dab41974e73cb73aa7ee105729d3f0944caa82c24ac72b2",
+    "src/platform/credentials.ts": "96ffc2c035d655b91676875970563189440a658a1fdf4d951d7eb33850fb478a",
+    "src/platform/document-sqlite.ts": "241f28ece61d4f84cb60268721f9ba165ac86786baaf306344cd782b211303a2",
+    "src/platform/driver.ts": "967761d74ef849db5965f668087ca2033d71c45b3eddd4337d88d4c0a4a61bc3",
+    "src/platform/gateway.ts": "7067ff381e584ea1849d99e836b85191bbcf2d6c99d7acb7c8e450b54feffa76",
+    "src/platform/host.ts": "4c65a78ed86bc2979b1e47204cf6c5e9d16023ab76eacbd6c0419c42bde63e78",
+    "src/platform/join-mailbox.ts": "80ae9a48bbbe2ad0341edff479b6973297d0b26d5e1ac849a4361aa578daac1d",
+    "src/platform/key-mailbox.ts": "46091516b63b8c8650f920d0408f2e238b9c94aba2f1bcc220464aa43076cad8",
+    "src/platform/ledger-actor.ts": "0ae0ab803e13497f380cee41803669d994913f276f352e2bd2f12b03f3096cd5",
+    "src/platform/ledger-client.ts": "dbc57e4b30347eae8a8950df3a642662f5ba6b0e1743641aa283cdad3540abaa",
+    "src/platform/mailbox-http.ts": "160cee8abea9b78765171d460e9a81b165df7bfb633bcc5f396fc03e220d39e3",
+    "src/platform/operation-scope.ts": "aa9766c099964e875927cc10cdbab475853ce3a0249f05e47fffcd93b196ea7c",
+    "src/platform/run.ts": "09857026104ea0c54113197a1786fefbd8028831da4b9fa6b535e704718ee87c",
+    "src/platform/runtime.ts": "5ecc74c8748ad4909c0b69ad7fc173d651809d9767d20093de6500dd24e013a8",
+    "src/platform/sdk-owner.ts": "b28fd9895c95b85b9126c66c1df92a32e85fcb29bb5f7fbca3e27fff872bd058",
+    "src/platform/stream-read.ts": "7d1742d6905fcf31e5a1e0def276f9b38afc04a0be08763ecb24cfdbbdb4dc61",
+    "src/platform/workspace-registry.ts": "6f9b3602dc53c7b190c2b08fcbd8435cf9aa36908d04e1ec9d785e7cef965559",
+    "src/pure/judge.ts": "d32ab4efb965dec58f5224e7d3b6fe0260f4fba309f36b30d8c20cd880951f6f",
+    "src/pure/multipart.ts": "be0d5332da2294ec63691f4e9c31a3b5d6b8fd05684b02adb5110f9386ae71a3",
+    "src/pure/replay.ts": "13d516e4e9cda44efe9b9f359b87c832b0444587fbabbe76b81de88f37d97af2",
+    "src/pure/schedule.ts": "dac314f901d288c7cb433eca78fe7952b8e2adfb793e2fe0bbf1c85b9167bd0e",
+    "src/pure/scheduler.ts": "2e9d62e9a39a6b92ea78dbf2d59650f1366ea8921bf81af385826e164b037240",
+    "test/authenticated-mailbox-fixture.ts": "c146f3f56aafe5f514f44ecf6b4e46c21cb0cc4036f99bce794b1bedd5a1fc69",
+    "test/content-fixture.ts": "8bf1010203ff06fbc1fccfdf680f4cba32fdbccd29f95c5a1c00811bdecd6b66",
+    "test/content-provider.test.ts": "3acb99485e13aa494cf2dbc880664d4e2cd76d1b7bcd69c6f229e84e264269ee",
+    "test/content-reopen.mts": "17515ba140c32c660cdd66c3188c2a8c1e2b8e83e009c4872ba17765aa107474",
+    "test/content-trace.test.ts": "c5c9a81c40f0cf5c0baf498725708b18519b5fd394661f6c1950810eb146066f",
+    "test/credentials.test.ts": "6e0f9f5acee939cfb3f3e6e00681f8b59a094d608a0df361a1d44497adcc2b84",
+    "test/driver.test.ts": "e8fd4e1d7986da517ca9cac3c0461195107fb97b035a229edc2287f0566f7d96",
+    "test/gateway.test.ts": "20948f66cc48fd959223733b0a5663d82e4c6c690e1e73c08252cfcd9eb44df2",
+    "test/host.test.ts": "6755e3edebf6e70d1acc16fb0f1b7952ea6288f4a8dbed8a7765150d3ffffd2b",
+    "test/join-mailbox.test.ts": "049e512ada09c1fbc5f6df6f576712889fe2f92daf6200e8bb344d3f0e0a6777",
+    "test/judge.test.ts": "d3054dcb2a5dc52790b8d30343d33b5adab0099cb86dc880a01dfc277c1e2ce7",
+    "test/key-distribution.test.ts": "ba3c0564bc6ad25933285aa1c0a6943ee11f4d4940a8b79ddac333ec5360d689",
+    "test/key-mailbox.test.ts": "94ec488d11ccd80a751edc039c2e9ae29894d4aaf985ede0750529702bf346fb",
+    "test/key-reopen.mts": "500545c30ba1505dd32eb9d2094ca37f9f497b02b66d6150d20a880b716c555a",
+    "test/ledger-actor-reopen.mts": "760fd376ac9a624ccb5e5ab7601358e5d508d320905c1c8fda7fb235044b9cce",
+    "test/ledger-actor.test.ts": "964289da65a3f7d13aece936f5456cfed40d3338d176f71af1748e949292ef90",
+    "test/ledger-client.test.ts": "93fdc1ad5a9f2faacb62814f1449a39ee64500f47491299d0fe5b94dbe9dbeeb",
+    "test/ledger-fixture.ts": "430f3e44bc6316a0825326e646348afe59a8c487e8cc4bf2974d1944fd66444b",
+    "test/ledger-reopen.mts": "18663757d020087fcefb7c0cfc887f756cd04287c504ddd19e7de8d6d547568f",
+    "test/mailbox-http-fixture.ts": "bd89643c5d8f1aeb368b01c2811b0da6a21aad85eca684fe8f2ede0e006b1176",
+    "test/multipart.test.ts": "9659e55751ad1b1356c7adf684aa1544c7b822d4e98498f40742bef6e239a0e2",
+    "test/native-child.ts": "49121fd7f373bb14ace6dca2acfb0a1aa75d09c7ceb9fc615a2d1834042a316f",
+    "test/replay.test.ts": "2e7dc867db2f3bbb92b884e16b6eabb83aecfc5f285ef78e6ec1c62f27d8a867",
+    "test/runtime.test.ts": "d6eb19979a98bf01975bb05bea2f2d0878044450e9a36ea93e4c0b386fe292d1",
+    "test/scheduler.test.ts": "68ad31cf9cf10cbd1e27e3b99dfdb4b68c9c6033f73823fa892af6b742666c12",
+    "test/stream-read.test.ts": "86d6a4f3a92b920a9aa06b38c7c88403cbe21799678ad8cce85452c23d632a4a",
+    "test/workspace-registry-reopen.mts": "01bad80389bb3e671ecee1fc3f27f817adc6d892534b578b1b1307b6ffd28211",
+    "test/workspace-registry.test.ts": "7ebd6269531d835e5389928a10f6951dcf364c4c321e8440b35d4b33bee0d006",
+    "tsconfig.json": "b88fb9865d3be1692d2db141b9f4bac2ceebfa4eaf31027ffa2991da2a6a756d",
+    "src/platform/device.ts": "143763bfa64fdd40fc296cd81d5ebdbbe67ef28a58e1e6fd0a299f2bcfaa48e6",
+    "src/pure/fingerprint.ts": "de366b38db2b81dc64fd353a05a63f991e1cbaf745f2d67e74b147682d0eaffb",
+    "src/pure/minimize.ts": "2f44a7798309535067d9472fe3555c1cf0b1127f59e1d79be64bb802491bd0b9",
+    "src/pure/reference-model.ts": "f603f10d197727f5fb9ec399bf1bc421622be67226880c10ed09e15b6691d619",
+    "test/reference-model.test.ts": "3be46c65a2adbd89b92b7b8bc79333bd1ee034fd9f4df917616dfd7b117d1662",
+    "src/platform/key-round.ts": "a11d48a996d0575d2a34ea7a0dce183d0f7d875a2687bb2f9340d32bf54b2ba0",
+    "src/platform/http-identity.ts": "baed8a333885a2639ac68ee29c5f4e0cf052bed18f18e6ab69cdd8ad1683c2e0",
+    "src/platform/workspace-session.ts": "5f535a377bcf3dbe1a052501e37a6a2e3fee643f461e49452e7dc02158be3762",
+    "test/workspace-session-reopen.mts": "ee99f073d1ff8cd7bcaa6a686c4753e048cc11af5fb2a5cbff31ff4616e69183",
+    "src/platform/snapshot-cache.ts": "06373fedb3456942dc3ff02a9a01e9694e40909c2c6a274051d8fca2d20a5c60",
+    "test/snapshot-cache-reopen.mts": "ad4ba766a5aa0ca1c44573c77969a0e5c7460534ea8d7deffbe18e8b1c78c9c9",
+    "src/platform/synthetic-protection.ts": "246624547160f0a28d666d93627c8a3d4c545f2cdb09ba526d599b1bbc86c33a"
+  },
+  "sourceSpecificFingerprints": {
+    ".gitignore": {
+      "core": "23ad373c1116a04e6510773beaaa9f6d279507cc39f72d25648c97a039c12b43",
+      "candidate": "23ad373c1116a04e6510773beaaa9f6d279507cc39f72d25648c97a039c12b43"
+    },
+    "AGENTS.md": {
+      "core": "71d20808def259201eb673fc407acf519c461a87497be30f844e69748de11354",
+      "candidate": "66d79c766d95312ae17a4a9d2b07cb902b20e5fa06b0e5a9c067289165d63731"
+    },
+    "CLAUDE.md": {
+      "core": "a54ff182c7e8acf56acfd6e4b9c3ff41e2c41a31c9b211b2deb9df75d9a478f9",
+      "candidate": "a54ff182c7e8acf56acfd6e4b9c3ff41e2c41a31c9b211b2deb9df75d9a478f9"
+    },
+    "README.md": {
+      "core": "8548a91cd715474fc80091acd0e06a15ee3c01ee54914a8f6b2e342305da8eab",
+      "candidate": "08f657accf2cafa59d537463971d2dc230f11ec48f7b31b5324f3210aeb077ca"
+    },
+    "README.zh.md": {
+      "core": "97c57440235e2186895ba46c6554c51635430800037631e8639c6ff0a3f3af03",
+      "candidate": "5dbfae0ab23530af4424cc4468e14ce1bd36ddb376e6639bbc08210c2132f280"
+    },
+    "package.json": {
+      "core": "fa602d1ba97d2c9ab31d4ace69bd984874384aa584213fbdddc3ed9bc35c1d48",
+      "candidate": "ee3d590fe8738e2b715561d92856d6618ae74c38df0928cceeb6961efeca99ec"
+    },
+    "src/actors.ts": {
+      "core": "2c7a3c4d9938691526674e3e34444ab229a5bd8cc33f14996de479099b00e27d",
+      "candidate": "2c7a3c4d9938691526674e3e34444ab229a5bd8cc33f14996de479099b00e27d"
+    },
+    "src/attack-lab.ts": {
+      "core": "1b8f2bf90b35c8bc13716b20678b6d7a67a43b2a5aaac8769f1b3e92613e0f0e",
+      "candidate": "1b8f2bf90b35c8bc13716b20678b6d7a67a43b2a5aaac8769f1b3e92613e0f0e"
+    },
+    "src/attacks.ts": {
+      "core": "506cde49c72dda9952456720117850e60ec774bd7e8b68d9e6a7dfa20c0fc095",
+      "candidate": "506cde49c72dda9952456720117850e60ec774bd7e8b68d9e6a7dfa20c0fc095"
+    },
+    "src/backend.ts": {
+      "core": "9235bc58bb148d39f0c16f2ad674056da6b9c2712f5bef020076df5dfb1bb631",
+      "candidate": "9235bc58bb148d39f0c16f2ad674056da6b9c2712f5bef020076df5dfb1bb631"
+    },
+    "src/cli.ts": {
+      "core": "56bd8911a8dd6176aabde986bb69d2b1327945edf6d12149d46d16f39937be1f",
+      "candidate": "56bd8911a8dd6176aabde986bb69d2b1327945edf6d12149d46d16f39937be1f"
+    },
+    "src/content-trace.ts": {
+      "core": "edf7216dc561dc9b615f9804205c001fe0764fc040ba49f06903e57838aa69e0",
+      "candidate": "edf7216dc561dc9b615f9804205c001fe0764fc040ba49f06903e57838aa69e0"
+    },
+    "src/defects.ts": {
+      "core": "990adf6feec5b6e7a860991fc2ae4c7968789781b806e57383ab502975380807",
+      "candidate": "990adf6feec5b6e7a860991fc2ae4c7968789781b806e57383ab502975380807"
+    },
+    "src/driver.ts": {
+      "core": "1e8cedca5dfece6fdc37d70b2eb91969829e48e2b10b807329c741e10e7a0bbd",
+      "candidate": "1e8cedca5dfece6fdc37d70b2eb91969829e48e2b10b807329c741e10e7a0bbd"
+    },
+    "src/entropy.ts": {
+      "core": "db4dbbc6e2b71c16cd9aec267c6c3e7bee20229f37ed1f3602605b5b219d0cdb",
+      "candidate": "db4dbbc6e2b71c16cd9aec267c6c3e7bee20229f37ed1f3602605b5b219d0cdb"
+    },
+    "src/fingerprint.ts": {
+      "core": "2af8f33fbb702c7407a829d952f56e7dd825dbacb6e989bd5c8208df35b19d32",
+      "candidate": "2af8f33fbb702c7407a829d952f56e7dd825dbacb6e989bd5c8208df35b19d32"
+    },
+    "src/fixtures.ts": {
+      "core": "c8369176ae34876ffa454617be7f8f19bfb9bdccbfd756aae48c01e7c9f0b97a",
+      "candidate": "c8369176ae34876ffa454617be7f8f19bfb9bdccbfd756aae48c01e7c9f0b97a"
+    },
+    "src/identity.ts": {
+      "core": "fe4585d1fd0d165b5cbae33b24088d986d6a3aca38a7dca9bf4437ad69d446aa",
+      "candidate": "566e6215ca9943f953af8264a81b4f2f0859fb8d558eb37690479988d7f8516b"
+    },
+    "src/index.ts": {
+      "core": "194a24aefd092b8e760a8ca95c8bb3520223c9c1ea5ad5cf7350c3d791506eb7",
+      "candidate": "194a24aefd092b8e760a8ca95c8bb3520223c9c1ea5ad5cf7350c3d791506eb7"
+    },
+    "src/insider.ts": {
+      "core": "0a4ccd0703b6d3395826a06cf469c67cdfe1f347174fe324a7e6b98103aa4298",
+      "candidate": "47d743e0f8aaf2dedf69f98bcfc5d9341a3e86d8d57ea766411888731c964367"
+    },
+    "src/judge.ts": {
+      "core": "5d0c6b6c152e2aeb87c9e604c5d02ec8f9158563dc5f79a5b1cc9561b0949c18",
+      "candidate": "5d0c6b6c152e2aeb87c9e604c5d02ec8f9158563dc5f79a5b1cc9561b0949c18"
+    },
+    "src/minimize.ts": {
+      "core": "a1c9f3f2e84d5badf9e38dce165cd7ba8d95dfe57d1b478fda66a4dc2fb6277a",
+      "candidate": "a1c9f3f2e84d5badf9e38dce165cd7ba8d95dfe57d1b478fda66a4dc2fb6277a"
+    },
+    "src/model.ts": {
+      "core": "540e0d1aaa764b318423d6e6127ab8d929ca6bb3b5da6b8a1b92451773644f09",
+      "candidate": "540e0d1aaa764b318423d6e6127ab8d929ca6bb3b5da6b8a1b92451773644f09"
+    },
+    "src/multipart.ts": {
+      "core": "5a42eeb030382990708a52dadbb2296ed6b6f450234fe442655a58ed873d0d91",
+      "candidate": "5a42eeb030382990708a52dadbb2296ed6b6f450234fe442655a58ed873d0d91"
+    },
+    "src/platform/backup.ts": {
+      "core": "dc32b6141008c7c955721123836b0d7ddbb6ca469b50420d6ad28d672e6d1ec2",
+      "candidate": "dc32b6141008c7c955721123836b0d7ddbb6ca469b50420d6ad28d672e6d1ec2"
+    },
+    "src/platform/bytes.ts": {
+      "core": "cced7aca56a74f25e17ee9500d4ddafa626fe39d7f1f04fd6d40a01ffdde254d",
+      "candidate": "cced7aca56a74f25e17ee9500d4ddafa626fe39d7f1f04fd6d40a01ffdde254d"
+    },
+    "src/platform/content-session.ts": {
+      "core": "f150c6f0aaf5ef2ec4c12b235aa9cbd5b4e970715b93d4881a2449aedde4ce3e",
+      "candidate": "f150c6f0aaf5ef2ec4c12b235aa9cbd5b4e970715b93d4881a2449aedde4ce3e"
+    },
+    "src/platform/device.ts": {
+      "core": "495ef9b8e1b92e72502a43e8face42a0b9fd65f3457608777106304b28d1f1f5",
+      "candidate": "495ef9b8e1b92e72502a43e8face42a0b9fd65f3457608777106304b28d1f1f5"
+    },
+    "src/platform/gateway.ts": {
+      "core": "cf54fd5f0825e67959f57399f195660446ce38c4e4defc02ef562e344e849007",
+      "candidate": "cf54fd5f0825e67959f57399f195660446ce38c4e4defc02ef562e344e849007"
+    },
+    "src/platform/host-meta.ts": {
+      "core": "8f40941246e5745b441aaaf0bdc93f5e8b994656b24eea7f58b1229d63ee28c3",
+      "candidate": "8f40941246e5745b441aaaf0bdc93f5e8b994656b24eea7f58b1229d63ee28c3"
+    },
+    "src/platform/host.ts": {
+      "core": "7d5d559f3c635ba797c4d6140d8240e48628be1a720340b209174bbc2398231a",
+      "candidate": "7d5d559f3c635ba797c4d6140d8240e48628be1a720340b209174bbc2398231a"
+    },
+    "src/platform/key-delivery-layer.ts": {
+      "core": "e6ec86ab2c11ca2006de79d1c3dc350b558d10fce58d677f22cca735d78a2938",
+      "candidate": "e6ec86ab2c11ca2006de79d1c3dc350b558d10fce58d677f22cca735d78a2938"
+    },
+    "src/platform/key-mailbox.ts": {
+      "core": "3641a20e393d9882c0bcb0cdd1972b7713d7e021f2f7e9ad8cc206c7a5c1769b",
+      "candidate": "3641a20e393d9882c0bcb0cdd1972b7713d7e021f2f7e9ad8cc206c7a5c1769b"
+    },
+    "src/platform/persist.ts": {
+      "core": "2edf88cb550a20e96e2239a19d8340113aa5bd2974da98d0df6dcd27fae9e31d",
+      "candidate": "2edf88cb550a20e96e2239a19d8340113aa5bd2974da98d0df6dcd27fae9e31d"
+    },
+    "src/platform/protocol.ts": {
+      "core": "7bf933204d1570e44e150010c680d7f8a8bb7410513ebfff835c06179eb12675",
+      "candidate": "7bf933204d1570e44e150010c680d7f8a8bb7410513ebfff835c06179eb12675"
+    },
+    "src/platform/rotation-layer.ts": {
+      "core": "295d074516fc66fd0c32d8e25846fdca2aea52403da05f58863020f8bc56c7e7",
+      "candidate": "295d074516fc66fd0c32d8e25846fdca2aea52403da05f58863020f8bc56c7e7"
+    },
+    "src/platform/session.ts": {
+      "core": "0dd6c102cd8a608bf7a31baa05549cc5b7320b7e51277e98bcf6ffcde120c60f",
+      "candidate": "0dd6c102cd8a608bf7a31baa05549cc5b7320b7e51277e98bcf6ffcde120c60f"
+    },
+    "src/pure/ledger-command.ts": {
+      "core": "74fec05a393ff72ac48baadb562bf7302bfeb63d5b427a6b742e4d5a332156e7",
+      "candidate": "74fec05a393ff72ac48baadb562bf7302bfeb63d5b427a6b742e4d5a332156e7"
+    },
+    "src/reference-model.ts": {
+      "core": "328d426df98c6c6ef83540f44b656ece2a23573fbb534dba4ca9509b1424b2b0",
+      "candidate": "328d426df98c6c6ef83540f44b656ece2a23573fbb534dba4ca9509b1424b2b0"
+    },
+    "src/replay.ts": {
+      "core": "6dc9f560a0f230799222e885e258728959cfe0017a7122815ef0841ac4c833fa",
+      "candidate": "6dc9f560a0f230799222e885e258728959cfe0017a7122815ef0841ac4c833fa"
+    },
+    "src/repro-cli.ts": {
+      "core": "87b34ef778db1c82fa0282cab3b5649416ad33a99699c076ddb8351d87090d72",
+      "candidate": "87b34ef778db1c82fa0282cab3b5649416ad33a99699c076ddb8351d87090d72"
+    },
+    "src/repro-pack.ts": {
+      "core": "22bf8baa9076980339ded24afa324213a3606516410ec189cd701a4812922ea1",
+      "candidate": "22bf8baa9076980339ded24afa324213a3606516410ec189cd701a4812922ea1"
+    },
+    "src/restricted-agent.ts": {
+      "core": "5d1bb386e9d726c38fcfab1107e0ddb438515ca97dfedab0830626554b2a6e34",
+      "candidate": "5d1bb386e9d726c38fcfab1107e0ddb438515ca97dfedab0830626554b2a6e34"
+    },
+    "src/runtime.ts": {
+      "core": "51e26c9eaf96b10a875f5f951eaf6fa200748d6221d7fcf52f8975ddd5351e63",
+      "candidate": "51e26c9eaf96b10a875f5f951eaf6fa200748d6221d7fcf52f8975ddd5351e63"
+    },
+    "src/scenario.ts": {
+      "core": "b0fd0141bfa17afa373dd7957ecae0f4a01162472fd6e0b5b37f53a7290e47c1",
+      "candidate": "b0fd0141bfa17afa373dd7957ecae0f4a01162472fd6e0b5b37f53a7290e47c1"
+    },
+    "src/schedule.ts": {
+      "core": "760cc54684912e06f582bb015a2efe7ddd2d37c51e8c4043e593c70f54bf7a4f",
+      "candidate": "760cc54684912e06f582bb015a2efe7ddd2d37c51e8c4043e593c70f54bf7a4f"
+    },
+    "src/scheduler.ts": {
+      "core": "1b8012063c0281ca30e913840a8471e4e6c17e41aaf93272070c695989b73aaf",
+      "candidate": "1b8012063c0281ca30e913840a8471e4e6c17e41aaf93272070c695989b73aaf"
+    },
+    "src/services/clock.ts": {
+      "core": "53d3bae48e6ec979293d02293c61cdc21f9f2de0cc2d9a94df2db8b89efe67f8",
+      "candidate": "53d3bae48e6ec979293d02293c61cdc21f9f2de0cc2d9a94df2db8b89efe67f8"
+    },
+    "src/services/fs.ts": {
+      "core": "a11e3e0b77ef33da660594cd4684e74265ec0766a7d1fc202c1909015fa4aabe",
+      "candidate": "a11e3e0b77ef33da660594cd4684e74265ec0766a7d1fc202c1909015fa4aabe"
+    },
+    "src/services/http.ts": {
+      "core": "4dc26371f465d91552d734b658202f14d9a62135cbf1ff6751fc6a49f5e26a00",
+      "candidate": "4dc26371f465d91552d734b658202f14d9a62135cbf1ff6751fc6a49f5e26a00"
+    },
+    "src/services/index.ts": {
+      "core": "e613452a67f42a8eecae4762571b547b893a53f23c489b2172218c057ed3de55",
+      "candidate": "e613452a67f42a8eecae4762571b547b893a53f23c489b2172218c057ed3de55"
+    },
+    "src/services/live.ts": {
+      "core": "2494ba3d637fdf2d10e56bd3b1a642081f16adaa8c680954321f13321721a58d",
+      "candidate": "2494ba3d637fdf2d10e56bd3b1a642081f16adaa8c680954321f13321721a58d"
+    },
+    "src/services/run.ts": {
+      "core": "d05a7592b08dda18ae5f2a0be9602d6554a978fb16b6fd1d65ea8fbc782294f7",
+      "candidate": "d05a7592b08dda18ae5f2a0be9602d6554a978fb16b6fd1d65ea8fbc782294f7"
+    },
+    "src/trace.ts": {
+      "core": "0c5c92123e79ae7133976b9cfbec88d01fdff942f9c9024b362062ad247e2e93",
+      "candidate": "0c5c92123e79ae7133976b9cfbec88d01fdff942f9c9024b362062ad247e2e93"
+    },
+    "src/workflows/session-ledger.ts": {
+      "core": "c7a0278b6f9e4e8a416e23529a3f0d003ba07e61df453ab2dbfea71fa7017315",
+      "candidate": "c7a0278b6f9e4e8a416e23529a3f0d003ba07e61df453ab2dbfea71fa7017315"
+    },
+    "test/attack-lab.test.ts": {
+      "core": "bba9b53b78efe5dad5a0e9e42e4ec1dd8576e283358261a9fab26b148c2d3dd4",
+      "candidate": "bba9b53b78efe5dad5a0e9e42e4ec1dd8576e283358261a9fab26b148c2d3dd4"
+    },
+    "test/attacks.test.ts": {
+      "core": "a8dace556acf3c64a6fea333e398bffb22a6ba2df72a7688d8305dece9583a7d",
+      "candidate": "a8dace556acf3c64a6fea333e398bffb22a6ba2df72a7688d8305dece9583a7d"
+    },
+    "test/central-key-delivery.test.ts": {
+      "core": "ba127f641b6c937bcc6c314bc7e79d9b7d70929a1a9143fdb57bf3fc95ee4d3d",
+      "candidate": "ba127f641b6c937bcc6c314bc7e79d9b7d70929a1a9143fdb57bf3fc95ee4d3d"
+    },
+    "test/collab-baseline.test.ts": {
+      "core": "79d4afbb4a7c0476833c03d2ad3a699ac2b0ef1b05ae1ecf0e5963df319b1da5",
+      "candidate": "79d4afbb4a7c0476833c03d2ad3a699ac2b0ef1b05ae1ecf0e5963df319b1da5"
+    },
+    "test/collab-scenario.test.ts": {
+      "core": "a8c8fb6761e257cd5d6061d3319cff684568cb898e575be16c04547923b5b19c",
+      "candidate": "a8c8fb6761e257cd5d6061d3319cff684568cb898e575be16c04547923b5b19c"
+    },
+    "test/content-authority.test.ts": {
+      "core": "19a834a77eecc9d6120322205d2d0fb5e89c6c5a452160c08526305b44d3fa66",
+      "candidate": "19a834a77eecc9d6120322205d2d0fb5e89c6c5a452160c08526305b44d3fa66"
+    },
+    "test/crash-epoch-client.ts": {
+      "core": "a69372c0fad3486ada254896783e33ddfc59a4405f0ca72e715217bb42e5c683",
+      "candidate": "a69372c0fad3486ada254896783e33ddfc59a4405f0ca72e715217bb42e5c683"
+    },
+    "test/crash-loro-client.ts": {
+      "core": "30f95eff444583480c56259e259de0145c26d1f61e492b2e6f0b8af54c12ed37",
+      "candidate": "30f95eff444583480c56259e259de0145c26d1f61e492b2e6f0b8af54c12ed37"
+    },
+    "test/design-probes.test.ts": {
+      "core": "0eec7f74ba45125b7eeaa854a0a0f20b731a7cc2ae5f12586c3ccc8b36a3d2f9",
+      "candidate": "0eec7f74ba45125b7eeaa854a0a0f20b731a7cc2ae5f12586c3ccc8b36a3d2f9"
+    },
+    "test/epoch-key-history.test.ts": {
+      "core": "f0af3a41e9268733c9dcaf5dfa750b8f5793deea17f18ccea4008d5542035ff6",
+      "candidate": "f0af3a41e9268733c9dcaf5dfa750b8f5793deea17f18ccea4008d5542035ff6"
+    },
+    "test/flock.test.ts": {
+      "core": "7f650e12d37ced7bde11d492de91679e2f34a7721b7fe9c25cb5a8c69abdfb8a",
+      "candidate": "7f650e12d37ced7bde11d492de91679e2f34a7721b7fe9c25cb5a8c69abdfb8a"
+    },
+    "test/gateway-headers.test.ts": {
+      "core": "ae0aafa626d87d4c1a018bfb9dbbe7b2a1590afba7099218e0b4b1c804275fd7",
+      "candidate": "ae0aafa626d87d4c1a018bfb9dbbe7b2a1590afba7099218e0b4b1c804275fd7"
+    },
+    "test/gateway.test.ts": {
+      "core": "a55fa0c661a1db99288eb4374095d2d325ce92b550da7b050bd772a00f9f74df",
+      "candidate": "a55fa0c661a1db99288eb4374095d2d325ce92b550da7b050bd772a00f9f74df"
+    },
+    "test/host-hardening.test.ts": {
+      "core": "72a0a66a2c71bdf81b06d1e53e719fe977be59a179340d4ace754dfd91838dce",
+      "candidate": "72a0a66a2c71bdf81b06d1e53e719fe977be59a179340d4ace754dfd91838dce"
+    },
+    "test/host-lifecycle.test.ts": {
+      "core": "97b9f78099d27464278d6f09d979b9948be1fa4b5a3f80b1df1fb2d72768128e",
+      "candidate": "ac4dc7769e39ee2fcad949b8f0450aacedfba979359484dbb97e7021577ee120"
+    },
+    "test/matrix.test.ts": {
+      "core": "472bf92ecd12ce1739998c069b9adde43269ea0de6ef08250cc6f2ade01e9b99",
+      "candidate": "472bf92ecd12ce1739998c069b9adde43269ea0de6ef08250cc6f2ade01e9b99"
+    },
+    "test/multipart.test.ts": {
+      "core": "0c2b07ae1121ce3dc7572f59258f72e7578517eca23188221e68a396722feb16",
+      "candidate": "0c2b07ae1121ce3dc7572f59258f72e7578517eca23188221e68a396722feb16"
+    },
+    "test/reference-model.test.ts": {
+      "core": "f2441afa1fd59eaccd9aabd616231db09792ead8d26ff20d3836aaedd9eceb48",
+      "candidate": "f2441afa1fd59eaccd9aabd616231db09792ead8d26ff20d3836aaedd9eceb48"
+    },
+    "test/replay-bytes.test.ts": {
+      "core": "da40ef59dde00317cce2c4daf52cf7c05c41e51d90b2297badc7cd03e53cc523",
+      "candidate": "da40ef59dde00317cce2c4daf52cf7c05c41e51d90b2297badc7cd03e53cc523"
+    },
+    "test/replay-cas.test.ts": {
+      "core": "ffc8d72663675da063fad6414a717580915b0e8ba2f1f8423b4da6373bcb1943",
+      "candidate": "ffc8d72663675da063fad6414a717580915b0e8ba2f1f8423b4da6373bcb1943"
+    },
+    "test/repro-pack.test.ts": {
+      "core": "1038a16affa9bbfc2b5998762f8c5e15298c3bef0a170d7f248c8163f6603eaf",
+      "candidate": "f603a0197836bd48b90f59835a1c5bed755a0139323e5179f3320eb8f0519ca7"
+    },
+    "test/restricted-agent.test.ts": {
+      "core": "8bccec0dddcf7db91cd0ca763cb04f71ca8dd378728502dcd7e8aabfc1135b50",
+      "candidate": "8bccec0dddcf7db91cd0ca763cb04f71ca8dd378728502dcd7e8aabfc1135b50"
+    },
+    "test/review2-a.test.ts": {
+      "core": "5f050cf127b113b018338b522a85561e7feb0200fb844c72f6d38ed4c51bbc8b"
+    },
+    "test/review2-b-sync.test.ts": {
+      "core": "8f3e00b59eb4084b7c00ec12574669741663086ce792ff1966130b1db34079b9",
+      "candidate": "8f3e00b59eb4084b7c00ec12574669741663086ce792ff1966130b1db34079b9"
+    },
+    "test/review2-c-keystream.test.ts": {
+      "core": "014992e5ee5b99109c09b7debf2ab716cbc49399c275bae6eaafd45000b76655"
+    },
+    "test/review2-d-content.test.ts": {
+      "core": "ed65fe9bf383a78a49e6070da23298e06d0ac82928d38e611b36917cc05a511b"
+    },
+    "test/runtime-permit.test.ts": {
+      "core": "06b48da2b523d56634c4d294bfa552047b23c30f55688c402e33a1dfc97a5900",
+      "candidate": "06b48da2b523d56634c4d294bfa552047b23c30f55688c402e33a1dfc97a5900"
+    },
+    "test/scheduler.test.ts": {
+      "core": "6919b8d2a2a8a55d08f5c0dddaebeb45803613accea38d44fa0b87ac75adba01",
+      "candidate": "6919b8d2a2a8a55d08f5c0dddaebeb45803613accea38d44fa0b87ac75adba01"
+    },
+    "test/services.test.ts": {
+      "core": "53c53285cc77d15725b1373189b559d683a6db41b9fe45afd6db81f61f3294a4",
+      "candidate": "53c53285cc77d15725b1373189b559d683a6db41b9fe45afd6db81f61f3294a4"
+    },
+    "tsconfig.json": {
+      "core": "43008fa78e62980b13206c52a219d815137944c615f8f2981ab90847c8115983",
+      "candidate": "43008fa78e62980b13206c52a219d815137944c615f8f2981ab90847c8115983"
+    },
+    "vendor/README.md": {
+      "core": "21003cc9b44f1440044f67e2078ede47cdd6850c31513acd490c8b54f385302f",
+      "candidate": "60b10c64cae8bebb46f455b746ebf47ba56b9e9809a117df06d013eeee61d3e6"
+    },
+    "vendor/SHA256SUMS": {
+      "core": "5264c10a18933183fd564f6f895b02e552f0c8a59016f7b8061b27420479bfe9",
+      "candidate": "5264c10a18933183fd564f6f895b02e552f0c8a59016f7b8061b27420479bfe9"
+    },
+    "vendor/streams-crdt.tgz": {
+      "core": "a1314d8fbfaed381505001342d563993ae1f32c0682d9db8252c6f6eb97a391e"
+    },
+    "vitest.config.ts": {
+      "core": "6ed47ca0a9f437d2e75985514e9de6795f16e6e5756b4c760df1b5d2336dcbd0",
+      "candidate": "6ed47ca0a9f437d2e75985514e9de6795f16e6e5756b4c760df1b5d2336dcbd0"
+    }
+  },
+  "partialCoverage": {
+    "ledger": "src/platform/ledger-client.ts and ledger-actor.ts consume settled public gates and unchanged submission recovery",
+    "content": "public header3 update provider, raw SDK owner and Loro session; full Flock/session/host integration pending",
+    "persistence": "Per-document native state/cursor SQL pairing, actual Loro/Flock OS child reopen with protected keys/no usable signer; Flock cross-model failed import retains actual durable pair. Full crash/rotation/session/recovery/live remains pending.",
+    "recovery": "readable encrypted history only; Riverrun nonzero snapshot history gap remains undecided",
+    "originalHarness": "driver/attack/replay/CLI and original host scenarios pending",
+    "gateway": "Bounded authenticated GET/HEAD control/loro/flock/bootstrap/latest/specific snapshot routes; fixed loopback upstream, canonical same-origin/Org/stream redirect, actual response-body retention and before/after genuine permission. Real machine revoke keeps durable feed cursor. Lab52 plus five SHA overlays passes; three direct behavioral negatives/no timeout/restored. Unprotected snapshot fixture only; content writes/live/fullhost/CLI and protected snapshot contract pending.",
+    "mailbox": "Actual SQLite ignored protected-key insert retains original Install task/no terminal/no key; after closing parent receiver owners actual OS child reopens syntheticX25519/device/publicgenuine2records, realHPKEopens/saves/readbacks and reports through fresh challenge/bearer HTTP. Parent actualSQLite taskReported/frame bytecompare, original Recovery no-send/repair coverage retained. Synthetic device file0600 only, importedprivate handle nonextractable/publicextractable needed lockedHPKEserialize binding. Original nonextractable-public open-failed log retained, noalgorithm/corechange. Affected13/type + fresh e574/3SHA Lab52 pass, skipping actualinstall/report gives noReported directfail/nontimeout/restored. Full epochrotation/host/originalLab2/nativecustody pending.",
+    "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work.",
+    "judgeAndTrace": "WIP pure verdict18 exports ported: missing measurements/default baseline/mixed unavailable not all-pass, count-only history unavailable, measured new unauthorized acceptance violation with lawful admitted-history semantics unchanged, explicit insider freshness scope. Source4 old pure FAIL/new same probe PASS retained; new observer old original alias FAIL retained. Typed run-scoped bounded private synthetic trace provides original record/read/clear as methods, owned fields before budget/no returned alias/no cross-run clear/close and closed observation fails. No global plaintext registry, no attacker access or authority inference. Owning9/type pass; Root core302/Lab67, format/docs/publicboundary7017/27 pass; all59Lab inputSHA unchanged. Fixedhead and real actor/attack observation integration pending."
+  },
+  "dependencyAlignment": {
+    "streamsCrdt": "0.17.0",
+    "directStreamsClient": "0.9.0",
+    "transitiveCrdtStreamsClient": "0.10.0",
+    "effect": "4.0.2",
+    "source": "Existing main094 release records; explicit pins avoid stale catalog importer on combined tree",
+    "corePackageSha256": "f5c7ffc81f0d4ab0e411a8b6e920572a2028604cd1cf0e0571b6983d434b89ed"
+  }
+}
