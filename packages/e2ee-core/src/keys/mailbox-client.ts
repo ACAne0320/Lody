@@ -1,11 +1,21 @@
-import { Data, Effect } from 'effect';
+import { Cause, Data, Effect } from 'effect';
 import * as Bytes from '../bytes';
 import { keyId } from '../identifiers';
-import { isHash, fromHex } from './reports';
+import { isHash, fromHex, mailboxDigest } from './reports';
 import { makeSqliteEpochReceiver, type ReceiveMailboxRemote } from './receive-sqlite';
 import { makeSqliteMailboxRepair } from './repair-sqlite';
 export class MailboxClientError extends Data.TaggedError('MailboxClientError')<{
   readonly code: 'invalid-page' | 'closed' | 'rollback' | 'unauthorized';
+}> {}
+/** Identifies the owned failed envelope; not permission to reject it or advance a cursor.
+ * The cause distinguishes crypto rejection from retryable local storage/native failures. */
+export class MailboxInstallError extends Data.TaggedError('MailboxInstallError')<{
+  readonly genesis: string;
+  readonly epoch: number;
+  readonly recipient: string;
+  readonly sender: string;
+  readonly frameDigest: string;
+  readonly cause: unknown;
 }> {}
 const fail = (code: MailboxClientError['code']) => new MailboxClientError({ code });
 export interface RecipientMailboxRemote extends ReceiveMailboxRemote {
@@ -141,7 +151,27 @@ export function makeSqliteRecipientMailbox(
           if (rows.length !== count) return yield* fail('invalid-page');
           const latest = yield* current();
           if (latest.inspectState().epoch.number !== epoch) return yield* fail('rollback');
-          for (const row of items) yield* receiver.receive(row.sender, row.frame);
+          for (const row of items) {
+            const frameDigest = mailboxDigest(row.frame);
+            yield* receiver.receive(row.sender, row.frame).pipe(
+              Effect.catchCause((failure) =>
+                Effect.failCause(
+                  Cause.map(
+                    failure,
+                    (cause) =>
+                      new MailboxInstallError({
+                        genesis: keyId(anchor.toBytes()),
+                        epoch,
+                        recipient: keyId(signer.publicKey.toBytes()),
+                        sender: keyId(row.sender.toBytes()),
+                        frameDigest,
+                        cause,
+                      })
+                  )
+                )
+              )
+            );
+          }
           // Preserve the source failure contract: no page-next result after any install failure.
           return { processed: items.length, next };
         }),

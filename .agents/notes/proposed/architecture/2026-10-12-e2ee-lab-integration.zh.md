@@ -247,3 +247,5 @@ restoreLabLedgerFromCacheOrHistory只接受独立选择的精确endpoint与genui
 CI3006保留关闭修复但仍红：串行后Flock3096ms／gateway3320ms通过，两个含四次进程启动的用例仍超过5秒。本地key／workspace为2852／1712ms；已完成的Linux native对照约4至5倍成本，整项估计13／8秒。仅这两项既有OS进程集成用例采用有限15／10秒预算；全部断言及关闭竞争／其它测试5秒保留。native-child日志记录真实settlement耗时，仅诊断不作时间断言；新CI须核验估计并定位剩余等待。这是成本预算估计，不能证明所有超时根因都是CPU。旧红CI不改。
 
 依赖组合修正（2026-10-13）：两处streams-crdt条目都由本Lab整合引入，因此只修#1526，已同步父层head不再变动。core SDK测试和Lab依赖明确钉main已有0.17.0，复用main发布包的完整client0.10.0依赖图；直接使用的streams-client仍0.9.0，Effect4.0.2不变。包级明确版本避免旧catalog条目与GitHub合并树的main0.17 catalog错配，不改其他包catalog。保留旧0.16.2解析记录供当前冻结父链其他包使用；与main组合后两处引用一致。运行源码/wire无变化，已验证同一0.17实际依赖core302/Lab94证据可复用；新准确CI和独立组合增量仍分列。
+
+CI 预算修正：key-distribution 夹具在 HTTP/接收/repair 查询中重复验证不变签名历史。现在复用真实验证的 view；仅在该私有只追加夹具新增记录后完整验证新历史。保留 epoch1、发送者撤销断言及独立 OS 子进程验证，全部 HPKE/HTTP/SQLite/报告/repair 步骤和原 15 秒限制不变。连接当前 core 的本地对照从 2757ms 到 1718ms。这是作者夹具证据，不是原生存钥或永久计时保证。父层带有失败信封定位，供明确的持久定向 repair 使用，不自动跳过。

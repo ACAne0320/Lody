@@ -9,7 +9,12 @@ import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { Bytes, encodeCbor } from '@lody/e2ee-core';
 import { commitEpochKey, sealHistoryPacket } from '@lody/e2ee-core/keys';
-import { contentPermissions, hashRecordBytes, verifyLedger } from '@lody/e2ee-core/ledger';
+import {
+  contentPermissions,
+  hashRecordBytes,
+  verifyLedger,
+  type LedgerView,
+} from '@lody/e2ee-core/ledger';
 import {
   signGenesisRecord,
   prepareDeviceAdmission,
@@ -82,14 +87,23 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
         })
       );
       const records: Uint8Array[] = [genesis.record];
-      const view = () =>
-        ok(
-          verifyLedger({
-            anchor: genesis.genesis,
-            records,
-            checkpoint: { head: hashRecordBytes(records.at(-1)!), length: records.length },
-          })
-        );
+      // This fixture only appends signed records; captured records are never mutated.
+      // Reverify every append (including epoch/revocation), not every unchanged HTTP lookup.
+      let cachedView: LedgerView | undefined,
+        cachedCount = 0;
+      const view = () => {
+        if (!cachedView || cachedCount !== records.length) {
+          cachedView = ok(
+            verifyLedger({
+              anchor: genesis.genesis,
+              records,
+              checkpoint: { head: hashRecordBytes(records.at(-1)!), length: records.length },
+            })
+          );
+          cachedCount = records.length;
+        }
+        return cachedView;
+      };
       const command = await Effect.runPromise(
         prepareDeviceAdmission({
           genesis: genesis.genesis,

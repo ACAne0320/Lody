@@ -61,7 +61,7 @@
     "test/host.test.ts": "6755e3edebf6e70d1acc16fb0f1b7952ea6288f4a8dbed8a7765150d3ffffd2b",
     "test/join-mailbox.test.ts": "049e512ada09c1fbc5f6df6f576712889fe2f92daf6200e8bb344d3f0e0a6777",
     "test/judge.test.ts": "d3054dcb2a5dc52790b8d30343d33b5adab0099cb86dc880a01dfc277c1e2ce7",
-    "test/key-distribution.test.ts": "ba3c0564bc6ad25933285aa1c0a6943ee11f4d4940a8b79ddac333ec5360d689",
+    "test/key-distribution.test.ts": "f9e2d13adb3ce8d052e2b0e085c906f29b9b580c749fa19e5418b90c71fac957",
     "test/key-mailbox.test.ts": "94ec488d11ccd80a751edc039c2e9ae29894d4aaf985ede0750529702bf346fb",
     "test/key-reopen.mts": "500545c30ba1505dd32eb9d2094ca37f9f497b02b66d6150d20a880b716c555a",
     "test/ledger-actor-reopen.mts": "760fd376ac9a624ccb5e5ab7601358e5d508d320905c1c8fda7fb235044b9cce",
