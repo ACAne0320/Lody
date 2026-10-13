@@ -36,3 +36,5 @@ Draft: [#1464](https://github.com/LodyAI/Lody/pull/1464).
 增量计数修复：独立审查 13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf 发现 comparison note 重复累加 offset，使同点不同状态误判 pending sync。现只计一次，回归验证 full／endorsed 同点一致、不同状态明确冲突、已验后缀计数。原 reviewer 证据不改，另保留 old-fail／new-pass；信任／wire 与 P09 未改。
 
 计数修复最终代码树：账本 47/47、完整 root check（core 188/188）通过，格式／文档及未改公共边界通过。原 count=5 失败与新版 count=3／conflict 证据分别保留。
+
+补充对照覆盖零/非零historyStart、两种起点的suffix推进、full/endorsed同digest双向比较，以及真实重签不同状态的raw/confirm双向conflict。核查note/body/digest/view均只计一次offset，confirm绑定实际note count不再累加。零起点使用真实Owner标签，不用未登记peer。A/B/C信任、wire/domain、OwnerGov、unknown-prefix及冲突语义未变；下游heads不动，审查后另行协调同步。

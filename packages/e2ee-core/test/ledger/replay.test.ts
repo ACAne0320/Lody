@@ -1181,10 +1181,81 @@ describe('authenticated snapshot migration reproduction', () => {
   });
   it('compares endorsed snapshots at their actual count and reports same-position state conflict', () => {
     const o = org();
-    o.append(owner, o.join(bob, 11));
+    const compareAtPoint = (fullView: Ledger.LedgerView, endorsedView: Ledger.LedgerView) => {
+      const manager = ok(Bytes.signingPublicKey(owner.pk));
+      const a = ok(Snapshots.comparisonNote(endorsedView, manager));
+      const b = ok(Snapshots.comparisonNote(fullView, manager));
+      expect(a.length).toBe(fullView.length);
+      expect(b.length).toBe(fullView.length);
+      expect(a.head.equals(b.head)).toBe(true);
+      expect(a.stateDigest.equals(b.stateDigest)).toBe(true);
+      for (const [left, right] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        expect(ok(Snapshots.compareNotes(left, right))).toMatchObject({
+          kind: 'agree',
+          length: fullView.length,
+          independent: false,
+        });
+        // Independently selected tuple; bytes never prove peer authentication.
+        expect(
+          ok(
+            Snapshots.confirmIndependentComparison(left, right, manager, {
+              source: 'authenticated-channel',
+              expected: right,
+            })
+          )
+        ).toMatchObject({ kind: 'agree', length: fullView.length });
+      }
+    };
+    const conflictAtPoint = (fullView: Ledger.LedgerView) => {
+      const manager = ok(Bytes.signingPublicKey(owner.pk));
+      const changed = editedSnapshot(fullView, owner, (body) => {
+        const fields = body[5] as CborValue[];
+        // Qualified malicious endorsement changes a well-formed commitment,
+        // retaining OwnerGov and genesis-count constraints, not proving a preimage.
+        fields[4] = filled(66);
+        ((fields[10] as CborValue[])[fields[3] as number] as CborValue[])[1] = filled(66);
+      });
+      const importedView = ok(Snapshots.verifyLedgerSnapshot(changed));
+      const a = ok(Snapshots.comparisonNote(fullView, manager));
+      const b = ok(Snapshots.comparisonNote(importedView, manager));
+      expect(a.head.equals(b.head)).toBe(true);
+      expect(a.length).toBe(b.length);
+      expect(a.stateDigest.equals(b.stateDigest)).toBe(false);
+      for (const [left, right] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        expect(ok(Snapshots.compareNotes(left, right))).toMatchObject({
+          kind: 'conflict',
+          length: fullView.length,
+        });
+        expect(
+          ok(
+            Snapshots.confirmIndependentComparison(left, right, manager, {
+              source: 'manual',
+              expected: right,
+            })
+          )
+        ).toMatchObject({ kind: 'conflict', length: fullView.length });
+      }
+    };
+    const zero = ok(o.verify());
+    const zeroImported = ok(Snapshots.verifyLedgerSnapshot(endorsed(zero)));
+    expect(zeroImported.historyStart).toBe(0);
+    compareAtPoint(zero, zeroImported);
+    conflictAtPoint(zero);
+    const zeroSuffix = o.append(owner, o.join(bob, 11));
+    const zeroAdvanced = ok(Ledger.extendLedger(zeroImported, [zeroSuffix], checkpoint(o.records)));
+    expect(zeroAdvanced.historyStart).toBe(0);
+    compareAtPoint(ok(o.verify()), zeroAdvanced);
     o.append(owner, [3, id(11), 1]);
     const full = ok(o.verify()),
       imported = ok(Snapshots.verifyLedgerSnapshot(endorsed(full)));
+    expect(imported.historyStart).toBe(2);
+    compareAtPoint(full, imported);
     const local = ok(Snapshots.comparisonNote(imported, ok(Bytes.signingPublicKey(owner.pk))));
     const remote = ok(Snapshots.comparisonNote(full, ok(Bytes.signingPublicKey(bob.pk))));
     expect(imported.length).toBe(3);
@@ -1214,14 +1285,37 @@ describe('authenticated snapshot migration reproduction', () => {
     );
     expect(contrary.head.equals(remote.head)).toBe(true);
     expect(contrary.length).toBe(remote.length);
-    expect(ok(Snapshots.compareNotes(remote, contrary))).toMatchObject({
-      kind: 'conflict',
-    });
+    expect(contrary.stateDigest.equals(remote.stateDigest)).toBe(false);
+    for (const [left, right] of [
+      [remote, contrary],
+      [contrary, remote],
+    ] as const) {
+      expect(ok(Snapshots.compareNotes(left, right))).toMatchObject({
+        kind: 'conflict',
+        length: full.length,
+      });
+      expect(
+        ok(
+          Snapshots.confirmIndependentComparison(
+            left,
+            right,
+            ok(Bytes.signingPublicKey(owner.pk)),
+            {
+              source: 'authenticated-channel',
+              expected: right,
+            }
+          )
+        )
+      ).toMatchObject({ kind: 'conflict', length: full.length });
+    }
     const suffix = o.append(owner, [7, 1, filled(21), filled(22, 72)]);
     const extended = ok(Ledger.extendLedger(imported, [suffix], checkpoint(o.records)));
     expect(
       ok(Snapshots.comparisonNote(extended, ok(Bytes.signingPublicKey(owner.pk)))).length
     ).toBe(4);
+    expect(extended.historyStart).toBe(2);
+    compareAtPoint(ok(o.verify()), extended);
+    conflictAtPoint(ok(o.verify()));
     expect(
       ok(
         Snapshots.compareNotes(
