@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { createElement } from 'react';
+import { createElement, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
@@ -187,53 +187,37 @@ describe('AskUserQuestionCard submit behavior', () => {
     container = undefined;
   });
 
-  function renderInteractiveCard(onSubmit: ReturnType<typeof vi.fn>) {
+  function renderInteractiveCard() {
+    let acceptedAnswers: AskUserQuestionAnswers | undefined;
+    function InteractiveCard() {
+      const [answers, setAnswers] = useState<AskUserQuestionAnswers>();
+      return createElement(AskUserQuestionCard, {
+        meta,
+        mode: answers
+          ? { kind: 'readonly', answers }
+          : {
+              kind: 'interactive',
+              isReady: true,
+              isPendingSubmit: false,
+              isPendingCancel: false,
+              disabled: false,
+              onSubmit: (next) => {
+                acceptedAnswers = next;
+                setAnswers(next);
+              },
+              onCancel: () => {},
+            },
+      });
+    }
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-
-    flushSync(() => {
-      root?.render(
-        createElement(AskUserQuestionCard, {
-          meta,
-          mode: {
-            kind: 'interactive',
-            isReady: true,
-            isPendingSubmit: false,
-            isPendingCancel: false,
-            disabled: false,
-            onSubmit,
-            onCancel: vi.fn(),
-          },
-        })
-      );
-    });
+    flushSync(() => root?.render(createElement(InteractiveCard)));
+    return () => acceptedAnswers;
   }
 
-  it('does not submit when the user clicks the last single-select option', async () => {
-    const onSubmit = vi.fn();
-    renderInteractiveCard(onSubmit);
-
-    flushSync(() => {
-      getButton(container!, 'Eggs').click();
-    });
-    flushSync(() => {
-      getButton(container!, 'Next').click();
-    });
-
-    expect(container?.textContent).toContain('Pick a drink');
-
-    flushSync(() => {
-      getButton(container!, 'Coffee').click();
-    });
-
-    await new Promise((resolve) => queueMicrotask(() => resolve(undefined)));
-    expect(onSubmit).not.toHaveBeenCalled();
-  });
-
   it('submits only when the user clicks the Submit button after answering all questions', async () => {
-    const onSubmit = vi.fn();
-    renderInteractiveCard(onSubmit);
+    const acceptedAnswers = renderInteractiveCard();
 
     flushSync(() => {
       getButton(container!, 'Eggs').click();
@@ -246,15 +230,17 @@ describe('AskUserQuestionCard submit behavior', () => {
     });
 
     await new Promise((resolve) => queueMicrotask(() => resolve(undefined)));
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(acceptedAnswers()).toBeUndefined();
+    expect(container?.textContent).not.toContain('Answered');
+    expect((getButton(container!, 'Submit') as HTMLButtonElement).disabled).toBe(false);
 
     flushSync(() => {
       getButton(container!, 'Submit').click();
     });
 
-    expect(onSubmit).toHaveBeenCalledTimes(1);
-    const submittedAnswers = onSubmit.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(Object.values(submittedAnswers)).toEqual(expect.arrayContaining([['Eggs'], 'Coffee']));
+    expect(container?.textContent).toContain('Answered');
+    expect(Object.values(acceptedAnswers()!)).toEqual([['Eggs'], 'Coffee']);
+    expect(getButton(container!, 'Coffee').getAttribute('aria-disabled')).toBe('true');
   });
 });
 
@@ -475,6 +461,38 @@ describe('AskUserQuestionCard answer notes', () => {
     flushSync(() => getButton(container, 'Submit').click());
     expect(result.answers()).toEqual({ approach: 'Another approach', approach_note: 'Reason' });
   });
+  it.each([{ isComposing: true }, { keyCode: 229 }, { which: 229 }])(
+    'keeps candidate confirmation out of answer submission (%j)',
+    (imeSignal) => {
+      const result = render({
+        ...noteMeta,
+        questions: [{ ...noteMeta.questions[0]!, allowCustomAnswer: true }],
+      });
+      typeNote('保留现有接口');
+      const input = container.querySelector('input')!;
+      const candidate = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+        ...imeSignal,
+      });
+      flushSync(() => input.dispatchEvent(candidate));
+      expect(candidate.defaultPrevented).toBe(false);
+      expect(result.answers()).toBeUndefined();
+      expect(input.value).toBe('保留现有接口');
+      flushSync(() =>
+        input.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            bubbles: true,
+            cancelable: true,
+          })
+        )
+      );
+      expect(result.answers()).toEqual({ approach: '保留现有接口' });
+    }
+  );
+
   it('renders the real readonly story fixtures with independent secret masking', () => {
     flushSync(() => root.render(createElement(AskUserQuestionCard, storyMeta.args)));
     expect(container.querySelector('textarea')!.value).toBe('Keep the public API stable.');

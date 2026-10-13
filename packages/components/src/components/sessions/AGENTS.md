@@ -2,7 +2,7 @@
 
 `CLAUDE.md` symlinks here. Edit `AGENTS.md` only.
 
-Read parent rules and each heading's linked context before edits.
+Read parent rules and linked context before edits.
 
 ## [Tabs and `?tab` routing](../../../../../.agents/docs/sessions-tabs-routing.md)
 
@@ -53,8 +53,8 @@ Read parent rules and each heading's linked context before edits.
 
 - Message-list crash fallback preserves the composer and copies the shared report,
   including the original error and caught React component stacks.
-- Read receipts are gated on VISIBILITY, not on being mounted: keep the
-  explicit per-surface `isVisible` prop.
+- Read receipts require per-surface `isVisible`, never mere mounting.
+- Keep question drafts on navigation and IME Enter; show failures.
 - Markdown copy uses `buildConversationMarkdown`, not `buildReplayPromptFromHistory`:
   keep prose whole, cap thinking rather than drop it, toast every omission, and
   include the selected message regardless of ACP fork support.
