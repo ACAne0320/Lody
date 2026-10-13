@@ -32,10 +32,6 @@ Each layer compares only with its direct parent. Actual branch/head/base and val
 
 `package.json`, the root lock/catalog, entry maps and module README/AGENTS belong to the first layer that consumes each change and are updated incrementally. Node-only storage has an explicit subentry; no native custody or runtime is silently installed through the portable root. Test fixtures belong to their behavioral owner. Lab owns synthetic storage adapters and its process resources; core owns protocol policy.
 
-At the initial remote check, [#1433](https://github.com/LodyAI/Lody/pull/1433) SDK preparation (`08aec8c69f4e0cffbfb8be9e9f67d27b0a30062f`) and [#1434](https://github.com/LodyAI/Lody/pull/1434) submission (`f11f1451c095e47a10226ca1824c1b8b66e7a087`) were open. Their authors retain ownership. Dependent implementation waits for actual main rather than copying unmerged code. Refresh those facts before starting dependent work.
-
-A subsequent refresh before the document Draft found #1433 merged at `37cadfbcb0fa2183a98ccf041ba3820a8945b28e`, main at the base above, and #1434 still open at `54b16340c28a59e29bade3bf4d275d812f549c21`. The document bottom follows actual main; dependent implementation remains gated until submission lands.
-
 Platform custody, private cloud ledger/projection/JWT/mailbox, Web/mobile composition, published upstream changes and production deadline enforcement are linked workstreams in their respective repositories. They cannot be represented by one public Git stack.
 
 ```mermaid
@@ -100,12 +96,24 @@ Current implementation base: all three prerequisites have landed. Submission #14
 
 ## Current implemented stack
 
-The implemented Draft chain is L0 [#1438](https://github.com/LodyAI/Lody/pull/1438) → historical facts [#1439](https://github.com/LodyAI/Lody/pull/1439) → document workflows [#1442](https://github.com/LodyAI/Lody/pull/1442) → epoch history [#1446](https://github.com/LodyAI/Lody/pull/1446) → ordinary signing [#1447](https://github.com/LodyAI/Lody/pull/1447) → epoch envelopes [#1448](https://github.com/LodyAI/Lody/pull/1448) → exact-byte delivery [#1450](https://github.com/LodyAI/Lody/pull/1450) → authenticated ledger snapshots [#1464](https://github.com/LodyAI/Lody/pull/1464). The indexed local mailbox layer follows #1464; its [owning note](../notes/implemented/architecture/2026-10-11-e2ee-key-mailbox.md) records source/adaptation/evidence. Each PR targets its direct parent branch. Canonical history/distribution did not wait for unrelated format decisions. Submission #1434 landed before dependent signing work and remains unchanged.
+This is the refreshed Draft stack snapshot before this layer. Parent head is the exact selected stack basis. Main continues moving; the frozen bottom ancestor is not a claim about latest remote main. Independently review each current PR head/base.
 
-Snapshot A requires independently sourced exact management qualification; B derives genuine same-point trust; C is signature evidence only. Endorsed-state provenance and unknown historical prefix remain explicit. The mailbox reference supplies authenticated composition binding, fixed admission, duplicate deduplication, bounded recipient reads and signed claim/repair handling; durable recipient installation, distribution scheduling, full engine/SDK/transport recovery and Lab are unfinished. The old duplicate-stream failure is retained; new mailbox-path evidence alone does not close all legacy/Lab delivery coverage.
+| PR | Branch | Head | Parent head |
+| --- | --- | --- | --- |
+| [#1438](https://github.com/LodyAI/Lody/pull/1438) | `e2ee-migration-baseline` | `59c3840b0165ce8a6637418c1e2b2095b13f6b88` | `984c35c5b30600d68abec1ec3e585eca73bcd4f0` |
+| [#1439](https://github.com/LodyAI/Lody/pull/1439) | `e2ee-ledger-content-facts` | `946965a7fd3ccc10c6a18f41f8f54a38c74232a3` | `59c3840b0165ce8a6637418c1e2b2095b13f6b88` |
+| [#1442](https://github.com/LodyAI/Lody/pull/1442) | `e2ee-document-workflows` | `543f82d1c4f4470436d4ad183f0f53259faddf49` | `946965a7fd3ccc10c6a18f41f8f54a38c74232a3` |
+| [#1446](https://github.com/LodyAI/Lody/pull/1446) | `e2ee-epoch-history` | `b67e0c062c667046d8c90b7a2512dbbd0834be40` | `543f82d1c4f4470436d4ad183f0f53259faddf49` |
+| [#1447](https://github.com/LodyAI/Lody/pull/1447) | `e2ee-ledger-signing` | `d87ee2d444a60079ae1adf84565a7bd53faf905e` | `b67e0c062c667046d8c90b7a2512dbbd0834be40` |
+| [#1448](https://github.com/LodyAI/Lody/pull/1448) | `e2ee-epoch-envelopes` | `0a73d464b5c93fab4b4e0f7ce704778ba437ac94` | `d87ee2d444a60079ae1adf84565a7bd53faf905e` |
+| [#1450](https://github.com/LodyAI/Lody/pull/1450) | `e2ee-key-delivery` | `34b918367fe23f6bf9c2ff1cea31b154de298cb2` | `0a73d464b5c93fab4b4e0f7ce704778ba437ac94` |
+| [#1464](https://github.com/LodyAI/Lody/pull/1464) | `e2ee-ledger-snapshots` | `5d3967ec94e3b10fdec76220937e9fcfe2623590` | `34b918367fe23f6bf9c2ff1cea31b154de298cb2` |
+| [#1472](https://github.com/LodyAI/Lody/pull/1472) | `e2ee-key-mailbox` | `58cbd49c6869f28d09efb60d3b9a7ec10243e93a` | `5d3967ec94e3b10fdec76220937e9fcfe2623590` |
+| [#1474](https://github.com/LodyAI/Lody/pull/1474) | `e2ee-content-snapshot-auth` | `f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08` | `58cbd49c6869f28d09efb60d3b9a7ec10243e93a` |
+| [#1479](https://github.com/LodyAI/Lody/pull/1479) | `e2ee-ledger-admission` | `f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b` | `f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08` |
+| [#1480](https://github.com/LodyAI/Lody/pull/1480) | `e2ee-host-epoch-protection` | `ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee` | `f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b` |
+| [#1482](https://github.com/LodyAI/Lody/pull/1482) | `e2ee-epoch-receive-reports` | `4134109a76739d8b36ff5a8a1209e37e16518703` | `ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee` |
 
-Mailbox Draft: [#1472](https://github.com/LodyAI/Lody/pull/1472), direct parent #1464 at `5d3967ec94e3b10fdec76220937e9fcfe2623590`.
+SDK preparation #1433 and submission #1434 landed; the latter merge is `7c58cabe1d05f132b7133a52b45a16b79274ea6a`. Their implementation remains unchanged. Host protection direction A is settled: trusted composition initializes protect/unprotect once, binds purpose/Org/recipient/epoch/commitment and requires actual save/reload before reports. Synthetic protection is not native platform custody.
 
-Document snapshot-identity/input follow-up Draft: [#1474](https://github.com/LodyAI/Lody/pull/1474), direct parent #1472 at `ad4aed943928be69b0013445c2a38d86c7907fbe`.
-
-The host-only epoch protection direction is settled: trusted composition initializes protect/unprotect once, complete purpose/Org/recipient/epoch/commitment binding, opaque ordinary consumers and durable save/reload/commitment check before reports. The L4e installed-key library uses a distinct local protected payload, not a recovery-file format or new mailbox wire. Native adapters and report queues remain separate; synthetic protection does not establish platform custody.
+The next L1d [full-history feed](../../packages/e2ee-core/src/ledger/FEED.md) directly follows #1482 `4134109a…`. Original Lab2 failures await the actual migrated consumer. Legacy whole-JSON journals are retired without implicit import. Sender discovery, durable repair/fetch, snapshot SDK and Lab/recovery scopes remain ongoing implementation or explicit decision gates.

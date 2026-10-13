@@ -1142,7 +1142,14 @@
       "targetPath": "packages/e2ee-core/src/submission/sqlite.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "reason": "Submission #1434 is already in the pinned actual main. L1d adapts the independent full-history read/persist subset without changing P09. Snapshot qualification/bootstrap, CAS adapter and actual Lab consumer remain explicit unfinished scopes; legacy whole-JSON storage is retired without implicit import.",
+      "coverage": [
+        {
+          "layer": "L1d",
+          "target": "packages/e2ee-core/src/ledger/feed.ts + feed-page.ts + feed-reader.ts + feed-sqlite.ts",
+          "scope": "Full-history suffix/initial genesis binding only; no known-record skipping. Original length-framed borrowed SDK reads cancel/await; new local journal atomically retains records/position with independently selected exact endpoint. P09 remains unchanged; Source qualified snapshot bootstrap and actual Lab consumers remain unfinished; legacy whole-JSON persistence is retired without implicit import."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/platform/node-key-mailbox.ts",
@@ -1584,7 +1591,14 @@
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "reason": "Submission #1434 is already in the pinned actual main. L1d adapts the independent full-history read/persist subset without changing P09. Snapshot qualification/bootstrap, CAS adapter and actual Lab consumer remain explicit unfinished scopes; legacy whole-JSON storage is retired without implicit import.",
+      "coverage": [
+        {
+          "layer": "L1d",
+          "target": "packages/e2ee-core/src/ledger/feed.ts + feed-page.ts + feed-reader.ts + feed-sqlite.ts",
+          "scope": "Full-history suffix/initial genesis binding only; no known-record skipping. Original length-framed borrowed SDK reads cancel/await; new local journal atomically retains records/position with independently selected exact endpoint. P09 remains unchanged; Source qualified snapshot bootstrap and actual Lab consumers remain unfinished; legacy whole-JSON persistence is retired without implicit import."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/key-delivery.ts",
@@ -1671,7 +1685,14 @@
       "targetPath": "packages/e2ee-core/src/submission/index.ts",
       "status": "需迁并修复",
       "layer": "reserved-1434",
-      "reason": "Reserved to existing PR #1434 author; await actual main, then adapt dependent snapshot/trust persistence without copying unmerged code."
+      "reason": "Submission #1434 is already in the pinned actual main. L1d adapts the independent full-history read/persist subset without changing P09. Snapshot qualification/bootstrap, CAS adapter and actual Lab consumer remain explicit unfinished scopes; legacy whole-JSON storage is retired without implicit import.",
+      "coverage": [
+        {
+          "layer": "L1d",
+          "target": "packages/e2ee-core/src/ledger/feed.ts + feed-page.ts + feed-reader.ts + feed-sqlite.ts",
+          "scope": "Full-history suffix/initial genesis binding only; no known-record skipping. Original length-framed borrowed SDK reads cancel/await; new local journal atomically retains records/position with independently selected exact endpoint. P09 remains unchanged; Source qualified snapshot bootstrap and actual Lab consumers remain unfinished; legacy whole-JSON persistence is retired without implicit import."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/ledger-policy.ts",
@@ -1912,7 +1933,14 @@
       "targetPath": "packages/e2ee-core/src/submission/streams.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Submission #1434 owns the public transport contract. After it lands, migrate the published-SDK length-framing/read/CAS adapter against that contract; no copied candidate coordinator or fallback append."
+      "reason": "Submission #1434 is already in the pinned actual main. L1d adapts the independent full-history read/persist subset without changing P09. Snapshot qualification/bootstrap, CAS adapter and actual Lab consumer remain explicit unfinished scopes; legacy whole-JSON storage is retired without implicit import.",
+      "coverage": [
+        {
+          "layer": "L1d",
+          "target": "packages/e2ee-core/src/ledger/feed.ts + feed-page.ts + feed-reader.ts + feed-sqlite.ts",
+          "scope": "Full-history suffix/initial genesis binding only; no known-record skipping. Original length-framed borrowed SDK reads cancel/await; new local journal atomically retains records/position with independently selected exact endpoint. P09 remains unchanged; Source qualified snapshot bootstrap and actual Lab consumers remain unfinished; legacy whole-JSON persistence is retired without implicit import."
+        }
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/team-codec.ts",
@@ -4521,5 +4549,111 @@
       "synthetic tests only, not OS/native custody acceptance"
     ],
     "platformGap": "platform host-keys only public identity storage; Electron string safeStorage has no reviewed full-payload-integrity adapter/backend failure contract and dev plaintext override; not composed for A"
-  }
+  },
+  "publishedStackSnapshot": [
+    {
+      "number": 1438,
+      "headRefName": "e2ee-migration-baseline",
+      "headRefOid": "59c3840b0165ce8a6637418c1e2b2095b13f6b88",
+      "baseRefName": "main",
+      "isDraft": true,
+      "parentHead": "984c35c5b30600d68abec1ec3e585eca73bcd4f0"
+    },
+    {
+      "number": 1439,
+      "headRefName": "e2ee-ledger-content-facts",
+      "headRefOid": "946965a7fd3ccc10c6a18f41f8f54a38c74232a3",
+      "baseRefName": "e2ee-migration-baseline",
+      "isDraft": true,
+      "parentHead": "59c3840b0165ce8a6637418c1e2b2095b13f6b88"
+    },
+    {
+      "number": 1442,
+      "headRefName": "e2ee-document-workflows",
+      "headRefOid": "543f82d1c4f4470436d4ad183f0f53259faddf49",
+      "baseRefName": "e2ee-ledger-content-facts",
+      "isDraft": true,
+      "parentHead": "946965a7fd3ccc10c6a18f41f8f54a38c74232a3"
+    },
+    {
+      "number": 1446,
+      "headRefName": "e2ee-epoch-history",
+      "headRefOid": "b67e0c062c667046d8c90b7a2512dbbd0834be40",
+      "baseRefName": "e2ee-document-workflows",
+      "isDraft": true,
+      "parentHead": "543f82d1c4f4470436d4ad183f0f53259faddf49"
+    },
+    {
+      "number": 1447,
+      "headRefName": "e2ee-ledger-signing",
+      "headRefOid": "d87ee2d444a60079ae1adf84565a7bd53faf905e",
+      "baseRefName": "e2ee-epoch-history",
+      "isDraft": true,
+      "parentHead": "b67e0c062c667046d8c90b7a2512dbbd0834be40"
+    },
+    {
+      "number": 1448,
+      "headRefName": "e2ee-epoch-envelopes",
+      "headRefOid": "0a73d464b5c93fab4b4e0f7ce704778ba437ac94",
+      "baseRefName": "e2ee-ledger-signing",
+      "isDraft": true,
+      "parentHead": "d87ee2d444a60079ae1adf84565a7bd53faf905e"
+    },
+    {
+      "number": 1450,
+      "headRefName": "e2ee-key-delivery",
+      "headRefOid": "34b918367fe23f6bf9c2ff1cea31b154de298cb2",
+      "baseRefName": "e2ee-epoch-envelopes",
+      "isDraft": true,
+      "parentHead": "0a73d464b5c93fab4b4e0f7ce704778ba437ac94"
+    },
+    {
+      "number": 1464,
+      "headRefName": "e2ee-ledger-snapshots",
+      "headRefOid": "5d3967ec94e3b10fdec76220937e9fcfe2623590",
+      "baseRefName": "e2ee-key-delivery",
+      "isDraft": true,
+      "parentHead": "34b918367fe23f6bf9c2ff1cea31b154de298cb2"
+    },
+    {
+      "number": 1472,
+      "headRefName": "e2ee-key-mailbox",
+      "headRefOid": "58cbd49c6869f28d09efb60d3b9a7ec10243e93a",
+      "baseRefName": "e2ee-ledger-snapshots",
+      "isDraft": true,
+      "parentHead": "5d3967ec94e3b10fdec76220937e9fcfe2623590"
+    },
+    {
+      "number": 1474,
+      "headRefName": "e2ee-content-snapshot-auth",
+      "headRefOid": "f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08",
+      "baseRefName": "e2ee-key-mailbox",
+      "isDraft": true,
+      "parentHead": "58cbd49c6869f28d09efb60d3b9a7ec10243e93a"
+    },
+    {
+      "number": 1479,
+      "headRefName": "e2ee-ledger-admission",
+      "headRefOid": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b",
+      "baseRefName": "e2ee-content-snapshot-auth",
+      "isDraft": true,
+      "parentHead": "f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08"
+    },
+    {
+      "number": 1480,
+      "headRefName": "e2ee-host-epoch-protection",
+      "headRefOid": "ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee",
+      "baseRefName": "e2ee-ledger-admission",
+      "isDraft": true,
+      "parentHead": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b"
+    },
+    {
+      "number": 1482,
+      "headRefName": "e2ee-epoch-receive-reports",
+      "headRefOid": "4134109a76739d8b36ff5a8a1209e37e16518703",
+      "baseRefName": "e2ee-host-epoch-protection",
+      "isDraft": true,
+      "parentHead": "ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee"
+    }
+  ]
 }
