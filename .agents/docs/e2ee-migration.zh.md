@@ -113,7 +113,9 @@ Lab 使用真实 HTTP/SQLite 持久化、进程重开、双端 Loro/Flock/Repo S
 | [#1479](https://github.com/LodyAI/Lody/pull/1479) | `e2ee-ledger-admission` | `f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b` | `f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08` |
 | [#1480](https://github.com/LodyAI/Lody/pull/1480) | `e2ee-host-epoch-protection` | `ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee` | `f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b` |
 | [#1482](https://github.com/LodyAI/Lody/pull/1482) | `e2ee-epoch-receive-reports` | `4134109a76739d8b36ff5a8a1209e37e16518703` | `ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee` |
+| [#1484](https://github.com/LodyAI/Lody/pull/1484) | `e2ee-ledger-feed` | `14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8` | `4134109a76739d8b36ff5a8a1209e37e16518703` |
+| [#1485](https://github.com/LodyAI/Lody/pull/1485) | `e2ee-mailbox-repairs` | `680686d1442e7f8b12f6f8b84af3f17f3c514b97` | `14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8` |
 
 SDK 准备 #1433 与 submission #1434 已落地，后者 merge 为 `7c58cabe1d05f132b7133a52b45a16b79274ea6a`；本栈未改其实现。A 保护方向已明确：可信组合一次初始化 protect/unprotect，绑定用途／Org／接收者／epoch／commitment，真实保存重载后才报告。synthetic protector 不等于原生平台存钥。
 
-下一层 L1d 的[全历史 feed](../../packages/e2ee-core/src/ledger/FEED.md)直接基于 #1482 `4134109a…`。原 Lab2 失败仍待实际迁移消费路径复验；旧整块 JSON journal 淘汰、不隐式导入。sender discovery、持久 repair／fetch、snapshot SDK 与 Lab／恢复未决项仍继续实施或保留明确决策归属。
+L1d 的[全历史 feed](../../packages/e2ee-core/src/ledger/FEED.md)、L4g [持久 repair](../../packages/e2ee-core/src/keys/REPAIR.md)与 L4h [接收 fetch 组合](../../packages/e2ee-core/src/keys/RECIPIENT-MAILBOX.md)已有公开归属。全历史最后核对使用独立自有字节；repair 终态和 acknowledgement 保持全部原件。有效已登记 R 可接收／repair 代密钥，不因此获得发钥／写入／管理权限。原 Lab2 失败仍待实际迁移消费路径复验；sender 发现／当前 key／outbox rounds、SDK CAS／provider／snapshot bootstrap 和 Lab／恢复范围仍未完成。旧整块 JSON journal 淘汰、不隐式导入。原 labeled entropy 重放需明确 Lab 能力决策：公开首次 seal 固定使用安全随机源，不全局替换 crypto，也不私改 primitive。
