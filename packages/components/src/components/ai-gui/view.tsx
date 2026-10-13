@@ -5702,7 +5702,7 @@ const AssistantChatItem = memo(function AssistantChatItem({
   );
 }, areAssistantChatItemPropsEqual);
 
-const UserChatBubble = ({
+export const UserChatBubble = ({
   message,
   sessionId,
   conversationFontSize,
@@ -5713,7 +5713,7 @@ const UserChatBubble = ({
    */
   variant = 'full',
 }: {
-  message: SessionHistoryParsed;
+  message: Pick<SessionHistoryParsed, 'id' | 'items'>;
   sessionId: SessionId;
   conversationFontSize: ConversationFontSize;
   variant?: 'full' | 'attachments';

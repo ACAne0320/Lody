@@ -793,6 +793,7 @@ export interface SessionHistoryReadRequest {
 
 /** Bounded logical reads over the owner session's active history branch. */
 export type SessionHistoryReadQuery =
+  | { readonly kind: 'inputAcceptance'; readonly entry: unknown }
   | { readonly kind: 'count' }
   | { readonly kind: 'readAt'; readonly position: number }
   | { readonly kind: 'readTurn'; readonly turnId: string }
@@ -817,6 +818,7 @@ export interface SessionHistoryReadResponse {
 }
 
 export type SessionHistoryWriteOperation =
+  | 'accept_input'
   | 'append'
   | 'replace'
   | 'respond_permission'

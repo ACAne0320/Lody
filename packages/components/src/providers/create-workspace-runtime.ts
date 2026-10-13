@@ -162,10 +162,7 @@ import { createWorkspaceMachineRpcFacade } from './workspace-machine-rpc-facade'
 import { resyncMachineFlockRows } from '@/hooks/use-machine-flock-rows';
 import { createCodeCollabFileIndexCache } from '@/lib/code-collab-file-index-cache';
 import { getIpcServices, onIpcEvent, sendLocalSessionControl } from '@/lib/electron-ipc-client';
-import {
-  createLocalRoostSessionDataFactory,
-  createRemoteRoostSessionDataFactory,
-} from '@/lib/roost-session-bridge';
+import { createRoostSessionDataFactoryForMachine } from '@/lib/roost-session-bridge';
 
 declare global {
   interface Window {
@@ -536,6 +533,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   let authToken: string | null = null;
   // Assigned once the send resources exist; runs after the first meta sync.
   let startLegacySendMigration: (() => void) | null = null;
+  let resumePendingInputs: (() => void) | null = null;
   let cloudTransportAttached = false;
   let cloudTransportAttachPromise: Promise<void> | null = null;
   let metaSub: RepoRoomSubscription | null = null;
@@ -3461,6 +3459,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
           initialMetaSyncCompleted = true;
           initialMetaSyncFailed = false;
           startLegacySendMigration?.();
+          resumePendingInputs?.();
           currentMetaTracker.markFirstSynced();
           // Dual watches its local binding here; its marker is cleared by the
           // cloud Meta binding instead (attachCloudMetaHealthTracker).
@@ -3776,8 +3775,10 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
 
   let sendLocalMachineId: MachineId | null = null;
   const setLocalMachineId = (machineId: MachineId | null) => {
+    const changed = sendLocalMachineId !== machineId;
     sendLocalMachineId = machineId;
     targetRouter.setLocalMachineId(machineId);
+    if (changed) resumePendingInputs?.();
   };
 
   // Presence (Ephemeral Stream) health lives in the same registry as durable
@@ -4202,40 +4203,35 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
         if (!machineId) {
           throw new Error(`Roost session ${sessionId} has no owning machine`);
         }
-        const plane = await targetRouter.resolvePlaneForMachine(machineId, {
-          timeoutMs: LOCAL_MACHINE_ID_READY_TIMEOUT_MS,
-        });
-        if (plane === 'local') {
-          if (!getIpcServices()) {
-            throw new Error(
-              `Roost session ${sessionId} is local, but the Electron session-control bridge is unavailable`
-            );
-          }
-          rendererSessionDataFactory = createLocalRoostSessionDataFactory({
-            accountId: deps.accountId,
-            workspaceId,
-            machineId,
-          });
-        } else {
-          rendererSessionDataFactory = createRemoteRoostSessionDataFactory({
-            accountId: deps.accountId,
-            workspaceId,
-            machineId,
-            requestHistoryRead: async (targetMachineId, targetSessionId, query) =>
-              await requestSessionHistoryRead(targetMachineId, targetSessionId, query),
-            requestHistoryWrite: async ({
-              machineId: targetMachineId,
+        rendererSessionDataFactory = createRoostSessionDataFactoryForMachine({
+          accountId: deps.accountId,
+          workspaceId,
+          machineId,
+          resolvePlane: async (targetMachineId) => {
+            const plane = await targetRouter.resolvePlaneForMachine(targetMachineId, {
+              timeoutMs: LOCAL_MACHINE_ID_READY_TIMEOUT_MS,
+            });
+            if (plane === 'local' && !getIpcServices()) {
+              throw new Error(
+                `Roost session ${sessionId} is local, but the Electron session-control bridge is unavailable`
+              );
+            }
+            return plane;
+          },
+          requestHistoryRead: async (targetMachineId, targetSessionId, query) =>
+            await requestSessionHistoryRead(targetMachineId, targetSessionId, query),
+          requestHistoryWrite: async ({
+            machineId: targetMachineId,
+            sessionId: targetSessionId,
+            operation,
+            payload,
+          }) =>
+            await requestSessionHistoryWrite(targetMachineId, {
               sessionId: targetSessionId,
               operation,
               payload,
-            }) =>
-              await requestSessionHistoryWrite(targetMachineId, {
-                sessionId: targetSessionId,
-                operation,
-                payload,
-              }),
-          });
-        }
+            }),
+        });
       }
       conversation = createConversationSession(sessionDoc, {
         sessionId,
@@ -4879,7 +4875,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
         webAttachReconnectLoop?.close(),
       ]);
       // Held sends are in memory only: closing the workspace drops them.
-      pendingSends.dispose();
+      await pendingSends.dispose();
       // Cancel and join send I/O while its cache, transport and repo still exist.
       await sendResources.dispose();
       cancelDelayedBackgroundSyncStart?.();
@@ -5048,6 +5044,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     notifyBackgroundSyncEnvChange();
     if (document.visibilityState === 'visible') {
       triggerReconnect('visibility-wake');
+      resumePendingInputs?.();
     }
   };
   // When the browser regains network connectivity, trigger reconnect immediately
@@ -5055,6 +5052,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   const handleOnline = () => {
     notifyBackgroundSyncEnvChange();
     triggerReconnect('network-online');
+    resumePendingInputs?.();
   };
   const handleOffline = () => {
     console.info('createWorkspaceRuntime: browser offline; stopping reconnect loop', {
@@ -5095,6 +5093,9 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   const isMachineRpcUnreachable = (machineId: MachineId) =>
     targetRouter.getPlaneForMachine(machineId) === 'cloud' && !isBrowserOnline();
   const pendingSends = createWorkspacePendingSends({
+    accountId: deps.accountId ?? `local:${workspaceId}`,
+    workspaceId,
+    paused: !initialMetaSyncCompleted,
     runtime: {
       repo,
       writer: workspaceWriter,
@@ -5106,6 +5107,13 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     token: () => authToken,
     localMachineId: () => sendLocalMachineId,
   });
+  resumePendingInputs = () => {
+    if (!disposePromise && initialMetaSyncCompleted)
+      void pendingSends.resume().catch((error: unknown) => {
+        console.warn('Pending input recovery failed', error);
+      });
+  };
+  if (initialMetaSyncCompleted) resumePendingInputs();
   if (deps.accountId) {
     const accountId = deps.accountId;
     let migrationStarted = false;

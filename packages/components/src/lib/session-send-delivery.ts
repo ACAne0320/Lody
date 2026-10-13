@@ -43,20 +43,22 @@ export type SessionSendRuntime = Pick<
 > &
   Partial<Pick<WorkspaceRuntime, 'isMachineRpcUnreachable'>>;
 
-async function persistHumanInputReceipt(
+/** Trusted human-send provenance, committed before history or queue activation. */
+export async function persistHumanInputReceipt(
   runtime: SessionSendRuntime,
   sessionId: SessionId,
-  inputId: string,
-  userId: string,
+  entry: Pick<SessionHistory, 'id' | 'userId'>,
   signal?: AbortSignal
 ): Promise<void> {
+  const userId = entry.userId?.trim();
+  if (!userId) throw new Error('Human input requires an explicit user identity');
   await runtime.sendResources.withSessionStore(
     sessionId,
     (store) => {
-      if (store.getState().humanInputReceipts?.[inputId]?.userId === userId) return;
+      if (store.getState().humanInputReceipts?.[entry.id]?.userId === userId) return;
       store.setState((draft: SessionDocDraft) => {
         draft.humanInputReceipts ??= {};
-        draft.humanInputReceipts[inputId] = { userId };
+        draft.humanInputReceipts[entry.id] = { userId };
       });
     },
     signal
@@ -106,7 +108,21 @@ export async function writeUserTurn(
   send: UserTurnSend,
   signal?: AbortSignal
 ): Promise<void> {
-  const { sessionId, entry } = send;
+  await prepareUserTurnWrite(runtime, send, signal);
+  await persistHumanInputReceipt(runtime, send.sessionId, send.entry, signal);
+  throwIfSendAborted(signal);
+  if (send.queue) await runtime.writer.enqueueSessionMessage(send.sessionId, send.queue);
+  else await runtime.writer.appendSessionTurn(send.sessionId, send.entry);
+  if (send.delivery.kind === 'dispatch') await activateUserTurn(runtime, send.sessionId, send.entry.id);
+}
+
+/** Only local control metadata; this does not write history or start execution. */
+export async function prepareUserTurnWrite(
+  runtime: SessionSendRuntime,
+  send: UserTurnSend,
+  signal?: AbortSignal
+): Promise<void> {
+  const { sessionId } = send;
   const roomId = getSessionRoomId(sessionId);
   const found = await runtime.repo.getDocMeta(roomId);
   if (isLoroRepoDocDeleted(found)) throw new Error('Target conversation was deleted');
@@ -122,16 +138,6 @@ export async function writeUserTurn(
   } else if (!meta?.id) {
     throw new Error('Target conversation is no longer available');
   }
-  throwIfSendAborted(signal);
-  // This is the trusted human-send producer, separate from generic history
-  // append and Agent task materialization. Persist its receipt BEFORE activating
-  // history/queue; RPC is only a redundant fast path, even for oversized input.
-  const userId = entry.userId?.trim();
-  if (!userId) throw new Error('Human input requires an explicit user identity');
-  await persistHumanInputReceipt(runtime, sessionId, entry.id, userId, signal);
-  if (send.queue) await runtime.writer.enqueueSessionMessage(sessionId, send.queue);
-  else await runtime.writer.appendSessionTurn(sessionId, entry);
-  if (send.delivery.kind === 'dispatch') await activateUserTurn(runtime, sessionId, entry.id);
 }
 
 async function readUserTurn(runtime: SessionSendRuntime, sessionId: SessionId, turnId: string) {
@@ -166,7 +172,7 @@ export async function dispatchUserTurn(
   const inputConfig = options?.inputConfig ?? normalizeSessionTurnInputConfig(entry?.inputConfig);
   const userId = entry?.userId?.trim();
   const timestamp = entry?.timestamp;
-  if (userId) await persistHumanInputReceipt(runtime, sessionId, userTurnId, userId);
+  if (userId) await persistHumanInputReceipt(runtime, sessionId, { id: userTurnId, userId });
   // Local history writes are the accept boundary; nudge the room upload
   // without holding the caller on it.
   void runtime.sendResources
