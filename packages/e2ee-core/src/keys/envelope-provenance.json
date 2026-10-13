@@ -1,0 +1,14 @@
+{
+  "sourceCommit": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "sources": {
+    "packages/e2ee-core/src/pure/epoch-envelope.ts": "06908c666fba41c3759bc2fc15e0b991ba9d50255dc60c2f9a4288cccce7b820",
+    "packages/e2ee-core/src/workflows/epoch-envelope.ts": "3cfac7a21d851aaaad2ba67d2f9419d89db3365d204d883a4d073b0df29323e4"
+  },
+  "scope": "Signed current envelope prepare/authenticate/open only, not full epoch workflow/distribution. Exact existing v1 bytes and merged primitives retained.",
+  "directParent": "d87ee2d444a60079ae1adf84565a7bd53faf905e",
+  "destinations": {
+    "packages/e2ee-core/src/keys/envelope.ts": "9a68b33f91562beca5142f368928c299556edf389c0c6060a7012b9a843e34c4",
+    "packages/e2ee-core/src/epoch-key.ts": "ad21b5e661b3d6bb7ef483658e912039fbdfc07588d3a960a86e85fc2d727628",
+    "packages/e2ee-core/test/hpke.test.ts": "25022fe2bf8263f014b6c1852d166678715dbc67a8d3fe9514f1657a251d273e"
+  }
+}

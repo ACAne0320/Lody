@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "sources": {
+    "packages/e2ee-core/src/workflows/ledger-client.ts": "eecd282404c3f8cb378e7a4ab9c4aaa9bcae4c7ff36406dc7b797cfab628cedc",
+    "packages/e2ee-core/src/workflows/ledger-engine.ts": "365acefaf38d183b4c0115034ae0c2c6502265fdaa2e9573750e064ad9a72709",
+    "packages/e2ee-core/src/workflows/verification.ts": "d0ad05d6535366d31b54796346f2cf04827b7ced9f87279255ca0a1efecbd1a4"
+  },
+  "scope": "Ordinary-record pre-sign authorization and fixed-verified signing, not full engine/client migration. Existing domains/versions unchanged.",
+  "directParent": "b67e0c062c667046d8c90b7a2512dbbd0834be40",
+  "destinations": {
+    "packages/e2ee-core/src/ledger/signing.ts": "517e823ca7b1f3fab4b70c5ca570d0911f0444602d444e79383c6f9286e584dc",
+    "packages/e2ee-core/src/ledger/replay.ts": "9855a3e8bbb07b1b2c0adea2415c8832be91f4c65c2a79514f164eefabf8e634",
+    "packages/e2ee-core/test/ledger/replay.test.ts": "14bcc9edef44757f536945fd292d759b29a1e5ca1c3c15b05ff59918ee16f68b"
+  }
+}

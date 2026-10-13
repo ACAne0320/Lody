@@ -161,10 +161,11 @@ catalogs:
       version: 3.6.0
 
 overrides:
-  '@peculiar/x509>@peculiar/asn1-schema': 2.10.0
+  "@loro-dev/sqlite-riverrun>better-sqlite3": 13.0.3
+  "@peculiar/x509>@peculiar/asn1-schema": 2.10.0
   acp-extension-core: workspace:*
   electron-builder-squirrel-windows: ^26.15.3
-  '@loro-dev/loro-cli>loro-crdt': 1.16.3
+  "@loro-dev/loro-cli>loro-crdt": 1.16.3
   tsx@4.21.0>esbuild: 0.27.0
   vite@7.3.1>esbuild: 0.27.0
   zod: 4.3.6
@@ -1553,36 +1554,42 @@ importers:
 
   packages/e2ee-core:
     dependencies:
-      '@hpke/chacha20poly1305':
+      "@hpke/chacha20poly1305":
         specifier: 1.8.0
         version: 1.8.0
-      '@hpke/core':
+      "@hpke/core":
         specifier: 1.9.0
         version: 1.9.0
-      '@ipld/dag-cbor':
+      "@ipld/dag-cbor":
         specifier: 10.0.2
         version: 10.0.2
-      '@noble/ciphers':
+      "@noble/ciphers":
         specifier: 2.1.1
         version: 2.1.1
-      '@noble/ed25519':
+      "@noble/ed25519":
         specifier: 3.2.0
         version: 3.2.0
-      '@noble/hashes':
+      "@noble/hashes":
         specifier: 2.2.0
         version: 2.2.0
       better-sqlite3:
-        specifier: 'catalog:'
+        specifier: "catalog:"
         version: 13.0.3
       effect:
-        specifier: 'catalog:'
+        specifier: "catalog:"
         version: 4.0.2
     devDependencies:
-      '@types/better-sqlite3':
-        specifier: 'catalog:'
+      "@loro-dev/streams-crdt":
+        specifier: 0.17.0
+        version: 0.17.0(@loro-dev/flock-wasm@0.4.3)(effect@4.0.2)(loro-crdt@1.16.3)
+      "@loro-dev/streams-client":
+        specifier: "catalog:"
+        version: 0.9.0
+      "@types/better-sqlite3":
+        specifier: "catalog:"
         version: 7.6.13
-      '@types/node':
-        specifier: 'catalog:'
+      "@types/node":
+        specifier: "catalog:"
         version: 24.10.12
       oxfmt:
         specifier: ^0.65.0
@@ -1591,7 +1598,7 @@ importers:
         specifier: 4.23.7
         version: 4.23.7
       typescript:
-        specifier: 'catalog:'
+        specifier: "catalog:"
         version: 5.9.3
       vitest:
         specifier: 3.2.4
@@ -1912,6 +1919,52 @@ importers:
       oxlint-tsgolint:
         specifier: 7.0.2003
         version: 7.0.2003
+
+  packages/e2ee-lab:
+    dependencies:
+      "@loro-dev/flock-wasm":
+        specifier: "catalog:"
+        version: 0.4.3
+      "@loro-dev/streams-crdt":
+        specifier: 0.17.0
+        version: 0.17.0(@loro-dev/flock-wasm@0.4.3)(effect@4.0.2)(loro-crdt@1.16.3)
+      loro-crdt:
+        specifier: "catalog:"
+        version: 1.16.3
+      "@lody/e2ee-core":
+        specifier: workspace:*
+        version: link:../e2ee-core
+      "@loro-dev/sqlite-riverrun":
+        specifier: 0.3.0
+        version: 0.3.0
+      "@loro-dev/streams-client":
+        specifier: "catalog:"
+        version: 0.9.0
+      better-sqlite3:
+        specifier: "catalog:"
+        version: 13.0.3
+      effect:
+        specifier: "catalog:"
+        version: 4.0.2
+    devDependencies:
+      "@types/better-sqlite3":
+        specifier: "catalog:"
+        version: 7.6.13
+      "@types/node":
+        specifier: "catalog:"
+        version: 24.10.12
+      oxfmt:
+        specifier: ^0.65.0
+        version: 0.65.0
+      tsx:
+        specifier: 4.23.7
+        version: 4.23.7
+      typescript:
+        specifier: "catalog:"
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.10.12)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.33.0)(terser@5.46.0)(tsx@4.23.7)(yaml@2.8.2)
 
 packages:
 
@@ -14468,6 +14521,12 @@ packages:
         optional: true
       vite-plus:
         optional: true
+
+  "@loro-dev/sqlite-riverrun@0.3.0":
+    resolution:
+      integrity: sha512-UGolSlUDMfaRSGzhvwFmqC5HnM5Vs9mGEA8d6xyAB/pO9La+HPDhUCYdQ/wO2XJZVxiNVglIdT5W5iHO+FTr5Q==
+    engines:
+      node: ">=22"
 
 snapshots:
 
@@ -29229,3 +29288,7 @@ snapshots:
       '@oxlint/binding-win32-ia32-msvc': 1.86.0
       '@oxlint/binding-win32-x64-msvc': 1.86.0
       oxlint-tsgolint: 7.0.2003
+  "@loro-dev/sqlite-riverrun@0.3.0":
+    dependencies:
+      better-sqlite3: 13.0.3
+      loro-crdt: 1.16.3
