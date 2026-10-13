@@ -93,6 +93,41 @@ only find it in Settings or with the CLI, so reinstalling became the obvious fix
   lands, its crisis screen covers its own failures, which are raised above this
   placeholder.
 
+## Investigated cause: repo storage upgrades
+
+Affected iOS users report the hang after not opening the app for a long time. That
+matches a jump across several loro-repo storage changes. Users who last opened
+the app before 0.20.3 (2026-09-27) still hold a schema-v3 repo database, so their
+next launch runs the v3→v4 IndexedDB upgrade.
+
+An experiment ruled this out under fake-indexeddb:
+
+- **Write:** each shipped version (0.19.1, 0.20.0, 0.20.3, 0.21.0–0.21.2, 0.22.0),
+  with the `loro-crdt` and Flock versions it shipped with, wrote session and machine
+  metadata with repeated patches and deletions, plus a document and a Flock
+  document. Some databases were closed cleanly and some were left without a
+  repo shutdown.
+- **Read:** 0.22.0 opened each database with the runtime's options and ran the
+  real `docMetaSubscriptionAtom` scan.
+- **Result:** every database upgraded to v4 and reached a ready scope with the
+  expected sessions, deletions, document and Flock values. It was still readable
+  on a second launch. 3,000 sessions written by 0.19.1 opened and scanned in about
+  0.6 s.
+- **Negative control:** corrupting the metadata snapshot made `LoroRepo.create`
+  throw `Failed to hydrate metadata snapshot`. That is a `runtime_init_failed`,
+  not a hung scan, so the harness does detect an incompatibility.
+
+Limits: WebKit's IndexedDB is not fake-indexeddb, and only locally written
+metadata was exercised, not metadata imported from Streams.
+
+A local schema incompatibility would also be removed by a cache clear, which
+reportedly does not help. Two causes remain open:
+
+- a WebKit-specific failure of the v3→v4 upgrade itself;
+- state that survives a cache clear. `useOrganization` stops retrying the workspace
+  list after five attempts, and a cache clear deletes the cached slug→id map that
+  let the app start without that list.
+
 ## Verification
 
 - `tests/workspace-open-placeholder.test.tsx`:
