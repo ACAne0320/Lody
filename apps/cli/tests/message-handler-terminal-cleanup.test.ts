@@ -42,6 +42,8 @@ const createSilentLogger = (): Logger => ({
 });
 
 type MessageHandlerInternals = {
+  cleanup: () => Promise<void>;
+  codeCollabV2DiffStore: { close: () => Promise<void> };
   sessionActivePresence: SessionActivePresenceControllerLegacy;
   handleSessionArchived: (sessionId: SessionId) => Promise<void>;
   handleSessionDeleted: (sessionId: SessionId) => Promise<void>;
@@ -62,6 +64,7 @@ type MessageHandlerInternals = {
   };
   previewService: {
     closeSessionPreviewForCleanup: (sessionId: SessionId, reason: string) => Promise<void>;
+    closeAllActiveTunnelsForCleanup: (reason: string) => Promise<void>;
   };
 };
 
@@ -218,6 +221,7 @@ function createHarness(options?: {
   const internal = handler as unknown as MessageHandlerInternals;
   internal.previewService = {
     closeSessionPreviewForCleanup: vi.fn(async () => {}),
+    closeAllActiveTunnelsForCleanup: vi.fn(async () => {}),
   };
 
   return {
@@ -250,6 +254,61 @@ describe('MessageHandler terminal cleanup', () => {
     await Effect.runPromise(Scope.close(lease, Exit.void));
     expect(presenceEntries.has(sessionId)).toBe(false);
     await handler.sessionActivePresence.close();
+  });
+
+  it('waits for the native Turn lease before closing evidence stores and documents on shutdown', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { handler, sessionId, presenceEntries, sessionManager } = createHarness();
+    const lease = Effect.runSync(Scope.make());
+    await Effect.runPromise(
+      Scope.provide(handler.sessionActivePresence.native.hold(sessionId), lease)
+    );
+    const events: string[] = [];
+    let producersStopped: () => void = () => {};
+    const stopped = new Promise<void>((resolve) => {
+      producersStopped = resolve;
+    });
+    let closeRequested: () => void = () => {};
+    const closingStarted = new Promise<void>((resolve) => {
+      closeRequested = resolve;
+    });
+    const originalClose = handler.sessionActivePresence.close.bind(handler.sessionActivePresence);
+    vi.spyOn(handler.sessionActivePresence, 'close').mockImplementation(() => {
+      closeRequested();
+      return originalClose();
+    });
+    sessionManager.cleanUp.mockImplementation(
+      async (options?: { keepWorkspaceDocumentOpen?: boolean }) => {
+        if (options?.keepWorkspaceDocumentOpen) {
+          events.push('producers-stopped');
+          producersStopped();
+        } else events.push('documents-closed');
+      }
+    );
+    vi.spyOn(handler.codeCollabV2DiffStore, 'close').mockImplementation(async () => {
+      events.push('evidence-store-closed');
+    });
+    const cleaning = handler.cleanup();
+    try {
+      await stopped;
+      await closingStarted;
+      expect(presenceEntries.has(sessionId)).toBe(true);
+      expect(events).toEqual(['producers-stopped']);
+      await Effect.runPromise(Scope.close(lease, Exit.void));
+      events.push('lease-released');
+      await cleaning;
+      expect(presenceEntries.size).toBe(0);
+      expect(events).toEqual([
+        'producers-stopped',
+        'lease-released',
+        'evidence-store-closed',
+        'documents-closed',
+      ]);
+    } finally {
+      await Effect.runPromise(Scope.close(lease, Exit.void));
+      await cleaning;
+      vi.useRealTimers();
+    }
   });
 
   it('releases the runtime when a session becomes archived, even without an active session', async () => {

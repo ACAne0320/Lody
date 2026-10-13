@@ -106,8 +106,8 @@ clear keeps its generation and Cause, blocks new holds, and allows explicit loca
 `session-active-presence-legacy.ts` is the single MessageHandler execution entry and
 retains the existing analytics flush as unfinished Legacy orchestration. Native
 heartbeats only admit synchronous diagnostics. Shutdown retires new holds, stops
-SessionManager producers and flushes ACP/history before awaiting lease and monitoring
-release. Each observation is bounded at five seconds; timeout keeps the original
+SessionManager producers and awaits lease and monitoring release before the final
+ACP/history flush and evidence/document teardown. Each observation is bounded at five seconds; timeout keeps the original
 owner and refuses document teardown. This completes the session lease/heartbeat
 responsibility, while full Session/Turn and daemon lifecycle migration remains pending.
 
@@ -148,15 +148,15 @@ the same application executor. Cloud revocation ends remote sinks and then that
 provider, while local presence stays alive; local-only creation reads no credentials
 and makes no cloud request. Application shutdown stops every retained workspace.
 
-| Evidence | Meaning |
-| --- | --- |
-| SDK `auth`, `bootstrap`, `queue`, `post`, `ack`, `retry`, `stall`, `release` | Actual native transport stages, projected as finite categories/counts. |
-| Owner `joined` / `bootstrap` | Read-side bootstrap availability; status changes retire readiness synchronously. |
-| Owner `heartbeat` | Local publication timestamp and queue snapshot, sampled once per 30 seconds. |
-| Owner `barrier` | Captured logical chain completion; later independent writes are excluded. Not an exact heartbeat acknowledgement or peer receipt. |
-| Owner `stall` | The pending local upload made no observed progress for its bounded interval; warns without reconnecting automatically. |
-| Owner `retry` | Bootstrap/rejoin attempt and bounded safe failure category. |
-| Owner `release` | Remote admission retired. Success requires actual SDK/task cleanup and Scope closure; timeout retains the original work and owner. |
+| Evidence                                                                     | Meaning                                                                                                                            |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| SDK `auth`, `bootstrap`, `queue`, `post`, `ack`, `retry`, `stall`, `release` | Actual native transport stages, projected as finite categories/counts.                                                             |
+| Owner `joined` / `bootstrap`                                                 | Read-side bootstrap availability; status changes retire readiness synchronously.                                                   |
+| Owner `heartbeat`                                                            | Local publication timestamp and queue snapshot, sampled once per 30 seconds.                                                       |
+| Owner `barrier`                                                              | Captured logical chain completion; later independent writes are excluded. Not an exact heartbeat acknowledgement or peer receipt.  |
+| Owner `stall`                                                                | The pending local upload made no observed progress for its bounded interval; warns without reconnecting automatically.             |
+| Owner `retry`                                                                | Bootstrap/rejoin attempt and bounded safe failure category.                                                                        |
+| Owner `release`                                                              | Remote admission retired. Success requires actual SDK/task cleanup and Scope closure; timeout retains the original work and owner. |
 
 Successful per-operation/heartbeat events use opt-in trace. SDK errors use debug;
 bounded bootstrap/retry/stall diagnostics use warn. Unknown error text, payloads,

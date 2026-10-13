@@ -29,7 +29,7 @@ MessageHandler / SessionActivePresenceControllerLegacy
       per-generation Deferred -> actual Turn's initialization failure race
     synchronous phase/status readers -> existing permission/image/reconnect consumers
   optional diagnostics -> existing Legacy analytics flush (actual Promise retained)
-  shutdown -> stop producers -> flush ACP/history -> await leases/monitoring -> close docs
+  shutdown -> stop producers -> await leases/monitoring -> flush ACP/history -> close stores/docs
 ```
 
 The host only admits synchronous local publication and diagnostics. CRDT/status mapping
@@ -93,12 +93,12 @@ wall-clock sleeps. Replaced controller tests assert entries/status, not mock-onl
 Six temporary ablations each fail their corresponding observable regression:
 heartbeat Scope ownership, early stall latch, progress deadline reset, failed-clear
 retention, exact startup generation and incidental archive clear. Restored source
-passes all seven actual-consumer suites (307 tests). The native/Legacy lease suite also verifies actual monitoring
+passes all seven actual-consumer suites (308 tests). The native/Legacy lease suite also verifies actual monitoring
 settlement after bounded close failure. Root typechecking, lint, format, document checks and every static boundary guard pass.
 `pnpm check` reached the full test phase but the unchanged code-review renderer suite
 failed with `act is not a function` under the inherited production React environment;
 this is the previously recorded validation limit, not a green full check. The unchanged review-helper package passes all 33 tests under `NODE_ENV=test`,
 confirming the production environment constraint. The seven
-P6 consumer suites pass 307 tests. Clean-environment CI must validate the final PR.
+P6 consumer suites pass 308 tests. Clean-environment CI must validate the final PR.
 Linux source-level evidence does not establish packaged desktop or production-load
 behavior, or native ownership of the remaining upper workflows.

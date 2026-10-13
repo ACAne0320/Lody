@@ -9780,6 +9780,9 @@ export class MessageHandler {
     // but none can arrive after this await. Keep the document manager open so
     // those callbacks can be flushed below.
     await this.sessionManager.cleanUp({ keepWorkspaceDocumentOpen: true });
+    // Turn finalizers can still write history/evidence after producers stop.
+    // Keep every store open until their leases and monitoring actually release.
+    await this.sessionActivePresence.close();
     await this.flushAllACPUpdates();
     // Wait for any in-flight flushes to complete
     const inFlightPromises = this.store
@@ -9790,9 +9793,6 @@ export class MessageHandler {
     await this.drainCodeCollabTurnPersistenceForCleanup();
     await this.codeCollabV2DiffStore.close();
     await this.previewService.closeAllActiveTunnelsForCleanup('Message handler cleanup');
-    // Visible Turn finalizers still own their leases through ACP/history cleanup.
-    // A bounded close refuses teardown while those owners remain.
-    await this.sessionActivePresence.close();
     await this.sessionManager.cleanUp();
   }
 
