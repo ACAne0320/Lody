@@ -98,5 +98,16 @@ export function envelopeFixture(kind: 0 | 1 | 2 = 0, org = 100) {
     const unsigned = frame.subarray(0, -64);
     return concat([unsigned, owner.signBytes(tag('epoch-env/v1', unsigned))]);
   };
-  return { owner, phone, secret, view, append, context: envelopeContext, ledger, prepare, resign };
+  return {
+    owner,
+    phone,
+    secret,
+    view,
+    append,
+    context: envelopeContext,
+    ledger,
+    prepare,
+    resign,
+    genesisRecord: new Uint8Array(records[0]!),
+  };
 }
