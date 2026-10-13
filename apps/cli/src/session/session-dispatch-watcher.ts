@@ -124,7 +124,7 @@ type SessionDispatchWatcherDeps = {
 /** A running verify-with-retry fiber for a transient access failure on `turnId`. */
 type AccessRetryHandle = {
   turnId: string;
-  fiber: Fiber.RuntimeFiber<void, never>;
+  fiber: Fiber.Fiber<void, never>;
 };
 
 type WatchedSession = {
@@ -2002,6 +2002,7 @@ export class SessionDispatchWatcher {
         agentType: entry.inputConfig?.agentType ?? meta.agentType,
         customAcp: launchConfig?.customAcp,
         runtimeOverrides: launchConfig?.runtimeOverrides,
+        magpieGatewayUrl: launchConfig?.magpieGatewayUrl,
         modeId: entry.inputConfig?.modeId,
         modelId: entry.inputConfig?.modelId,
         configOptionValues: entry.inputConfig?.configOptionValues,
@@ -2047,6 +2048,7 @@ export class SessionDispatchWatcher {
         agentType: entry.inputConfig?.agentType ?? meta.agentType,
         customAcp: launchConfig?.customAcp,
         runtimeOverrides: launchConfig?.runtimeOverrides,
+        magpieGatewayUrl: launchConfig?.magpieGatewayUrl,
         modeId: entry.inputConfig?.modeId,
         modelId: entry.inputConfig?.modelId,
         configOptionValues: entry.inputConfig?.configOptionValues,

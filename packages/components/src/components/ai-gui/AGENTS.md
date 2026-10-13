@@ -23,10 +23,10 @@ Ownership: [README.md](README.md).
 - Empty-state presentation stays outside the list, even with an empty leading Fragment:
   zero-height caches can hide the first user row. Preserve live activity labels/tones.
   Apply the header inset once to the whole scroller.
-- Create `operation_progress` cards update in place per materialized target; bind
-  status to its exact Turn and subscribe only to its title. `progressMessageId`
-  suppresses duplicate completion cards; legacy completions keep successful-target
-  cards. Rationale: [README.md](README.md#creation-progress).
+- Creation cards: [contract](README.md#creation-progress). Bind status to the
+  target Turn and subscribe only to its title; `progressMessageId` prevents
+  duplicates. Consecutive creation records share a five-card scroller with
+  disclosure; retain their full hydration range. Legacy successes keep cards.
 
 ## Turn Folding And Layout
 
@@ -86,11 +86,11 @@ Ownership: [README.md](README.md).
   and `support.cancel`. Dialogs share turn renderers/grouping and one scroller:
   [task rows and dialog](README.md#subagent-tasks).
 
-- Text roles use `@lody/ui`; reading prose uses `conversation.readingLeading`.
-  Compact prose/code use subheadline, never nested `em`. Message sizes use
-  `conversation-font-size-classes.ts`; hosts require CSS typed division. Only live
-  turns load the stream engine. Remounted live rows show existing text immediately;
-  only additions animate.
+- Text roles: `@lody/ui`; prose: `conversation.readingLeading`; compact prose/code:
+  subheadline, no nested `em`. Message sizes: `conversation-font-size-classes.ts`;
+  hosts require CSS typed division. Stream engine: live turns only;
+  remounts show existing text immediately and animate only additions.
+- Rendering and search share CJK emphasis rules.
 - A Mermaid diagram in a message is a still preview until a pointer click
   activates it, and an unmodified wheel is NEVER taken — activated or not.
   Deactivation preserves pan/zoom and activation adds no outline; see the

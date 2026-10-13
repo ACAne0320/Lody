@@ -44,8 +44,9 @@ Read parent rules and linked context before edits.
   (`fromPageContent`) never opens private LAN; only the address bar may.
 - Preload one bounded frame after live confirmation; require atomic moves, no
   polling, and cleanup safe after Browser takeover.
-- Static HTML runs `allow-scripts`-only from a policy-owned `srcdoc`; truncated
-  documents are never executable and static frames die with their tab.
+- Static HTML requires policy-owned `srcdoc`. Scripts require credentialless and
+  `allow-scripts` only; otherwise use navigation-stripped HTML with an empty sandbox.
+  Never preview truncated text; static frames die with their tab.
 - Preview comment writes go through `runtime.writer.mutatePreviewVisualComments`, never the store's `setState`.
 
 ## [Conversation surface](../../../../../.agents/docs/sessions-surface.md)
@@ -95,19 +96,17 @@ Read parent rules and linked context before edits.
 
 ## [Composer info bar](../../../../../.agents/docs/sessions-info-bar.md)
 
-- Canonical cluster in CONSTANT order + exactly one staged item; no items hides
-  the bar (unless syncing) and the stage never empties or relayouts on click.
+- Keep canonical cluster order and one nonempty stage when items exist. Hide
+  the bar only without items or ambient content. Machine control stays outside
+  staging (desktop name, mobile icon); ownership appears only in its details card.
 - The stage icon is inert, colour is reserved for genuine status, and nothing
   in the bar pulses.
 - Open preview stays gated on a real reported target; repository actions are
   priority-ordered (dirty ⇒ Commit & Push), collapse into one, never duplicated
   below the reply.
 
-## [Auto review, status slot](../../../../../.agents/docs/sessions-auto-review.md)
+## [Session status slot](../../../../../.agents/docs/sessions-auto-review.md)
 
-- Auto review needs a usable reviewer row before a run starts; turning it ON
-  confirms, turning it OFF does not. The banner is NOT gated on the
-  experiment atom. Engine: `apps/cli/src/lib/review-automation/AGENTS.md`
 - One priority-ordered status slot (browser-offline > machine-removed >
   machine-offline): states hand off, never stack; machine-offline never blocks
   sends; doc-stream degradation is never re-added.
@@ -133,7 +132,7 @@ Read parent rules and linked context before edits.
   genuinely workspace-relative path; `lib/session-local-file-path.ts` rejects
   absolute and `..` paths.
 - Keep viewer shells static; load Office engines on activation/idle only.
-  Local PDFs use 64 KiB ranges and 8 MP canvases.
+  Stop hidden video; local PDFs use 64 KiB ranges and 8 MP canvases.
 
 ## [Stories](../../../../../.agents/docs/sessions-stories.md)
 
