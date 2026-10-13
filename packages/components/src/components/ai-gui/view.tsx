@@ -272,7 +272,7 @@ import { toast } from '@/lib/toast';
 import { SessionPlanBar } from '@/components/sessions/session-plan-bar';
 import { ContainerQueryProvider } from './container-query-provider';
 import { ScheduleProposalNotice } from '@/components/schedules/schedule-proposal-notice';
-import { shouldRenderSystemRowItem } from './message-content-guards';
+import { isOperationSurfaceItem, shouldRenderSystemRowItem } from './message-content-guards';
 import { getChatFailedDiagnosticCopy } from './chat-failed-diagnostic-copy';
 import {
   buildChatFailedErrorReport,
@@ -930,7 +930,10 @@ const ChatItem = memo(function ChatItem({
       <ConversationColumn
         {...stylex.props(
           conversationSurface.message,
-          msg.role === 'user' && conversationSurface.userMessage
+          msg.role === 'user' && conversationSurface.userMessage,
+          msg.role === 'system' &&
+            msg.items.some(isOperationSurfaceItem) &&
+            conversationSurface.operationSurface
         )}
       >
         {renderMessageRow({
@@ -2772,7 +2775,7 @@ const OperationCompletionBatchView = ({
 }) => {
   const { t } = useTranslation();
   return (
-    <div>
+    <div className="flex flex-col gap-1.5">
       <div>
         {t(
           batch.deliveryStatus === 'unknown'

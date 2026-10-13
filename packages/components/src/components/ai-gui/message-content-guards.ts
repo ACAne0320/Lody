@@ -254,3 +254,13 @@ export const shouldRenderSystemRowItem = <T extends { type: string }>(
     item.type === 'operation_progress'
   );
 };
+
+/**
+ * Operation rows paint bordered cards (reply cards, created Sessions, the
+ * batch result list) rather than prose, so the row takes surface spacing
+ * instead of the plain message pad.
+ */
+export const isOperationSurfaceItem = <T extends { type: string }>(item: T): boolean =>
+  item.type === 'operation_completion' ||
+  item.type === 'operation_completion_batch' ||
+  item.type === 'operation_progress';
