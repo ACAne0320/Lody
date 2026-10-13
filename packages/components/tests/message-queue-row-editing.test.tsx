@@ -237,6 +237,7 @@ describe('queued message editing commits', () => {
               return new Promise<void>((resolve) => {
                 finishStart = resolve;
               });
+            return undefined;
           },
           onEditCancel: (item) => {
             setItems((current) =>
@@ -261,6 +262,7 @@ describe('queued message editing commits', () => {
               return new Promise<void>((resolve) => {
                 finishSave = resolve;
               });
+            return undefined;
           },
         });
       }
