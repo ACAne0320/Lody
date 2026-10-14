@@ -33,7 +33,7 @@
     "src/platform/document-sqlite.ts": "241f28ece61d4f84cb60268721f9ba165ac86786baaf306344cd782b211303a2",
     "src/platform/driver.ts": "ae23c72921b9171aab129217b37205d08b24c1c528b2ae16db76489482cd5e13",
     "src/platform/gateway.ts": "7067ff381e584ea1849d99e836b85191bbcf2d6c99d7acb7c8e450b54feffa76",
-    "src/platform/host.ts": "0156a7b8cd96d4846922fd84a2b5e0498d82c931950d051dd161f02bc37cb8d6",
+    "src/platform/host.ts": "23f36adf3cb7dd368f2175937c23be47166ed23e15246d57538da75ebc3c0f75",
     "src/platform/join-mailbox.ts": "80ae9a48bbbe2ad0341edff479b6973297d0b26d5e1ac849a4361aa578daac1d",
     "src/platform/key-mailbox.ts": "46091516b63b8c8650f920d0408f2e238b9c94aba2f1bcc220464aa43076cad8",
     "src/platform/ledger-actor.ts": "0ae0ab803e13497f380cee41803669d994913f276f352e2bd2f12b03f3096cd5",
