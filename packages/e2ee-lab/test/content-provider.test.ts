@@ -645,3 +645,35 @@ describe('public update provider with released CRDT SDK', () => {
     }
   });
 });
+
+it('a real SDK provider defect remains a harness failure instead of an expected crypto rejection', async () => {
+  const f = await fixture();
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* makeLabLoroSession({
+            path: join(f.dir, 'provider-defect.sqlite'),
+            mode: 'create',
+            streamUrl: `${f.server.baseUrl}/ds/synthetic/provider-defect`,
+            fetch,
+            genesis: f.anchor,
+            resource: 'document',
+            writeEpoch: 0,
+            signer: f.owner,
+            ledger: () => Effect.die(new Error('synthetic provider implementation defect')),
+            readEpochKey: () => Effect.die('must not read a key after ledger defect'),
+          });
+          yield* session.create();
+          const result = yield* Effect.result(session.append('local original'));
+          expect(Result.isFailure(result)).toBe(true);
+          if (Result.isFailure(result))
+            expect(result.failure).toMatchObject({ _tag: 'LabProviderError', code: 'harness' });
+          expect(yield* session.status()).toBe('document-stopped');
+        })
+      )
+    );
+  } finally {
+    await f.close();
+  }
+});

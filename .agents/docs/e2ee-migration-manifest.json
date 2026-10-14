@@ -9224,6 +9224,14 @@
       "parentHead": "e2fe6c65c1da595aa36b19097657bedc294f892f"
     },
     {
+      "number": 1526,
+      "headRefName": "e2ee-lab-integration",
+      "headRefOid": "66dd666dbb20352857866ba9103d11bcff985d5f",
+      "baseRefName": "e2ee-content-sdk-binding",
+      "isDraft": true,
+      "parentHead": "d9e0db0c37e656e8ac510f7a4ea53bcaee93572a"
+    },
+    {
       "number": 1557,
       "headRefName": "e2ee-complete-consumers",
       "headRefOid": "2f196ddb5a47e85aa7a6981dc54ddbb91929d3a6",

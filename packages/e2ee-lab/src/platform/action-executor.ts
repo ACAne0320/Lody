@@ -252,6 +252,7 @@ export function assessLabAction(
     checks.refusal =
       !reply.error ||
       reply.error.tag === 'LabHarnessError' ||
+      reply.error.tag === 'LabProviderError' ||
       reply.error.tag === 'LabActionFailure' ||
       ['internal_error', 'unknown', 'native', 'invalid-plan'].includes(reply.error.code) ||
       !refusal ||

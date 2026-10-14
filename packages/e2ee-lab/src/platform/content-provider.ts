@@ -1,7 +1,12 @@
-import { Effect, Layer } from 'effect';
+import { Data, Effect, Layer } from 'effect';
+import { ContentError, ValidationError } from '@lody/e2ee-core';
 import { PayloadProtectionError, type PayloadProtectionProvider } from '@loro-dev/streams-crdt';
 import { makeStreamsUpdateBinding } from '@lody/e2ee-core/content/streams';
 import { LegacyLabRun } from './run';
+
+export class LabProviderError extends Data.TaggedError('LabProviderError')<{
+  readonly code: 'harness';
+}> {}
 
 /** Lab-only Promise/SDK callback boundary. No injected runner, verifier or alternate core.
  * The surrounding Scope owns this adapter before its SDK transports/Wasm owners are released.
@@ -9,7 +14,8 @@ import { LegacyLabRun } from './run';
 export function makeLabUpdateProvider(input: Parameters<typeof makeStreamsUpdateBinding>[0]) {
   return Effect.gen(function* () {
     const binding = yield* makeStreamsUpdateBinding(input);
-    let closed = false;
+    let closed = false,
+      harnessFailure = false;
     // Registered after binding: reject callbacks and interrupt/await owned fibers first.
     const owner = yield* Effect.acquireRelease(
       Effect.sync(() => new LegacyLabRun(Layer.empty)),
@@ -21,6 +27,9 @@ export function makeLabUpdateProvider(input: Parameters<typeof makeStreamsUpdate
     );
     const failure = (cause: unknown, operation: 'seal' | 'open') => {
       if (cause instanceof PayloadProtectionError) return cause;
+      if (!(cause instanceof ContentError) && !(cause instanceof ValidationError))
+        harnessFailure = true;
+      if (cause instanceof ContentError && cause.code === 'closed') harnessFailure = true;
       const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
       return new PayloadProtectionError(
         code === 'unsupported-streams-context'
@@ -33,7 +42,7 @@ export function makeLabUpdateProvider(input: Parameters<typeof makeStreamsUpdate
         'Lab protected content operation failed'
       );
     };
-    return Object.freeze({
+    const provider = {
       maxSealOverheadBytes: binding.maxSealOverheadBytes,
       async seal(request) {
         if (closed) throw new PayloadProtectionError('encrypt_failed', 'Lab provider is closed');
@@ -58,6 +67,17 @@ export function makeLabUpdateProvider(input: Parameters<typeof makeStreamsUpdate
           throw failure(cause, 'open');
         }
       },
-    } satisfies PayloadProtectionProvider);
+    } satisfies PayloadProtectionProvider;
+    return Object.freeze({
+      ...provider,
+      // Released SDKs may collapse unknown provider exceptions into decrypt_failed.
+      // Preserve an independent local harness signal across that native boundary.
+      checkFailure: () =>
+        Effect.suspend(() => {
+          const failed = harnessFailure;
+          harnessFailure = false;
+          return failed ? Effect.fail(new LabProviderError({ code: 'harness' })) : Effect.void;
+        }),
+    });
   });
 }

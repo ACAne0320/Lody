@@ -300,3 +300,5 @@ CI 预算修正：key-distribution 夹具在 HTTP/接收/repair 查询中重复�
 负向期待必须给出精确 refusal tag/code；无关失败不能通过。非法计划、未分类错误、defect 和多重 cause 均保持 harness 失败。保留 SDK 保护失败原因与 HTTP forbidden，只输出安全分类，不序列化可能含秘密的 cause。丢 ACK 分类同时要求真实故障见证及 typed submission 失败。inspect 从观察重新计算且标明材料不可信，不认证文件，也不重跑场景。真实 39 步场景不以墙钟耗时判定性能（CI job 超时兜底仍保留）；耗时仅供观察。
 
 Node HTTP 回调使用已登记的 LegacyLabRun，由 host Scope 持有并等待关闭。driver 在放行同步 phase 前发布 permit 计数，避免完成重入误报外部 permit。本修复不批准任何协议提案或 installed-history 的产品范围。
+
+不能把 SDK 的错误归类当唯一判定：provider 单独保留未分类/原生 defect 标记，文档 owner 在 SDK 真正结算后检查并返回 LabProviderError/harness，即使 SDK 将其称为 decrypt_failed 或 encrypt_failed。不会序列化原始异常或秘密。

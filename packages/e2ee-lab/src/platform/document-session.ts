@@ -188,7 +188,9 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
               })
           );
           yield* before;
-          const result = yield* owner.invoke(work);
+          const result = yield* owner
+            .invoke(work)
+            .pipe(Effect.onExit(() => provider.checkFailure()));
           if (replay && result.ok && recoveredCursor) {
             yield* guard();
             yield* Effect.tryPromise({

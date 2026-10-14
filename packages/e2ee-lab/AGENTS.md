@@ -63,3 +63,4 @@ report missing observations. Measured action success is not whole-security or ex
 ciphertext replay. Flock has an explicit monotonic clock and shared document owner.
 
 Negative action expectations require exact refusal tag/code; untyped, defect and unrelated failures are harness errors, never successful negative evidence. Artifact inspection recomputes observations but does not authenticate them. HTTP callbacks use the scoped registered LegacyLabRun bridge.
+SDK failure normalization must not erase provider defects; action consumers check the provider harness signal after actual SDK settlement.
