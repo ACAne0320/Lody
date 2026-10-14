@@ -2,6 +2,7 @@
 
 Status: proposed
 Type: architecture
+PR: [#1572](https://github.com/LodyAI/Lody/pull/1572)
 Translation: current
 
 [English](2026-10-14-desktop-data-process.md)
@@ -431,6 +432,8 @@ machine online 由 daemon 的 machine lease 支撑，active-turn 再由其下 ex
 旧凭据退出首先登记 retirement plan：具体 credential/device/session/channel、实际共享的本机与远端部署、原 scopes、替代凭据、到期/撤销/订阅关闭证据及提示。本机独立凭据可只让旧本机入口升级；若共享 user/workspace/CLI 凭据，远端旧 daemon 也可能失效，必须列出机器并给升级/重认证路径，不能保证不影响它们。独立远端保持原合法 grant/RPC兼容，不因本地存储迁移强制换新 local wire。没有可隔离的旧本机身份/取 token 权限时，阻塞该 cloud cutover并先补官方 credential/版本兼容设计；不撤销整个账号/工作区来伪装已完成。managed旧启动提示“数据已迁移/升级”，remote unsupported 走既有 capability 错误与 upgrade/re-auth 提示；未知旧 UI 仍不能靠 marker 改造。
 
 ### 本轮验证范围
+
+PR 提交检查：三份有限模型的 Node 执行、各自 TypeScript 5.8.2 strict 检查与 Oxfmt 0.65.0 格式检查通过。当前 worktree 未安装依赖，全库 pnpm check 在缺少 tsgo 处停止，pnpm format 在缺少 oxfmt 处停止；未完成应用类型/测试与全库格式检查。docs check 与开始时逐项比较仍为既有 82 errors/68 warnings，无新增问题。有限模型不证明运行时实现或产品验收。
 
 [authority/placement 有限模型](../../../../specs/models/workspace-data-sync-authority.model.ts)执行/strict 类型检查通过：四个独立探索共 272 states、2,160 transitions、depth 5，两代 owner；包含历史/current 的差异、取消 setup、禁止活跃 Agent 接管、重启保留模式及旧 ready frame fencing。删除 epoch guard 的临时变体在旧 ready 反例失败。模型不覆盖 SDK、真实 raw release/持久化/IPC、grant 或时钟。另一 checkout 的 Loro 1.16.3 合成实验核对两窗离线 VV、编码 snapshot 读回与“JSON相等但缺 OpLog”反例；不证明 fsync、IDB/SQLite 或上传迁移。Effect 4.0.2/TS5.8.2 fixture 的 expected compile failure 验证普通 renderer runtime 缺 MachineCommandConsumer/SessionExecutionPresence；它不是生产 exports/composition 的验收。
 

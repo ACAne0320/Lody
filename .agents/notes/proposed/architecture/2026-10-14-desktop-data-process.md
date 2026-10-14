@@ -2,6 +2,7 @@
 
 Status: proposed
 Type: architecture
+PR: [#1572](https://github.com/LodyAI/Lody/pull/1572)
 Translation: current
 
 [中文](2026-10-14-desktop-data-process.zh.md)
@@ -431,6 +432,8 @@ Add a desktop Agent batch-write baseline: enqueue → host admission → writer 
 Credential retirement plans list credential/device/session/channel, shared local/remote deployments, scopes, replacements and expiry/revocation/subscription proof/prompt. Local-only scoped credentials can target obsolete local entries; shared user/workspace/CLI credentials may invalidate old remote daemons, requiring a machine list/upgrade/reauthentication path. Legitimate independent remotes retain grants/RPC compatibility and do not acquire new local wire merely because desktop storage migrated. Block cloud cutover until obsolete-local issuance can be isolated through official credential/version design rather than revoking whole accounts/workspaces. Managed old entries require upgrade; remote capability errors guide upgrade/reauth, while unknown old UI cannot change from a marker.
 
 ### Validation scope
+
+PR preparation checks: Node execution, individual strict TypeScript 5.8.2 checks and Oxfmt 0.65.0 checks pass for all three finite models. This worktree has no installed dependencies: full pnpm check stops at missing tsgo and pnpm format at missing oxfmt, so application type/tests and workspace formatting did not complete. docs check matches the pre-work 82 errors/68 warnings item by item without new findings. Finite models do not establish runtime implementation or product acceptance.
 
 The [finite authority/placement model](../../../../specs/models/workspace-data-sync-authority.model.ts) executes/strict-checks: four independent explorations total 272 states/2,160 transitions, depth five/two generations, covering baseline/current, setup cancellation, no active-Agent takeover, persisted restart mode and stale-ready fences. A temporary epoch-guard ablation fails the stale-ready witness. It excludes SDK/raw release/persistence/IPC/grants/clocks. Same-version Loro 1.16.3 references test two offline windows' vectors, encoded snapshot readback and equal-JSON/missing-OpLog, not fsync/IDB/SQLite/upload migration. Effect 4.0.2/TS5.8.2 expected compile failures show renderer runtime lacks MachineCommandConsumer/SessionExecutionPresence, not acceptance of real exports/composition.
 

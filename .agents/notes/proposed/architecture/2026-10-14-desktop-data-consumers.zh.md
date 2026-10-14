@@ -2,6 +2,7 @@
 
 Status: proposed
 Type: architecture
+PR: [#1572](https://github.com/LodyAI/Lody/pull/1572)
 Translation: current
 
 [English](2026-10-14-desktop-data-consumers.md)
