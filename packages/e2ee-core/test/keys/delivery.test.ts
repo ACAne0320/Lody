@@ -219,19 +219,21 @@ describe('durable exact-byte epoch delivery', () => {
       file = location(),
       remote = host(f, file + '.host');
     try {
-      await run(
-        Effect.gen(function* () {
-          const box = yield* DeliveryOutbox;
-          for (let i = 0; i < 4096; i++)
-            yield* box.saveOriginal(
-              i.toString(16).padStart(32, '0'),
-              new Uint8Array(248).fill(i % 256)
-            );
-        }),
-        file,
-        'create',
-        remote.service
-      );
+      await run(Effect.void, file, 'create', remote.service);
+      // Populate historical retained rows in one real transaction. This case
+      // tests indexed lookup beyond 4096 rows, not 4096 synchronous disk flushes.
+      const seed = new Database(file);
+      try {
+        const insert = seed.prepare('INSERT INTO epoch_delivery(slot,frame) VALUES(?,?)');
+        seed
+          .transaction(() => {
+            for (let i = 0; i < 4096; i++)
+              insert.run(i.toString(16).padStart(32, '0'), new Uint8Array(248).fill(i % 256));
+          })
+          .immediate();
+      } finally {
+        seed.close();
+      }
       const next = await run(
         deliverEpochEnvelope({
           context: f.context,
