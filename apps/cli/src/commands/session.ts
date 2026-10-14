@@ -1,3 +1,15 @@
+import {
+  getMachineRoomId,
+  machineSupportsProtocolCapability,
+  MACHINE_PROTOCOL_CAPABILITIES,
+  OPERATION_INBOX_PROTOCOL_VERSION,
+} from '@lody/shared';
+import {
+  assertMachineFlockCacheSufficient,
+  validateWithMachineFlockFreshness,
+  type MachineFlockFreshness,
+} from './session-catalog-read';
+export { MachineFlockReadUnavailableError } from './session-catalog-read';
 import { normalizeSessionTurnInputConfig } from '@lody/shared';
 import { prepareSessionInputAttachments } from '@/lib/session-input-attachments';
 import { buildCommandInputBlocks, type SessionInputAttachment } from '@/lib/session-input-content';
@@ -19,7 +31,8 @@ import {
   isPreparedSessionDispatched,
   type PreparedSessionInput,
 } from '@/lib/prepared-session-input';
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
+import { sessionInboxRecoveryCommand } from './session-inbox-recovery';
 import {
   SessionDiscoveryFilterShape,
   matchesSessionDiscovery,
@@ -50,6 +63,8 @@ import {
   getAcpCapabilityCacheKey,
   getBuiltinDefaultModeId,
   getMachineFlockAcpCapabilities,
+  getReadableAcpCapabilityCacheEntry,
+  getReadableAcpCapabilityCacheEntryForRuntimeOverrides,
   getMachineFlockDocId,
   readMachineFlockRowsFromFlock,
   resolveActiveAssistantTurnId,
@@ -71,6 +86,7 @@ import {
   type AcpCapabilityCacheEntry,
   type AcpConfigOptionSummary,
   type AgentConfigMeta,
+  type BuiltinRuntimeOverrides,
   type AgentRoleId,
   type LocalProjectGitState,
   type LocalProjectId,
@@ -125,6 +141,10 @@ import {
 import { readMachineLocalProjects } from '@/lib/local-project-meta';
 import { getSessionCommandEnvironment } from '@/lib/session-command-environment';
 import { listMergedAgentConfigs } from '@/lib/agent-config-machine-flock';
+import {
+  applyAgentRoleCreateTarget,
+  resolveAgentRoleCreateFromCatalog,
+} from '@/lib/agent-role-create';
 import { getLogger, rootLogger, routeLoggerToStderr } from '@/utils/logger';
 import { parseEnvAssignments } from './agent-config';
 import { formatErrorMessage } from '@/utils/format-error';
@@ -150,6 +170,18 @@ type CommonOptions = CommonCommandOptions;
 export type DelegatedSessionRequester = {
   userId: string;
   author?: AgentMessageAuthor;
+};
+
+/** Delegation without provenance must never be recorded as human input. */
+const resolveSessionInputAuthor = (
+  userId: string,
+  delegatedRequester?: DelegatedSessionRequester
+): MessageAuthor => {
+  if (!delegatedRequester) return { v: 1, kind: 'human', userId };
+  if (!delegatedRequester.author) {
+    throw new Error('Delegated message is missing Agent source identity.');
+  }
+  return delegatedRequester.author;
 };
 
 type ResolvedSessionRequester = {
@@ -182,6 +214,8 @@ export type CreateOptions = CommonOptions &
     machine?: string;
     agent?: string;
     agentConfig?: string;
+    /** CLI `--agent-role` selector (id or name), resolved from the workspace catalog. */
+    agentRole?: string;
     currentSessionId?: SessionId;
     defaultMachineId?: MachineId;
     requesterUserId?: string;
@@ -229,6 +263,21 @@ export type ChatOptions = CommonOptions &
     wait?: boolean;
     timeout?: number;
   };
+
+/** Additive Stop fields are sent only to a peer that implements Inbox pause/resume. */
+export function getSessionCancelProtocolFields(
+  machine: Parameters<typeof machineSupportsProtocolCapability>[0],
+  cancelId: string,
+  pauseInbox: boolean
+): { cancelId?: string; pauseInbox?: boolean } {
+  return machineSupportsProtocolCapability(
+    machine,
+    MACHINE_PROTOCOL_CAPABILITIES.operationInbox,
+    OPERATION_INBOX_PROTOCOL_VERSION
+  )
+    ? { cancelId, pauseInbox }
+    : {};
+}
 
 export async function ensureSessionCreateWorkspaceMetaFresh(args: {
   manager: Pick<LoroDocumentManager, 'syncMetaOrThrow'>;
@@ -504,7 +553,6 @@ function formatVisibleTranscriptItem(item: MessageContent): string | undefined {
       operationKind: item.operationKind,
       ...(item.progressMessageId ? { progressMessageId: item.progressMessageId } : {}),
       completion: item.completion,
-      ...(item.continuation ? { continuation: item.continuation } : {}),
     });
   }
 
@@ -1044,21 +1092,28 @@ async function syncMachineFlockDocsForRead(
   workspaceId: WorkspaceId,
   machineIds: readonly MachineId[],
   reason: string
-): Promise<void> {
+): Promise<MachineFlockFreshness> {
   const logger = getLogger('session');
-  await Promise.all(
-    Array.from(new Set(machineIds)).map(async (machineId) => {
+  const results = await Promise.all(
+    Array.from(new Set(machineIds)).map(async (machineId): Promise<MachineFlockFreshness> => {
       try {
         await manager.syncFlockDocOrThrow(getMachineFlockDocId(workspaceId, machineId), {
           reason: `${reason}:${machineId}`,
+          requireRemoteConfirmation: true,
         });
+        return { confirmed: true };
       } catch (error) {
         logger.warn(
           `Machine Flock freshness sync was not confirmed (${reason}:${machineId}); continuing from the local replica: ${formatErrorMessage(error)}`
         );
+        return { confirmed: false, error };
       }
     })
   );
+  const failures = results.filter((result) => !result.confirmed);
+  return failures.length > 0
+    ? { confirmed: false, error: new AggregateError(failures.map((failure) => failure.error)) }
+    : { confirmed: true };
 }
 
 export async function resolveLocalProjectRefOrThrow(
@@ -1069,22 +1124,35 @@ export async function resolveLocalProjectRefOrThrow(
   requestedBranch?: string,
   useWorktree?: boolean
 ): Promise<ProjectRef> {
-  await syncMachineFlockDocsForRead(manager, workspaceId, [machineId], 'session.local-projects');
+  const normalizedSelector = normalizeCliValue(selector);
+  if (!normalizedSelector) {
+    throw new Error('Missing local project selector.');
+  }
+  const freshness = await syncMachineFlockDocsForRead(
+    manager,
+    workspaceId,
+    [machineId],
+    'session.local-projects'
+  );
   const localProjects = Object.values(
     await readMachineLocalProjects(manager.repo, workspaceId, machineId)
   );
   if (localProjects.length === 0) {
+    assertMachineFlockCacheSufficient(freshness, 'Local project catalog is unavailable.', {
+      kind: 'project',
+      id: normalizedSelector,
+    });
     throw new Error('No local project is registered on this machine for the target workspace.');
-  }
-
-  const normalizedSelector = normalizeCliValue(selector);
-  if (!normalizedSelector) {
-    throw new Error('Missing local project selector.');
   }
 
   const matches = selectLocalProjectsBySelector(localProjects, normalizedSelector);
 
   if (matches.length === 0) {
+    assertMachineFlockCacheSufficient(
+      freshness,
+      `Local project is absent from the local replica: ${normalizedSelector}.`,
+      { kind: 'project', id: normalizedSelector }
+    );
     throw new Error(
       `Local project not found: ${normalizedSelector}. Candidates: ${localProjects
         .map((project) => `${project.name} (${project.id})`)
@@ -1416,6 +1484,15 @@ export type ResolvedTurnDispatchConfig = {
   modeId?: string;
   modelId?: string;
   configOptionValues?: Record<string, string | boolean>;
+  /** Internal provenance for the builtin mode derived before Operation acceptance. */
+  builtinDefaultModeId?: string;
+  /** Legacy inherited-mode provenance; new configs use inheritedDispatchConfig. */
+  inheritedBuiltinDefaultModeId?: string;
+  /** Accepted inherited selections, kept distinct from current explicit choices on replay. */
+  inheritedDispatchConfig?: Pick<
+    ResolvedTurnDispatchConfig,
+    'modeId' | 'modelId' | 'configOptionValues'
+  >;
   /** Prevent create replay from re-reading mutable defaults from the requester history. */
   inheritSessionDefaults?: false;
   /**
@@ -1446,7 +1523,9 @@ export type ResolvedTurnDispatchConfig = {
  */
 export function applyAgentRunConfigSelection(
   config: ResolvedTurnDispatchConfig,
-  capability: AcpCapabilityCacheEntry | undefined
+  capability: AcpCapabilityCacheEntry | undefined,
+  freshness: MachineFlockFreshness = { confirmed: true },
+  inheritedModelId?: string
 ): {
   config: ResolvedTurnDispatchConfig;
   validatedConfigIds: ReadonlySet<string>;
@@ -1456,15 +1535,21 @@ export function applyAgentRunConfigSelection(
   if (!hasAgentRunConfigSelection(runConfig)) {
     return { config: rest, validatedConfigIds: new Set(), unverifiedSelections: [] };
   }
-  const resolved = resolveAgentRunConfigSelection(
-    {
-      ...runConfig,
-      modelId:
-        runConfig?.modelId ??
-        rest.modelId ??
-        getTurnSelectorConfigOptionValue(rest.configOptionValues, capability, 'model'),
-    },
-    capability
+  const explicitModelId =
+    runConfig?.modelId ??
+    rest.modelId ??
+    getTurnSelectorConfigOptionValue(rest.configOptionValues, capability, 'model');
+  const resolved = validateWithMachineFlockFreshness(
+    freshness,
+    () =>
+      resolveAgentRunConfigSelection(
+        {
+          ...runConfig,
+          modelId: explicitModelId ?? inheritedModelId,
+        },
+        capability
+      ),
+    { kind: 'ACP run config', id: runConfig.modelId }
   );
   const explicitModeId =
     rest.modeId ?? getTurnSelectorConfigOptionValue(rest.configOptionValues, capability, 'mode');
@@ -1482,7 +1567,7 @@ export function applyAgentRunConfigSelection(
   return {
     config: {
       ...((resolved.modeId ?? rest.modeId) ? { modeId: resolved.modeId ?? rest.modeId } : {}),
-      ...((resolved.modelId ?? rest.modelId) ? { modelId: resolved.modelId ?? rest.modelId } : {}),
+      ...(explicitModelId !== undefined ? { modelId: resolved.modelId ?? explicitModelId } : {}),
       ...(Object.keys(configOptionValues).length > 0 ? { configOptionValues } : {}),
     },
     validatedConfigIds: new Set(resolved.validatedConfigIds ?? []),
@@ -1587,6 +1672,52 @@ function mergeTurnDispatchConfig(
   };
 }
 
+function readFrozenInheritedTurnConfig(
+  config: ResolvedTurnDispatchConfig,
+  target: Pick<SessionMeta, 'cliType' | 'agentType'>
+): ResolvedTurnDispatchConfig['inheritedDispatchConfig'] {
+  const snapshot = config.inheritedDispatchConfig;
+  const legacyMode =
+    config.inheritedBuiltinDefaultModeId ===
+    getBuiltinDefaultModeId(target.cliType, target.agentType)
+      ? config.inheritedBuiltinDefaultModeId
+      : undefined;
+  const modeId = snapshot?.modeId ?? legacyMode;
+  const inherited = {
+    ...(modeId !== undefined && config.modeId === modeId ? { modeId } : {}),
+    ...(snapshot?.modelId !== undefined && config.modelId === snapshot.modelId
+      ? { modelId: snapshot.modelId }
+      : {}),
+    ...(snapshot?.configOptionValues !== undefined &&
+    isDeepStrictEqual(config.configOptionValues, snapshot.configOptionValues)
+      ? { configOptionValues: snapshot.configOptionValues }
+      : {}),
+  };
+  return Object.keys(inherited).length ? inherited : undefined;
+}
+
+function removeShadowedInheritedSelectors(
+  inherited: ResolvedTurnDispatchConfig | undefined,
+  requested: ResolvedTurnDispatchConfig,
+  capability: AcpCapabilityCacheEntry | undefined
+): void {
+  if (!inherited) return;
+  for (const category of ['mode', 'model'] as const) {
+    const key = category === 'mode' ? 'modeId' : 'modelId';
+    if (getTurnSelectorConfigOptionValue(requested.configOptionValues, capability, category)) {
+      delete inherited[key];
+    }
+    if (requested[key] !== undefined && inherited.configOptionValues) {
+      delete inherited.configOptionValues[
+        findTurnConfigOptionByCategory(capability, category)?.id ?? category
+      ];
+    }
+  }
+  if (inherited.configOptionValues && Object.keys(inherited.configOptionValues).length === 0) {
+    delete inherited.configOptionValues;
+  }
+}
+
 function validateConfigOptionValue(
   option: AcpConfigOptionSummary,
   value: string | boolean
@@ -1615,23 +1746,37 @@ export function validateTurnConfigOptionValues(
    * capability's `configOptions` only describe the probed model, so re-checking
    * them here would reject values that are valid for the target model.
    */
-  skipIds?: ReadonlySet<string>
+  skipIds?: ReadonlySet<string>,
+  freshness: MachineFlockFreshness = { confirmed: true }
 ): void {
   const entries = Object.entries(values ?? {}).filter(([id]) => !skipIds?.has(id));
   if (entries.length === 0) {
     return;
   }
   if (!capability?.configOptions) {
+    assertMachineFlockCacheSufficient(
+      freshness,
+      'ACP config options are unavailable in the local replica.',
+      { kind: 'ACP option', id: entries[0]?.[0] }
+    );
     throw new Error('ACP config options are unavailable for the selected agent.');
   }
   const optionsById = new Map(capability.configOptions.map((option) => [option.id, option]));
   for (const [id, value] of entries) {
     const option = optionsById.get(id);
     if (!option) {
+      assertMachineFlockCacheSufficient(
+        freshness,
+        `ACP config option is absent from the local replica: ${id}.`,
+        { kind: 'ACP option', id }
+      );
       throw new Error(`Unknown ACP config option for the selected agent: ${id}.`);
     }
     const error = validateConfigOptionValue(option, value);
     if (error) {
+      if (option.type === 'select' && typeof value === 'string') {
+        assertMachineFlockCacheSufficient(freshness, error, { kind: 'ACP option', id });
+      }
       throw new Error(error);
     }
   }
@@ -1640,7 +1785,8 @@ export function validateTurnConfigOptionValues(
 function validateModelDependentTurnConfigOptionValues(
   values: Record<string, string | boolean> | undefined,
   capability: AcpCapabilityCacheEntry | undefined,
-  targetModelId: string | undefined
+  targetModelId: string | undefined,
+  freshness: MachineFlockFreshness = { confirmed: true }
 ): ReadonlySet<string> {
   const validatedIds = new Set<string>();
   if (!values || !capability || !targetModelId) {
@@ -1654,8 +1800,16 @@ function validateModelDependentTurnConfigOptionValues(
   const declaredFast = getDeclaredModelControls(capability, targetModelId)?.fastMode;
   for (const [id, value] of Object.entries(values)) {
     if (isTurnEffortEntry(optionsById, id)) {
+      if (typeof value !== 'string') {
+        throw new Error(`Config option "${id}" expects a select value.`);
+      }
       if (efforts !== undefined) {
-        if (typeof value !== 'string' || !efforts.includes(value)) {
+        if (!efforts.includes(value)) {
+          assertMachineFlockCacheSufficient(
+            freshness,
+            `Reasoning effort is absent from the local replica for model ${targetModelId}.`,
+            { kind: 'ACP option', id }
+          );
           throw new Error(
             `Invalid reasoning effort for model ${targetModelId}: ${String(value)}. Allowed values: ${efforts.join(', ')}.`
           );
@@ -1665,8 +1819,33 @@ function validateModelDependentTurnConfigOptionValues(
         validatedIds.add(id);
       }
     } else if (isAcpFastModeConfigId(id)) {
+      const option = optionsById.get(id);
+      if (option?.type === 'boolean' && typeof value !== 'boolean') {
+        throw new Error(`Config option "${id}" expects a boolean value.`);
+      }
+      if (option?.type === 'select') {
+        if (typeof value !== 'string') {
+          throw new Error(`Config option "${id}" expects a select value.`);
+        }
+        // A custom raw select value has no model-independent toggle meaning.
+        // Leave its membership validation to the ordinary catalog validator.
+        if (value !== ACP_CONFIG_OPTION_ON_VALUE && value !== ACP_CONFIG_OPTION_OFF_VALUE) {
+          continue;
+        }
+      } else if (
+        typeof value !== 'boolean' &&
+        value !== ACP_CONFIG_OPTION_ON_VALUE &&
+        value !== ACP_CONFIG_OPTION_OFF_VALUE
+      ) {
+        throw new Error(`Config option "${id}" expects a boolean or on/off value.`);
+      }
       // Off on a model without Fast is already the case; on cannot happen.
       if (declaredFast === false && (value === true || value === ACP_CONFIG_OPTION_ON_VALUE)) {
+        assertMachineFlockCacheSufficient(
+          freshness,
+          `Fast mode is unavailable in the local replica for model ${targetModelId}.`,
+          { kind: 'ACP option', id }
+        );
         throw new Error(`Model ${targetModelId} does not offer fast mode.`);
       }
       // The probe's snapshot says nothing about the target model's Fast; a
@@ -1752,53 +1931,129 @@ function getSupportedTurnSelectorIds(
 
 export function validateTurnModeAndModel(
   config: Pick<ResolvedTurnDispatchConfig, 'modeId' | 'modelId'>,
-  capability: AcpCapabilityCacheEntry | undefined
+  capability: AcpCapabilityCacheEntry | undefined,
+  freshness: MachineFlockFreshness = { confirmed: true }
 ): void {
   if (config.modeId && !getSupportedTurnSelectorIds(capability, 'mode').has(config.modeId)) {
+    assertMachineFlockCacheSufficient(
+      freshness,
+      `ACP mode is absent from the local replica: ${config.modeId}.`,
+      { kind: 'ACP mode', id: config.modeId }
+    );
     throw new Error(`Unsupported ACP mode for the selected agent: ${config.modeId}.`);
   }
   if (config.modelId && !getSupportedTurnSelectorIds(capability, 'model').has(config.modelId)) {
+    assertMachineFlockCacheSufficient(
+      freshness,
+      `ACP model is absent from the local replica: ${config.modelId}.`,
+      { kind: 'ACP model', id: config.modelId }
+    );
     throw new Error(`Unsupported ACP model for the selected agent: ${config.modelId}.`);
   }
 }
 
 export function filterCompatibleInheritedTurnConfig(
   config: ResolvedTurnDispatchConfig | undefined,
-  capability: AcpCapabilityCacheEntry | undefined
+  capability: AcpCapabilityCacheEntry | undefined,
+  targetModelId?: string
 ): ResolvedTurnDispatchConfig | undefined {
   if (!config) {
     return undefined;
   }
   const supportedModes = getSupportedTurnSelectorIds(capability, 'mode');
   const supportedModels = getSupportedTurnSelectorIds(capability, 'model');
+  const modelId =
+    config.modelId && supportedModels.has(config.modelId) ? config.modelId : undefined;
+  const rawModelId = getTurnSelectorConfigOptionValue(
+    config.configOptionValues,
+    capability,
+    'model'
+  );
   const configOptionValues = filterCompatibleTurnConfigOptionValues(
     config.configOptionValues,
-    capability
+    capability,
+    targetModelId ??
+      modelId ??
+      (rawModelId && supportedModels.has(rawModelId) ? rawModelId : undefined)
   );
   return {
     ...(config.modeId && supportedModes.has(config.modeId) ? { modeId: config.modeId } : {}),
-    ...(config.modelId && supportedModels.has(config.modelId) ? { modelId: config.modelId } : {}),
+    ...(modelId ? { modelId } : {}),
     ...(configOptionValues ? { configOptionValues } : {}),
   };
 }
 
-export async function readAgentAcpCapability(args: {
+function warnDroppedInheritedMachineFlockSelections(args: {
+  freshness: MachineFlockFreshness;
+  inherited: ResolvedTurnDispatchConfig | undefined;
+  compatible: ResolvedTurnDispatchConfig | undefined;
+  requested: ResolvedTurnDispatchConfig;
+  capability: AcpCapabilityCacheEntry | undefined;
+}): void {
+  if (args.freshness.confirmed || !args.inherited) return;
+  let dropped = false;
+  for (const category of ['mode', 'model'] as const) {
+    const key = category === 'mode' ? 'modeId' : 'modelId';
+    const inheritedId = args.inherited[key];
+    if (
+      inheritedId &&
+      args.requested[key] === undefined &&
+      getTurnSelectorConfigOptionValue(
+        args.requested.configOptionValues,
+        args.capability,
+        category
+      ) === undefined &&
+      args.compatible?.[key] !== inheritedId
+    ) {
+      dropped = true;
+    }
+  }
+  if (args.requested.configOptionValues === undefined) {
+    for (const [id, value] of Object.entries(args.inherited.configOptionValues ?? {})) {
+      const shadowed = (['mode', 'model'] as const).some((category) => {
+        const key = category === 'mode' ? 'modeId' : 'modelId';
+        return (
+          args.requested[key] !== undefined &&
+          id === (findTurnConfigOptionByCategory(args.capability, category)?.id ?? category)
+        );
+      });
+      if (!shadowed && args.compatible?.configOptionValues?.[id] !== value) {
+        dropped = true;
+      }
+    }
+  }
+  if (dropped) {
+    getLogger('session').warn(
+      'Dropped incompatible inherited ACP selections after an unconfirmed catalog read.'
+    );
+  }
+}
+
+type AgentAcpCapabilityReadArgs = {
   manager: LoroDocumentManager;
   workspaceId: WorkspaceId;
   machineId: MachineId;
   agentConfigId?: AgentConfigMeta['id'];
+  /** Omission means the caller has no launch-source context; explicit undefined means no override. */
+  runtimeOverrides?: BuiltinRuntimeOverrides;
   localOnly?: boolean;
-}): Promise<AcpCapabilityCacheEntry | undefined> {
+};
+
+async function readAgentAcpCapabilitySnapshot(args: AgentAcpCapabilityReadArgs): Promise<{
+  capability: AcpCapabilityCacheEntry | undefined;
+  freshness: MachineFlockFreshness;
+}> {
   if (!args.agentConfigId) {
-    return undefined;
+    return { capability: undefined, freshness: { confirmed: true } };
   }
-  if (!args.localOnly)
-    await syncMachineFlockDocsForRead(
-      args.manager,
-      args.workspaceId,
-      [args.machineId],
-      'session.acp-capabilities'
-    );
+  const freshness = args.localOnly
+    ? { confirmed: true as const }
+    : await syncMachineFlockDocsForRead(
+        args.manager,
+        args.workspaceId,
+        [args.machineId],
+        'session.acp-capabilities'
+      );
   const handle = await args.manager.repo.openFlockDoc(
     getMachineFlockDocId(args.workspaceId, args.machineId)
   );
@@ -1807,7 +2062,18 @@ export async function readAgentAcpCapability(args: {
       families: ACP_CAPABILITY_ROW_FAMILIES,
     })
   );
-  return capabilities[getAcpCapabilityCacheKey(args.agentConfigId)];
+  const cached = capabilities[getAcpCapabilityCacheKey(args.agentConfigId)];
+  const capability =
+    'runtimeOverrides' in args
+      ? getReadableAcpCapabilityCacheEntryForRuntimeOverrides(cached, args.runtimeOverrides)
+      : getReadableAcpCapabilityCacheEntry(cached);
+  return { capability, freshness };
+}
+
+export async function readAgentAcpCapability(
+  args: AgentAcpCapabilityReadArgs
+): Promise<AcpCapabilityCacheEntry | undefined> {
+  return (await readAgentAcpCapabilitySnapshot(args)).capability;
 }
 
 export function resolveTurnDispatchConfigFromInputConfig(
@@ -1874,7 +2140,9 @@ export function resolveEffectiveSessionChatDispatchConfig(args: {
   inheritedDispatchConfig?: ResolvedTurnDispatchConfig;
   target: Pick<SessionMeta, 'cliType' | 'agentType'>;
   capability?: AcpCapabilityCacheEntry;
+  freshness?: MachineFlockFreshness;
 }): ResolvedTurnDispatchConfig {
+  const freshness = args.freshness ?? { confirmed: true };
   const previous = args.inheritedDispatchConfig;
   const explicitModeOption = getTurnSelectorConfigOptionValue(
     args.dispatchConfig.configOptionValues,
@@ -1899,33 +2167,44 @@ export function resolveEffectiveSessionChatDispatchConfig(args: {
             : previous.configOptionValues,
       }
     : undefined;
-  const compatible = filterCompatibleInheritedTurnConfig(inherited, args.capability);
-  if (compatible && previous?.memory) compatible.memory = previous.memory;
-  if (compatible) {
-    compatible.configOptionValues = filterCompatibleTurnConfigOptionValues(
-      inherited?.configOptionValues,
-      args.capability,
-      compatible.modelId
-    );
+  const compatible = filterCompatibleInheritedTurnConfig(
+    inherited,
+    args.capability,
+    args.dispatchConfig.modelId ?? explicitModelOption
+  );
+  const builtinDefault = getBuiltinDefaultModeId(args.target.cliType, args.target.agentType);
+  if (!args.capability && compatible && builtinDefault && inherited?.modeId === builtinDefault) {
+    compatible.modeId = builtinDefault;
   }
+  if (compatible && previous?.memory) compatible.memory = previous.memory;
+  warnDroppedInheritedMachineFlockSelections({
+    freshness,
+    inherited,
+    compatible,
+    requested: args.dispatchConfig,
+    capability: args.capability,
+  });
+  removeShadowedInheritedSelectors(compatible, args.dispatchConfig, args.capability);
   const effective = withBuiltinDefaultTurnMode(
     mergeTurnDispatchConfig(args.dispatchConfig, compatible),
     args.target,
     args.capability
   );
-  validateTurnModeAndModel(args.dispatchConfig, args.capability);
+  validateTurnModeAndModel(args.dispatchConfig, args.capability, freshness);
   const targetModelId =
     effective.modelId ??
     getTurnSelectorConfigOptionValue(effective.configOptionValues, args.capability, 'model');
   const validatedIds = validateModelDependentTurnConfigOptionValues(
     args.dispatchConfig.configOptionValues,
     args.capability,
-    targetModelId
+    targetModelId,
+    freshness
   );
   validateTurnConfigOptionValues(
     args.dispatchConfig.configOptionValues,
     args.capability,
-    validatedIds
+    validatedIds,
+    freshness
   );
   return effective;
 }
@@ -2252,11 +2531,22 @@ async function dispatchTurnFastPath(args: {
   userTurnId: string;
   userId: string;
   timestamp: string;
+  inputOrigin: 'human' | 'agent';
   inputConfig: SessionTurnInputConfig | undefined;
 }): Promise<void> {
   const environment = getSessionCommandEnvironment();
   if (environment) {
-    await environment.host.dispatchSession(args.sessionId);
+    await environment.host.dispatchSession(
+      args.sessionId,
+      args.inputConfig
+        ? {
+            inputId: args.userTurnId,
+            userId: args.userId,
+            config: args.inputConfig,
+            inputOrigin: args.inputOrigin,
+          }
+        : undefined
+    );
     return;
   }
   if (!args.inputConfig) {
@@ -2271,6 +2561,7 @@ async function dispatchTurnFastPath(args: {
           userTurnId: args.userTurnId,
           userId: args.userId,
           timestamp: args.timestamp,
+          inputOrigin: args.inputOrigin,
           inputConfig: args.inputConfig!,
           timeoutMs: 15_000,
         })
@@ -2534,8 +2825,13 @@ async function listAgentConfigsForMachine(
   manager: LoroDocumentManager,
   workspaceId: WorkspaceId,
   machineId: MachineId
-): Promise<AgentConfigMeta[]> {
-  await syncMachineFlockDocsForRead(manager, workspaceId, [machineId], 'session.agent-configs');
+): Promise<{ configs: AgentConfigMeta[]; freshness: MachineFlockFreshness }> {
+  const freshness = await syncMachineFlockDocsForRead(
+    manager,
+    workspaceId,
+    [machineId],
+    'session.agent-configs'
+  );
   const configs = await listMergedAgentConfigs(manager.repo, workspaceId, [machineId]);
   configs.sort((left, right) => {
     const nameCompare = left.name.localeCompare(right.name);
@@ -2544,7 +2840,7 @@ async function listAgentConfigsForMachine(
     }
     return left.id.localeCompare(right.id);
   });
-  return configs;
+  return { configs, freshness };
 }
 
 export function selectDefaultAgentConfigForCreate(
@@ -2577,13 +2873,32 @@ async function resolveAgentConfigForCreate(args: {
   selector?: string;
   currentSession?: SessionMeta;
 }): Promise<AgentConfigMeta> {
-  const configs = await listAgentConfigsForMachine(args.manager, args.workspaceId, args.machineId);
+  const { configs, freshness } = await listAgentConfigsForMachine(
+    args.manager,
+    args.workspaceId,
+    args.machineId
+  );
   if (configs.length === 0) {
+    assertMachineFlockCacheSufficient(freshness, 'Agent config catalog is unavailable.', {
+      kind: 'agent config',
+      id: args.selector,
+    });
     throw new Error(`No agent config exists on machine ${args.machineId}.`);
   }
   const selector =
     normalizeCliValue(args.selector) ?? normalizeCliValue(process.env.LODY_AGENT_CONFIG_ID);
   if (selector) {
+    if (
+      !configs.some(
+        (config) => config.id === selector || normalizeCliValue(config.name) === selector
+      )
+    ) {
+      assertMachineFlockCacheSufficient(
+        freshness,
+        `Agent config is absent from the local replica: ${selector}.`,
+        { kind: 'agent config', id: selector }
+      );
+    }
     return selectUniqueAgentConfigByIdOrName(configs, selector);
   }
   const defaultConfig = selectDefaultAgentConfigForCreate(
@@ -2761,11 +3076,24 @@ async function resolveLocalProjectRefOnMachineOrThrow(
   requestedBranch?: string,
   useWorktree?: boolean
 ): Promise<ProjectRef> {
-  await syncMachineFlockDocsForRead(manager, workspaceId, [machineId], 'session.local-projects');
+  const normalizedSelector = normalizeCliValue(selector);
+  if (!normalizedSelector) {
+    throw new Error('Missing local project selector.');
+  }
+  const freshness = await syncMachineFlockDocsForRead(
+    manager,
+    workspaceId,
+    [machineId],
+    'session.local-projects'
+  );
   const localProjects = Object.values(
     await readMachineLocalProjects(manager.repo, workspaceId, machineId)
   );
   if (localProjects.length === 0) {
+    assertMachineFlockCacheSufficient(freshness, 'Local project catalog is unavailable.', {
+      kind: 'project',
+      id: normalizedSelector,
+    });
     throw new Error('No local project is registered on the target machine for this workspace.');
   }
   const authorizedLocalProjects = await filterAuthorizedLocalProjectsForCreate({
@@ -2778,12 +3106,15 @@ async function resolveLocalProjectRefOnMachineOrThrow(
   if (authorizedLocalProjects.length === 0) {
     throw new Error('No authorized local projects are available on the target machine.');
   }
-  const normalizedSelector = normalizeCliValue(selector);
-  if (!normalizedSelector) {
-    throw new Error('Missing local project selector.');
-  }
   const matches = selectLocalProjectsBySelector(authorizedLocalProjects, normalizedSelector);
   if (matches.length === 0) {
+    if (selectLocalProjectsBySelector(localProjects, normalizedSelector).length === 0) {
+      assertMachineFlockCacheSufficient(
+        freshness,
+        `Local project is absent from the local replica: ${normalizedSelector}.`,
+        { kind: 'project', id: normalizedSelector }
+      );
+    }
     throw new Error(
       `Local project not found on ${machineId}: ${normalizedSelector}. Candidates: ${authorizedLocalProjects
         .map((project) => `${project.name} (${project.id})`)
@@ -3046,8 +3377,34 @@ export async function resolveEffectiveSessionCreateDispatchConfig(args: {
   openedBySessionId?: SessionId;
   dispatchConfig: ResolvedTurnDispatchConfig;
   localOnly?: boolean;
+  /** Matching immutable Turn evidence, checked against frozen inherited provenance. */
+  authoredInheritedModel?: { modelId: string | undefined };
 }): Promise<ResolvedTurnDispatchConfig> {
-  const { frozenInheritedInputConfig, ...dispatchConfig } = args.dispatchConfig;
+  const {
+    frozenInheritedInputConfig,
+    builtinDefaultModeId,
+    inheritedBuiltinDefaultModeId,
+    inheritedDispatchConfig: frozenInheritedConfig,
+    ...dispatchConfig
+  } = args.dispatchConfig;
+  const frozenInherited = readFrozenInheritedTurnConfig(args.dispatchConfig, args.agentConfig);
+  if (frozenInherited?.modeId !== undefined) delete dispatchConfig.modeId;
+  if (frozenInherited?.modelId !== undefined) delete dispatchConfig.modelId;
+  if (frozenInherited?.configOptionValues !== undefined) delete dispatchConfig.configOptionValues;
+  const builtinDefault = getBuiltinDefaultModeId(
+    args.agentConfig.cliType,
+    args.agentConfig.agentType
+  );
+  const frozenBuiltinDefault = Boolean(
+    builtinDefault &&
+    inheritedBuiltinDefaultModeId === undefined &&
+    builtinDefaultModeId === builtinDefault &&
+    dispatchConfig.modeId === builtinDefault
+  );
+  // This was a fallback, not a user selection. Re-derive it from the capability
+  // available during materialization so a newly advertised catalog can omit it.
+  // Keep explicit modes and all other selections on their normal validation path.
+  if (frozenBuiltinDefault) delete dispatchConfig.modeId;
   if (dispatchConfig.memory) {
     const machine = (await listMachineMetasForWorkspace(args.manager)).find(
       (entry) => entry.id === args.agentConfig.machineId
@@ -3056,15 +3413,17 @@ export async function resolveEffectiveSessionCreateDispatchConfig(args: {
       throw new Error('Update the target machine to use memory providers.');
   }
   const inheritedDispatchConfig =
-    frozenInheritedInputConfig !== undefined
-      ? resolveTurnDispatchConfigFromInputConfig(frozenInheritedInputConfig, args.agentConfig)
-      : dispatchConfig.inheritSessionDefaults !== false && args.openedBySessionId
-        ? await resolveSessionTurnDispatchDefaults(
-            args.manager,
-            args.openedBySessionId,
-            args.agentConfig
-          )
-        : undefined;
+    frozenInheritedConfig !== undefined || inheritedBuiltinDefaultModeId !== undefined
+      ? frozenInherited
+      : frozenInheritedInputConfig !== undefined
+        ? resolveTurnDispatchConfigFromInputConfig(frozenInheritedInputConfig, args.agentConfig)
+        : dispatchConfig.inheritSessionDefaults !== false && args.openedBySessionId
+          ? await resolveSessionTurnDispatchDefaults(
+              args.manager,
+              args.openedBySessionId,
+              args.agentConfig
+            )
+          : undefined;
   // Builtin Role/MCP creates often have no modeId. Read capabilities before
   // accepting so withBuiltinDefaultTurnMode cannot freeze an unoffered mode.
   const mayApplyBuiltinDefault =
@@ -3082,41 +3441,103 @@ export async function resolveEffectiveSessionCreateDispatchConfig(args: {
     inheritedDispatchConfig?.modeId !== undefined ||
     inheritedDispatchConfig?.modelId !== undefined ||
     inheritedDispatchConfig?.configOptionValues !== undefined;
-  const capability = needsCapability
-    ? await readAgentAcpCapability({
+  const { capability, freshness } = needsCapability
+    ? await readAgentAcpCapabilitySnapshot({
         manager: args.manager,
         workspaceId: args.workspaceId,
         machineId: args.agentConfig.machineId,
         agentConfigId: args.agentConfig.id,
+        runtimeOverrides: args.agentConfig.runtimeOverrides,
         localOnly: args.localOnly,
       })
-    : undefined;
-  const requested = applyAgentRunConfigSelection(dispatchConfig, capability);
-  validateTurnModeAndModel(requested.config, capability);
+    : { capability: undefined, freshness: { confirmed: true as const } };
+  const compatibleDefaults = filterCompatibleInheritedTurnConfig(
+    inheritedDispatchConfig,
+    capability
+  );
+  // Semantic controls create an explicit option map, replacing inherited raw
+  // options. Only a scalar inherited model survives that replacement.
+  const inheritedModelId = args.authoredInheritedModel
+    ? args.authoredInheritedModel.modelId
+    : compatibleDefaults?.modelId;
+  const requested = applyAgentRunConfigSelection(
+    dispatchConfig,
+    capability,
+    freshness,
+    inheritedModelId
+  );
+  validateTurnModeAndModel(requested.config, capability, freshness);
+  const requestedModelId =
+    requested.config.modelId ??
+    getTurnSelectorConfigOptionValue(requested.config.configOptionValues, capability, 'model');
+  const inherited = filterCompatibleInheritedTurnConfig(
+    inheritedDispatchConfig,
+    capability,
+    requestedModelId
+  );
+  if (inherited && args.authoredInheritedModel) {
+    // The target model is already part of this fixed Turn's identity. Validate
+    // explicit model-dependent controls against it, not a newly filtered default.
+    inherited.modelId = args.authoredInheritedModel.modelId;
+  }
+  if (
+    !capability &&
+    inherited &&
+    builtinDefault &&
+    inheritedDispatchConfig?.modeId === builtinDefault
+  ) {
+    inherited.modeId = builtinDefault;
+  }
+  warnDroppedInheritedMachineFlockSelections({
+    freshness,
+    inherited: inheritedDispatchConfig,
+    compatible: inherited,
+    requested: requested.config,
+    capability,
+  });
+  removeShadowedInheritedSelectors(inherited, requested.config, capability);
+  const merged = mergeTurnDispatchConfig(requested.config, inherited);
+  const effective = withBuiltinDefaultTurnMode(merged, args.agentConfig, capability);
+  const derivedBuiltinDefault =
+    effective.modeId === builtinDefault &&
+    merged.modeId === undefined &&
+    getTurnSelectorConfigOptionValue(merged.configOptionValues, capability, 'mode') === undefined;
+  const targetModelId =
+    effective.modelId ??
+    getTurnSelectorConfigOptionValue(effective.configOptionValues, capability, 'model');
+  const validatedConfigIds = new Set([
+    ...requested.validatedConfigIds,
+    ...validateModelDependentTurnConfigOptionValues(
+      requested.config.configOptionValues,
+      capability,
+      targetModelId,
+      freshness
+    ),
+  ]);
   validateTurnConfigOptionValues(
     requested.config.configOptionValues,
     capability,
-    requested.validatedConfigIds
+    validatedConfigIds,
+    freshness
   );
-  const inherited = filterCompatibleInheritedTurnConfig(inheritedDispatchConfig, capability);
-  if (inherited) {
-    // Raw selectors must override inherited scalar selectors, which the runtime
-    // otherwise applies first and uses to skip the corresponding option.
-    if (getTurnSelectorConfigOptionValue(requested.config.configOptionValues, capability, 'mode')) {
-      delete inherited.modeId;
-    }
-    if (
-      getTurnSelectorConfigOptionValue(requested.config.configOptionValues, capability, 'model')
-    ) {
-      delete inherited.modelId;
-    }
-  }
+  const inheritedSnapshot = {
+    ...(requested.config.modeId === undefined && inherited?.modeId !== undefined
+      ? { modeId: inherited.modeId }
+      : {}),
+    ...(requested.config.modelId === undefined && inherited?.modelId !== undefined
+      ? { modelId: inherited.modelId }
+      : {}),
+    ...(requested.config.configOptionValues === undefined &&
+    inherited?.configOptionValues !== undefined
+      ? { configOptionValues: inherited.configOptionValues }
+      : {}),
+  };
   return {
-    ...withBuiltinDefaultTurnMode(
-      mergeTurnDispatchConfig(requested.config, inherited),
-      args.agentConfig,
-      capability
-    ),
+    ...effective,
+    ...(derivedBuiltinDefault && builtinDefault ? { builtinDefaultModeId: builtinDefault } : {}),
+    ...(Object.keys(inheritedSnapshot).length
+      ? { inheritedDispatchConfig: inheritedSnapshot }
+      : {}),
     inheritSessionDefaults: false,
   };
 }
@@ -3168,6 +3589,7 @@ export async function prepareSessionInput(
     options.delegatedRequester
   );
   const requesterUserId = requester.userId;
+  const author = resolveSessionInputAuthor(requesterUserId, options.delegatedRequester);
   const sessionOwnerUserId = resolveSessionCreateOwnerUserId(
     requesterUserId,
     options.sessionOwnerUserId
@@ -3190,6 +3612,72 @@ export async function prepareSessionInput(
     openedBySessionId,
     openedByRootSessionId,
   } = resolved;
+  const authoredDispatchOverrides: Pick<
+    ResolvedTurnDispatchConfig,
+    'modeId' | 'modelId' | 'configOptionValues'
+  > = {};
+  const builtinDefault = getBuiltinDefaultModeId(agentConfig.cliType, agentConfig.agentType);
+  const frozenInherited = readFrozenInheritedTurnConfig(dispatchConfig, agentConfig);
+  const inferredBuiltin = Boolean(
+    builtinDefault &&
+    dispatchConfig.builtinDefaultModeId === builtinDefault &&
+    dispatchConfig.modeId === builtinDefault &&
+    !frozenInherited?.modeId
+  );
+  if (options.sessionId && options.userTurnId && (inferredBuiltin || frozenInherited)) {
+    const existing = await manager.repo.getDocMeta(getSessionRoomId(options.sessionId));
+    const existingMeta = existing?.meta as SessionMeta | undefined;
+    if (
+      existing &&
+      existingMeta &&
+      !isLoroRepoDocDeleted(existing) &&
+      existingMeta.id === options.sessionId &&
+      existingMeta.machineId === targetMachine.id &&
+      existingMeta.userId === sessionOwnerUserId &&
+      existingMeta.agentConfigId === agentConfig.id
+    ) {
+      const sessionDoc = await manager.getOrCreateSessionDoc(options.sessionId);
+      const backend = await createSessionBackend(sessionDoc, existingMeta);
+      const read = await backend.readTurn(options.userTurnId);
+      const prior = read.state === 'ready' && read.turn.role === 'user' ? read.turn : undefined;
+      const authored = normalizeSessionTurnInputConfig(prior?.inputConfig);
+      if (prior) {
+        // Once authored, fallback filtering must not change the fixed Turn. Only
+        // preserve selections reachable from the frozen provenance; the complete
+        // prepared-input identity check still rejects unrelated config changes.
+        const inheritedMode = frozenInherited?.modeId;
+        const allowMode =
+          inferredBuiltin ||
+          inheritedMode !== undefined ||
+          (dispatchConfig.modeId === undefined &&
+            frozenInherited?.configOptionValues !== undefined);
+        if (
+          allowMode &&
+          (authored?.modeId === undefined ||
+            authored.modeId === inheritedMode ||
+            authored.modeId === builtinDefault)
+        ) {
+          authoredDispatchOverrides.modeId = authored?.modeId;
+        }
+        if (
+          frozenInherited?.modelId !== undefined &&
+          (authored?.modelId === undefined || authored.modelId === frozenInherited.modelId)
+        ) {
+          authoredDispatchOverrides.modelId = authored?.modelId;
+        }
+        const inheritedOptions = frozenInherited?.configOptionValues;
+        if (
+          inheritedOptions !== undefined &&
+          Object.entries(authored?.configOptionValues ?? {}).every(
+            ([id, value]) => Object.hasOwn(inheritedOptions, id) && inheritedOptions[id] === value
+          )
+        ) {
+          authoredDispatchOverrides.configOptionValues = authored?.configOptionValues;
+        }
+      }
+    }
+  }
+
   const effectiveDispatchConfig = await resolveEffectiveSessionCreateDispatchConfig({
     manager,
     workspaceId: workspace.id as WorkspaceId,
@@ -3197,7 +3685,11 @@ export async function prepareSessionInput(
     ...(openedBySessionId ? { openedBySessionId } : {}),
     dispatchConfig,
     localOnly: ownerTarget !== undefined,
+    ...(Object.hasOwn(authoredDispatchOverrides, 'modelId')
+      ? { authoredInheritedModel: { modelId: authoredDispatchOverrides.modelId } }
+      : {}),
   });
+  Object.assign(effectiveDispatchConfig, authoredDispatchOverrides);
 
   const sessionId = options.sessionId ?? (uuidV4() as SessionId);
   const attachments =
@@ -3268,7 +3760,7 @@ export async function prepareSessionInput(
         : 'pending',
     read: !!ownerTarget || machineSupportsPreparedSessionInputProtocol(targetMachine),
     userId: requesterUserId,
-    author: options.delegatedRequester?.author ?? { v: 1, kind: 'human', userId: requesterUserId },
+    author,
     items: inputBlocksToHistoryItems(inputBlocks),
     inputConfig: {
       ...(options.agentRoleId
@@ -3365,6 +3857,8 @@ export async function createSessionResult(
         status: SessionStatusFactory.idle(),
       } satisfies Partial<SessionMeta>);
     }
+    if (!options.delegatedRequester)
+      sessionDoc.recordHumanInputReceipt(userTurnId, requesterUserId);
     await commitPreparedSessionDispatch(manager, prepared);
     dispatched = true;
     await confirmDispatchSyncedBestEffort({
@@ -3380,6 +3874,7 @@ export async function createSessionResult(
       userTurnId,
       userId: requesterUserId,
       timestamp: userTurn.timestamp,
+      inputOrigin: options.delegatedRequester ? 'agent' : 'human',
       inputConfig: userTurn.inputConfig,
     });
     return {
@@ -3487,6 +3982,7 @@ export async function sendSessionChatResult(
 }> {
   const requester = resolveSessionRequester(auth, requesterUserIdOverride, delegatedRequester);
   const requesterUserId = requester.userId;
+  const author = resolveSessionInputAuthor(requesterUserId, delegatedRequester);
   const session = await validateSessionChatTargetForRequester({
     auth,
     workspace,
@@ -3521,7 +4017,7 @@ export async function sendSessionChatResult(
     typeof dispatchConfig.configOptionValues?.mode !== 'string' &&
     inheritedDispatchConfig?.modeId === undefined &&
     typeof inheritedDispatchConfig?.configOptionValues?.mode !== 'string';
-  const capability =
+  const { capability, freshness } =
     dispatchConfig.modeId ||
     dispatchConfig.modelId ||
     dispatchConfig.configOptionValues ||
@@ -3529,18 +4025,19 @@ export async function sendSessionChatResult(
     inheritedDispatchConfig?.modelId !== undefined ||
     inheritedDispatchConfig?.configOptionValues !== undefined ||
     mayApplyBuiltinDefault
-      ? await readAgentAcpCapability({
+      ? await readAgentAcpCapabilitySnapshot({
           manager,
           workspaceId: workspace.id as WorkspaceId,
           machineId: session.machineId,
           agentConfigId: session.agentConfigId,
         })
-      : undefined;
+      : { capability: undefined, freshness: { confirmed: true as const } };
   const effectiveDispatchConfig = resolveEffectiveSessionChatDispatchConfig({
     dispatchConfig,
     inheritedDispatchConfig,
     target: session,
     capability,
+    freshness,
   });
   // An unconfigured follow-up retains the target's selected Role, never the sender's.
   // Explicit execution changes clear it rather than claiming an unchanged preset.
@@ -3575,7 +4072,7 @@ export async function sendSessionChatResult(
     sessionDoc,
     prompt,
     userId: requesterUserId,
-    author: delegatedRequester?.author,
+    author,
     inputConfig: {
       agentRoleId: roleSelection?.agentRoleId ?? null,
       agentRoleRevision: roleSelection?.agentRoleRevision,
@@ -3615,6 +4112,7 @@ export async function sendSessionChatResult(
   let dispatched = false;
   try {
     await updateSessionActivityTimestampsBestEffort(manager, sessionId);
+    if (!delegatedRequester) sessionDoc.recordHumanInputReceipt(userTurnId, requesterUserId);
     await writeDispatchPointer({ manager, sessionId, userTurnId });
     dispatched = true;
     await confirmDispatchSyncedBestEffort({
@@ -3630,6 +4128,7 @@ export async function sendSessionChatResult(
       userTurnId,
       userId: requesterUserId,
       timestamp: userTurn.timestamp,
+      inputOrigin: delegatedRequester ? 'agent' : 'human',
       inputConfig: userTurn.inputConfig,
     });
     return {
@@ -4046,6 +4545,10 @@ const sessionCreateCommand = new Command('create')
   .option('--machine <idOrName>', 'Target machine id or name')
   .option('--agent <idOrName>', 'Agent config id or name')
   .option('--agent-config <idOrName>', 'Agent config id or name')
+  .option(
+    '--agent-role <idOrName>',
+    'Agent Role id or name; the Role overrides --machine, --agent(-config), --mode, --model and --config-option'
+  )
   .option('--parent <sessionId>', 'Parent session whose work context should be reused')
   .option('--use-current-session-as-parent', 'Use LODY_SESSION_ID as the parent session')
   .option('--title <title>', 'Fixed session title (default: generated from the prompt)')
@@ -4091,17 +4594,40 @@ const sessionCreateCommand = new Command('create')
         const workspace = await resolveWorkspaceOrThrow(auth, options.workspace);
         const prompt = await readPromptText(options, promptArg);
         await withWorkspaceManager(auth, workspace, async (manager) => {
-          const dispatchConfig = resolveTurnDispatchConfig({
-            mode: options.mode,
-            model: options.model,
-            configOption: options.configOption,
-          });
+          const agentRoleSelector = normalizeCliValue(options.agentRole);
+          const resolvedAgentRole = agentRoleSelector
+            ? await resolveAgentRoleCreateFromCatalog({
+                manager,
+                workspaceId: workspace.id as WorkspaceId,
+                selector: agentRoleSelector,
+                prompt,
+                overrides: options,
+              })
+            : undefined;
+          let effectivePrompt = prompt;
+          let dispatchConfig: ResolvedTurnDispatchConfig;
+          if (resolvedAgentRole) {
+            if (resolvedAgentRole.ignoredOverrides.length > 0) {
+              console.error(
+                `Warning: --agent-role ${resolvedAgentRole.role.id} overrides ${resolvedAgentRole.ignoredOverrides.join(', ')}; the Role's machine, agent config, and run configuration take precedence.`
+              );
+            }
+            applyAgentRoleCreateTarget(options, resolvedAgentRole);
+            effectivePrompt = resolvedAgentRole.prompt;
+            dispatchConfig = resolvedAgentRole.dispatchConfig;
+          } else {
+            dispatchConfig = resolveTurnDispatchConfig({
+              mode: options.mode,
+              model: options.model,
+              configOption: options.configOption,
+            });
+          }
           const shouldWaitForCompletion = shouldWaitForSessionCompletion(options);
           const result = await createSessionResult(
             auth,
             workspace,
             manager,
-            prompt,
+            effectivePrompt,
             options,
             dispatchConfig,
             shouldWaitForCompletion
@@ -4387,11 +4913,15 @@ const sessionCancelCommand = new Command('cancel')
   .description('Cancel the current running turn for a session')
   .option('--workspace <selector>', 'Target workspace id, slug, or name')
   .option('--turn-id <turnId>', 'Cancel only when this exact assistant turn is active')
+  .addOption(new Option('--operation-cancel', 'Internal accepted-task cancellation').hideHelp())
   .option('--json', 'Print JSON output')
   .option('--debug', 'Enable debug output')
   .argument('[sessionId]', 'Session ID; falls back to LODY_SESSION_ID')
   .action(
-    async (sessionIdArg: string | undefined, options: CommonOptions & { turnId?: string }) => {
+    async (
+      sessionIdArg: string | undefined,
+      options: CommonOptions & { turnId?: string; operationCancel?: boolean }
+    ) => {
       await runSessionCommand(options, async () => {
         const auth = getAuthContextOrThrow();
         const sessionId = (normalizeCliValue(sessionIdArg) ??
@@ -4445,6 +4975,12 @@ const sessionCancelCommand = new Command('cancel')
 
           await ensureTargetMachineOnline({ auth, workspaceId, machineId: session.machineId });
 
+          const machine = await manager.repo.getDocMeta(getMachineRoomId(session.machineId));
+          const inboxCancel = getSessionCancelProtocolFields(
+            machine?.meta,
+            uuidV4(),
+            !options.operationCancel
+          );
           const response =
             session.machineId === auth.machineId
               ? extractCancelResponse(
@@ -4454,12 +4990,18 @@ const sessionCancelCommand = new Command('cancel')
                     machineId: auth.machineId,
                     workspaceId,
                     turnId,
+                    ...inboxCancel,
                   })
                 )
               : await withMachineRpcClient(
                   { auth, workspaceId, machineId: session.machineId },
                   async (client) =>
-                    await client.requestSessionCancel({ sessionId, turnId, timeoutMs: 10_000 })
+                    await client.requestSessionCancel({
+                      sessionId,
+                      turnId,
+                      timeoutMs: 10_000,
+                      ...inboxCancel,
+                    })
                 );
 
           if (!response) {
@@ -5065,4 +5607,5 @@ export const sessionCommand = new Command('session')
   .addCommand(sessionRenameCommand)
   .addCommand(sessionArchiveCommand)
   .addCommand(sessionRestoreCommand)
+  .addCommand(sessionInboxRecoveryCommand)
   .addCommand(sessionDeleteCommand);
