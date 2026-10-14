@@ -1201,29 +1201,31 @@ export function ChatComposer({
                     <div className="flex shrink-0 justify-center pt-2 pb-1">
                       <div className="h-1 w-9 rounded-full bg-muted-foreground/30" />
                     </div>
-                    <div className="flex shrink-0 items-center gap-3 border-b border-border/60 py-2 pr-2 pl-4">
-                      <div className="flex min-w-0 flex-1 flex-col">
-                        <Drawer.Title className="flex items-center gap-2 font-medium">
+                    {/* The close shares the title's row so it centres on that
+                        first line; the summary sits on its own line beneath. */}
+                    <div className="flex shrink-0 flex-col border-b border-border/60 py-2 pr-2 pl-4">
+                      <div className="flex items-center gap-3">
+                        <Drawer.Title className="flex min-w-0 flex-1 items-center gap-2 font-medium">
                           <ClipboardPaste className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           {pastedTextDialogTitle}
                         </Drawer.Title>
-                        <Drawer.Description className="truncate text-muted-foreground tabular-nums">
-                          {summaryText}
-                        </Drawer.Description>
+                        <Drawer.Close
+                          render={
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="small"
+                              icon
+                              aria-label={t('common.close', 'Close')}
+                            />
+                          }
+                        >
+                          <X className="size-4" />
+                        </Drawer.Close>
                       </div>
-                      <Drawer.Close
-                        render={
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="small"
-                            icon
-                            aria-label={t('common.close', 'Close')}
-                          />
-                        }
-                      >
-                        <X className="size-4" />
-                      </Drawer.Close>
+                      <Drawer.Description className="truncate pr-2 text-muted-foreground tabular-nums">
+                        {summaryText}
+                      </Drawer.Description>
                     </div>
                     {pastedTextEditor('px-4 py-3')}
                   </div>
