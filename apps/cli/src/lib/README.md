@@ -16,7 +16,8 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
 
 - `workspace-command-manager.ts` — overlapping cloud commands borrow one document
   manager through `command-runtime.ts`; the last callback awaits its cleanup.
-  Authorization scopes stay separate, and failed cleanup blocks replacement.
+  Authorization scopes stay separate; failed cleanup blocks replacement only
+  while presence remains unreleased.
 - `discovery-query.ts` — strict query schemas, scope-bound keyset pagination and
   shared Session title/Machine/Agent/Role filters.
 - `resource-discovery.ts` — readable directory projections, Role availability,

@@ -143,7 +143,10 @@ cache. `doc.ts` acquires a child workspace through the deprecated
 `presence-legacy.ts` execution facade. Overlapping cloud commands share their
 document manager through `command-runtime.ts`, so they also share that manager's
 existing presence and credential owner. Last command release awaits manager cleanup;
-failed cleanup blocks replacement. Direct duplicate workspace owners remain forbidden.
+failed cleanup blocks replacement only while presence remains unreleased. The
+manager exposes the native owner's release state through its Legacy facade, so
+transport, session or repo cleanup errors after release permit a fresh command.
+Direct duplicate workspace owners remain forbidden.
 The native owner uses child Scopes for
 heartbeat, shared bootstrap, probes and remote generations; `platform/presence.ts`
 composes the published SDK's native API. It adds no POST/SSE queue or token cache.

@@ -9,6 +9,7 @@ export interface WorkspaceCommandScope {
 
 interface CommandManager {
   cleanUp(options: { fast: boolean; preserveSessionStatus: boolean }): Promise<void>;
+  isPresenceReleased(): boolean;
 }
 
 /** Overlapping commands borrow one manager; completed cleanup removes the entry. */
@@ -31,7 +32,7 @@ export function makeWorkspaceCommandManagers<Manager extends CommandManager>() {
   ): Promise<Result> {
     let entry = entries.get(workspaceId);
     // Never admit a new owner while the previous manager is still closing.
-    // Failed cleanup keeps its rejected receipt and original manager reachable.
+    // Only unreleased presence keeps a failed receipt and its original owner.
     while (entry?.closing) {
       await entry.closing;
       entry = entries.get(workspaceId);
@@ -66,6 +67,13 @@ export function makeWorkspaceCommandManagers<Manager extends CommandManager>() {
           .then(() => manager.cleanUp({ fast: true, preserveSessionStatus: true }))
           .then(() => {
             entries.delete(workspaceId);
+          })
+          .catch((error: unknown) => {
+            if (!manager.isPresenceReleased()) throw error;
+            // Cleanup settled and presence is released: a transport/repo error
+            // must not poison later callers, including those already waiting.
+            entries.delete(workspaceId);
+            onCleanupFailure(error);
           });
         try {
           await borrowed.closing;

@@ -413,6 +413,84 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
     }
   });
 
+  it.each(['transport', 'repo'] as const)(
+    'allows the next command after %s cleanup fails but presence releases',
+    async (failedPhase) => {
+      const failure = new Error(`Synthetic ${failedPhase} cleanup failure`);
+      const managers: LoroDocumentManager[] = [];
+      const repos: { destroyed: boolean }[] = [];
+      mocks.repoCreate.mockImplementation(async () => {
+        const state = { destroyed: false };
+        const first = repos.length === 0;
+        repos.push(state);
+        return {
+          joinMetaRoom: async () => createMetaSubscription(),
+          addTransport: mocks.repoAddTransport,
+          removeTransport: async () => {
+            if (first && failedPhase === 'transport') throw failure;
+          },
+          transportRooms: mocks.repoTransportRooms,
+          destroy: async () => {
+            if (first && failedPhase === 'repo') throw failure;
+            state.destroyed = true;
+          },
+        };
+      });
+      mocks.cliHttpFetch.mockImplementation(async () =>
+        Response.json({
+          token: 'synthetic-streams-token',
+          expiresIn: 900,
+          gatewayBaseUrl: mocks.streamsGatewayBaseUrl,
+        })
+      );
+      const monitorAttach = vi
+        .spyOn(CliMachineMonitorRuntime.prototype, 'attachStreams')
+        .mockResolvedValue(undefined);
+      const auth = {
+        token: 'synthetic-cleanup-token',
+        userId: 'user-1',
+        userName: 'Synthetic User',
+        userEmail: 'synthetic@example.test',
+        machineId: 'synthetic-machine' as MachineId,
+        machineName: 'Synthetic Machine',
+      };
+      const workspace = {
+        id: `workspace-cleanup-${failedPhase}`,
+        slug: 'synthetic',
+        name: 'Synthetic',
+        role: 'owner',
+      };
+      const run = () =>
+        withWorkspaceManager(auth, workspace, 'synthetic-cleanup', async (manager) => {
+          expect(manager.isPresenceReleased()).toBe(false);
+          managers.push(manager);
+          manager.publishSessionPresence(
+            'synthetic-next-session' as SessionId,
+            auth.machineId,
+            SessionStatusFactory.running()
+          );
+          expect(
+            Object.values(manager.getPresenceStates() ?? {}).some(
+              (state) => state.kind === 'session' && state.sessionId === 'synthetic-next-session'
+            )
+          ).toBe(true);
+          return 'accepted';
+        });
+      try {
+        expect(await run()).toBe('accepted');
+        expect(managers[0]?.isPresenceReleased()).toBe(true);
+        expect(await run()).toBe('accepted');
+        expect(managers[1]).not.toBe(managers[0]);
+        expect(managers[1]?.isPresenceReleased()).toBe(true);
+        expect(repos[1]?.destroyed).toBe(true);
+      } finally {
+        monitorAttach.mockRestore();
+        mocks.repoCreate.mockReset();
+        mocks.cliHttpFetch.mockReset();
+      }
+    }
+  );
+
   it('does not build a remote transport when repo creation fails', async () => {
     mocks.repoCreate.mockRejectedValueOnce(new Error('repo create failed'));
 

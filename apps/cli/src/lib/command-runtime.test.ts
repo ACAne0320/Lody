@@ -53,9 +53,14 @@ const commandScope = {
 };
 const makeCommandManager = () => ({
   live: true,
+  presenceReleased: false,
   writes: [] as string[],
   async cleanUp() {
     this.live = false;
+    this.presenceReleased = true;
+  },
+  isPresenceReleased() {
+    return this.presenceReleased;
   },
   write(value: string) {
     if (!this.live) throw new Error('Manager closed');
@@ -246,7 +251,51 @@ describe('workspace command manager sharing', () => {
     expect(manager.live).toBe(false);
   });
 
-  it('preserves an accepted result and retains failed cleanup rather than admitting replacement', async () => {
+  it('admits a waiting command after failed cleanup has released presence', async () => {
+    const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
+    const closing = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    const failure = new Error('Synthetic transport cleanup failure');
+    const old = makeCommandManager();
+    old.cleanUp = async () => {
+      closing.resolve();
+      await finish.promise;
+      old.presenceReleased = true;
+      throw failure;
+    };
+    const errors: unknown[] = [];
+    const first = withManager(
+      'workspace',
+      commandScope,
+      async () => old,
+      async () => 'accepted',
+      (error) => errors.push(error)
+    );
+    await closing.promise;
+    const next = makeCommandManager();
+    const incoming = withManager(
+      'workspace',
+      commandScope,
+      async () => {
+        expect(old.isPresenceReleased()).toBe(true);
+        return next;
+      },
+      async (owner) => owner.write('next command'),
+      (error) => errors.push(error)
+    );
+    try {
+      finish.resolve();
+      expect(await first).toBe('accepted');
+      await incoming;
+      expect(next.writes).toEqual(['next command']);
+      expect(errors).toEqual([failure]);
+    } finally {
+      finish.resolve();
+      await Promise.allSettled([first, incoming]);
+    }
+  });
+
+  it('preserves an accepted result and fences cleanup with unreleased presence', async () => {
     const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
     const failure = new Error('Synthetic cleanup failure');
     const manager = makeCommandManager();
