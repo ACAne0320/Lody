@@ -118,7 +118,9 @@ export function makeSqliteLedgerFeed(input: {
       return db
         .transaction(() => {
           const meta = db
-            .prepare('SELECT head,count,offset,bootstrap,bytes FROM ledger_feed_meta WHERE id=1')
+            .prepare(
+              'SELECT genesis,head,count,offset,bootstrap,bytes FROM ledger_feed_meta WHERE id=1'
+            )
             .get() as
             | { head: unknown; count: unknown; offset: unknown; bootstrap: unknown; bytes: unknown }
             | undefined;
@@ -196,7 +198,9 @@ export function makeSqliteLedgerFeed(input: {
     const matches = () => {
       guard();
       const row = db
-        .prepare('SELECT head,count,offset,bootstrap,bytes FROM ledger_feed_meta WHERE id=1')
+        .prepare(
+          'SELECT genesis,head,count,offset,bootstrap,bytes FROM ledger_feed_meta WHERE id=1'
+        )
         .get() as
         | { head: Uint8Array; count: number; offset: string; bootstrap: number; bytes: number }
         | undefined;
@@ -280,10 +284,11 @@ export function makeSqliteLedgerFeed(input: {
                 );
               const stored = db
                 .prepare(
-                  'SELECT head,count,offset,bootstrap,bytes FROM ledger_feed_meta WHERE id=1'
+                  'SELECT genesis,head,count,offset,bootstrap,bytes FROM ledger_feed_meta WHERE id=1'
                 )
                 .get() as
                 | {
+                    genesis: Uint8Array;
                     head: Uint8Array;
                     count: number;
                     offset: string;
@@ -293,6 +298,8 @@ export function makeSqliteLedgerFeed(input: {
                 | undefined;
               if (
                 !stored ||
+                !(stored.genesis instanceof Uint8Array) ||
+                !bytesEqual(stored.genesis, anchor.toBytes()) ||
                 !(stored.head instanceof Uint8Array) ||
                 !next.view.head.equals(Result.getOrThrow(Bytes.recordHash(stored.head))) ||
                 stored.count !== next.view.length ||

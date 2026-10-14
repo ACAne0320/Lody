@@ -38,3 +38,7 @@ Owning12 覆盖原帧、真实签名、初始绑定、重复／回退、独立�
 输入原件归属修复：5b 调用输入数组的 `.map`，自定义方法可返回借用字节，accept 后外部修改仍污染私有 expected originals。改为读取有界数字索引并构造全新 typed array，复制不调用输入数组方法／iterator；验证、写入、最终历史比较使用同一组自有原件。两条实际回归准确5b均失败：外部改写会拒绝合法续页；metadata trigger 同长破坏旧历史却假成功推进。修复 owning19／typecheck 通过；复制的独立 trigger 反例现返回 corrupt，保持 count2／cursor2，真实子进程重开成功。旧证据不改写，新独立复验／CI 分列。
 
 输入原件修复最终作者检查：feed19/core253、package typecheck、完整 root `pnpm check`、format/docs 检查通过。复制的独立反例还验证失败后真实子进程重开原历史；删除 trigger 后同 handle 重试并再次子进程重开通过。这不提前升级独立审查／CI，也不关闭源 Lab2。
+
+## 外部审查修复
+
+写入后的最终元数据检查包含固定 genesis 原字节。AFTER UPDATE 改写 genesis 会在提交前回滚记录、元数据及内存推进。reader transport 错误保留 SDK 原始 cause 供本地诊断；消费者须投影安全字段，不应记录任意原生 cause。未改变权限或 wire。
