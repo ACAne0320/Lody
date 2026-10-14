@@ -1,14 +1,15 @@
-# apps/cli/src/lib — Index
+# CLI library
 
 `CLAUDE.md` is a symlink to this file. Edit `AGENTS.md` only. File index:
 [README.md](README.md). Scoped rules: [acp](acp/AGENTS.md),
 [code-collab](code-collab/AGENTS.md), [file-preview](file-preview/AGENTS.md),
 [loro](loro/AGENTS.md), [pr-poller](pr-poller/AGENTS.md).
 
-**Before touching message dispatch/sync here, read context/message-flow.md**, the
-end-to-end map. The WS/DO control-plane path is DEPRECATED; do not add to it.
+**Before dispatch/sync changes, read context/message-flow.md.** The WS/DO control-plane path is DEPRECATED; do not add to it.
 
 ## Composition and transports
+
+- Cloud commands share workspace managers.
 
 - GitHub auth: conversation-owner personal → matching-owner machine → repo App,
   once per source. Failures advance without a policy RPC; local context grants
