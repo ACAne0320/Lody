@@ -1,12 +1,15 @@
 # WorkspaceData Effect Service 设计
 
 Status: proposed
+Type: architecture
 PR: [#1572](https://github.com/LodyAI/Lody/pull/1572)
 Translation: current
 
-[English](workspace-data-service.md)
+[English](2026-10-14-workspace-data-services.md)
 
-本文集中说明 daemon、renderer 与 main 共用的数据业务接口、owner 拓扑、取舍及迁移验收。一期按领域迁移进程内实现，可独立发布；二期桌面共享独立 Node host，无头 daemon 长期支持内嵌同一 owner Layer。方案保持 proposed，生产 Services 和 host 尚未实现。
+## 摘要
+
+renderer 与 daemon 当前各自持有 Loro 副本、持久化和网络订阅，多窗口会增加重复同步与内存成本。提议先用按领域拆分的 Effect Services 统一两端查询、命令与观察，保留现有行为，再将桌面存储、Streams 授权和共享连接迁入独立 Node 数据进程；无头 daemon 长期支持内嵌同一 owner Layer。daemon 保留实际执行资源，host 在 daemon lease 存续时跨桌面退出继续运行；集中 RPC 网络入口增加一次 IPC，并让远端控制依赖 host。方案仍为 proposed，真实存储迁移、跨进程恢复、prepared handoff 和性能收益尚未验证。
 
 ## 背景、核心需求与长期目标
 
@@ -16,47 +19,52 @@ renderer 与 daemon 当前分别持有 Loro 副本、持久化和同步生命周
 
 目的在于提高应用速度、减少重复副本和下行，以及重复 bootstrap、订阅、授权和重连请求。性能比较保留原有作者、权限、持久化和恢复保证，同时测量所有进程总内存、流式延迟和 IPC 成本。实际 payload 与请求量是收益证据，连接数只是其中一个观察值。
 
-| 阶段 | 交付内容 |
-| --- | --- |
-| 基线与切片选择 | 在第一个领域实现前测量现状，选择能独立验证的真实场景；指标见 §9.4。 |
-| 一期：共同业务边界 | 两端按领域接入相同业务契约，保持原读写、同步与错误行为；每个已闭合切片可独立发布。这是重构，主要性能收益在二期。 |
-| 二期：统一数据 owner | 桌面使用独立 Node host，无头默认内嵌同一 Layer；完成各自恢复与存储迁移后，再退出重复持久化/连接。 |
-| 独立管理产品单元 | write-only 凭据、编辑上下文与冲突 UX 单独交付；它是二期 catalog 接入 host 的前置条件，不计入一期主线。 |
+| 阶段                 | 交付内容                                                                                                         |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 基线与切片选择       | 在第一个领域实现前测量现状，选择能独立验证的真实场景；指标见 §9.4。                                              |
+| 一期：共同业务边界   | 两端按领域接入相同业务契约，保持原读写、同步与错误行为；每个已闭合切片可独立发布。这是重构，主要性能收益在二期。 |
+| 二期：统一数据 owner | 桌面使用独立 Node host，无头默认内嵌同一 Layer；完成各自恢复与存储迁移后，再退出重复持久化/连接。                |
+| 独立管理产品单元     | write-only 凭据、编辑上下文与冲突 UX 单独交付；它是二期 catalog 接入 host 的前置条件，不计入一期主线。           |
 
 完整 I/O 目标包括登录、原生凭据、媒体、附件与文件能力。Git、终端、Agent/ACP 子进程及嵌入网页自身 I/O 属于执行环境边界，进一步集中需要执行能力与网络隔离设计。原生登录/代理/证书/cookie/安全存储仍需宿主 port；只有 Node 委托 main 执行时，物理 I/O 尚未全部迁入 Node。公共 OSS 保持 local-only，官方 cloud composition 注入可选云 ports。
+
+本提案保留[通讯架构草稿](../../../../specs/communication-architecture.zh.md)的本地/可选云边界，以及命令、本地持久化、远端同步的独立完成语义。独立 host 是待实施的模块归属调整；切换时须同步更新 Spec 中的模块/路径与对应实现约束，本 Note 不把目标拓扑写成现状。
 
 ## 1. 核心决定
 
 采用锁定 Effect `4.0.2` 的 `Context.Service`，按内聚领域拆分；Layer 注入进程内或 client 实现。业务依赖它实际使用的 Service，测试只提供所需领域。绑定可信 workspace、身份与账号生命周期；方法执行仍检查权限与业务条件。
 
-| Service（建议名称） | 公共能力 |
-| --- | --- |
-| `SessionDirectory` | summary、分页、观察、创建、改名、归档/恢复/删除 |
-| `SessionAccess` | scoped 会话 history、control、queue 与用户命令 |
-| `WorkspaceCatalog` / `CatalogManagement` | 普通 summary/观察；授权管理读取与明确字段修改，family 范围见 §2.3 |
-| `SessionSubmissions` | workspace 范围 admission、pending、retry/cancel |
-| `WorkspaceSchedules` / `PreviewComments` | 既有定义/观察与领域操作 |
-| `SyncAuthority` | 业务目标的历史/当前权威、权威重同步与显式上传等待，见 §2.4 |
-| `MachineCommands` | 提交、取消和观察机器持久命令；可信消费使用独立 MachineCommandConsumer，见 §2.5 |
-| `MachineRpc` | 分组的 typed request/进度；内部选路、协商与鉴权，见 §8.1 |
-| `Presence` | scoped viewing lease、临时会话/机器状态和 monitor；执行发布使用独立可信能力，见 §3.3 |
-| `PromptShortcuts` / `FileCollaboration` | 独立授权的快捷指令；按 owner session 借用文件索引与文件业务接口，见 §3.4、§8.5 |
-| `SessionAgentWriter`（可信执行） | Agent 输出、promotion/recovery、终态等执行写入 |
-| `MachineLaunchData`（可信执行） | 同步 prepared guard 所需的 scoped 当前启动视图 |
-| `MachineCommandConsumer` / `SessionExecutionPresence`（可信执行） | 持久命令的 scoped 消费；machine/active-turn 临时 lease；普通 renderer Layer 不提供 |
+| Service（建议名称）                                               | 公共能力                                                                             |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `SessionDirectory`                                                | summary、分页、观察、创建、改名、归档/恢复/删除                                      |
+| `SessionAccess`                                                   | scoped 会话 history、control、queue 与用户命令                                       |
+| `WorkspaceCatalog` / `CatalogManagement`                          | 普通 summary/观察；授权管理读取与明确字段修改，family 范围见 §2.3                    |
+| `SessionSubmissions`                                              | workspace 范围 admission、pending、retry/cancel                                      |
+| `WorkspaceSchedules` / `PreviewComments`                          | 既有定义/观察与领域操作                                                              |
+| `SyncAuthority`                                                   | 业务目标的历史/当前权威、权威重同步与显式上传等待，见 §2.4                           |
+| `MachineCommands`                                                 | 提交、取消和观察机器持久命令；可信消费使用独立 MachineCommandConsumer，见 §2.5       |
+| `MachineRpc`                                                      | 分组的 typed request/进度；内部选路、协商与鉴权，见 §8.1                             |
+| `Presence`                                                        | scoped viewing lease、临时会话/机器状态和 monitor；执行发布使用独立可信能力，见 §3.3 |
+| `PromptShortcuts` / `FileCollaboration`                           | 独立授权的快捷指令；按 owner session 借用文件索引与文件业务接口，见 §3.4、§8.5       |
+| `SessionAgentWriter`（可信执行）                                  | Agent 输出、promotion/recovery、终态等执行写入                                       |
+| `MachineLaunchData`（可信执行）                                   | 同步 prepared guard 所需的 scoped 当前启动视图                                       |
+| `MachineCommandConsumer` / `SessionExecutionPresence`（可信执行） | 持久命令的 scoped 消费；machine/active-turn 临时 lease；普通 renderer Layer 不提供   |
 
 operations 继续复用 `OperationRepository`。可在组合入口保留名为 `WorkspaceData` 的便利 facade；它聚合这些 Services，不另建要求所有消费者依赖的巨大 Service。
 
 代表性类型如下；生产模块尚未创建：
 
 ```ts
-import { Context, Effect, Option, Scope, Stream } from "effect";
+import { Context, Effect, Option, Scope, Stream } from 'effect';
 
-class SessionAccess extends Context.Service<SessionAccess, {
-  openSession(id: SessionId): Effect.Effect<
-    Option.Option<SessionHandle>, DataReadError, Scope.Scope
-  >;
-}>()("@lody/shared/workspace-data/SessionAccess") {}
+class SessionAccess extends Context.Service<
+  SessionAccess,
+  {
+    openSession(
+      id: SessionId
+    ): Effect.Effect<Option.Option<SessionHandle>, DataReadError, Scope.Scope>;
+  }
+>()('@lody/shared/workspace-data/SessionAccess') {}
 
 interface SessionHandle {
   readonly capabilities: SessionDataCapabilities;
@@ -67,11 +75,14 @@ interface SessionHandle {
   readonly commands: SessionUserCommands;
 }
 
-class SessionAgentWriter extends Context.Service<SessionAgentWriter, {
-  openSession(id: SessionId): Effect.Effect<
-    Option.Option<SessionAgentOperations>, DataReadError, Scope.Scope
-  >;
-}>()("@lody/shared/workspace-data/SessionAgentWriter") {}
+class SessionAgentWriter extends Context.Service<
+  SessionAgentWriter,
+  {
+    openSession(
+      id: SessionId
+    ): Effect.Effect<Option.Option<SessionAgentOperations>, DataReadError, Scope.Scope>;
+  }
+>()('@lody/shared/workspace-data/SessionAgentWriter') {}
 ```
 
 普通流程使用 `yield* SessionDirectory` 或 `yield* SessionAccess`。renderer 的公共会话句柄没有 `agent`，其 Layer 与公开入口不提供可信执行 Services。daemon 执行 composition 才提供 `SessionAgentWriter/MachineLaunchData`。编译检查发生在程序提交到应用 runtime、环境依赖必须被满足的边界；声明一个尚需 AgentWriter 的 Effect 本身仍可通过类型检查。节点端继续验证调用身份，类型能力防止误用，运行时授权守住实际边界。
@@ -88,13 +99,13 @@ class SessionAgentWriter extends Context.Service<SessionAgentWriter, {
 
 当前持久化历史后端为 `loro | roost`。按完成 hydration 的 metadata 绑定；旧 discriminator 缺失按既有 Loro 规则，新会话保留默认与 Roost opt-in。Roost physical segments 按 businessId 投影为逻辑 turn。普通 HistoryView 使用同一 reader，backend 只用于创建策略、诊断和能力说明。读取保留 legacy JSON/LoroMap 与未知字段表示。
 
-| 领域 | 实现来源与责任 |
-| --- | --- |
-| directory / catalog | Meta Flock 索引、key-family helpers 与既有字段/权限规则 |
-| history / 用户命令 | 选定 backend 的 reader、真实写者和共享 planners |
-| control / queue / Agent 写入 | SessionBackend、SessionDocument 与执行协调；promotion ledger 保留 |
-| submissions | send-resource、held pending、durable ready-input 和 session-input-storage 中可能是唯一副本的待发输入；SessionSubmissions 是唯一业务 owner |
-| schedule / preview | ScheduleRepository、PreviewVisualCommentMutation 的既有顺序与验证 |
+| 领域                         | 实现来源与责任                                                                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| directory / catalog          | Meta Flock 索引、key-family helpers 与既有字段/权限规则                                                                                   |
+| history / 用户命令           | 选定 backend 的 reader、真实写者和共享 planners                                                                                           |
+| control / queue / Agent 写入 | SessionBackend、SessionDocument 与执行协调；promotion ledger 保留                                                                         |
+| submissions                  | send-resource、held pending、durable ready-input 和 session-input-storage 中可能是唯一副本的待发输入；SessionSubmissions 是唯一业务 owner |
+| schedule / preview           | ScheduleRepository、PreviewVisualCommentMutation 的既有顺序与验证                                                                         |
 
 ### 2.2 Catalog 管理编辑
 
@@ -118,35 +129,47 @@ SyncAuthority 按业务目标表达同步，不公开 room id/transport。下列
 
 ```ts
 type SyncTarget =
-  | { kind: "workspace-meta" } | { kind: "workspace-catalog" }
-  | { kind: "machine-data"; machineId: MachineId }
-  | { kind: "session-control"; sessionId: SessionId }
-  | { kind: "schedule-definition"; scheduleId: ScheduleId }
-  | { kind: "schedule-registry" }
-  | { kind: "preview-comments"; sessionId: SessionId };
+  | { kind: 'workspace-meta' }
+  | { kind: 'workspace-catalog' }
+  | { kind: 'machine-data'; machineId: MachineId }
+  | { kind: 'session-control'; sessionId: SessionId }
+  | { kind: 'schedule-definition'; scheduleId: ScheduleId }
+  | { kind: 'schedule-registry' }
+  | { kind: 'preview-comments'; sessionId: SessionId };
 
 type AuthorityState =
-  | { kind: "unknown"; epoch: AuthorityEpoch }
-  | { kind: "local-authoritative"; epoch: AuthorityEpoch }
-  | { kind: "remote"; epoch: AuthorityEpoch;
-      baseline: "missing" | "complete";
-      readiness: "catching-up" | "current" | "unavailable" };
-type AuthorityRequirement = "baseline" | "current";
-type UploadWaitPolicy = "require-route" | "wait-for-route"
-  | "bounded-confirmation" | "retain-until-ack";
+  | { kind: 'unknown'; epoch: AuthorityEpoch }
+  | { kind: 'local-authoritative'; epoch: AuthorityEpoch }
+  | {
+      kind: 'remote';
+      epoch: AuthorityEpoch;
+      baseline: 'missing' | 'complete';
+      readiness: 'catching-up' | 'current' | 'unavailable';
+    };
+type AuthorityRequirement = 'baseline' | 'current';
+type UploadWaitPolicy =
+  'require-route' | 'wait-for-route' | 'bounded-confirmation' | 'retain-until-ack';
 
-class SyncAuthority extends Context.Service<SyncAuthority, {
-  authority(target: SyncTarget): Effect.Effect<AuthorityState, DataReadError>;
-  observeAuthority(target: SyncTarget): Stream.Stream<AuthorityState, DataObservationError>;
-  refresh(target: SyncTarget, policy: ReadSyncPolicy):
-    Effect.Effect<AuthorityState, DataReadSyncError, Scope.Scope>;
-  awaitAuthority(target: SyncTarget, requirement: AuthorityRequirement):
-    Effect.Effect<AuthorityState, DataAuthorityUnavailable, Scope.Scope>;
-  authoritativeResyncs(target: SyncTarget):
-    Stream.Stream<AuthorityResync, DataObservationError>;
-  awaitUpload(target: SyncTarget, policy: UploadWaitPolicy):
-    Effect.Effect<UploadReceipt, DataUploadError>;
-}>()("@lody/shared/workspace-data/SyncAuthority") {}
+class SyncAuthority extends Context.Service<
+  SyncAuthority,
+  {
+    authority(target: SyncTarget): Effect.Effect<AuthorityState, DataReadError>;
+    observeAuthority(target: SyncTarget): Stream.Stream<AuthorityState, DataObservationError>;
+    refresh(
+      target: SyncTarget,
+      policy: ReadSyncPolicy
+    ): Effect.Effect<AuthorityState, DataReadSyncError, Scope.Scope>;
+    awaitAuthority(
+      target: SyncTarget,
+      requirement: AuthorityRequirement
+    ): Effect.Effect<AuthorityState, DataAuthorityUnavailable, Scope.Scope>;
+    authoritativeResyncs(target: SyncTarget): Stream.Stream<AuthorityResync, DataObservationError>;
+    awaitUpload(
+      target: SyncTarget,
+      policy: UploadWaitPolicy
+    ): Effect.Effect<UploadReceipt, DataUploadError>;
+  }
+>()('@lody/shared/workspace-data/SyncAuthority') {}
 ```
 
 local-only 在本地存储/index 就绪后成为权威。远端 baseline 是本 binding 已完成初始权威同步的证据，current 是当前连接门槛；GC、可信空 catalog、provider 消费和 schedule 各自登记所需门槛。领域命令在 owner 再检查条件；同步 callback 由私有 AuthorityView.current() 保留时机。
@@ -167,12 +190,12 @@ MachineCommands 的 submit/cancel/observe 处理归属 §2.3 的命令 family。
 
 ### 2.6 存储分类与 submissions owner
 
-| 类别 | owner 与迁移规则 |
-| --- | --- |
-| 持久 CRDT | Repo 的 IDB/SQLite；二期按每来源、每文档的持久版本覆盖与上传 custody 验收，见 §8 |
-| 唯一副本用户数据 | session-input-storage、ready-input、待发内容/附件引用；SessionSubmissions 负责持久化、恢复、排序、取消与清理 |
-| 可重建缓存 | Roost 已保存页面、eager snapshots、高水位、文件路径/GitHub/skills 缓存；各领域 owner 管理，不能顺带删尚未完成迁移的原始副本 |
-| UI 偏好与草稿 | renderer 的偏好、未提交 composer 草稿、选区/viewport；与已登记的待发输入分开 |
+| 类别             | owner 与迁移规则                                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 持久 CRDT        | Repo 的 IDB/SQLite；二期按每来源、每文档的持久版本覆盖与上传 custody 验收，见 §8                                            |
+| 唯一副本用户数据 | session-input-storage、ready-input、待发内容/附件引用；SessionSubmissions 负责持久化、恢复、排序、取消与清理                |
+| 可重建缓存       | Roost 已保存页面、eager snapshots、高水位、文件路径/GitHub/skills 缓存；各领域 owner 管理，不能顺带删尚未完成迁移的原始副本 |
+| UI 偏好与草稿    | renderer 的偏好、未提交 composer 草稿、选区/viewport；与已登记的待发输入分开                                                |
 
 SessionSubmissions 一期使用现有 private storage adapter，保持 account/workspace/id/sequence、冻结输入、canceled/deliveryStarted/unknown 与 fail-closed 恢复。未准备的 Blob 保留 memory owner，ready 后才进入持久流程。二期专用迁移逐条核对输入和附件、receipt/顺序状态；它们没有 Loro 版本向量，不能当缓存或只靠正文 VV 删除。服务关闭先停止生产/交接、join 实际 I/O，再关闭存储。
 
@@ -210,7 +233,7 @@ Presence 的 publishSessionViewing(sessionId) 获取 scoped lease；身份与 or
 
 FileCollaboration 提供按 owner session 借用的索引投影/观察、文件读取与带 base digest 的保存命令、当前/turn diff 读取；LSP 复用 MachineRpc 的 typed 方法。子会话解析到原 owner，沿用目标端路径检查、外部文件只读、冲突返回、证据与内存/并发限制。已确定本机的请求失败不转云。
 
-一期薄适配既有目标 CLI 文件服务与索引 LRU；二期 host 接管索引/signal 授权、共享缓存和 RPC client，实际文件 I/O 的目标 owner 逐项迁移。文件内容不写 Meta，也不引入 synced text CRDT；沿用 [Code Collab 约束](../../apps/cli/src/lib/code-collab/AGENTS.md)。
+一期薄适配既有目标 CLI 文件服务与索引 LRU；二期 host 接管索引/signal 授权、共享缓存和 RPC client，实际文件 I/O 的目标 owner 逐项迁移。文件内容不写 Meta，也不引入 synced text CRDT；沿用 [Code Collab 约束](../../../../apps/cli/src/lib/code-collab/AGENTS.md)。
 
 ## 4. 渲染、编辑与 Message Queue 的完整调用边界
 
@@ -224,14 +247,14 @@ renderer 使用现有 `ConversationView` 及 control/queue/submission/status 的
 
 ### 4.2 领域操作
 
-| 场景 | 对应入口与保留规则 |
-| --- | --- |
-| 用户输入、权限回复 | SessionSubmissions admission、SessionHandle 用户命令；新/旧 session 共用协调者 |
-| 编辑重发 / resend / fork | 完整领域命令；既有 eligibility、tail/goal recheck、rewrite barrier、复制 provenance 与条件补偿 |
-| queue 显示与修改 | read/observe、begin/save/cancelEdit、move/remove；保留字段、opaque itemId、调度编辑标记和队头同步屏障 |
-| queue steer / head fallback | 完整接受、移除、执行交接；未知结果按原规则恢复 |
-| Agent 输出与 queue promotion | SessionAgentWriter；prepared → history_accepted → activation_published → queue_consumed |
-| schedule proposal / preview | 各领域命令，保留 proposal 身份、未知内容、definition → flush → registry → flush |
+| 场景                         | 对应入口与保留规则                                                                                    |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 用户输入、权限回复           | SessionSubmissions admission、SessionHandle 用户命令；新/旧 session 共用协调者                        |
+| 编辑重发 / resend / fork     | 完整领域命令；既有 eligibility、tail/goal recheck、rewrite barrier、复制 provenance 与条件补偿        |
+| queue 显示与修改             | read/observe、begin/save/cancelEdit、move/remove；保留字段、opaque itemId、调度编辑标记和队头同步屏障 |
+| queue steer / head fallback  | 完整接受、移除、执行交接；未知结果按原规则恢复                                                        |
+| Agent 输出与 queue promotion | SessionAgentWriter；prepared → history_accepted → activation_published → queue_consumed               |
+| schedule proposal / preview  | 各领域命令，保留 proposal 身份、未知内容、definition → flush → registry → flush                       |
 
 queue 行 ID 映射既有 $cid；草稿、选区和 edit operation identity 保留在 UI，旧 ACK 不覆盖新草稿。控制、队列和权限状态不随正文渲染节流。
 
@@ -241,15 +264,15 @@ submissions 区分 held memory input、durable ready input、owner receipt、del
 
 owner 在本地协调内重查权限、目标和业务条件，再由既有真实写者执行。条件采用 editable tail 的 expected turn、active goal、queue identity、schedule activity 等领域条件。订阅/投影序号只做读侧 fencing，Semaphore 只约束参与本地协调的工作。
 
-| 操作 | 一期成功边界 |
-| --- | --- |
-| 目录与 catalog | 既有本地持久化/flush；后续 upload 独立报告 |
-| 普通 history/control | 既有 commit 与 typed writer 错误 |
-| queue 队头编辑 | 保留当前 waitUntilSynced 屏障与 applied/no-op |
-| schedule | 保留 definition/registry flush 顺序 |
-| 显式上传等待 awaitUpload | §2.4 调用点登记的原屏障结果；此前本地写入不因未确认改成未发生 |
-| MachineCommands 提交 | 本地 Flock durable；消费由可信 daemon 门控，结果按 family 单独观察 |
-| submit / edit / fork / steer | 保留 source、owner、delivery、执行的各自结果与恢复流程 |
+| 操作                         | 一期成功边界                                                       |
+| ---------------------------- | ------------------------------------------------------------------ |
+| 目录与 catalog               | 既有本地持久化/flush；后续 upload 独立报告                         |
+| 普通 history/control         | 既有 commit 与 typed writer 错误                                   |
+| queue 队头编辑               | 保留当前 waitUntilSynced 屏障与 applied/no-op                      |
+| schedule                     | 保留 definition/registry flush 顺序                                |
+| 显式上传等待 awaitUpload     | §2.4 调用点登记的原屏障结果；此前本地写入不因未确认改成未发生      |
+| MachineCommands 提交         | 本地 Flock durable；消费由可信 daemon 门控，结果按 family 单独观察 |
+| submit / edit / fork / steer | 保留 source、owner、delivery、执行的各自结果与恢复流程             |
 
 产品 editAndResend 返回既有 success/error；内部 import/tail replacement 保留 accepted/rejected/indeterminate。只有 rejected 证明未写入，indeterminate 查询原结果并保留原 owner。一期沿用各方法已有去重与确认，二期再设计 durable request journal。
 
@@ -261,15 +284,15 @@ MachineLaunchData 仅由可信执行 Layer 提供；进程内 scoped current() �
 
 同步读按影响处理；内嵌形态保持原同步调用，独立形态不能逐次远程 read-await-write：
 
-| 同步依赖 | 独立 host 模式迁移 |
-| --- | --- |
-| auto-seen、模型摘要、backend/watch initial | 在 owner 建立无缺口观察并做窄读取/发布；auto-seen 只由明确执行兴趣启用，保留最后副本 guard |
-| permission 定位/终态、plan/runtime-config、用户 stored copies | 固定 request/turn/input 身份的完整条件命令；owner 重查当前状态，保留赢家、敏感字段过滤和原串行顺序 |
-| Agent 批次、import/tail/capture、queue/control | 固定 enqueue-time assistant/user/epoch 一次进入真实 writer，保留 cursor/promotion/queue 顺序和 indeterminate；按批次传输 |
-| fork/rollback/操作回执 | owner 条件预留/查询；daemon 持有 ACP/worktree saga，按同一 operation 身份补偿，不用旧快照决定删除 |
-| prepared/launch | 数据授权在 host，实际 claim/spawn 在 daemon；按上述 handoff 证明一致性 |
-| 只读 catalog、ordering/evidence/export | 可 awaited 有限 DTO，保留 binding/revision/取消与晚回复 fence；展示缓存不作写入许可 |
-| schedule/provider 读改 | 完整 conditional publish/setup 命令在 owner，保留取消优先、原事务与 flush/registry 顺序；执行资源/slots 归 daemon |
+| 同步依赖                                                      | 独立 host 模式迁移                                                                                                       |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| auto-seen、模型摘要、backend/watch initial                    | 在 owner 建立无缺口观察并做窄读取/发布；auto-seen 只由明确执行兴趣启用，保留最后副本 guard                               |
+| permission 定位/终态、plan/runtime-config、用户 stored copies | 固定 request/turn/input 身份的完整条件命令；owner 重查当前状态，保留赢家、敏感字段过滤和原串行顺序                       |
+| Agent 批次、import/tail/capture、queue/control                | 固定 enqueue-time assistant/user/epoch 一次进入真实 writer，保留 cursor/promotion/queue 顺序和 indeterminate；按批次传输 |
+| fork/rollback/操作回执                                        | owner 条件预留/查询；daemon 持有 ACP/worktree saga，按同一 operation 身份补偿，不用旧快照决定删除                        |
+| prepared/launch                                               | 数据授权在 host，实际 claim/spawn 在 daemon；按上述 handoff 证明一致性                                                   |
+| 只读 catalog、ordering/evidence/export                        | 可 awaited 有限 DTO，保留 binding/revision/取消与晚回复 fence；展示缓存不作写入许可                                      |
+| schedule/provider 读改                                        | 完整 conditional publish/setup 命令在 owner，保留取消优先、原事务与 flush/registry 顺序；执行资源/slots 归 daemon        |
 
 这里的原子性是原条件读/检查/写及领域既有事务，不是跨 Doc/云/ACP 的全局事务。MessageHandler 的 permission outcome waiter 已异步；无新增 await 缺口的要求在实际 writer/guard 内。
 
@@ -310,13 +333,13 @@ host 不可用且请求尚未交给 daemon 时，远端沿用方法 deadline 超
 
 ### 8.2 owner 的部署位置
 
-| 部署形态 | 数据 owner 与接入 |
-| --- | --- |
-| 迁移前/一期 | 保留现有 daemon 进程内 owner 与 renderer 存储，按领域换调用接口 |
-| 二期桌面 | 优先独立普通 Node host；renderer/main/本机 daemon/one-shot CLI 共享它 |
-| 二期无头、单 daemon | 永久支持并默认内嵌同一 DataOwnerLive；Agent 批次直接调用，无额外 IPC |
-| 无头共享服务或需独立生命周期 | 按需独立 host，使用同一核心 Layer，加本机 socket/named pipe client |
-| 远端/旧版机器 | 每台机器有自己的 owner；远端经既有 ports/RPC，旧版保留隔离数据与明确兼容模式 |
+| 部署形态                     | 数据 owner 与接入                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| 迁移前/一期                  | 保留现有 daemon 进程内 owner 与 renderer 存储，按领域换调用接口              |
+| 二期桌面                     | 优先独立普通 Node host；renderer/main/本机 daemon/one-shot CLI 共享它        |
+| 二期无头、单 daemon          | 永久支持并默认内嵌同一 DataOwnerLive；Agent 批次直接调用，无额外 IPC         |
+| 无头共享服务或需独立生命周期 | 按需独立 host，使用同一核心 Layer，加本机 socket/named pipe client           |
+| 远端/旧版机器                | 每台机器有自己的 owner；远端经既有 ports/RPC，旧版保留隔离数据与明确兼容模式 |
 
 共享网络连接来自一个 owner，daemon 自身也能承担 owner。桌面首选独立 host，是因为停用/重启本机 Agent 后 UI 仍需数据，数据恢复不应绑定执行进程的生命周期；新增进程的 IPC、内存和启动成本必须实测。daemon data-only 模式也是合法备选，但须拆开执行开关与数据 scope。supervisor 是既有进程管理角色，不要求另开一个常驻 supervisor 进程。
 
@@ -332,24 +355,24 @@ host 不可用且请求尚未交给 daemon 时，远端沿用方法 deadline 超
 
 本地新 data protocol 的握手独立声明 wire version、支持的 DTO/投影特性、host epoch 与绑定身份；不兼容在取得 lease/写入前拒绝。它是新业务协议，不混入旧 local-loro v7 CRDT envelope。
 
-远程操作依据 [shared 协商规则](../../packages/shared/AGENTS.md#machine-protocol-negotiation)与 MachineMeta.protocolCapabilities 的 key/version，缺失表示不支持，不按 CLI 版本猜能力。未来 sessionHistoryProjection v1 必须真正实现后才登记到 machine-protocol-capabilities.ts；本地握手与远端能力各自验证。混合版本保留理解的字段，诊断说明兼容模式。
+远程操作依据 [shared 协商规则](../../../../packages/shared/AGENTS.md#machine-protocol-negotiation)与 MachineMeta.protocolCapabilities 的 key/version，缺失表示不支持，不按 CLI 版本猜能力。未来 sessionHistoryProjection v1 必须真正实现后才登记到 machine-protocol-capabilities.ts；本地握手与远端能力各自验证。混合版本保留理解的字段，诊断说明兼容模式。
 
 ### 8.5 授权种类与连接归属
 
 这里的 host 包含长期内嵌的 DataOwnerLive；物理进程位置不改变以下逻辑归属。
 
-| 授权/连接 | 一期 owner | 二期 owner 与约束 |
-| --- | --- | --- |
-| workspace Meta/session/machine/schedule 同步 | renderer、daemon 原 owners | host，保留各 principal/权限；只有证明同身份合法共享的 room 才计去重 |
-| 云端 Machine RPC | renderer/CLI 现有 client/server | host 持有 client 与 server 网络入口；daemon 执行。明确接受 host 故障时的远端控制耦合（§8.1） |
-| presence、machine monitor | renderer/daemon 原 transports | host transport；machine/active 发布有效期由 daemon 执行 lease 决定（§3.3） |
-| Prompt Shortcuts 独立授权、private/workspace index/body | renderer scoped provider | host 的独立 PromptShortcuts scope；不借 workspace-wide token，读写均按原 grant，切换时等旧 durable close |
-| Code Collab 文件索引与 signal | renderer LRU、目标 daemon publish | host 的 owner-session lease/LRU；本机 RPC 先 seed，失败不转云；FileCollaboration 返回投影与文件命令 |
-| eager-sync worker/snapshot/high-water | renderer worker 与可重建缓存 | host 按 room+授权 interest 合并预取；不获取 UI store/Mirror，不替换未上传副本 |
-| Roost owner RPC | renderer bridge / Node history owner | host client＋目标数据 owner；分页/branch/receipt 保持，同机后端在同一 owner Layer |
-| Streams/机器/Provider 凭据 | 原各自 owner | host 管理 scoped grant/token；trusted launch lease 独立，普通 renderer 无 Streams token |
-| 公共 managed-runtime 下载 | 现有执行下载 capability | 暂保留既有 port/执行 owner，作为显式 I/O 例外，不计连接去重；进一步收拢单独验收 |
-| UI 偏好、未提交草稿 | renderer | renderer；不使用数据同步凭据 |
+| 授权/连接                                               | 一期 owner                           | 二期 owner 与约束                                                                                        |
+| ------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| workspace Meta/session/machine/schedule 同步            | renderer、daemon 原 owners           | host，保留各 principal/权限；只有证明同身份合法共享的 room 才计去重                                      |
+| 云端 Machine RPC                                        | renderer/CLI 现有 client/server      | host 持有 client 与 server 网络入口；daemon 执行。明确接受 host 故障时的远端控制耦合（§8.1）             |
+| presence、machine monitor                               | renderer/daemon 原 transports        | host transport；machine/active 发布有效期由 daemon 执行 lease 决定（§3.3）                               |
+| Prompt Shortcuts 独立授权、private/workspace index/body | renderer scoped provider             | host 的独立 PromptShortcuts scope；不借 workspace-wide token，读写均按原 grant，切换时等旧 durable close |
+| Code Collab 文件索引与 signal                           | renderer LRU、目标 daemon publish    | host 的 owner-session lease/LRU；本机 RPC 先 seed，失败不转云；FileCollaboration 返回投影与文件命令      |
+| eager-sync worker/snapshot/high-water                   | renderer worker 与可重建缓存         | host 按 room+授权 interest 合并预取；不获取 UI store/Mirror，不替换未上传副本                            |
+| Roost owner RPC                                         | renderer bridge / Node history owner | host client＋目标数据 owner；分页/branch/receipt 保持，同机后端在同一 owner Layer                        |
+| Streams/机器/Provider 凭据                              | 原各自 owner                         | host 管理 scoped grant/token；trusted launch lease 独立，普通 renderer 无 Streams token                  |
+| 公共 managed-runtime 下载                               | 现有执行下载 capability              | 暂保留既有 port/执行 owner，作为显式 I/O 例外，不计连接去重；进一步收拢单独验收                          |
+| UI 偏好、未提交草稿                                     | renderer                             | renderer；不使用数据同步凭据                                                                             |
 
 所有授权由实际 platform ports 注入；独立只读 grant 不等于整个工作区的读写权限。新文件/未知 family/连接先登记 domain、identity、秘密和 owner，再加入迁移。只有完成 host 归属、授权等价与实际连接合并的行计收益；一个 host 内两种不同 principal 的订阅仍可各自存在。
 
@@ -389,30 +412,30 @@ DataScopeClosed 表示本地 acquisition 已结束；仍活跃 acquisition 的�
 
 源码审计固定在 [main df5b5a068e2f6a44118a30d0cc8fa34c2e4fcc49](https://github.com/LodyAI/Lody/tree/df5b5a068e2f6a44118a30d0cc8fa34c2e4fcc49)。以下行号属于该版本；每个实施切片先刷新目标版本与调用图。候选扫描覆盖 CLI/components 的原始数据 API、注入回调与存储入口，下面给出实施起点，不表示消费者已完成迁移。
 
-| 一期上传策略 | 现有调用依据 | 必须保留的行为 |
-| --- | --- | --- |
-| wait-for-route | create-workspace-runtime:4394–4426、4518–4524；use-session-doc:456；session-send-delivery:179 | transport/join 与选定 binding；Loro 同 Doc 控制/历史覆盖支撑发送确认和队头编辑；保留 detached/无 room/Abort 分支 |
-| bounded-confirmation | CLI loro/doc:2505–2542；session-backend:503；dispatch-watcher、message-handler、local-project-history-sync-service | 原默认 4s；不可用/超时 false；忽略、报错、通知 fallback 逐调用点保留 |
-| require-route | streams-room-binding:63–65；connection-recovery:409、1000–1001 | 缺路由错误按既有 refresh/deadline 包装处理，不作为全部 CLI store 默认行为 |
-| retain-until-ack | schedule-write-sync:5、24、43、60–65；create-workspace-runtime:4572–4585 | 本地写先返回，上传引用穿过 idle/reconnect；dispose/Abort 也结束等待，不能据此报告远端 ACK |
+| 一期上传策略         | 现有调用依据                                                                                                       | 必须保留的行为                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| wait-for-route       | create-workspace-runtime:4394–4426、4518–4524；use-session-doc:456；session-send-delivery:179                      | transport/join 与选定 binding；Loro 同 Doc 控制/历史覆盖支撑发送确认和队头编辑；保留 detached/无 room/Abort 分支 |
+| bounded-confirmation | CLI loro/doc:2505–2542；session-backend:503；dispatch-watcher、message-handler、local-project-history-sync-service | 原默认 4s；不可用/超时 false；忽略、报错、通知 fallback 逐调用点保留                                             |
+| require-route        | streams-room-binding:63–65；connection-recovery:409、1000–1001                                                     | 缺路由错误按既有 refresh/deadline 包装处理，不作为全部 CLI store 默认行为                                        |
+| retain-until-ack     | schedule-write-sync:5、24、43、60–65；create-workspace-runtime:4572–4585                                           | 本地写先返回，上传引用穿过 idle/reconnect；dispose/Abort 也结束等待，不能据此报告远端 ACK                        |
 
 UploadReceipt 区分 barrier-completed（local-primary/remote）、not-attempted、not-confirmed、not-required-local；目的地和原因只报告实现实际知道的值。throw 留在错误通道，false 不升格为成功，中断不伪造回执。Roost 的 roost-node-session:2009 只 flush 本地历史；roost-session-backend:400–404 仍组合 history flush 与 control 等待，不能报告 Roost 远端上传。
 
-| 权威依赖 | 目标与门控 |
-| --- | --- |
-| worktree GC、空 catalog | workspace-meta/catalog 的 baseline 与完整本地索引；区分删除与尚未看到 |
-| machine-flock-command-watcher、provider setup/cancel | machine-data 的原 authoritative join/rescan；取消在最终发布前再检查 |
-| schedule-sync-gate | 每次连接 generation 重建 current，首次同步 Promise 不能授权后续连接 |
-| 显式 sync/export、重连修复 | 本次 refresh 与逐 target Result；保留 --offline、startup/manual/dirty；廉价在线唤醒与限频 Meta 扫描分开 |
+| 权威依赖                                             | 目标与门控                                                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| worktree GC、空 catalog                              | workspace-meta/catalog 的 baseline 与完整本地索引；区分删除与尚未看到                                   |
+| machine-flock-command-watcher、provider setup/cancel | machine-data 的原 authoritative join/rescan；取消在最终发布前再检查                                     |
+| schedule-sync-gate                                   | 每次连接 generation 重建 current，首次同步 Promise 不能授权后续连接                                     |
+| 显式 sync/export、重连修复                           | 本次 refresh 与逐 target Result；保留 --offline、startup/manual/dirty；廉价在线唤醒与限频 Meta 扫描分开 |
 
 消费者按下列分组逐文件/API 登记，记录目标方法、权限/秘密、adapter 范围和删除条件；共享 packages、Electron/platform ports、公开返回类型与动态注入也进入对应切片调用图。
 
-| 领域 | 重点消费者与关闭条件 |
-| --- | --- |
-| 目录与访问 | GC、pr-poller、CLI session/sync/export/MCP、chat-landing/tour；完整 metadata、删除与实时分页行为等价 |
+| 领域                     | 重点消费者与关闭条件                                                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 目录与访问               | GC、pr-poller、CLI session/sync/export/MCP、chat-landing/tour；完整 metadata、删除与实时分页行为等价                                                               |
 | 历史/control/submissions | MessageHandler、dispatch/execution、ConversationView/use-session-doc、export/import、pending/input storage；同步 facade、真实 writer、唯一副本与未知 delivery 保留 |
-| catalog/机器命令 | agent-config/MCP/Role、resource discovery、memory、Magpie、本地项目与设置表单；每 family、授权、凭据保留和取消优先分别关闭 |
-| RPC/presence/附属数据 | operation-coordinator、submit routing、preview/files/LSP、Shortcuts、file-index LRU、eager worker、Roost bridge；连接授权、origin/lease、回执及 target 路由保留 |
+| catalog/机器命令         | agent-config/MCP/Role、resource discovery、memory、Magpie、本地项目与设置表单；每 family、授权、凭据保留和取消优先分别关闭                                         |
+| RPC/presence/附属数据    | operation-coordinator、submit routing、preview/files/LSP、Shortcuts、file-index LRU、eager worker、Roost bridge；连接授权、origin/lease、回执及 target 路由保留    |
 
 首个切片选择会话目录：先闭合 Meta 观察/索引与 SyncAuthority 投影、查询/分页及创建改名，再通过 MachineCommands 承接归档/删除。按真实消费者的端到端行为关闭范围，范围内完成的切片可以发布；其余领域保留待迁移状态。
 
@@ -420,12 +443,12 @@ UploadReceipt 区分 barrier-completed（local-primary/remote）、not-attempted
 
 动工前采相同场景的基线，二期在相同数据/窗口/机器规模下比较：
 
-| 指标 | 验证目的 |
-| --- | --- |
-| 每 room/principal 的订阅、bootstrap、下行字节、授权与 token refresh 次数 | 找到可合法共享的重复成本，避免把不同身份或逻辑连接数当收益 |
-| 冷/缓存首帧、流式 turn 延迟、IPC 增量/重建字节、背压队列 | 验证界面更快，长正文没有 O(N²) 重读 |
-| Agent batch enqueue → host admission → writer apply → 本地 durable → UI 可见 | 单列桌面热写延迟、吞吐和排队；无头内嵌不增加 IPC |
-| host/daemon/所有 renderer 的 RSS、JS heap 与 Wasm 内存，启动/解码成本 | 多窗口比较窄投影与只读 Loro replica 的总成本 |
-| host/daemon 重启、取消、权限换代、上传恢复与 RPC handoff | 性能收益同时满足原数据安全和可用性边界 |
+| 指标                                                                         | 验证目的                                                   |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 每 room/principal 的订阅、bootstrap、下行字节、授权与 token refresh 次数     | 找到可合法共享的重复成本，避免把不同身份或逻辑连接数当收益 |
+| 冷/缓存首帧、流式 turn 延迟、IPC 增量/重建字节、背压队列                     | 验证界面更快，长正文没有 O(N²) 重读                        |
+| Agent batch enqueue → host admission → writer apply → 本地 durable → UI 可见 | 单列桌面热写延迟、吞吐和排队；无头内嵌不增加 IPC           |
+| host/daemon/所有 renderer 的 RSS、JS heap 与 Wasm 内存，启动/解码成本        | 多窗口比较窄投影与只读 Loro replica 的总成本               |
+| host/daemon 重启、取消、权限换代、上传恢复与 RPC handoff                     | 性能收益同时满足原数据安全和可用性边界                     |
 
 本方案是待实施的业务与架构契约。固定源码审计、框架类型参照和早期有限模型用于澄清设计；真实 Effect/Repo/SQLite/IndexedDB/IPC 集成、prepared handoff、Clock/清理行为和产品性能仍须在对应实现中验证。文档与翻译检查不代表运行时实现通过，也不批准现行协议变更。
