@@ -21,7 +21,7 @@
 
 不计划旧JSON日志导入、schema升级、双decoder或metadata补genesis前缀。当前P09 control历史包含原签名genesis。淘汰无消费者的内存钥cache、member-only作者查询包装、Promise-phase路径与未接通攻击hooks。不支持的格式拒绝且不改写输入。当前格式重开、原字节重试、历史作者归属和向后代次钥恢复仍须保留。
 
-[当前格式与简化决定](../notes/implemented/simplification/2026-10-14-e2ee-current-formats-only.zh.md)记录删除项及保留行为；[Lab组合Note](../notes/proposed/architecture/2026-10-12-e2ee-lab-integration.zh.md)负责资源与权限边界。旧逐步检查点与不可变失败证据留在Git／关联报告，不再当作当前完成声明。
+[当前格式与简化决定](../notes/implemented/architecture/2026-10-15-e2ee-current-decisions.zh.md#只保留当前格式)记录保留范围；[Lab边界](../notes/implemented/architecture/2026-10-15-e2ee-current-decisions.zh.md#模块与验证边界)负责资源与权限边界。旧逐步检查点与不可变失败证据留在Git／关联报告，不再当作当前完成声明。
 
 ## 剩余事项
 

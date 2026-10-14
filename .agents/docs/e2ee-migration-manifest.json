@@ -8574,7 +8574,7 @@
         "core": "a4afb9fc0f8de7ea64b18495655cb5d43597bb6b7b22ebf90f7f101f51fcf8c1",
         "candidate": "a4afb9fc0f8de7ea64b18495655cb5d43597bb6b7b22ebf90f7f101f51fcf8c1"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8586,7 +8586,7 @@
         "core": "1689b92843488c4cb44b664cb14fc7e7a4888ed97a8936d4f59c33501ac7d8b1",
         "candidate": "1689b92843488c4cb44b664cb14fc7e7a4888ed97a8936d4f59c33501ac7d8b1"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8644,7 +8644,7 @@
         "core": "d95e945d7b56a73f6ec507c877e48a415a2a5c7ed46cdc7b3cac681778cce2f8",
         "candidate": "d95e945d7b56a73f6ec507c877e48a415a2a5c7ed46cdc7b3cac681778cce2f8"
       },
-      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "shared",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8656,7 +8656,7 @@
         "core": "76e4283773a7282e0a82d10bfbfffa15bd44293779d44faee3c58b94cf8648e2",
         "candidate": "76e4283773a7282e0a82d10bfbfffa15bd44293779d44faee3c58b94cf8648e2"
       },
-      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "shared",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8692,7 +8692,7 @@
         "core": "a5c0d9ffa2ee0bd1ab497d1ea42d7cec039971258ca2c269aa7312ba65124350",
         "candidate": "a5c0d9ffa2ee0bd1ab497d1ea42d7cec039971258ca2c269aa7312ba65124350"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8704,7 +8704,7 @@
         "core": "4c2cd085f2d924db6a7a21374b2369d7743051d08c9e4bf959a0e63a4cc7530f",
         "candidate": "4c2cd085f2d924db6a7a21374b2369d7743051d08c9e4bf959a0e63a4cc7530f"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8761,7 +8761,7 @@
         "core": "a128bef6ec1985cded72f19846500d2674a6cb245a53b3c49ce92cb44dddaa66",
         "candidate": "a128bef6ec1985cded72f19846500d2674a6cb245a53b3c49ce92cb44dddaa66"
       },
-      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "shared",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8773,7 +8773,7 @@
         "core": "370fc85f8556cada89c3a93a718c1edcd6a314e65fc5f1f7ff5683674cff513a",
         "candidate": "370fc85f8556cada89c3a93a718c1edcd6a314e65fc5f1f7ff5683674cff513a"
       },
-      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "shared",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8972,7 +8972,7 @@
       "fingerprints": {
         "candidate": "82b0009580b4390383a0cb9c7295d7e6c7a902a282ba772133158c3f297c9c45"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8983,7 +8983,7 @@
       "fingerprints": {
         "candidate": "d249b1f6d8446c5b2e17c4558f1ebe33e30a935f9f80946a29ce594cee5bed3f"
       },
-      "targetPath": ".agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "L2",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -8994,7 +8994,7 @@
       "fingerprints": {
         "candidate": "6ae3572856bf7e14b904da12bb4df523e6348ceaf7edb4fd396e45bb252054a1"
       },
-      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "shared",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
@@ -9005,7 +9005,7 @@
       "fingerprints": {
         "candidate": "1ac0b47d011db67f0f6e6822ff13c2e54be325122a6cb6764310a5652e87405b"
       },
-      "targetPath": ".agents/notes/proposed/architecture/2026-10-11-e2ee-complete-migration.md",
+      "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
       "status": "需迁并修复",
       "layer": "shared",
       "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",

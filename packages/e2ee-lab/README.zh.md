@@ -102,6 +102,6 @@ abort 本身不证明工作已停止，也不保证原生关闭时间有界。
 都是合成 fixture，不代表 OS 存钥、候选备份或 B 历史发送者信封恢复。
 测试、远端 CI、独立审查和产品验收分别成立，不能互相替代。
 参见[清单](../../.agents/docs/e2ee-migration-manifest.json)、
-[组合 Note](../../.agents/notes/proposed/architecture/2026-10-12-e2ee-lab-integration.zh.md)
+[组合 Note](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.zh.md#模块与验证边界)
 及[来源记录](migration-provenance.json)。完整旧 checkpoint 流水保留于
 [Git 5ab9394](https://github.com/LodyAI/Lody/blob/5ab9394392a3577a76b14ab0552c33f755b3ce48/packages/e2ee-lab/README.zh.md)。

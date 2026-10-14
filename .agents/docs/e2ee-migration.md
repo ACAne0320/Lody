@@ -21,7 +21,7 @@ The [manifest](e2ee-migration-manifest.json) retains all380 pinned source items,
 
 No legacy JSON journal import, schema upgrade, dual decoder or metadata-prefix genesis shim is planned. Current P09 control histories contain original signed genesis. The unused volatile key cache, member-only author wrapper, Promise-phase path and unconnected attack hooks are retired. Unsupported formats fail without rewriting their input. Normal current-format reopen, original-byte retry, historical authorship and backward epoch-key recovery remain required.
 
-[Current-only decision and simplification](../notes/implemented/simplification/2026-10-14-e2ee-current-formats-only.md) records deleted paths and retained behavior. [Lab composition note](../notes/proposed/architecture/2026-10-12-e2ee-lab-integration.md) owns resource and authority boundaries. Earlier step-by-step checkpoints and immutable old-failure evidence remain in Git/linked reports; they are not current completion claims.
+[Current-only decision and simplification](../notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#current-format-only) records the retained scope. [Lab boundaries](../notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#module-and-validation-boundaries) owns resource and authority boundaries. Earlier step-by-step checkpoints and immutable old-failure evidence remain in Git/linked reports; they are not current completion claims.
 
 ## Remaining work
 

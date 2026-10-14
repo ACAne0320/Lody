@@ -62,7 +62,7 @@ Node/native WebCrypto signatures, real HKDF/AEAD and explicit Deferred/native
 interruption signals. Crypto completion gating is a stated test boundary; no
 sleeps, real keys or physical-device claims are involved.
 
-[Extraction note](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-document-workflows.md)
+[Trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
  · [Source fingerprints](provenance.json).
 
 `./content/streams` adds `makeStreamsUpdateBinding`, an Effect-native header3 update

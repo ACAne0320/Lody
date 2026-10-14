@@ -50,7 +50,7 @@ no Python/network. Node custody/persistence, exact pending/outbox
 bytes, finite delivery rounds, durable reports, publisher-loss backup and recovery
 remain separate migration owners.
 
-[Decision/evidence](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-epoch-history.md)
+[Current-format decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#current-format-only)
  · [Fingerprints](provenance.json).
 
 EpochKey values use a private registry and null prototype; reflected symbols or
@@ -82,7 +82,7 @@ Native primitive settlement is awaited; a native call that never settles cannot
 provide bounded shutdown. Successful returned keys live while reachable; JavaScript
 cleanup does not guarantee erasure of native/runtime internal copies.
 
-[Envelope extraction note](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-epoch-envelopes.md)
+[Envelope trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
  · [Envelope fingerprints](envelope-provenance.json).
 
 ## Finite durable ciphertext delivery
@@ -107,7 +107,7 @@ pruning or old JSON-file import is added; retained disk rows grow over time.
 This layer has no mailbox discovery/report/repair, scheduler, actual device custody,
 new epoch publication or backup strategy. Local outbox contents are untrusted until
 verified; authenticated principal binding and host admission remain adapter work.
-[Delivery decision/evidence](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-key-delivery.md)
+[Durability decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#durability-and-lifecycle)
  · [Delivery fingerprints](delivery-provenance.json).
 
 Host-only initialization and durable recipient key retention now live under [`./keys/host` and `./keys/host/sqlite`](HOST-PROTECTION.md). Ordinary entries keep opaque keys. This does not choose an OS protector or complete installation reports/recovery backup.

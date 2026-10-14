@@ -196,4 +196,4 @@ A required rotation currently blocks new seals until the separately unfinished
 publisher supplies a valid next epoch; this is a production blocker, not a
 claim of completed revocation recovery. There is no product consumer or activation
 change. See the
-[verification decision](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-cooperative-verification.md).
+[verification decision](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#verification-work).

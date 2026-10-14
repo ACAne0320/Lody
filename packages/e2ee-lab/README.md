@@ -115,6 +115,6 @@ The known-key AES protector and exportable devices are synthetic fixtures, not O
 custody, candidate backup or historical-sender-envelope restoration B. Tests,
 remote CI, independent review and product acceptance remain separate evidence.
 See the [manifest](../../.agents/docs/e2ee-migration-manifest.json),
-[composition note](../../.agents/notes/proposed/architecture/2026-10-12-e2ee-lab-integration.md)
+[composition note](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#module-and-validation-boundaries)
 and [provenance](migration-provenance.json). Full earlier checkpoints remain in
 [Git at 5ab9394](https://github.com/LodyAI/Lody/blob/5ab9394392a3577a76b14ab0552c33f755b3ce48/packages/e2ee-lab/README.md).

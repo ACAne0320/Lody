@@ -67,7 +67,7 @@ and [source fingerprints](provenance.json). Run package `typecheck` and `test`;
 `test/ledger/replay.test.ts` signs fixed synthetic seeds with native Node Ed25519,
 independent of the production verifier, and exercises the public ledger subentry.
 
-[Historical facts extraction](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-historical-facts.md).
+[Historical-author trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority).
 
 `requireLedgerContinuation(previous, next)` verifies that two real full views share
 this exact authenticated prefix using private hashes. It rejects rollback, alternate
@@ -89,7 +89,7 @@ requires CAS conflict handling, never automatic re-signing or rebasing. This ent
 does not create genesis, discover freshness, generate/store private keys, or own
 transport. Legacy removal remains rejected.
 
-[Signing migration note](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-ledger-signing.md)
+[Signing durability decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#durability-and-lifecycle)
 and [source/destination fingerprints](signing-provenance.json).
 
 ## Authenticated permission snapshots
@@ -128,7 +128,7 @@ or authenticated-channel confirmation, including actual peer identity. Key lists
 and relabeled server notes are insufficient. This confirmation grants no permissions
 and upgrades no audit provenance. No new comparison wire/signature domain is added.
 
-[Snapshot decision/evidence](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-authenticated-snapshots.md)
+[Snapshot trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
  · [Snapshot fingerprints](snapshot-provenance.json).
 
 ## Admission consent and ordinary intent

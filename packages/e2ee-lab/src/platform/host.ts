@@ -120,12 +120,13 @@ export function makeLabHttpHost(input: {
           await closed;
         })
     );
-    const operations = yield* makeLabOperations();
     // Registered Node HTTP callback bridge, owned by this host Scope.
     const callbacks = yield* Effect.acquireRelease(
       Effect.sync(() => new LabCallbackRunner()),
       (owner) => Effect.promise(() => owner.close())
     );
+    // Scope closes in reverse: abort request bodies before joining callbacks.
+    const operations = yield* makeLabOperations();
     const address = server.address();
     if (!address || typeof address === 'string') return yield* reject(500);
     const body = (request: IncomingMessage, limit: number) =>

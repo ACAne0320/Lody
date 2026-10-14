@@ -379,19 +379,7 @@ export function makeSqliteLedgerFeed(input: {
                 additions.forEach((record, index) => {
                   const position = state.view.length + index + 1;
                   if (insert.run(position, record).changes !== 1) throw fail('corrupt');
-                  const saved = readOriginal.get(position) as { record: unknown } | undefined;
-                  if (!(saved?.record instanceof Uint8Array) || !bytesEqual(saved.record, record))
-                    throw fail('corrupt');
                 });
-                if (!fast) {
-                  const aggregate = db
-                    .prepare(
-                      'SELECT COUNT(*) AS count,COALESCE(SUM(length(record)),0) AS bytes FROM ledger_feed_records'
-                    )
-                    .get() as { count: number; bytes: number };
-                  if (aggregate.count !== next.view.length || aggregate.bytes !== bytes)
-                    throw fail('corrupt');
-                }
                 const changed = db
                   .prepare(
                     'UPDATE ledger_feed_meta SET head=?,count=?,offset=?,bootstrap=?,bytes=? WHERE id=1'

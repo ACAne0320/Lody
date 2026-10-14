@@ -11,7 +11,7 @@
     "packages/e2ee-core/src/ledger/feed-page.ts": "c9c4e1c1c5f21bafa4a6f764fc97eb73b8ee98284225c79912ef6d323c81f3be",
     "packages/e2ee-core/src/ledger/feed-reader.ts": "4e9ebb21ad894b2fcd0df19caea518a3b65d73f35d909c0b16db7e679f73b183",
     "packages/e2ee-core/src/ledger/feed.ts": "0afa0aefe12fae6002fc8d2914be989698587823e8a365980d976841becc8bd9",
-    "packages/e2ee-core/src/ledger/feed-sqlite.ts": "da4834c335bafb5135d5d84322e46b5826d7694214f0f7ce49b3580f65e653a7"
+    "packages/e2ee-core/src/ledger/feed-sqlite.ts": "e6e4bff52199d926645fd2ea5ea32a46b720cc509232f346ebd3762963a8b680"
   },
   "frozenCandidateHead": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
   "originalCoreHead": "f1bc0c52649c21d2e9b620fe3558874c40545e38",
