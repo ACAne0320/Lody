@@ -3310,6 +3310,7 @@ const KnownToolCallContentSchema = z.union([
       command: z.string(),
       args: z.array(z.string()).optional(),
       cwd: z.string().optional(),
+      truncated: z.boolean().optional(),
     })
     .loose(),
   z
