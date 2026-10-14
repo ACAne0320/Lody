@@ -46,7 +46,8 @@ export function makeLedgerStreamReader(stream: LedgerStreamReader) {
               try {
                 const output = await read({ offset, signal: controller.signal });
                 if (closed || controller.signal.aborted) throw fail('closed');
-                if (!output.ok) throw fail('transport');
+                if (!output.ok)
+                  throw new LedgerFeedError({ code: 'transport', cause: output.result });
                 const row = output.result;
                 if (
                   row.requestOffset !== offset ||
@@ -71,7 +72,10 @@ export function makeLedgerStreamReader(stream: LedgerStreamReader) {
                 pending.delete(controller);
               }
             },
-            catch: (error) => (error instanceof LedgerFeedError ? error : fail('transport')),
+            catch: (error) =>
+              error instanceof LedgerFeedError
+                ? error
+                : new LedgerFeedError({ code: 'transport', cause: error }),
           }),
         (controller) =>
           Effect.gen(function* () {
