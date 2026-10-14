@@ -1,0 +1,28 @@
+{
+  "sourceCommit": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "sourceState": "frozen read-only candidate plus captured staged patch",
+  "hashAlgorithm": "SHA-256",
+  "directParent": "ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee",
+  "sources": {
+    "workflows/key-distribution.ts": "ff8c46814c2e2755e128aece4d7a3dd25e034ca82d098282d1d765c8e5b8b481",
+    "pure/key-distribution.ts": "96e6e88eb20228c4d47eee03023e0b859e43e0d9a0a16b7214d90463e56c7290",
+    "ports/key-mailbox.ts": "08457c2e57c85100e8b67bad7445047e89746af5808da5229a5ea0f8e4afc30e"
+  },
+  "scope": "Finite recipient receive/local-publication install/report/original retry/result ownership only. No sender discovery, repair request scheduler, SDK/HTTP/Lab integration, native OS adapter or backup/vault format.",
+  "adaptations": [
+    "Current genuine view/fixed outer signature and real HPKE/commitment, never injected verifier or persisted phase authority.",
+    "Own captures before first wait; operation-owned opened keys are released through real brackets.",
+    "A host-only protected store is constructed once; save/reload/native binding+commitment precede original signed queue, without ordinary per-install arbitrary store/protector callbacks.",
+    "Indexed distinct task schema replaces whole JSON and lifetime caps; context hashes bind originals, queued bytes fixed-verify before retry, results keep actual public signature evidence.",
+    "Blocked remote revisions stay hints; keyset paging and genuine epoch/recipient disposition preserve finite progress.",
+    "Reported records original claim remote ACK, not server durability/key custody/current possession. Local loss requires fresh repair episode before reinstallation; corrupt protected original is never silently overwritten.",
+    "Scope owns databases; callers cancel/await their borrowed ledger/signer/transport. Closure guards reject late mutation; no Runtime/background loop."
+  ],
+  "destinationFingerprints": {
+    "src/keys/receive-sqlite.ts": "cc34b5ac804038da7feb84d5596b0f90840133b6bd91ffc2a94e8f1460974982"
+  },
+  "extractionDestinationFingerprints": {
+    "src/keys/receive-sqlite.ts": "fa94d8b826a82714a565c6aba9f660faac69f4bf2b759d7ba0b224ea0dd601b6"
+  },
+  "destinationBasis": "4134109a76739d8b36ff5a8a1209e37e16518703; source implementation unchanged in this child layer"
+}

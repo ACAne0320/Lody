@@ -1,0 +1,42 @@
+{
+  "sourceCommit": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "sourceState": "read-only pinned candidate selected files",
+  "hashAlgorithm": "SHA-256",
+  "files": {
+    "pure/wire-crypto.ts": "0e233bd4db6b07e929f4001239fe4a9dd0f9cb586fbb0fbd185399af1f35e4ad",
+    "pure/epoch-history.ts": "065e8322040c030c080bb694fa14a38945f47e9af707b18daee92926690f5dbb",
+    "pure/epoch-key.ts": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3",
+    "epoch-keys.ts": "a9f9fcc147aa483c708b28e42f7cc930f529f17c01b2dece09f931bf4cdbcce5",
+    "ledger/keys.ts": "06dc918f0e0edbbd77fee1eb1a8dc382835aeb48a95d961fa990890c8a2f5288"
+  },
+  "scope": "Canonical ledger v1 commitments and 72-byte history; verified-view complete recovery and scoped volatile install/read/clear. No rotation/delivery/backup/vault.",
+  "adaptations": [
+    "Keep epoch-key/v1 and epoch-history/v1 domains, epoch-zero exception, XChaCha20-Poly1305 and nonce24/ct32/tag16 bytes.",
+    "Replace raw-map recovery authority with real verified view packet facts; signed packet publication is separate from key validity.",
+    "Host secure random nonce only; no public nonce/entropy override.",
+    "Wipe operation-owned material on success/failure with ordinary try/finally; return no partial recovered keys.",
+    "Use synchronous already pinned noble SHA256; no native digest await or pending install within the cache.",
+    "Scope owns volatile copies; verified prefix observations resist known rollback/fork/revocation, but are not remote cursor or freshness claims.",
+    "Retire JSON prototype digest/signed-history wire while migrating its install/read/clear behavior.",
+    "Replace reflective EpochKey material accessor with private WeakMap provenance; legitimate inputs keep identical bytes, fake callbacks cannot swap installation material."
+  ],
+  "destinations": [
+    "src/keys/history.ts",
+    "src/keys/store.ts",
+    "src/keys/index.ts",
+    "src/ledger/replay.ts",
+    "src/epoch-key.ts"
+  ],
+  "destinationFingerprints": {
+    "src/keys/history.ts": "208892d0953494ff137465c9ed291c0ce92776e3a2064338c34fe330ab024199",
+    "src/keys/store.ts": "d0736149ca78666e57f86e30cab8b8ed19629af8677bb4a4c1734a6a50d3a293",
+    "src/keys/index.ts": "237a302b9b3e70a9a8a32783c5bb6337e47f499018693d1393ab1af7bd8bb3de",
+    "src/ledger/replay.ts": "3f4334342ac7b352fa561427568e895418cb9f1a40adc35319180a70639f7861",
+    "src/epoch-key.ts": "91a561e0be9418a9e6feb654ad8956359739ec0a24aad7b7b55a5cee4cf5a205"
+  },
+  "installedHistoryConsumer": {
+    "file": "src/keys/installed-history.ts",
+    "sha256": "235e960d8c928213d243742810bcc421d8806754d2ba59f47e48390032d1d952",
+    "scope": "New composition of public recoverLedgerHistory and unchanged installed protected store; all crypto preflight before durable saves; owned opaque cleanup, known-prefix memory; no candidate/vault/B or new wire."
+  }
+}

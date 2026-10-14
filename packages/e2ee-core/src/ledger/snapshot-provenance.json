@@ -1,0 +1,19 @@
+{
+  "sourceCommit": "bd5a9c1ec71ed7fa8085e51faec4f1e8dbe985b8",
+  "sources": {
+    "packages/e2ee-core/src/ledger/snapshot.ts": "fc9440e4511ac7b0ad5a3531854d23ed79be527d929719d504367e4073161160",
+    "packages/e2ee-core/src/pure/cbor.ts": "10a793aace02c1fce9cad249dd3b7d3c8b8ab92d86b85a88917230c881ea8337",
+    "packages/e2ee-core/src/pure/ledger-snapshot.ts": "b4d0639eef6de95ebcc9ac12e6ba5821652dc6be2a850dc874b82120ba1cd7d4",
+    "packages/e2ee-core/src/workflows/verification.ts": "d0ad05d6535366d31b54796346f2cf04827b7ced9f87279255ca0a1efecbd1a4"
+  },
+  "directParent": "34b918367fe23f6bf9c2ff1cea31b154de298cb2",
+  "scope": "Existing v1 wire/domains, stricter explicit qualification and source provenance; no invented pre-snapshot hash/audit, no old key-list confirmation. Product sourcing/persistence/SDK recovery remain separate.",
+  "destinations": {
+    "packages/e2ee-core/src/ledger/snapshot.ts": "f5ac809abf7dcc964ddd4edace0103269aba62db8b6c554132f63c002f4a827c",
+    "packages/e2ee-core/src/ledger/snapshot-codec.ts": "c4ccace55f079a65e0fcf45a53820642167ce3e8f9e6cc96192d32e9f260aa1d",
+    "packages/e2ee-core/src/ledger/snapshot-signing.ts": "d857d33e0d5c141b66f9232e2782d28fa6728ce0623bc948c49035fe1e4cd563",
+    "packages/e2ee-core/src/ledger/replay.ts": "c064488be37fe714493ae60265ad0e91653697026ef94f67060c17c14cbe8ea0",
+    "packages/e2ee-core/src/ledger/policy.ts": "4b463afd8148f2a34183bf47912277dbf5fb18e2999f6eccc083f21520e7b4bb",
+    "packages/e2ee-core/src/cbor.ts": "69390d017bde12323bdfde6eb2036bc7c447051fe87043dc1f7f88bd1007c834"
+  }
+}
