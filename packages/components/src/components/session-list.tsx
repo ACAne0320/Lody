@@ -43,7 +43,6 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
