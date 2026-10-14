@@ -28,3 +28,7 @@ The owning suite also verifies first-write immutability across handles, copies, 
 Final 172-test code tree passed full root check with native Git/local IPC. Format, docs and public boundary pass. No final code change followed that validation; exact-head remote CI is reported independently.
 
 Draft: [#1450](https://github.com/LodyAI/Lody/pull/1450).
+
+## External review fixes
+
+Retained-history test preparation now uses one actual SQLite transaction for 4096 historical rows. The next delivery still uses the public durable outbox and real signed envelope; assertions and retained-row count are unchanged. This removes thousands of fixture-only fsyncs, not delivery durability.
