@@ -1,4 +1,4 @@
-import type { MessageContent } from '@lody/shared';
+import { isToolTitleTruncatedForHistory, type MessageContent } from '@lody/shared';
 import { normalizeWorktreePath } from '@/lib/worktree-path';
 
 type ToolCallContent = Extract<MessageContent, { type: 'tool_call' }>;
@@ -124,7 +124,12 @@ export const resolvePermissionSubject = (toolCall: ToolCallContent): PermissionS
   const title = toolCall.title?.trim();
   if (title) {
     return questionKind === 'command'
-      ? { type: 'command', command: normalizeWorktreePath(title), cwd: null, truncated: false }
+      ? {
+          type: 'command',
+          command: normalizeWorktreePath(title),
+          cwd: null,
+          truncated: isToolTitleTruncatedForHistory(toolCall.title ?? ''),
+        }
       : { type: 'text', text: normalizeWorktreePath(title) };
   }
   return null;

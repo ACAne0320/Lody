@@ -313,6 +313,17 @@ export const truncateToolTitleForHistory = <T extends string | null | undefined>
     ? (truncateTerminalCommandForHistory({ command: title }).command as T)
     : title;
 
+/**
+ * Whether a stored tool title is the output of `truncateToolTitleForHistory`.
+ * Titles have no flag field: a cut title ends with the marker and fills the
+ * budget to within one code point, which an ordinary title practically never does.
+ */
+export const isToolTitleTruncatedForHistory = (title: string): boolean => {
+  if (!title.endsWith(TERMINAL_COMMAND_TRUNCATION_MARKER)) return false;
+  const { end, bytes } = utf8Head(title, MAX_STORED_TERMINAL_COMMAND_BYTES);
+  return end === title.length && bytes > MAX_STORED_TERMINAL_COMMAND_BYTES - 4;
+};
+
 const normalizeTerminalCommandsForHistory = (
   contents: StoredToolCallContent
 ): StoredToolCallContent =>

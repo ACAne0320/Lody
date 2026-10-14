@@ -229,6 +229,17 @@ describe('resolvePermissionSubject', () => {
     );
   });
 
+  it('flags a title that history cut short', () => {
+    const cut = `${'a'.repeat(1018)}…`;
+    expect(resolvePermissionSubject(toolCall({ kind: 'execute', title: cut }))).toMatchObject({
+      type: 'command',
+      truncated: true,
+    });
+    expect(
+      resolvePermissionSubject(toolCall({ kind: 'execute', title: 'Wait…' }))
+    ).toMatchObject({ truncated: false });
+  });
+
   it('reads a command from the title when no command block was sent', () => {
     expect(resolvePermissionSubject(toolCall({ kind: 'execute', title: 'git push' }))).toEqual({
       type: 'command',
