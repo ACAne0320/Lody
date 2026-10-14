@@ -2,7 +2,7 @@ import { SessionPendingSendsHost } from '../components/chat/session-pending-send
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useAtomValue, useSetAtom, useStore } from 'jotai';
 import { LODY_PRESENCE_HEARTBEAT_MS, type MachineId, type WorkspaceId } from '@lody/shared';
-import { authTokenAtom, runtimeAtom } from '@/atoms/runtime';
+import { authTokenAtom, runtimeAtom, workspaceRuntimeInitFailureAtom } from '@/atoms/runtime';
 import { setSessionRunConfigDraftAccountAtom } from '@/atoms/session-run-config-drafts';
 import { currentWorkspaceIdAtom, currentWorkspaceSlugAtom, userAtom } from '@/atoms';
 import {
@@ -38,6 +38,7 @@ import { getLocalWorkspaceSlug, useImplicitLocalWorkspace } from './local-platfo
 import { isWarmWindow } from '@/lib/desktop-window';
 import { capturePostHogEvent } from '@/lib/posthog-analytics';
 import { maybeClearLodyCacheOnBoot } from '@/lib/clear-local-cache';
+import { describeErrorType } from '@/lib/workspace-data-scope';
 import { isElectronRenderer } from '@/lib/electron';
 import { isNativeAppShell } from '@/lib/native-platform';
 import { usePlatform } from '@lody/platform/react';
@@ -83,6 +84,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const previousShutdown = useRef<Promise<void>>(Promise.resolve());
   const runtime = useAtomValue(runtimeAtom);
   const setRuntime = useSetAtom(runtimeAtom);
+  const setRuntimeInitFailure = useSetAtom(workspaceRuntimeInitFailureAtom);
   const store = useStore();
   const setControlConnectionState = useSetAtom(lodyControlConnectionStateAtom);
   const setRuntimeInitializing = useSetAtom(runtimeInitializingAtom);
@@ -232,6 +234,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   // - If cached id exists for this slug: initialize immediately (offline-first)
   // - Otherwise: wait for server to respond with workspaceId
   useEffect(() => {
+    // A failure describes one attempt; every new attempt starts without one.
+    setRuntimeInitFailure(null);
     if (!workspaceSlug) {
       console.info('RuntimeProvider: clear runtime due to missing workspaceSlug');
       setRuntime(null);
@@ -380,6 +384,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           return;
         }
         setRuntime(null);
+        setRuntimeInitFailure({
+          workspaceSlug,
+          errorType: describeErrorType(error),
+        });
         setControlConnectionState('error');
         setRuntimeInitializing(false);
       }
@@ -413,6 +421,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     setControlConnectionState,
     setRuntimeInitializing,
     setRuntime,
+    setRuntimeInitFailure,
     setPresenceStates,
     setPresenceSyncState,
     store,
