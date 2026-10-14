@@ -361,14 +361,24 @@ function useCloudOrganizationState(options?: UseOrganizationOptions) {
   // workspace id, the route has nothing else to open with. After the retry burst
   // is spent, allow one more attempt when the network returns, when the app
   // comes back to the foreground (a phone resuming after a long absence often
-  // fails its first requests), or every `ORGANIZATIONS_SLOW_RETRY_MS`.
+  // fails its first requests), and every `ORGANIZATIONS_SLOW_RETRY_MS` while
+  // visible. A hidden page does not poll: coming back to it retries at once.
   useEffect(() => {
     if (!organizationsFailureFinal || typeof window === 'undefined') return undefined;
     const retryOnce = () => setOrganizationsRetryCount(maxOrganizationsRetries - 1);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const armTimer = () => {
+      clearTimeout(timer);
+      timer =
+        document.visibilityState === 'hidden'
+          ? undefined
+          : setTimeout(retryOnce, ORGANIZATIONS_SLOW_RETRY_MS);
+    };
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') retryOnce();
+      else armTimer();
     };
-    const timer = setTimeout(retryOnce, ORGANIZATIONS_SLOW_RETRY_MS);
+    armTimer();
     window.addEventListener('online', retryOnce);
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {

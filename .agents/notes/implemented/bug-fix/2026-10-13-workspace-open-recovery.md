@@ -13,10 +13,10 @@ Some users, mostly on iOS after not opening the app for a long time, stay on
 app does not help. The root cause is not pinned down, and about twenty route screens
 could wait forever or fail with no way forward. So the fix is structural: every
 blocking route wait becomes a recovery page after 30 seconds, and every route failure
-offers a retry and the same page. A terminal local-storage failure gets one
-automatic cache clear per day, only online. Clears now restart into a fresh process
-on the desktop, verify what they deleted, and stay armed when they leave databases
-behind. The full reset uses the host's file-level wipe where one exists, which is what
+offers a retry and the same page. Nothing is deleted automatically, because the
+local replica can hold edits that never synced. Clears now verify what they deleted
+and record it; a desktop retry of an incomplete clear relaunches into a fresh process.
+The full reset uses the host's file-level wipe where one exists, which is what
 reinstalling did. The iOS shell implements that wipe, `window.__LODY_NATIVE_RESET__`,
 outside this repository. None of this is verified against a real stuck user yet.
 
@@ -73,47 +73,55 @@ Two specific dead ends were also found:
   reports `runtime_init_failed`. `describeErrorType` keeps only the error name,
   reading `name` off any object because a `DOMException` is not an `Error` in every
   engine.
-- **One automatic cache clear for a terminal blocker.** On `runtime_init_failed` or
-  `doc_meta_scan_failed`, `armAutomaticCacheClear` claims the clear, and the
-  placeholder restarts into it. It refuses:
-  - in the desktop's hidden warm spare;
-  - within 24 hours of the last automatic clear, including after a clock change;
-  - offline, because a clear deletes every workspace's offline copy;
-  - when the `lody:automaticCacheClearAt` marker cannot be written and read back.
-
-  The marker stays out of the DELETE list so it survives the clear it records.
-  Without it, a clear that did not help would restart forever. Nothing else is
-  automatic: a wait that never settles gets the page, never a clear, because slow is
-  not broken.
-
-- **Restart into clears.** `restartIntoCacheClear` relaunches the desktop through the
-  one-shot request file that `lody app reset-cache` already uses
-  (`app.relaunchIntoLocalReset`), so the clear runs in a fresh process before any
-  window loads. Web and mobile set the boot flag and reload. Settings and the
-  recovery page both use it.
-- **Verify clears.** The boot clear records each delete's outcome, re-enumerates the
-  databases, and also counts failures in the extra databases `RuntimeProvider` passes.
-  It writes `lody:lastLocalClear`, which is kept outside the DELETE list and rewritten
-  after a hard wipe. A clear that left databases behind stays armed for up to three
-  boots, and the recovery page says it was incomplete.
+- **Terminal failures show the page at once, and nothing clears on its own.** On
+  `runtime_init_failed` or `doc_meta_scan_failed` the placeholder becomes the recovery
+  page immediately, with Reload first. It does not delete anything: the repo replica
+  can hold edits that never synced, and a failure that looks terminal (a transient
+  read error) can pass on reload. The page says local data may be damaged only for a
+  storage error: a scan failure, or a runtime that failed with an IndexedDB or
+  `RepoStorageError` name. Other runtime failures get a generic description.
+- **Clearing reloads one window; relaunching is reserved.** `restartIntoCacheClear`
+  sets the boot flag and reloads the window, as Settings always did. Relaunching the
+  desktop quits the embedded CLI and stops running agents, so the recovery page asks
+  for it only to retry a clear that left databases behind within the last day. That
+  case means the storage backend failed in this process. The relaunch writes the
+  one-shot request file `lody app reset-cache` uses and quits through the normal
+  barrier. `app.relaunch()` is called only at `will-quit`. A quit answered Stay, or
+  one whose CLI cleanup fails, settles `cancelled`: the request file is withdrawn
+  and the caller reports that nothing started.
+- **Verify clears, and leave retries to the person.** The boot clear records each
+  delete's outcome, re-enumerates the databases, and also counts failures in the
+  extra databases `RuntimeProvider` passes. It writes `lody:lastLocalClear`, which
+  stays outside the DELETE list and is rewritten after a hard wipe. It never re-runs
+  on its own: a re-run deletes everything again, which after a hard reset would sign
+  the person out a second time once they signed back in. Within a day of a clear
+  that left databases behind, the recovery page says so. Older records are ignored.
 - **Hard reset prefers the host.** After revoking the server session, `startHardReset`
   first tries a file-level wipe from the host:
   - **Desktop:** relaunches into the native `hard` wipe the CLI already applies.
   - **Mobile shell:** calls `window.__LODY_NATIVE_RESET__.resetAllData()`.
 
   Only when no host wipe exists, or the host refuses, does it fall back to the web
-  wipe. This is a stronger version of the same step at the same cost (signed out,
+  wipe. A desktop quit answered Stay wipes nothing. This is a stronger version of the same step at the same cost (signed out,
   everything local gone). It is not shown as a separate fourth button.
 
 - **The workspace list keeps trying.** After the retry burst, one more attempt runs on
-  `online`, on return to the foreground, and every 30 seconds.
-- **Reports name the gate.** `workspace/boot_wait_stuck` is sent when a recovery page
-  appears, with the gate, blocker, idle gap and app version. The idle gap tests the
+  `online`, on return to the foreground, and every 30 seconds while the page is
+  visible.
+- **Reports name the gate.** One placeholder can stand in for several gates in turn,
+  so its 30-second timer covers the whole wait. `workspace/boot_wait_stuck` is sent
+  once per placeholder when the recovery page appears, with the gate, blocker, idle gap and app version. The idle gap tests the
   "long unused" pattern. `workspace/recovery_outcome` is sent after a boot clear:
   `ready` when the workspace opened, `stuck_again` when another recovery page
   appeared. That tells whether a clear is enough or the host wipe is needed.
 
 ## Alternatives not taken
+
+- **One automatic cache clear per day for a terminal blocker.** This was the first
+  version of this change. It would delete unsynced local edits without the person
+  agreeing, after an error that a reload might have fixed. Its counterpart, re-arming
+  an incomplete clear for later boots, would repeat a hard reset after the next
+  sign-in. Both were removed in review.
 
 - **Fixing each gate separately.** The cause is still unknown, so a per-gate fix would
   leave the next unknown gate stuck. Each gate still reports its name for later fixes.
@@ -156,22 +164,29 @@ clear, which is part of why clear verification and the host wipe matter.
 ## Verification
 
 - `tests/blocking-wait-placeholder.test.tsx`:
-  - automatic clear on both terminal blockers, refused inside the cooldown and
-    offline;
-  - a workspace wait and a non-workspace wait each time out to recovery exactly at
-    the delay;
-  - the incomplete-clear notice and the `stuck_again` outcome after a real boot clear;
-  - diagnostics content;
+  - a terminal failure shows the page at once and arms no clear;
+  - the damaged-data description only for storage errors;
+  - workspace and non-workspace waits time out exactly at the delay;
+  - one report for a wait that crosses gates;
+  - the incomplete-clear notice, with its restart warning on the desktop, and its
+    absence after a day;
+  - the `stuck_again` outcome after a real boot clear;
+  - diagnostics built only when shown;
   - `RouteMessage` with and without a gate.
 - `tests/clear-local-cache.test.ts`:
-  - a complete clear;
-  - a failing delete stays armed for exactly three boots;
+  - clearing reloads by default and relaunches only when asked;
+  - a cancelled relaunch arms nothing;
+  - a failed delete is recorded and not re-run;
   - a database that survives a reported success counts as a failure;
-  - a failed hard wipe keeps its record;
-  - the native bridge and the desktop relaunch replace the web wipe, and the web wipe
-    is the fallback when the bridge refuses.
+  - a failed hard wipe keeps its record without re-arming;
+  - records age out after a day;
+  - the native bridge and desktop relaunch replace the web wipe, a Stay answer wipes
+    nothing, and a refusing bridge falls back to the web wipe.
+- `apps/electron` `desktop-exclusion.test.mjs`: the quit barrier reports cancellation
+  for Stay and for failed cleanup, but not for a quit.
 - `tests/useOrganization.test.tsx`: after the burst, the list loads when the network
-  returns, and on the 30-second retry. Both tests fail with the new effect disabled.
+  returns and on the 30-second retry, and a hidden page does not poll but retries as
+  soon as it is shown. Each fails with its part of the effect disabled.
 - `tests/runtime-provider.test.tsx` and `tests/workspace-data-scope.test.ts`:
   `runtime_init_failed` is recorded, cleared on the next attempt, and applies only to
   the target slug.

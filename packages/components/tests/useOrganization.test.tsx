@@ -629,6 +629,42 @@ describe('useOrganization list recovery', () => {
     expect(latestOrganizationState?.error).toBeNull();
   });
 
+  it('does not poll while hidden, and retries as soon as the page is shown', async () => {
+    let visibility: DocumentVisibilityState = 'visible';
+    const descriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibility,
+    });
+    try {
+      await renderApp();
+      for (let i = 0; i < 8; i += 1) await advance(5_000);
+      expect(latestOrganizationState?.organizations).toBeUndefined();
+
+      visibility = 'hidden';
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      networkUp = true;
+      for (let i = 0; i < 6; i += 1) await advance(30_000);
+      // Nothing was requested in three minutes hidden: the list is still unknown.
+      expect(latestOrganizationState?.organizations).toBeUndefined();
+
+      visibility = 'visible';
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await advance(5_000);
+      await advance(0);
+      expect(latestOrganizationState?.organizations?.map((org) => org.slug)).toEqual([
+        'target-workspace',
+      ]);
+    } finally {
+      delete (document as { visibilityState?: unknown }).visibilityState;
+      if (descriptor) Object.defineProperty(Document.prototype, 'visibilityState', descriptor);
+    }
+  });
+
   it('tries again on its own after a while, without any event', async () => {
     await renderApp();
     for (let i = 0; i < 8; i += 1) await advance(5_000);

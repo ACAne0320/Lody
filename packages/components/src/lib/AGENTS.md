@@ -30,9 +30,9 @@ Background: [components](../../../../.agents/docs/components-package.md),
 - A cloud query throws into render and keeps throwing. An optional surface inside a larger
   boundary owns an inline `ErrorBoundary`, so a backend failure degrades locally.
 - `lib/clear-local-cache.ts` owns `restartIntoCacheClear` (recoverable `lody*` caches,
-  still signed in) and `startHardReset` (full wipe/sign-out, host-native first, own
-  confirmation). Defer deletes to next boot (desktop: relaunch); clear synchronous
-  storage BEFORE the flag. A clear that leaves databases stays armed ≤3 boots.
+  still signed in; reloads one window) and `startHardReset` (full wipe/sign-out,
+  host-native first, own confirmation). Defer deletes to next boot; clear synchronous
+  storage BEFORE the flag. Record a clear's result; never re-run it unasked.
 - Cache clearing uses a localStorage DELETE list, never a keep-allowlist. Include
   connection caches (Streams JWT/gateway, cursor-bypass, workspace-info) and new
   `lody:*` cache keys; retain auth tokens and preferences.
@@ -43,7 +43,7 @@ Background: [components](../../../../.agents/docs/components-package.md),
 - Route waits are `BlockingWaitPlaceholder` (recovery at 30s), never bare
   `LoadingPlaceholder`/`BootShell`; failures are `RouteMessage` with a `gate` (`null`:
   not a failure). `stuck-connection-banner.tsx` (`MainLayout`, 45s `loading`) only
-  offers the clear; only `armAutomaticCacheClear` self-clears (terminal, online, 1/day).
+  offers the clear. Nothing clears automatically: replicas may hold unsynced edits.
 
 ## File Preview and Code Collab
 

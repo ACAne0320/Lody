@@ -28,7 +28,6 @@ vi.mock('../src/lib/deferred-posthog', () => ({
 }));
 
 import 'fake-indexeddb/auto';
-import { browserOnlineAtom } from '../src/atoms/control-connection';
 import { docMetaCacheScopeAtom } from '../src/atoms/doc-meta';
 import {
   runtimeAtom,
@@ -44,9 +43,10 @@ import {
   resetAppActivityGapForTests,
 } from '../src/lib/app-activity-gap';
 import {
-  armAutomaticCacheClear,
+  LOCAL_CLEAR_RECORD_RELEVANCE_MS,
   markCacheClearPending,
   maybeClearLodyCacheOnBoot,
+  readPendingLocalClearMode,
   resetBootClearMemoForTests,
 } from '../src/lib/clear-local-cache';
 import { WorkspaceRouteTargetProvider } from '../src/providers/workspace-route-target';
@@ -65,20 +65,16 @@ let container: HTMLDivElement;
 let root: Root;
 
 function createWorkspaceStore({
-  online = true,
   scan,
+  initErrorType = 'InvalidStateError',
 }: {
-  online?: boolean;
   scan: 'pending' | 'failed' | 'init-failed';
+  initErrorType?: string;
 }) {
   const store = createStore();
   store.set(setWorkspaceContextAtom, { slug: 'acme', workspaceId: runtime.workspaceId });
-  store.set(browserOnlineAtom, online);
   if (scan === 'init-failed') {
-    store.set(workspaceRuntimeInitFailureAtom, {
-      workspaceSlug: 'acme',
-      errorType: 'InvalidStateError',
-    });
+    store.set(workspaceRuntimeInitFailureAtom, { workspaceSlug: 'acme', errorType: initErrorType });
     return store;
   }
   store.set(runtimeAtom, runtime);
@@ -134,6 +130,20 @@ const click = (label: string) => {
 };
 const eventsNamed = (name: string) => app.events.filter((event) => event.name === name);
 
+/** Make `name`'s delete fail, as on a storage backend that cannot open it. */
+function failingDelete(name: string) {
+  const deleteDatabase = indexedDB.deleteDatabase.bind(indexedDB);
+  vi.spyOn(indexedDB, 'deleteDatabase').mockImplementation((target: string) => {
+    if (target !== name) return deleteDatabase(target);
+    return {
+      error: new DOMException('backing store', 'UnknownError'),
+      addEventListener: (type: string, listener: () => void) => {
+        if (type === 'error') queueMicrotask(listener);
+      },
+    } as unknown as IDBOpenDBRequest;
+  });
+}
+
 /** Run the boot-time clear; fake-indexeddb schedules its work on the faked timers. */
 async function bootClear(extraNames: string[] = []) {
   await act(async () => {
@@ -141,11 +151,6 @@ async function bootClear(extraNames: string[] = []) {
     await vi.runAllTimersAsync();
     await booting;
   });
-}
-
-/** The automatic clear that already ran before this page load. */
-function automaticClearRanAMinuteAgo() {
-  expect(armAutomaticCacheClear(Date.now() - 60_000)).toBe(true);
 }
 
 beforeEach(async () => {
@@ -181,43 +186,23 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const DAMAGED = 'Data stored on this device may be damaged.';
+const GENERIC = "Reload first. If that doesn't help";
+
 describe('BlockingWaitPlaceholder', () => {
-  it('repairs a failed first metadata scan by restarting into one cache clear', async () => {
-    render(createWorkspaceStore({ scan: 'failed' }));
-    await act(async () => {});
-
-    expect(app.relaunches).toEqual(['cache']);
-    expect(text()).toContain('Repairing local cache');
-    expect(eventsNamed('workspace/auto_cache_clear')).toEqual([
-      {
-        name: 'workspace/auto_cache_clear',
-        properties: expect.objectContaining({
-          gate: 'workspace_data',
-          blocker: 'doc_meta_scan_failed',
-          doc_meta_scan_error_type: 'UnknownError',
-        }),
-      },
-    ]);
-  });
-
-  it('repairs a runtime that could not be created the same way', async () => {
-    render(createWorkspaceStore({ scan: 'init-failed' }));
-    await act(async () => {});
-
-    expect(app.relaunches).toEqual(['cache']);
-  });
-
-  it('shows the ways out instead of clearing again when the repair did not help', () => {
-    automaticClearRanAMinuteAgo();
-
+  it('shows the ways out at once for a failed scan, and clears nothing on its own', () => {
     render(createWorkspaceStore({ scan: 'failed' }));
 
-    expect(app.relaunches).toEqual([]);
     expect(text()).toContain("Lody couldn't open this workspace");
+    expect(text()).toContain(DAMAGED);
     expect(buttonLabels()).toEqual(
       expect.arrayContaining(['Reload Lody', 'Clear local cache and retry', 'Copy diagnostics'])
     );
     expect(text()).toContain('Clear all local data and sign out');
+    // The replica may hold edits that never synced: deleting it is the person's call.
+    expect(readPendingLocalClearMode()).toBeNull();
+    expect(app.relaunches).toEqual([]);
+    expect(app.reloads).toBe(0);
     expect(eventsNamed('workspace/boot_wait_stuck')).toEqual([
       {
         name: 'workspace/boot_wait_stuck',
@@ -230,11 +215,19 @@ describe('BlockingWaitPlaceholder', () => {
     ]);
   });
 
-  it('never clears automatically while offline', () => {
-    render(createWorkspaceStore({ scan: 'failed', online: false }));
+  it('calls local data damaged only when the runtime failed reading storage', () => {
+    render(createWorkspaceStore({ scan: 'init-failed', initErrorType: 'RepoStorageError' }));
+    expect(text()).toContain(DAMAGED);
 
-    expect(app.relaunches).toEqual([]);
+    act(() => {
+      root.unmount();
+    });
+    root = createRoot(container);
+    render(createWorkspaceStore({ scan: 'init-failed', initErrorType: 'TypeError' }));
+
     expect(text()).toContain("Lody couldn't open this workspace");
+    expect(text()).toContain(GENERIC);
+    expect(text()).not.toContain(DAMAGED);
   });
 
   it('offers the ways out for a scan that never settles, without clearing on its own', () => {
@@ -251,7 +244,7 @@ describe('BlockingWaitPlaceholder', () => {
     });
     expect(text()).toContain('This workspace is taking too long to open');
     expect(buttonLabels()).toContain('Clear local cache and retry');
-    expect(app.relaunches).toEqual([]);
+    expect(readPendingLocalClearMode()).toBeNull();
   });
 
   it('times out a wait that has nothing to do with workspace data', () => {
@@ -273,6 +266,7 @@ describe('BlockingWaitPlaceholder', () => {
     });
 
     expect(text()).toContain('Lody is taking too long to open');
+    expect(text()).toContain(GENERIC);
     expect(buttonLabels()).toContain('Reload Lody');
     expect(eventsNamed('workspace/boot_wait_stuck')[0]?.properties).toMatchObject({
       gate: 'session_loading',
@@ -281,31 +275,58 @@ describe('BlockingWaitPlaceholder', () => {
     });
   });
 
-  it('says so when the last clear could not delete everything', async () => {
-    markCacheClearPending();
-    // A storage backend that cannot open the database cannot delete it either.
-    const deleteDatabase = indexedDB.deleteDatabase.bind(indexedDB);
-    vi.spyOn(indexedDB, 'deleteDatabase').mockImplementation((name: string) => {
-      if (name !== 'lody-loro-repo-db-ws-acme') return deleteDatabase(name);
-      return {
-        error: new DOMException('backing store', 'UnknownError'),
-        addEventListener: (type: string, listener: () => void) => {
-          if (type === 'error') queueMicrotask(listener);
-        },
-      } as unknown as IDBOpenDBRequest;
+  it('times the whole wait across gates and reports it once, under the gate shown', () => {
+    const store = createStore();
+    const wait = (gate: string) => (
+      <BlockingWaitPlaceholder
+        gate={gate}
+        variant="boot"
+        title="Loading"
+        recoveryDelayMs={RECOVERY_DELAY_MS}
+      />
+    );
+    renderNode(store, wait('session_loading'), null);
+    act(() => {
+      vi.advanceTimersByTime(RECOVERY_DELAY_MS - 1);
     });
+    // A route branch further on renders the same placeholder in the same place.
+    renderNode(store, wait('workspace_list_loading'), null);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    renderNode(store, wait('workspace_access_loading'), null);
+
+    expect(text()).toContain('Lody is taking too long to open');
+    expect(eventsNamed('workspace/boot_wait_stuck').map((event) => event.properties.gate)).toEqual([
+      'workspace_list_loading',
+    ]);
+  });
+
+  it('says so when the last clear could not delete everything, and that retrying restarts', async () => {
+    markCacheClearPending();
+    failingDelete('lody-loro-repo-db-ws-acme');
     await bootClear(['lody-loro-repo-db-ws-acme']);
-    automaticClearRanAMinuteAgo();
 
     render(createWorkspaceStore({ scan: 'failed' }));
 
     expect(text()).toContain("The last cache clear couldn't remove everything.");
+    expect(text()).toContain('Clearing again restarts Lody');
+  });
+
+  it('does not bring up a clear older than a day', async () => {
+    failingDelete('lody-loro-repo-db-ws-acme');
+    markCacheClearPending();
+    await bootClear(['lody-loro-repo-db-ws-acme']);
+    vi.setSystemTime(Date.now() + LOCAL_CLEAR_RECORD_RELEVANCE_MS);
+
+    render(createWorkspaceStore({ scan: 'failed' }));
+
+    expect(text()).not.toContain("couldn't remove everything");
   });
 
   it('reports a boot-time clear that did not get the workspace open', async () => {
     markCacheClearPending();
     await bootClear();
-    automaticClearRanAMinuteAgo();
 
     render(createWorkspaceStore({ scan: 'failed' }));
 
@@ -325,8 +346,9 @@ describe('BlockingWaitPlaceholder', () => {
   it('puts the gate, blocker, idle gap and last clear into the copied diagnostics', () => {
     localStorage.setItem('lody:lastActiveAt', String(Date.now() - 72 * 3_600_000));
     const stopTracking = installAppActivityTracking();
-    automaticClearRanAMinuteAgo();
     render(createWorkspaceStore({ scan: 'failed' }));
+    // Nothing is built while the details are closed.
+    expect(container.querySelector('pre')).toBeNull();
 
     click('Technical details');
 
@@ -336,7 +358,7 @@ describe('BlockingWaitPlaceholder', () => {
     expect(report).toContain('Workspace: acme');
     expect(report).toContain('Doc metadata scan error: UnknownError');
     expect(report).toContain('Idle before launch: 72h');
-    expect(report).toContain('Last automatic cache clear: 2026-10-13T11:59:00.000Z');
+    expect(report).toContain('Local clear in the last day: none');
     stopTracking();
   });
 });

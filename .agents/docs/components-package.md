@@ -66,26 +66,30 @@ Route failures go through `RouteMessage` with a `gate`. It always offers a retry
 recovery page. `gate: null` marks a message that is not a failure, such as a plan limit.
 
 The two scope blockers nothing retries within a page load, `runtime_init_failed` and
-`doc_meta_scan_failed`, are local-storage read failures. For those the placeholder
-claims one automatic cache clear (`armAutomaticCacheClear`): only online, at most once
-per 24 hours. The `lody:automaticCacheClearAt` marker stays out of the DELETE list so
-it survives the clear it records. A wait that never settles is never cleared
-automatically; slow is not broken.
+`doc_meta_scan_failed`, show the recovery page at once instead of after 30s. The page
+says local data may be damaged only for a storage error: a scan failure, or a runtime
+that failed with an IndexedDB or `RepoStorageError` name. Nothing clears
+automatically: the repo replica can hold edits that never synced, and a failure that
+looks terminal can be transient, so every deletion is the person's choice.
 
 Clears take effect at the next boot:
 
-- **Restarting into a clear.** The desktop relaunches through the same one-shot request
-  as `lody app reset-cache`, because a backing store that failed in this process would
-  fail the deletes too. Web and mobile reload.
+- **Restarting into a clear.** Clearing the cache reloads the one window, as Settings
+  always has. Relaunching the desktop stops the embedded CLI and its running agents,
+  so it is used only to retry a clear that left databases behind earlier the same
+  day, because the storage backend that failed lives on in this process. The relaunch
+  goes through the same one-shot request as `lody app reset-cache`. A quit answered
+  Stay arms nothing and withdraws the request.
 - **Verifying a clear.** The boot clear re-enumerates databases and writes
-  `lody:lastLocalClear`. A clear that left databases behind stays armed for up to
-  three boots, and the recovery page says so.
+  `lody:lastLocalClear`. A clear is never re-run on its own: a re-run deletes
+  everything again, which after a hard reset would sign the person out a second time.
+  Within a day of a clear that left databases behind, the recovery page says so.
 - **Hard reset.** It prefers the host: the desktop relaunches into the native wipe, and
   a mobile shell implements `window.__LODY_NATIVE_RESET__`. Only those delete at the
   file level, which is what reinstalling did.
 
 A spent workspace-list retry burst retries again on `online`, on return to the
-foreground and every 30s. [Decision](../notes/implemented/bug-fix/2026-10-13-workspace-open-recovery.md).
+foreground and every 30s while the page is visible. [Decision](../notes/implemented/bug-fix/2026-10-13-workspace-open-recovery.md).
 
 ## Locally accepted messages
 

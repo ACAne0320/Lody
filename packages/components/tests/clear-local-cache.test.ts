@@ -2,15 +2,18 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { createSessionInputStorage, SESSION_INPUT_DATABASE } from '../src/lib/session-input-storage';
+import {
+  createSessionInputStorage,
+  SESSION_INPUT_DATABASE,
+} from '../src/lib/session-input-storage';
 import type { PendingSessionSend } from '../src/lib/session-pending-sends';
 
 import {
-  AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS,
-  armAutomaticCacheClear,
+  LOCAL_CLEAR_RECORD_RELEVANCE_MS,
   markCacheClearPending,
   maybeClearLodyCacheOnBoot,
   readLastLocalClear,
+  readRecentLocalClear,
   readPendingLocalClearMode,
   resetBootClearMemoForTests,
   restartIntoCacheClear,
@@ -117,21 +120,37 @@ describe('maybeClearLodyCacheOnBoot', () => {
     const original = globalThis.indexedDB;
     Object.defineProperty(globalThis, 'indexedDB', { value: factory, configurable: true });
     const input = {
-      id: 'cache-protected-input', sessionId: 'cache-session', workspaceId: 'cache-workspace', sequence: 1,
-      historyBackend: 'roost', targetMachineId: 'original-machine', delivery: { kind: 'dispatch' }, attachments: [],
-      entry: { id: 'cache-protected-input', role: 'user', userId: 'cache-account', timestamp: '2026-10-13T00:00:00.000Z',
-        items: [{ type: 'text', text: 'only-local-copy' }], status: 'pending' },
+      id: 'cache-protected-input',
+      sessionId: 'cache-session',
+      workspaceId: 'cache-workspace',
+      sequence: 1,
+      historyBackend: 'roost',
+      targetMachineId: 'original-machine',
+      delivery: { kind: 'dispatch' },
+      attachments: [],
+      entry: {
+        id: 'cache-protected-input',
+        role: 'user',
+        userId: 'cache-account',
+        timestamp: '2026-10-13T00:00:00.000Z',
+        items: [{ type: 'text', text: 'only-local-copy' }],
+        status: 'pending',
+      },
     } as PendingSessionSend;
     let storage = createSessionInputStorage('cache-account', 'cache-workspace', factory);
     try {
-      await storage.save(input); await storage.close();
+      await storage.save(input);
+      await storage.close();
       markCacheClearPending();
       await maybeClearLodyCacheOnBoot([SESSION_INPUT_DATABASE]);
       storage = createSessionInputStorage('cache-account', 'cache-workspace', factory);
-      expect((await storage.get(input.id))?.send.entry.items).toEqual([{ type: 'text', text: 'only-local-copy' }]);
+      expect((await storage.get(input.id))?.send.entry.items).toEqual([
+        { type: 'text', text: 'only-local-copy' },
+      ]);
       await storage.close();
       resetBootClearMemoForTests();
-      await startHardReset(); await maybeClearLodyCacheOnBoot();
+      await startHardReset();
+      await maybeClearLodyCacheOnBoot();
       storage = createSessionInputStorage('cache-account', 'cache-workspace', factory);
       expect(await storage.list()).toEqual([]);
     } finally {
@@ -259,34 +278,49 @@ describe('maybeClearLodyCacheOnBoot', () => {
   );
 });
 
-describe('armAutomaticCacheClear', () => {
-  const NOW = Date.UTC(2026, 9, 13, 12);
+describe('restartIntoCacheClear', () => {
+  afterEach(() => {
+    delete (window as { ipc?: unknown }).ipc;
+  });
 
-  it('allows one automatic clear, and refuses again until the cooldown has passed', async () => {
-    expect(armAutomaticCacheClear(NOW)).toBe(true);
+  /** The desktop bridge; `relaunchIntoLocalReset` answers with `outcome`. */
+  function installDesktop(outcome: 'quitting' | 'cancelled') {
+    const relaunches: unknown[] = [];
+    (window as unknown as { ipc: unknown }).ipc = {
+      invoke: async (channel: string, ...args: unknown[]) => {
+        if (channel !== 'app.relaunchIntoLocalReset') return null;
+        relaunches.push(args[0]);
+        return outcome;
+      },
+    };
+    return relaunches;
+  }
+
+  it('reloads this window by default, even on the desktop', async () => {
+    const relaunches = installDesktop('quitting');
+
     expect(await restartIntoCacheClear()).toBe(true);
+
+    // Relaunching would quit the whole app and stop the embedded CLI's agents.
+    expect(relaunches).toEqual([]);
     expect(readPendingLocalClearMode()).toBe('cache');
+  });
 
-    // The armed clear runs at boot; the record of it has to survive that clear.
-    await maybeClearLodyCacheOnBoot();
+  it('relaunches into the clear only when asked to', async () => {
+    const relaunches = installDesktop('quitting');
+
+    expect(await restartIntoCacheClear({ relaunch: true })).toBe(true);
+
+    expect(relaunches).toEqual(['cache']);
     expect(readPendingLocalClearMode()).toBeNull();
-
-    expect(armAutomaticCacheClear(NOW + AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS - 1)).toBe(false);
-    expect(armAutomaticCacheClear(NOW + AUTOMATIC_CACHE_CLEAR_COOLDOWN_MS)).toBe(true);
   });
 
-  it('refuses when the clock moved back behind the last automatic clear', () => {
-    expect(armAutomaticCacheClear(NOW)).toBe(true);
+  it('reports a relaunch the person cancelled, and arms nothing', async () => {
+    installDesktop('cancelled');
 
-    expect(armAutomaticCacheClear(NOW - 60_000)).toBe(false);
-  });
+    expect(await restartIntoCacheClear({ relaunch: true })).toBe(false);
 
-  it('refuses when it cannot record the clear, so a failing clear cannot loop', () => {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new DOMException('full', 'QuotaExceededError');
-    });
-
-    expect(armAutomaticCacheClear(NOW)).toBe(false);
+    expect(readPendingLocalClearMode()).toBeNull();
   });
 });
 
@@ -296,26 +330,35 @@ describe('a boot clear that cannot delete everything', () => {
 
     await maybeClearLodyCacheOnBoot();
 
-    expect(readLastLocalClear()).toMatchObject({ mode: 'cache', ok: true, attempts: 1 });
+    expect(readLastLocalClear()).toMatchObject({ mode: 'cache', ok: true });
     expect(readPendingLocalClearMode()).toBeNull();
   });
 
-  it('stays armed for a bounded number of boots, then gives up visibly', async () => {
+  it('records a clear that left databases behind, and does not run it again', async () => {
     failingDatabases.add('lody-loro-repo-db-ws1');
     markCacheClearPending();
 
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      resetBootClearMemoForTests();
-      await maybeClearLodyCacheOnBoot();
-      expect(readLastLocalClear()).toMatchObject({
-        mode: 'cache',
-        ok: false,
-        failedCount: 1,
-        attempts: attempt,
-      });
-      // Retried at the next boot until the third attempt, then left to the user.
-      expect(readPendingLocalClearMode()).toBe(attempt < 3 ? 'cache' : null);
-    }
+    await maybeClearLodyCacheOnBoot();
+
+    expect(readLastLocalClear()).toMatchObject({ mode: 'cache', ok: false, failedCount: 1 });
+    // A re-run deletes everything again (after a hard reset, the next sign-in
+    // too); whether to retry is the person's choice on the recovery page.
+    expect(readPendingLocalClearMode()).toBeNull();
+    resetBootClearMemoForTests();
+    deletedDatabases = [];
+    await maybeClearLodyCacheOnBoot();
+    expect(deletedDatabases).toEqual([]);
+  });
+
+  it('treats a clear older than a day as no longer relevant', async () => {
+    markCacheClearPending();
+    await maybeClearLodyCacheOnBoot();
+    const { atMs } = readLastLocalClear()!;
+
+    expect(readRecentLocalClear(atMs + LOCAL_CLEAR_RECORD_RELEVANCE_MS - 1)).not.toBeNull();
+    expect(readRecentLocalClear(atMs + LOCAL_CLEAR_RECORD_RELEVANCE_MS)).toBeNull();
+    // A clock that moved backwards cannot make a record look current either.
+    expect(readRecentLocalClear(atMs - 1)).toBeNull();
   });
 
   it('counts a database that still exists after a reported success as not cleared', async () => {
@@ -341,8 +384,9 @@ describe('a boot clear that cannot delete everything', () => {
 
     await maybeClearLodyCacheOnBoot();
 
-    expect(readLastLocalClear()).toMatchObject({ mode: 'hard', ok: false, attempts: 1 });
-    expect(readPendingLocalClearMode()).toBe('hard');
+    expect(readLastLocalClear()).toMatchObject({ mode: 'hard', ok: false });
+    // Re-arming a hard wipe would sign the person out again after they sign in.
+    expect(readPendingLocalClearMode()).toBeNull();
   });
 });
 
@@ -461,12 +505,25 @@ describe('startHardReset sign-out', () => {
     (window as unknown as { ipc: unknown }).ipc = {
       invoke: async (channel: string, ...args: unknown[]) => {
         calls.push([channel, args]);
+        return 'quitting';
       },
     };
 
-    await startHardReset();
+    expect(await startHardReset()).toBe(true);
 
     expect(calls).toContainEqual(['app.relaunchIntoLocalReset', ['hard']]);
+    expect(readPendingLocalClearMode()).toBeNull();
+  });
+
+  it('wipes nothing when the desktop quit for the native wipe is answered Stay', async () => {
+    localStorage.setItem('lody:auth-token', 'token');
+    (window as unknown as { ipc: unknown }).ipc = {
+      invoke: async () => 'cancelled',
+    };
+
+    expect(await startHardReset()).toBe(false);
+
+    expect(localStorage.getItem('lody:auth-token')).toBe('token');
     expect(readPendingLocalClearMode()).toBeNull();
   });
 

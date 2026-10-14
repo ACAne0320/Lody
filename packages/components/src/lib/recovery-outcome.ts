@@ -1,10 +1,7 @@
 import { deferredPostHog } from './deferred-posthog';
 import { capturePostHogEvent } from './posthog-analytics';
-import { readAutomaticCacheClearAt, takeBootLocalClear } from './clear-local-cache';
+import { takeBootLocalClear } from './clear-local-cache';
 import { recordSessionRenderTrace } from './session-render-trace';
-
-/** An automatic clear is claimed and then run within seconds; allow for a slow relaunch. */
-const AUTOMATIC_CLEAR_MATCH_MS = 10 * 60 * 1000;
 
 export type RecoveryOutcome = 'ready' | 'stuck_again';
 
@@ -17,20 +14,12 @@ export type RecoveryOutcome = 'ready' | 'stuck_again';
 export function reportRecoveryOutcome(outcome: RecoveryOutcome, gate: string | null): void {
   const record = takeBootLocalClear();
   if (!record) return;
-  const automaticAt = readAutomaticCacheClearAt();
   const properties = {
     outcome,
     gate,
     mode: record.mode,
     clear_ok: record.ok,
     failed_count: record.failedCount,
-    attempts: record.attempts,
-    trigger:
-      record.mode === 'cache' &&
-      automaticAt !== null &&
-      Math.abs(record.atMs - automaticAt) < AUTOMATIC_CLEAR_MATCH_MS
-        ? 'automatic'
-        : 'manual',
   };
   recordSessionRenderTrace(`recovery outcome ${outcome} after ${record.mode} clear`);
   try {

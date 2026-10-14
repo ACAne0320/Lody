@@ -7,7 +7,6 @@ import { colors } from '@lody/ui/tokens/colors.stylex';
 import { corner, radius, space, text } from '@lody/ui/tokens/scales.stylex';
 import { Button } from '@lody/ui/button';
 import {
-  browserOnlineAtom,
   lodyConnectionUiStateAtom,
   lodyControlConnectionStateAtom,
 } from '@/atoms/control-connection';
@@ -27,15 +26,14 @@ import {
 } from '@/hooks/use-workspace-data-scope-state';
 import { readIdleGapMs } from '@/lib/app-activity-gap';
 import {
-  armAutomaticCacheClear,
-  readAutomaticCacheClearAt,
-  readLastLocalClear,
+  readRecentLocalClear,
   reloadApp,
   restartIntoCacheClear,
   startHardReset,
   type LocalClearRecord,
 } from '@/lib/clear-local-cache';
 import { collectClientBuildInfo } from '@/lib/client-build-info';
+import { getIpcServices } from '@/lib/electron-ipc-client';
 import { writeTextToClipboard } from '@/lib/clipboard';
 import { deferredPostHog } from '@/lib/deferred-posthog';
 import {
@@ -100,6 +98,36 @@ export function isTerminalWorkspaceOpenBlocker(blocker: WorkspaceDataScopeBlocke
   return blocker === 'runtime_init_failed' || blocker === 'doc_meta_scan_failed';
 }
 
+/**
+ * Error names a local-storage read fails with: IndexedDB `DOMException`s and
+ * loro-repo's `RepoStorageError`. A runtime that failed for anything else (a
+ * transport or protection requirement, say) is not evidence of damaged local
+ * data, and the page must not say it is.
+ */
+const LOCAL_STORAGE_ERROR_NAMES = new Set([
+  'RepoStorageError',
+  'UnknownError',
+  'InvalidStateError',
+  'QuotaExceededError',
+  'DataError',
+  'VersionError',
+  'NotReadableError',
+  'ConstraintError',
+  'TransactionInactiveError',
+  'ReadOnlyError',
+]);
+
+/** Whether the wait failed reading local storage, so a cache clear is the fitting answer. */
+export function isLocalStorageFailure(observation: WorkspaceDataScopeObservation): boolean {
+  const blocker = blockerOf(observation);
+  if (blocker === 'doc_meta_scan_failed') return true;
+  return (
+    blocker === 'runtime_init_failed' &&
+    observation.runtimeInitErrorType !== null &&
+    LOCAL_STORAGE_ERROR_NAMES.has(observation.runtimeInitErrorType)
+  );
+}
+
 function blockerOf(observation: WorkspaceDataScopeObservation): WorkspaceDataScopeBlocker | null {
   return observation.scope?.status === 'switching' ? observation.scope.blocker : null;
 }
@@ -110,7 +138,6 @@ export type RecoveryDiagnosticsInput = {
   waitedMs: number;
   connectionUiState: string;
   controlConnectionState: string;
-  automaticCacheClearAt: number | null;
   lastLocalClear: LocalClearRecord | null;
   idleGapMs: number | null;
   environment: ReturnType<typeof collectErrorBoundaryEnvironment>;
@@ -136,20 +163,20 @@ export function buildRecoveryDiagnostics(input: RecoveryDiagnosticsInput): strin
     ['Organizations ready', observation.organizationsReady ? 'yes' : 'no'],
     ['Runtime init error', observation.runtimeInitErrorType],
     ['Doc metadata scan error', observation.docMetaScanErrorType],
-    ['Waited', `${Math.round(input.waitedMs / 1000)}s`],
+    // One placeholder can stand in for several gates in turn; this is the whole wait.
+    ['Waited (all gates)', `${Math.round(input.waitedMs / 1000)}s`],
     [
       'Idle before launch',
       input.idleGapMs === null ? null : `${Math.round(input.idleGapMs / 3_600_000)}h`,
     ],
     ['Connection', `${input.connectionUiState} (control: ${input.controlConnectionState})`],
-    ['Last automatic cache clear', isoOrNever(input.automaticCacheClearAt)],
     [
-      'Last local clear',
+      'Local clear in the last day',
       lastLocalClear === null
-        ? 'never'
+        ? 'none'
         : `${lastLocalClear.mode} at ${isoOrNever(lastLocalClear.atMs)}, ${
             lastLocalClear.ok ? 'complete' : `${lastLocalClear.failedCount} database(s) left`
-          }, attempt ${lastLocalClear.attempts}`,
+          }`,
     ],
   ];
   const section = fields
@@ -177,7 +204,7 @@ export function reportRecoveryShown(
   failed: boolean
 ): void {
   const blocker = blockerOf(observation);
-  const lastLocalClear = readLastLocalClear();
+  const lastLocalClear = readRecentLocalClear(Date.now());
   console.warn('[blocking-wait] offering recovery', { gate, blocker, failed });
   recordSessionRenderTrace(`blocking-wait recovery ${gate} ${blocker ?? '-'}`);
   captureSafely('workspace/boot_wait_stuck', {
@@ -195,61 +222,42 @@ export function reportRecoveryShown(
   reportRecoveryOutcome('stuck_again', gate);
 }
 
-type RecoveryState = 'waiting' | 'repairing' | 'slow' | 'failed';
+type RecoveryState = 'waiting' | 'slow' | 'failed';
 
 /**
- * A terminal workspace blocker claims the one automatic cache clear and
- * restarts into it — the clear runs at boot, before the runtime reopens the
- * databases it deletes. The cooldown in `armAutomaticCacheClear` bounds that to
- * one per day, so a second failure lands on the manual page instead of a
- * restart loop. Offline, nothing is cleared automatically: the damaged copy
- * could not be downloaded again.
+ * A wait becomes the recovery page once it fails for good (a terminal workspace
+ * blocker) or outlasts `delayMs`. Nothing here clears anything on its own: the
+ * local replica can hold edits that never synced, and a failure that looks
+ * terminal can be transient, so every destructive step is the person's choice.
+ *
+ * The placeholder is one instance across route branches, so the timer covers
+ * the whole wait, not each gate; the report fires once per instance.
  */
 function useBlockingWaitRecovery(
   gate: string,
   observation: WorkspaceDataScopeObservation,
   delayMs: number
 ): RecoveryState {
-  const online = useAtomValue(browserOnlineAtom);
   const blocker = blockerOf(observation);
   const failed = blocker !== null && isTerminalWorkspaceOpenBlocker(blocker);
   const [slow, setSlow] = useState(false);
-  const [repairing, setRepairing] = useState(false);
-  const latestRef = useRef(observation);
-  latestRef.current = observation;
+  const latestRef = useRef({ gate, observation, failed });
+  latestRef.current = { gate, observation, failed };
+  const reportedRef = useRef(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setSlow(true), delayMs);
     return () => clearTimeout(timer);
   }, [delayMs]);
 
+  const offered = failed || slow;
   useEffect(() => {
-    if (!failed || !online) return;
-    if (!armAutomaticCacheClear(Date.now())) return;
+    if (!offered || reportedRef.current) return;
+    reportedRef.current = true;
     const latest = latestRef.current;
-    const properties = {
-      gate,
-      blocker: blockerOf(latest),
-      workspace_id: latest.workspaceId,
-      doc_meta_scan_error_type: latest.docMetaScanErrorType,
-      runtime_init_error_type: latest.runtimeInitErrorType,
-    };
-    console.warn('[blocking-wait] clearing local cache automatically', properties);
-    recordSessionRenderTrace(`blocking-wait auto cache clear ${String(properties.blocker)}`);
-    captureSafely('workspace/auto_cache_clear', properties);
-    setRepairing(true);
-    void restartIntoCacheClear().then((started) => {
-      if (!started) setRepairing(false);
-    });
-  }, [failed, gate, online]);
+    reportRecoveryShown(latest.gate, latest.observation, latest.failed);
+  }, [offered]);
 
-  const offered = !repairing && (failed || slow);
-  // Once per screen state; a later change of blocker is in the copied diagnostics.
-  useEffect(() => {
-    if (offered) reportRecoveryShown(gate, latestRef.current, failed);
-  }, [offered, gate, failed]);
-
-  if (repairing) return 'repairing';
   if (failed) return 'failed';
   return slow ? 'slow' : 'waiting';
 }
@@ -278,22 +286,12 @@ export function BlockingWaitPlaceholder({
   description?: string;
   recoveryDelayMs?: number;
 }) {
-  const { t } = useTranslation();
   const observation = useWorkspaceDataScopeState();
   const state = useBlockingWaitRecovery(gate, observation, recoveryDelayMs);
   const [waitStartedAt] = useState(() => Date.now());
 
   if (state === 'waiting') {
     return <LoadingPlaceholder variant={variant} title={title} description={description} />;
-  }
-  if (state === 'repairing') {
-    return (
-      <LoadingPlaceholder
-        variant={variant}
-        title={t('workspace.route.recovery.repairingTitle')}
-        description={t('workspace.route.recovery.repairingDescription')}
-      />
-    );
   }
   return (
     <RecoveryPage
@@ -330,8 +328,13 @@ export function RecoveryPage({
   const [hardResetting, setHardResetting] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [lastLocalClear] = useState(readLastLocalClear);
+  const [lastLocalClear] = useState(() => readRecentLocalClear(Date.now()));
+  // A clear that already ran in this process and left databases behind may have
+  // hit a storage backend that is itself broken; only a retry of that relaunches
+  // the desktop (stopping the embedded CLI) instead of reloading this window.
+  const relaunchClear = lastLocalClear !== null && !lastLocalClear.ok;
 
+  // Built on demand (copy, or the details open), not on every render.
   const readDiagnostics = () =>
     buildRecoveryDiagnostics({
       gate,
@@ -339,8 +342,7 @@ export function RecoveryPage({
       waitedMs: Date.now() - waitStartedAt,
       connectionUiState,
       controlConnectionState,
-      automaticCacheClearAt: readAutomaticCacheClearAt(),
-      lastLocalClear: readLastLocalClear(),
+      lastLocalClear: readRecentLocalClear(Date.now()),
       idleGapMs: readIdleGapMs(),
       environment: collectErrorBoundaryEnvironment(),
       renderTrace: getSessionRenderTraceText(),
@@ -361,20 +363,29 @@ export function RecoveryPage({
     }
   };
 
-  // The URL already names this screen's destination, and a restart keeps it.
+  // A reload keeps the URL, so the clear lands back on this screen's
+  // destination. A desktop relaunch opens the default landing instead.
   const handleClear = useCallback(() => {
     setClearing(true);
-    void restartIntoCacheClear().then((started) => {
+    void restartIntoCacheClear({ relaunch: relaunchClear }).then((started) => {
       if (started) return;
       setClearing(false);
       setClearOpen(false);
       setClearNotStarted(true);
     });
-  }, []);
+  }, [relaunchClear]);
 
   const handleHardReset = useCallback(() => {
     setHardResetting(true);
-    void Promise.resolve(startHardReset()).catch(() => setHardResetting(false));
+    void startHardReset().then(
+      (started) => {
+        if (!started) {
+          setHardResetting(false);
+          setHardResetOpen(false);
+        }
+      },
+      () => setHardResetting(false)
+    );
   }, []);
 
   const hasTarget = observation.targetSlug !== null;
@@ -392,7 +403,11 @@ export function RecoveryPage({
             ? t('workspace.route.recovery.slowTitle')
             : t('workspace.route.recovery.slowTitleGeneric')
       }
-      description={t('workspace.route.recovery.description')}
+      description={
+        isLocalStorageFailure(observation)
+          ? t('workspace.route.recovery.description')
+          : t('workspace.route.recovery.descriptionGeneric')
+      }
     >
       <StatusPageActions>
         <Button type="button" size="small" onClick={() => reloadApp()}>
@@ -412,7 +427,9 @@ export function RecoveryPage({
           {t(
             clearNotStarted
               ? 'workspace.route.recovery.clearNotStarted'
-              : 'workspace.route.recovery.clearIncomplete'
+              : getIpcServices()
+                ? 'workspace.route.recovery.clearIncompleteRelaunch'
+                : 'workspace.route.recovery.clearIncomplete'
           )}
         </p>
       ) : null}
@@ -422,7 +439,7 @@ export function RecoveryPage({
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
       >
-        <StatusPageCode size="details">{readDiagnostics()}</StatusPageCode>
+        <DiagnosticsText read={readDiagnostics} />
       </StatusPageDetails>
 
       <StatusPageFootnote>
@@ -454,6 +471,11 @@ export function RecoveryPage({
       />
     </StatusPage>
   );
+}
+
+/** Mounted only while the details are open, so the report is built only then. */
+function DiagnosticsText({ read }: { read: () => string }) {
+  return <StatusPageCode size="details">{read()}</StatusPageCode>;
 }
 
 /** `RecoveryPage` for a screen that has already failed, outside any wait. */

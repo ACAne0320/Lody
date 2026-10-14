@@ -37,6 +37,7 @@ import {
 import { CliService } from './services/cli-service'
 import type { DesktopExecutionHost } from './services/desktop-execution-host'
 import { createDesktopQuitBarrier } from './services/desktop-shutdown'
+import { cancelRequestedRelaunch, relaunchIfRequested } from './relaunch-intent'
 import { applyPendingDesktopLocalReset } from './services/local-reset-service'
 import { TerminalRelay } from './services/terminal-relay'
 import { LoroDataPlaneRelay } from './services/loro-data-plane-relay'
@@ -387,8 +388,10 @@ export function startApplication(executionHost?: DesktopExecutionHost): void {
         )
         // Quit preparation already closed every window; keep a surface to retry from.
         openOrFocusMainWindow({ icon })
-      }
+      },
+      cancelled: cancelRequestedRelaunch
     })
+    app.on('will-quit', relaunchIfRequested)
     app.on('before-quit', (event) => {
       void beforeQuit(event)
     })
