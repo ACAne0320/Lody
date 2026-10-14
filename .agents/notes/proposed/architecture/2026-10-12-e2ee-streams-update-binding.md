@@ -59,3 +59,7 @@ fails at `ownerReleased` before gate release, and finishes through actual cleanu
 No production code, algorithm, wire, API or dependency changes in this increment.
 
 Combination dependency correction (2026-10-13): pin the core SDK type-test dependency introduced by#1496 to current main streams-crdt0.17.0, retaining direct SDK0.9.0/Effect4.0.2. Reuse main release/client0.10.0 graph and preserve0.16.2 records required by other frozen-parent consumers. No workspace catalog or runtime/wire change. The old0.16.2 catalog importer mismatched the actual GitHub main combination; exact CI38347426649 failed for a missing snapshot and its logs remain. New exact CI is separately attributed.
+
+## Main integration
+
+The stack consumes main `129996ed7d641be68aa1f1f9cc480c7c88d49917` without changing reviewed core implementations. Lock conflict resolution preserves main package entries and its Flock 0.4.4 selection, adding only the core SDK test imports at this layer; Lab dependencies remain owned by the child layer. Earlier 0.4.3 checks retain their original attribution. Final-combination checks and accurate-head CI must be recorded separately; this synchronization does not approve pending protocols or production activation.
