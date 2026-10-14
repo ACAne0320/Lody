@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { recordBootRequestResult } from '@/lib/boot-request-failures';
 import {
   clearPreferredWorkspaceSlugIfMatch,
   generateWorkspaceSlug,
@@ -247,6 +248,12 @@ function useCloudOrganizationState(options?: UseOrganizationOptions) {
   const activeOrganizationError =
     activeOrganizationQueryError ??
     (activeOrganizationMatchesTarget ? activeOrganizationDataError : null);
+  useEffect(() => {
+    recordBootRequestResult('organizations', organizationsError);
+  }, [organizationsError]);
+  useEffect(() => {
+    recordBootRequestResult('active_organization', activeOrganizationQueryError);
+  }, [activeOrganizationQueryError]);
 
   const setWorkspaceContext = useSetAtom(setWorkspaceContextAtom);
   const setWorkspaceContextAtRevision = useSetAtom(setWorkspaceContextAtRevisionAtom);
@@ -487,8 +494,10 @@ function useCloudOrganizationState(options?: UseOrganizationOptions) {
       try {
         await switchOrganizationOrThrow(organizationId);
         setMutationError(null);
+        recordBootRequestResult('switch_organization', null);
       } catch (err) {
         setMutationError('Failed to switch organization');
+        recordBootRequestResult('switch_organization', err);
         throw err;
       }
     },

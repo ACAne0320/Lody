@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react';
 import type { WorkspaceId } from '@lody/shared';
 import type { WorkspaceRuntime } from '@/atoms/runtime';
 import { RecoveryPage } from '@/components/blocking-wait-placeholder';
+import { recordBootRequestResult } from '@/lib/boot-request-failures';
 import type { WorkspaceDataScopeObservation } from '@/hooks/use-workspace-data-scope-state';
 
 const runtime = {
@@ -77,4 +78,19 @@ export const SlowBeforeAnyWorkspace: Story = {
       runtimeInitErrorType: null,
     },
   },
+};
+
+/** Stuck signing in because the session check keeps getting a server error. */
+export const ServerErrorWhileSigningIn: Story = {
+  args: SlowBeforeAnyWorkspace.args,
+  decorators: [
+    (Story) => {
+      recordBootRequestResult('session', {
+        status: 503,
+        code: 'FAILED_TO_GET_SESSION',
+        message: 'Failed to get session',
+      });
+      return <Story />;
+    },
+  ],
 };

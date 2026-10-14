@@ -37,6 +37,11 @@ import {
 import { setWorkspaceContextAtom } from '../src/atoms/workspace-context';
 import { BlockingWaitPlaceholder } from '../src/components/blocking-wait-placeholder';
 import { RouteMessage } from '../src/components/route-message';
+import {
+  describeBootRequestError,
+  recordBootRequestResult,
+  resetBootRequestFailuresForTests,
+} from '../src/lib/boot-request-failures';
 import { initI18n } from '../src/i18n';
 import {
   installAppActivityTracking,
@@ -161,6 +166,7 @@ beforeEach(async () => {
   localStorage.clear();
   resetBootClearMemoForTests();
   resetAppActivityGapForTests();
+  resetBootRequestFailuresForTests();
   app.reloads = 0;
   app.relaunches = [];
   app.events = [];
@@ -360,6 +366,92 @@ describe('BlockingWaitPlaceholder', () => {
     expect(report).toContain('Idle before launch: 72h');
     expect(report).toContain('Local clear in the last day: none');
     stopTracking();
+  });
+});
+
+describe('a wait stuck on a failing request', () => {
+  const signingIn = () =>
+    renderNode(
+      createStore(),
+      <BlockingWaitPlaceholder
+        gate="session_loading"
+        variant="boot"
+        title="Signing you in"
+        recoveryDelayMs={RECOVERY_DELAY_MS}
+      />,
+      null
+    );
+
+  it('says the server failed, and that this device is not the problem', () => {
+    // Better Auth's client error for a 5xx from get-session.
+    recordBootRequestResult('session', {
+      status: 503,
+      statusText: 'Service Unavailable',
+      code: 'FAILED_TO_GET_SESSION',
+      message: 'Failed to get session',
+    });
+    signingIn();
+    act(() => {
+      vi.advanceTimersByTime(RECOVERY_DELAY_MS);
+    });
+
+    expect(text()).toContain(
+      'The server returned an error while checking your sign-in (HTTP 503).'
+    );
+    expect(text()).toContain("This isn't a problem with the data on this device.");
+    expect(text()).not.toContain(DAMAGED);
+    expect(eventsNamed('workspace/boot_wait_stuck')[0]?.properties).toMatchObject({
+      request_failure_source: 'session',
+      request_failure_kind: 'server',
+      request_failure_status: 503,
+      request_failure_code: 'FAILED_TO_GET_SESSION',
+    });
+
+    click('Technical details');
+    expect(container.querySelector('pre')?.textContent).toContain(
+      'Failing request: session: server · HTTP 503 · FAILED_TO_GET_SESSION · "Failed to get session"'
+    );
+  });
+
+  it('says the server could not be reached when the request never got an answer', () => {
+    recordBootRequestResult('organizations', new TypeError('Load failed'));
+    signingIn();
+    act(() => {
+      vi.advanceTimersByTime(RECOVERY_DELAY_MS);
+    });
+
+    expect(text()).toContain("Lody can't reach the server while loading your workspaces.");
+  });
+
+  it('drops the message once the request succeeds', () => {
+    recordBootRequestResult('session', { status: 502 });
+    recordBootRequestResult('session', null);
+    signingIn();
+    act(() => {
+      vi.advanceTimersByTime(RECOVERY_DELAY_MS);
+    });
+
+    expect(text()).not.toContain('The server');
+    expect(text()).toContain(GENERIC);
+  });
+
+  it('classifies request errors and keeps tokens out of the message', () => {
+    expect(describeBootRequestError({ status: 429 }).kind).toBe('rate_limited');
+    expect(describeBootRequestError({ status: 401 }).kind).toBe('unauthorized');
+    expect(describeBootRequestError({ error: { status: 500 } })).toMatchObject({
+      kind: 'server',
+      status: 500,
+    });
+    expect(describeBootRequestError(new TypeError('Failed to fetch')).kind).toBe('network');
+    expect(
+      describeBootRequestError({ status: 0, message: 'Network request failed' })
+    ).toMatchObject({ kind: 'network', status: null });
+    expect(
+      describeBootRequestError({
+        status: 400,
+        message: 'bad header Bearer abc.def and token Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eHF1dXg',
+      }).message
+    ).toBe('bad header Bearer … and token …');
   });
 });
 

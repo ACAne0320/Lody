@@ -26,6 +26,11 @@ import {
 } from '@/hooks/use-workspace-data-scope-state';
 import { readIdleGapMs } from '@/lib/app-activity-gap';
 import {
+  readLatestBootRequestFailure,
+  useLatestBootRequestFailure,
+  type BootRequestFailure,
+} from '@/lib/boot-request-failures';
+import {
   readRecentLocalClear,
   reloadApp,
   restartIntoCacheClear,
@@ -139,10 +144,24 @@ export type RecoveryDiagnosticsInput = {
   connectionUiState: string;
   controlConnectionState: string;
   lastLocalClear: LocalClearRecord | null;
+  requestFailure: BootRequestFailure | null;
   idleGapMs: number | null;
   environment: ReturnType<typeof collectErrorBoundaryEnvironment>;
   renderTrace: string | undefined;
 };
+
+function formatRequestFailure(failure: BootRequestFailure | null): string {
+  if (failure === null) return 'none';
+  return [
+    `${failure.source}: ${failure.kind}`,
+    failure.status === null ? null : `HTTP ${failure.status}`,
+    failure.code,
+    failure.message === null ? null : `"${failure.message}"`,
+    `at ${new Date(failure.atMs).toISOString()}`,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' · ');
+}
 
 const isoOrNever = (ms: number | null) => (ms === null ? 'never' : new Date(ms).toISOString());
 
@@ -170,6 +189,7 @@ export function buildRecoveryDiagnostics(input: RecoveryDiagnosticsInput): strin
       input.idleGapMs === null ? null : `${Math.round(input.idleGapMs / 3_600_000)}h`,
     ],
     ['Connection', `${input.connectionUiState} (control: ${input.controlConnectionState})`],
+    ['Failing request', formatRequestFailure(input.requestFailure)],
     [
       'Local clear in the last day',
       lastLocalClear === null
@@ -205,6 +225,7 @@ export function reportRecoveryShown(
 ): void {
   const blocker = blockerOf(observation);
   const lastLocalClear = readRecentLocalClear(Date.now());
+  const requestFailure = readLatestBootRequestFailure();
   console.warn('[blocking-wait] offering recovery', { gate, blocker, failed });
   recordSessionRenderTrace(`blocking-wait recovery ${gate} ${blocker ?? '-'}`);
   captureSafely('workspace/boot_wait_stuck', {
@@ -218,6 +239,10 @@ export function reportRecoveryShown(
     app_version: collectClientBuildInfo().appVersion ?? null,
     last_local_clear_mode: lastLocalClear?.mode ?? null,
     last_local_clear_ok: lastLocalClear?.ok ?? null,
+    request_failure_source: requestFailure?.source ?? null,
+    request_failure_kind: requestFailure?.kind ?? null,
+    request_failure_status: requestFailure?.status ?? null,
+    request_failure_code: requestFailure?.code ?? null,
   });
   reportRecoveryOutcome('stuck_again', gate);
 }
@@ -329,6 +354,8 @@ export function RecoveryPage({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [lastLocalClear] = useState(() => readRecentLocalClear(Date.now()));
+  const requestFailure = useLatestBootRequestFailure();
+  const storageFailure = isLocalStorageFailure(observation);
   // A clear that already ran in this process and left databases behind may have
   // hit a storage backend that is itself broken; only a retry of that relaunches
   // the desktop (stopping the embedded CLI) instead of reloading this window.
@@ -343,6 +370,7 @@ export function RecoveryPage({
       connectionUiState,
       controlConnectionState,
       lastLocalClear: readRecentLocalClear(Date.now()),
+      requestFailure: readLatestBootRequestFailure(),
       idleGapMs: readIdleGapMs(),
       environment: collectErrorBoundaryEnvironment(),
       renderTrace: getSessionRenderTraceText(),
@@ -404,9 +432,11 @@ export function RecoveryPage({
             : t('workspace.route.recovery.slowTitleGeneric')
       }
       description={
-        isLocalStorageFailure(observation)
+        storageFailure
           ? t('workspace.route.recovery.description')
-          : t('workspace.route.recovery.descriptionGeneric')
+          : requestFailure !== null
+            ? t('workspace.route.recovery.descriptionRequest')
+            : t('workspace.route.recovery.descriptionGeneric')
       }
     >
       <StatusPageActions>
@@ -420,6 +450,16 @@ export function RecoveryPage({
           {copied ? t('errorBoundary.copied') : t('workspace.route.recovery.copyDiagnostics')}
         </Button>
       </StatusPageActions>
+
+      {requestFailure !== null && !storageFailure ? (
+        <p role="status" {...stylex.props(styles.message)}>
+          <AlertTriangle {...stylex.props(styles.messageMark)} aria-hidden="true" />
+          {t(`workspace.route.recovery.requestFailed.${requestFailure.kind}`, {
+            request: t(`workspace.route.recovery.request.${requestFailure.source}`),
+            status: requestFailure.status ?? '',
+          })}
+        </p>
+      ) : null}
 
       {clearNotStarted || (lastLocalClear !== null && !lastLocalClear.ok) ? (
         <p role="status" {...stylex.props(styles.message)}>

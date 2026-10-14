@@ -108,6 +108,16 @@ Two specific dead ends were also found:
 - **The workspace list keeps trying.** After the retry burst, one more attempt runs on
   `online`, on return to the foreground, and every 30 seconds while the page is
   visible.
+- **Name a failing request.** A session check that keeps failing (offline, a 5xx, a
+  timeout) is never a sign-out, so without help the page would blame local data for a
+  server problem. The session check, the workspace list, the active workspace and the
+  workspace switch record their latest error. While one is failing, the page names
+  it in plain words with its HTTP status, says the device is not the problem, and
+  adds it to the diagnostics and the stuck report. Better Auth's `get-session` answers
+  a missing or expired session with `null`, and a backend failure (including the
+  session refresh write that long-unused sessions need) with HTTP 500
+  `FAILED_TO_GET_SESSION`; the backend logs every non-401 auth error as
+  `better-auth error response`, which is where to confirm whether this happens.
 - **Reports name the gate.** One placeholder can stand in for several gates in turn,
   so its 30-second timer covers the whole wait. `workspace/boot_wait_stuck` is sent
   once per placeholder when the recovery page appears, with the gate, blocker, idle gap and app version. The idle gap tests the

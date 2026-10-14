@@ -72,6 +72,13 @@ that failed with an IndexedDB or `RepoStorageError` name. Nothing clears
 automatically: the repo replica can hold edits that never synced, and a failure that
 looks terminal can be transient, so every deletion is the person's choice.
 
+A session check that keeps failing (offline, a 5xx, a timeout) is deliberately not
+treated as a sign-out, so a wait can be stuck on the server rather than on local
+data. `lib/boot-request-failures.ts` keeps the latest failing session, workspace-list,
+active-workspace or switch request; while one is failing, the recovery page names it
+(network, server with its HTTP status, rate limit, rejected sign-in) and says the
+device is not the problem.
+
 Clears take effect at the next boot:
 
 - **Restarting into a clear.** Clearing the cache reloads the one window, as Settings
