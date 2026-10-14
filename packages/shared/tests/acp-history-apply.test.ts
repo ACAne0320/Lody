@@ -291,7 +291,7 @@ describe('acp history apply', () => {
 
   it('stores at most 1 KiB of a command that inlines a base64 image', () => {
     const base64 = 'iVBORw0KGgo'.repeat(40_000);
-    const commandOf = (rawInput: Record<string, unknown>) => {
+    const storedTool = (rawInput: Record<string, unknown>, title?: string) => {
       const history = applyNotificationOnHistory(
         [],
         [
@@ -300,18 +300,20 @@ describe('acp history apply', () => {
             toolCallId: 'inline-image',
             kind: 'execute',
             status: 'completed',
+            title,
             rawInput,
           }),
         ]
       );
-      const toolCall = ((history[0]?.items ?? []) as unknown as MessageContent[]).find(
+      return ((history[0]?.items ?? []) as unknown as MessageContent[]).find(
         (item) => item.type === 'tool_call'
       ) as Extract<MessageContent, { type: 'tool_call' }>;
-      return toolCall.content?.find((block) => block.type === 'terminal_command') as {
+    };
+    const commandOf = (rawInput: Record<string, unknown>) =>
+      storedTool(rawInput).content?.find((block) => block.type === 'terminal_command') as {
         command: string;
         args?: string[];
       };
-    };
     const storedBytes = (block: { command: string; args?: string[] }) =>
       [block.command, ...(block.args ?? [])].reduce(
         (sum, part) => sum + new TextEncoder().encode(part).byteLength,
@@ -330,6 +332,15 @@ describe('acp history apply', () => {
     expect(codex.args?.[0]).toBe('-lc');
     expect(codex.args?.[1]?.endsWith('…')).toBe(true);
     expect(storedBytes(codex)).toBeLessThanOrEqual(MAX_STORED_TERMINAL_COMMAND_BYTES);
+
+    // Claude's adapter titles a Bash call with the command itself.
+    const command = `echo ${base64} | base64 -d > out.png`;
+    const title = storedTool({ command }, command).title ?? '';
+    expect(title.startsWith('echo iVBORw0KGgo')).toBe(true);
+    expect(title.endsWith('…')).toBe(true);
+    expect(new TextEncoder().encode(title).byteLength).toBeLessThanOrEqual(
+      MAX_STORED_TERMINAL_COMMAND_BYTES
+    );
   });
 
   it('truncates commands on code point boundaries and leaves short ones untouched', () => {

@@ -304,6 +304,15 @@ export const truncateTerminalCommandForHistory = <
   return { ...block, command, ...(block.args === undefined ? {} : { args }) };
 };
 
+/**
+ * Agents often use the full shell command as a tool title, so the title gets
+ * the same head-keeping 1 KiB bound as the command it repeats.
+ */
+export const truncateToolTitleForHistory = <T extends string | null | undefined>(title: T): T =>
+  typeof title === 'string'
+    ? (truncateTerminalCommandForHistory({ command: title }).command as T)
+    : title;
+
 const normalizeTerminalCommandsForHistory = (
   contents: StoredToolCallContent
 ): StoredToolCallContent =>
@@ -1019,7 +1028,7 @@ const mergeToolCallMessage = (
     toolCallId: incoming.toolCallId,
     // `null` title/kind means "no information" on the wire (zod allows explicit null);
     // it must keep the previously persisted value, not wipe it.
-    title: incoming.title ?? prev.title,
+    title: truncateToolTitleForHistory(incoming.title ?? prev.title),
     kind: nextKind ?? undefined,
     status: nextStatus,
     content: mergedContent.length
@@ -1333,7 +1342,7 @@ export const buildMessageContentFromNotification = (
         {
           type: 'tool_call',
           toolCallId: update.toolCallId,
-          title: update.title,
+          title: truncateToolTitleForHistory(update.title),
           toolName,
           kind: kind ?? undefined,
           status: update.status ?? previousTool?.status ?? 'pending',
@@ -1680,7 +1689,7 @@ class NotificationOnHistoryApplier {
           type: 'tool_call',
           toolCallId: update.toolCallId,
           status: update.status ?? tool?.status ?? 'pending',
-          title: update.title ?? tool?.title,
+          title: truncateToolTitleForHistory(update.title ?? tool?.title),
           kind: update.kind ?? tool?.kind,
           content:
             update.content != null
@@ -2065,6 +2074,7 @@ class NotificationOnHistoryApplier {
 
     items.push({
       ...incoming,
+      ...(incoming.title ? { title: truncateToolTitleForHistory(incoming.title) } : {}),
       status: incoming.status || 'pending',
       content: incoming.content
         ? compactToolCallContentForHistory(incoming.content, {
@@ -2366,6 +2376,7 @@ export const applyMessageContentsBatch = (
     } else {
       state.items.push({
         ...incoming,
+        ...(incoming.title ? { title: truncateToolTitleForHistory(incoming.title) } : {}),
         status: incoming.status || 'pending',
         content: incoming.content
           ? compactToolCallContentForHistory(incoming.content, {
