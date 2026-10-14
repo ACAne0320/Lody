@@ -11,6 +11,14 @@ export const conversationSurface = stylex.create({
   surfaceRow: { paddingTop: conversation.surfaceGap, paddingBottom: 0 },
   processRow: { paddingBlock: 0 },
   footerRow: { paddingBlock: 0 },
+  /* A system row carrying an Operation's bordered cards keeps the message pad
+     above — the previous row's own bottom pad already composes to the surface
+     gap there — and reserves the full surface gap below, so the next turn's
+     first row (which adds no top pad) does not crowd the card. */
+  operationSurface: {
+    paddingTop: conversation.messagePadding,
+    paddingBottom: conversation.surfaceGap,
+  },
   lastRow: { paddingBottom: conversation.messagePadding },
   // Next-user metadata and footer actions share the round reserve. Taller
   // file cards or wrapped actions grow naturally beyond this minimum.
