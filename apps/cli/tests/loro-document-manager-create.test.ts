@@ -7,7 +7,12 @@ import {
   type LocalLoroDataPlaneServerMessage,
 } from '@lody/shared/local-loro-data-plane';
 import { LocalLoroDataPlaneServerLegacy } from '@lody/shared/local-loro-data-plane-server';
-import type { WorkspaceId } from '@lody/shared';
+import {
+  SessionStatusFactory,
+  type MachineId,
+  type SessionId,
+  type WorkspaceId,
+} from '@lody/shared';
 import { InMemoryRemoteCursorStore } from '@loro-dev/streams-crdt';
 import { RepoSyncError, RepoTransportError, type RepoSyncReport } from 'loro-repo';
 
@@ -173,6 +178,7 @@ vi.mock('@/utils/http-transport', () => ({
 }));
 
 import { LoroDocumentManager } from '../src/lib/loro/doc';
+import { withWorkspaceManager } from '../src/lib/command-runtime';
 import { createCliSqliteRepoStore } from '../src/lib/loro/sqlite-repo-store';
 
 const testStreamsTokens = {
@@ -323,6 +329,87 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
       delete process.env.LODY_LORO_AUTO_RECONNECT_INTERVAL_MS;
     } else {
       process.env.LODY_LORO_AUTO_RECONNECT_INTERVAL_MS = originalReconnectIntervalEnv;
+    }
+  });
+
+  it('overlapping workspace commands share a real presence owner and keep the survivor writable', async () => {
+    let destroyed = false;
+    mocks.repoCreate.mockImplementation(async () => ({
+      joinMetaRoom: async () => createMetaSubscription(),
+      destroy: async () => {
+        destroyed = true;
+      },
+      addTransport: mocks.repoAddTransport,
+      removeTransport: mocks.repoRemoveTransport,
+      transportRooms: mocks.repoTransportRooms,
+    }));
+    mocks.cliHttpFetch.mockImplementation(async () =>
+      Response.json({
+        token: 'synthetic-streams-token',
+        expiresIn: 900,
+        gatewayBaseUrl: mocks.streamsGatewayBaseUrl,
+      })
+    );
+    const monitorAttach = vi
+      .spyOn(CliMachineMonitorRuntime.prototype, 'attachStreams')
+      .mockResolvedValue(undefined);
+    const auth = {
+      token: 'synthetic-command-token',
+      userId: 'user-1',
+      userName: 'Synthetic User',
+      userEmail: 'synthetic@example.test',
+      machineId: 'synthetic-machine' as MachineId,
+      machineName: 'Synthetic Machine',
+    };
+    const workspace = {
+      id: 'workspace-command-overlap',
+      slug: 'synthetic',
+      name: 'Synthetic',
+      role: 'owner',
+    };
+    const entered = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+    const finish = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+    const managers: LoroDocumentManager[] = [];
+    const run = (index: number) =>
+      withWorkspaceManager(auth, workspace, 'synthetic-command', async (manager) => {
+        managers[index] = manager;
+        entered[index]?.resolve();
+        await finish[index]?.promise;
+        manager.publishSessionPresence(
+          `synthetic-session-${index}` as SessionId,
+          auth.machineId,
+          SessionStatusFactory.running()
+        );
+        return 'accepted';
+      });
+    const first = run(0);
+    let second: Promise<string> | undefined;
+    try {
+      await Promise.race([first, entered[0]!.promise]);
+      second = run(1);
+      // The old helper rejects at the second presence acquisition; no sleeps
+      // or timeout are needed to distinguish that failure from successful entry.
+      await Promise.race([second, entered[1]!.promise]);
+      expect(managers[1]).toBe(managers[0]);
+      finish[0]?.resolve();
+      expect(await first).toBe('accepted');
+      expect(destroyed).toBe(false);
+      const manager = managers[1];
+      if (!manager) throw new Error('Missing surviving manager');
+      expect(
+        Object.values(manager.getPresenceStates() ?? {}).some(
+          (state) => state.kind === 'session' && state.sessionId === 'synthetic-session-0'
+        )
+      ).toBe(true);
+      finish[1]?.resolve();
+      expect(await second).toBe('accepted');
+      expect(destroyed).toBe(true);
+    } finally {
+      for (const gate of finish) gate.resolve();
+      await Promise.allSettled(second ? [first, second] : [first]);
+      monitorAttach.mockRestore();
+      mocks.repoCreate.mockReset();
+      mocks.cliHttpFetch.mockReset();
     }
   });
 

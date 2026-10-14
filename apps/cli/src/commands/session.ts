@@ -109,7 +109,7 @@ import type { SessionTurn } from '@lody/shared/session-data';
 import { AuthClient } from '@/lib/auth';
 import {
   dispatchLocalControl,
-  createCommandSessionHistoryFactory,
+  withWorkspaceManager as withCommandWorkspaceManager,
   withMachineRpcClient,
   ensureWorkspaceMetaSynced,
   listAliveDocMetas,
@@ -156,8 +156,6 @@ import {
 } from './session-output';
 import { flushTelemetry } from '@/instrument';
 import { captureSessionCommandEvent } from './analytics-events';
-import { LODY_AUTH_SITE_URL, LODY_AUTH_URL } from '@/utils/const';
-import { createCloudBillingPort, createCloudStreamsTokenPort } from '@/lib/cloud-cli-port';
 import { readMachineAccessWithBoundedRetry } from '@/session/session-access-retry';
 import { createSessionBackend } from '@/session/session-backend';
 import { Effect } from 'effect';
@@ -911,38 +909,7 @@ async function withWorkspaceManager<T>(
   workspace: WorkspaceSummary,
   fn: (manager: LoroDocumentManager) => Promise<T>
 ): Promise<T> {
-  // One-shot commands need the remote Streams transport so their writes reach
-  // the cloud (and the daemon) instead of stranding in the local SQLite store.
-  if (!LODY_AUTH_URL) {
-    throw new Error('Cloud session commands require LODY_AUTH_URL');
-  }
-  const logger = getLogger('session');
-  let manager: LoroDocumentManager;
-  const sessionHistoryFactory = createCommandSessionHistoryFactory(
-    () => manager,
-    auth,
-    workspace.id as WorkspaceId
-  );
-  manager = await LoroDocumentManager.create(workspace.id as WorkspaceId, auth.userId, logger, {
-    attachRemoteOnCreate: true,
-    streamsTokens: createCloudStreamsTokenPort({
-      token: auth.token,
-      authBaseUrl: LODY_AUTH_URL,
-      authSiteUrl: LODY_AUTH_SITE_URL,
-      logger,
-    }),
-    cloudBilling: createCloudBillingPort({ token: auth.token }),
-    sessionHistoryFactory,
-  });
-  try {
-    return await fn(manager);
-  } finally {
-    await manager.cleanUp({ fast: true, preserveSessionStatus: true }).catch((error: unknown) => {
-      getLogger('session').warn(
-        `Failed to clean up workspace manager for ${workspace.id}: ${formatErrorMessage(error)}`
-      );
-    });
-  }
+  return withCommandWorkspaceManager(auth, workspace, 'session', fn);
 }
 
 async function listSessionMetasForWorkspace(manager: LoroDocumentManager): Promise<SessionMeta[]> {

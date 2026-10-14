@@ -25,6 +25,7 @@ import {
   WORKSPACE_SYNC_UNAVAILABLE_MESSAGE,
   WorkspaceSyncUnavailableError,
 } from './command-runtime';
+import { makeWorkspaceCommandManagers } from './workspace-command-manager';
 
 const createControlRequest = (): LocalSessionControlRequest => ({
   type: 'session/create',
@@ -43,6 +44,244 @@ const createControlRequest = (): LocalSessionControlRequest => ({
 
 const tempDirs: string[] = [];
 const servers: http.Server[] = [];
+
+const commandScope = {
+  userId: 'synthetic-user',
+  token: 'synthetic-token',
+  machineId: 'synthetic-machine',
+  authBaseUrl: 'https://synthetic.invalid',
+};
+const makeCommandManager = () => ({
+  live: true,
+  writes: [] as string[],
+  async cleanUp() {
+    this.live = false;
+  },
+  write(value: string) {
+    if (!this.live) throw new Error('Manager closed');
+    this.writes.push(value);
+  },
+});
+
+describe('workspace command manager sharing', () => {
+  it('joins pending creation and keeps a surviving command usable until the last release', async () => {
+    const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
+    const created = Promise.withResolvers<ReturnType<typeof makeCommandManager>>();
+    const entered = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    const manager = makeCommandManager();
+    const first = withManager(
+      'workspace',
+      commandScope,
+      () => created.promise,
+      async (owner) => {
+        owner.write('first');
+      },
+      () => {}
+    );
+    const second = withManager(
+      'workspace',
+      commandScope,
+      async () => {
+        throw new Error('Duplicate owner');
+      },
+      async (owner) => {
+        entered.resolve();
+        await finish.promise;
+        owner.write('survivor');
+      },
+      () => {}
+    );
+    created.resolve(manager);
+    try {
+      await entered.promise;
+      await first;
+      expect(manager.live).toBe(true);
+      finish.resolve();
+      await second;
+      expect(manager.writes).toEqual(['first', 'survivor']);
+      expect(manager.live).toBe(false);
+    } finally {
+      finish.resolve();
+      await Promise.allSettled([first, second]);
+    }
+  });
+
+  it('waits for actual cleanup before replacement without blocking another workspace', async () => {
+    const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
+    const closing = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    const old = makeCommandManager();
+    old.cleanUp = async () => {
+      closing.resolve();
+      await released.promise;
+      old.live = false;
+    };
+    const first = withManager(
+      'workspace',
+      commandScope,
+      async () => old,
+      async () => 'first',
+      () => {}
+    );
+    await closing.promise;
+    const next = makeCommandManager();
+    let admitted = false;
+    const incoming = withManager(
+      'workspace',
+      commandScope,
+      async () => {
+        expect(old.live).toBe(false);
+        admitted = true;
+        return next;
+      },
+      async (owner) => owner.write('replacement'),
+      () => {}
+    );
+    try {
+      const unrelated = makeCommandManager();
+      await withManager(
+        'other-workspace',
+        commandScope,
+        async () => unrelated,
+        async (owner) => owner.write('independent'),
+        () => {}
+      );
+      expect(unrelated.writes).toEqual(['independent']);
+      expect(admitted).toBe(false);
+      released.resolve();
+      await Promise.all([first, incoming]);
+      expect(next.writes).toEqual(['replacement']);
+    } finally {
+      released.resolve();
+      await Promise.allSettled([first, incoming]);
+    }
+  });
+
+  it.each([
+    { userId: 'other-user' },
+    { token: 'other-token' },
+    { machineId: 'other-machine' },
+    { authBaseUrl: 'https://other.invalid' },
+    { authSiteUrl: 'https://other-site.invalid' },
+  ])('does not share an active manager across authorization scopes: %j', async (changed) => {
+    const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
+    const entered = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    const manager = makeCommandManager();
+    const first = withManager(
+      'workspace',
+      commandScope,
+      async () => manager,
+      async () => {
+        entered.resolve();
+        await finish.promise;
+      },
+      () => {}
+    );
+    try {
+      await entered.promise;
+      await expect(
+        withManager(
+          'workspace',
+          { ...commandScope, ...changed },
+          async () => {
+            throw new Error('Must not create another owner');
+          },
+          async () => {
+            throw new Error('Must not use another identity');
+          },
+          () => {}
+        )
+      ).rejects.toThrow('same authorization scope');
+      expect(manager.live).toBe(true);
+    } finally {
+      finish.resolve();
+      await first;
+    }
+  });
+
+  it('allows a new attempt after shared creation fails', async () => {
+    const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
+    const creating = Promise.withResolvers<ReturnType<typeof makeCommandManager>>();
+    const failure = new Error('Synthetic creation failure');
+    const create = () => creating.promise;
+    const run = async (manager: ReturnType<typeof makeCommandManager>) => manager.write('ready');
+    const outcomes = Promise.allSettled([
+      withManager('workspace', commandScope, create, run, () => {}),
+      withManager('workspace', commandScope, create, run, () => {}),
+    ]);
+    creating.reject(failure);
+    expect(await outcomes).toEqual([
+      { status: 'rejected', reason: failure },
+      { status: 'rejected', reason: failure },
+    ]);
+    const manager = makeCommandManager();
+    await withManager(
+      'workspace',
+      commandScope,
+      async () => manager,
+      run,
+      () => {}
+    );
+    expect(manager.writes).toEqual(['ready']);
+    expect(manager.live).toBe(false);
+  });
+
+  it('preserves callback failures while releasing the manager', async () => {
+    const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
+    const manager = makeCommandManager();
+    const failure = new Error('Synthetic command failure');
+    await expect(
+      withManager(
+        'workspace',
+        commandScope,
+        async () => manager,
+        async () => {
+          throw failure;
+        },
+        () => {}
+      )
+    ).rejects.toBe(failure);
+    expect(manager.live).toBe(false);
+  });
+
+  it('preserves an accepted result and retains failed cleanup rather than admitting replacement', async () => {
+    const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
+    const failure = new Error('Synthetic cleanup failure');
+    const manager = makeCommandManager();
+    manager.cleanUp = async () => {
+      throw failure;
+    };
+    const errors: unknown[] = [];
+    expect(
+      await withManager(
+        'workspace',
+        commandScope,
+        async () => manager,
+        async (owner) => {
+          owner.write('accepted');
+          return 'accepted';
+        },
+        (error) => errors.push(error)
+      )
+    ).toBe('accepted');
+    expect(manager.writes).toEqual(['accepted']);
+    expect(manager.live).toBe(true);
+    expect(errors).toEqual([failure]);
+    await expect(
+      withManager(
+        'workspace',
+        commandScope,
+        async () => {
+          throw new Error('Unsafe replacement');
+        },
+        async () => 'unexpected',
+        () => {}
+      )
+    ).rejects.toBe(failure);
+  });
+});
 
 function makeTempDir(): string {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lody-command-runtime-test-'));
