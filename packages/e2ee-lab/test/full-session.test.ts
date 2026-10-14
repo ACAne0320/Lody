@@ -253,3 +253,25 @@ it('durably retries an unadmitted join original after a lost receipt, then start
     rmSync(root, { recursive: true, force: true });
   }
 }, 15000);
+
+it('revalidates changed signed fixture originals before reusing synthetic authority', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-fixture-originals-'));
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fixture = yield* makeLabScenarioFixture(join(root, 'fixture'));
+          const before = fixture.view();
+          const record = fixture.records[0]!;
+          const original = new Uint8Array(record);
+          record[record.length - 1] = record[record.length - 1]! ^ 1;
+          expect(() => fixture.view()).toThrow();
+          record.set(original);
+          expect(fixture.view().inspectState()).toEqual(before.inspectState());
+        })
+      )
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 10000);

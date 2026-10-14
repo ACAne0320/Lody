@@ -46,7 +46,30 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
   });
   const records: Uint8Array[] = [new Uint8Array(genesis.record)];
   const point = () => ({ head: hashRecordBytes(records.at(-1)!), length: records.length });
-  const view = () => ok(verifyLedger({ anchor: genesis.genesis, records, checkpoint: point() }));
+  // This synthetic authority owns its witnessed history. Reuse a genuine view
+  // only while every original byte is unchanged; a new CAS or tampered fixture
+  // must pass full verification again. Transport reads still verify independently.
+  let verifiedOriginals: Uint8Array[] = [];
+  let verifiedView: ReturnType<typeof verifyLedger> | undefined;
+  const view = () => {
+    let unchanged = records.length === verifiedOriginals.length;
+    for (let index = 0; unchanged && index < records.length; index++) {
+      const record = records[index]!;
+      const original = verifiedOriginals[index]!;
+      unchanged = record.length === original.length;
+      for (let offset = 0; unchanged && offset < record.length; offset++)
+        unchanged = record[offset] === original[offset];
+    }
+    if (!unchanged || verifiedView === undefined) {
+      const next = verifyLedger({ anchor: genesis.genesis, records, checkpoint: point() });
+      ok(next);
+      verifiedOriginals = [];
+      for (let index = 0; index < records.length; index++)
+        verifiedOriginals.push(new Uint8Array(records[index]!));
+      verifiedView = next;
+    }
+    return ok(verifiedView);
+  };
   const admission = yield* prepareDeviceAdmission({
     genesis: genesis.genesis,
     membershipId: membership,
