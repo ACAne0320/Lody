@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { Data, Effect, Result } from 'effect';
+import { Data, Effect, Layer, Result } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 import type { makeLabCredentials } from './credentials';
 import type { makeLabControlGateway } from './control-gateway';
@@ -279,7 +279,8 @@ export function makeLabHttpHost(input: {
         abort();
         return;
       }
-      const raw = callbacks.run(Effect.result(operations.run(route(request))))
+      const raw = callbacks
+        .run(Effect.result(operations.run(route(request))))
         .then(
           (result) => {
             if (Result.isSuccess(result)) respond(response, 200, result.success);
