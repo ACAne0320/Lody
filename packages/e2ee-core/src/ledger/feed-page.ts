@@ -9,6 +9,7 @@ import {
 } from './index';
 
 export class LedgerFeedError extends Data.TaggedError('LedgerFeedError')<{
+  readonly cause?: unknown;
   readonly code:
     | 'invalid-frame'
     | 'read-too-large'
