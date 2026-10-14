@@ -21,3 +21,7 @@ Author owning tests use real signatures/HPKE, all three registered recipient kin
 Initial type checks found raw numbers where EpochNumber brands were required and a readonly test-signer mutation; fixed via real validation and a new borrowed signer. A later test incorrectly chose kind1 (machine) for Recovery; the retained failure is corrected to kind2 with an explicit genuine-state kind assertion, not a changed permission rule. Owning9/core296, package typecheck, complete root check, format/docs/public boundary pass. Independent current-head review and accurate new CI remain separate.
 
 Candidate backup/permanent loss, D12, recovery-vault encoding, SDK protected snapshot offset and Lab replay randomness remain open. This is not full migration closure, production composition, key creation, database migration, release or deployment.
+
+## External review fixes
+
+Retained metadata integrity still audits every original through the transaction. Final verification uses one iterator instead of a second full array plus N point lookups. sendStore.maxTasks bounds this audit (default 10000, configurable 1..100000); at capacity new tasks are blocked without deleting history, while existing terminal/ack updates remain possible. Oversized existing journals fail closed and require an explicitly adequate budget. This is bounded linear audit, not constant-time storage or an automatic retention policy.

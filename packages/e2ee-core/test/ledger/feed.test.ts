@@ -542,7 +542,7 @@ describe('durable full-history feed boundary', () => {
       }
     }
   );
-  it.each(['ABORT', 'IGNORE'] as const)(
+  it.each(['ABORT', 'IGNORE', 'GENESIS'] as const)(
     'rolls back actual appended records and position when metadata write is %s',
     async (failure) => {
       const f = envelopeFixture(),
@@ -564,7 +564,9 @@ describe('durable full-history feed boundary', () => {
               const disk = new Database(file);
               try {
                 disk.exec(
-                  `CREATE TRIGGER fail_feed BEFORE UPDATE ON ledger_feed_meta BEGIN SELECT RAISE(${failure}${failure === 'ABORT' ? ", 'synthetic storage fault'" : ''}); END;`
+                  failure === 'GENESIS'
+                    ? 'CREATE TRIGGER fail_feed AFTER UPDATE ON ledger_feed_meta BEGIN UPDATE ledger_feed_meta SET genesis=zeroblob(32); END'
+                    : `CREATE TRIGGER fail_feed BEFORE UPDATE ON ledger_feed_meta BEGIN SELECT RAISE(${failure}${failure === 'ABORT' ? ", 'synthetic storage fault'" : ''}); END;`
                 );
               } finally {
                 disk.close();
