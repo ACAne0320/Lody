@@ -21,3 +21,7 @@ PR: https://github.com/LodyAI/Lody/pull/1493
 初次类型检查暴露裸number未经过EpochNumber验证、测试改写只读signer；改为实际验证与新借用signer。后来Recovery测试误选kind1（machine），保留失败后纠正为kind2并断言真实已验证state.kind，没有改变权限规则。owning9／core296、package typecheck、完整根检查、format/docs/public boundary通过；当前head独立审查与准确新CI另记。
 
 候选备份／永久丢失、D12、恢复vault编码、SDK保护快照offset、Lab回放随机源仍未定。本层不代表全部迁移完成、生产组合、密钥创建、数据库迁移、发布或部署。
+
+## 外部审查修复
+
+事务仍核对全部原元数据。最终检查改用一次迭代，去除第二份整表数组及 N 次点查。sendStore.maxTasks 限制审计规模（默认 10000，可配置 1..100000）；到限阻止新增任务且不删历史，已有终态/ack 更新仍可执行。已有文件超过预算会明确拒绝写入，须显式配置足够预算。这是有界线性审计，不是常数开销或自动清理策略。

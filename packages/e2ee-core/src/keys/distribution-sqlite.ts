@@ -20,7 +20,13 @@ import {
 import { fromHex, isHash } from './reports';
 
 export class DistributionError extends Data.TaggedError('DistributionError')<{
-  readonly code: 'storage' | 'corrupt' | 'closed' | 'invalid-input' | 'context-changed';
+  readonly code:
+    | 'storage'
+    | 'corrupt'
+    | 'closed'
+    | 'invalid-input'
+    | 'context-changed'
+    | 'task-limit';
 }> {}
 const fail = (code: DistributionError['code']) => new DistributionError({ code });
 type Phase = 'Pending' | 'Observed' | 'Obsolete' | 'Revoked';
@@ -62,7 +68,11 @@ const senderEligible = (view: LedgerView, self: string) => {
 export function makeSqliteKeyDistribution(
   input: Omit<Parameters<typeof makeSqliteRecipientMailbox>[0], 'remote'> & {
     readonly remote: DistributionMailboxRemote;
-    readonly sendStore: { readonly path: string; readonly mode: 'create' | 'open' };
+    readonly sendStore: {
+      readonly path: string;
+      readonly mode: 'create' | 'open';
+      readonly maxTasks?: number;
+    };
     readonly outboxStore: { readonly path: string; readonly mode: 'create' | 'open' };
     /** Untrusted original candidate. Receiver verifies exact membership and publication. */
     readonly currentPublication: (view: LedgerView) => Effect.Effect<Uint8Array | null, unknown>;
@@ -71,6 +81,9 @@ export function makeSqliteKeyDistribution(
   return Effect.gen(function* () {
     const config = { ...input.sendStore },
       outboxConfig = { ...input.outboxStore };
+    const maxTasks = config.maxTasks ?? 10000;
+    if (!Number.isSafeInteger(maxTasks) || maxTasks < 1 || maxTasks > 100000)
+      return yield* fail('invalid-input');
     const publication = input.currentPublication;
     const native = input.keyStore.protector;
     const keyConfig = {
@@ -219,19 +232,34 @@ export function makeSqliteKeyDistribution(
           .transaction(() => {
             guard();
             const retained = (
-              db.prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id`).all() as unknown[]
-            ).map(parse);
-            write();
-            const final = (
-              db.prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id`).all() as unknown[]
+              db
+                .prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id LIMIT ?`)
+                .all(maxTasks + 1) as unknown[]
             ).map(parse);
             if (
-              !equal(load(id), expected) ||
-              final.length !== retained.length + (retained.some((t) => t.id === id) ? 0 : 1)
+              retained.length > maxTasks ||
+              (retained.length === maxTasks && !retained.some((task) => task.id === id))
             )
+              throw fail('task-limit');
+            write();
+            const originals = new Map(retained.map((task) => [task.id, task]));
+            let count = 0,
+              matched = false;
+            for (const row of db
+              .prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id`)
+              .iterate()) {
+              const task = parse(row);
+              if (++count > maxTasks) throw fail('task-limit');
+              if (task.id === id) {
+                if (!equal(task, expected)) throw fail('corrupt');
+                matched = true;
+              } else {
+                const original = originals.get(task.id);
+                if (!original || !equal(original, task)) throw fail('corrupt');
+              }
+            }
+            if (!matched || count !== retained.length + (originals.has(id) ? 0 : 1))
               throw fail('corrupt');
-            for (const old of retained)
-              if (old.id !== id && !equal(old, load(old.id))) throw fail('corrupt');
             const meta = db
               .prepare('SELECT genesis,sender FROM distribution_meta WHERE id=1')
               .get() as { genesis: unknown; sender: unknown } | undefined;

@@ -122,8 +122,12 @@ export const driveLabPermits = Effect.fn('Lab.drivePermits')(function* <A, E, R>
           if (permits >= maxSteps) {
             return yield* new LabDriverError({ code: 'budget', divergence: divergence() });
           }
-          yield* Effect.sync(() => runtime.permit(selected.eventId));
-          permits += 1;
+          yield* Effect.sync(() => {
+            // A granted synchronous phase can finish and re-enter tick immediately.
+            // Publish the driver's count before resuming that phase.
+            permits += 1;
+            runtime.permit(selected.eventId);
+          });
         }
       });
       const watch = Effect.gen(function* () {

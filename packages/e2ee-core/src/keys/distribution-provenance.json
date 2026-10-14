@@ -7,7 +7,7 @@
   },
   "scope": "Settled finite distribution of already committed protected keys; actual receiver/protected store/outbox owners. Old whole-JSON tasks and hint-derived terminal authority retired. No candidate backup, rotation wire, vault or production.",
   "destinationFingerprints": {
-    "src/keys/distribution-sqlite.ts": "39ebd8d7eba9ef802ca293a014cc0ee948c8c7d7023d587b2b0ae2a83d760248",
+    "src/keys/distribution-sqlite.ts": "10675b3702704e22c792bf20da76bc10ba43085e608d4410fe768fff5626497e",
     "src/keys/mailbox-client.ts": "888b0046d56e415060bafbaa74cdb4bcc3097a1796f3b01b14b5930e7f862018"
   }
 }
