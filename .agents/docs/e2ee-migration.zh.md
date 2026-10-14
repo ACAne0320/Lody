@@ -1,5 +1,19 @@
 # E2EE 核心与 Lab 迁移
 
+## 当前能力范围（本集中分支基于 2190d418，2026-10-14）
+
+Lab 已有 Draft [#1526](https://github.com/LodyAI/Lody/pull/1526)。下文的“尚无 Lab PR”、早期测试数量与分阶段待办属于历史进展，不能作为当前总状态。迁移尚未整体完成；逐文件状态不是功能完成率，目标路径存在也不是行为等价证明。
+
+| 能力 | 当前实现 | 剩余边界 |
+| --- | --- | --- |
+| 权限、历史作者、账本签名与提交 | public ledger / admission / submission 与 SDK CAS | 外部可信 checkpoint 的取得及持久管理不能由 SQL 或 offset 替代 |
+| 内容 | content 工作流、header3 update binding、真实 Loro/Flock 消费 | protected snapshot 发布、位置绑定与完整恢复未完成 |
+| 密钥 | history、HPKE envelope、outbox、mailbox、receiver、repair、distributor、受限 A | 新 epoch 的耐久发布/备份策略、vault 与生产 protector 未完成；合成 E7 测试不是完整 publisher |
+| Lab | 认证、joins、原 genesis 读取、外部pin既有workspace共同生命周期、header3 host写入、有限key round、真实OS actor/动作/硬退出/故障、CLI证据与判定 | genesis/新epoch/snapshot/vault producer及entropy相关原件replay/场景仍有决定或上游门槛；不称原完整Lab完成 |
+
+旧格式或旧类被淘汰，不意味着它承载的能力可以丢弃；epoch/history publisher 等必须分别登记行为替代或明确剩余责任。受限 A 批准不覆盖 vault、备份、D12、严格 B 或历史发送者信封恢复。本说明不改变任何协议或批准状态。
+
+
 [English](e2ee-migration.md)
 
 这次把公开库、协议草案和可运行的本地 Lab 收敛到一套实现，不开启产品 E2EE，不迁生产数据，不发布包，也不代表原生存钥或全平台验收。[白皮书](../../specs/e2ee/whitepaper.zh.md)描述拟采用的架构；其中独立包实现指固定来源原型，只有对应公共层验证完成后才算本仓实现。

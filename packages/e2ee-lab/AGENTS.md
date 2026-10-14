@@ -52,3 +52,11 @@ reverifies v1 with caller-pinned peer/role/position; no SQL-selected endorser or
 Synthetic protection is a Lab-only known-key boundary, never native custody or
 production wrapping. Restricted A local restore reads installed protected originals;
 it must not silently reopen a historical envelope or relax new sender eligibility.
+
+Finite action plans own a fixed initial JSON-data slice (max256), reject accessors
+and unsupported actions before effects, and run native Effect phases. OS crashes
+mean actual SIGKILL and awaited exit/close. Private IPC observations must match
+independently witnessed signed records; no SQL-selected authority on restart.
+Trace only protected protocol paths, excluding credentials; bound frames/bytes and
+report missing observations. Measured action success is not whole-security or exact
+ciphertext replay. Flock has an explicit monotonic clock and shared document owner.

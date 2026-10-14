@@ -77,3 +77,11 @@ actual SDK bridge, plaintext disposal after use and transport/native lifetime.
 Snapshot writer and legacy-read compatibility remain unimplemented pending the
 offset-binding decision; this partial codec rejects snapshots explicitly and
 does not count as complete provider migration. See [binding provenance](streams-provenance.json).
+
+
+Host consumers may use `admitDocument` for fresh writes: a genuine current view,
+exact scope and externally authenticated device must qualify; the fixed signature
+binds the same author. Historical `authenticateDocument` remains separate.
+`admitStreamsUpdateBatch` checks released streams-crdt0.17 framing and header3,
+rejecting the entire mixed batch before a host forwards unchanged original bytes.
+It does not decrypt, admit snapshots or prove ciphertext usability.

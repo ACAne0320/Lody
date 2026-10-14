@@ -176,7 +176,7 @@ export const driveLabPermits = Effect.fn('Lab.drivePermits')(function* <A, E, R>
     (scope) =>
       Effect.sync(() => runtime.close()).pipe(
         Effect.andThen(Scope.close(scope, Exit.void)),
-        Effect.ensuring(Effect.promise(() => runtime.dispose()))
+        Effect.ensuring(runtime.disposeEffect())
       )
   );
 });

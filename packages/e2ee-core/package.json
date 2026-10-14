@@ -28,7 +28,8 @@
     "./keys/host/mailbox/sqlite": "./src/keys/mailbox-client.ts",
     "./submission/streams": "./src/submission/streams.ts",
     "./keys/host/distribution/sqlite": "./src/keys/distribution-sqlite.ts",
-    "./content/streams": "./src/content/streams.ts"
+    "./content/streams": "./src/content/streams.ts",
+    "./keys/host/history": "./src/keys/installed-history.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

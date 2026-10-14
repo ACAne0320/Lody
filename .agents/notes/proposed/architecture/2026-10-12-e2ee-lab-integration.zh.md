@@ -249,3 +249,36 @@ CI3006保留关闭修复但仍红：串行后Flock3096ms／gateway3320ms通过�
 依赖组合修正（2026-10-13）：两处streams-crdt条目都由本Lab整合引入，因此只修#1526，已同步父层head不再变动。core SDK测试和Lab依赖明确钉main已有0.17.0，复用main发布包的完整client0.10.0依赖图；直接使用的streams-client仍0.9.0，Effect4.0.2不变。包级明确版本避免旧catalog条目与GitHub合并树的main0.17 catalog错配，不改其他包catalog。保留旧0.16.2解析记录供当前冻结父链其他包使用；与main组合后两处引用一致。运行源码/wire无变化，已验证同一0.17实际依赖core302/Lab94证据可复用；新准确CI和独立组合增量仍分列。
 
 CI 预算修正：key-distribution 夹具在 HTTP/接收/repair 查询中重复验证不变签名历史。现在复用真实验证的 view；仅在该私有只追加夹具新增记录后完整验证新历史。保留 epoch1、发送者撤销断言及独立 OS 子进程验证，全部 HPKE/HTTP/SQLite/报告/repair 步骤和原 15 秒限制不变。连接当前 core 的本地对照从 2757ms 到 1718ms。这是作者夹具证据，不是原生存钥或永久计时保证。父层带有失败信封定位，供明确的持久定向 repair 使用，不自动跳过。
+
+
+## 2026-10-14 集中交付：待 human 决定（全部 proposed）
+
+受限 A 已批准并继续沿用：只持久保存已合法安装 EpochKey，可信宿主初始化注入 protector；不是未发布 candidate、vault 或原信封历史资格授权。
+
+| 决定 | 推荐 | 替代 / 兼容与代价 | 不选择时阻塞 |
+|---|---|---|---|
+| G：genesis/control 布局 | 原签名 genesis 是 control 第0条；registry仅作原件发现缓存，host创建须幂等恢复 | 旧 metadata-only 不能作为完整审计起点；旧布局需显式迁移/拒绝，不能自动猜 | 新建workspace；既有已发布full-prefix+外部pin session不阻塞 |
+| S：内容snapshot与资格/信任 | 新认证header绑定真实续读位置摘要，独立pin当前Owner/Admin personal资格；旧header仅历史读取，禁止新接纳；坏snapshot客户端回完整历史 | 升级格式会拒绝旧publisher；仅按header4继续接纳保留位置替换风险，不推荐；历史API不可用须失败且保留cursor | protected snapshot publisher/admission/bootstrap；完整资格批准引用仍缺 |
+| D：D12兼容 | 沿现有atomic-removal提案tag8+snapshot-v2 required tags/独立能力pin，单条CAS移除+换代 | 旧端明确拒绝v2/tag8；不能降级tag2两步。需成套升级旧端 | 原子移除producer，不重复决定原子原则 |
+| V：vault/恢复 | 一文件秘密直接派生每workspace独立R的包装钥，逐条CAS、先读回验证新备份再撤旧、默认保留退役备份 | 现draft另有独立master V+index包装方案，需选定并改draft；直接派生更简单，换文件秘密需重包各条目；Passkey包装另审 | Recovery设置/跨设备vault恢复；受限A本地installed-key恢复不阻塞 |
+| K：新钥备份与紧急例外 | 正常发布前完成独立可读的candidate备份；没有备份时不提交 | 允许用户明确确认永久丢失风险后紧急移除可更快撤权，但publisher随后永久丢失会丢新内容；不能预发给未生效普通设备 | 耐久新epoch candidate/rotate/resume/genesis发布；已提交K配送不阻塞 |
+| R：replay entropy | 保存原签名/密文字节与真实观测，原件重放；首次seal仍安全随机 | 测试专用label entropy是另一显式能力，不改global crypto；同seed不能假称可再生同密文 | 精确seal再生成replay；有限动作执行/证据包不阻塞 |
+| N：notes资格 | host notes仅inert观察DTO；独立确认仍外部完整tuple+实际peer，不让host代选确认者 | 开放所有Member签新comparison-note需新wire/domain，暂不推荐 | 新签名note producer；现raw比较/外部确认不阻塞 |
+| B：严格期限 | 保持普通60秒容差；严格B单独批准可信时源/超时行为后再启用 | 默认严格会影响离线/高延迟；不得本次偷加claim | strictB新鲜度能力，不阻塞普通已有契约 |
+
+这张表不是批准。只有可定位human答复覆盖的行才可实施对应语义；不获答复继续完成外部pin既有workspace、实际动作执行和CLI。native平台protector、可信历史保留API及生产接线是平台/上游关联工作，不用synthetic证据冒充完成。
+
+## 集中既有工作区交付（2026-10-14）
+
+本分支完成无争议消费者，不另造core。`openLabWorkspaceSession`统一既有入组control/P09、installed protected keys、receiver/distributor、每文档Loro/Flock生命周期；两种真实native模型共用一个文档引擎，失败只停止该文档。host消费public当前写入准入核验released header3，历史作者认证不授予新写权限；拒绝snapshot/旧header，不引入新wire/domain。gate/phase/dispose自有编排用Effect；废弃Promise方法限SDK回调边界。
+
+有限JSON动作执行器启动真实OS worker、持久写文档、实际kill actor、注入真实密文/SQLite/ACK故障并消费真实观测。CLI run/inspect生成有界合成证据：实际加载源码/依赖SHA、原签名账本、保护wire原件。它不再生成首次seal字节，不宣称原完整replay。真实control CAS后丢响应保留原P09字节，硬重开恢复同字节，feed持久核对后才允许显式ACK。本地已知pin与当前网络点分开；私有IPC点仍与独立见证的签名原件核对，重开最多尝试已知local点和当前external点，不从SQL自选端点。生产独立权限来源的取得/耐久性仍归平台。
+
+作者证据：39动作涉及HPKE安装/报告、两真实SDK模型、SIGKILL/重开、坏密文、单文档隔离、native状态/cursor摘要保留、完整历史恢复、SQLite ABORT、原记录ACK恢复。负控实际删除SQL文档后独立进程重开，判定直接测出耐久丢失，不是超时。初次IGNORE夹具重试完全相同的已落盘状态，是合法幂等；改夹具为ABORT，不改持久成功契约。初次native phase测试错用了Effect yield API，释放信号没发导致超时；保留为harness错误，不计安全负控。日常所属测试复用准确已装依赖，最终组合frozen/root/build/smoke及远端CI在交接中独立归属，不重开旧P1矩阵。
+
+原core7/Lab2逐案去向只维护在manifest：六项core已有替代；永久丢失换代仍受阻；两个Lab offset行为补完整session消费者、真实SQL保留和独立OS重开回归。源指纹和登记不变。淘汰旧JSON/Team/MLS/类，不淘汰必要能力；旧验签worker pool只是未移植的可选性能优化，不恢复注入式权威；文档/cursor同SQLite事务，不重建旧分文件cursor。
+
+上面的八项表全部proposed。受限A已批准，不重复问；只覆盖installed EpochKey持久保护，不覆盖candidate/vault/B历史发送信封或生产持钥。native protector、可信保留历史API和私有产品接线为平台/上游关联工作。代码与测试不自动批准任何协议。
+
+
+补充已定消费者：unbound签名加入意图有独立Lab SQL原件journal，丢回执/重开保留原件；真实admission/P09生效后才启动普通receiver/content，入组前mailbox实际拒绝。public installed-history初始化借用原保护store，完整链核验后才保存/回读各旧钥，退出清理所拥有的临时opaque钥。真实已签坏packet不产生旧钥部分落盘，SQL ABORT明确失败，显式重试恢复原commitment；真实观测先于缺失epoch拒绝，随后旧view被拒。不创建candidate保护/vault或历史信封B。

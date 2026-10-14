@@ -62,3 +62,11 @@
   Hints only trigger retries; only genuine epoch/revocation changes terminate tasks.
   Exact readback is observation, never installation. Use already committed protected
   keys; candidate backup/rotation/vault decisions remain separately gated.
+
+- `./keys/host/history` borrows installed protected-store capabilities at trusted
+  initialization. Recover from the installed latest key only, fixed-verify the
+  full history/commitments before writes, wipe owned opaque recovery copies on
+  every exit, and preserve validated observations before missing-epoch failures.
+  It never restores historical envelopes, publishes epochs, creates reports,
+  selects vault formats or grants current writing rights. Storage failures may
+  leave safe originals; retries are explicit and idempotent, never deletion.

@@ -1,5 +1,6 @@
+import { LabContentGatewayError, type makeLabContentGateway } from './content-gateway';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { Data, Effect, Result } from 'effect';
+import { Data, Effect, Result, Semaphore } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 import type { makeLabCredentials } from './credentials';
 import type { makeLabControlGateway } from './control-gateway';
@@ -45,6 +46,10 @@ const respond = (response: ServerResponse, status: number, value: unknown) => {
  * Caller creates credentials/control owners in the same enclosing Scope first. */
 export function makeLabHttpHost(input: {
   readonly credentials: Credentials;
+  readonly contents?: (
+    genesis: Bytes.GenesisHash,
+    model: 'loro' | 'flock'
+  ) => Effect.Success<ReturnType<typeof makeLabContentGateway>> | undefined;
   readonly streams?: (
     genesis: Bytes.GenesisHash
   ) => Effect.Success<ReturnType<typeof makeLabStreamReader>> | undefined;
@@ -55,12 +60,35 @@ export function makeLabHttpHost(input: {
 }) {
   return Effect.gen(function* () {
     const credentials = input.credentials,
+      contents = input.contents,
       streams = input.streams,
       workspaces = input.workspaces,
       control = input.control,
       mailbox = input.mailbox,
       joins = input.joins;
     const active = new Set<Promise<void>>();
+    // Same-Org control and content admissions linearize at this host; a queued
+    // write checks permission only after earlier control CAS has actually settled.
+    // This is a semaphore, never a SQLite transaction held during native IO.
+    const writeLocks = new Map<string, { lock: Semaphore.Semaphore; users: number }>();
+    const write = <A, E, R>(anchor: Bytes.GenesisHash, work: Effect.Effect<A, E, R>) =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const id = Buffer.from(anchor.toBytes()).toString('hex');
+          let slot = writeLocks.get(id);
+          if (!slot) {
+            slot = { lock: Semaphore.makeUnsafe(1), users: 0 };
+            writeLocks.set(id, slot);
+          }
+          slot.users++;
+          return { id, slot };
+        }),
+        ({ slot }) => slot.lock.withPermit(work),
+        ({ id, slot }) =>
+          Effect.sync(() => {
+            if (--slot.users === 0) writeLocks.delete(id);
+          })
+      );
     let accept: ((request: IncomingMessage, response: ServerResponse) => void) | undefined;
     const server = createServer((request, response) => {
       if (!accept) return respond(response, 503, { error: 'unavailable' });
@@ -183,6 +211,27 @@ export function makeLabHttpHost(input: {
           yield* owner.put(credential, candidate);
           return { ok: true };
         }
+        const contentMatch = /^\/ds\/([0-9a-f]{64})\/(loro|flock)$/.exec(path);
+        if (contentMatch && (request.method === 'PUT' || request.method === 'POST')) {
+          const authorization = request.headers.authorization;
+          if (typeof authorization !== 'string' || !/^Bearer [0-9a-f]{64}$/.test(authorization))
+            return yield* reject(401);
+          const credential = yield* credentials.authenticate(authorization.slice(7));
+          const anchor = yield* Effect.fromResult(Bytes.genesisHash(hex(contentMatch[1], 32)));
+          if (!credential.genesis?.equals(anchor)) return yield* reject(403);
+          const gateway = contents?.(anchor, contentMatch[2] as 'loro' | 'flock');
+          if (!gateway) return yield* reject(404);
+          const original = yield* body(request, request.method === 'PUT' ? 0 : 16 * 1024 * 1024);
+          return yield* write(
+            anchor,
+            gateway.write({
+              credential,
+              requestGenesis: anchor,
+              method: request.method,
+              body: original,
+            })
+          );
+        }
         if (request.method !== 'POST') return yield* reject(404);
         if (path === '/v1/credentials/challenge') {
           const value = yield* json(request);
@@ -260,11 +309,14 @@ export function makeLabHttpHost(input: {
           return yield* reject(400);
         // No caller headers enter the public SDK CAS capability. Exactly one original
         // record; candidate validation and trusted tail pinning belong to public core.
-        return yield* gateway.append({
-          authenticatedCredential: credential,
-          requestGenesis: genesis,
-          record: framed.subarray(4),
-        });
+        return yield* write(
+          genesis,
+          gateway.append({
+            authenticatedCredential: credential,
+            requestGenesis: genesis,
+            record: framed.subarray(4),
+          })
+        );
       });
     accept = (request, response) => {
       const abort = () => request.destroy();
@@ -281,7 +333,8 @@ export function makeLabHttpHost(input: {
               respond(
                 response,
                 result.failure instanceof LabHttpError ||
-                  result.failure instanceof LabStreamReadError
+                  result.failure instanceof LabStreamReadError ||
+                  result.failure instanceof LabContentGatewayError
                   ? result.failure.status
                   : result.failure instanceof LabJoinError ||
                       result.failure instanceof LabWorkspaceError

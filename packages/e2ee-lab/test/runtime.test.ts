@@ -341,3 +341,73 @@ it.each([false, true])(
     }
   }
 );
+
+it('native Effect phases are interrupted and both close callers await actual uninterruptible SQLite settlement before releasing the database', async () => {
+  const f = await fixture();
+  const db = new Database(join(f.dir, 'native-phase.sqlite'));
+  db.exec('CREATE TABLE writes(value TEXT)');
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const scope = yield* Scope.make(),
+            entered = yield* Deferred.make<void>(),
+            release = yield* Deferred.make<void>();
+          yield* Effect.addFinalizer(() => Effect.sync(() => db.close())).pipe(
+            Effect.provideService(Scope.Scope, scope)
+          );
+          const runtime = yield* makeLabRuntime({ mode: 'auto', time: 0, fetch }).pipe(
+            Effect.provideService(Scope.Scope, scope)
+          );
+          const writer = yield* Effect.forkChild(
+            Effect.exit(
+              runtime.phaseEffect(
+                'alice',
+                'persist',
+                'native',
+                Effect.uninterruptible(
+                  Deferred.succeed(entered, undefined).pipe(
+                    Effect.andThen(Deferred.await(release)),
+                    Effect.andThen(
+                      Effect.sync(() => {
+                        db.prepare('INSERT INTO writes VALUES (?)').run('settled');
+                      })
+                    )
+                  )
+                )
+              )
+            )
+          );
+          yield* Effect.addFinalizer(() => Deferred.succeed(release, undefined));
+          yield* Deferred.await(entered);
+          const first = yield* Effect.forkChild(Scope.close(scope, Exit.void));
+          yield* Effect.sync(() => runtime.close());
+          const second = yield* Effect.forkChild(runtime.disposeEffect());
+          yield* Effect.yieldNow;
+          const openBeforeRelease = db.open;
+          const firstEarly = first.pollUnsafe(),
+            secondEarly = second.pollUnsafe();
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(first);
+          yield* Fiber.join(second);
+          yield* Fiber.join(writer);
+          expect(openBeforeRelease).toBe(true);
+          expect(firstEarly).toBeUndefined();
+          expect(secondEarly).toBeUndefined();
+          expect(db.open).toBe(false);
+          const reopened = new Database(join(f.dir, 'native-phase.sqlite'));
+          try {
+            expect(reopened.prepare('SELECT value FROM writes').all()).toEqual([
+              { value: 'settled' },
+            ]);
+          } finally {
+            reopened.close();
+          }
+        })
+      )
+    );
+  } finally {
+    if (db.open) db.close();
+    await f.close();
+  }
+});

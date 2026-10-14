@@ -80,6 +80,7 @@ export const openLabExistingWorkspace = Effect.fnUntraced(function* (input: {
         control,
         identity: auth,
         genesisRecord: () => new Uint8Array(original.record),
+        stop: () => identity.stop(),
         close: () => close,
       });
     }),

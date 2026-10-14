@@ -33,5 +33,10 @@
     "src/keys/index.ts": "237a302b9b3e70a9a8a32783c5bb6337e47f499018693d1393ab1af7bd8bb3de",
     "src/ledger/replay.ts": "3f4334342ac7b352fa561427568e895418cb9f1a40adc35319180a70639f7861",
     "src/epoch-key.ts": "91a561e0be9418a9e6feb654ad8956359739ec0a24aad7b7b55a5cee4cf5a205"
+  },
+  "installedHistoryConsumer": {
+    "file": "src/keys/installed-history.ts",
+    "sha256": "235e960d8c928213d243742810bcc421d8806754d2ba59f47e48390032d1d952",
+    "scope": "New composition of public recoverLedgerHistory and unchanged installed protected store; all crypto preflight before durable saves; owned opaque cleanup, known-prefix memory; no candidate/vault/B or new wire."
   }
 }

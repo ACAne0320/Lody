@@ -3,7 +3,7 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Cause, Deferred, Effect, Exit, Fiber, Result, Scope } from 'effect';
 import * as Documents from '@lody/e2ee-core/content';
-import { makeStreamsUpdateBinding } from '@lody/e2ee-core/content/streams';
+import { admitStreamsUpdateBatch, makeStreamsUpdateBinding } from '@lody/e2ee-core/content/streams';
 import type { PayloadProtectionProvider } from '@loro-dev/streams-crdt';
 import * as Signing from '@lody/e2ee-core/signing';
 import * as Ledger from '@lody/e2ee-core/ledger';
@@ -554,6 +554,90 @@ describe('ledger-bound signed document workflows', () => {
     signer: f.owner.signer,
     ledger: () => Effect.succeed(f.view()),
     readEpochKey: () => Effect.sync(() => read(Bytes.epochKey(source))),
+  });
+  it('admits exact header3 SDK batches only for the current authenticated writer, refusing whole mixed batches before forwarding', async () => {
+    const f = ledgerFixture(true);
+    f.addPhone();
+    const prefix = new Uint8Array([76, 83, 67, 69, 2, 1, 0, 1, 0, 0, 3]);
+    const domain = new TextEncoder().encode('loro-streams-crdt-payload-protection/v2\0');
+    const additionalData = new Uint8Array(domain.length + prefix.length);
+    additionalData.set(domain);
+    additionalData.set(prefix, domain.length);
+    const body = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const binding = yield* makeStreamsUpdateBinding({
+            ...bindingOptions(f),
+            signer: f.phone.signer,
+          });
+          const sealed = yield* binding.seal({
+            context: updateContext,
+            plaintext: new Uint8Array([4, 5]),
+            additionalData: () => additionalData,
+          });
+          const frame = new Uint8Array(4 + prefix.length + sealed.sealed.length);
+          new DataView(frame.buffer).setUint32(0, prefix.length + sealed.sealed.length, false);
+          frame.set(prefix, 4);
+          frame.set(sealed.sealed, 4 + prefix.length);
+          return frame;
+        })
+      )
+    );
+    const options = {
+      genesis: f.view().genesis,
+      resource: f.scope.resource,
+      model: 'loro' as const,
+      view: f.view(),
+      device: f.phone.signer.publicKey,
+      body,
+    };
+    const admitted = read(admitStreamsUpdateBatch(options));
+    expect(admitted).toEqual(body);
+    expect(admitted).not.toBe(body);
+    expect(
+      Result.isFailure(admitStreamsUpdateBatch({ ...options, device: f.owner.signer.publicKey }))
+    ).toBe(true);
+    expect(
+      Result.isFailure(admitStreamsUpdateBatch({ ...options, resource: 'another document' }))
+    ).toBe(true);
+    expect(Result.isFailure(admitStreamsUpdateBatch({ ...options, model: 'flock' }))).toBe(true);
+    expect(
+      Result.isFailure(
+        admitStreamsUpdateBatch({
+          ...options,
+          genesis: read(Bytes.genesisHash(new Uint8Array(32).fill(91))),
+        })
+      )
+    ).toBe(true);
+    expect(
+      Result.isFailure(admitStreamsUpdateBatch({ ...options, view: { ...options.view } }))
+    ).toBe(true);
+    for (const position of [body.length - 1, 4 + 4, 4 + 5, 4 + 8, 4 + 10]) {
+      const invalid = new Uint8Array(body);
+      invalid[position] = invalid[position]! ^ 1;
+      expect(Result.isFailure(admitStreamsUpdateBatch({ ...options, body: invalid }))).toBe(true);
+      const mixed = new Uint8Array(body.length * 2);
+      mixed.set(body);
+      mixed.set(invalid, body.length);
+      expect(Result.isFailure(admitStreamsUpdateBatch({ ...options, body: mixed }))).toBe(true);
+    }
+    expect(Result.isFailure(admitStreamsUpdateBatch({ ...options, body: new Uint8Array() }))).toBe(
+      true
+    );
+    expect(
+      Result.isFailure(
+        admitStreamsUpdateBatch({ ...options, body: body.subarray(0, body.length - 1) })
+      )
+    ).toBe(true);
+    f.append([5, f.phone.raw]);
+    // A legitimately historical author still authenticates old bytes, but cannot
+    // use that historical identity for a fresh write through the host API.
+    expect(
+      Result.isSuccess(
+        Documents.authenticateDocument(f.view(), f.scope, body.subarray(15), additionalData)
+      )
+    ).toBe(true);
+    expect(code(admitStreamsUpdateBatch({ ...options, view: f.view() }))).toBe('unauthorized');
   });
   it('binds settled header3 updates to real ledger, signer and commitment using published SDK types', async () => {
     const f = ledgerFixture(true);

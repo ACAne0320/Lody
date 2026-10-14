@@ -1,4 +1,8 @@
-import { Deferred, Effect, Layer, Queue, Ref, Result } from 'effect';
+import { Cause, Context, Deferred, Effect, Exit, Layer, Queue, Ref, Result, Scope } from 'effect';
+import { makeLabOperations } from './operation-scope';
+const PhaseParent = Context.Reference<string | undefined>('Lab/PhaseParent', {
+  defaultValue: () => undefined,
+});
 import { LegacyLabRun, runLabSync } from './run';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
@@ -44,7 +48,8 @@ export type ViewFreeze = {
 /** @deprecated Explicit Promise bridge for SDK/harness callbacks. Acquire with makeLabRuntime. */
 export class LegacyLabRuntime {
   private readonly active = new Set<Promise<unknown>>();
-  private disposing?: Promise<void>;
+  private disposing = false;
+  private readonly disposed = Deferred.makeUnsafe<void>();
   private readonly scheduler: Ref.Ref<SchedulerState>;
   private readonly run = new LegacyLabRun(Layer.empty);
   private readonly notifications = new Set<Queue.Queue<void>>();
@@ -101,7 +106,11 @@ export class LegacyLabRuntime {
   /** Honest-operation starts recorded for strict replay. */
   readonly startLog: ScheduleChoice[] = [];
 
-  constructor(options: LabRuntimeOptions) {
+  constructor(
+    options: LabRuntimeOptions,
+    private readonly operations: Effect.Success<ReturnType<typeof makeLabOperations>>,
+    private readonly nativeScope: Scope.Closeable
+  ) {
     this.mode = options.mode;
     this.fetchImpl = options.fetch;
     this.scheduler = Ref.makeUnsafe(emptyScheduler(options.time));
@@ -279,42 +288,85 @@ export class LegacyLabRuntime {
     this.run.addFinalizer(finalizer);
   }
 
+  /** Effect owner closes admission, interrupts phases, awaits raw SDK settlement,
+   * then releases callback Context. All callers observe the same completion. */
+  disposeEffect() {
+    return Effect.uninterruptible(
+      Effect.gen({ self: this }, function* () {
+        this.close();
+        if (!this.disposing) {
+          this.disposing = true;
+          const result = yield* Effect.exit(
+            Scope.close(this.nativeScope, Exit.void).pipe(
+              Effect.ensuring(Effect.promise(() => Promise.allSettled([...this.active]))),
+              Effect.ensuring(Effect.promise(() => this.run.close()))
+            )
+          );
+          yield* Deferred.done(this.disposed, result);
+        }
+        return yield* Deferred.await(this.disposed);
+      })
+    );
+  }
+  /** @deprecated SDK/application Promise boundary only. */
   dispose(): Promise<void> {
-    this.close();
-    return (this.disposing ??= (async () => {
-      // close rejects gates and aborts fetch; retain raw work until settlement.
-      await Promise.all([...this.active]);
-      await this.run.close();
-    })());
+    return Effect.runPromiseExit(this.disposeEffect()).then((exit) => {
+      if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
+    });
   }
 
-  async gate(actor: string, operation: string, phase: string): Promise<string> {
-    if (this.closed) throw new Error('runtime-closed');
-    const requested = requestEvent(this.state, {
-      actor,
-      operation,
-      phase,
-      parent: this.gateContext.getStore(),
-    });
-    this.state = requested.state;
-    this.flushRequestWaiters();
-    const eventId = requested.event.eventId;
-    const armed = this.pendingIntercepts.findIndex((item) => item.match(requested.event));
-    if (armed >= 0) {
-      const matched = this.pendingIntercepts[armed]!;
-      this.pendingIntercepts.splice(armed, 1);
-      this.intercepts.push({ ...matched.intercept, eventId });
-    }
-    const ready = Deferred.makeUnsafe<void, Error>();
-    this.waiters.set(eventId, ready);
-    this.dispatch();
-    this.changed();
-    try {
-      await this.run.run(Deferred.await(ready));
-    } finally {
-      this.waiters.delete(eventId);
-    }
-    return eventId;
+  gateEffect(actor: string, operation: string, phase: string) {
+    return Effect.acquireUseRelease(
+      Effect.gen({ self: this }, function* () {
+        if (this.closed) return yield* Effect.fail(new Error('runtime-closed'));
+        const parent = (yield* PhaseParent) ?? this.gateContext.getStore();
+        const requested = requestEvent(this.state, { actor, operation, phase, parent });
+        this.state = requested.state;
+        this.flushRequestWaiters();
+        const eventId = requested.event.eventId;
+        const armed = this.pendingIntercepts.findIndex((item) => item.match(requested.event));
+        if (armed >= 0) {
+          const matched = this.pendingIntercepts.splice(armed, 1)[0]!;
+          this.intercepts.push({ ...matched.intercept, eventId });
+        }
+        const ready = Deferred.makeUnsafe<void, Error>();
+        this.waiters.set(eventId, ready);
+        this.dispatch();
+        this.changed();
+        return { eventId, ready };
+      }),
+      ({ eventId, ready }) => Deferred.await(ready).pipe(Effect.as(eventId)),
+      ({ eventId }) =>
+        Effect.sync(() => {
+          this.waiters.delete(eventId);
+        })
+    );
+  }
+  /** @deprecated Native SDK callback boundary only. */
+  gate(actor: string, operation: string, phase: string): Promise<string> {
+    return this.run.run(this.gateEffect(actor, operation, phase));
+  }
+
+  phaseEffect<A, E, R>(
+    actor: string,
+    operation: string,
+    phase: string,
+    work: Effect.Effect<A, E, R>
+  ) {
+    return this.operations.run(
+      Effect.gen({ self: this }, function* () {
+        const eventId = yield* this.gateEffect(actor, operation, phase);
+        return yield* work.pipe(
+          Effect.provideService(PhaseParent, eventId),
+          Effect.tap(() =>
+            Effect.suspend(() =>
+              this.closed ? Effect.fail(new Error('runtime-closed')) : Effect.void
+            )
+          ),
+          Effect.ensuring(Effect.sync(() => this.complete(eventId)))
+        );
+      })
+    );
   }
 
   /**
@@ -322,22 +374,25 @@ export class LegacyLabRuntime {
    * phase is a child event: it is visible to the scheduler and needs its own
    * permit, which may be granted only while its parent chain is permitted.
    */
-  async phase<T>(
-    actor: string,
-    operation: string,
-    phase: string,
-    work: () => Promise<T>
-  ): Promise<T> {
-    return this.retain(async () => {
-      const eventId = await this.gate(actor, operation, phase);
-      try {
-        const value = await this.gateContext.run(eventId, work);
-        if (this.closed) throw new Error('runtime-closed');
-        return value;
-      } finally {
-        this.complete(eventId);
-      }
-    });
+  /** @deprecated Promise work belongs only to native callback bridges. */
+  phase<T>(actor: string, operation: string, phase: string, work: () => Promise<T>): Promise<T> {
+    return this.run.run(
+      this.phaseEffect(
+        actor,
+        operation,
+        phase,
+        Effect.gen({ self: this }, function* () {
+          const parent = yield* PhaseParent;
+          // Legacy borrowed Promise has no cancellation contract: wait actual completion.
+          return yield* Effect.uninterruptible(
+            Effect.tryPromise({
+              try: () => this.gateContext.run(parent!, work),
+              catch: (error) => error,
+            })
+          );
+        })
+      )
+    );
   }
 
   gatedFetch(actor: string): typeof globalThis.fetch {
@@ -466,9 +521,15 @@ export interface LabRuntimeOptions {
   readonly fetch: typeof globalThis.fetch;
 }
 /** Scope owns admission, abort, raw settlement and final resource closure. */
-export function makeLabRuntime(options: LabRuntimeOptions) {
-  return Effect.acquireRelease(
-    Effect.sync(() => new LegacyLabRuntime({ ...options })),
-    (runtime) => Effect.promise(() => runtime.dispose())
+export const makeLabRuntime = Effect.fnUntraced(function* (options: LabRuntimeOptions) {
+  const nativeScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+    Scope.close(scope, Exit.void)
   );
-}
+  const operations = yield* makeLabOperations().pipe(
+    Effect.provideService(Scope.Scope, nativeScope)
+  );
+  return yield* Effect.acquireRelease(
+    Effect.sync(() => new LegacyLabRuntime({ ...options }, operations, nativeScope)),
+    (runtime) => runtime.disposeEffect()
+  );
+});

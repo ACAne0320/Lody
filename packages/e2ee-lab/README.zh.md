@@ -1,5 +1,32 @@
 # 公开 E2EE Lab（迁移中）
 
+## 运行集中既有工作区场景
+
+```sh
+pnpm --filter @lody/e2ee-lab lab run /绝对路径/新输出目录
+pnpm --filter @lody/e2ee-lab lab inspect /绝对路径/新输出目录/evidence.json
+```
+
+默认有限计划用真实子进程、challenge/bearer HTTP、public HPKE/SQLite/P09、已发布Loro/Flock SDK执行39个动作：实际SIGKILL/重开、签名control提交后丢ACK与原字节恢复、坏密文、单文档停止/持久对不推进、客户端完整历史恢复、SQLite ABORT。`evidence.json`记录实际源码/依赖指纹、原签名记录、服务端密文字节、调度、判定与未测范围；私有设备夹具导出只在IPC内存。`fixture/*-transport.jsonl`保存原始/投递保护字节，不记凭据。exit0仅表示已测动作契约通过，不表示三类安全维度/完整迁移全通过；exit2为测得违约/缺口，exit1为harness失败，exit64为CLI用法错误。自定义动作是≤256项JSON数组，未知动作/actor、访问器和必要观测缺失在作用前明确拒绝。SIGINT/TERM中断入口并等待actor终止；不提供精确字节重seal replay。
+
+`./join-session`先落盘/核验原签名加入意图再POST，丢回执不重签；unbound发现不授予收钥，Owner走public admission/P09并核对持久feed后ACK，新成员才启动key/content。
+
+`./full-session`统一已入组control、receiver/distributor、installed protected keys和每文档Loro/Flock owner；重认证先等旧native操作结束。本地已知pin与当前网络点分开：合成进程桥把返回点与独立见证的签名原件核对，最多尝试两个外部已知重开点，不从SQL自选权限端点。Flock用显式单调逻辑时钟。最新installed钥的历史恢复消费public `./keys/host/history`，核验全链再持久保存/回读旧钥，不回开历史发送信封或candidate备份。夹具准备的是已经发布的完整前缀，不是产品创建或耐久新epoch publisher。历史可用时才可恢复，只停失败文档。
+
+## 当前能力范围（本集中分支基于 2190d418，2026-10-14）
+
+Lab 已有 Draft [#1526](https://github.com/LodyAI/Lody/pull/1526)。下文的“尚无 Lab PR”、早期测试数量与分阶段待办属于历史进展，不能作为当前总状态。迁移尚未整体完成；逐文件状态不是功能完成率，目标路径存在也不是行为等价证明。
+
+| 能力 | 当前实现 | 剩余边界 |
+| --- | --- | --- |
+| 权限、历史作者、账本签名与提交 | public ledger / admission / submission 与 SDK CAS | 外部可信 checkpoint 的取得及持久管理不能由 SQL 或 offset 替代 |
+| 内容 | content 工作流、header3 update binding、真实 Loro/Flock 消费 | protected snapshot 发布、位置绑定与完整恢复未完成 |
+| 密钥 | history、HPKE envelope、outbox、mailbox、receiver、repair、distributor、受限 A | 新 epoch 的耐久发布/备份策略、vault 与生产 protector 未完成；合成 E7 测试不是完整 publisher |
+| Lab | 认证、joins、原 genesis 读取、外部pin既有workspace共同生命周期、header3 host写入、有限key round、真实OS actor/动作/硬退出/故障、CLI证据与判定 | genesis/新epoch/snapshot/vault producer及entropy相关原件replay/场景仍有决定或上游门槛；不称原完整Lab完成 |
+
+旧格式或旧类被淘汰，不意味着它承载的能力可以丢弃；epoch/history publisher 等必须分别登记行为替代或明确剩余责任。受限 A 批准不覆盖 vault、备份、D12、严格 B 或历史发送者信封恢复。本说明不改变任何协议或批准状态。
+
+
 这个可运行、private 的 workspace 消费公开 `@lody/e2ee-core` 和实际发布 SDK：
 streams-client 0.9.0、streams-crdt 0.17.0、Loro 1.16.3、Flock 0.4.3、
 SQLite Riverrun 0.3.0，以及根锁定的 Effect 4.0.2。不保留另一套复制 core。

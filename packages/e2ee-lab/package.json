@@ -30,14 +30,21 @@
     "./http-identity": "./src/platform/http-identity.ts",
     "./workspace-session": "./src/platform/workspace-session.ts",
     "./snapshot-cache": "./src/platform/snapshot-cache.ts",
-    "./synthetic-protection": "./src/platform/synthetic-protection.ts"
+    "./synthetic-protection": "./src/platform/synthetic-protection.ts",
+    "./full-session": "./src/platform/full-session.ts",
+    "./actions": "./src/platform/action-executor.ts",
+    "./scenarios": "./src/platform/scenario-runner.ts",
+    "./process-actor": "./src/platform/process-actor.ts",
+    "./content-gateway": "./src/platform/content-gateway.ts",
+    "./join-session": "./src/platform/join-session.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "test": "vitest run --no-file-parallelism",
     "check": "pnpm typecheck && pnpm test",
     "format": "oxfmt 'src/**/*.ts' 'test/**/*.ts' 'test/**/*.mts'",
-    "format:check": "oxfmt --check 'src/**/*.ts' 'test/**/*.ts' 'test/**/*.mts'"
+    "format:check": "oxfmt --check 'src/**/*.ts' 'test/**/*.ts' 'test/**/*.mts'",
+    "lab": "node bin/e2ee-lab.mjs"
   },
   "dependencies": {
     "@lody/e2ee-core": "workspace:*",
@@ -56,5 +63,8 @@
     "oxfmt": "^0.65.0",
     "tsx": "4.23.7",
     "@types/better-sqlite3": "catalog:"
+  },
+  "bin": {
+    "e2ee-lab": "./bin/e2ee-lab.mjs"
   }
 }

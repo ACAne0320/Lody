@@ -124,3 +124,13 @@ Host-only initialization and durable recipient key retention now live under [`./
 [Finite recipient installation and original-report queue](RECEIVE.md) uses explicit `./keys/host/receive/sqlite`. It composes the protected store with real HPKE/commitment and retains exact queued reports; sender/repair/SDK/Lab owners remain separate.
 
 The explicit [durable repair queue](REPAIR.md) binds stable source request IDs before dispatch and retains local ACK history without claiming key installation. Sender discovery and receive-fetch composition remain separate.
+
+
+`./keys/host/history` provides `makeInstalledEpochHistory` at trusted composition.
+It validates the entire signed history against the already installed latest key,
+then saves/reloads recovered older keys through the unchanged protected store.
+Owned latest/recovered copies are disposed on every exit. `read(epoch)` recovers
+only a genuine missing old key; corrupt/native/permission failures remain errors.
+Partial storage success remains failure and is reconciled idempotently. This is
+installed-key history restoration, not an epoch publisher, vault or historical
+sender-envelope restoration, and it creates no delivery report.

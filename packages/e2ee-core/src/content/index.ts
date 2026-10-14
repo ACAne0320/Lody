@@ -146,6 +146,25 @@ export function authenticateDocument(
     });
   });
 }
+/** Host new-write admission, distinct from historical authentication and AEAD open.
+ * The caller selects current genuine view, exact scope and authenticated principal.
+ * Admission proves signature/current writing permission, never valid plaintext. */
+export function admitDocument(
+  view: LedgerView,
+  scope: ContentScope,
+  frame: Uint8Array,
+  authenticatedDevice: Bytes.SigningPublicKey,
+  additionalData?: Uint8Array
+) {
+  return Result.gen(function* () {
+    const principal = yield* Bytes.signingPublicKey(authenticatedDevice.toBytes());
+    yield* boundAuthority(view, scope, principal, true);
+    const authenticated = yield* authenticateDocument(view, scope, frame, additionalData);
+    if (authenticated.header.device !== keyId(principal.toBytes()))
+      return yield* fail('unauthorized');
+    return authenticated;
+  });
+}
 export function openDocument(
   view: LedgerView,
   scope: ContentScope,

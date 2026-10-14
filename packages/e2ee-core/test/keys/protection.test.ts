@@ -9,7 +9,9 @@ import { synthetic } from './protection-fixture';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { makeHostEpochProtection, type NativeEpochProtector } from '@lody/e2ee-core/keys/host';
-import { commitEpochKey } from '../../src/keys/history';
+import { makeInstalledEpochHistory } from '@lody/e2ee-core/keys/host/history';
+import { Bytes } from '@lody/e2ee-core';
+import { commitEpochKey, sealHistoryPacket } from '../../src/keys/history';
 import { contentPermissions } from '@lody/e2ee-core/ledger';
 import { envelopeFixture } from './fixture';
 const ok = Result.getOrThrow;
@@ -541,4 +543,147 @@ describe('verified host observations and durable authority readback', () => {
       );
     }
   );
+});
+
+it('recovers and durably reloads all old keys from only installed latest K, validating the whole chain before writes; failed missing-epoch reads retain observed revocation', async () => {
+  const f = envelopeFixture(),
+    native = synthetic(),
+    pathName = file();
+  const key1 = ok(Bytes.epochKey(new Uint8Array(32).fill(176))),
+    key2 = ok(Bytes.epochKey(new Uint8Array(32).fill(177)));
+  f.append([
+    7,
+    1,
+    ok(commitEpochKey(f.context.genesis, 1, key1)).toBytes(),
+    ok(
+      sealHistoryPacket({
+        genesis: f.context.genesis,
+        epoch: 1,
+        currentKey: key1,
+        previousKey: f.secret,
+      })
+    ),
+  ]);
+  f.append([
+    7,
+    2,
+    ok(commitEpochKey(f.context.genesis, 2, key2)).toBytes(),
+    ok(
+      sealHistoryPacket({
+        genesis: f.context.genesis,
+        epoch: 2,
+        currentKey: key2,
+        previousKey: key1,
+      })
+    ),
+  ]);
+  let selected = f.view();
+  const ledger = () => Effect.succeed(selected);
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const store = yield* makeSqliteProtectedEpochKeys({
+          ...config(f, native.protector),
+          ledger,
+          path: pathName,
+          mode: 'create',
+        });
+        yield* store.saveAndReload(2, key2);
+        const history = yield* makeInstalledEpochHistory({
+          genesis: f.context.genesis,
+          ledger,
+          installed: store,
+        });
+        const restored = yield* history.read(0);
+        expect(ok(commitEpochKey(f.context.genesis, 0, restored))).toEqual(
+          ok(commitEpochKey(f.context.genesis, 0, f.secret))
+        );
+        const db = new Database(pathName, { readonly: true, fileMustExist: true });
+        try {
+          expect(db.prepare('SELECT epoch FROM protected_epoch_keys ORDER BY epoch').all()).toEqual(
+            [{ epoch: 0 }, { epoch: 1 }, { epoch: 2 }]
+          );
+        } finally {
+          db.close();
+        }
+        const prior = selected;
+        f.append([5, f.phone.raw]);
+        selected = f.view();
+        expect(Result.isFailure(yield* Effect.result(history.read(99)))).toBe(true);
+        selected = prior;
+        expect(Result.isFailure(yield* Effect.result(history.read(2)))).toBe(true);
+      })
+    )
+  );
+  wiped(native.plains);
+});
+it('bad signed history produces no partial older durable keys, and retries after native storage ABORT recover original commitments', async () => {
+  for (const corrupt of [true, false]) {
+    const f = envelopeFixture(),
+      native = synthetic(),
+      pathName = file();
+    const key1 = ok(Bytes.epochKey(new Uint8Array(32).fill(178))),
+      key2 = ok(Bytes.epochKey(new Uint8Array(32).fill(179)));
+    const packet = ok(
+      sealHistoryPacket({
+        genesis: f.context.genesis,
+        epoch: 1,
+        currentKey: key1,
+        previousKey: f.secret,
+      })
+    );
+    if (corrupt) packet[packet.length - 1] = packet.at(-1)! ^ 1;
+    f.append([7, 1, ok(commitEpochKey(f.context.genesis, 1, key1)).toBytes(), packet]);
+    f.append([
+      7,
+      2,
+      ok(commitEpochKey(f.context.genesis, 2, key2)).toBytes(),
+      ok(
+        sealHistoryPacket({
+          genesis: f.context.genesis,
+          epoch: 2,
+          currentKey: key2,
+          previousKey: key1,
+        })
+      ),
+    ]);
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* makeSqliteProtectedEpochKeys({
+            ...config(f, native.protector),
+            path: pathName,
+            mode: 'create',
+          });
+          yield* store.saveAndReload(2, key2);
+          const history = yield* makeInstalledEpochHistory({
+            genesis: f.context.genesis,
+            ledger: f.ledger,
+            installed: store,
+          });
+          const db = new Database(pathName, { fileMustExist: true });
+          try {
+            if (!corrupt)
+              db.exec(
+                "CREATE TRIGGER deny_old BEFORE INSERT ON protected_epoch_keys WHEN NEW.epoch<2 BEGIN SELECT RAISE(ABORT,'synthetic storage fault'); END"
+              );
+            expect(Result.isFailure(yield* Effect.result(history.recover()))).toBe(true);
+            expect(
+              db.prepare('SELECT epoch FROM protected_epoch_keys ORDER BY epoch').all()
+            ).toEqual([{ epoch: 2 }]);
+            if (!corrupt) {
+              db.exec('DROP TRIGGER deny_old');
+              expect(yield* history.recover()).toEqual([2, 1, 0]);
+              const zero = yield* store.read(0);
+              expect(ok(commitEpochKey(f.context.genesis, 0, zero))).toEqual(
+                ok(commitEpochKey(f.context.genesis, 0, f.secret))
+              );
+            }
+          } finally {
+            db.close();
+          }
+        })
+      )
+    );
+  }
 });

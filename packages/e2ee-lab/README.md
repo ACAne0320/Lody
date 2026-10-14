@@ -1,5 +1,32 @@
 # Public E2EE Lab (migration in progress)
 
+## Run the concentrated existing-workspace scenario
+
+```sh
+pnpm --filter @lody/e2ee-lab lab run /absolute/new-output-directory
+pnpm --filter @lody/e2ee-lab lab inspect /absolute/new-output-directory/evidence.json
+```
+
+The default finite plan executes 39 actions on real child processes, challenge/bearer HTTP, public HPKE/SQLite/P09 and released Loro/Flock SDKs. It includes actual SIGKILL/reopen, signed control commit with lost ACK and original-byte resume, corrupted ciphertext, document-only stop, unchanged durable pair, full-history client recovery and SQLite ABORT. `evidence.json` includes actual source/release hashes, original signed records, encrypted server bytes, schedule, judgments and coverage gaps; private device exports stay in IPC memory. Referenced `fixture/*-transport.jsonl` contains original/delivered protected bytes without credentials. Exit0 means the measured action contract passed, not all three security dimensions or full migration. Exit2 is a measured violation/gap; exit1 is a harness failure; exit64 is invalid CLI usage. Custom actions are a bounded JSON array (≤256); unsupported kinds/actors, accessors and missing required observations fail explicitly before effects. SIGINT/TERM interrupts the application and awaits actor termination. No exact-byte re-sealing replay is offered.
+
+`./join-session` durably saves/verifies original signed join consent before POST; a lost receipt is retried without re-signing. Unbound discovery never grants key access; the Owner submits public admission/P09, acknowledges after durable feed verification, then the new member starts ordinary key/content consumers.
+
+`./full-session` composes admitted control, receiver/distributor, installed protected keys and per-document Loro/Flock owners. Reauthentication closes old native work first. Local known pins and current network endpoints are distinct: the synthetic process bridge verifies returned points against independently witnessed signed originals and tries at most two externally known reopen pins, never a SQL-selected endpoint. Flock uses an explicit monotonic logical clock. Installed latest-key history restoration persists/reloads old keys through the public `./keys/host/history` adapter; no historical sender envelope or candidate backup is opened. The fixture prepares an already-published full prefix; it is not product workspace creation or a durable new-epoch publisher. Recovery succeeds only while real history is available, and stops only the failed document.
+
+## Current capability scope (completion branch based on 2190d418, 2026-10-14)
+
+Lab has Draft [#1526](https://github.com/LodyAI/Lody/pull/1526). Statements below about no Lab PR, early test counts and intermediate remaining work are historical progress, not the current aggregate state. Migration is not complete. File statuses are not a completion percentage; an existing destination is not behavioral-equivalence evidence.
+
+| Capability | Current implementation | Remaining boundary |
+| --- | --- | --- |
+| Authority, historical authors, ledger signing and submission | Public ledger / admission / submission and SDK CAS | Independent checkpoint acquisition and durable trust cannot be replaced by SQL or offsets |
+| Content | Content workflows, header3 update binding and real Loro/Flock consumers | Protected snapshot publication, position binding and complete recovery remain unfinished |
+| Keys | History, HPKE envelopes, outbox, mailbox, receiver, repair, distributor and restricted A | Durable new-epoch publication/backup policy, vault and production protector remain unfinished; synthetic E7 tests are not a complete publisher |
+| Lab | Authentication, joins, original genesis discovery, externally pinned complete existing-workspace lifecycle, header3 host writes, finite key round, real OS actors/actions/crashes/faults, CLI evidence and judgments | Genesis/new-epoch/snapshot/vault producers and entropy-dependent original replay/scenarios remain gated; no full original Lab claim |
+
+Retiring a format or class does not retire its required behavior. Epoch/history publishers require explicit replacement or remaining ownership. Restricted A does not approve vault, backup, D12, strict B or historical-sender envelope restoration. This correction changes no protocol or approval state.
+
+
 This private runnable workspace consumes public `@lody/e2ee-core` modules and
 released SDKs: streams-client 0.9.0, streams-crdt 0.17.0, Loro 1.16.3, Flock 0.4.3,
 SQLite Riverrun 0.3.0 and the root locked Effect 4.0.2. It has no copied core.

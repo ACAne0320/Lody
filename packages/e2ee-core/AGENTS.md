@@ -104,3 +104,9 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   devices may authenticate only device identity, never a guessed user or current write
   right. Capture seal inputs/capabilities before waiting, wipe owned plaintext through
   a real resource bracket, and reject later views outside the known verified prefix.
+
+- Host header3 update admission lives under `./content/streams`: current genuine
+  view, externally authenticated signer, exact resource/model/epoch and whole
+  bounded batch are checked before forwarding original bytes. Historical-author
+  success is not write permission or proof that ciphertext decrypts. Unknown,
+  legacy or snapshot headers fail; no new snapshot protocol is implied.

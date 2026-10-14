@@ -9052,7 +9052,18 @@
       "no D12/SDK snapshot header/backup policy/strict B/production enablement approval",
       "synthetic tests only, not OS/native custody acceptance"
     ],
-    "platformGap": "platform host-keys only public identity storage; Electron string safeStorage has no reviewed full-payload-integrity adapter/backend failure contract and dev plaintext override; not composed for A"
+    "platformGap": "platform host-keys only public identity storage; Electron string safeStorage has no reviewed full-payload-integrity adapter/backend failure contract and dev plaintext override; not composed for A",
+    "implementationEvidence": "Existing public host port/store/receiver reused. #1480 revoked-sender OS-child cold read passes; Lab public synthetic module, hard-exit before report, first blob retained after independent-process reinstall/report, installed-only keys0/1 read in OS-child after sender revoked; no HPKE/private-handle import/network on local restore.",
+    "hostHead": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
+    "hostBase": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b",
+    "hostCi": {
+      "run": 38217731210,
+      "head": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
+      "conclusion": "SUCCESS",
+      "checkout": "8f9d891f1f63b9960ed962b31e40d17271e23fcd",
+      "limitation": "synthetic intermediate base; core implementation identical, ledger replay test includes separate #1464 regression; full tree differs",
+      "independentReview": "coordinator pending"
+    }
   },
   "publishedStackSnapshot": [
     {
@@ -9352,31 +9363,164 @@
     },
     "downstream": "11 descendants and Lab still contain original5d count fix, not new926 test/Note; coordinate later sync; no rebase or force push here"
   },
-  "restrictedDurableEpochApproval": {
-    "decision": "A",
-    "approvedBy": "user",
-    "date": "2026-10-12",
-    "scope": "Verified installed EpochKeys persist through trusted host initialization-time authenticated protection; native priority. Opaque protected SQLite blobs; full purpose/genesis/recipient/epoch/commitment payload binding; actual native settlement and own-copy cleanup; context journal/save/reload/fixed report queue. Local installed-key restore independent of original sender still active; new-delivery current sender unchanged.",
-    "existingOwner": "#1480 host protection; downstream receive/report owner composes existing HPKE/P09",
-    "limits": [
-      "not generic material export or per-business-call callback",
-      "adapter may copy secrets; JavaScript total erasure not promised",
-      "no historical-sender envelope restore B",
-      "no new wrapping/wire/domain/vault format",
-      "no D12/SDK snapshot header/backup policy/strict B/production enablement approval",
-      "synthetic tests only, not OS/native custody acceptance"
+  "capabilityAudit": {
+    "status": "partial-behavior-migration-not-equivalence",
+    "stackHead": "2190d418b3ec2f805246794e5ec1dae72fa8fbc4",
+    "sourceIdentityMatched": 367,
+    "registeredEntries": 380,
+    "classificationRule": "Retired implementation does not retire required behavior. File status and path existence are not completion percentages.",
+    "currentLabPR": 1526,
+    "remaining": [
+      "G genesis/control creation and layout approval",
+      "S protected snapshot format/admission/trust qualification and unavailable-history API",
+      "K/V durable new-epoch candidate/backup/emergency exception and vault/recovery format",
+      "D atomic tag8/snapshot-v2 compatibility approval",
+      "R exact-original replay entropy decision",
+      "N additional comparison-note signing authority",
+      "B strict freshness approval",
+      "Native platform protector and private product wiring; synthetic not equivalent"
     ],
-    "platformGap": "platform host-keys only public identity storage; Electron string safeStorage has no reviewed full-payload-integrity adapter/backend failure contract and dev plaintext override; not composed for A",
-    "implementationEvidence": "Existing public host port/store/receiver reused. #1480 revoked-sender OS-child cold read passes; Lab public synthetic module, hard-exit before report, first blob retained after independent-process reinstall/report, installed-only keys0/1 read in OS-child after sender revoked; no HPKE/private-handle import/network on local restore.",
-    "hostHead": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
-    "hostBase": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b",
-    "hostCi": {
-      "run": 38217731210,
-      "head": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
-      "conclusion": "SUCCESS",
-      "checkout": "8f9d891f1f63b9960ed962b31e40d17271e23fcd",
-      "limitation": "synthetic intermediate base; core implementation identical, ledger replay test includes separate #1464 regression; full tree differs",
-      "independentReview": "coordinator pending"
-    }
+    "independentBehaviorTestsRerun": false,
+    "currentScope": "Complete unblocked existing-workspace consumers and finite actors/actions/CLI; original full migration remains incomplete. Earlier fields/file status are historical registration, never completion percentages.",
+    "completionBatch": {
+      "base": "2190d418b3ec2f805246794e5ec1dae72fa8fbc4",
+      "branch": "e2ee-complete-consumers",
+      "maximumNewPrs": 1,
+      "frozenOldCoreLabPrs": 20,
+      "associatedPrs": [
+        1532,
+        1540
+      ],
+      "priorTotal": 22,
+      "plannedTotal": 23,
+      "remainingCap": 1,
+      "independentReview": "Coordinator-owned; not author self-review",
+      "currentHeadAndPr": "Exact pins and Draft URL are delivered by the review handoff; no self-referential manifest SHA."
+    },
+    "capabilities": [
+      {
+        "old": "DemoSession start/reauth/read/write/submit/resume/receive",
+        "new": [
+          "packages/e2ee-lab/src/platform/full-session.ts",
+          "packages/e2ee-lab/src/platform/document-session.ts",
+          "packages/e2ee-lab/src/platform/flock-session.ts",
+          "packages/e2ee-lab/src/platform/join-session.ts",
+          "packages/e2ee-core/src/keys/installed-history.ts"
+        ],
+        "behavior": "One scoped existing-workspace owner, externally pinned full-prefix, admitted control/P09, installed-key distributor, per-document Loro/Flock and common close/reopen. No genesis/candidate/vault choice. Signed join originals persist before POST and repeat after lost receipts; no pre-admission keys. Installed latest-key history fully validates then saves/reloads older originals; no sender-envelope restore/candidate/vault.",
+        "tests": [
+          "packages/e2ee-lab/test/full-session.test.ts",
+          "packages/e2ee-lab/test/process-actor.test.ts",
+          "packages/e2ee-core/test/keys/protection.test.ts"
+        ],
+        "status": "implemented-author-verification; independent pending"
+      },
+      {
+        "old": "Host updates + action/start/persist/crash/attack CLI",
+        "new": [
+          "packages/e2ee-core/src/content/index.ts",
+          "packages/e2ee-core/src/content/streams.ts",
+          "packages/e2ee-lab/src/platform/content-gateway.ts",
+          "packages/e2ee-lab/src/platform/action-executor.ts",
+          "packages/e2ee-lab/src/platform/process-actor.ts",
+          "packages/e2ee-lab/src/platform/scenario-runner.ts",
+          "packages/e2ee-lab/src/cli.ts"
+        ],
+        "behavior": "Public fixed verifier, current write permission and exact header3 batch before host send; bounded real-process action execution, actual SQL/cipher/drop-ACK faults, original-byte evidence, measured reference and CLI. No duplicate core or first-seal entropy override.",
+        "tests": [
+          "packages/e2ee-core/test/crypto.test.ts",
+          "packages/e2ee-lab/test/action-executor.test.ts",
+          "packages/e2ee-lab/test/runtime.test.ts"
+        ],
+        "status": "implemented-author-verification; original full replay/insider scenarios remain gated"
+      }
+    ],
+    "legacyFailureDisposition": [
+      {
+        "id": "core7-A8",
+        "old": "review2-a.test.ts:160 forged-view-accepted",
+        "replacement": "public genuine view registry refuses reflected/structural construction",
+        "owner": 1439,
+        "test": "packages/e2ee-core/test/ledger/replay.test.ts:479",
+        "status": "existing closure retained; not rerun old probe"
+      },
+      {
+        "id": "core7-C-mailbox",
+        "old": "review2-c-delivery.test.ts:174 epoch-stream-read limit",
+        "replacement": "recipient-indexed bounded mailbox deduplicates insider frames; no global stream cap",
+        "owner": 1472,
+        "test": "packages/e2ee-core/test/keys/mailbox.test.ts:223",
+        "status": "existing closure retained; no old shared-stream restoration"
+      },
+      {
+        "id": "core7-C-outbox",
+        "old": "review2-c-delivery.test.ts:219 4096 oversize",
+        "replacement": "exact ciphertext SQLite outbox retains history without lifetime total cap",
+        "owner": 1450,
+        "test": "packages/e2ee-core/test/keys/delivery.test.ts:217",
+        "status": "existing closure retained"
+      },
+      {
+        "id": "core7-C-rotation",
+        "old": "review2-c-rotation.test.ts:111 rotator lost before K1 delivery",
+        "replacement": "No complete publisher replacement yet; installed A and postcommit distribution do not solve independent candidate backup",
+        "decision": [
+          "K",
+          "V"
+        ],
+        "status": "blocked by human backup/candidate and emergency semantics; NOT closed"
+      },
+      {
+        "id": "core7-E-verifier",
+        "old": "review2-e-api-boundary.test.ts:146 unsigned injected verifier",
+        "replacement": "fixed verification ignores injected verifier, no alternate authority service",
+        "owner": 1439,
+        "test": "packages/e2ee-core/test/ledger/replay.test.ts:927",
+        "status": "existing closure retained"
+      },
+      {
+        "id": "core7-E-OwnerGov",
+        "old": "review2-e-api-boundary.test.ts:164 impossible Owner snapshot",
+        "replacement": "OwnerGov invariant on public snapshot codec; complete qualification approval provenance remains separate",
+        "owner": 1464,
+        "test": "packages/e2ee-core/test/ledger/replay.test.ts",
+        "status": "existing code finding closure retained; approval not inferred"
+      },
+      {
+        "id": "core7-E-journal",
+        "old": "review2-e-api-boundary.test.ts:226 journal substitutes endorser",
+        "replacement": "external complete tuple qualification and cache reverify on every read; no SQL-selected authority",
+        "owner": 1526,
+        "test": "packages/e2ee-lab/test/ledger-actor.test.ts / snapshot-cache tests",
+        "status": "existing replacement evidence retained; production pin custody unfinished"
+      },
+      {
+        "id": "Lab2-duplicate",
+        "old": "review2-b-sync.test.ts duplicated record was accepted",
+        "replacement": "actual existing-workspace/control actor refuses later-offset duplicate and retains signed history/cursor; healthy peer and OS-child independent reopen",
+        "owner": 1526,
+        "test": "packages/e2ee-lab/test/full-session.test.ts",
+        "status": "new complete-session actual SDK/SQL and OS-child consumer regression; original source failures retained, independent increment pending"
+      },
+      {
+        "id": "Lab2-rollback",
+        "old": "review2-b-sync.test.ts rollback rewound cursor",
+        "replacement": "actual SDK/SQL wrong-prefix refusal retains all feed rows/meta/view/cursor with independent peer/OS-child",
+        "owner": 1526,
+        "test": "packages/e2ee-lab/test/full-session.test.ts",
+        "status": "new complete-session actual SDK/SQL and OS-child consumer regression; original source failures retained, independent increment pending"
+      }
+    ],
+    "originalEvidence": [
+      "core7-old.json",
+      "lab2-old.json",
+      "/private/tmp/e2ee-migration-evidence"
+    ],
+    "unimplementedNotRetired": [
+      "new-epoch publisher/rotation/resumption independent backup",
+      "protected content snapshot/admission/bootstrap",
+      "vault/per-workspace recovery registration",
+      "all original entropy/insider/model-driven scenarios and native custody"
+    ]
   }
 }

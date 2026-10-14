@@ -20,16 +20,17 @@
     "src/content/streams.ts",
     "test/crypto.test.ts"
   ],
-  "scope": "Only settled header3 update binding. Snapshot4 writer/read compatibility, offset-authenticated new format and real SDK/Lab integration remain unfinished.",
+  "scope": "Settled header3 update binding and whole-batch fixed current-writer admission, real public SDK/Lab consumer. Protected snapshot formats/bootstrap remain unapproved.",
   "adaptations": [
     "Effect descriptions only, type-only published streams-crdt 0.16.2 contract; no hidden runtime or injected verifier.",
     "Genuine historical author and current seal/rotation checks use public content workflows; exact epoch commitment checked before leaf derivation.",
     "Each key read transfers a fresh owned opaque epoch capability; leaf/epoch cleanup bracket all exits. Scope closes admission, awaits active leases and rejects late plaintext/ciphertext.",
-    "Retain secure host randomness and existing header3/v0 algorithms; no nonce override or snapshot format invented."
+    "Retain secure host randomness and existing header3/v0 algorithms; no nonce override or snapshot format invented.",
+    "2026-10-14 concentrated consumers: fixed current-writer host admission; exact released SDK0.17 header3 batches only; no snapshot format/algorithm/domain change. Original source fingerprints retained."
   ],
   "destinationFingerprints": {
-    "src/content/streams.ts": "d68be679abd811564fbb410f063fffb3938d4a7655110e8ac111314e39c1fb88",
-    "test/crypto.test.ts": "423ef81f73dfc4c8956eba1fc0ec42b51db2240386e9bcd33a67e74dc14a785f"
+    "src/content/streams.ts": "607d0b003ac1aa8e5600a444cf6ef552cfeea4afe128a192a8d6a660e4720ffa",
+    "test/crypto.test.ts": "1df3edd1d2c7bdf7ca0868ce3118038791242c248850a48d08562c7409a9516f"
   },
   "sourceState": "Original and candidate sources are read-only; exact source-specific fingerprints from the complete manifest. Frozen working copy fingerprints below.",
   "workingCopyFingerprints": {

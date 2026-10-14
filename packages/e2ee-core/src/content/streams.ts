@@ -6,8 +6,8 @@ import type {
 } from '@loro-dev/streams-crdt';
 import * as Bytes from '../bytes';
 import { disposeEpochKey } from '../epoch-key';
-import { ContentError } from '../errors';
 import { keyId } from '../identifiers';
+import { ContentError } from '../errors';
 import { epochHistoryPacket, requireLedgerContinuation, type LedgerView } from '../ledger';
 import { commitEpochKey } from '../keys/history';
 import type { DeviceSigner } from '../signing';
@@ -19,7 +19,7 @@ import {
   type ContentScope,
 } from '../content-format';
 import { scopedDocumentKey } from './document-key';
-import { authenticateDocument, openDocument, sealDocument } from './index';
+import { admitDocument, authenticateDocument, openDocument, sealDocument } from './index';
 
 const error = (code: string) => new ContentError({ code });
 /** Settled header 3 update binding. Snapshot writer/read compatibility remains a separate decision. */
@@ -198,5 +198,82 @@ export function makeStreamsUpdateBinding(input: {
           })
         ),
     });
+  });
+}
+
+/** Decode only released streams-crdt0.17 update framing and header3. Atomic
+ * preflight of a bounded batch; caller sends these returned originals unchanged.
+ * Snapshot/legacy headers, plaintext, unknown kind and empty batches are refused.
+ * No SDK private import, key lookup, decryption or injected signature verifier. */
+export function admitStreamsUpdateBatch(input: {
+  readonly genesis: Bytes.GenesisHash;
+  readonly resource: string;
+  readonly model: 'loro' | 'flock';
+  readonly view: LedgerView;
+  readonly device: Bytes.SigningPublicKey;
+  readonly body: Uint8Array;
+}) {
+  return Result.gen(function* () {
+    const candidate = input.body,
+      view = input.view,
+      genesis = input.genesis,
+      resource = input.resource,
+      model = input.model,
+      device = input.device;
+    if (
+      !(candidate instanceof Uint8Array) ||
+      candidate.length > MAX_CONTENT_BYTES ||
+      !candidate.length ||
+      !['loro', 'flock'].includes(model)
+    )
+      return yield* Result.fail(error('invalid-streams-batch'));
+    // Own before inspecting; one capture cannot be substituted during processing.
+    const body = new Uint8Array(candidate);
+    let at = 0,
+      count = 0;
+    const aadDomain = new TextEncoder().encode('loro-streams-crdt-payload-protection/v2\0');
+    while (at < body.length) {
+      if (body.length - at < 4 || ++count > 100)
+        return yield* Result.fail(error('invalid-streams-batch'));
+      const size = new DataView(body.buffer).getUint32(at, false);
+      at += 4;
+      if (size < 12 || size > body.length - at)
+        return yield* Result.fail(error('invalid-streams-batch'));
+      const item = body.subarray(at, at + size);
+      at += size;
+      if (
+        item[0] !== 76 ||
+        item[1] !== 83 ||
+        item[2] !== 67 ||
+        item[3] !== 69 ||
+        item[4] !== 2 ||
+        item[5] !== 1 ||
+        item[6] !== 0 ||
+        item[7] !== 1 ||
+        item[8] !== 0 ||
+        item[9] !== 0 ||
+        item[10] !== 3
+      )
+        return yield* Result.fail(error('unsupported-streams-header'));
+      const frame = item.subarray(11);
+      const metadata = yield* inspectContentFrame(frame);
+      const aad = new Uint8Array(aadDomain.length + 11);
+      aad.set(aadDomain);
+      aad.set(item.subarray(0, 11), aadDomain.length);
+      yield* admitDocument(
+        view,
+        {
+          genesis: keyId(genesis.toBytes()),
+          resource,
+          epoch: metadata.epoch,
+          docEpoch: 0,
+          purpose: model === 'loro' ? 'doc-update' : 'flock-update',
+        },
+        frame,
+        device,
+        aad
+      );
+    }
+    return body;
   });
 }
