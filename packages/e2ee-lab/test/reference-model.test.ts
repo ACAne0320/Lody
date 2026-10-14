@@ -10,9 +10,6 @@ import {
   refCursorAllowed,
   refMayAdmit,
   refMayRecover,
-  refMaySendEpoch,
-  refMayWriteDocument,
-  refRetryPreservesCommit,
   refRevokeIsLocal,
   refSnapshotAdmissible,
   type RefDevice,
@@ -81,26 +78,27 @@ describe('independent reference model', () => {
     expect(refMayAdmit(roleBound, 'member-phone', 'org-a')).toBe(false);
     expect(refMayAdmit(roleBound, 'owner-machine', 'org-a')).toBe(false);
     expect(refMayAdmit(roleBound, 'owner-r', 'org-a')).toBe(false);
-    expect(refMayWriteDocument(world, 'guest', 'org-a', 1)).toBe(false);
-    expect(refMayWriteDocument(world, 'owner', 'org-b', 1)).toBe(false);
-    expect(refMayWriteDocument(world, 'owner', 'org-a', 0)).toBe(false);
-    expect(refMaySendEpoch(world, 'machine', 'org-a')).toBe(true);
-    expect(refMaySendEpoch(world, 'guest', 'org-a')).toBe(true);
-    expect(refMaySendEpoch(world, 'owner', 'org-a')).toBe(true);
-    expect(refMaySendEpoch(world, 'owner', 'org-b')).toBe(false);
-    expect(refMaySendEpoch(world, 'stranger', 'org-a')).toBe(false);
+    expect(refWriteExpectation(world, 'guest', 'org-a', 1)).toBe('deny');
+    expect(refWriteExpectation(world, 'owner', 'org-b', 1)).toBe('deny');
+    expect(refWriteExpectation(world, 'owner', 'org-a', 0)).toBe('deny');
+    expect(refSendExpectation(world, 'machine', 'org-a')).toBe('allow');
+    expect(refSendExpectation(world, 'guest', 'org-a')).toBe('allow');
+    expect(refSendExpectation(world, 'owner', 'org-a')).toBe('allow');
+    expect(refSendExpectation(world, 'owner', 'org-b')).toBe('deny');
+    expect(refSendExpectation(world, 'stranger', 'org-a')).toBe('deny');
     const unmeasured = state([
       { ...device({ id: 'unknown' }), kind: undefined } as unknown as RefDevice,
     ]);
     expect(refSendExpectation(unmeasured, 'unknown', 'org-a')).toBe('unmeasured');
-    expect(refMaySendEpoch(unmeasured, 'unknown', 'org-a')).toBe(false);
     const recovery = device({ id: 'r', kind: 'recovery', role: 'member' });
-    expect(refMaySendEpoch(state([device({ id: 'owner' }), recovery]), 'r', 'org-a')).toBe(false);
+    expect(refSendExpectation(state([device({ id: 'owner' }), recovery]), 'r', 'org-a')).toBe(
+      'deny'
+    );
     const revokedMachine = state(
       [device({ id: 'owner' }), device({ id: 'machine', kind: 'machine', role: 'member' })],
       { revoked: new Set(['machine']) }
     );
-    expect(refMaySendEpoch(revokedMachine, 'machine', 'org-a')).toBe(false);
+    expect(refSendExpectation(revokedMachine, 'machine', 'org-a')).toBe('deny');
   });
 
   it('keeps recovery and revoke inside current membership', () => {
@@ -154,9 +152,8 @@ describe('independent reference model', () => {
     expect(refCursorAllowed({ hasDocument: true } as Parameters<typeof refCursorAllowed>[0])).toBe(
       'unmeasured'
     );
-    expect(refRetryPreservesCommit({ originalHex: 'aa', retryHex: 'aa' })).toBe(true);
-    expect(refRetryPreservesCommit({ originalHex: 'aa', retryHex: 'ab' })).toBe(false);
-    expect(refRetryPreservesCommit({ originalHex: '', retryHex: '' })).toBe(false);
+    expect(refRetryExpectation({ originalHex: 'aa', retryHex: 'aa' })).toBe('allow');
+    expect(refRetryExpectation({ originalHex: 'aa', retryHex: 'ab' })).toBe('deny');
     expect(refRetryExpectation({ originalHex: '', retryHex: '' })).toBe('unmeasured');
   });
 });
@@ -168,10 +165,8 @@ describe('owned reference observations, never implementation-derived expectation
     expect(refWriteExpectation(ready, 'writer', 'org-a', 1)).toBe('allow');
     const blocked = state([writer], { rotationRequired: true });
     expect(refWriteExpectation(blocked, 'writer', 'org-a', 1)).toBe('deny');
-    expect(refMayWriteDocument(blocked, 'writer', 'org-a', 1)).toBe(false);
     const unknown = state([writer], { rotationRequired: undefined });
     expect(refWriteExpectation(unknown, 'writer', 'org-a', 1)).toBe('unmeasured');
-    expect(refMayWriteDocument(unknown, 'writer', 'org-a', 1)).toBe(false);
     expect(refWriteExpectation(unknown, 'writer', 'org-b', 1)).toBe('deny');
     expect(refWriteExpectation(ready, 'writer', 'org-a', NaN)).toBe('unmeasured');
     // Snapshot eligibility is deliberately independent of new-seal rotation.

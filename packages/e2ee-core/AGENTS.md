@@ -110,3 +110,5 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   bounded batch are checked before forwarding original bytes. Historical-author
   success is not write permission or proof that ciphertext decrypts. Unknown,
   legacy or snapshot headers fail; no new snapshot protocol is implied.
+
+- Prelaunch E2EE supports current formats only. No legacy ledger/journal imports, dual decoders, schema upgrades or old-client compatibility. Reject unsupported input without rewriting it; retain normal current-format reopen/history verification.

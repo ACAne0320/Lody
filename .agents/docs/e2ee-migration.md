@@ -2,6 +2,10 @@
 
 ## Current capability scope (completion branch based on 2190d418, 2026-10-14)
 
+## Current formats only
+
+User decision on 2026-10-14: E2EE has not shipped and has no deployed legacy ledgers to maintain. Old ledger/API facades, JSON journal decoders/imports and old-client dual-format operation are retired, not outstanding migration tasks. The source manifest retains their hashes as history. Current-format ledger replay, signed historical authorship, epoch history and crash/reopen recovery remain required. See the [scope and audit](../notes/implemented/simplification/2026-10-14-e2ee-current-formats-only.md).
+
 Lab has Draft [#1526](https://github.com/LodyAI/Lody/pull/1526). Statements below about no Lab PR, early test counts and intermediate remaining work are historical progress, not the current aggregate state. Migration is not complete. File statuses are not a completion percentage; an existing destination is not behavioral-equivalence evidence.
 
 | Capability | Current implementation | Remaining boundary |
@@ -62,11 +66,11 @@ flowchart LR
 
 ## Decisions that remain open
 
-- SDK content-snapshot position: old snapshot header4 hides the offset in ciphertext, so host verification cannot establish the actual submitted position. Proposed new snapshot header binds an exact-offset SHA-256 digest through existing SDK v2 AAD; alternatively change upstream SDK and consume a published release. New tag/domain and old-reader/admission compatibility remain unapproved. Provider and host admission must be reviewed together.
+- SDK content-snapshot position: old snapshot header4 hides the offset in ciphertext, so host verification cannot establish the actual submitted position. Proposed new snapshot header binds an exact-offset SHA-256 digest through existing SDK v2 AAD; alternatively change upstream SDK and consume a published release. The new snapshot format and authenticated admission remain unapproved; old-reader compatibility is out of scope. Provider and host admission must be reviewed together.
 - Strict deadline B: no new claim and no change to ordinary 60-second tolerance.
 - Recovery-vault format, wrapping, identity/version binding, concurrent updates and retention. The old shared-R/file prototype is not approved as that format.
 - New-key backup and recovery when the publishing device is permanently lost after commit and before delivery. A process restart cannot validate permanent-loss recovery.
-- D12's new atomic-removal encoding/version/old-reader rejection. Reject standalone old tag2 removal; do not invent replacement fields until confirmed.
+- D12's final atomic-removal encoding and authenticated snapshot position; no old-reader compatibility requirement. Reject standalone old tag2 removal; do not invent replacement fields until confirmed.
 - Self-device-revocation rotation scheduling, exact machine-operation scope and any newly discovered protocol conflicts require their owning decision. These do not block unrelated snapshot/content work.
 
 Settled requirements include per-workspace R, client recovery of bad snapshots, document-local sync failure, native secure key custody preference without changing algorithms, durable offline edits, and disabled production E2EE.
@@ -106,7 +110,7 @@ Lab acceptance uses real HTTP/SQLite persistence, process reopen, two clients, L
 
 The complete stack is unfinished. Migrating the manifest is not migrating its remaining implementations; no layer is Ready, merged, deployed or published by this work.
 
-Current implementation base: all three prerequisites have landed. Submission #1434 merged as `7c58cabe1d05f132b7133a52b45a16b79274ea6a`; L0 now includes actual main `984c35c5b30600d68abec1ec3e585eca73bcd4f0`. L1a migrates historical authors, signed epoch facts and current content permission queries without wire changes. Snapshot format/old-reader compatibility remains a separate decision gate.
+Current implementation base: all three prerequisites have landed. Submission #1434 merged as `7c58cabe1d05f132b7133a52b45a16b79274ea6a`; L0 now includes actual main `984c35c5b30600d68abec1ec3e585eca73bcd4f0`. L1a migrates historical authors, signed epoch facts and current content permission queries without wire changes. Snapshot format remains a separate decision gate; old-reader compatibility is out of scope.
 
 ## Current implemented stack
 
@@ -146,7 +150,7 @@ Continue existing implementation with a maximum of24 migration PRs, including th
 
 L4i adapts [finite sender discovery and dispatch](../../packages/e2ee-core/src/keys/DISTRIBUTION.md) for already committed protected keys, retaining original outbox bytes, per-revision tasks/results, genuine disposition and own publication-report reconstruction. Actual Lab consumption and candidate backup/rotation remain separate; new source has its own current-head review.
 
-L2 SDK update binding uses `./content/streams`, settled header3, genuine public content workflows and operation-owned key cleanup. Direct parent is sender #1493 `36ca2685b7eefeb15ebd041e50444796c2686652`. Snapshot wire/compatibility remains a human decision; published SDK type checks are separate from actual Lab/transport acceptance. Original provider migration remains incomplete.
+L2 SDK update binding uses `./content/streams`, settled header3, genuine public content workflows and operation-owned key cleanup. Direct parent is sender #1493 `36ca2685b7eefeb15ebd041e50444796c2686652`. The snapshot wire format remains a human decision; published SDK type checks are separate from actual Lab/transport acceptance. Original provider migration remains incomplete.
 
 Lab integration is based directly on #1496 head0418; it has no Lab PR yet. Fixed 6de real Lab24/typecheck/focused lint passed: public ledger actor/P09 original-byte recovery, actual Loro/Flock SDKs, paired SQLite native state/cursor and Loro process reopen, document isolation. Bad snapshot client recovery succeeds only while history remains readable; Riverrun0.3.0 nonzero snapshot PUT advances earliest_offset, so inaccessible history can only fail closed with retained cursor. Retained history/API ownership is a new recovery dependency gap. Full original host/actors/driver/attacks/replay/CLI and original Lab2 remain incomplete. See the owning [Lab README](../../packages/e2ee-lab/README.md); historical root/CI results do not transfer to current WIP.
 

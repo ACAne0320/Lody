@@ -5,7 +5,7 @@ import { writeFileSync } from 'node:fs';
 import { runOwnedChild } from './native-child';
 import { fileURLToPath } from 'node:url';
 import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
-import { syntheticProtector } from './content-fixture';
+import { labSyntheticProtector } from '../src/platform/synthetic-protection';
 import { join } from 'node:path';
 import { StreamsClient } from '@loro-dev/streams-client';
 import { makeLabLoroSession } from '../src/platform/content-session';
@@ -58,7 +58,7 @@ describe('public update provider with released CRDT SDK', () => {
               genesis: genesis.genesis,
               recipient: f.owner.publicKey,
               ledger: () => Effect.succeed(view),
-              protector: syntheticProtector,
+              protector: labSyntheticProtector,
             });
             yield* keys.saveAndReload(0, ok(Bytes.epochKey(material)));
             writeFileSync(join(f.dir, 'content-genesis.cbor'), genesis.record);
@@ -294,7 +294,7 @@ describe('public update provider with released CRDT SDK', () => {
               genesis: genesis.genesis,
               recipient: f.owner.publicKey,
               ledger: () => Effect.succeed(view),
-              protector: syntheticProtector,
+              protector: labSyntheticProtector,
             });
             yield* keys.saveAndReload(0, ok(Bytes.epochKey(material)));
             writeFileSync(join(f.dir, 'content-genesis.cbor'), genesis.record);

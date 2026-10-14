@@ -2,6 +2,10 @@
 
 ## Run the concentrated existing-workspace scenario
 
+## Current-format consumers
+
+No deployed legacy E2EE data or API requires compatibility. Tests consume the explicit public synthetic protector directly; the old fixture alias and boolean reference aliases are removed. Reference write/send/retry observations retain allow/deny/unmeasured. Source-era unauthorized-content report labels are not projected into current fingerprints. SDK/HTTP Promise callbacks still use an owned Effect bridge because those are actual external APIs, not old ledger readers.
+
 ```sh
 pnpm --filter @lody/e2ee-lab lab run /absolute/new-output-directory
 pnpm --filter @lody/e2ee-lab lab inspect /absolute/new-output-directory/evidence.json
@@ -113,7 +117,7 @@ full host/rotation composition or cross-process epoch-rotation acceptance.
 
 The original synthetic device module now preserves its seven exports as typed Effect/public-byte APIs and consumes the public native signer/verifier. Its existing four-field JSON roundtrips native Ed25519/X25519 fixtures, with private/public binding checked before import returns. Real public HPKE and SQLite credentials verify the imported device, single-use proof and refusal to bind an unregistered device to an Org. Creation awaits both native generators on rejection/cancellation; explicit signal tests instrument only post-native returns/failure, leaving actual crypto/entropy unchanged. Caller owns native handles; WebCrypto offers no key close/zeroization. Exportable strings are synthetic fixture material, not a recovery-vault, OS custody or captured replay contract. Full session/actors still need wiring.
 
-Pure fingerprint and bounded minimizer retain the original five/two exports with separate policies: exact replay compares every original field and reports missing/JSON-dropped/null/unavailable measurements as gaps; another dimension's harness error never erases a measured violation. Shrink preserves the original rules and exact known trigger facts, permits diagnostic ledger length to shrink, and exposes partial observation. Unmeasured original triggers refuse execution. Effect runners remain sequential, bounded, caller-owned and fail transparently. The original fingerprint is independently copied before callbacks; generic action items must already be immutable and independently owned. Legacy model labels are inert compatibility diagnostics, not authorization policy. These are pure synthetic algorithm probes, not full attack/repro execution, serialization approval, captured entropy or resealing.
+Pure fingerprint and bounded minimizer retain the original five/two exports with separate policies: exact replay compares every original field and reports missing/JSON-dropped/null/unavailable measurements as gaps; another dimension's harness error never erases a measured violation. Shrink preserves the original rules and exact known trigger facts, permits diagnostic ledger length to shrink, and exposes partial observation. Unmeasured original triggers refuse execution. Effect runners remain sequential, bounded, caller-owned and fail transparently. The original fingerprint is independently copied before callbacks; generic action items must already be immutable and independently owned. Source-era unauthorized-content model labels and unused report fields are removed; current fingerprints use measured judgments only. These are pure synthetic algorithm probes, not full attack/repro execution, serialization approval, captured entropy or resealing.
 
 The scoped credential owner retains the frozen Lab v2 possession domain, 60-second
 single-use nonce and at most 15-minute synthetic token TTL. Real Ed25519 proofs,
@@ -212,8 +216,7 @@ not exact replay equality.
 The original independent reference-model exports now live under ./reference-model.
 Independent synthetic observations predict policy without calling core decision
 functions. New-seal prediction denies rotationRequired, and missing rotation/kind or
-pending-byte/cursor observations remain unmeasured. Legacy boolean projections fail
-closed and cannot prove two unknown runs agree. captureRefState owns factual rows
+pending-byte/cursor observations remain unmeasured. Write/send/retry predictions expose allow/deny/unmeasured directly; unused boolean compatibility projections are removed. captureRefState owns factual rows
 and collections before measured actors run; the LedgerState adapter is metadata
 only and establishes no authority. Snapshot helper predicts local context/personal
 manager eligibility only, never signature/history/trust admission. These eight pure

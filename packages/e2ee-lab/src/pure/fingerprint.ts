@@ -26,8 +26,6 @@ export interface FingerprintFacts {
 export interface FingerprintReport extends JudgeReport {
   readonly detectability?: JudgeVerdict;
   readonly properties?: readonly { readonly id: string; readonly verdict: JudgeVerdict }[];
-  readonly budgetExceeded?: boolean;
-  readonly claims?: number;
 }
 export function fingerprintOf(
   report: FingerprintReport,
@@ -69,17 +67,6 @@ export function fingerprintOf(
   if (measured.confidentiality === 'violation')
     rules.push(insider === 'violation' ? 'confidentiality.insider' : 'confidentiality.plaintext');
   if (insider === 'outside-model') rules.push('model.stale-control-view');
-  // Preserve explicit legacy model classification for diagnosis. This function
-  // never grants authority or changes the corrected content authorization judge.
-  if (
-    measured.integrity === 'outside-model' ||
-    (measured.properties === undefined
-      ? measured.detectability === 'outside-model'
-      : measured.properties.some(
-          (row) => row.id === 'integrity.content-authorized' && row.verdict === 'outside-model'
-        ))
-  )
-    rules.push('model.unauthorized-content');
   if (
     [
       measured.confidentiality,

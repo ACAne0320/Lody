@@ -22,7 +22,7 @@ import { scopedDocumentKey } from './document-key';
 import { admitDocument, authenticateDocument, openDocument, sealDocument } from './index';
 
 const error = (code: string) => new ContentError({ code });
-/** Settled header 3 update binding. Snapshot writer/read compatibility remains a separate decision. */
+/** Settled header 3 update binding. The snapshot writer format remains a separate decision. */
 export function makeStreamsUpdateBinding(input: {
   readonly genesis: Bytes.GenesisHash;
   readonly resource: string;

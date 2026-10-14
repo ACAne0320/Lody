@@ -2,6 +2,10 @@
 
 ## 当前能力范围（本集中分支基于 2190d418，2026-10-14）
 
+## 仅支持当前格式
+
+用户于 2026-10-14 明确：E2EE 尚未上线，没有线上旧账本需要维护。旧账本/API 门面、JSON 日志解码/导入和旧客户端双格式运行直接淘汰，不再列为待迁任务；manifest 只保留其来源 hash 作历史记录。当前格式的账本回放、签名历史作者、代次历史及崩溃重开仍须保留。参见[范围与核对](../notes/implemented/simplification/2026-10-14-e2ee-current-formats-only.zh.md)。
+
 Lab 已有 Draft [#1526](https://github.com/LodyAI/Lody/pull/1526)。下文的“尚无 Lab PR”、早期测试数量与分阶段待办属于历史进展，不能作为当前总状态。迁移尚未整体完成；逐文件状态不是功能完成率，目标路径存在也不是行为等价证明。
 
 | 能力 | 当前实现 | 剩余边界 |
@@ -62,11 +66,11 @@ flowchart LR
 
 ## 未决项
 
-- SDK 内容快照位置：旧 snapshot header4 把 offset 藏在密文中，服务端无法核对实际提交位置。提案是在新 snapshot header 放 exact-offset SHA-256 摘要，用现有 SDK v2 AAD 认证；另选上游 SDK 契约变更并消费已发布版本。新 tag/domain 与旧读者/接纳兼容尚未批准，provider 与 host admission 须一同审查。
+- SDK 内容快照位置：旧 snapshot header4 把 offset 藏在密文中，服务端无法核对实际提交位置。提案是在新 snapshot header 放 exact-offset SHA-256 摘要，用现有 SDK v2 AAD 认证；另选上游 SDK 契约变更并消费已发布版本。新快照格式与认证接纳尚未批准；不要求旧读者兼容，provider 与 host admission 须一同审查。
 - 严格期限 B：不新增 claim，不改普通 60 秒容差。
 - 恢复库格式、包装、身份/版本绑定、并发和保留。旧共用 R/文件原型不等于批准的新格式。
 - 提交后、发钥前发布设备永久丢失的新钥备份与取回；重启不能验收永久丢失。
-- D12 原子移除编码/版本/旧 reader 拒绝。拒绝旧 tag2 单独移除，未确认前不自创字段。
+- D12 最终原子移除编码与认证快照位置；不要求兼容旧 reader。拒绝旧 tag2 单独移除，未确认前不自创字段。
 - 本人撤设备后的换代调度、基本机器操作清单及其它新发现的协议冲突交给其决策归属；不阻塞独立快照/内容工作。
 
 已定：每工作区独立 R、客户端恢复坏快照、单文档停止同步、优先原生安全存钥但不改算法、本地草稿可靠保存、生产 E2EE 关闭。
@@ -106,7 +110,7 @@ Lab 使用真实 HTTP/SQLite 持久化、进程重开、双端 Loro/Flock/Repo S
 
 整栈尚未完成。清单迁入不表示其中实现已迁；本次不自动 Ready、merge、deploy 或 publish。
 
-当前实施基线：三项前置均已落地。submission #1434 合入为 `7c58cabe1d05f132b7133a52b45a16b79274ea6a`；L0 已纳入实际 main `984c35c5b30600d68abec1ec3e585eca73bcd4f0`。L1a 先迁历史作者、已签名 epoch 事实与当前内容权限查询，不改 wire；快照格式与旧客户端兼容另行讨论。
+当前实施基线：三项前置均已落地。submission #1434 合入为 `7c58cabe1d05f132b7133a52b45a16b79274ea6a`；L0 已纳入实际 main `984c35c5b30600d68abec1ec3e585eca73bcd4f0`。L1a 先迁历史作者、已签名 epoch 事实与当前内容权限查询，不改 wire；快照格式仍待定；不要求兼容旧客户端。
 
 ## 当前已实施的栈
 
@@ -146,7 +150,7 @@ L1d 的[全历史 feed](../../packages/e2ee-core/src/ledger/FEED.md)、L4g [持�
 
 L4i适配[有限发送目标发现与投递](../../packages/e2ee-core/src/keys/DISTRIBUTION.md)：使用已提交、已保护的当前密钥，保留outbox原件和每个revision的task/result，由真实账本决定终态，并重建本机发布者报告。实际Lab消费和候选备份／轮换另有归属，新代码单独绑定当前head审查。
 
-L2 SDK update绑定使用 `./content/streams`、已定header3、真实公开内容工作流和本次操作密钥清理。直接父层为sender #1493 `36ca2685b7eefeb15ebd041e50444796c2686652`。快照wire／兼容仍待人决定；已发布SDK类型检查与实际Lab／transport验收分开，原provider迁移仍未完成。
+L2 SDK update绑定使用 `./content/streams`、已定header3、真实公开内容工作流和本次操作密钥清理。直接父层为sender #1493 `36ca2685b7eefeb15ebd041e50444796c2686652`。快照 wire 格式仍待人决定；已发布SDK类型检查与实际Lab／transport验收分开，原provider迁移仍未完成。
 
 Lab 集成分支以 #1496 0418 为直接父层，仍未创建 Lab PR。固定6de真实 Lab24/typecheck/focused lint 通过：公共账本 actor/P09 原字节恢复、Loro/Flock 实际 SDK、SQLite 状态/游标对与 Loro 子进程重开、单文档隔离。坏快照仅在历史可读时客户端恢复成功；Riverrun0.3.0非零 snapshot PUT 推进 earliest_offset，历史不可读时只能安全拒绝并保留游标，历史保留/API归属是新增恢复依赖缺口。完整原 host/actors/driver/攻击/replay/CLI 与原 Lab2 仍未闭合。详见同层[Lab README](../../packages/e2ee-lab/README.zh.md)，不继承历史 root/CI 为当前通过。
 

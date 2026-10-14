@@ -39,6 +39,10 @@ required; async native completion precedes temporary-buffer cleanup and cancella
 completion. Outer signatures, current eligibility and epoch commitments remain
 mandatory caller responsibilities; HPKE validity does not establish sender identity.
 
+## Current formats only
+
+E2EE has not shipped and has no deployed ledger or journal data to migrate. Support only the current format for each entrypoint; do not add old-format decoders, dual readers, schema upgrades, legacy imports or compatibility facades. Unsupported formats fail without rewriting their input. Normal reopening of current stores, verified history within the current ledger and epoch-key history recovery remain required. This scope choice does not select any pending replacement format or approve production activation.
+
 ## Local epoch protection boundary
 
 A recipient must be able to reopen a durably retained installed epoch key without

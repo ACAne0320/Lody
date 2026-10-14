@@ -74,7 +74,7 @@ ledger commitment before deriving a scoped leaf and clears both after use.
 Historical signatures are checked before untrusted frame epochs can request keys.
 It contains no Promise runner, production protector or SDK transport. Lab owns the
 actual SDK bridge, plaintext disposal after use and transport/native lifetime.
-Snapshot writer and legacy-read compatibility remain unimplemented pending the
+Snapshot writer and its authenticated format remain unimplemented pending the
 offset-binding decision; this partial codec rejects snapshots explicitly and
 does not count as complete provider migration. See [binding provenance](streams-provenance.json).
 

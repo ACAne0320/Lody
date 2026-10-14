@@ -29,7 +29,7 @@ import { runLabKeyRound, LabKeyRoundError } from '../src/platform/key-round';
 import { makeLabMailboxRemote } from '../src/platform/key-mailbox';
 import { makeLabJoinMailbox, labJoinWire } from '../src/platform/join-mailbox';
 import { makeAuthenticatedLabMailbox } from './authenticated-mailbox-fixture';
-import { syntheticProtector } from './content-fixture';
+import { labSyntheticProtector } from '../src/platform/synthetic-protection';
 const ok = Result.getOrThrow;
 const signer = (seed: number) => {
   const privateKey = createPrivateKey({
@@ -151,7 +151,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               genesis: genesis.genesis,
               recipient: owner.publicKey,
               ledger,
-              protector: syntheticProtector,
+              protector: labSyntheticProtector,
             });
             yield* keys.saveAndReload(0, key);
             const host = yield* makeSqliteKeyMailbox({
@@ -230,7 +230,11 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               pair: ownerPair,
               ledger,
               remote,
-              keyStore: { path: file('owner-keys'), mode: 'open', protector: syntheticProtector },
+              keyStore: {
+                path: file('owner-keys'),
+                mode: 'open',
+                protector: labSyntheticProtector,
+              },
               repairStore: { path: file('owner-repair'), mode: 'create' },
               sendStore: { path: file('owner-send'), mode: 'create' },
               outboxStore: { path: file('owner-outbox'), mode: 'create' },
@@ -291,7 +295,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               keyStore: {
                 path: file('recovery-keys'),
                 mode: 'create',
-                protector: syntheticProtector,
+                protector: labSyntheticProtector,
               },
               repairStore: { path: file('recovery-repair'), mode: 'create' },
               sendStore: { path: file('recovery-send'), mode: 'create' },
@@ -453,7 +457,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               keyStore: {
                 path: file('recovery-keys'),
                 mode: 'open',
-                protector: syntheticProtector,
+                protector: labSyntheticProtector,
               },
               repairStore: { path: file('recovery-repair'), mode: 'open' },
               sendStore: { path: file('recovery-send'), mode: 'open' },
@@ -547,7 +551,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               genesis: genesis.genesis,
               recipient: owner.publicKey,
               ledger,
-              protector: syntheticProtector,
+              protector: labSyntheticProtector,
             });
             yield* keys.saveAndReload(1, key1);
             const host = yield* makeSqliteKeyMailbox({
@@ -573,7 +577,11 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               pair: ownerPair,
               ledger,
               remote: senderRemote,
-              keyStore: { path: file('owner-keys'), mode: 'open', protector: syntheticProtector },
+              keyStore: {
+                path: file('owner-keys'),
+                mode: 'open',
+                protector: labSyntheticProtector,
+              },
               repairStore: { path: file('owner-repair'), mode: 'open' },
               sendStore: { path: file('owner-send'), mode: 'open' },
               outboxStore: { path: file('owner-outbox'), mode: 'open' },
@@ -631,7 +639,7 @@ describe('Lab finite key rounds using public HPKE/SQLite/HTTP owners', () => {
               keyStore: {
                 path: file('epoch1-recovery-keys'),
                 mode: 'open',
-                protector: syntheticProtector,
+                protector: labSyntheticProtector,
               },
               repairStore: { path: file('epoch1-recovery-repair'), mode: 'open' },
               sendStore: { path: file('epoch1-recovery-send'), mode: 'create' },

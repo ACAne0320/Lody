@@ -93,9 +93,9 @@ flowchart LR
 
 `ContentCipher.deriveDocumentKey` 返回绑定 scope 的不可变文档钥；`exportDocumentKey` / `importDocumentKey` 复制叶子钥，`sealDocument` / `openDocument` 直接使用它，不再 HKDF，也不需要组织秘密。相同 policy 和严格验签仍执行；拿到文档钥不能使未登记的外部签名者被接受。provider 二选一本地 `readKey(epoch)` 或 `readDocumentKey(epoch, docEpoch)`；不自动联网取钥，返回的文档钥必须匹配固定组织、资源与代次。
 
-SDK 精确 AAD 仍是外部输入，不复制到密文。非空 `B = u16be(additionalData.length) || additionalData`（上限 1024B）时，AEAD 使用 `lody-content-aad-bound/v0\0 || C || B || 固定包头`，签名使用 `lody-content-signature-bound/v0\0 || C || B || 未签名完整包`。SDK 外层版本及 `loro-streams-crdt-payload-protection/v2\0` 域不变；AAD 共 51B，宿主从信封重建相同字节。provider header 3/4 保持，拒绝旧 1/2。快照 continuationOffset 保持加密认证。update POST body 为带长度 batch 加 158B，较优化后 v2 的 156B 仅增加文档代次 2B；单/五 update 实测 244→246B、600→602B，不含 HTTP/TLS。新 reader 只接受 v0，旧 v1/v2 实验保留固定 `f1bc0c52` reader；新实验另开流/目录，无后备或自动迁移。
+SDK 精确 AAD 仍是外部输入，不复制到密文。非空 `B = u16be(additionalData.length) || additionalData`（上限 1024B）时，AEAD 使用 `lody-content-aad-bound/v0\0 || C || B || 固定包头`，签名使用 `lody-content-signature-bound/v0\0 || C || B || 未签名完整包`。SDK 外层版本及 `loro-streams-crdt-payload-protection/v2\0` 域不变；AAD 共 51B，宿主从信封重建相同字节。provider header 3/4 保持，拒绝旧 1/2。快照 continuationOffset 保持加密认证。update POST body 为带长度 batch 加 158B，较优化后 v2 的 156B 仅增加文档代次 2B；单/五 update 实测 244→246B、600→602B，不含 HTTP/TLS。reader 只接受当前 v0 格式；不支持此前实验格式，不提供旧 reader、后备或迁移。
 
-接收端只接受指定组织已验证账本登记的签名公钥，再推导设备、成员实例与用户。完整已验证回放维护原始作者索引；撤权或重新加入不能把旧签名归给新成员实例。仅从认证快照起步且缺旧映射时，按既有历史验签语义只返回曾登记设备与缺历史上下文，不虚构完整作者。历史验签和当前新写准入分开；异步密码操作后仍复核 authority，Guest/R 持钥不授予写权。SDK 打开后返回原始 batch/快照字节，仍认证 SDK AAD 和快照 continuationOffset，文档保存先于持久游标推进。旧 v1/v2 数据使用其固定旧 reader；本次没有自动迁移或重签。账本记录、epoch 信封及 72B 历史包不改；本格式不提供命令防重放或逐条 operation 作者证明。
+接收端只接受指定组织已验证账本登记的签名公钥，再推导设备、成员实例与用户。完整已验证回放维护原始作者索引；撤权或重新加入不能把旧签名归给新成员实例。仅从认证快照起步且缺旧映射时，按既有历史验签语义只返回曾登记设备与缺历史上下文，不虚构完整作者。历史验签和当前新写准入分开；异步密码操作后仍复核 authority，Guest/R 持钥不授予写权。SDK 打开后返回原始 batch/快照字节，仍认证 SDK AAD 和快照 continuationOffset，文档保存先于持久游标推进。此前实验数据不在支持范围内；不提供兼容 reader、迁移或重签。账本记录、epoch 信封及 72B 历史包不改；本格式不提供命令防重放或逐条 operation 作者证明。
 
 内容快照可由有文档写权限的个人设备或机器发表，Guest 与恢复设备 R 不可。快照签名证明生成者，不等于逐条保存或重新证明所有原始更新作者的签名。可信宿主在接纳时核验已认证提交设备与签名设备一致、当前写权限及原始授权截止，并保留已接纳内容身份：同位置不同字节不得替换；只有签名设备本人的精确重试可幂等，且不会把较旧快照重新设为当前；宿主只接纳存储可接受的位置。合法历史不因作者后来撤权失效；读端仍验证签名及 Org、文档、代次、用途和续读位置。此方案信任宿主执行，不抵抗宿主与撤权者合谋，不引入跨流事务。独立包提供内存原型与单机 SQLite 准入后端，原子保存密文字节、接纳身份与当前位置，并支持重启恢复；生产 Streams 存储及 JWT/网关尚未接线。附件、在线状态、RPC 与本地直连的完整保护仍是产品接入要求。
 

@@ -125,21 +125,6 @@ export function refWriteExpectation(
   if (rotationRequired !== false) return 'unmeasured';
   return 'allow';
 }
-/** Compatibility projection, fail closed. Measurement comparisons must use
- * refWriteExpectation: two false projections do not prove agreement when unknown. */
-export function refMayWriteDocument(
-  state: RefState,
-  deviceId: string,
-  org: string,
-  epoch: number
-): boolean {
-  return refWriteExpectation(state, deviceId, org, epoch) === 'allow';
-}
-
-/** Any current non-recovery device may forward the epoch key (2026-09-22). */
-export function refMaySendEpoch(state: RefState, deviceId: string, org: string): boolean {
-  return refSendExpectation(state, deviceId, org) === 'allow';
-}
 export function refSendExpectation(state: RefState, deviceId: string, org: string): RefExpectation {
   if (org !== state.org) return 'deny';
   const device = deviceOf(state, deviceId);
@@ -189,10 +174,6 @@ export function refCursorAllowed(input: {
   return 'ok';
 }
 
-/** Lost-ACK retry must resubmit the exact pending bytes. */
-export function refRetryPreservesCommit(input: { originalHex: string; retryHex: string }): boolean {
-  return refRetryExpectation(input) === 'allow';
-}
 export function refRetryExpectation(input: {
   originalHex: string;
   retryHex: string;

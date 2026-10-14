@@ -2,6 +2,10 @@
 
 ## 运行集中既有工作区场景
 
+## 当前格式消费者
+
+没有线上旧 E2EE 数据或 API 需要兼容。测试直接消费公开的 synthetic protector，删除旧 fixture 别名和布尔 reference 别名。write/send/retry 观察保留 allow/deny/unmeasured；当前 fingerprint 不再投影源原型的越权内容旧标签。SDK/HTTP Promise 回调仍通过有 owner 的 Effect 桥接，因为它们是真实外部 API，不是旧账本读者。
+
 ```sh
 pnpm --filter @lody/e2ee-lab lab run /绝对路径/新输出目录
 pnpm --filter @lody/e2ee-lab lab inspect /绝对路径/新输出目录/evidence.json

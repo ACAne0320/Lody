@@ -29,8 +29,8 @@
     "2026-10-14 concentrated consumers: fixed current-writer host admission; exact released SDK0.17 header3 batches only; no snapshot format/algorithm/domain change. Original source fingerprints retained."
   ],
   "destinationFingerprints": {
-    "src/content/streams.ts": "607d0b003ac1aa8e5600a444cf6ef552cfeea4afe128a192a8d6a660e4720ffa",
-    "test/crypto.test.ts": "1df3edd1d2c7bdf7ca0868ce3118038791242c248850a48d08562c7409a9516f"
+    "src/content/streams.ts": "83ae6dd09d52a4ad0fa51bfc48dfa1319ccc10c692555a2dcd99496212d71c5e",
+    "test/crypto.test.ts": "331d3108114b94c1c5a95e5bd572d6df29ecd03ed5c22d54d5904775a8add18e"
   },
   "sourceState": "Original and candidate sources are read-only; exact source-specific fingerprints from the complete manifest. Frozen working copy fingerprints below.",
   "workingCopyFingerprints": {

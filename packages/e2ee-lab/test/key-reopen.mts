@@ -10,7 +10,7 @@ import { verifyLedger, epochHistoryPacket } from '@lody/e2ee-core/ledger';
 import { makeSqliteRecipientMailbox } from '@lody/e2ee-core/keys/host/mailbox/sqlite';
 import { makeLabMailboxRemote } from '../src/platform/key-mailbox';
 import { makeLabHttpIdentity } from '../src/platform/http-identity';
-import { syntheticProtector } from './content-fixture';
+import { labSyntheticProtector } from '../src/platform/synthetic-protection';
 const [directory, baseUrl, stage] = process.argv.slice(2);
 if (
   stage !== undefined &&
@@ -78,7 +78,7 @@ if (installedOnly) {
           genesis,
           recipient: signer.publicKey,
           ledger: () => Effect.succeed(view),
-          protector: syntheticProtector,
+          protector: labSyntheticProtector,
         });
         const result: { epoch: number; matches: boolean }[] = [];
         for (const epoch of [0, 1]) {
@@ -121,7 +121,7 @@ if (installedOnly) {
           keyStore: {
             path: join(directory!, `${prefix}-keys.sqlite`),
             mode,
-            protector: syntheticProtector,
+            protector: labSyntheticProtector,
           },
           repairStore: { path: join(directory!, `${prefix}-repair.sqlite`), mode },
         });
@@ -137,7 +137,7 @@ if (installedOnly) {
             genesis,
             recipient: signer.publicKey,
             ledger: () => Effect.succeed(view),
-            protector: syntheticProtector,
+            protector: labSyntheticProtector,
           });
           const db = yield* Effect.acquireRelease(
             Effect.sync(

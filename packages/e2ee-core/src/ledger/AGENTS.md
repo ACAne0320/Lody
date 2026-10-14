@@ -24,3 +24,5 @@ Follow the package [boundary](../../AGENTS.md) and [record/replay contract](READ
 - Borrowed SDK reads propagate abort and are retained/awaited until settlement.
   Close this Scope before destroying the SDK owner. ACK/CAS and snapshot bootstrap
   remain separate contracts; no fallback append or new snapshot header.
+
+- Current format only: no legacy-ledger adapters, old-state import, schema conversion or version downgrade. Current-format historical replay and rollback protection remain mandatory.

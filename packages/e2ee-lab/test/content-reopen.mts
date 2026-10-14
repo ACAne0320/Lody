@@ -11,7 +11,7 @@ import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { makeLabSdkOwner } from '../src/platform/sdk-owner';
 import { makeLabUpdateProvider } from '../src/platform/content-provider';
 import { makeLabDocumentStore } from '../src/platform/document-sqlite';
-import { syntheticProtector } from './content-fixture';
+import { labSyntheticProtector } from '../src/platform/synthetic-protection';
 const [dir, url, genesisHex, publicKeyHex, requestedModel = 'loro'] = process.argv.slice(2);
 if (requestedModel !== 'loro' && requestedModel !== 'flock')
   throw new Error('unsupported synthetic model');
@@ -39,7 +39,7 @@ await Effect.runPromise(
         genesis,
         recipient: publicKey,
         ledger: () => Effect.succeed(view),
-        protector: syntheticProtector,
+        protector: labSyntheticProtector,
       });
       const provider = yield* makeLabUpdateProvider({
         genesis,

@@ -29,10 +29,7 @@ SQLite13.0.3 override；旧 lock 条目和根 Riverrun catalog 不变。禁用�
 
 genuine 策略先于读取当前 device/member/Org；structural fake 和恶意 wrapper 不选权限。
 R 接收/修复密钥，不发送/写入/管理。inert join 收到不等于 admission。当前可信 checkpoint/
-lostACK crash-gap 宿主组合未完成。原 createSpace 只在 metadata 存 genesis、建空 control；
-loadControl prepend metadata genesis。公开 submission 要完整签名历史，待人选择 A初始化
-control 写已验证原 genesis（建议），或 B仅 Lab metadata-prefix 传输并明确 cursor/lostACK
-验证。协调推荐 A 不是批准；不改 merge P09，不在确认前实现依赖布局的 createSpace。
+lostACK crash-gap 宿主组合未完成。源原型只在 metadata 保存 genesis、读取时再补前缀的兼容替代，已由 2026-10-14 用户仅保留当前格式的决定淘汰。当前公开 submission 要求 control 具备包含原签名 genesis 的完整历史；metadata 仅用于发现。可续做的 workspace 创建、checkpoint／丢 ACK 耐久性仍是未完成职责，不再成为新增 metadata-prefix 兼容或修改 P09 的理由。
 
 纯 verdict 要测量：未测基线/部分 unavailable 不能 pass，记录数量不认证历史。
 新越权写入违反公开契约，合法已接纳历史不因作者撤权失效；insider freshness 假设明确。
@@ -257,7 +254,7 @@ CI 预算修正：key-distribution 夹具在 HTTP/接收/repair 查询中重复�
 
 | 决定 | 推荐 | 替代 / 兼容与代价 | 不选择时阻塞 |
 |---|---|---|---|
-| G：genesis/control 布局 | 原签名 genesis 是 control 第0条；registry仅作原件发现缓存，host创建须幂等恢复 | 旧 metadata-only 不能作为完整审计起点；旧布局需显式迁移/拒绝，不能自动猜 | 新建workspace；既有已发布full-prefix+外部pin session不阻塞 |
+| G：genesis/control 布局 | 原签名 genesis 是 control 第0条；registry仅作原件发现缓存，host创建须幂等恢复 | metadata-only 不作为审计起点；旧布局直接淘汰，无迁移／兼容要求 | 新建workspace；既有已发布full-prefix+外部pin session不阻塞 |
 | S：内容snapshot与资格/信任 | 新认证header绑定真实续读位置摘要，独立pin当前Owner/Admin personal资格；旧header仅历史读取，禁止新接纳；坏snapshot客户端回完整历史 | 升级格式会拒绝旧publisher；仅按header4继续接纳保留位置替换风险，不推荐；历史API不可用须失败且保留cursor | protected snapshot publisher/admission/bootstrap；完整资格批准引用仍缺 |
 | D：D12兼容 | 沿现有atomic-removal提案tag8+snapshot-v2 required tags/独立能力pin，单条CAS移除+换代 | 旧端明确拒绝v2/tag8；不能降级tag2两步。需成套升级旧端 | 原子移除producer，不重复决定原子原则 |
 | V：vault/恢复 | 一文件秘密直接派生每workspace独立R的包装钥，逐条CAS、先读回验证新备份再撤旧、默认保留退役备份 | 现draft另有独立master V+index包装方案，需选定并改draft；直接派生更简单，换文件秘密需重包各条目；Passkey包装另审 | Recovery设置/跨设备vault恢复；受限A本地installed-key恢复不阻塞 |

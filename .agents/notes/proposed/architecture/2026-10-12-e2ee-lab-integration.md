@@ -39,12 +39,7 @@ Genuine policy checks precede inspecting current device/member/Org. Structural
 counterfeit views and hostile wrappers cannot choose authority. R receives and
 repairs keys but cannot send, write or manage. Inert join receipt is not admission.
 Current trusted-checkpoint/lost-ACK crash-gap host composition is unfinished.
-Original createSpace stores genesis only in host metadata and creates empty control;
-original loadControl prepends that metadata genesis. The public submission adapter
-requires a complete signed history. Human options are A initialize control with
-verified original genesis (recommended), or B a Lab-only metadata-prefix transport
-with explicit cursor/lost-ACK acceptance. Coordinator recommends A, not approval.
-Do not change merged P09 or implement dependent createSpace before human selection.
+The source prototype stored genesis only in metadata and prepended it on reads. That compatibility alternative is retired by the user current-only decision on 2026-10-14. Current public submission requires a complete signed control history including original genesis; metadata is discovery only. Resumable workspace creation and checkpoint/lost-ACK durability remain unimplemented work, not a reason to add metadata-prefix compatibility or change P09.
 
 Pure verdicts require measurements: unmeasured baseline and partially unavailable
 coverage never pass; counts do not authenticate history. Unauthorized new writes
@@ -358,7 +353,7 @@ The original core7/Lab2 disposition lives only in the migration manifest: six co
 
 | Decision | Recommendation | Alternative / compatibility / blocked scope |
 |---|---|---|
-| G genesis/control | Original signed genesis at control record0; registry discovery only; resumable creation | Metadata-only requires explicit compatibility policy; product creation blocked, existing full-prefix sessions proceed |
+| G genesis/control | Original signed genesis at control record0; registry discovery only; resumable creation | No metadata-prefix compatibility; resumable creation remains unfinished, existing full-prefix sessions proceed |
 | S content snapshot and qualification | Bind actual continuation position in authenticated new header; independently pin current Owner/Admin personal qualification; old format historical-only | New admission refuses old publisher; exact encoding and full qualification approval provenance require review; snapshot producer/bootstrap blocked |
 | D D12 | Existing tag8 + snapshot-v2 required tags/capability-pin proposal | Old clients explicitly refuse; never tag2 downgrade/two CAS; atomic principle already settled, new producer blocked |
 | V vault | Direct file-secret derivation of independent workspace wrapping keys; per-entry CAS, verify replacement before revocation, retain retired backups | Existing draft proposes master/index instead; choosing direct derivation requires revising that draft; Passkey separate; vault setup/recovery blocked |

@@ -64,3 +64,5 @@ ciphertext replay. Flock has an explicit monotonic clock and shared document own
 
 Negative action expectations require exact refusal tag/code; untyped, defect and unrelated failures are harness errors, never successful negative evidence. Artifact inspection recomputes observations but does not authenticate them. HTTP callbacks use the scoped registered LegacyLabRun bridge.
 SDK failure normalization must not erase provider defects; action consumers check the provider harness signal after actual SDK settlement.
+
+Use current-format APIs and explicit allow/deny/unmeasured reference predictions. No obsolete boolean aliases or source-era unauthorized-content classifications. Native SDK callback bridges are lifecycle adapters, not legacy-ledger readers.
