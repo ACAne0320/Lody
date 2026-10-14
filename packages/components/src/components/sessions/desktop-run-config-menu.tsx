@@ -1129,7 +1129,7 @@ export function DesktopPermissionModeButton({
       }),
     [configOptionSelectors, configOptionValues, modeOptions, selectedModeId]
   );
-  const permissionLabel = t('chat.runConfig.permissionLabel', 'Permission');
+  const controlLabel = t('chat.runConfig.modeLabel', 'Mode');
 
   if (options.length === 0) return null;
 
@@ -1148,8 +1148,8 @@ export function DesktopPermissionModeButton({
           row. The mode's name is the tooltip and the accessible name. */}
       <Menu.Trigger
         disabled={disabled}
-        aria-label={label ? `${permissionLabel}: ${label}` : permissionLabel}
-        title={label ? `${permissionLabel}: ${label}` : permissionLabel}
+        aria-label={label ? `${controlLabel}: ${label}` : controlLabel}
+        title={label ? `${controlLabel}: ${label}` : controlLabel}
         className={iconOnlyTriggerClassName}
         render={<button type="button" />}
       >
