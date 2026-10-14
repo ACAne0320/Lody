@@ -32,7 +32,8 @@ owned and immutable; an array copy does not own nested bytes. Synthetic device
 exports/native handles are not a recovery vault or platform custody guarantee.
 
 Reference expectations use independently owned observations, never production
-policy as expected values. Missing facts stay unmeasured; boolean projections do
+policy as expected values. Conjoined action expectations retain each measurement;
+aggregate their worst verdict without letting a later pass overwrite a failure. Missing facts stay unmeasured; boolean projections do
 not prove agreement. Snapshot eligibility alone never admits a snapshot.
 
 Credential clients capture signer bindings before await, bound credential body

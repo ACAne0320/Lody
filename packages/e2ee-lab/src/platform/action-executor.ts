@@ -71,6 +71,12 @@ export interface LabActionObservation {
   readonly reply: LabProcessReply;
   readonly integrity: JudgeVerdict;
   readonly durability: JudgeVerdict;
+  readonly checks: {
+    readonly ok: JudgeVerdict;
+    readonly outcome?: JudgeVerdict;
+    readonly text?: JudgeVerdict;
+    readonly unchangedFrom?: JudgeVerdict;
+  };
 }
 /** Own finite plan before effects. Not an unbounded agent/script interpreter:
  * missing actions/actors/observations fail visibly; no re-seal entropy replay.
@@ -142,7 +148,9 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
     return yield* new LabActionError({ code: 'unknown-actor' });
   if (
     actions.some(
-      (row, index) => row.expect?.unchangedFrom !== undefined && row.expect.unchangedFrom >= index
+      (row, index) =>
+        (row.expect?.unchangedFrom !== undefined && row.expect.unchangedFrom >= index) ||
+        (row.expect?.ok === false && row.expect.outcome !== undefined)
     )
   )
     return yield* new LabActionError({ code: 'invalid-plan' });
@@ -175,21 +183,28 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
         })
       );
       const matched = action.expect ? reply.ok === action.expect.ok : undefined;
-      let integrity: JudgeVerdict = !action.expect
-        ? 'unavailable'
-        : action.expect.ok
-          ? matched
-            ? 'pass'
-            : 'harness-error'
-          : judgeClientIntegrity({ observed: true, acceptedUnauthorized: reply.ok });
+      const checks: {
+        ok: JudgeVerdict;
+        outcome?: JudgeVerdict;
+        text?: JudgeVerdict;
+        unchangedFrom?: JudgeVerdict;
+      } = {
+        ok: !action.expect
+          ? 'unavailable'
+          : action.expect.ok
+            ? matched
+              ? 'pass'
+              : 'harness-error'
+            : judgeClientIntegrity({ observed: true, acceptedUnauthorized: reply.ok }),
+      };
       if (action.expect?.outcome !== undefined) {
         const value = reply.value as { outcome?: string } | undefined;
-        integrity = reply.ok && value?.outcome === action.expect.outcome ? 'pass' : 'harness-error';
+        checks.outcome =
+          reply.ok && value?.outcome === action.expect.outcome ? 'pass' : 'harness-error';
       }
-      let durability: JudgeVerdict = 'unavailable';
       if (action.expect?.text !== undefined) {
         const value = reply.value as { text?: unknown } | undefined;
-        durability = judgeClientDurability({
+        checks.text = judgeClientDurability({
           observed: reply.ok,
           cursorAheadOfDocument: false,
           lostDurableData: value?.text !== action.expect.text,
@@ -203,13 +218,23 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
         if (!previous?.persisted || !value?.persisted)
           return yield* new LabActionError({ code: 'missing-observation' });
         // Independent snapshot of prior actual durable state; do not call production policy as expected value.
-        durability = judgeClientDurability({
+        checks.unchangedFrom = judgeClientDurability({
           observed: reply.ok,
           cursorAheadOfDocument: false,
           lostDurableData: JSON.stringify(previous.persisted) !== JSON.stringify(value.persisted),
         });
       }
-      observations.push({ action, reply, integrity, durability });
+      // Preserve every applicable measurement: a later pass cannot erase a
+      // violation, harness error or unmeasured result from another condition.
+      const integrity = worstVerdict([
+        checks.ok,
+        ...(checks.outcome === undefined ? [] : [checks.outcome]),
+      ]);
+      const durability = worstVerdict([
+        ...(checks.text === undefined ? [] : [checks.text]),
+        ...(checks.unchangedFrom === undefined ? [] : [checks.unchangedFrom]),
+      ]);
+      observations.push({ action, reply, integrity, durability, checks });
     }
     return observations;
   });

@@ -136,6 +136,14 @@ it('preflights every initial action before any effect, ignores caller map overri
   };
   for (const actions of [
     [{ kind: 'new-unknown', actor: 'owner' }],
+    [
+      {
+        kind: 'call',
+        actor: 'owner',
+        operation: 'resume',
+        expect: { ok: false, outcome: 'Committed' },
+      },
+    ],
     [{ kind: 'start', actor: 'missing', mode: 'create' }],
     [
       {
@@ -171,4 +179,181 @@ it('preflights every initial action before any effect, ignores caller map overri
   );
   expect(Result.isFailure(result)).toBe(true);
   expect(started).toBe(false);
+});
+
+it.each([
+  { name: 'wrong text with unchanged actual SQL pair', wrongText: true, changed: false },
+  { name: 'correct text with changed actual SQL pair', wrongText: false, changed: true },
+  { name: 'correct text with unchanged actual SQL pair', wrongText: false, changed: false },
+])(
+  'aggregates both durable expectations: $name',
+  async ({ wrongText, changed }) => {
+    const root = mkdtempSync(join(tmpdir(), 'lab-action-conjunction-'));
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const f = yield* makeLabScenarioFixture(join(root, 'fixture'));
+            const device = yield* exportDevice(f.owner);
+            const actor = yield* makeLabProcessActor((mode) =>
+              Effect.sync(() => ({
+                syntheticOnly: true as const,
+                device,
+                peerSigningKey: Buffer.from(f.peer.publicKey.toBytes()).toString('hex'),
+                baseUrl: f.host.baseUrl,
+                directory: f.directory,
+                actor: 'owner' as const,
+                mode,
+                genesis: Buffer.from(f.genesis.toBytes()).toString('hex'),
+                records: f.records.map((record) => Buffer.from(record).toString('hex')),
+                point: {
+                  head: Buffer.from(f.point().head.toBytes()).toString('hex'),
+                  length: f.point().length,
+                },
+              }))
+            );
+            let observed = 0;
+            // Only the wrong-text negative control projects a defective observation.
+            // The OS actor supplies the actual SQL digests; the changed-pair case
+            // performs a real additional edit and durable write instead of faking them.
+            const measured = {
+              ...actor,
+              call: (...args: Parameters<typeof actor.call>) =>
+                actor.call(...args).pipe(
+                  Effect.map((reply) => {
+                    if (args[0] === 'observe' && ++observed === 2 && wrongText)
+                      return {
+                        ...reply,
+                        value: { ...(reply.value as object), text: 'wrong observed text' },
+                      };
+                    return reply;
+                  })
+                ),
+            };
+            const result = yield* executeLabActions({
+              actors: { owner: measured },
+              maxSteps: 20,
+              actions: [
+                { kind: 'start', actor: 'owner', mode: 'create', expect: { ok: true } },
+                {
+                  kind: 'call',
+                  actor: 'owner',
+                  operation: 'create',
+                  document: 'loro',
+                  expect: { ok: true },
+                },
+                {
+                  kind: 'call',
+                  actor: 'owner',
+                  operation: 'append',
+                  document: 'loro',
+                  text: 'expected original',
+                  expect: { ok: true },
+                },
+                {
+                  kind: 'call',
+                  actor: 'owner',
+                  operation: 'observe',
+                  document: 'loro',
+                  expect: { ok: true, text: 'expected original' },
+                },
+                ...(changed
+                  ? [
+                      {
+                        kind: 'call',
+                        actor: 'owner',
+                        operation: 'append',
+                        document: 'loro',
+                        text: '+',
+                        expect: { ok: true },
+                      },
+                    ]
+                  : []),
+                {
+                  kind: 'call',
+                  actor: 'owner',
+                  operation: 'observe',
+                  document: 'loro',
+                  expect: {
+                    ok: true,
+                    text: changed ? 'expected original+' : 'expected original',
+                    unchangedFrom: 3,
+                  },
+                },
+              ],
+            });
+            const prior = result.observations[3]!.reply.value as { persisted: unknown };
+            const last = result.observations.at(-1)!;
+            const value = last.reply.value as { persisted: unknown; text: string };
+            if (changed) expect(value.persisted).not.toEqual(prior.persisted);
+            else expect(value.persisted).toEqual(prior.persisted);
+            expect(value.text).toBe(
+              wrongText
+                ? 'wrong observed text'
+                : changed
+                  ? 'expected original+'
+                  : 'expected original'
+            );
+            expect(last.checks.text).toBe(wrongText ? 'violation' : 'pass');
+            expect(last.checks.unchangedFrom).toBe(changed ? 'violation' : 'pass');
+            const verdict = wrongText || changed ? 'violation' : 'pass';
+            expect(last.durability).toBe(verdict);
+            expect(result.verdict).toBe(verdict);
+          })
+        )
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+  15000
+);
+
+it('preserves ok/outcome failures and missing measurements instead of turning them into passes', async () => {
+  for (const { reply, expected, verdict } of [
+    {
+      reply: { ok: false, value: { outcome: 'Committed' } },
+      expected: { ok: true, outcome: 'Committed' },
+      verdict: 'harness-error',
+    },
+    {
+      reply: { ok: true, value: { outcome: 'Conflicted' } },
+      expected: { ok: true, outcome: 'Committed' },
+      verdict: 'harness-error',
+    },
+    {
+      reply: { ok: true, value: { outcome: 'Committed' } },
+      expected: { ok: true, outcome: 'Committed' },
+      verdict: 'pass',
+    },
+    { reply: { ok: true }, expected: { ok: false }, verdict: 'violation' },
+    {
+      reply: { ok: false },
+      expected: { ok: true, text: 'not observed' },
+      verdict: 'harness-error',
+    },
+    { reply: { ok: true }, expected: undefined, verdict: 'unavailable' },
+  ]) {
+    const actor = {
+      start: () => Effect.succeed(reply as LabProcessReply),
+      // This reply fixture has the same asynchronous IPC boundary as an actor.
+      call: () => Effect.promise(() => Promise.resolve(reply as LabProcessReply)),
+      crash: () => Effect.succeed({ code: null, signal: 'SIGKILL' as const }),
+      shutdown: () => Effect.void,
+      pid: () => undefined,
+      diagnostics: () => '',
+    };
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        executeLabActions({
+          actors: { owner: actor },
+          maxSteps: 5,
+          actions: [{ kind: 'call', actor: 'owner', operation: 'resume', expect: expected }],
+        })
+      )
+    );
+    expect(result.verdict).toBe(verdict);
+    expect(result.observations[0]!.integrity).toBe(verdict);
+    if (expected?.text) expect(result.observations[0]!.checks.text).toBe('harness-error');
+  }
 });

@@ -282,3 +282,9 @@ CI 预算修正：key-distribution 夹具在 HTTP/接收/repair 查询中重复�
 
 
 补充已定消费者：unbound签名加入意图有独立Lab SQL原件journal，丢回执/重开保留原件；真实admission/P09生效后才启动普通receiver/content，入组前mailbox实际拒绝。public installed-history初始化借用原保护store，完整链核验后才保存/回读各旧钥，退出清理所拥有的临时opaque钥。真实已签坏packet不产生旧钥部分落盘，SQL ABORT明确失败，显式重试恢复原commitment；真实观测先于缺失epoch拒绝，随后旧view被拒。不创建candidate保护/vault或历史信封B。
+
+## #1557 联合判定修复（2026-10-14）
+
+独立F1为Lab验收判定缺口，非密码学绕过/线上损坏：同一步text错误的violation被后续相同SQL摘要的pass覆盖。现在保留ok/outcome/text/unchangedFrom各自checks，再用worstVerdict聚合；失败、未测量及harness错误不能被通过结果擦掉。outcome要求成功响应，因此预期ok=false同时要求outcome的矛盾计划在执行前拒绝。
+
+原reviewer反例复制到作者自有证据目录，原断言旧fail/新pass；真实OS/HPKE/HTTP/SQLite补text错+持久对相同、text正确+真实编辑改变持久对、两者正确三对照。另验证ok/outcome、失败响应和无期待时unavailable分类。首次同步回复分类夹具触发driver external-permit，保留为非目标夹具错误；改为实际IPC的异步边界。39步预算与全部断言不变，旧P1/未批准协议不重开。本修复由协调独立增量复验，作者验证不自行关闭独立finding。准确head/base、日志与CI归属放交接，不因链接更新实现head。
