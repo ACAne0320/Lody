@@ -173,6 +173,11 @@ clear, which is part of why clear verification and the host wipe matter.
 
 ## Verification
 
+- `tests/error-boundary-fallback.test.tsx`: the reset mock returns the real
+  `Promise<boolean>` contract; confirmation stays pending when a reset starts, and
+  a cancelled reset closes the dialog and permits another attempt. CI previously
+  passed every assertion but failed on an uncaught `.then()` on the obsolete mock.
+
 - `tests/blocking-wait-placeholder.test.tsx`:
   - a terminal failure shows the page at once and arms no clear;
   - the damaged-data description only for storage errors;

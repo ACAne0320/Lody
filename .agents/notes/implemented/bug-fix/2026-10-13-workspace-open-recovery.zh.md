@@ -120,6 +120,10 @@ PR: https://github.com/LodyAI/Lody/pull/1531
 
 ## 验证
 
+- `tests/error-boundary-fallback.test.tsx`：重置 mock 遵循实际的 `Promise<boolean>` 契约；
+  重置开始后确认框保持进行中，取消重置后关闭确认框并允许再次尝试。此前 CI 的所有断言虽然通过，
+  但旧 mock 返回 `undefined`，调用 `.then()` 引发未捕获异常，导致整个测试分组失败。
+
 - `tests/blocking-wait-placeholder.test.tsx`：
   - 终态失败立即显示恢复页，并且不设置任何清除；
   - 只有存储错误才显示“数据可能已损坏”的说明；
