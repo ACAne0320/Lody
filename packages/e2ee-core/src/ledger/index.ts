@@ -15,7 +15,6 @@ export {
 export {
   verifyLedger,
   extendLedger,
-  historicalContentAuthor,
   contentPermissions,
   epochHistoryPacket,
   type ContentPermissions,

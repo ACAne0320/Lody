@@ -1,11 +1,11 @@
 import { LabContentGatewayError, type makeLabContentGateway } from './content-gateway';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { Data, Effect, Layer, Result, Semaphore } from 'effect';
+import { Data, Effect, Result, Semaphore } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 import type { makeLabCredentials } from './credentials';
 import type { makeLabControlGateway } from './control-gateway';
 import { makeLabOperations } from './operation-scope';
-import { LegacyLabRun } from './run';
+import { LabCallbackRunner } from './run';
 import { dispatchLabMailbox, type LabMailboxHost } from './mailbox-http';
 import { LabJoinError, parseLabJoin, type makeLabJoinMailbox } from './join-mailbox';
 import { LabWorkspaceError, type makeLabWorkspaceRegistry } from './workspace-registry';
@@ -123,7 +123,7 @@ export function makeLabHttpHost(input: {
     const operations = yield* makeLabOperations();
     // Registered Node HTTP callback bridge, owned by this host Scope.
     const callbacks = yield* Effect.acquireRelease(
-      Effect.sync(() => new LegacyLabRun(Layer.empty)),
+      Effect.sync(() => new LabCallbackRunner()),
       (owner) => Effect.promise(() => owner.close())
     );
     const address = server.address();

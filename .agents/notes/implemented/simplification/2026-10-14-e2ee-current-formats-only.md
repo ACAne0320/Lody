@@ -31,3 +31,15 @@ The public foundation draft and whitepaper now state the current-only policy ins
 ## Verification
 
 Existing reference-policy cases move to the current tri-state APIs without losing role, rotation, unknown-observation or exact retry-byte assertions. Real Loro/Flock, HPKE, SQLite and OS-child tests consume the same public synthetic protector directly. Validation and exact head are recorded in the existing [#1557](https://github.com/LodyAI/Lody/pull/1557) delivery; this cleanup adds no PR and does not merge or enable E2EE.
+
+## Redundant paths removed
+
+The wider follow-up removes the unconsumed volatile key cache, member-only historical-author wrapper and unused identifier/snapshot helpers. Historical identity now uses the existing explicit member/device-only union. Relevant fake-key, revoked-view, rollback/fork and close assertions run on the actual protected store; its missing-row read does not claim to observe a ledger it never queried.
+
+Receiver, distributor and installed-history consumers now borrow one receiver-owned installed-key store instead of opening the same database three times. Capabilities stay opaque and host-only. Borrowers settle before owner close; protection/native leases and final context/readback checks remain.
+
+Content authenticate/open share one owned parsed frame. Seal keeps the exact-message verification already performed by signVerified and removes a second full-frame verify. AEAD, fixed signer checks, captured inputs and pre/post-await permission/prefix checks remain.
+
+Lab removes unused pause/resume/permit-next, freeze/intercept, start-log and Promise-phase paths. Actual SQL/HTTP/ciphertext faults remain in the action executor. Phase parent and scheduler state use the native Effect path. Callback fibers use the fixed-scope LabCallbackRunner only at actual Node/SDK boundaries: host HTTP, SDK protection and fetch response callbacks are its consumers; owner close rejects new work and waits cleanup, and aggregate causes remain visible. Generic Layer initialization and unused runner methods are gone. Gate registration precedes synchronous notification, and the driver retains its first typed failure before closing gates.
+
+Current docs and manifest no longer duplicate intermediate checkpoint counts, live PR pins or source/target hash inventories. All380 source entries, their SHA and original export inventories remain in the manifest; actual-run hashes are captured by the evidence module. Git5ab9394392a3577a76b14ab0552c33f755b3ce48 and fixed reports retain historical evidence. Current Lab parent identities use JSON tuples without a delimiter-compatibility reader. No protocol wire, algorithm, product activation or protocol approval is introduced.

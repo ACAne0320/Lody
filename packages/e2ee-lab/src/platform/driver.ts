@@ -1,5 +1,5 @@
-import { Data, Effect, Exit, Fiber, Queue, Scope } from 'effect';
-import type { LegacyLabRuntime } from './runtime';
+import { Cause, Data, Effect, Exit, Fiber, Queue, Scope } from 'effect';
+import type { LabRuntime } from './runtime';
 import { canPermitEvent, type LabEvent } from '../pure/scheduler';
 import { choiceKey, eventIdentity, identitiesEqual, type ScheduleChoice } from '../pure/schedule';
 import type { Divergence } from '../pure/replay';
@@ -16,7 +16,7 @@ export interface DriverOptions {
   readonly stop?: Effect.Effect<void>;
 }
 
-export function leftoverRequested(runtime: LegacyLabRuntime): readonly LabEvent[] {
+export function leftoverRequested(runtime: LabRuntime): readonly LabEvent[] {
   return runtime.events().filter((event) => event.status === 'requested');
 }
 
@@ -26,7 +26,7 @@ export function leftoverRequested(runtime: LegacyLabRuntime): readonly LabEvent[
  * The input schedule is captured before work begins, including identity fields.
  */
 export const driveLabPermits = Effect.fn('Lab.drivePermits')(function* <A, E, R>(
-  runtime: LegacyLabRuntime,
+  runtime: LabRuntime,
   recorded: 'record' | readonly ScheduleChoice[],
   work: Effect.Effect<A, E, R>,
   options: DriverOptions
@@ -48,16 +48,11 @@ export const driveLabPermits = Effect.fn('Lab.drivePermits')(function* <A, E, R>
               ...choice,
               identity: { ...choice.identity },
             }));
-      // Parent strings retain the source representation. Refuse delimiter labels
-      // that could alias different parent triples rather than invent a new wire.
-      const safeIdentity = (identity: ScheduleChoice['identity']) =>
-        ![identity.actor, identity.operation, identity.phase].some((label) => label.includes('|'));
       if (
         choices !== 'record' &&
         choices.some(
           (choice) =>
             choice.kind !== 'permit' ||
-            !safeIdentity(choice.identity) ||
             !Number.isSafeInteger(choice.occurrence) ||
             choice.occurrence < 0
         )
@@ -104,14 +99,10 @@ export const driveLabPermits = Effect.fn('Lab.drivePermits')(function* <A, E, R>
         }
         while (true) {
           const events = runtime.events();
-          if (events.some((event) => !safeIdentity(eventIdentity(event, events)))) {
-            return yield* new LabDriverError({ code: 'configuration' });
-          }
           const next = choices === 'record' ? undefined : choices[permits];
           const selected = events.find(
             (event) =>
               event.status === 'requested' &&
-              !runtime.paused.has(event.actor) &&
               canPermitEvent(runtime.state, event.eventId) &&
               (choices === 'record' ||
                 (next &&
@@ -145,31 +136,34 @@ export const driveLabPermits = Effect.fn('Lab.drivePermits')(function* <A, E, R>
           })
         )
       );
-      const closeOnFailure = <B, F, S>(effect: Effect.Effect<B, F, S>) =>
+      // Claim the failure before closing gates: native phases may resume
+      // synchronously and otherwise replace budget/stop with runtime-closed.
+      let firstFailure: Cause.Cause<E | LabDriverError> | undefined;
+      const closeOnFailure = <B, S>(effect: Effect.Effect<B, E | LabDriverError, S>) =>
         effect.pipe(
           Effect.onExit((exit) =>
-            Exit.isFailure(exit) ? Effect.sync(() => runtime.close()) : Effect.void
+            Exit.isFailure(exit)
+              ? Effect.sync(() => {
+                  firstFailure ??= exit.cause;
+                  runtime.close();
+                })
+              : Effect.void
           )
         );
       const running = Effect.raceFirst(closeOnFailure(completed), closeOnFailure(watch));
-      return yield* stop
-        ? Effect.raceFirst(
-            running,
-            stop.pipe(
-              Effect.andThen(Effect.sync(() => runtime.close())),
-              Effect.andThen(
-                Effect.suspend(() =>
-                  Effect.fail(
-                    new LabDriverError({
-                      code: 'stopped',
-                      divergence: divergence(),
-                    })
-                  )
-                )
-              )
-            )
-          )
-        : running;
+      const stopped = stop?.pipe(
+        Effect.andThen(
+          Effect.suspend(() => {
+            const error = new LabDriverError({ code: 'stopped', divergence: divergence() });
+            firstFailure ??= Cause.fail(error);
+            runtime.close();
+            return Effect.fail(error);
+          })
+        )
+      );
+      return yield* (stopped ? Effect.raceFirst(running, stopped) : running).pipe(
+        Effect.catchCause((cause) => Effect.failCause(firstFailure ?? cause))
+      );
     })
   );
   // An independent child Scope lets cancellation close gates before interrupting

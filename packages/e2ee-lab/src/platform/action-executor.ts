@@ -174,7 +174,6 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
     for (const action of actions) {
       const actor = actors.get(action.actor)!;
       const operation = action.kind === 'call' ? action.operation : action.kind;
-      runtime.recordStart({ actor: action.actor, operation });
       const reply = yield* runtime.phaseEffect(
         action.actor,
         operation,

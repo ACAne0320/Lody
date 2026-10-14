@@ -9,6 +9,6 @@
   "destinations": {
     "packages/e2ee-core/src/keys/envelope.ts": "9a68b33f91562beca5142f368928c299556edf389c0c6060a7012b9a843e34c4",
     "packages/e2ee-core/src/epoch-key.ts": "ad21b5e661b3d6bb7ef483658e912039fbdfc07588d3a960a86e85fc2d727628",
-    "packages/e2ee-core/test/hpke.test.ts": "25022fe2bf8263f014b6c1852d166678715dbc67a8d3fe9514f1657a251d273e"
+    "packages/e2ee-core/test/hpke.test.ts": "c4ce200ff158470efc358f9f5ee6e19eb0a990281b46576b0b4f1a6022cb8d5e"
   }
 }

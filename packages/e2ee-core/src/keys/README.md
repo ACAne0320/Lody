@@ -1,4 +1,4 @@
-# Canonical epoch history and volatile verified keys
+# Canonical epoch history and installed keys
 
 `@lody/e2ee-core/keys` uses the current CBOR ledger's fixed v1 commitment and
 72-byte history packet, not the retired JSON experiment's digest/signed frame.
@@ -21,28 +21,20 @@ No rotation, delivery, backup, vault/file format or product feature is activated
   wrong previous key. Structural raw collection is replaced by the existing
   unverified record decoder plus authoritative verified-view packet queries.
 
-`makeVerifiedEpochKeys(genesis, recipient)` is an inert Effect requiring the
-application Scope. It creates only volatile private copies, with synchronous
-install/read Result operations and a synchronous clear. Install verifies a genuine view, active
-recipient membership and the exact epoch commitment; Guest/R may read but acquire
-no document-write rights. Read repeats eligibility and commitment checks and
-returns a fresh opaque key. `clear` wipes stored copies; Scope close wipes them,
-releases its observed view and permanently rejects use. Caller-owned input and
-returned key objects retain their own lifetimes; this is not physical-memory
-zeroization or remote key deletion.
+Current host workflows use the single receiver-owned protected store under
+`./keys/host/sqlite`. Recipient, distributor and installed-history consumers share
+its opaque read/save capabilities instead of opening the same database repeatedly.
+The unused volatile cache and its synchronous install/read/clear API are retired.
+Current protected-store checks retain genuine-view membership, commitment and
+known-prefix rollback/fork protection. No new secret export is exposed.
 
-The store remembers the latest independently verified prefix it has observed.
-`requireLedgerContinuation` compares two real views using private verified hashes;
-a lower view or alternate fork cannot bypass a known revocation. A verified newer
-revocation remains observed even if read fails. This local authority observation
-is not a transport/durable cursor advance, global freshness proof or fork resolution.
 Callers still obtain current independently expected ledger endpoints and handle
 persistence. An endorsed snapshot authenticates its state/history facts; it does not independently audit each past publication. The explicit ledger/snapshot entry documents its separate qualification.
 
 Tests extend the owning crypto suite: independently generated Python SHA-256 /
 PyNaCl 1.6.2 libsodium vectors, real native-signed ledger histories, corrupt links,
 wrong commitments, copy cleanup, false views, rollback/fork rejection, active R,
-clear and Scope close. The original candidate's wrong-old-key cleanup failure is
+and Scope close. The original candidate's wrong-old-key cleanup failure is
 reproduced in an isolated copy; no source/candidate worktree is modified.
 
 Regenerate only synthetic fixtures in an isolated Python environment:
@@ -84,8 +76,7 @@ This API performs no transport, outbox persistence or retry.
 `openEpochEnvelope` fixes caller context/frame/key handles before asynchronous
 work, checks outer signature before decryption, checks the plaintext commitment,
 then rechecks current authority. It returns a caller-owned opaque key, not a
-durable installation receipt. Compose it with `makeVerifiedEpochKeys` for volatile
-installation; durable storage/reporting remains a later owner. A failed/cancelled
+durable installation receipt. Compose it with the actual protected-store receiver for durable installation and durable report queue. A failed/cancelled
 post-decrypt check wipes and invalidates this operation's newly created EpochKey.
 Native primitive settlement is awaited; a native call that never settles cannot
 provide bounded shutdown. Successful returned keys live while reachable; JavaScript

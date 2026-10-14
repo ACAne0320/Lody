@@ -62,7 +62,9 @@ Trace only protected protocol paths, excluding credentials; bound frames/bytes a
 report missing observations. Measured action success is not whole-security or exact
 ciphertext replay. Flock has an explicit monotonic clock and shared document owner.
 
-Negative action expectations require exact refusal tag/code; untyped, defect and unrelated failures are harness errors, never successful negative evidence. Artifact inspection recomputes observations but does not authenticate them. HTTP callbacks use the scoped registered LegacyLabRun bridge.
+Negative action expectations require exact refusal tag/code; untyped, defect and unrelated failures are harness errors, never successful negative evidence. Artifact inspection recomputes observations but does not authenticate them. HTTP/SDK callbacks use the fixed-scope LabCallbackRunner bridge; native workflows never use it as a second orchestration path.
 SDK failure normalization must not erase provider defects; action consumers check the provider harness signal after actual SDK settlement.
 
 Use current-format APIs and explicit allow/deny/unmeasured reference predictions. No obsolete boolean aliases or source-era unauthorized-content classifications. Native SDK callback bridges are lifecycle adapters, not legacy-ledger readers.
+
+Native phase scheduling uses the Effect PhaseParent context only. Register each waiter before notifying synchronous consumers; retain the first typed failure before closing other gates. No unused pause/intercept/freeze/start-log or Promise-phase compatibility API.

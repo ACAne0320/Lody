@@ -8,7 +8,6 @@ import { disposeEpochKey } from '../epoch-key';
 import { keyId } from '../identifiers';
 import { decodeRecord, type LedgerView } from '../ledger';
 import { makeSqliteRecipientMailbox, type RecipientMailboxRemote } from './mailbox-client';
-import { makeSqliteProtectedEpochKeys } from './protected-sqlite';
 import { sqliteDeliveryOutbox } from './delivery-sqlite';
 import {
   DeliveryOutbox,
@@ -121,13 +120,7 @@ export function makeSqliteKeyDistribution(
     const observe = recipient.observeLedger;
     const org = keyId(anchor.toBytes()),
       self = keyId(signer.publicKey.toBytes());
-    const keys = yield* makeSqliteProtectedEpochKeys({
-      ...keyConfig,
-      mode: 'open',
-      genesis: anchor,
-      recipient: signer.publicKey,
-      ledger: observe,
-    });
+    const keys = recipient.installedEpochKeys;
     const outbox = Context.get(
       yield* Layer.build(sqliteDeliveryOutbox(outboxConfig)),
       DeliveryOutbox

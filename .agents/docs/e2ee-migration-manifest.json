@@ -767,12 +767,12 @@
       "targetPath": "packages/e2ee-core/src/keys/history.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Migrate volatile verified install/read/clear lifecycle into the canonical ledger owner. Retire the JSON prototype lody-epoch-secret/v1 digest and framed-history format; canonical ledger uses lody-e2ee/epoch-key/v1 and 72-byte history packets. Do not copy incompatible wire.",
+      "reason": "Canonical history/commitment and actual installed-key lifecycle only. Retire unused volatile store and source JSON digest/frame; durable new-epoch candidates/backup remain separately gated.",
       "coverage": {
-        "L4a": "Canonical commitment/72B history and scoped volatile install/read/clear migrated; durable candidates/outbox/delivery/rotation remain separate."
+        "L4a": "Current canonical commitment/72B history; installed read/save/Scope ownership covered by the receiver-owned protected store. Unused volatile API retired, not a second migration obligation."
       },
       "additionalTargetPaths": [
-        "packages/e2ee-core/src/keys/store.ts"
+        "packages/e2ee-core/src/keys/protected-sqlite.ts"
       ],
       "sourceDeclaredExports": {
         "core": [
@@ -1165,10 +1165,10 @@
       "layer": "L4",
       "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
       "coverage": {
-        "L4a": "Canonical commitment/72B history and scoped volatile install/read/clear migrated; durable candidates/outbox/delivery/rotation remain separate."
+        "L4a": "Current canonical commitment/72B history; installed read/save/Scope ownership covered by the receiver-owned protected store. Unused volatile API retired, not a second migration obligation."
       },
       "additionalTargetPaths": [
-        "packages/e2ee-core/src/keys/store.ts"
+        "packages/e2ee-core/src/keys/protected-sqlite.ts"
       ],
       "sourceDeclaredExports": {
         "core": [
@@ -2849,10 +2849,10 @@
       "layer": "L4",
       "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
       "coverage": {
-        "L4a": "Canonical commitment/72B history and scoped volatile install/read/clear migrated; durable candidates/outbox/delivery/rotation remain separate."
+        "L4a": "Current canonical commitment/72B history; installed read/save/Scope ownership covered by the receiver-owned protected store. Unused volatile API retired, not a second migration obligation."
       },
       "additionalTargetPaths": [
-        "packages/e2ee-core/src/keys/store.ts"
+        "packages/e2ee-core/src/keys/protected-sqlite.ts"
       ],
       "sourceDeclaredExports": {
         "core": [
@@ -2993,7 +2993,7 @@
       "targetPath": "packages/e2ee-core/src/identifiers.ts",
       "status": "已迁",
       "layer": "main",
-      "reason": "Public foundations already extracted and hardened; no second byte/crypto implementation.",
+      "reason": "Reuse current keyId; unused joinKey has no current caller and is retired without alias.",
       "sourceDeclaredExports": {
         "core": [
           "keyId",
@@ -3007,6 +3007,9 @@
       "targetPathState": "existing",
       "coveragePaths": [
         "packages/e2ee-core/src/identifiers.ts"
+      ],
+      "retiredSourceExports": [
+        "joinKey"
       ]
     },
     {
@@ -7563,7 +7566,7 @@
       "targetPath": "packages/e2ee-lab/src/runtime.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Current explicit scoped native fetch/phase/permit runtime rejects late values and waits owner settlement; full actor/driver/replay composition pending.",
+      "reason": "One native Effect phase/fetch/permit path. Unused pause/resume/freeze/intercept/start-log and Promise phase APIs removed; actual action/HTTP fault owners remain separate.",
       "coveragePaths": [
         "packages/e2ee-lab/src/platform/runtime.ts"
       ],
@@ -7581,7 +7584,11 @@
           "LabRuntime"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "proposed-path-not-created",
+      "retiredSourceExports": [
+        "FetchIntercept",
+        "ViewFreeze"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/scenario.ts",
@@ -7850,7 +7857,7 @@
       "targetPath": "packages/e2ee-lab/src/services/run.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Current deprecated SDK/Promise callback boundary retains one Effect context and waits fibers/owner close; new internal workflows remain Effects.",
+      "reason": "One fixed-scope LabCallbackRunner at actual Node/SDK Promise callbacks. No unused generic Layer/context/sync method or duplicate workflow runner.",
       "coveragePaths": [
         "packages/e2ee-lab/src/platform/run.ts"
       ],
@@ -7868,7 +7875,12 @@
           "runLiveLabPromise"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "proposed-path-not-created",
+      "retiredSourceExports": [
+        "LabRun",
+        "runLabPromise",
+        "runLiveLabPromise"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/trace.ts",
@@ -9065,264 +9077,7 @@
       "independentReview": "coordinator pending"
     }
   },
-  "publishedStackSnapshot": [
-    {
-      "number": 1438,
-      "headRefName": "e2ee-migration-baseline",
-      "headRefOid": "d7c4d1fc0d25fadfdf14d97d1576435e2e49f627",
-      "baseRefName": "main",
-      "isDraft": true,
-      "parentHead": "129996ed7d641be68aa1f1f9cc480c7c88d49917"
-    },
-    {
-      "number": 1439,
-      "headRefName": "e2ee-ledger-content-facts",
-      "headRefOid": "49700a726882522f1093022d266d7f7002ace11a",
-      "baseRefName": "e2ee-migration-baseline",
-      "isDraft": true,
-      "parentHead": "d7c4d1fc0d25fadfdf14d97d1576435e2e49f627"
-    },
-    {
-      "number": 1442,
-      "headRefName": "e2ee-document-workflows",
-      "headRefOid": "ea7998dd2954f7207e7e36c02f61f62ba86637ca",
-      "baseRefName": "e2ee-ledger-content-facts",
-      "isDraft": true,
-      "parentHead": "49700a726882522f1093022d266d7f7002ace11a"
-    },
-    {
-      "number": 1446,
-      "headRefName": "e2ee-epoch-history",
-      "headRefOid": "85660e6b8f3a305bd240cf0d54417325aabc0eda",
-      "baseRefName": "e2ee-document-workflows",
-      "isDraft": true,
-      "parentHead": "ea7998dd2954f7207e7e36c02f61f62ba86637ca"
-    },
-    {
-      "number": 1447,
-      "headRefName": "e2ee-ledger-signing",
-      "headRefOid": "d5d1c18ff9c47f4c7b14aa4d8ed36e04605a8a23",
-      "baseRefName": "e2ee-epoch-history",
-      "isDraft": true,
-      "parentHead": "85660e6b8f3a305bd240cf0d54417325aabc0eda"
-    },
-    {
-      "number": 1448,
-      "headRefName": "e2ee-epoch-envelopes",
-      "headRefOid": "37c6c40d8e3680bb8ee7a129a58760e886d42919",
-      "baseRefName": "e2ee-ledger-signing",
-      "isDraft": true,
-      "parentHead": "d5d1c18ff9c47f4c7b14aa4d8ed36e04605a8a23"
-    },
-    {
-      "number": 1450,
-      "headRefName": "e2ee-key-delivery",
-      "headRefOid": "9c77ac714f10229a4f57c4eb265d86d65ea34bfe",
-      "baseRefName": "e2ee-epoch-envelopes",
-      "isDraft": true,
-      "parentHead": "37c6c40d8e3680bb8ee7a129a58760e886d42919"
-    },
-    {
-      "number": 1464,
-      "headRefName": "e2ee-ledger-snapshots",
-      "headRefOid": "3263358c1c686651979aaa9a741227c9d92ce644",
-      "baseRefName": "e2ee-key-delivery",
-      "isDraft": true,
-      "parentHead": "9c77ac714f10229a4f57c4eb265d86d65ea34bfe",
-      "reviewStatus": "original limited NOT READY; author oldfail/newpass and supplemental exact-point regressions done; coordinator/original reviewer incremental recheck pending"
-    },
-    {
-      "number": 1472,
-      "headRefName": "e2ee-key-mailbox",
-      "headRefOid": "6d2dba9f27316c08784b852670f0a8ddad1df3c4",
-      "baseRefName": "e2ee-ledger-snapshots",
-      "isDraft": true,
-      "parentHead": "3263358c1c686651979aaa9a741227c9d92ce644",
-      "lastIntegratedParentHead": "5d3967ec94e3b10fdec76220937e9fcfe2623590",
-      "syncRequired": true
-    },
-    {
-      "number": 1474,
-      "headRefName": "e2ee-content-snapshot-auth",
-      "headRefOid": "2eaa9d353ec139a0d92645b44dda1705a448053e",
-      "baseRefName": "e2ee-key-mailbox",
-      "isDraft": true,
-      "parentHead": "6d2dba9f27316c08784b852670f0a8ddad1df3c4"
-    },
-    {
-      "number": 1479,
-      "headRefName": "e2ee-ledger-admission",
-      "headRefOid": "f5d2e5c9d108dfda6ea39cc6fdde3ec5a3796198",
-      "baseRefName": "e2ee-content-snapshot-auth",
-      "isDraft": true,
-      "parentHead": "2eaa9d353ec139a0d92645b44dda1705a448053e"
-    },
-    {
-      "number": 1480,
-      "headRefName": "e2ee-host-epoch-protection",
-      "headRefOid": "f4f0986b313107ef5e5fb8337f703391a72b8273",
-      "baseRefName": "e2ee-ledger-admission",
-      "isDraft": true,
-      "parentHead": "f5d2e5c9d108dfda6ea39cc6fdde3ec5a3796198"
-    },
-    {
-      "number": 1482,
-      "headRefName": "e2ee-epoch-receive-reports",
-      "headRefOid": "fb69ec29fcbc16cf309b511f88c9b1b164ffe7cb",
-      "baseRefName": "e2ee-host-epoch-protection",
-      "isDraft": true,
-      "parentHead": "f4f0986b313107ef5e5fb8337f703391a72b8273",
-      "lastIntegratedParentHead": "ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee",
-      "syncRequired": true
-    },
-    {
-      "number": 1484,
-      "headRefName": "e2ee-ledger-feed",
-      "headRefOid": "56333d8b4e0ef3ba7503fc783381448e183da28b",
-      "baseRefName": "e2ee-epoch-receive-reports",
-      "isDraft": true,
-      "parentHead": "fb69ec29fcbc16cf309b511f88c9b1b164ffe7cb"
-    },
-    {
-      "number": 1485,
-      "headRefName": "e2ee-mailbox-repairs",
-      "headRefOid": "697d2b5ffb376cbcbbe3731d9ac9337b7bf524c7",
-      "baseRefName": "e2ee-ledger-feed",
-      "isDraft": true,
-      "parentHead": "56333d8b4e0ef3ba7503fc783381448e183da28b"
-    },
-    {
-      "number": 1487,
-      "headRefName": "e2ee-recipient-mailbox",
-      "headRefOid": "fa61d95ded0c7e96b71d754b0745e3bba2f11668",
-      "baseRefName": "e2ee-mailbox-repairs",
-      "isDraft": true,
-      "parentHead": "697d2b5ffb376cbcbbe3731d9ac9337b7bf524c7"
-    },
-    {
-      "number": 1491,
-      "headRefName": "e2ee-ledger-sdk-cas",
-      "headRefOid": "3c6a46bb4aaeebfec9dff3b13634ddc0139394a1",
-      "baseRefName": "e2ee-recipient-mailbox",
-      "isDraft": true,
-      "parentHead": "fa61d95ded0c7e96b71d754b0745e3bba2f11668"
-    },
-    {
-      "number": 1493,
-      "headRefName": "e2ee-sender-distribution",
-      "headRefOid": "e2fe6c65c1da595aa36b19097657bedc294f892f",
-      "baseRefName": "e2ee-ledger-sdk-cas",
-      "isDraft": true,
-      "parentHead": "3c6a46bb4aaeebfec9dff3b13634ddc0139394a1"
-    },
-    {
-      "number": 1496,
-      "headRefName": "e2ee-content-sdk-binding",
-      "headRefOid": "d9e0db0c37e656e8ac510f7a4ea53bcaee93572a",
-      "baseRefName": "e2ee-sender-distribution",
-      "isDraft": true,
-      "parentHead": "e2fe6c65c1da595aa36b19097657bedc294f892f"
-    },
-    {
-      "number": 1526,
-      "headRefName": "e2ee-lab-integration",
-      "headRefOid": "66dd666dbb20352857866ba9103d11bcff985d5f",
-      "baseRefName": "e2ee-content-sdk-binding",
-      "isDraft": true,
-      "parentHead": "d9e0db0c37e656e8ac510f7a4ea53bcaee93572a"
-    },
-    {
-      "number": 1557,
-      "headRefName": "e2ee-complete-consumers",
-      "headRefOid": "2f196ddb5a47e85aa7a6981dc54ddbb91929d3a6",
-      "baseRefName": "e2ee-lab-integration",
-      "isDraft": true,
-      "parentHead": "66dd666dbb20352857866ba9103d11bcff985d5f"
-    }
-  ],
-  "lastFetchedMain": {
-    "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
-    "tree": "f3168cbda928a4f9866fba330c8278bbbb09d5ef",
-    "stackFrozenMain": "984c35c5b30600d68abec1ec3e585eca73bcd4f0",
-    "ownedOverlapSinceFrozenMain": [],
-    "ci": {
-      "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
-      "run": 38196554181,
-      "conclusion": "SUCCESS"
-    },
-    "originalCombinationCi": {
-      "run": 38109831626,
-      "conclusion": "CANCELLED"
-    },
-    "successorCi": {
-      "head": "871179e297a9a9f52f83d51a6038d1958c263139",
-      "run": 38109983563,
-      "conclusion": "SUCCESS"
-    }
-  },
   "deliveryLimit": 24,
-  "labIntegrationWorkInProgress": {
-    "branch": "e2ee-lab-integration",
-    "parent": "0418fd69e22d1eeba47553714473ec54762837ec",
-    "draftPr": 1526,
-    "reviewedHead": "c33dffede8d8fbd5187ea843c3cba6818c2a9cbd",
-    "reviewFindings": {
-      "P1": "Concurrent parent close must await already-started operation cleanup; author shared-completion fix awaits independent incremental verification.",
-      "oldCi": {
-        "run": 38333206761,
-        "conclusion": "FAILURE",
-        "lab": "88/92, four5000ms timeout"
-      },
-      "currentCi": "pending automatic run after this substantive repair",
-      "desktopReviewedHead": "c33 smoke6scenarios/40steps PASS; not Lab/full-platform acceptance",
-      "timeoutRepair": "Serial files; default5s except measured four-process key15s/workspace10s budgets. Native settlement timings retained; no assertion removal. CI3006 remained red for these two cases, next exactCI decides acceptance."
-    },
-    "consumerTests": 94,
-    "originalLabFailuresClosed": false,
-    "remaining": "Full honest host/gateway/actors, Flock full recovery/live session, key mailbox/rotation composition, full schedule/action executor, restricted attacks, original fixtures/replay/CLI, original Lab2 and complete fault scenarios pending; snapshot/retained-history and entropy contracts need decisions.",
-    "pureScheduler": "Ported to typed Result errors; explicit permit chain and logical time tests pass, runtime integration pending.",
-    "runtime": "Explicit scoped native request/phase settlement and permit probes pass; full host/driver integration pending.",
-    "authorRootCheck": "v1 snapshot byte cache + actual permission-history recovery root core302/Lab92, check/format/docs/publicboundary7036files27manifests PASS; all70 Lab input SHA unchanged. Same-Org/head real self-claimed Owner signatures cannot replace external pins; SQL rollback/isolation/OS-child, genuine full history fallback and failed native metadata-save retention/retry verified. Root1 no-shadow failure preserved, fixed without suppressing rules. P09 already migrated unchanged; production pin custody/vault/fullR/content snapshot and originalLab2/final-stackCI/independent review incomplete. Extended existing owning session case now verifies native duplicate/rollback bytes, two live SQLite owners, OS-child reopen before retry; root check/format/docs PASS, core302/Lab92 unchanged; no new protocol/production code, all70 input SHA retained. Distinct native admitted personal peer, credential row identity and actual imported peer-key OS-child reopen now verified; same owning case count/root core302/Lab92, check/format/docs/publicboundary7036files27manifests PASS, all70 inputSHA unchanged; only synthetic fixtures, no custody/vault/backup decisions. Restricted A: public synthetic protector, actual hard exit after save/readback before report, first-blob reuse after child restart, network-free installed keys0/1 child restore after sender revoked PASS; root core302/Lab92/publicboundary7037files27manifests, all71 inputSHA unchanged; first no-shadow failure kept and corrected without suppressing rules.",
-    "lastFetchedMain": {
-      "head": "3ac76bad10f46720517a2ca6929f03de4ef5bb9b",
-      "tree": "f3168cbda928a4f9866fba330c8278bbbb09d5ef",
-      "ci": 38196554181,
-      "ciConclusion": "success",
-      "coreLabProtocolOverlapFromStackBottom": []
-    },
-    "actorUncommitted": "Actor consumer remains committed and unchanged since fixed1087; actual admission/signing/merged P09 is not reimplemented. Current root passes for this whole Lab tree; original Lab2/full honest host and independent review remain incomplete.",
-    "sdkConsumers": "Actual Loro two clients, released streams-crdt0.16.2, public content/ledger/protected-key composition, SQL IGNORE pair rollback, actual Loro/Flock OS readers without signer. Synthetic AES wrapping is fixture-only. Real Flock SDK/native-file consumer focused pass; public0.4.3 has no deterministic free/dispose guarantee.",
-    "sdkOwnership": "Raw one-shot owners abort and await actual settlement. CRDT SyncClient close and actual Loro.free are lifecycle operations; StreamsClient.close publishes EOF and is never disposal. HTTP facades require request leases, no synthetic EOF cleanup.",
-    "recoveryHistoryContract": "Real Riverrun0.3.0 snapshot PUT at nonzero offset advances earliest_offset. Public SDK recovery succeeds only while authenticated full history remains readable; otherwise it fails closed and retains the durable pair. Upstream history retention/read API versus trusted host history route needs coordinated decision; no server database reset or snapshot deletion.",
-    "replayComparator": "Existing typed events compare all fields including eventId/step; missing parent distinct from literal none. Frames and inert entropy byte diagnostics retained. Exact fingerprint versus shrink preservation distinct; unknown observations remain gaps. No captured executor, entropy/reseal or new repro schema acceptance.",
-    "gateway": "Partial real loopback health/challenge/credential/control-CAS HTTP: genuine current Org, stored bearer and single-use real device-possession proof, exact path/single bounded frame, public complete-prefix/pinned SDK CAS, no forwarded caller lifecycle/offset/auth headers. Published StreamsClient consumes correct auth API and mandatory ACK offset header. Full workspace/checkpoint durable crash-gap, joins, notes, key/content routes and CLI remain incomplete.",
-    "mailbox": "Actual stored-bearer/boundOrg7 HTTP DTOs consume public HPKE/SQLite mailbox and installation gates; original JSON identity mutant refuses R sender. Finite real OS child HPKE install/report after ignored key INSERT retains originaltask/frame and independently verifies installed context/save/readback/new credential/reportACK; Recovery no-send/ownslotrepair retained. Syntheticaccount/deviceexport/AES fixture only; full epochrotation/host/originalfault/nativecustody pending.",
-    "mailboxNativeLease": "Optional transferred native HTTP close capability, actual raw fetch/body wait then close once. Initial response-body no-wait mutant escaped; corrected native close-order assertion fails in5ms, no timeout; restored pass. Fixed1087 native-lease complete root Lab30/core302 passed with unchanged Lab input SHA; format/docs/public boundary pass. Earlier02f root30 remains separate.",
-    "credentialStorage": "Real SQLite mint/invalidate and nonce-consumption readback; original HostMeta SQL IGNORE phantom-token and nonce-restoring-trigger failures reproduced read-only. Source SHA unchanged. Synthetic Lab labels/TTL only, not product identity/JWT/ordinary-leeway or approved strictB.",
-    "operationOwnership": "Shared parent-owned child scopes close admission, abort native capabilities and interrupt/await every child before earlier owners; defective child finalizer cannot skip other children or hide cause. Real SQLite/SDK lifetimes tested; fault injection boundary explicit.",
-    "joins": "WIP public signed requests and real authenticated unbound-outsider submit/member read, same-ID original signer/first synthetic account binding, one-transaction two-row readback; original two SQL failures repaired with real signature/SQL/reopen tests. No ledger admission or production identity/new expiry; R cannot submit. Abort signal plus actual borrowed lookup retention and SQLite/nativeRiverrun close order tested. Current5/associated7/type/static pass; Fresh fba88 +6 declared overlays full42 pass; native-retain/SQL-readback negative controls hit actual direct assertions, no timeout, restored pass. Root core302/Lab42 passes; fixedhead/CI/independent pending.",
-    "workspaces": "WIP original public-signature genesis/original signer SQLite registry with transaction readback, copy-owned records, corrupted-row refusal and actual OS-child reopen; stored-bearer GET genesis permits original unbound discovery. Private harness registration only; create-space stream publication/current independent checkpoint/crash gap/credential binding remain incomplete. Owning3+associated10/type pass; Fresh77485 +6 declared overlays45 pass; readback/original-signer mutants direct assertion failure, no timeout, restored pass. Root core302/Lab45 passes; fixed-head/CI/independent pending.",
-    "comparisonPublicationDecision": "Proposed, awaiting human: old Lab notes permits current machine/R, current public comparisonNote only personal. Option A preserve current personal contract and inert host observations; option B separate machine observation DTO, never R send, needs explicit eligibility contract. Host notes cannot automatically become independent confirmation. No core/spec change made. Coordinator recommends A; this is not recorded as human approval.",
-    "credentialBinding": "WIP original bind-once synthetic bearer after genuine current membership; stored identity, invalidation and original expiry rechecked after borrowed lookup; real SQL UPDATE readback, same-target idempotent, other-Org rejected, no new token/renewal. New finite ledger callback receives abort and actual completion is retained before SQLite/SDK close. Existing native-owner test parameterized for join/credential without removing original join behavior. Owning credential4/join6/host1 associated11/type/static pass; Fresh349fd +3 declared overlays47 pass; native retain/readback negatives actual direct assertions, no timeout, restored pass. Root core302/Lab47 passes; fixedhead/CI/independent pending. Not completed HTTP create-space binding flow; no JWT/strictB change.",
-    "finiteReads": "Bounded authenticated GET/HEAD control/loro/flock/bootstrap/latest/specific snapshot routes; fixed loopback upstream, canonical same-origin/Org/stream redirect, actual response-body retention and before/after genuine permission. Real machine revoke keeps durable feed cursor. Lab52 plus five SHA overlays passes; three direct behavioral negatives/no timeout/restored. Unprotected snapshot fixture only; content writes/live/fullhost/CLI and protected snapshot contract pending.",
-    "flockProcess": "Actual OS child reopens signed-genesis/protected epoch SQLite/native Flock file/exact cursor without usable signer, preserves prior field and decrypts independent new update. Actual released Loro SDK same-Org/resource different-model wire is refused by reopened Flock, actual durable file/cursor unchanged. Existing owning4/child script extended, no copied core/public native free claim. Fresh285289+2SHA Lab52 passes; removing Flock restore loses old field direct assertion, disabling reopened key yields actual missing_read_key child failure; no timeouts/restored pass. Full Flock session/recovery/live/entropy and original host still incomplete.",
-    "genesisControlLayoutDecision": "User current-only decision 2026-10-14 retires the source metadata-only/prepended-genesis compatibility alternative. Current public P09 requires complete original signed control history including genesis; registry is discovery only. Resumable create/lostACK/checkpoint durability remains unfinished; no P09 or wire change.",
-    "keyProcess": "Actual SQLite ignored protected-key insert retains original Install task/no terminal/no key; after closing parent receiver owners actual OS child reopens syntheticX25519/device/publicgenuine2records, realHPKEopens/saves/readbacks and reports through fresh challenge/bearer HTTP. Parent actualSQLite taskReported/frame bytecompare, original Recovery no-send/repair coverage retained. Synthetic device file0600 only, importedprivate handle nonextractable/publicextractable needed lockedHPKEserialize binding. Original nonextractable-public open-failed log retained, noalgorithm/corechange. Affected13/type + fresh e574/3SHA Lab52 pass, skipping actualinstall/report gives noReported directfail/nontimeout/restored. Full epochrotation/host/originalLab2/nativecustody pending.",
-    "finitePermitDriver": "Partial Effect finite manual-runtime driver; actual SQLite reversed requests replay exact recorded order with nested repeated parents; mismatched/missing/extra entries leave native rows unchanged under explicit stop; exact pre-permit budget; caller interruption and stop close gates before uninterruptible real HTTP/native body/SQLite owner settlement. Related13/type pass; old Exit(Result) assertion failure retained. Internal JSON counter keys avoid delimiter alias without changing parent wire; labels containing delimiter refused explicitly. Full actions/ancestry/entropy/executor remain pending. Root core302/Lab58, format/docs/public boundary7013/27 pass; 55 Lab input SHA unchanged. First root static no-shadow/consistent-return failures retained and repaired. Fixedhead/CI/independent whole executor pending. Native borrowers must eventually settle; abort alone never proves stopped work.",
-    "judgeAndTrace": "Finite pure verdict18 exports ported: missing measurements/default baseline/mixed unavailable not all-pass, count-only history unavailable, measured new unauthorized acceptance violation with lawful admitted-history semantics unchanged, explicit insider freshness scope. Source4 old pure FAIL/new same probe PASS retained; new observer old original alias FAIL retained. Typed run-scoped bounded private synthetic trace provides original record/read/clear as methods, owned fields before budget/no returned alias/no cross-run clear/close and closed observation fails. No global plaintext registry, no attacker access or authority inference. Owning9/type pass; Root core302/Lab67, format/docs/publicboundary7017/27 pass; all59Lab inputSHA unchanged. Fixed71d98f no-overlay Lab67 passes; four verdict/trace negative controls fail direct assertions and restore. Real actor/attack observation integration pending.",
-    "onlineEpoch1": "The existing key-round also covers a genuine signed synthetic epoch1 record, real owner distribution, fresh HTTP credentials and an OS child installing only key1. Public history recovery derives key0 from that installed key and the authenticated packet; the parent checks native SQLite rows change from [1] to [0,1], commitment matching, the original ciphertext frame and the installation receipt. A valid identical epoch2 proposal succeeds for Owner and fails for R. R still cannot send. Signed history is independently pinned by the fixture; this is not control-stream publication, a durable production rotation producer, backup completion or a recovery-vault format. No old key is supplied to the child. Affected7/type and current root core302/Lab67, format/docs/publicboundary7017files/27manifests pass; 59 Lab inputSHA unchanged. Fixed-head negative controls and whole actor/rotation acceptance pending.",
-    "syntheticDevices": "The original synthetic device module now preserves its seven exports as typed Effect/public-byte APIs and consumes the public native signer/verifier. Its existing four-field JSON roundtrips native Ed25519/X25519 fixtures, with private/public binding checked before import returns. Real public HPKE and SQLite credentials verify the imported device, single-use proof and refusal to bind an unregistered device to an Org. Creation awaits both native generators on rejection/cancellation; explicit signal tests instrument only post-native returns/failure, leaving actual crypto/entropy unchanged. Caller owns native handles; WebCrypto offers no key close/zeroization. Exportable strings are synthetic fixture material, not a recovery-vault, OS custody or captured replay contract. Full session/actors still need wiring. Source two mismatch oldFAIL/new same-probe PASS and owning8/type pass. Current root core302/Lab71, format/docs/publicboundary7018files/27manifests pass; 60 Lab input SHA unchanged. Fixed-head negatives/whole actor acceptance pending.",
-    "fingerprintAndMinimize": "Pure fingerprint and bounded minimizer retain the original five/two exports with separate policies: exact replay compares every original field and reports missing/JSON-dropped/null/unavailable measurements as gaps; another dimension's harness error never erases a measured violation. Shrink preserves the original rules and exact known trigger facts, permits diagnostic ledger length to shrink, and exposes partial observation. Unmeasured original triggers refuse execution. Effect runners remain sequential, bounded, caller-owned and fail transparently. The original fingerprint is independently copied before callbacks; generic action items must already be immutable and independently owned. Obsolete unauthorized-content model classifications are removed; current measured judgments own the result. These are pure synthetic algorithm probes, not full attack/repro execution, serialization approval, captured entropy or resealing. Four original oldFAIL/new same-probe PASS; owning10/type pass. Current root core302/Lab80, format/docs/publicboundary7020files/27manifests pass; 62 Lab input SHA unchanged. First six loop-static failures retained, equivalent budget guards moved into loop body; fixed-head controls/real actor integration pending.",
-    "referenceModel": "Current pure reference exports, independent owned synthetic observations plus public metadata-only fact adapter; rotation blocks new seal, missing rotation/kind/cursor/retry stays unmeasured, no obsolete boolean aliases, snapshot eligibility not full snapshot trust. Actual actor/reference correspondence incomplete.",
-    "keyRound": "One finite application pass now consumes unchanged public distributor with real Owner epoch0/1 and reopened R HTTP/HPKE/SQLite/OS-child evidence. Bad-frame/install failures propagate without next; invalid budget leaves actual native task/mailbox untouched. Startup/re-auth/bootstrap/session class and automatic pagination remain incomplete.",
-    "sessionInventory": "All43 methods (31 public inclconstructor,12private) and29 declared fields + constructor options have source member SHA/destinations; raw ordinary key maps/private point cache replaced by public owners, synthetic adversary fixtures explicitly retained. Inventory is not facade completion.",
-    "httpIdentity": "Actual bounded local native possession/bearer client extracted from test helper; public verifier/provenance-safe signer capture, Schema account/device/Org/token/timestamp response validation, original lease policy retained, same-origin/redirect/closed guard. Native transport instrumentation is explicit; full application identity/re-auth/facade and forever-native bounded finalizer remain incomplete.",
-    "genesisConsumer": "Authenticated bounded existing metadata discovery verifies requested hash/type/real original signature and returns owned original bytes only. Unbound joiners preserved; not current authority or selected Genesis/control bootstrap. Full adopt/session keyring and ledger initialization incomplete.",
-    "joinConsumer": "Public bounded authenticated submit/list consumes existing candidate metadata, verifies copied Org/signature/sender, true receipt and unique IDs; no membership/identity authority, new IDs/expiry or full session approval facade. Actual host permissions unchanged.",
-    "existingWorkspaceSession": "Public child-scope composition of admitted identity, original genesis, released SDK and public actor. Independently pinned existing full-prefix control/local/network checkpoints required. Failure closes resources before parent teardown; close shares completion. Actual SQLite/HTTP/CAS/OS-child same-history+cursor pass; full honest key/content/startup and host durable checkpoint/lostACK gap pending. Real native duplicate-at-current-offset/rollback-prefix response bytes refuse progress: all SQLite rows/meta/view/cursor retained, independent simultaneous client usable, OS-child reopens before same-handle retry. Existing-workspace consumer evidence only; original Lab2 not closed. The independent client is now a genuinely distinct native personal device admitted by actual PoP/signed CAS. Native credential rows identify both peers; a private synthetic fixture is imported in its own OS child, returning actual public key/head/cursor. No production custody/vault/backup claim.",
-    "snapshotCache": "Real SQLite v1 byte cache indexed by independently provided Org/head/count/endorser, public verification with full separate pins on every get. No role/head attestation/peer selection from SQL. Native rollback/readback, scoped cleanup, owned bytes, distinct-Org isolation and OS-child pass; returned endorsed view is not full history/currentness. Production pin custody/bootstrap/recovery unimplemented. Same-Org/head actual self-claimed Owner and structural full-view clones refused; client fallback reads actual full signed SDK history, failed native metadata save retains prior records/view/cursor and same-handle retry commits. This is permission-history recovery only.",
-    "restrictedA": "Explicit public synthetic protector consumes existing core host boundary; actual save/reload-before-report crash/reopen and local-only keys0/1 restoration after sender revocation. Production adapter gap remains; not B-envelope restore or custody/vault/backup approval."
-  },
   "unsettledContractProposals": {
     "humanApproval": false,
     "implemented": false,
@@ -9361,27 +9116,8 @@
     "unchanged": true,
     "remaining": "Current snapshot/trust consumers remain separately scoped; old JSON journal restoration and import are retired."
   },
-  "snapshotCountFixHandoff": {
-    "pr": 1464,
-    "head": "926e1501e69b047d1a367f241b3660cb474d61b8",
-    "directBase": "34b918367fe23f6bf9c2ff1cea31b154de298cb2",
-    "implementationAlreadyInStack": "5d3967ec94e3b10fdec76220937e9fcfe2623590",
-    "originalReviewedHead": "13ddba9823cbe51d0ff92e87c59ac9d1d206e6cf",
-    "authorEvidence": "oldfail/newpass, offset0/nonzero/suffix same/different digest raw/confirm bilateral regression; owning47/core188/root PASS",
-    "independentClosure": false,
-    "ci": {
-      "run": 38213100550,
-      "head": "926e1501e69b047d1a367f241b3660cb474d61b8",
-      "conclusion": "SUCCESS",
-      "checkout": "7a29ccc5406679f6246ec7c1d5c050247e20e157",
-      "desktop": "SKIPPED",
-      "treeLimitation": "core directory equals head; intermediate base merges direct base into 960e7022; full lock/catalog/tree differs"
-    },
-    "downstream": "11 descendants and Lab still contain original5d count fix, not new926 test/Note; coordinate later sync; no rebase or force push here"
-  },
   "capabilityAudit": {
     "status": "partial-behavior-migration-not-equivalence",
-    "stackHead": "2f196ddb5a47e85aa7a6981dc54ddbb91929d3a6",
     "sourceIdentityMatched": 367,
     "registeredEntries": 380,
     "classificationRule": "Retired implementation does not retire required behavior. File status and path existence are not completion percentages.",
@@ -9396,23 +9132,7 @@
       "B strict freshness approval",
       "Native platform protector and private product wiring; synthetic not equivalent"
     ],
-    "independentBehaviorTestsRerun": false,
     "currentScope": "Complete unblocked existing-workspace consumers and finite actors/actions/CLI; original full migration remains incomplete. Earlier fields/file status are historical registration, never completion percentages.",
-    "completionBatch": {
-      "base": "2190d418b3ec2f805246794e5ec1dae72fa8fbc4",
-      "branch": "e2ee-complete-consumers",
-      "maximumNewPrs": 1,
-      "frozenOldCoreLabPrs": 20,
-      "associatedPrs": [
-        1532,
-        1540
-      ],
-      "priorTotal": 22,
-      "plannedTotal": 23,
-      "remainingCap": 1,
-      "independentReview": "Coordinator-owned; not author self-review",
-      "currentHeadAndPr": "Exact pins and Draft URL are delivered by the review handoff; no self-referential manifest SHA."
-    },
     "capabilities": [
       {
         "old": "DemoSession start/reauth/read/write/submit/resume/receive",
@@ -9537,11 +9257,8 @@
       "protected content snapshot/admission/bootstrap",
       "vault/per-workspace recovery registration",
       "all original entropy/insider/model-driven scenarios and native custody"
-    ],
-    "previousStackHead": "2190d418b3ec2f805246794e5ec1dae72fa8fbc4",
-    "stackHeadMeaning": "Pinned external-review baseline; previous audit conclusions are historical, not newly revalidated by this field."
+    ]
   },
-  "publishedStackSnapshotScope": "Immutable published baseline at the start of the 2026-10-14 external review fixes; not a live PR status API. Subsequent repair commits are identified by Git ancestry and exact CI checkout, not a self-referential manifest SHA.",
   "externalReviewFixes": {
     "baseline": "2f196ddb5a47e85aa7a6981dc54ddbb91929d3a6",
     "scope": [
@@ -9586,5 +9303,17 @@
       "required SDK Promise/Effect callback boundaries"
     ],
     "unapprovedFormatsRemainUnimplemented": true
+  },
+  "currentImplementation": {
+    "scope": "Current-format public core plus synthetic Lab; implementation and incomplete behavior recorded by source item and capability, not checkpoint counts.",
+    "owners": {
+      "ledger": "One genuine-view replay/authority implementation; full or separately qualified snapshot identity.",
+      "keys": "One receiver-owned protected store borrowed by distributor and installed history.",
+      "content": "One owned parsed frame per operation; fixed signature/AEAD verification and pre/post authority checks.",
+      "lab": "Native Effect scheduling and one fixed-scope Node/SDK callback bridge; actual faults through action/HTTP/SQL owners."
+    },
+    "validation": "Exact head/base/CI and author vs independent acceptance belong to the fixed PR delivery report. No self-referential source hash or mutable live pin table here.",
+    "historicalCheckpointRegistry": "Git5ab9394392a3577a76b14ab0552c33f755b3ce48 retains old progress and source/target registry; old evidence is not rewritten.",
+    "remaining": "capabilityAudit.remaining and unimplementedNotRetired; restricted A does not approve other protocol or native custody decisions."
   }
 }

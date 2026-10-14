@@ -1,11 +1,12 @@
-import { Deferred, Effect, Fiber, Result } from 'effect';
+import { Deferred, Effect, Exit, Fiber, Result, Scope } from 'effect';
 import Database from 'better-sqlite3';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { driveLabPermits, LabDriverError } from '../src/platform/driver';
-import { makeLabRuntime } from '../src/platform/runtime';
+import { makeLabRuntime, type LabRuntime } from '../src/platform/runtime';
 import type { ScheduleChoice } from '../src/pure/schedule';
-import { identityKey } from '../src/pure/schedule';
+import { eventIdentity, identityKey } from '../src/pure/schedule';
+import { emptyScheduler, requestEvent } from '../src/pure/scheduler';
 import { fixture } from './ledger-fixture';
 const bridge = <A>(work: () => Promise<A>) =>
   Effect.tryPromise({ try: work, catch: (error) => error });
@@ -22,6 +23,29 @@ const latch = () => {
   return { promise, resolve };
 };
 
+const sqlitePhases = (runtime: LabRuntime, db: Database.Database, actors: readonly string[]) =>
+  Effect.forEach(
+    actors,
+    (actor) =>
+      runtime.phaseEffect(
+        actor,
+        'persist',
+        'save',
+        Effect.gen(function* () {
+          for (let index = 0; index < 2; index++)
+            yield* runtime.phaseEffect(
+              actor,
+              'persist',
+              'save',
+              Effect.sync(() => {
+                db.prepare('INSERT INTO effects VALUES (?)').run(`${actor}:${index}`);
+              })
+            );
+        })
+      ),
+    { concurrency: 'unbounded' }
+  );
+
 describe('strict finite permit driver', () => {
   it('records and replays real SQLite writes in recorded order despite reversed request order, including nested repeats', async () => {
     const f = await fixture();
@@ -32,18 +56,7 @@ describe('strict finite permit driver', () => {
         Effect.scoped(
           Effect.gen(function* () {
             const runtime = yield* makeLabRuntime({ mode: 'manual', time: 0, fetch });
-            const work = bridge(() =>
-              Promise.all(
-                ['alice', 'bob'].map((actor) =>
-                  runtime.phase(actor, 'persist', 'save', async () => {
-                    for (let index = 0; index < 2; index++)
-                      await runtime.phase(actor, 'persist', 'save', async () => {
-                        db.prepare('INSERT INTO effects VALUES (?)').run(`${actor}:${index}`);
-                      });
-                  })
-                )
-              )
-            );
+            const work = sqlitePhases(runtime, db, ['alice|member', 'bob']);
             yield* driveLabPermits(runtime, 'record', work, { maxSteps: 6 });
             return runtime.permitLog.map((entry) => ({
               ...entry,
@@ -53,8 +66,8 @@ describe('strict finite permit driver', () => {
         )
       );
       expect(db.prepare('SELECT actor FROM effects ORDER BY rowid').all()).toEqual([
-        { actor: 'alice:0' },
-        { actor: 'alice:1' },
+        { actor: 'alice|member:0' },
+        { actor: 'alice|member:1' },
         { actor: 'bob:0' },
         { actor: 'bob:1' },
       ]);
@@ -67,19 +80,10 @@ describe('strict finite permit driver', () => {
             yield* driveLabPermits(
               runtime,
               recorded,
-              bridge(() =>
-                Promise.all(
-                  ['bob', 'alice'].map((actor) =>
-                    runtime.phase(actor, 'persist', 'save', async () => {
-                      for (let index = 0; index < 2; index++)
-                        await runtime.phase(actor, 'persist', 'save', async () => {
-                          db.prepare('INSERT INTO effects VALUES (?)').run(`${actor}:${index}`);
-                        });
-                    })
-                  )
-                )
-              ),
-              { maxSteps: 6 }
+              sqlitePhases(runtime, db, ['bob', 'alice|member']),
+              {
+                maxSteps: 6,
+              }
             );
             expect(runtime.permitLog.map(({ eventId: _id, ...entry }) => entry)).toEqual(
               recorded.map(({ eventId: _id, ...entry }) => entry)
@@ -88,8 +92,8 @@ describe('strict finite permit driver', () => {
         )
       );
       expect(db.prepare('SELECT actor FROM effects ORDER BY rowid').all()).toEqual([
-        { actor: 'alice:0' },
-        { actor: 'alice:1' },
+        { actor: 'alice|member:0' },
+        { actor: 'alice|member:1' },
         { actor: 'bob:0' },
         { actor: 'bob:1' },
       ]);
@@ -120,8 +124,11 @@ describe('strict finite permit driver', () => {
                   driveLabPermits(
                     runtime,
                     schedule,
-                    bridge(() =>
-                      runtime.phase('alice', 'persist', 'save', async () => {
+                    runtime.phaseEffect(
+                      'alice',
+                      'persist',
+                      'save',
+                      Effect.sync(() => {
                         db.prepare('INSERT INTO effects VALUES (?)').run('alice');
                       })
                     ),
@@ -129,7 +136,7 @@ describe('strict finite permit driver', () => {
                   )
                 )
               );
-              yield* Effect.promise(() => runtime.whenRequested(1));
+              yield* runtime.whenRequested(1);
               yield* Deferred.succeed(stop, undefined);
               const outcome = yield* Fiber.join(result);
               expect(Result.isFailure(outcome)).toBe(true);
@@ -163,12 +170,16 @@ describe('strict finite permit driver', () => {
               driveLabPermits(
                 runtime,
                 'record',
-                bridge(async () => {
-                  for (const actor of ['alice', 'bob'])
-                    await runtime.phase(actor, 'persist', 'save', async () => {
+                Effect.forEach(['alice', 'bob'], (actor) =>
+                  runtime.phaseEffect(
+                    actor,
+                    'persist',
+                    'save',
+                    Effect.sync(() => {
                       db.prepare('INSERT INTO effects VALUES (?)').run(actor);
-                    });
-                }),
+                    })
+                  )
+                ),
                 { maxSteps: 1 }
               )
             );
@@ -217,6 +228,13 @@ describe('strict finite permit driver', () => {
           Effect.scoped(
             Effect.gen(function* () {
               // Explicit abort-ignoring gate around an actual native HTTP read/body/SQLite write.
+              const ownerScope = yield* Scope.make();
+              yield* Effect.addFinalizer(() =>
+                Effect.sync(() => {
+                  closedEarly = !settled;
+                  db.close();
+                })
+              ).pipe(Effect.provideService(Scope.Scope, ownerScope));
               const runtime = yield* makeLabRuntime({
                 mode: 'manual',
                 time: 0,
@@ -234,13 +252,8 @@ describe('strict finite permit driver', () => {
                     headers: response.headers,
                   });
                 },
-              });
-              runtime.addFinalizer(
-                Effect.sync(() => {
-                  closedEarly = !settled;
-                  db.close();
-                })
-              );
+              }).pipe(Effect.provideService(Scope.Scope, ownerScope));
+
               const stop = yield* Deferred.make<void>();
               const worker = yield* Effect.forkChild(
                 Effect.result(
@@ -263,10 +276,12 @@ describe('strict finite permit driver', () => {
                   : Fiber.interrupt(worker).pipe(Effect.asVoid)
               );
               yield* Effect.promise(() => aborted.promise);
+              const closingOwner = yield* Effect.forkChild(Scope.close(ownerScope, Exit.void));
               const premature = worker.pollUnsafe();
               const openBeforeRelease = db.open;
               release.resolve();
               yield* Fiber.join(endingFiber);
+              yield* Fiber.join(closingOwner);
               const outcome = yield* Effect.exit(Fiber.join(worker));
               expect(premature).toBeUndefined();
               expect(openBeforeRelease).toBe(true);
@@ -303,14 +318,20 @@ describe('strict finite permit driver', () => {
     }
   );
 
-  it('rejects auto grants, unsupported actions and ambiguous parent labels before starting work; counter keys do not alias', async () => {
+  it('rejects auto grants and unsupported actions before starting work; current parent tuples and counter keys do not alias', async () => {
     expect(identityKey({ actor: 'a|b', operation: 'c', phase: 'd' })).not.toBe(
       identityKey({ actor: 'a', operation: 'b|c', phase: 'd' })
+    );
+    const parentA = requestEvent(emptyScheduler(0), { actor: 'a|b', operation: 'c', phase: 'd' });
+    const parentB = requestEvent(parentA.state, { actor: 'a', operation: 'b|c', phase: 'd' });
+    const events = parentB.state.events;
+    const child = { actor: 'child', operation: 'save', phase: 'sql' };
+    expect(eventIdentity({ ...child, parent: parentA.event.eventId }, events).parent).not.toBe(
+      eventIdentity({ ...child, parent: parentB.event.eventId }, events).parent
     );
     for (const input of [
       { mode: 'auto' as const, choices: [] },
       { mode: 'manual' as const, choices: [{ ...choice('alice'), kind: 'attack' as const }] },
-      { mode: 'manual' as const, choices: [choice('alice|bob')] },
     ])
       await Effect.runPromise(
         Effect.scoped(

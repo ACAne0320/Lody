@@ -1401,80 +1401,7 @@ describe('ledger-bound signed document workflows', () => {
       vi.unstubAllGlobals();
       expect(copyEpochKeyBytes(f.k1)).toEqual(new NativeBytes(32).fill(8));
     });
-    it('keeps a local verified prefix pin; known revocation cannot be bypassed by an older view or fork', async () => {
-      const f = epochFixture();
-      f.admit(f.phone, 0);
-      const prior = f.view();
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const store = yield* EpochKeys.makeVerifiedEpochKeys(f.genesis, f.phone.publicKey);
-            read(store.install(prior, 0, f.k0));
-            expect(copyEpochKeyBytes(read(store.read(prior, 0)))).toEqual(
-              new Uint8Array(32).fill(7)
-            );
-            f.append([5, f.phone.raw]);
-            const revoked = f.view();
-            // An untrusted future epoch cannot prevent observing this verified revocation.
-            expect(code(store.read(revoked, 99))).toBe('unauthorized');
-            expect(code(store.read(revoked, 0))).toBe('unauthorized');
-            expect(code(store.read(prior, 0))).toBe('unauthorized');
-            expect(code(store.install(prior, 0, f.k0))).toBe('unauthorized');
-            expect(Result.isFailure(Ledger.requireLedgerContinuation(revoked, prior))).toBe(true);
-            const packet = read(
-              EpochKeys.sealHistoryPacket({
-                genesis: f.genesis,
-                epoch: 1,
-                currentKey: f.k1,
-                previousKey: f.k0,
-              })
-            );
-            const alternative = f.record([
-              prior.head.toBytes(),
-              f.owner.raw,
-              [7, 1, read(EpochKeys.commitEpochKey(f.genesis, 1, f.k1)).toBytes(), packet],
-            ]);
-            const fork = read(
-              Ledger.verifyLedger({
-                anchor: f.genesis,
-                records: [...f.records.slice(0, prior.length), alternative],
-                checkpoint: { head: Ledger.hashRecordBytes(alternative), length: prior.length + 1 },
-              })
-            );
-            expect(Result.isSuccess(Ledger.requireLedgerContinuation(prior, fork))).toBe(true);
-            expect(Result.isFailure(Ledger.requireLedgerContinuation(revoked, fork))).toBe(true);
-            expect(code(store.read(fork, 0))).toBe('unauthorized');
-          })
-        )
-      );
-    });
-    it('permits active R to read, rejects forged/mismatched install, and closes its volatile copies with Scope', async () => {
-      const f = epochFixture();
-      f.admit(f.recovery, 2);
-      const view = f.view();
-      let store: EpochKeys.VerifiedEpochKeys | undefined;
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            store = yield* EpochKeys.makeVerifiedEpochKeys(f.genesis, f.recovery.publicKey);
-            expect(code(store.read(view, 0))).toBe('missing-key');
-            expect(code(store.install(view, 0, f.k1))).toBe('commitment-mismatch');
-            expect(code(store.install({ ...view }, 0, f.k0))).toBe('unauthorized');
-            read(store.install(view, 0, f.k0));
-            read(store.install(view, 0, f.k0));
-            expect(copyEpochKeyBytes(read(store.read(view, 0)))).toEqual(
-              new Uint8Array(32).fill(7)
-            );
-            store.clear();
-            expect(code(store.read(view, 0))).toBe('missing-key');
-            read(store.install(view, 0, f.k0));
-          })
-        )
-      );
-      expect(code(store!.read(view, 0))).toBe('closed');
-      expect(code(store!.install(view, 0, f.k0))).toBe('closed');
-    });
-    it('has no reflective secret accessor and rejects a forged material function before installation', async () => {
+    it('has no reflective secret accessor and rejects forged key material', () => {
       const f = epochFixture(),
         key = f.k0;
       expect(Object.getPrototypeOf(key)).toBeNull();
@@ -1493,19 +1420,6 @@ describe('ledger-bound signed document workflows', () => {
           })
         )
       ).toBe('invalid-content-key');
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const store = yield* EpochKeys.makeVerifiedEpochKeys(f.genesis, f.owner.publicKey);
-            expect(code(store.install(f.view(), 0, fake))).toBe('invalid-input');
-            expect(code(store.read(f.view(), 0))).toBe('missing-key');
-            read(store.install(f.view(), 0, key));
-            expect(copyEpochKeyBytes(read(store.read(f.view(), 0)))).toEqual(
-              new Uint8Array(32).fill(7)
-            );
-          })
-        )
-      );
     });
     it('rejects invalid epoch/packet bounds before any history result', () => {
       const f = epochFixture();

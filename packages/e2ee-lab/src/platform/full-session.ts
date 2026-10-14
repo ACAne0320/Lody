@@ -3,7 +3,6 @@ import { Bytes } from '@lody/e2ee-core';
 import { Data, Effect, Exit, Scope, Semaphore } from 'effect';
 import type { LedgerCheckpoint } from '@lody/e2ee-core/ledger';
 import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
-import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { openLabExistingWorkspace } from './workspace-session';
 import { makeLabMailboxRemote } from './key-mailbox';
 import { runLabKeyRound } from './key-round';
@@ -102,7 +101,6 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
     outboxStore: { ...input.keys.outboxStore },
   };
   if (
-    docs.length > 100 ||
     new Set(docs.map((doc) => doc.id)).size !== docs.length ||
     docs.some(
       (doc) =>
@@ -137,14 +135,11 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
         ledger,
         remote,
       });
-      const installed = yield* makeSqliteProtectedEpochKeys({
-        ...keys.keyStore,
-        mode: 'open',
+      const history = yield* makeInstalledEpochHistory({
         genesis,
-        recipient: signer.publicKey,
         ledger,
+        installed: distribution.installedEpochKeys,
       });
-      const history = yield* makeInstalledEpochHistory({ genesis, ledger, installed });
       const sessions = new Map<string, LabWorkspaceDocument>();
       const initial = yield* control.control.current();
       for (const doc of docs) {
@@ -201,21 +196,12 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
               control.control.execute({ _tag: 'AdmitMember', request, membershipId })
             )
           ),
-        admitDevice: (
-          command: Extract<Parameters<typeof control.control.execute>[0], { _tag: 'AdmitDevice' }>
-        ) => run(serial.withPermit(control.control.execute(command))),
         submit: (command: Parameters<typeof control.control.execute>[0]) =>
           run(serial.withPermit(control.control.execute(command))),
         resume: () => run(serial.withPermit(control.control.resume())),
         acknowledge: (result: Parameters<typeof control.control.acknowledge>[0]) =>
           run(serial.withPermit(control.control.acknowledge(result))),
-        submitJoin: (request: Parameters<typeof control.identity.submitJoin>[0]) =>
-          run(control.identity.submitJoin(request)),
         listJoins: () => run(control.identity.listJoins()),
-        recoverHistory: () => run(serial.withPermit(history.recover())),
-        enqueueRepair: (id: Parameters<typeof distribution.enqueueRepair>[0]) =>
-          run(distribution.enqueueRepair(id)),
-        flushRepairs: (limit = 100) => run(distribution.flushRepairs(limit)),
         keyRound: (limit = 100) => run(serial.withPermit(runLabKeyRound(distribution, limit))),
         createDocument: (id: string) => document(id, (doc) => doc.create()),
         append: (id: string, text: string) => document(id, (doc) => doc.append(text)),

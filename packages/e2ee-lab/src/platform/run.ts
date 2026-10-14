@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Exit, Fiber, Layer, Scope } from 'effect';
+import { Cause, Effect, Exit, Fiber, Scope } from 'effect';
 
 function unwrap<A, E>(exit: Exit.Exit<A, E>): A {
   if (Exit.isSuccess(exit)) return exit.value;
@@ -15,49 +15,19 @@ export function runLabSync<A, E>(effect: Effect.Effect<A, E>): A {
   return unwrap(Effect.runSyncExit(effect));
 }
 
-/** One owner for Layers, callback fibers and resources. Construction is inert;
- * the first run builds a fresh Context in the persistent scope. Close rejects
- * new work, interrupts active fibers, and awaits finalizers exactly once. */
-/** @deprecated Promise boundary; use scoped Effects in new workflows. */
-export class LegacyLabRun<R = never> {
+/** One owner for actual Node/SDK callback fibers. New orchestration composes
+ * Effects directly. Closing rejects admission and awaits callback finalizers. */
+export class LabCallbackRunner {
   private readonly scope = Scope.makeUnsafe();
-  private context?: Promise<Context.Context<R>>;
   private closing?: Promise<void>;
   private closed = false;
 
-  constructor(private readonly layer: Layer.Layer<R>) {}
-
-  async run<A, E>(effect: Effect.Effect<A, E, R | Scope.Scope>): Promise<A> {
+  async run<A, E>(effect: Effect.Effect<A, E, Scope.Scope>): Promise<A> {
     if (this.closed) throw new Error('lab-run-closed');
-    if (!this.context) {
-      const acquisition = runLabSync(
-        Effect.forkIn(Layer.buildWithScope(this.layer, this.scope), this.scope)
-      );
-      this.context = Effect.runPromiseExit(Fiber.join(acquisition)).then(unwrap);
-    }
-    const context = await this.context;
-    if (this.closed) throw new Error('lab-run-closed');
-    const exit = await Effect.runPromiseExit(
-      effect.pipe(
-        Effect.provideContext(Context.add(context, Scope.Scope, this.scope)),
-        Effect.forkIn(this.scope),
-        Effect.flatMap(Fiber.join)
-      )
+    const fiber = runLabSync(
+      effect.pipe(Effect.provideService(Scope.Scope, this.scope), Effect.forkIn(this.scope))
     );
-    return unwrap(exit);
-  }
-
-  runSync<A, E>(effect: Effect.Effect<A, E, R>): A {
-    if (this.closed) throw new Error('lab-run-closed');
-    if (this.context) throw new Error('lab-run-already-started');
-    const context = unwrap(Effect.runSyncExit(Layer.buildWithScope(this.layer, this.scope)));
-    this.context = Promise.resolve(context);
-    return unwrap(Effect.runSyncExitWith(context)(effect));
-  }
-
-  addFinalizer(finalizer: Effect.Effect<void>): void {
-    if (this.closed) throw new Error('lab-run-closed');
-    runLabSync(Scope.addFinalizer(this.scope, finalizer));
+    return unwrap(await Effect.runPromiseExit(Fiber.join(fiber)));
   }
 
   close(): Promise<void> {
@@ -65,18 +35,5 @@ export class LegacyLabRun<R = never> {
     return (this.closing ??= Effect.runPromiseExit(Scope.close(this.scope, Exit.void)).then(
       unwrap
     ));
-  }
-}
-
-/** Single-call boundary for descriptions whose resources do not escape. */
-export async function runLabPromise<A, E, R>(
-  effect: Effect.Effect<A, E, R>,
-  layer: Layer.Layer<R>
-): Promise<A> {
-  const run = new LegacyLabRun(layer);
-  try {
-    return await run.run(effect);
-  } finally {
-    await run.close();
   }
 }

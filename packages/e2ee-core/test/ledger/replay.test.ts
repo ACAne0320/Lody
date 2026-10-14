@@ -500,6 +500,13 @@ describe('verified view is a runtime boundary', () => {
   });
 });
 
+const fullAuthor = (view: Ledger.LedgerView, device: Bytes.SigningPublicKey) => {
+  const identity = ok(Snapshots.historicalContentIdentity(view, device));
+  expect(identity.kind).toBe('member');
+  if (identity.kind !== 'member') throw new Error('missing full-history member attribution');
+  return identity;
+};
+
 describe('verified historical facts and current content permissions', () => {
   const publicKey = (key: Keys) => ok(Bytes.signingPublicKey(key.pk));
   const permissions = (view: Ledger.LedgerView, key: Keys) =>
@@ -512,21 +519,23 @@ describe('verified historical facts and current content permissions', () => {
     expect(permissions(prior, phone)).toEqual({ mayWriteDocument: true, maySealNewContent: true });
     o.append(bob, [5, phone.pk]);
     const current = ok(o.verify());
-    const author = ok(Ledger.historicalContentAuthor(current, publicKey(phone)));
+    const author = ok(Snapshots.historicalContentIdentity(current, publicKey(phone)));
+    expect(author.kind).toBe('member');
+    if (author.kind !== 'member') throw new Error('missing full-history member attribution');
     expect(hex(author.device)).toBe(keyId(phone.pk));
     expect(hex(author.actor)).toBe(keyId(filled(11)));
     expect(hex(author.memberInstance)).toBe(keyId(id(11)));
     author.actor.toBytes().fill(0);
     author.memberInstance.toBytes().fill(0);
-    expect(hex(ok(Ledger.historicalContentAuthor(current, publicKey(phone))).actor)).toBe(
-      keyId(filled(11))
-    );
+    expect(hex(fullAuthor(current, publicKey(phone)).actor)).toBe(keyId(filled(11)));
     expect(permissions(current, phone)).toEqual({
       mayWriteDocument: false,
       maySealNewContent: false,
     });
     expect(permissions(prior, phone)).toEqual({ mayWriteDocument: true, maySealNewContent: true });
-    expect(code(Ledger.historicalContentAuthor(current, publicKey(attacker)))).toBe('unauthorized');
+    expect(code(Snapshots.historicalContentIdentity(current, publicKey(attacker)))).toBe(
+      'unauthorized'
+    );
   });
   it('distinguishes host admission from the honest seal rotation gate', () => {
     const o = org();
@@ -567,9 +576,7 @@ describe('verified historical facts and current content permissions', () => {
         mayWriteDocument: false,
         maySealNewContent: false,
       });
-      expect(hex(ok(Ledger.historicalContentAuthor(guest, publicKey(key))).actor)).toBe(
-        keyId(filled(11))
-      );
+      expect(hex(fullAuthor(guest, publicKey(key)).actor)).toBe(keyId(filled(11)));
     }
     expect(permissions(guest, attacker)).toEqual({
       mayWriteDocument: false,
@@ -626,7 +633,9 @@ describe('verified historical facts and current content permissions', () => {
       { ...view, inspectState: () => view.inspectState() },
       Object.create(view),
     ] as Ledger.LedgerView[]) {
-      expect(code(Ledger.historicalContentAuthor(fake, publicKey(owner)))).toBe('unauthorized');
+      expect(code(Snapshots.historicalContentIdentity(fake, publicKey(owner)))).toBe(
+        'unauthorized'
+      );
       expect(code(Ledger.contentPermissions(fake, publicKey(owner)))).toBe('unauthorized');
       expect(code(Ledger.epochHistoryPacket(fake, 0))).toBe('unauthorized');
     }
@@ -635,7 +644,7 @@ describe('verified historical facts and current content permissions', () => {
     expect(
       Result.isFailure(Ledger.extendLedger(view, o.records.slice(1), checkpoint(o.records)))
     ).toBe(true);
-    expect(code(Ledger.historicalContentAuthor(view, publicKey(bob)))).toBe('unauthorized');
+    expect(code(Snapshots.historicalContentIdentity(view, publicKey(bob)))).toBe('unauthorized');
     expect(code(Ledger.epochHistoryPacket(view, 1))).toBe('unauthorized');
     expect(permissions(view, owner).maySealNewContent).toBe(true);
   });
@@ -1432,9 +1441,12 @@ describe('authenticated snapshot migration reproduction', () => {
     expect(
       ok(Snapshots.historicalContentIdentity(imported, ok(Bytes.signingPublicKey(phone.pk))))
     ).toMatchObject({ kind: 'device-only' });
-    expect(
-      code(Ledger.historicalContentAuthor(imported, ok(Bytes.signingPublicKey(phone.pk))))
-    ).toBe('unauthorized');
+    const retiredIdentity = ok(
+      Snapshots.historicalContentIdentity(imported, ok(Bytes.signingPublicKey(phone.pk)))
+    );
+    expect(retiredIdentity.kind).toBe('device-only');
+    expect('actor' in retiredIdentity).toBe(false);
+    expect('memberInstance' in retiredIdentity).toBe(false);
     const clean = org(),
       view = ok(clean.verify());
     for (const edit of [
@@ -1515,16 +1527,10 @@ describe('authenticated snapshot migration reproduction', () => {
     expect(ok(EpochKeys.commitEpochKey(view.genesis, 0, recovered.get(0)!)).toBytes()).toEqual(
       ok(Ledger.epochHistoryPacket(view, 0)).commitment.toBytes()
     );
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const cache = yield* EpochKeys.makeVerifiedEpochKeys(view.genesis, f.phone.publicKey);
-          for (const [epoch, key] of recovered) ok(cache.install(view, epoch, key));
-          expect(Result.isSuccess(cache.read(view, 0))).toBe(true);
-          expect(Result.isSuccess(cache.read(view, 1))).toBe(true);
-        })
-      )
-    );
+    for (const [epoch, key] of recovered)
+      expect(ok(EpochKeys.commitEpochKey(view.genesis, epoch, key))).toEqual(
+        ok(Ledger.epochHistoryPacket(view, epoch)).commitment
+      );
   });
 });
 

@@ -418,10 +418,6 @@ function claimedSnapshotState(
     return state;
   });
 }
-/** Internal signature/shape parser. Its return state alone is never a public authority view. */
-export function parseSnapshotEvidenceState(bytes: Uint8Array, pin: SnapshotIdentityPin) {
-  return safely(() => Result.flatMap(ownedPin(pin), (owned) => claimedSnapshotState(bytes, owned)));
-}
 /** External independent role facts are mandatory; no role inference from signed self-claims. */
 export function verifiedSnapshotState(
   bytes: Uint8Array,

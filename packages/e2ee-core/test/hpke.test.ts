@@ -364,7 +364,7 @@ describe('fixed Base HPKE epoch primitive through the public entry', () => {
 
 describe('authorized signed epoch envelopes through the public subentry', () => {
   it.each([0, 1, 2] as const)(
-    'opens and installs for active recipient kind %s with real HPKE and signature',
+    'opens the committed key for active recipient kind %s with real HPKE and signature',
     async (kind) => {
       const f = envelopeFixture(kind),
         frame = await Effect.runPromise(f.prepare());
@@ -381,17 +381,8 @@ describe('authorized signed epoch envelopes through the public subentry', () => 
         })
       );
       expect(hex(copyEpochKeyBytes(opened))).toBe(v.pt);
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const cache = yield* EpochKeys.makeVerifiedEpochKeys(
-              f.context.genesis,
-              f.phone.publicKey
-            );
-            ok(cache.install(f.view(), 0, opened));
-            expect(hex(copyEpochKeyBytes(ok(cache.read(f.view(), 0))))).toBe(v.pt);
-          })
-        )
+      expect(ok(EpochKeys.commitEpochKey(f.context.genesis, 0, opened))).toEqual(
+        ok(EpochKeys.commitEpochKey(f.context.genesis, 0, f.secret))
       );
     }
   );

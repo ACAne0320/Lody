@@ -182,22 +182,6 @@ export function extendLedger(
     : fail('unauthorized');
 }
 
-/** An admitted historical signer is not necessarily a current writer. */
-export function historicalContentAuthor(
-  view: LedgerView,
-  device: SigningPublicKey
-): Result.Result<HistoricalContentAuthor, LedgerError> {
-  return Result.gen(function* () {
-    const state = states.get(view);
-    if (!state) return yield* fail('unauthorized');
-    const key = yield* Result.mapError(
-      signingPublicKey(device.toBytes()),
-      (error) => new LedgerError({ code: error.code })
-    );
-    const author = state.contentAuthors.get(keyId(key.toBytes()));
-    return author ? author : yield* fail('unauthorized');
-  });
-}
 export interface ContentPermissions {
   /** Host admission: active personal/machine device of a non-Guest member. */
   readonly mayWriteDocument: boolean;

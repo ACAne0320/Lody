@@ -1,10 +1,9 @@
-import { Cause, Context, Deferred, Effect, Exit, Layer, Queue, Ref, Result, Scope } from 'effect';
+import { Context, Deferred, Effect, Exit, Queue, Result, Scope } from 'effect';
 import { makeLabOperations } from './operation-scope';
 const PhaseParent = Context.Reference<string | undefined>('Lab/PhaseParent', {
   defaultValue: () => undefined,
 });
-import { LegacyLabRun, runLabSync } from './run';
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { LabCallbackRunner } from './run';
 import {
   canPermitEvent,
   completeEvent,
@@ -28,37 +27,20 @@ export interface ProtocolFrame {
   readonly responseHex: string;
 }
 
-export type FetchIntercept = {
-  readonly eventId: string;
-  readonly kind: 'drop' | 'replace' | 'delay' | 'duplicate' | 'truncate';
-  readonly status?: number;
-  readonly bodyHex?: string;
-};
-
-/**
- * Split view: `actor` sees `stream` only up to byte offset `at`; later records
- * are withheld from that actor while every other client sees the real tail.
- */
-export type ViewFreeze = {
-  readonly actor: string;
-  readonly stream: string;
-  readonly at: number;
-};
-
-/** @deprecated Explicit Promise bridge for SDK/harness callbacks. Acquire with makeLabRuntime. */
-export class LegacyLabRuntime {
+/** Scoped native Effect runtime; construct through makeLabRuntime. */
+class LabRuntime {
   private readonly active = new Set<Promise<unknown>>();
   private disposing = false;
   private readonly disposed = Deferred.makeUnsafe<void>();
-  private readonly scheduler: Ref.Ref<SchedulerState>;
-  private readonly run = new LegacyLabRun(Layer.empty);
+  private scheduler: SchedulerState;
+  private readonly run = new LabCallbackRunner();
   private readonly notifications = new Set<Queue.Queue<void>>();
   private readonly abort = new AbortController();
   get state(): SchedulerState {
-    return Ref.getUnsafe(this.scheduler);
+    return this.scheduler;
   }
   private set state(next: SchedulerState) {
-    runLabSync(Ref.set(this.scheduler, next));
+    this.scheduler = next;
   }
 
   /** Subscription is scoped. Notifications wake the driver without granting a permit. */
@@ -80,20 +62,12 @@ export class LegacyLabRuntime {
     for (const queue of this.notifications) Queue.offerUnsafe(queue, undefined);
   }
 
-  readonly paused = new Set<string>();
   readonly frames: ProtocolFrame[] = [];
-  private readonly intercepts: FetchIntercept[] = [];
-  private readonly freezes: ViewFreeze[] = [];
-  private readonly pendingIntercepts: {
-    match: (event: LabEvent) => boolean;
-    intercept: Omit<FetchIntercept, 'eventId'>;
-  }[] = [];
   private readonly waiters = new Map<string, Deferred.Deferred<void, Error>>();
   private readonly requestWaiters: Array<{
     count: number;
     ready: Deferred.Deferred<void, Error>;
   }> = [];
-  private readonly gateContext = new AsyncLocalStorage<string>();
   get schedulingMode(): 'auto' | 'manual' {
     return this.mode;
   }
@@ -103,8 +77,6 @@ export class LegacyLabRuntime {
   /** Every permit, in order. Replay uses this instead of an unbounded drain. */
   readonly permitLog: ScheduleChoice[] = [];
   private readonly identityCounts = new Map<string, number>();
-  /** Honest-operation starts recorded for strict replay. */
-  readonly startLog: ScheduleChoice[] = [];
 
   constructor(
     options: LabRuntimeOptions,
@@ -113,7 +85,7 @@ export class LegacyLabRuntime {
   ) {
     this.mode = options.mode;
     this.fetchImpl = options.fetch;
-    this.scheduler = Ref.makeUnsafe(emptyScheduler(options.time));
+    this.scheduler = emptyScheduler(options.time);
   }
 
   private retain<A>(work: () => Promise<A>): Promise<A> {
@@ -136,46 +108,26 @@ export class LegacyLabRuntime {
     return this.state.events;
   }
 
-  pause(actor: string): void {
-    this.paused.add(actor);
-  }
-
-  resumeActor(actor: string): void {
-    this.paused.delete(actor);
-    this.dispatch();
-    this.changed();
-  }
-
-  permitActor(actor: string): void {
-    const event = this.state.events.find(
-      (row) => row.actor === actor && canPermitEvent(this.state, row.eventId)
+  whenRequested(count: number) {
+    return Effect.acquireUseRelease(
+      Effect.try({
+        try: () => {
+          if (this.closed) throw new Error('runtime-closed');
+          const ready = Deferred.makeUnsafe<void, Error>();
+          const waiter = { count, ready };
+          if (this.requestedCount() >= count) Deferred.doneUnsafe(ready, Effect.void);
+          else this.requestWaiters.push(waiter);
+          return waiter;
+        },
+        catch: (error) => error,
+      }),
+      (waiter) => Deferred.await(waiter.ready),
+      (waiter) =>
+        Effect.sync(() => {
+          const index = this.requestWaiters.indexOf(waiter);
+          if (index >= 0) this.requestWaiters.splice(index, 1);
+        })
     );
-    if (!event) throw new Error(`no-requested:${actor}`);
-    this.permit(event.eventId);
-  }
-
-  /** Permit the first requested event the scheduler allows. Returns its id. */
-  permitNext(): string | null {
-    const next = this.state.events.find(
-      (event) =>
-        event.status === 'requested' &&
-        !this.paused.has(event.actor) &&
-        canPermitEvent(this.state, event.eventId)
-    );
-    if (!next) return null;
-    this.permit(next.eventId);
-    return next.eventId;
-  }
-
-  whenRequested(count: number): Promise<void> {
-    if (this.closed) return Promise.reject(new Error('runtime-closed'));
-    if (this.requestedCount() >= count) return Promise.resolve();
-    const ready = Deferred.makeUnsafe<void, Error>();
-    this.requestWaiters.push({ count, ready });
-    return this.run.run(Deferred.await(ready)).finally(() => {
-      const index = this.requestWaiters.findIndex((row) => row.ready === ready);
-      if (index >= 0) this.requestWaiters.splice(index, 1);
-    });
   }
 
   permit(eventId: string): void {
@@ -194,79 +146,10 @@ export class LegacyLabRuntime {
     this.dispatch();
   }
 
-  recordStart(input: { actor: string; operation: string; phase?: string }): void {
-    this.startLog.push({
-      kind: 'start',
-      identity: {
-        actor: input.actor,
-        operation: input.operation,
-        phase: input.phase ?? 'start',
-      },
-      occurrence: this.startLog.length,
-    });
-    this.changed();
-  }
-
   complete(eventId: string): void {
     this.state = Result.getOrThrow(completeEvent(this.state, eventId));
     this.dispatch();
     this.changed();
-  }
-
-  intercept(input: FetchIntercept): void {
-    this.intercepts.push(input);
-  }
-
-  freezeView(input: ViewFreeze): void {
-    this.releaseView(input.actor, input.stream);
-    this.freezes.push(input);
-  }
-
-  releaseView(actor: string, stream: string): void {
-    const index = this.freezes.findIndex((row) => row.actor === actor && row.stream === stream);
-    if (index >= 0) this.freezes.splice(index, 1);
-  }
-
-  views(): readonly ViewFreeze[] {
-    return [...this.freezes];
-  }
-
-  /** Rewrite a plain stream read so the frozen actor never sees bytes past `at`. */
-  private async applyFreeze(
-    actor: string,
-    url: string,
-    method: string,
-    response: Response
-  ): Promise<Response> {
-    const route = /\/ds\/[^/]+\/([^/?]+)(?:\?|$)/.exec(url);
-    const freeze =
-      route && this.freezes.find((row) => row.actor === actor && row.stream === route[1]);
-    if (!freeze || !response.ok) return response;
-    const nextHeader = response.headers.get('stream-next-offset');
-    if (nextHeader === null || Number(nextHeader) <= freeze.at) return response;
-    const width = nextHeader.length;
-    const raw = new URL(url).searchParams.get('offset');
-    const from = raw === null || raw === '' || raw === '-1' ? 0 : Number(raw);
-    if (!Number.isSafeInteger(from)) return response;
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const keep = method === 'HEAD' ? 0 : Math.max(0, Math.min(bytes.byteLength, freeze.at - from));
-    const headers = new Headers(response.headers);
-    headers.delete('etag');
-    headers.delete('content-length');
-    headers.set('stream-next-offset', String(Math.max(freeze.at, from)).padStart(width, '0'));
-    headers.set('stream-up-to-date', 'true');
-    return new Response(method === 'HEAD' ? null : Buffer.from(bytes.subarray(0, keep)), {
-      status: response.status,
-      headers,
-    });
-  }
-
-  /** Attach an intercept to the next requested event matching `match`. */
-  interceptWhen(
-    match: (event: LabEvent) => boolean,
-    intercept: Omit<FetchIntercept, 'eventId'>
-  ): void {
-    this.pendingIntercepts.push({ match, intercept });
   }
 
   /** Reject every pending gate and request waiter. Idempotent teardown. */
@@ -281,11 +164,6 @@ export class LegacyLabRuntime {
     for (const waiter of this.requestWaiters.splice(0))
       Deferred.doneUnsafe(waiter.ready, Effect.fail(error));
     this.changed();
-  }
-
-  /** Harness owners register cleanup without exposing their private Context. */
-  addFinalizer(finalizer: Effect.Effect<void>): void {
-    this.run.addFinalizer(finalizer);
   }
 
   /** Effect owner closes admission, interrupts phases, awaits raw SDK settlement,
@@ -308,30 +186,19 @@ export class LegacyLabRuntime {
       })
     );
   }
-  /** @deprecated SDK/application Promise boundary only. */
-  dispose(): Promise<void> {
-    return Effect.runPromiseExit(this.disposeEffect()).then((exit) => {
-      if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
-    });
-  }
-
   gateEffect(actor: string, operation: string, phase: string) {
     return Effect.acquireUseRelease(
       Effect.gen({ self: this }, function* () {
         if (this.closed) return yield* Effect.fail(new Error('runtime-closed'));
-        const parent = (yield* PhaseParent) ?? this.gateContext.getStore();
+        const parent = yield* PhaseParent;
         const requested = requestEvent(this.state, { actor, operation, phase, parent });
         this.state = requested.state;
-        this.flushRequestWaiters();
         const eventId = requested.event.eventId;
-        const armed = this.pendingIntercepts.findIndex((item) => item.match(requested.event));
-        if (armed >= 0) {
-          const matched = this.pendingIntercepts.splice(armed, 1)[0]!;
-          this.intercepts.push({ ...matched.intercept, eventId });
-        }
         const ready = Deferred.makeUnsafe<void, Error>();
         this.waiters.set(eventId, ready);
         this.dispatch();
+        // Registration must complete before a synchronous waiter can close us.
+        this.flushRequestWaiters();
         this.changed();
         return { eventId, ready };
       }),
@@ -342,8 +209,8 @@ export class LegacyLabRuntime {
         })
     );
   }
-  /** @deprecated Native SDK callback boundary only. */
-  gate(actor: string, operation: string, phase: string): Promise<string> {
+  /** Actual Fetch callback boundary, not an alternate workflow. */
+  private gate(actor: string, operation: string, phase: string): Promise<string> {
     return this.run.run(this.gateEffect(actor, operation, phase));
   }
 
@@ -369,32 +236,6 @@ export class LegacyLabRuntime {
     );
   }
 
-  /**
-   * Gate `work` on an explicit permit. A phase nested inside a permitted
-   * phase is a child event: it is visible to the scheduler and needs its own
-   * permit, which may be granted only while its parent chain is permitted.
-   */
-  /** @deprecated Promise work belongs only to native callback bridges. */
-  phase<T>(actor: string, operation: string, phase: string, work: () => Promise<T>): Promise<T> {
-    return this.run.run(
-      this.phaseEffect(
-        actor,
-        operation,
-        phase,
-        Effect.gen({ self: this }, function* () {
-          const parent = yield* PhaseParent;
-          // Legacy borrowed Promise has no cancellation contract: wait actual completion.
-          return yield* Effect.uninterruptible(
-            Effect.tryPromise({
-              try: () => this.gateContext.run(parent!, work),
-              catch: (error) => error,
-            })
-          );
-        })
-      )
-    );
-  }
-
   gatedFetch(actor: string): typeof globalThis.fetch {
     return (input, init) =>
       this.retain(async () => {
@@ -415,7 +256,6 @@ export class LegacyLabRuntime {
         }
         const requestId = await this.gate(actor, operation, 'request-queued');
         const requestHex = toHex(new Uint8Array(await request.clone().arrayBuffer()));
-        const intercept = this.intercepts.find((item) => item.eventId === requestId);
         const frame = (status: number, responseHex: string): ProtocolFrame => ({
           eventId: requestId,
           actor,
@@ -428,26 +268,7 @@ export class LegacyLabRuntime {
         });
         let outcome: { response: Response } | { error: unknown };
         try {
-          if (intercept?.kind === 'drop') {
-            throw new Error('intercept-drop');
-          }
-          if (intercept?.kind === 'duplicate') {
-            await this.fetchImpl(request.clone());
-          }
-          let response =
-            intercept?.kind === 'replace'
-              ? new Response(Buffer.from(fromHexBody(intercept.bodyHex ?? '')), {
-                  status: intercept.status ?? 200,
-                })
-              : await this.applyFreeze(actor, url, method, await this.fetchImpl(request));
-          if (intercept?.kind === 'truncate') {
-            const bytes = new Uint8Array(await response.clone().arrayBuffer());
-            const keep = Math.min(1, bytes.byteLength);
-            response = new Response(Buffer.from(bytes.subarray(0, keep)), {
-              status: response.status,
-              headers: { 'content-type': 'application/json' },
-            });
-          }
+          const response = await this.fetchImpl(request);
           if (this.closed) throw new Error('runtime-closed');
           this.frames.push(
             frame(response.status, toHex(new Uint8Array(await response.clone().arrayBuffer())))
@@ -492,10 +313,7 @@ export class LegacyLabRuntime {
     }
     if (this.mode !== 'auto') return;
     const next = this.state.events.find(
-      (event) =>
-        event.status === 'requested' &&
-        !this.paused.has(event.actor) &&
-        canPermitEvent(this.state, event.eventId)
+      (event) => event.status === 'requested' && canPermitEvent(this.state, event.eventId)
     );
     if (!next) return;
     this.permit(next.eventId);
@@ -504,15 +322,6 @@ export class LegacyLabRuntime {
 
 function stripSecrets(url: string): string {
   return url.replace(/Bearer%20[0-9a-f]+/gi, 'Bearer').split('?')[0] ?? url;
-}
-
-function fromHexBody(hex: string): Uint8Array {
-  if (hex.length === 0) return new Uint8Array();
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.byteLength; i++) {
-    bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
 }
 
 export interface LabRuntimeOptions {
@@ -529,7 +338,9 @@ export const makeLabRuntime = Effect.fnUntraced(function* (options: LabRuntimeOp
     Effect.provideService(Scope.Scope, nativeScope)
   );
   return yield* Effect.acquireRelease(
-    Effect.sync(() => new LegacyLabRuntime({ ...options }, operations, nativeScope)),
+    Effect.sync(() => new LabRuntime({ ...options }, operations, nativeScope)),
     (runtime) => runtime.disposeEffect()
   );
 });
+
+export type { LabRuntime };

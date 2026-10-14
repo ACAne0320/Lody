@@ -30,7 +30,7 @@
   ],
   "destinationFingerprints": {
     "src/content/streams.ts": "83ae6dd09d52a4ad0fa51bfc48dfa1319ccc10c692555a2dcd99496212d71c5e",
-    "test/crypto.test.ts": "331d3108114b94c1c5a95e5bd572d6df29ecd03ed5c22d54d5904775a8add18e"
+    "test/crypto.test.ts": "aa46d3a624460b1f687bdc40ecf2c96a62be08371f9b8ec372404f58719ffb96"
   },
   "sourceState": "Original and candidate sources are read-only; exact source-specific fingerprints from the complete manifest. Frozen working copy fingerprints below.",
   "workingCopyFingerprints": {

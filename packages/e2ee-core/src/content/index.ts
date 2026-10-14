@@ -19,9 +19,10 @@ import {
   MAX_CONTENT_BYTES,
   type ContentScope,
   type ContentHeader,
+  type ParsedContentFrame,
 } from '../content-format';
 import { sealContentAead, openContentAead } from '../crypto/content';
-import { verifyContentSignature } from '../signature';
+import { verifyParsedContentSignature } from '../signature';
 import { signVerified, type DeviceSigner } from '../signing';
 import { documentKeyForScope, type DocumentKey } from './document-key';
 export {
@@ -109,7 +110,6 @@ export function sealDocument(input: {
             const message = yield* Effect.fromResult(contentSigningBytes(scope, unsigned, binding));
             const signature = yield* signVerified(capability, message);
             const frame = concat([unsigned, signature.toBytes()]);
-            yield* Effect.fromResult(verifyContentSignature(frame, scope, signer, binding));
             const latest = yield* lookup();
             yield* Effect.fromResult(
               Result.mapError(
@@ -132,14 +132,24 @@ export function authenticateDocument(
   frame: Uint8Array,
   additionalData?: Uint8Array
 ) {
+  return Result.flatMap(parseContentFrame(frame), (parsed) =>
+    authenticateParsed(view, scope, parsed, additionalData)
+  );
+}
+
+function authenticateParsed(
+  view: LedgerView,
+  scope: ContentScope,
+  parsed: ParsedContentFrame,
+  additionalData?: Uint8Array
+) {
   return Result.gen(function* () {
-    const parsed = yield* parseContentFrame(frame);
     const signer = yield* Result.mapError(
       Bytes.signingPublicKey(parsed.unsigned.subarray(7, 39)),
       () => new ContentError({ code: 'invalid-signing-key' })
     );
     const author = yield* boundAuthority(view, scope, signer, false);
-    const metadata = yield* verifyContentSignature(frame, scope, signer, additionalData);
+    const metadata = yield* verifyParsedContentSignature(parsed, scope, signer, additionalData);
     return Object.freeze({
       header: Object.freeze({ ...scope, device: metadata.device, docEpoch: 0 as const }),
       author,
@@ -174,11 +184,7 @@ export function openDocument(
 ) {
   return Result.gen(function* () {
     const parsed = yield* parseContentFrame(frame);
-    const ownedFrame = concat([
-      parsed.unsigned,
-      Uint8Array.from(parsed.signatureHex.match(/../g)!, (x) => parseInt(x, 16)),
-    ]);
-    const authenticated = yield* authenticateDocument(view, scope, ownedFrame, additionalData);
+    const authenticated = yield* authenticateParsed(view, scope, parsed, additionalData);
     const key = yield* documentKeyForScope(documentKey, scope);
     const plaintext = yield* openContentAead(
       key,

@@ -19,7 +19,7 @@
     "Scope owns databases; callers cancel/await their borrowed ledger/signer/transport. Closure guards reject late mutation; no Runtime/background loop."
   ],
   "destinationFingerprints": {
-    "src/keys/receive-sqlite.ts": "cc34b5ac804038da7feb84d5596b0f90840133b6bd91ffc2a94e8f1460974982"
+    "src/keys/receive-sqlite.ts": "500e27b141845dd3521de7e474564ddea52ff5f6ac0c2a5afcce54e4faa4f13c"
   },
   "extractionDestinationFingerprints": {
     "src/keys/receive-sqlite.ts": "fa94d8b826a82714a565c6aba9f660faac69f4bf2b759d7ba0b224ea0dd601b6"

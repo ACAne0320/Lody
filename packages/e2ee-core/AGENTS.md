@@ -96,9 +96,9 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   admission. Index recipient rows and deduplicate exact ciphertext; no global read limit.
   Verified observations survive failed pin writes in the same owner; success requires
   exact fixed-context/head/count readback. Failed persistence makes no reopen promise.
-  Reports are signed claims, not custody proof. Repair retains history and invalidates
-  prior report revision. Separate indexed schema rejects old JSON files without import.
-  Scope closes storage; callers cancel/await their own borrowed async resources.
+  Reports are claims, not custody proof. Repair invalidates prior reports; indexed
+  storage rejects foreign formats without import.
+  Callers cancel/await borrowed work before Scope closes storage.
 
 - Content author identity preserves full member mapping when known; endorsed retired
   devices may authenticate only device identity, never a guessed user or current write
@@ -106,9 +106,10 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   a real resource bracket, and reject later views outside the known verified prefix.
 
 - Host header3 update admission lives under `./content/streams`: current genuine
-  view, externally authenticated signer, exact resource/model/epoch and whole
-  bounded batch are checked before forwarding original bytes. Historical-author
-  success is not write permission or proof that ciphertext decrypts. Unknown,
-  legacy or snapshot headers fail; no new snapshot protocol is implied.
+  view, authenticated signer, exact resource/model/epoch and bounded whole batch
+  precede forwarding. Historical authorship is not current write permission or
+  decryption proof. Unsupported headers fail; no new snapshot protocol.
 
-- Prelaunch E2EE supports current formats only. No legacy ledger/journal imports, dual decoders, schema upgrades or old-client compatibility. Reject unsupported input without rewriting it; retain normal current-format reopen/history verification.
+- Current formats: no legacy imports, dual decoders or schema upgrades. Reject unsupported input without rewriting; keep current reopen/history.
+
+- Receive/distribution/history share one receiver-owned protected store; borrowers settle before owner close.

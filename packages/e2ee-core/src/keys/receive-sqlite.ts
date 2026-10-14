@@ -515,6 +515,8 @@ export function makeSqliteEpochReceiver(input: {
         return { processed: page.ids.length, blocked, next: page.next };
       });
     return Object.freeze({
+      /** Borrowed opaque-key capability; the receiver Scope retains sole ownership. */
+      installedEpochKeys: keys,
       /** Genuine public observation only; persists the known prefix, grants no eligibility. */
       observeLedger: current,
       receive: (senderInput: Bytes.SigningPublicKey, inputFrame: Uint8Array) =>

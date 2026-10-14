@@ -31,3 +31,15 @@ Lab 删除三个无消费者的布尔 reference 投影和 synthetic protector �
 ## 验证
 
 原 reference 权限用例改用三态 API，保留角色、待轮换、未知观察和原字节重试断言。真实 Loro／Flock、HPKE、SQLite 和 OS 子进程用例直接使用同一公开 synthetic protector。验证与准确 head 记录在现有 [#1557](https://github.com/LodyAI/Lody/pull/1557) 交付中；本清理不新增 PR，不合入或启用 E2EE。
+
+## 删除的重复路径
+
+继续扫描后删除无消费者的内存钥缓存、仅member作者查询包装和未使用标识／快照helper。历史作者统一使用已有member/device-only结果。假钥、撤权、回退／分叉和关闭断言转由真实保护存储验证；找不到行而未查询账本时，不声称已观察新账本。
+
+接收、分发与installed-history借用同一个接收器持有的存储，不再重复打开三份数据库。能力仍是host专用opaque钥；借用操作结束后owner才关闭。完整context、实际读回和native lease保留。
+
+内容认证／解密复用同一份已解析自有frame。seal保留signVerified已经完成的原消息验签，去掉第二次整帧验签。AEAD、固定签名者、输入捕获和await前后权限／prefix检查均保留。
+
+Lab删除未接通pause/resume/permit-next、freeze/intercept、start-log和Promise-phase。真实SQL／HTTP／密文故障仍由执行器承担。phase parent和调度状态只有原生Effect路径。固定Scope的LabCallbackRunner只供真实Node／SDK回调：host HTTP、SDK保护及fetch响应回调是具名消费者；关闭拒绝新任务并等待cleanup，聚合cause仍保留。删除泛型Layer初始化和未用runner方法。gate注册先于同步通知，driver先保留原typed failure再关闭其他gate。
+
+当前文档／manifest不再重复中间检查点、实时PR pin及来源／目标hash表。全部380项源SHA与原导出清单仍在manifest，实际运行hash由evidence模块记录。Git5ab9394392a3577a76b14ab0552c33f755b3ce48与固定报告保留历史证据。当前Lab父身份改用JSON三元组，不保留旧分隔符读取分支。本次不增加协议wire／算法、产品接线或协议批准。

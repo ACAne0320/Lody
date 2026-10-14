@@ -24,7 +24,7 @@ export function eventIdentity(
   let parent: string | undefined;
   if (event.parent) {
     const row = events.find((item) => item.eventId === event.parent);
-    parent = row ? `${row.actor}|${row.operation}|${row.phase}` : event.parent;
+    parent = row ? JSON.stringify([row.actor, row.operation, row.phase]) : event.parent;
   }
   return {
     actor: event.actor,
@@ -35,7 +35,7 @@ export function eventIdentity(
 }
 
 export function identityKey(identity: EventIdentity): string {
-  // Internal counter key, not a new captured schedule/parent wire format.
+  // Current Lab identity only; no source-era delimiter representation.
   return JSON.stringify([
     identity.actor,
     identity.operation,

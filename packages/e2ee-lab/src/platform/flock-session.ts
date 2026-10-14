@@ -2,7 +2,6 @@ import { Flock } from '@loro-dev/flock-wasm';
 import { createFlockAdapter } from '@loro-dev/streams-crdt/flock';
 import type { makeStreamsUpdateBinding } from '@lody/e2ee-core/content/streams';
 import { makeLabDocumentSession } from './document-session';
-export { LabContentError as LabFlockContentError } from './document-session';
 /** Flock has no deterministic free/dispose; drop references only after actual SDK
  * settlement. Inject a logical clock; reopens must retain its monotonic semantics. */
 export function makeLabFlockSession(

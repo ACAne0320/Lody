@@ -687,3 +687,81 @@ it('bad signed history produces no partial older durable keys, and retries after
     );
   }
 });
+
+it.each([0, 2] as const)(
+  'the actual protected store retains kind %s, forged-key/commitment checks, same-length fork rejection and closed ownership after retiring the volatile cache',
+  async (kind) => {
+    const f = envelopeFixture(kind),
+      native = synthetic(),
+      dbPath = file();
+    const prior = f.view();
+    let current = prior;
+    let owned: Effect.Success<ReturnType<typeof makeSqliteProtectedEpochKeys>> | undefined;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = (owned = yield* makeSqliteProtectedEpochKeys({
+            ...config(f, native.protector),
+            path: dbPath,
+            mode: 'create',
+            ledger: () => Effect.succeed(current),
+          }));
+          const fake = Object.freeze({}) as Bytes.EpochKey;
+          expect(Result.isFailure(yield* Effect.result(store.saveAndReload(0, fake)))).toBe(true);
+          expect(
+            Result.isFailure(
+              yield* Effect.result(
+                store.saveAndReload(0, ok(Bytes.epochKey(new Uint8Array(32).fill(77))))
+              )
+            )
+          ).toBe(true);
+          current = { ...prior } as typeof prior;
+          expect(Result.isFailure(yield* Effect.result(store.saveAndReload(0, f.secret)))).toBe(
+            true
+          );
+          current = prior;
+          yield* store.saveAndReload(0, f.secret);
+          yield* store.saveAndReload(0, f.secret);
+          const read = yield* store.read(0);
+          expect(ok(commitEpochKey(f.context.genesis, 0, read))).toEqual(
+            ok(commitEpochKey(f.context.genesis, 0, f.secret))
+          );
+          // Revoke on one valid branch and publish on the other, both at count 3.
+          f.append([5, f.phone.raw]);
+          current = f.view();
+          // Reading an existing blob actually observes the genuine revocation.
+          expect(Result.isFailure(yield* Effect.result(store.read(0)))).toBe(true);
+          expect(Result.isFailure(yield* Effect.result(store.read(99)))).toBe(true);
+          const other = envelopeFixture(kind),
+            next = ok(Bytes.epochKey(new Uint8Array(32).fill(8)));
+          const packet = ok(
+            sealHistoryPacket({
+              genesis: other.context.genesis,
+              epoch: 1,
+              currentKey: next,
+              previousKey: other.secret,
+            })
+          );
+          other.append([
+            7,
+            1,
+            ok(commitEpochKey(other.context.genesis, 1, next)).toBytes(),
+            packet,
+          ]);
+          const fork = other.view();
+          expect(fork.genesis.equals(current.genesis)).toBe(true);
+          expect(fork.length).toBe(current.length);
+          expect(fork.head.equals(current.head)).toBe(false);
+          current = prior;
+          expect(Result.isFailure(yield* Effect.result(store.read(0)))).toBe(true);
+          current = fork;
+          expect(Result.isFailure(yield* Effect.result(store.read(0)))).toBe(true);
+        })
+      )
+    );
+    expect(Result.isFailure(await Effect.runPromise(Effect.result(owned!.read(0))))).toBe(true);
+    expect(
+      Result.isFailure(await Effect.runPromise(Effect.result(owned!.saveAndReload(0, f.secret))))
+    ).toBe(true);
+  }
+);

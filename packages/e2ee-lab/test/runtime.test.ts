@@ -33,15 +33,16 @@ describe('scoped Lab permit runtime and borrowed work settlement', () => {
       Effect.scoped(
         Effect.gen(function* () {
           const scope = yield* Scope.make();
-          const runtime = yield* makeLabRuntime({ mode: 'auto', time: 0, fetch: raw }).pipe(
-            Effect.provideService(Scope.Scope, scope)
-          );
-          runtime.addFinalizer(
+          yield* Effect.addFinalizer(() =>
             Effect.sync(() => {
               ownerClosedBeforeSettlement = !settled;
               ownerClosed = true;
             })
+          ).pipe(Effect.provideService(Scope.Scope, scope));
+          const runtime = yield* makeLabRuntime({ mode: 'auto', time: 0, fetch: raw }).pipe(
+            Effect.provideService(Scope.Scope, scope)
           );
+
           const worker = yield* Effect.forkChild(
             Effect.result(
               Effect.tryPromise({
@@ -103,57 +104,12 @@ describe('scoped Lab permit runtime and borrowed work settlement', () => {
               })
             )
           );
-          yield* Effect.promise(() => runtime.whenRequested(1));
+          yield* runtime.whenRequested(1);
           expect(observed).toEqual([]);
           expect(runtime.events().map((event) => event.status)).toEqual(['requested']);
-          yield* Effect.promise(() => runtime.dispose());
+          yield* runtime.disposeEffect();
           expect(Result.isFailure(yield* Fiber.join(worker))).toBe(true);
           expect(observed).toEqual([]);
-        })
-      )
-    );
-  });
-  it('waits for explicitly permitted phase work and refuses its value after close', async () => {
-    const entered = latch(),
-      release = latch();
-    let cleaned = false;
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const runtime = yield* makeLabRuntime({
-            mode: 'auto',
-            time: 0,
-            fetch: async () => new Response('unused'),
-          });
-          const worker = yield* Effect.forkChild(
-            Effect.result(
-              Effect.tryPromise({
-                try: () =>
-                  runtime.phase('alice', 'persist', 'save', async () => {
-                    entered.resolve();
-                    try {
-                      await release.promise;
-                      return 'late';
-                    } finally {
-                      cleaned = true;
-                    }
-                  }),
-                catch: (error) => error,
-              })
-            )
-          );
-          yield* Effect.promise(() => entered.promise);
-          runtime.close();
-          const disposing = yield* Effect.forkChild(Effect.promise(() => runtime.dispose()));
-          yield* Effect.yieldNow;
-          const before = disposing.pollUnsafe();
-          const prematureCleanup = cleaned;
-          release.resolve();
-          yield* Fiber.join(disposing);
-          expect(before).toBeUndefined();
-          expect(prematureCleanup).toBe(false);
-          expect(cleaned).toBe(true);
-          expect(Result.isFailure(yield* Fiber.join(worker))).toBe(true);
         })
       )
     );
@@ -390,7 +346,8 @@ it('native Effect phases are interrupted and both close callers await actual uni
           yield* Deferred.succeed(release, undefined);
           yield* Fiber.join(first);
           yield* Fiber.join(second);
-          yield* Fiber.join(writer);
+          const writerExit = yield* Fiber.join(writer);
+          expect(Exit.isFailure(writerExit)).toBe(true);
           expect(openBeforeRelease).toBe(true);
           expect(firstEarly).toBeUndefined();
           expect(secondEarly).toBeUndefined();

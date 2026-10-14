@@ -5,4 +5,3 @@ export {
   openHistoryPacket,
   recoverLedgerHistory,
 } from './history';
-export { makeVerifiedEpochKeys, type VerifiedEpochKeys } from './store';

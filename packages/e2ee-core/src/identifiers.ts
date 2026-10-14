@@ -5,6 +5,3 @@ export function keyId(bytes: Uint8Array): string {
   for (const byte of bytes) hex += HEX[byte];
   return hex;
 }
-export function joinKey(signingPublicKey: Uint8Array, requestId: Uint8Array): string {
-  return `${keyId(signingPublicKey)}:${keyId(requestId)}`;
-}

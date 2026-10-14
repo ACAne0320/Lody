@@ -50,9 +50,10 @@ preimage. `epochHistoryPacket(view, epoch)` returns that signed fact with an own
 packet copy; epoch zero uses an empty previous-key packet. Unknown/future epochs
 fail rather than fabricate a key. Decryption belongs to the key workflow.
 
-`historicalContentAuthor(view, device)` resolves the admission-bound user and
-member instance, retaining attribution after revocation and role changes. Missing author context fails rather than guessing. Full replay retains original
-admission attribution; endorsed snapshots provide their active-device mappings.
+The explicit snapshot entry's `historicalContentIdentity(view, device)` is the
+single historical-author query. Full history returns admission-bound user/member
+identity even after revocation; an endorsed retired device without member history
+returns `device-only`, never guessed user attribution. Unknown/fake views fail.
 `contentPermissions(view, device)` separates current host write admission from
 honest new-content sealing: active non-Guest personal/machine devices may write,
 Recovery never writes, and a pending rotation additionally blocks new seals.

@@ -22,7 +22,7 @@
   "destinationFingerprints": {
     "src/keys/reports.ts": "fb936b0646d737f62f142f768e594ce330c706b92c527336e47839aec968c7d4",
     "src/keys/mailbox-sqlite.ts": "df23901effa79f831a12a54df8c1c672f67d1fa329a39ef443cb8db1acedc405",
-    "src/ledger/replay.ts": "4a63d8fa7e7a6ee579d8bee62ae11d98a6fc6ae3836311ece49b3d1c7e02ef8a",
-    "src/ledger/index.ts": "accc5c6374ffa734ad0391a4e4244da540bd8beba0f1849b272a2db7e5c74753"
+    "src/ledger/replay.ts": "83601c4b551943ed7288bddfbf1a67a5a0a028e8fa38193ce55f9cc707ce250d",
+    "src/ledger/index.ts": "397908b49fa1174b7eb23264d81fef1fb914a0d5d91e1eec42bb8d9c6c0c7a4b"
   }
 }

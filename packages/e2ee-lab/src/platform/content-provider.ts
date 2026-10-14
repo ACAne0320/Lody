@@ -1,8 +1,8 @@
-import { Data, Effect, Layer } from 'effect';
+import { Data, Effect } from 'effect';
 import { ContentError, ValidationError } from '@lody/e2ee-core';
 import { PayloadProtectionError, type PayloadProtectionProvider } from '@loro-dev/streams-crdt';
 import { makeStreamsUpdateBinding } from '@lody/e2ee-core/content/streams';
-import { LegacyLabRun } from './run';
+import { LabCallbackRunner } from './run';
 
 export class LabProviderError extends Data.TaggedError('LabProviderError')<{
   readonly code: 'harness';
@@ -18,7 +18,7 @@ export function makeLabUpdateProvider(input: Parameters<typeof makeStreamsUpdate
       harnessFailure = false;
     // Registered after binding: reject callbacks and interrupt/await owned fibers first.
     const owner = yield* Effect.acquireRelease(
-      Effect.sync(() => new LegacyLabRun(Layer.empty)),
+      Effect.sync(() => new LabCallbackRunner()),
       (run) =>
         Effect.gen(function* () {
           closed = true;

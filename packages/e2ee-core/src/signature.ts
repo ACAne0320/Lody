@@ -7,6 +7,7 @@ import {
   contentSigningBytes,
   parseContentFrame,
   type ContentMetadata,
+  type ParsedContentFrame,
   type ContentScope,
 } from './content-format';
 
@@ -42,8 +43,19 @@ export function verifyContentSignature(
   expectedSigner: SigningPublicKey,
   additionalData?: Uint8Array
 ): Result.Result<ContentMetadata, ContentError> {
+  return Result.flatMap(parseContentFrame(frame), (parsed) =>
+    verifyParsedContentSignature(parsed, scope, expectedSigner, additionalData)
+  );
+}
+
+/** Internal owned-frame path; not exported by the package entrypoints. */
+export function verifyParsedContentSignature(
+  parsed: ParsedContentFrame,
+  scope: ContentScope,
+  expectedSigner: SigningPublicKey,
+  additionalData?: Uint8Array
+): Result.Result<ContentMetadata, ContentError> {
   return Result.gen(function* () {
-    const parsed = yield* parseContentFrame(frame);
     if (parsed.header.epoch !== scope.epoch)
       return yield* Result.fail(new ContentError({ code: 'content-scope-mismatch' }));
     const device = expectedSigner.toBytes();
