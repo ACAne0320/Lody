@@ -2,7 +2,6 @@ import { Data, Result } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 import { contentPermissions, decodeRecord, type LedgerView } from '@lody/e2ee-core/ledger';
 
-export type GatewayAction = 'read' | 'control-cas' | 'keys-cas' | 'content-cas' | 'snapshot-put';
 export class LabGatewayError extends Data.TaggedError('LabGatewayError')<{
   readonly status: 403 | 404;
   readonly code: 'unauthorized' | 'unknown-stream' | 'method-not-allowed';
@@ -10,10 +9,10 @@ export class LabGatewayError extends Data.TaggedError('LabGatewayError')<{
 const hex = (value: { toBytes(): Uint8Array }) => Buffer.from(value.toBytes()).toString('hex');
 const deny = (code: LabGatewayError['code'], status: 403 | 404 = 403) =>
   Result.fail(new LabGatewayError({ status, code }));
-/** Policy gate only, not bearer authentication or URL parsing. The actual host must
+/** Read/control route gate only, not bearer authentication or URL parsing. The actual host must
  * authenticate the credential and select its genuine current checkpoint independently
- * before calling. Payload verification, pinned CAS and snapshot admission follow this
- * gate; a route permission is never record/content/snapshot acceptance. */
+ * before calling. Public record verification and pinned CAS follow this gate;
+ * signed-content admission belongs to the separate content gateway. */
 export function authorizeLabStream(input: {
   readonly view: LedgerView;
   readonly authenticatedCredential: {
@@ -32,7 +31,7 @@ export function authorizeLabStream(input: {
     try: () =>
       Result.gen(function* () {
         const { stream, method, sub, view, authenticatedCredential, requestGenesis } = input;
-        if (!['control', 'keys', 'loro', 'flock'].includes(stream))
+        if (!['control', 'loro', 'flock'].includes(stream))
           return yield* deny('unknown-stream', 404);
         const device = yield* Result.mapError(
           Bytes.signingPublicKey(authenticatedCredential.device.toBytes()),
@@ -40,7 +39,7 @@ export function authorizeLabStream(input: {
         );
         // This genuine-view query checks the public core's private registration before any
         // caller-visible state/method is used. Forged structural LedgerViews are rejected.
-        const permissions = yield* Result.mapError(
+        yield* Result.mapError(
           contentPermissions(view, device),
           () => new LabGatewayError({ status: 403, code: 'unauthorized' })
         );
@@ -66,7 +65,7 @@ export function authorizeLabStream(input: {
           (method === 'GET' || method === 'HEAD') &&
           (sub === undefined || sub === 'snapshot' || sub === 'bootstrap')
         )
-          return { action: 'read' as const };
+          return undefined;
         // The settled exception is R authorizing its own new personal device.
         // Core derives ownership from the actor's member instance and verifies
         // the new device's bound PoP; this route screening is never admission.
@@ -89,18 +88,9 @@ export function authorizeLabStream(input: {
             decoded.body.operation.kind !== 'personal'
           )
             return yield* deny('unauthorized');
-          return { action: 'control-cas' as const };
+          return undefined;
         }
-        if (method === 'POST' && sub === 'append-cas' && stream === 'control')
-          return { action: 'control-cas' as const };
-        if (method === 'POST' && sub === 'append-cas' && stream === 'keys')
-          return { action: 'keys-cas' as const };
-        const content = stream === 'loro' || stream === 'flock';
-        if (permissions.mayWriteDocument && content) {
-          if (method === 'PUT' && sub === 'snapshot') return { action: 'snapshot-put' as const };
-          if (method === 'POST' && (sub === undefined || sub === 'append-cas'))
-            return { action: 'content-cas' as const };
-        }
+        if (method === 'POST' && sub === 'append-cas' && stream === 'control') return undefined;
         return yield* deny('method-not-allowed');
       }),
     catch: () => new LabGatewayError({ status: 403, code: 'unauthorized' }),

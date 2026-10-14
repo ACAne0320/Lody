@@ -44,7 +44,8 @@ SIGINT/TERM 先停止接收新工作，再等待真实子进程终止。
 `evidence.json` 保存实际载入源码/依赖的哈希、原始签名记录、受保护传输字节、
 调度、观察及覆盖缺口。其引用的 `fixture/*-transport.jsonl` 仅含受保护协议流量，
 不含凭据；设备私密导出只留在 IPC 内存。`inspect` 根据记录的观察重新计算结论，
-不信任已存 verdict；它不认证文件来源，也不重新执行场景。耗时仅作诊断。
+不信任已存 verdict；它不认证文件来源，也不重新执行场景。执行与检查共用一套
+动作语义校验和观察汇总。耗时仅作诊断。
 固定120秒的测试设施看门狗会中断停滞场景，kill 并等待所属子进程、释放资源后
 返回 `LabScenarioError/watchdog`（CLI exit1）。只有 owner 清理成功后才写最终证据；
 它不是耗时通过阈值，也不改变严格 freshness B。
@@ -89,6 +90,11 @@ checkpoint。发现元数据、SQL 行、offset 和 IPC 观察不能选择信任
 CRDT SDK close 不等待全部单次操作：先等原始工作，再关订阅/SDK，最后 free Loro。
 Flock 没有公开确定性 free/dispose；实际结束后丢弃引用。
 abort 本身不证明工作已停止，也不保证原生关闭时间有界。
+
+HTTP 消费者在既有 raw lease 内共用一个有界 body reader：EOF 释放 reader，
+未读完则等待 cancel 后释放。共享路由筛查只负责实际读取和 control CAS，
+mailbox 与内容写入走各自准入，不预设 key/content/snapshot 写许可。
+Control 复用具体 SDK adapter 同次验证的 genuine view，不再重放同一历史两遍。
 
 ## 尚未完成的边界
 

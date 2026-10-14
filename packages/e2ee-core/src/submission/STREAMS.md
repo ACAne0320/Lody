@@ -14,6 +14,11 @@ this mapping. Empty pages cannot jump position. Local budgets are explicit up to
 one million records/64MiB; each framed read remains bounded by the reader. SDK0.9
 buffers responses upstream, so these bounds do not cap SDK allocations.
 
+The concrete adapter's `read` also returns the genuine `view` from this same audit,
+so host consumers can use its permissions without repeating full replay. Generic
+`SubmissionRemote` still exposes only records/checkpoint: P09 independently verifies
+arbitrary remote histories and never trusts a remote's claimed view or flag.
+
 CAS requires a matching genuinely verified mapping, an ordinary signed record
 that really extends that history, and original u32be framing. No producer/retry,
 ordinary append fallback or offset ordering is invented. Unsupported/conflict or

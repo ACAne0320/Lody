@@ -76,6 +76,34 @@ export interface LabActionObservation {
     readonly unchangedFrom?: JudgeVerdict;
   };
 }
+function assertLabActionSemantics(row: LabAction, index: number) {
+  if (
+    (row.expect?.unchangedFrom !== undefined && row.expect.unchangedFrom >= index) ||
+    (row.expect?.ok === false &&
+      (row.expect.outcome !== undefined || row.expect.refusal === undefined)) ||
+    (row.expect?.ok === true && row.expect.refusal !== undefined) ||
+    (row.kind === 'call' &&
+      ['create', 'append', 'pull', 'recover', 'observe'].includes(row.operation) &&
+      row.document === undefined) ||
+    (row.kind === 'call' && row.operation === 'append' && row.text === undefined)
+  )
+    throw new LabActionError({ code: 'invalid-plan' });
+}
+
+/** Aggregate independently measured dimensions; absent durable checks add no claim. */
+export function summarizeLabActions(
+  observations: readonly Pick<LabActionObservation, 'integrity' | 'durability'>[]
+) {
+  const integrity = worstVerdict(observations.map((row) => row.integrity));
+  const durability = worstVerdict(
+    observations.filter((row) => row.durability !== 'unavailable').map((row) => row.durability)
+  );
+  return {
+    integrity,
+    durability,
+    verdict: worstVerdict(durability === 'unavailable' ? [integrity] : [integrity, durability]),
+  };
+}
 /** Own finite plan before effects. Not an unbounded agent/script interpreter:
  * missing actions/actors/observations fail visibly; no re-seal entropy replay.
  * Each actual start/call/persist/crash/attack crosses an Effect scheduler phase.
@@ -154,20 +182,10 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
   );
   if (actions.some((row) => !actors.has(row.actor)))
     return yield* new LabActionError({ code: 'unknown-actor' });
-  if (
-    actions.some(
-      (row, index) =>
-        (row.expect?.unchangedFrom !== undefined && row.expect.unchangedFrom >= index) ||
-        (row.expect?.ok === false &&
-          (row.expect.outcome !== undefined || row.expect.refusal === undefined)) ||
-        (row.expect?.ok === true && row.expect.refusal !== undefined) ||
-        (row.kind === 'call' &&
-          ['create', 'append', 'pull', 'recover', 'observe'].includes(row.operation) &&
-          row.document === undefined) ||
-        (row.kind === 'call' && row.operation === 'append' && row.text === undefined)
-    )
-  )
-    return yield* new LabActionError({ code: 'invalid-plan' });
+  yield* Effect.try({
+    try: () => actions.forEach(assertLabActionSemantics),
+    catch: () => new LabActionError({ code: 'invalid-plan' }),
+  });
   const runtime = yield* makeLabRuntime({ mode: 'manual', time: 0, fetch });
   const observations: LabActionObservation[] = [];
   const work = Effect.gen(function* () {
@@ -210,11 +228,7 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
   return {
     observations,
     schedule: runtime.permitLog.map((choice) => ({ ...choice, identity: { ...choice.identity } })),
-    verdict: worstVerdict(
-      observations.flatMap((row) =>
-        row.durability === 'unavailable' ? [row.integrity] : [row.integrity, row.durability]
-      )
-    ),
+    verdict: summarizeLabActions(observations).verdict,
     coverage: {
       confidentiality: 'unavailable' as const,
       exactCiphertextReplay: 'unavailable' as const,
@@ -326,16 +340,7 @@ export function inspectLabEvidence(input: unknown) {
   const evidence = Schema.decodeUnknownSync(Evidence)(input);
   const observations: LabActionObservation[] = [];
   for (const { action, reply } of evidence.run.observations) {
-    if (
-      (action.expect?.ok === false && (!action.expect.refusal || action.expect.outcome)) ||
-      (action.expect?.ok === true && action.expect.refusal) ||
-      (action.kind === 'call' &&
-        ['create', 'append', 'pull', 'recover', 'observe'].includes(action.operation) &&
-        action.document === undefined) ||
-      (action.expect?.unchangedFrom !== undefined &&
-        action.expect.unchangedFrom >= observations.length)
-    )
-      throw new LabActionError({ code: 'invalid-plan' });
+    assertLabActionSemantics(action, observations.length);
     observations.push({ action, reply, ...assessLabAction(action, reply, observations) });
   }
   return {
@@ -343,11 +348,7 @@ export function inspectLabEvidence(input: unknown) {
     syntheticOnly: true,
     verification: 'recomputed-untrusted-observations',
     run: {
-      verdict: worstVerdict(
-        observations.flatMap((row) =>
-          row.durability === 'unavailable' ? [row.integrity] : [row.integrity, row.durability]
-        )
-      ),
+      verdict: summarizeLabActions(observations).verdict,
       observations,
     },
   };

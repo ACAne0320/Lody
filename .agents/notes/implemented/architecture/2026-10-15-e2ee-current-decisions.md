@@ -32,6 +32,11 @@ view; signature-only evidence and equal comparison notes do not supply that trus
 Unknown pre-snapshot hashes and missing user attribution cannot be fabricated.
 Current permission and known-prefix checks repeat after asynchronous work.
 
+The concrete Streams adapter returns its genuine view from the same verified read;
+Lab control reuses it. Generic remote records still require independent P09
+verification. Shared route screening covers actual reads/control only, while key
+mailbox and content writes retain their dedicated admission.
+
 ## Installed-key protection
 
 The restricted approval covers verified installed EpochKeys through a trusted
@@ -61,6 +66,8 @@ SDK close alone does not join every operation. Clear owned scratch after settlem
 borrowed handles and runtime-internal copies have separate lifetimes. HTTP shutdown
 aborts incoming bodies before joining callbacks; reverse Scope finalization must
 not make the abort owner wait behind its own unfinished body.
+Bounded response collection is one internal helper inside these existing leases:
+EOF releases the reader; incomplete work awaits cancel and always releases the lock.
 
 ## Verification work
 
@@ -77,6 +84,8 @@ after the last DML; earlier duplicate readback is omitted. These conditions and
 caches remain subject to necessity review.
 A 120s Lab watchdog is a harness bound, not a performance pass line or strict B;
 final evidence is written only after successful resource cleanup.
+Execute and inspect share action semantics and observation summaries, so malformed
+plans cannot become passing evidence through a different inspection path.
 
 ## Module and validation boundaries
 

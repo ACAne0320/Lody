@@ -6,7 +6,7 @@
   },
   "scope": "Full-history SDK read/CAS adaptation to existing P09 only; no snapshot bootstrap, ordinary append fallback or production.",
   "destinationFingerprints": {
-    "src/submission/streams.ts": "bbbbcbe69d374698656a2dad96703c55a952a77de9fc41861bbe52d59e10fcdd",
+    "src/submission/streams.ts": "531d5ffe9f365cf4c2b9d68d83fefcde2d3f58bd17fefbba5a1d855b7ea8709d",
     "src/ledger/feed-reader.ts": "becd9988cb06d00a396e6348062278fec1e93cfcefafbfb3f0bd916379f23f61"
   }
 }

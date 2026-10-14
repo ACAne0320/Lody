@@ -3,6 +3,7 @@ import type { DistributionMailboxRemote } from '@lody/e2ee-core/keys/host/distri
 import type { MailboxTarget } from '@lody/e2ee-core/keys/mailbox/sqlite';
 import { validSlot } from '@lody/e2ee-core/keys/reports';
 import { makeLabSdkOwner } from './sdk-owner';
+import { readBoundedBody } from './bounded-body';
 
 export class LabMailboxError extends Data.TaggedError('LabMailboxError')<{
   readonly code: 'unauthorized' | 'transport' | 'invalid-response' | 'closed';
@@ -77,46 +78,24 @@ export function makeLabMailboxRemote(input: {
               body: JSON.stringify(body),
               signal: owner.signal,
             });
-            const reader = response.body?.getReader();
-            try {
-              if (!response.ok)
-                return Result.fail(
-                  fail(
-                    response.status === 400 || response.status === 401 || response.status === 403
-                      ? 'unauthorized'
-                      : 'transport'
-                  )
-                );
-              if (!reader) return Result.fail(fail('invalid-response'));
-              const chunks: Uint8Array[] = [];
-              let length = 0;
-              for (;;) {
-                const chunk = await reader.read();
-                if (chunk.done) break;
-                length += chunk.value.length;
-                if (length > 128 * 1024) return Result.fail(fail('invalid-response'));
-                chunks.push(chunk.value);
-              }
-              const bytes = new Uint8Array(length);
-              let at = 0;
-              for (const chunk of chunks) {
-                bytes.set(chunk, at);
-                at += chunk.length;
-              }
-              return Result.try({
-                try: () =>
-                  decode(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))),
-                catch: () => fail('invalid-response'),
-              });
-            } finally {
-              if (reader) {
-                try {
-                  await reader.cancel();
-                } finally {
-                  reader.releaseLock();
-                }
-              }
+            if (!response.ok) {
+              await response.body?.cancel();
+              return Result.fail(
+                fail(
+                  response.status === 400 || response.status === 401 || response.status === 403
+                    ? 'unauthorized'
+                    : 'transport'
+                )
+              );
             }
+            if (!response.body) return Result.fail(fail('invalid-response'));
+            const bytes = await readBoundedBody(response.body, 128 * 1024);
+            if (bytes === undefined) return Result.fail(fail('invalid-response'));
+            return Result.try({
+              try: () =>
+                decode(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))),
+              catch: () => fail('invalid-response'),
+            });
           } catch (error) {
             return Result.fail(error instanceof LabMailboxError ? error : fail('transport'));
           }

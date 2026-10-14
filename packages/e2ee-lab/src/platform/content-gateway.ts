@@ -10,6 +10,7 @@ import type { LabCredential } from './credentials';
 import { makeLabOperations } from './operation-scope';
 import { makeLabSdkOwner } from './sdk-owner';
 import { LabStreamReply } from './stream-read';
+import { readBoundedBody } from './bounded-body';
 export class LabContentGatewayError extends Data.TaggedError('LabContentGatewayError')<{
   readonly status: 400 | 403 | 413 | 502;
 }> {}
@@ -108,42 +109,18 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
             redirect: 'manual',
             signal: AbortSignal.any([native.signal, operations.signal]),
           });
-          try {
-            const reader = reply.body?.getReader();
-            const chunks: Uint8Array[] = [];
-            let size = 0;
-            try {
-              if (reader)
-                for (;;) {
-                  const part = await reader.read();
-                  if (part.done) break;
-                  size += part.value.length;
-                  if (size > 64 * 1024) throw new LabContentGatewayError({ status: 502 });
-                  chunks.push(part.value);
-                }
-            } finally {
-              if (reader) {
-                await reader.cancel();
-                reader.releaseLock();
-              }
-            }
-            const bytes = new Uint8Array(size);
-            let at = 0;
-            for (const chunk of chunks) {
-              bytes.set(chunk, at);
-              at += chunk.length;
-            }
-            return new LabStreamReply({
-              status: reply.status,
-              body: bytes,
-              headers: ['content-type', 'stream-next-offset', 'stream-closed'].flatMap((name) => {
-                const value = reply.headers.get(name);
-                return value === null ? [] : [[name, value] as const];
-              }),
-            });
-          } finally {
-            await reply.body?.cancel().catch(() => undefined);
-          }
+          const bytes = reply.body
+            ? await readBoundedBody(reply.body, 64 * 1024)
+            : new Uint8Array();
+          if (bytes === undefined) throw new LabContentGatewayError({ status: 502 });
+          return new LabStreamReply({
+            status: reply.status,
+            body: bytes,
+            headers: ['content-type', 'stream-next-offset', 'stream-closed'].flatMap((name) => {
+              const value = reply.headers.get(name);
+              return value === null ? [] : [[name, value] as const];
+            }),
+          });
         });
       })
     );

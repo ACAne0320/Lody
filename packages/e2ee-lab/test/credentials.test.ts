@@ -70,7 +70,7 @@ describe('synthetic Lab device credentials, not product identity or strict deadl
                   method: 'GET',
                 })
               )
-            ).toEqual({ action: 'read' });
+            ).toBeUndefined();
             const wrongOrg = ok(Bytes.genesisHash(new Uint8Array(32).fill(201)));
             const otherNonce = yield* host.issueChallenge('synthetic-alice', f.owner.publicKey);
             expect(

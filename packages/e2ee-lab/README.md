@@ -49,7 +49,8 @@ protected wire bytes, schedule, observations and coverage gaps. Referenced
 `fixture/*-transport.jsonl` files contain protected protocol traffic without
 credentials; private device exports stay in IPC memory. `inspect` recomputes
 judgments from recorded observations instead of trusting saved verdicts. It does
-not authenticate an artifact or rerun its scenario. Timing is diagnostic only.
+not authenticate an artifact or rerun its scenario. Execution and inspection use
+one action-semantic validator and one observation summary. Timing is diagnostic only.
 A fixed120s harness watchdog interrupts stalled scenarios, kills/awaits owned
 children and releases resources before returning `LabScenarioError/watchdog`
 (CLI exit1). Final evidence is written only after successful owner cleanup;
@@ -101,6 +102,13 @@ protocol EOF and is never used as disposal. CRDT SDK close does not await every
 one-shot operation: join raw work, close subscriptions/SDK, then free Loro.
 Flock has no public deterministic free/dispose; drop references after settlement.
 Abort alone does not prove stopped work or guarantee bounded native shutdown.
+
+HTTP consumers share one bounded body reader inside their existing raw lease:
+EOF releases the reader; incomplete reads await cancellation before releasing it.
+The shared policy gate screens current reads and control CAS only. Key mailbox and
+content writes use their actual dedicated admission paths; it has no speculative
+key/content/snapshot write permissions. Control uses the concrete SDK adapter's
+genuine read result rather than replaying the same history twice.
 
 ## Remaining boundaries
 

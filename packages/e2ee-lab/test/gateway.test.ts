@@ -2,7 +2,7 @@ import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { join } from 'node:path';
 import { Effect, Exit, Fiber, Result, Scope } from 'effect';
 import { describe, expect, it } from 'vitest';
-import { Bytes } from '@lody/e2ee-core';
+import { Bytes, encodeCbor } from '@lody/e2ee-core';
 import { hashRecordBytes, type LedgerView } from '@lody/e2ee-core/ledger';
 import {
   prepareDeviceAdmission,
@@ -17,6 +17,14 @@ import { signLedgerRecord } from '@lody/e2ee-core/ledger/signing';
 import { makeLabLedgerActor } from '../src/platform/ledger-actor';
 import { fixture, options, history } from './ledger-fixture';
 const ok = Result.getOrThrow;
+function assertDenied(
+  result: ReturnType<typeof authorizeLabStream>,
+  code: 'unauthorized' | 'unknown-stream' | 'method-not-allowed',
+  status = 403
+) {
+  expect(Result.isFailure(result)).toBe(true);
+  if (Result.isFailure(result)) expect(result.failure).toMatchObject({ status, code });
+}
 function syntheticSigner(seed: number) {
   const privateKey = createPrivateKey({
     key: Buffer.concat([
@@ -48,7 +56,11 @@ describe('genuine ledger Lab gateway policy (HTTP authentication not implemented
       stream: 'loro',
       method: 'GET',
     };
-    expect(ok(authorizeLabStream(input))).toEqual({ action: 'read' });
+    expect(ok(authorizeLabStream(input))).toBeUndefined();
+    for (const stream of ['control', 'loro', 'flock'])
+      for (const method of ['GET', 'HEAD'])
+        for (const sub of [undefined, 'snapshot', 'bootstrap'])
+          expect(ok(authorizeLabStream({ ...input, stream, method, sub }))).toBeUndefined();
     expect(
       Result.isFailure(
         authorizeLabStream({
@@ -102,11 +114,24 @@ describe('genuine ledger Lab gateway policy (HTTP authentication not implemented
       inspectState: () => f.view.inspectState(),
     } as unknown as LedgerView;
     expect(Result.isFailure(authorizeLabStream({ ...input, view: forged }))).toBe(true);
-    expect(Result.isFailure(authorizeLabStream({ ...input, method: 'DELETE' }))).toBe(true);
-    expect(Result.isFailure(authorizeLabStream({ ...input, stream: 'unknown' }))).toBe(true);
+    assertDenied(authorizeLabStream({ ...input, method: 'DELETE' }), 'method-not-allowed');
+    assertDenied(authorizeLabStream({ ...input, stream: 'unknown' }), 'unknown-stream', 404);
+    for (const method of ['GET', 'HEAD', 'POST', 'PUT'])
+      assertDenied(authorizeLabStream({ ...input, stream: 'keys', method }), 'unknown-stream', 404);
     expect(
-      ok(authorizeLabStream({ ...input, stream: 'keys', method: 'POST', sub: 'append-cas' }))
-    ).toEqual({ action: 'keys-cas' });
+      ok(authorizeLabStream({ ...input, stream: 'control', method: 'POST', sub: 'append-cas' }))
+    ).toBeUndefined();
+    for (const [stream, method, sub] of [
+      ['loro', 'POST', undefined],
+      ['loro', 'POST', 'append-cas'],
+      ['flock', 'POST', undefined],
+      ['flock', 'POST', 'append-cas'],
+      ['loro', 'PUT', 'snapshot'],
+      ['flock', 'PUT', 'snapshot'],
+      ['control', 'GET', 'append-cas'],
+      ['control', 'HEAD', 'append-cas'],
+    ] as const)
+      assertDenied(authorizeLabStream({ ...input, stream, method, sub }), 'method-not-allowed');
   });
   it('uses real public admission, SDK CAS and durable feed for current Recovery/machine roles and revocation', async () => {
     const f = await fixture();
@@ -156,10 +181,10 @@ describe('genuine ledger Lab gateway policy (HTTP authentication not implemented
               view: (yield* actor.current()).view,
               authenticatedCredential: { device: recovery.publicKey, genesis: f.anchor },
               requestGenesis: f.anchor,
-              stream: 'keys',
+              stream: 'control',
               method: 'GET',
             };
-            expect(ok(authorizeLabStream(input))).toEqual({ action: 'read' });
+            expect(ok(authorizeLabStream(input))).toBeUndefined();
             for (const streamName of ['control', 'keys', 'loro', 'flock']) {
               expect(
                 Result.isFailure(
@@ -177,16 +202,95 @@ describe('genuine ledger Lab gateway policy (HTTP authentication not implemented
                 authorizeLabStream({ ...input, stream: 'loro', method: 'PUT', sub: 'snapshot' })
               )
             ).toBe(true);
-            expect(
-              ok(
+            assertDenied(
+              authorizeLabStream({
+                ...input,
+                authenticatedCredential: { device: machine.publicKey, genesis: f.anchor },
+                stream: 'loro',
+                method: 'POST',
+              }),
+              'method-not-allowed'
+            );
+            const personal = syntheticSigner(97);
+            const consent = yield* prepareDeviceAdmission({
+              genesis: f.anchor,
+              membershipId: f.membership,
+              encryptionPublicKey: ok(Bytes.encryptionPublicKey(new Uint8Array(32).fill(98))),
+              kind: 'personal',
+              signer: personal,
+            });
+            const record = yield* signLedgerRecord(
+              ok(prepareLedgerCommand(input.view, recovery.publicKey, consent)),
+              recovery
+            );
+            const control = { ...input, stream: 'control', method: 'POST', sub: 'append-cas' };
+            expect(ok(authorizeLabStream({ ...control, controlRecord: record }))).toBeUndefined();
+            // Screening checks the candidate's signer and personal-device kind.
+            // Only the public submission consumer verifies signatures and bound PoP.
+            for (const kind of [1, 2])
+              assertDenied(
                 authorizeLabStream({
-                  ...input,
-                  authenticatedCredential: { device: machine.publicKey, genesis: f.anchor },
-                  stream: 'loro',
-                  method: 'POST',
-                })
+                  ...control,
+                  controlRecord: ok(
+                    encodeCbor([
+                      [
+                        input.view.head.toBytes(),
+                        recovery.publicKey.toBytes(),
+                        [
+                          4,
+                          kind,
+                          personal.publicKey.toBytes(),
+                          consent.encryptionPublicKey.toBytes(),
+                          consent.possessionSignature.toBytes(),
+                        ],
+                      ],
+                      new Uint8Array(64),
+                    ])
+                  ),
+                }),
+                'unauthorized'
+              );
+            const otherSignerRecord = yield* signLedgerRecord(
+              ok(prepareLedgerCommand(input.view, f.owner.publicKey, consent)),
+              f.owner
+            );
+            assertDenied(
+              authorizeLabStream({ ...control, controlRecord: otherSignerRecord }),
+              'unauthorized'
+            );
+            const gateway = yield* makeLabControlGateway({
+              genesis: f.anchor,
+              stream,
+              checkpoint: () =>
+                Effect.sync(() => ({
+                  head: hashRecordBytes(originals.at(-1)!),
+                  length: originals.length,
+                })),
+              now: () => 0,
+              budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
+            });
+            const bad = new Uint8Array(record);
+            bad[bad.length - 1] = bad[bad.length - 1]! ^ 1;
+            const personalRequest = {
+              authenticatedCredential: control.authenticatedCredential,
+              requestGenesis: f.anchor,
+              record,
+            };
+            const before = originals.map((bytes) => new Uint8Array(bytes));
+            expect(
+              Result.isFailure(
+                yield* Effect.result(gateway.append({ ...personalRequest, record: bad }))
               )
-            ).toEqual({ action: 'content-cas' });
+            ).toBe(true);
+            expect(originals).toEqual(before);
+            yield* gateway.append(personalRequest);
+            const current = yield* actor.refresh();
+            expect(
+              current.view
+                .inspectState()
+                .devices.get(Buffer.from(personal.publicKey.toBytes()).toString('hex'))
+                ?.membershipId.equals(f.membership)
+            ).toBe(true);
             const guest = syntheticSigner(92);
             const request = yield* prepareJoinRequest({
               genesis: f.anchor,
@@ -216,10 +320,17 @@ describe('genuine ledger Lab gateway policy (HTTP authentication not implemented
               view: (yield* actor.current()).view,
               authenticatedCredential: { device: guest.publicKey, genesis: f.anchor },
             };
-            expect(ok(authorizeLabStream(guestInput))).toEqual({ action: 'read' });
-            expect(
-              ok(authorizeLabStream({ ...guestInput, method: 'POST', sub: 'append-cas' }))
-            ).toEqual({ action: 'keys-cas' });
+            expect(ok(authorizeLabStream(guestInput))).toBeUndefined();
+            assertDenied(
+              authorizeLabStream({
+                ...guestInput,
+                stream: 'keys',
+                method: 'POST',
+                sub: 'append-cas',
+              }),
+              'unknown-stream',
+              404
+            );
             expect(
               Result.isFailure(
                 authorizeLabStream({ ...guestInput, stream: 'loro', method: 'POST' })

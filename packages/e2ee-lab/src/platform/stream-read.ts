@@ -4,6 +4,7 @@ import type { LedgerView } from '@lody/e2ee-core/ledger';
 import type { LabCredential } from './credentials';
 import { authorizeLabStream } from './gateway';
 import { makeLabOperations } from './operation-scope';
+import { readBoundedBody } from './bounded-body';
 
 export class LabStreamReadError extends Data.TaggedError('LabStreamReadError')<{
   readonly status: 400 | 403 | 404 | 413 | 502 | 503;
@@ -208,27 +209,10 @@ export function makeLabStreamReader(input: {
                     await response.body?.cancel();
                     throw refuse(502);
                   }
-                  const chunks: Uint8Array[] = [];
-                  let size = 0;
-                  const reader = response.body?.getReader();
-                  try {
-                    if (reader)
-                      while (true) {
-                        const part = await reader.read();
-                        if (part.done) break;
-                        size += part.value.byteLength;
-                        if (size > maxBytes) throw refuse(413);
-                        chunks.push(new Uint8Array(part.value));
-                      }
-                  } finally {
-                    if (reader) {
-                      try {
-                        await reader.cancel();
-                      } finally {
-                        reader.releaseLock();
-                      }
-                    }
-                  }
+                  const bytes = response.body
+                    ? await readBoundedBody(response.body, maxBytes)
+                    : new Uint8Array();
+                  if (bytes === undefined) throw refuse(413);
                   const headers: Array<readonly [string, string]> = [];
                   for (const name of replyHeaders) {
                     const value = response.headers.get(name);
@@ -240,12 +224,7 @@ export function makeLabStreamReader(input: {
                   return new LabStreamReply({
                     status: response.status,
                     headers,
-                    body: new Uint8Array(
-                      Buffer.concat(
-                        chunks.map((value) => Buffer.from(value)),
-                        size
-                      )
-                    ),
+                    body: bytes,
                   });
                 },
                 catch: (error) => (error instanceof LabStreamReadError ? error : refuse(502)),

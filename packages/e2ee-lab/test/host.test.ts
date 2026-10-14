@@ -297,7 +297,7 @@ describe('real loopback Lab credentials and control HTTP composition', () => {
               });
             // The foreign-member PoP reaches public submission verification; shape
             // screening and a valid outer R signature are not admission evidence.
-            expect(ok(routePermission(attacks[0]!))).toEqual({ action: 'control-cas' });
+            expect(ok(routePermission(attacks[0]!))).toBeUndefined();
             for (const attack of attacks.slice(1, 5))
               expect(Result.isFailure(routePermission(attack))).toBe(true);
             for (const attack of attacks) {

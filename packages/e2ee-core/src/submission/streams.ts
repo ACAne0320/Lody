@@ -74,6 +74,8 @@ export function makeStreamsSubmissionRemote(input: {
         if (!anchor.equals(copy)) return yield* fail();
         return undefined;
       });
+    // Concrete consumers may reuse this genuine view from the same full audit.
+    // Generic SubmissionRemote readers still receive untrusted records/checkpoint.
     const read = (requested: Bytes.GenesisHash) =>
       Effect.gen(function* () {
         yield* boundAnchor(requested);
@@ -114,7 +116,7 @@ export function makeStreamsSubmissionRemote(input: {
             if (mapping) yield* Effect.fromResult(requireLedgerContinuation(mapping.view, view));
             yield* guard();
             mapping = { view, offset };
-            return { records, checkpoint: expected };
+            return { records, checkpoint: expected, view };
           }
           visited.add(offset);
         }
@@ -183,6 +185,6 @@ export function makeStreamsSubmissionRemote(input: {
         );
         return undefined;
       }).pipe(Effect.mapError(fail));
-    return SubmissionRemote.of({ read, appendCas });
+    return Object.freeze({ read, appendCas }) satisfies SubmissionRemote['Service'];
   }).pipe(Effect.mapError(fail));
 }

@@ -11,7 +11,8 @@ import { makeStreamsSubmissionRemote } from '@lody/e2ee-core/submission/streams'
 import { SubmissionRemote, submitRecord, resumeSubmission } from '@lody/e2ee-core/submission';
 import { sqliteSubmissionJournal } from '@lody/e2ee-core/submission/sqlite';
 import { frameLedgerRecord, makeLedgerStreamReader } from '@lody/e2ee-core/ledger/feed';
-import { anchor, checkpoint, genesis, host, rotate, filled } from './fixture';
+import { extendLedger, hashRecordBytes, requireLedgerContinuation } from '@lody/e2ee-core/ledger';
+import { anchor, checkpoint, genesis, host, rotate, filled, owner, signed } from './fixture';
 import { Bytes } from '@lody/e2ee-core';
 const ok = Result.getOrThrow;
 async function localHost() {
@@ -180,6 +181,89 @@ const using = <A, E, R>(f: Awaited<ReturnType<typeof localHost>>, effect: Effect
     })
   );
 describe('released SDK CAS bound to independently verified ledger endpoint', () => {
+  it('shares a genuine same-read view without lending its authority or replacing the verified CAS mapping on a bad read', async () => {
+    const f = await localHost();
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const remote = yield* f.make();
+            const history = yield* remote.read(anchor);
+            expect(history.records).toEqual([genesis]);
+            expect(history.checkpoint).toEqual(checkpoint([genesis]));
+            expect(history.view.genesis.equals(anchor)).toBe(true);
+            expect(history.view.head.equals(history.checkpoint.head)).toBe(true);
+            expect(history.view.length).toBe(history.checkpoint.length);
+            const next = ok(
+              extendLedger(history.view, [rotate()], checkpoint([genesis, rotate()]))
+            );
+            expect(next.length).toBe(2);
+            expect(Result.isSuccess(requireLedgerContinuation(history.view, next))).toBe(true);
+            history.records[0]!.fill(0);
+            f.mode('corrupt');
+            expect(Result.isFailure(yield* Effect.result(remote.read(anchor)))).toBe(true);
+            expect(history.view.head.equals(checkpoint([genesis]).head)).toBe(true);
+            expect(
+              Result.isFailure(
+                yield* Effect.result(
+                  remote.appendCas(anchor, checkpoint([genesis, rotate()]), rotate())
+                )
+              )
+            ).toBe(true);
+            f.mode('normal');
+            yield* remote.appendCas(anchor, history.checkpoint, rotate());
+          })
+        )
+      );
+      expect(f.store.read()).toEqual([genesis, rotate()]);
+      expect(f.requests).toEqual([{ expected: 'tail/1', body: ok(frameLedgerRecord(rotate())) }]);
+    } finally {
+      await f.close();
+    }
+  });
+  it('rejects later rollback and forks in verified reads and retains the original view-offset pair for CAS', async () => {
+    const f = await localHost(),
+      record = rotate(),
+      fork = rotate(undefined, 22),
+      successor = signed([
+        hashRecordBytes(record).toBytes(),
+        owner.pk,
+        [7, 2, filled(23), filled(31, 72)],
+      ]);
+    try {
+      f.store.append(record);
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const remote = yield* f.make();
+            const history = yield* remote.read(anchor);
+            f.store.db.prepare('DELETE FROM records WHERE position = 1').run();
+            expect(Result.isFailure(yield* Effect.result(remote.read(anchor)))).toBe(true);
+            f.store.db.prepare('INSERT INTO records VALUES(1, ?)').run(fork);
+            expect(Result.isFailure(yield* Effect.result(remote.read(anchor)))).toBe(true);
+            expect(
+              Result.isFailure(
+                yield* Effect.result(
+                  remote.appendCas(anchor, checkpoint([genesis, fork]), successor)
+                )
+              )
+            ).toBe(true);
+            f.store.db.prepare('UPDATE records SET record = ? WHERE position = 1').run(record);
+            yield* remote.appendCas(anchor, history.checkpoint, successor);
+            const after = yield* remote.read(anchor);
+            expect(after.records).toEqual([genesis, record, successor]);
+            expect(Result.isSuccess(requireLedgerContinuation(history.view, after.view))).toBe(
+              true
+            );
+          })
+        )
+      );
+      expect(f.store.read()).toEqual([genesis, record, successor]);
+      expect(f.requests).toEqual([{ expected: 'tail/2', body: ok(frameLedgerRecord(successor)) }]);
+    } finally {
+      await f.close();
+    }
+  });
   it.each(['normal', 'lost-ack'] as const)(
     'persists exact P09 original and reads back through actual HTTP/SQLite (%s)',
     async (mode) => {

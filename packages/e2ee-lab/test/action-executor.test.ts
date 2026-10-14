@@ -7,7 +7,7 @@ import { Deferred, Effect, Exit, Fiber, Result } from 'effect';
 import { TestClock } from 'effect/testing';
 import { expect, it } from 'vitest';
 import { LabScenarioError, runLabScenario } from '../src/platform/scenario-runner';
-import { executeLabActions } from '../src/platform/action-executor';
+import { executeLabActions, inspectLabEvidence } from '../src/platform/action-executor';
 import { makeLabScenarioFixture } from '../src/platform/scenario-fixture';
 import { LabProcessSpawn, makeLabProcessActor } from '../src/platform/process-actor';
 import { exportDevice } from '../src/platform/device';
@@ -237,7 +237,7 @@ it('preflights every initial action before any effect, ignores caller map overri
         started = true;
         return { ok: true } as LabProcessReply;
       }),
-    call: () => Effect.succeed({ ok: true } as LabProcessReply),
+    call: () => Effect.promise(() => Promise.resolve({ ok: true } as LabProcessReply)),
     crash: () => Effect.succeed({ code: null, signal: 'SIGKILL' as const }),
     shutdown: () => Effect.void,
     pid: () => undefined,
@@ -258,8 +258,25 @@ it('preflights every initial action before any effect, ignores caller map overri
       {
         kind: 'call',
         actor: 'owner',
+        operation: 'append',
+        document: 'loro',
+        expect: { ok: true },
+      },
+    ],
+    [
+      {
+        kind: 'call',
+        actor: 'owner',
         operation: 'resume',
         expect: { ok: false, outcome: 'Committed' },
+      },
+    ],
+    [
+      {
+        kind: 'call',
+        actor: 'owner',
+        operation: 'resume',
+        expect: { ok: true, refusal: { tag: 'LabContentError', code: 'decrypt_failed' } },
       },
     ],
     [{ kind: 'start', actor: 'missing', mode: 'create' }],
@@ -268,6 +285,7 @@ it('preflights every initial action before any effect, ignores caller map overri
         kind: 'call',
         actor: 'owner',
         operation: 'observe',
+        document: 'loro',
         expect: { ok: true, unchangedFrom: 2 },
       },
     ],
@@ -278,7 +296,20 @@ it('preflights every initial action before any effect, ignores caller map overri
       )
     );
     expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result))
+      expect(result.failure).toMatchObject({
+        _tag: 'LabActionError',
+        code: actions[0]!.actor === 'missing' ? 'unknown-actor' : 'invalid-plan',
+      });
     expect(started).toBe(false);
+    if (actions[0]!.actor !== 'missing')
+      expect(() =>
+        inspectLabEvidence({
+          version: 1,
+          syntheticOnly: true,
+          run: { observations: actions.map((action) => ({ action, reply: { ok: true } })) },
+        })
+      ).toThrow();
   }
   const rows: unknown[] = [
     { kind: 'start', actor: 'owner', mode: 'create' },
@@ -297,6 +328,61 @@ it('preflights every initial action before any effect, ignores caller map overri
   );
   expect(Result.isFailure(result)).toBe(true);
   expect(started).toBe(false);
+  let accessorRead = false;
+  for (const [row, object, key] of [
+    [{ kind: 'start', actor: 'owner', mode: 'create' }, undefined, 'kind'],
+    [{ kind: 'start', actor: 'owner', mode: 'create', expect: {} }, 'expect', 'ok'],
+    [
+      {
+        kind: 'call',
+        actor: 'owner',
+        operation: 'pull',
+        document: 'loro',
+        expect: { ok: false, refusal: {} },
+      },
+      'refusal',
+      'code',
+    ],
+  ] as const) {
+    const target =
+      object === undefined ? row : object === 'expect' ? row.expect : row.expect.refusal;
+    Object.defineProperty(target, key, {
+      get() {
+        accessorRead = true;
+        return 'accessor must not run';
+      },
+    });
+    const rejected = await Effect.runPromise(
+      Effect.scoped(
+        Effect.result(executeLabActions({ actors: { owner: actor }, actions: [row], maxSteps: 10 }))
+      )
+    );
+    expect(Result.isFailure(rejected)).toBe(true);
+  }
+  expect(accessorRead).toBe(false);
+  expect(started).toBe(false);
+  const emptyText = await Effect.runPromise(
+    Effect.scoped(
+      executeLabActions({
+        actors: { owner: actor },
+        actions: [
+          {
+            kind: 'call',
+            actor: 'owner',
+            operation: 'append',
+            document: 'loro',
+            text: '',
+            expect: { ok: true },
+          },
+        ],
+        maxSteps: 2,
+      })
+    )
+  );
+  expect(emptyText.verdict).toBe('pass');
+  expect(inspectLabEvidence({ version: 1, syntheticOnly: true, run: emptyText }).run.verdict).toBe(
+    'pass'
+  );
 });
 
 it.each([
@@ -417,6 +503,9 @@ it.each([
             const verdict = wrongText || changed ? 'violation' : 'pass';
             expect(last.durability).toBe(verdict);
             expect(result.verdict).toBe(verdict);
+            const inspected = inspectLabEvidence({ version: 1, syntheticOnly: true, run: result });
+            expect(inspected.run.verdict).toBe(verdict);
+            expect(inspected.run.observations.at(-1)!.checks).toEqual(last.checks);
           })
         )
       );
@@ -482,6 +571,9 @@ it('preserves ok/outcome failures and missing measurements instead of turning th
     expect(result.verdict).toBe(verdict);
     expect(result.observations[0]!.integrity).toBe(verdict);
     if (expected?.text) expect(result.observations[0]!.checks.text).toBe('harness-error');
+    const inspected = inspectLabEvidence({ version: 1, syntheticOnly: true, run: result });
+    expect(inspected.run.verdict).toBe(result.verdict);
+    expect(inspected.run.observations).toEqual(result.observations);
   }
 });
 
@@ -521,8 +613,7 @@ it('requires the exact refusal and never treats input, defect or unrelated trans
   }
 });
 
-it('inspect recomputes observations instead of trusting stored pass verdicts', async () => {
-  const { inspectLabEvidence } = await import('../src/platform/action-executor');
+it('inspect recomputes observations instead of trusting stored pass verdicts', () => {
   const artifact = {
     version: 1,
     syntheticOnly: true,

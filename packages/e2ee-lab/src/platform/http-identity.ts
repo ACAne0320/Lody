@@ -11,6 +11,7 @@ import { signVerified, type DeviceSigner } from '@lody/e2ee-core/signing';
 import { labPossessionMessage } from './credentials';
 import { labJoinWire, parseLabJoin } from './join-mailbox';
 import { makeLabSdkOwner } from './sdk-owner';
+import { readBoundedBody } from './bounded-body';
 
 export class LabHttpIdentityError extends Data.TaggedError('LabHttpIdentityError')<{
   readonly code: 'invalid-origin' | 'invalid-response' | 'response-too-large' | 'closed';
@@ -85,36 +86,9 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
         await response.body?.cancel();
         return { refused: true as const };
       }
-      const reader = response.body?.getReader();
-      if (!reader) return { refused: true as const };
-      let complete = false,
-        count = 0;
-      const chunks: Uint8Array[] = [];
-      try {
-        for (;;) {
-          const part = await reader.read();
-          if (part.done) {
-            complete = true;
-            break;
-          }
-          count += part.value.length;
-          if (count > limit) return { oversized: true as const };
-          chunks.push(new Uint8Array(part.value));
-        }
-        const bytes = new Uint8Array(count);
-        let offset = 0;
-        for (const chunk of chunks) {
-          bytes.set(chunk, offset);
-          offset += chunk.length;
-        }
-        return { bytes };
-      } finally {
-        try {
-          if (!complete) await reader.cancel();
-        } finally {
-          reader.releaseLock();
-        }
-      }
+      if (!response.body) return { refused: true as const };
+      const bytes = await readBoundedBody(response.body, limit);
+      return bytes === undefined ? { oversized: true as const } : { bytes };
     });
     if ('refused' in reply) return yield* fail('invalid-response');
     if ('oversized' in reply) return yield* fail('response-too-large');

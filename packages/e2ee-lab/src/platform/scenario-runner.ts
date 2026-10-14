@@ -6,10 +6,10 @@ import { Data, Effect } from 'effect';
 import { makeLabScenarioFixture } from './scenario-fixture';
 import { exportDevice } from './device';
 import { makeLabProcessActor } from './process-actor';
-import { executeLabActions, type LabAction } from './action-executor';
+import { executeLabActions, summarizeLabActions, type LabAction } from './action-executor';
 import { fingerprintOf } from '../pure/fingerprint';
-import { worstVerdict } from '../pure/judge';
 import { makeLabSdkOwner } from './sdk-owner';
+import { readBoundedBody } from './bounded-body';
 export class LabScenarioError extends Data.TaggedError('LabScenarioError')<{
   readonly code: 'watchdog';
 }> {}
@@ -198,30 +198,10 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
           const response = await fetch(`${fixture.server.baseUrl}/ds/${org}/${stream}?offset=-1`, {
             signal: evidenceTransport.signal,
           });
-          const reader = response.body?.getReader(),
-            chunks: Uint8Array[] = [];
-          let length = 0;
-          try {
-            if (reader)
-              for (;;) {
-                const item = await reader.read();
-                if (item.done) break;
-                length += item.value.length;
-                if (length > 16 * 1024 * 1024) throw new Error('evidence-stream-budget');
-                chunks.push(item.value);
-              }
-          } finally {
-            if (reader) {
-              await reader.cancel();
-              reader.releaseLock();
-            }
-          }
-          const bytes = new Uint8Array(length);
-          let at = 0;
-          for (const chunk of chunks) {
-            bytes.set(chunk, at);
-            at += chunk.length;
-          }
+          const bytes = response.body
+            ? await readBoundedBody(response.body, 16 * 1024 * 1024)
+            : new Uint8Array();
+          if (bytes === undefined) throw new Error('evidence-stream-budget');
           return {
             stream,
             status: response.status,
@@ -233,13 +213,10 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         });
         ciphertext.push(saved);
       }
+      const { integrity, durability } = summarizeLabActions(run.observations);
       const report = {
-        integrity: worstVerdict(run.observations.map((row) => row.integrity)),
-        durability: worstVerdict(
-          run.observations
-            .filter((row) => row.durability !== 'unavailable')
-            .map((row) => row.durability)
-        ),
+        integrity,
+        durability,
         confidentiality: 'unavailable' as const,
       };
       const artifacts = {
