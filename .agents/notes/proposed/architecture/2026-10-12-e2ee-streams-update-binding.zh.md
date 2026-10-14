@@ -45,3 +45,7 @@ branch CI与独立审查分别记录，此处不宣称通过。
 生产代码、算法、wire、API或依赖。
 
 组合依赖修正（2026-10-13）：#1496引入的core SDK类型测试依赖明确钉当前main已有streams-crdt0.17.0，保留直接SDK0.9.0/Effect4.0.2。锁文件复用main发布包与client0.10.0依赖图，并保留冻结父链其他消费者的0.16.2记录。不变更workspace catalog或运行源码/wire。原0.16.2 catalog条目与实际GitHubmain合并树错配，准确CI38347426649因缺失snapshot失败，保留日志；新准确CI独立归属。
+
+## Main 整合
+
+本栈消费 main `129996ed7d641be68aa1f1f9cc480c7c88d49917`，不改变已审 core 实现。锁冲突处理保留 main 的依赖条目及 Flock 0.4.4 选择，本层只补 core SDK 测试依赖入口；Lab 依赖仍归子层。旧 0.4.3 检查保持原版本归属。最终组合检查与准确 head CI 分别记录；本次同步不批准未决协议或生产启用。

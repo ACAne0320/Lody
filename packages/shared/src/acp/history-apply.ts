@@ -16,6 +16,7 @@ import {
   deriveLocationsFromRawInput,
   deriveLocationsFromToolCallContent,
   stripToolCallContentForHistory,
+  stripToolCallPayloadsForHistory,
 } from './tool-call-history';
 import {
   parseLodyTaskMeta,
@@ -1591,8 +1592,9 @@ class NotificationOnHistoryApplier {
         );
         const previous = run.items[index];
         const tool = previous?.type === 'tool_call' ? previous : undefined;
-        // Keep child tool payloads intact. The parent's compact terminal projection
-        // intentionally discards diffs and read results, unsuitable for the detail view.
+        const input = asRecordOrUndefined(update.rawInput);
+        // Keep child diffs and read results for the detail view, but discard tool
+        // images just as the parent history does.
         const content: Extract<SubagentRunItem, { type: 'tool_call' }> = {
           ...tool,
           ...(identity.nativeTurnId !== undefined ? { nativeTurnId: identity.nativeTurnId } : {}),
@@ -1602,37 +1604,37 @@ class NotificationOnHistoryApplier {
           status: update.status ?? tool?.status ?? 'pending',
           title: update.title ?? tool?.title,
           kind: update.kind ?? tool?.kind,
-          content: update.content ?? tool?.content,
+          content:
+            update.content != null
+              ? stripToolCallPayloadsForHistory(update.content)
+              : tool?.content,
           locations: update.locations ?? tool?.locations,
-          rawInput: asRecordOrUndefined(update.rawInput) ?? tool?.rawInput,
+          // Plan approval is the UI's sole child raw-input consumer.
+          rawInput:
+            update.rawInput != null
+              ? typeof input?.plan === 'string'
+                ? { plan: input.plan }
+                : undefined
+              : tool?.rawInput,
           rawOutput: asRecordOrUndefined(update.rawOutput) ?? tool?.rawOutput,
           toolName: resolveAcpToolName(update._meta) ?? tool?.toolName,
           _meta: update._meta ?? tool?._meta,
         };
-        for (const [key, value] of [
-          ['rawInput', update.rawInput],
-          ['rawOutput', update.rawOutput],
-        ] as const) {
-          if (value == null || asRecordOrUndefined(value)) continue;
-          // MessageContent's historical raw fields accept records. Retain other
-          // JSON values in metadata, and make scalar output readable in the UI.
-          const meta = content._meta ?? {};
-          const lody = asRecordOrUndefined(meta.lody) ?? {};
-          const raw = asRecordOrUndefined(lody.subagentRaw) ?? {};
-          content._meta = { ...meta, lody: { ...lody, subagentRaw: { ...raw, [key]: value } } };
-          if (key === 'rawOutput') {
-            const text = typeof value === 'string' ? value : JSON.stringify(value);
-            const blocks = content.content ?? [];
-            if (
-              !blocks.some(
-                (block) =>
-                  block.type === 'content' &&
-                  block.content.type === 'text' &&
-                  block.content.text === text
-              )
-            ) {
-              content.content = [...blocks, { type: 'content', content: { type: 'text', text } }];
-            }
+        const value = update.rawOutput;
+        if (value != null && !asRecordOrUndefined(value)) {
+          // Keep the readable copy; the old _meta.lody.subagentRaw duplicate
+          // had no consumer. Preserve full text and arrays, without new limits.
+          const text = typeof value === 'string' ? value : JSON.stringify(value);
+          const blocks = content.content ?? [];
+          if (
+            !blocks.some(
+              (block) =>
+                block.type === 'content' &&
+                block.content.type === 'text' &&
+                block.content.text === text
+            )
+          ) {
+            content.content = [...blocks, { type: 'content', content: { type: 'text', text } }];
           }
         }
         if (index >= 0) run.items[index] = content;
