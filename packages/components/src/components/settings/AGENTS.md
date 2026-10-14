@@ -62,6 +62,8 @@ rolls back — is in the root [AGENTS.md](../../../../../AGENTS.md).
   names stay on the default interface font. Five tiers write `--ui-font-size`;
   sizes use `@lody/ui` text tokens. Font ligatures in the Text group writes
   `--lody-font-ligatures` for conversation, code, and tool output.
+- Quota UI requires Core `rateLimits`; refresh also requires `query: true`.
+  Keep cached values while the shared Provider RPC refreshes.
 - Provider rows show identity, read-only remaining quota, a direct flat forecast
   action, and a persistent Provider `…` menu. The forecast action opens its dialog
   in one step; no quota-details interstitial or forecast probability belongs in
@@ -111,3 +113,11 @@ component details.
   failed. Card changes use the billing Portal separately; transfer keeps the current card.
 
 - Nightly downloads live below Download apps in desktop/Web About.
+
+## Seat billing
+
+- Reuse `SeatCostNotice` in invitation and approval entry points. Approval must show
+  the current cost and deferred collection policy before committing membership.
+- Removal/leave do not cancel accrued service fees. Deleted workspace invoices stay
+  reachable for the retained billing owner through `deleted-workspace-billing.tsx`
+  in personal Account settings; invoice details reuse `BillingInvoiceDetails`.
