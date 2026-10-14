@@ -14645,7 +14645,6 @@ packages:
   '@loro-dev/sqlite-riverrun@0.3.0':
     resolution: {integrity: sha512-UGolSlUDMfaRSGzhvwFmqC5HnM5Vs9mGEA8d6xyAB/pO9La+HPDhUCYdQ/wO2XJZVxiNVglIdT5W5iHO+FTr5Q==}
     engines: {node: '>=22'}
-
 snapshots:
 
   '@adobe/css-tools@4.4.4': {}
