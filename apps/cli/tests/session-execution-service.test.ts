@@ -10904,6 +10904,7 @@ describe('Operation Inbox execution boundary', () => {
       });
       release.resolve();
       await running;
+      expect((await (await createSessionBackend(f.doc)).readHistory()).find((turn) => turn.id === 'human-input')).toMatchObject({ status: 'canceled', cancellationReason: 'user_stop' });
       expect(received).toEqual([]);
       expect(
         (f.store as unknown as { db: Database.Database }).db

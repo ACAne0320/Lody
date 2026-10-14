@@ -9,7 +9,7 @@ export const inboxRepositoryLayer = (sql: InboxSqlite, ownedConnection = false) 
   const repository: Repository = {
     abandon: (w, s, id) => io(() => sql.abandonInput(w, s, id)),
     deactivate: (w, o) => io(() => sql.deactivate(w, o)),
-    cancelExecution: (scope, id) => io(() => sql.cancelExecution(scope, id)),
+    cancelExecution: (scope, id, reason) => io(() => sql.cancelExecution(scope, id, reason)),
     adopt: (p, n, id) => io(() => sql.adoptExecution(p, n, id)),
     canSubmit: (s, id, o) => io(() => sql.canSubmit(s, id, o)),
     accept: (i) => io(() => sql.accept(i)),

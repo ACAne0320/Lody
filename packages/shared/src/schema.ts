@@ -692,6 +692,7 @@ export const sessionHistorySchema = schema.LoroMap({
   permissionWaitMs: schema.Number({ required: false }),
   role: schema.String<Role>(),
   status: schema.String<SessionHistoryStatus>({ required: false }),
+  cancellationReason: schema.String<'user_stop'>({ required: false }),
   inputConfig: acpSessionConfigSchema,
   /**
    * @deprecated Use `status` instead.

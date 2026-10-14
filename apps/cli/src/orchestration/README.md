@@ -164,3 +164,20 @@ Never reconstruct historical display details from current catalogs. See the [con
 
 Decision rationale, verification limits and future steer conditions are maintained in
 the [implementation record](../../../../.agents/notes/implemented/architecture/2026-10-12-operation-inbox.md).
+
+
+## Silent target Stop
+
+Inbox records `user_stop` on the exact canceled input in the Stop transaction.
+Coordinator checks this local record before stale history or deadlines; remote
+requesters read its history projection. Cancellation history projects the same cause through HistoryWriter, including
+queued/late history recovery and shallow Loro/Roost reads. This is a turn field,
+not Session metadata, so remote requesters can reconcile the frozen target input.
+The pure `operationInboxCompletion` filter omits these canceled targets from
+model receipts. Finalization rechecks local Stop under the writer lock and normalizes the stored
+items/completion, so a precomputed success cannot overtake a committed Stop.
+The complete Operation remains queryable. Fully omitted results
+have a consumed Inbox tombstone in the finish transaction: no intent, no future
+human batch, and no duplicate/restart replay, while normal retention still works.
+Partial batches deliver the remaining targets. Requester cancellation, failed
+turns and timeouts do not acquire a user-stop cause.

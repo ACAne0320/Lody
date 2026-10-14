@@ -839,31 +839,93 @@ describe('LodyOperationCoordinator', () => {
       status: 'canceled' as const,
       expected: { status: 'cancelled' },
     },
-  ])('keeps $status ahead of terminal assistant partial output', async ({ status, expected }) => {
-    const harness = await makeHarness();
-    const targetHistory = harness.histories.get(harness.targetSessionId)!;
-    targetHistory[0] = { ...targetHistory[0]!, status };
-    targetHistory.push({
-      id: 'assistant:turn-1',
-      role: 'assistant',
-      userTurnId: 'turn-1',
-      timestamp: '2026-07-20T00:00:00.500Z',
-      items: [{ type: 'text', text: 'partial output' }],
-      fileDiff: [],
-      finished: true,
-    });
+    {
+      status: 'canceled' as const,
+      cancellationReason: 'user_stop' as const,
+      expected: { status: 'cancelled', cancellationReason: 'user_stop' },
+    },
+  ])(
+    'keeps $status ahead of terminal assistant partial output',
+    async ({ status, expected, ...source }) => {
+      const harness = await makeHarness();
+      const targetHistory = harness.histories.get(harness.targetSessionId)!;
+      targetHistory[0] = { ...targetHistory[0]!, status, ...source };
+      targetHistory.push({
+        id: 'assistant:turn-1',
+        role: 'assistant',
+        userTurnId: 'turn-1',
+        timestamp: '2026-07-20T00:00:00.500Z',
+        items: [{ type: 'text', text: 'partial output' }],
+        fileDiff: [],
+        finished: true,
+      });
 
-    harness.coordinator.start();
-    await harness.coordinator.idle();
-    await harness.coordinator.stop();
+      harness.coordinator.start();
+      await harness.coordinator.idle();
+      await harness.coordinator.stop();
 
+      const store = new LodyOperationStore(harness.storePath, () => TEST_NOW_MS);
+      try {
+        expect(store.get(harness.requesterSessionId, 'review-round-1')).toMatchObject({
+          state: 'finished',
+          completion: { type: 'result', value: { items: [expected] } },
+        });
+        if ('cancellationReason' in source) {
+          expect(queuedResults(store, harness.coordinatorOptions.workspaceId)).toEqual([]);
+          expect(
+            harness.histories
+              .get(harness.requesterSessionId)
+              ?.some((turn) => turn.role === 'assistant')
+          ).toBe(false);
+        }
+      } finally {
+        store.close();
+      }
+    }
+  );
+
+  it('uses durable local Stop before stale partial output or an expired deadline can return a receipt', async () => {
+    const harness = await makeHarness({ deadlineAt: '2026-07-19T00:00:00Z' });
     const store = new LodyOperationStore(harness.storePath, () => TEST_NOW_MS);
     try {
+      const input = {
+        workspaceId: harness.coordinatorOptions.workspaceId,
+        sessionId: harness.targetSessionId,
+        userId: 'user-1',
+        inputId: 'turn-1',
+        kind: 'task' as const,
+        config: {},
+      };
+      store.inbox.activate(input.workspaceId, 'target-owner');
+      store.inbox.accept(input);
+      store.inbox.begin(input, 'target-execution');
+      expect(store.inbox.pause(input, 'target-execution', [], 'manual-stop')).toBe(true);
+      // The cancellation projection has not arrived. The requester sees only partial terminal output.
+      harness.histories.get(harness.targetSessionId)?.push({
+        id: 'partial',
+        role: 'assistant',
+        userTurnId: 'turn-1',
+        timestamp: '2026-07-20T00:00:00Z',
+        items: [{ type: 'text', text: 'partial' }],
+        finished: true,
+        fileDiff: [],
+      });
+      harness.coordinator.start();
+      await harness.coordinator.idle();
+      await harness.coordinator.stop();
       expect(store.get(harness.requesterSessionId, 'review-round-1')).toMatchObject({
         state: 'finished',
-        completion: { type: 'result', value: { items: [expected] } },
+        completion: {
+          type: 'result',
+          value: { items: [{ status: 'cancelled', cancellationReason: 'user_stop' }] },
+        },
       });
+      expect(queuedResults(store, input.workspaceId)).toEqual([]);
+      expect(
+        harness.histories.get(harness.requesterSessionId)?.some((turn) => turn.role === 'assistant')
+      ).toBe(false);
     } finally {
+      await harness.coordinator.stop();
       store.close();
     }
   });

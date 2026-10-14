@@ -119,3 +119,15 @@ Cloud 合成使用相同 PR 生产代码，加上已记录的本地 SDK／运行
 main 的额度刷新合并在运行时 pin 回滚后重新带入升级过的 ACP 锁文件。冻结安装发现它与恢复后的 gitlink 不匹配；重新解析也会触及未改变的发布年龄门槛。因此恢复 `c10ca8561` 的兼容锁文件，该版本的依赖声明与 workspace 配置和本次合并一致，package manifest 唯一差异是 PR 的 CLI 类型检查脚本。额度刷新没有新增依赖，功能继续保留；没有额外升级、发布年龄豁免或运行时发布。
 
 冻结安装、完整 pnpm check（含 CLI 4162 项通过、4 项跳过）、format／format:check、针对 main 的文档检查与 GitHub 策略测试 113 项均通过。执行／Inbox／机器注册交集的 358 项也通过，与完整检查重叠，不能累加计数。CLI 在 2 GiB 堆限制下构建并通过发布包 import 检查；OSS 桌面构建及 smoke 的 6 个场景／40 个步骤全部通过。验证使用 Node 22.23.1、原生 Git helper 和 CI 的签名配置。没有放宽运行时校验、发布年龄策略或测试断言。推送后对应 head 的 Actions 与真实模型／Cloud 产品验收仍是独立证据。
+
+## 手动停止目标时静默结束（2026-10-14）
+
+用户要求：停止 B 中被委派的 turn，不应唤醒发起方 A。保留 Operation 查询中的取消状态，但自动模型回执过滤掉手动停止的目标；混合批量只回传剩余目标。Stop 在机器本地 Inbox 输入中记录原因，由 HistoryWriter 写到精确 user turn，供远端协调与迟到输入恢复读取；不新增 Session metadata 字段或 RPC。保留 Effect 准入与 SQLite 事务边界，筛选是纯函数，I/O 仍在现有 platform adapter 中。终态与已消费结果墓碑在同一个事务中提交，防止重启、重复 finish 或后来用户输入补发，并保留清理资格。目标的新任务相互独立；非用户取消、失败和超时仍按原规则回执。
+
+验证：冻结安装与完整 pnpm check 通过，CLI 4181 项通过、4 项跳过。最新 Inbox／Coordinator 交集 96 项通过，包含墓碑写入失败的事务回滚；shared HistoryWriter／peer 投影交集 63 项通过。以上计数重叠，不能累加。本次回执策略变更未重复运行真实模型与桌面验收。
+
+原生 OperationRepository 在读取旧目标历史与 deadline 降级前核对精确输入的本地取消记录。真实 SQLite／Coordinator 测试覆盖了输入已停止、历史仍有部分终态输出且 deadline 已过的窗口；远端协调读取持久历史中的原因。
+
+完成事务持有 SQLite 写锁后重新核对 Stop，并在索引前同时规范化持久目标状态与完成结果；预先算出的成功不能越过已经提交的停止。完整检查仍通过，最终 Inbox／Coordinator／Store 交集 156 项也通过。
+
+后续实现：[PR #1553](https://github.com/LodyAI/Lody/pull/1553)。

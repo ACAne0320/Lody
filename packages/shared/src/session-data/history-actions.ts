@@ -47,6 +47,7 @@ export type HistoryAction =
       kind: 'user-status';
       turnId: string;
       status: SessionTurnStatus;
+      cancellationReason?: 'user_stop';
       requeueUndelivered?: boolean;
       onlyPendingApply?: boolean;
       deliveredSteer?: boolean;
@@ -115,6 +116,8 @@ function applyUserStatus(
   if (!canonical) return action.requeueUndelivered === true;
   const write = (entry: SessionEntry) => {
     entry.status = action.status;
+    if (action.status === 'canceled' && action.cancellationReason)
+      entry.cancellationReason = action.cancellationReason;
     entry.read = action.status !== 'pending' && action.status !== 'pending_apply';
     if (action.deliveredSteer)
       entry.inputConfig = { ...entry.inputConfig, _lodyDeliveryKind: 'steer' };

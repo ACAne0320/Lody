@@ -12,7 +12,7 @@ import {
   type InboxScope,
 } from './model';
 import type { BlockedInboxExecution, InboxResourceIdentity } from './recovery';
-import { canFenceBatch, inputAcceptance } from './rules';
+import { canFenceBatch, inputAcceptance, operationInboxCompletion } from './rules';
 
 const StateRow = z.object({
   revision: z.number(),
@@ -74,6 +74,9 @@ export class InboxSqlite {
       db.prepare("SELECT 1 FROM sqlite_master WHERE name='inbox_stops'").get() &&
       (db.prepare('PRAGMA table_info(inbox_results)').all() as { name: string }[]).some(
         (c) => c.name === 'consumed_at'
+      ) &&
+      (db.prepare('PRAGMA table_info(inbox_inputs)').all() as { name: string }[]).some(
+        (c) => c.name === 'cancellation_reason'
       )
     )
       return;
@@ -125,6 +128,12 @@ export class InboxSqlite {
           batch_id TEXT NOT NULL REFERENCES inbox_batches(batch_id), sequence INTEGER NOT NULL REFERENCES inbox_results(sequence),
           PRIMARY KEY(batch_id,sequence));
       `);
+      if (
+        !(db.prepare('PRAGMA table_info(inbox_inputs)').all() as { name: string }[]).some(
+          (c) => c.name === 'cancellation_reason'
+        )
+      )
+        db.exec('ALTER TABLE inbox_inputs ADD COLUMN cancellation_reason TEXT');
       const modesSql = (
         db.prepare("SELECT sql FROM sqlite_master WHERE name='inbox_modes'").get() as {
           sql: string;
@@ -162,14 +171,15 @@ export class InboxSqlite {
         .get(operation.requesterSessionId, operation.operationId)
     )
       return;
+    const receipt = operationInboxCompletion(operation.completion);
     const { value } = this.db
       .prepare(
         "UPDATE orchestration_meta SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT) WHERE key='inbox_sequence' RETURNING CAST(value AS INTEGER) AS value"
       )
       .get() as { value: number };
     this.db
-      .prepare(`INSERT INTO inbox_results(sequence,workspace_id,session_id,user_id,operation_id,operation_kind,source_turn_id,created_at,completed_at,chain_depth,completion_json,automatic_eligible)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,1)`)
+      .prepare(`INSERT INTO inbox_results(sequence,workspace_id,session_id,user_id,operation_id,operation_kind,source_turn_id,created_at,completed_at,chain_depth,completion_json,automatic_eligible,consumed,consumed_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?,?)`)
       .run(
         value,
         operation.workspaceId,
@@ -181,8 +191,11 @@ export class InboxSqlite {
         operation.createdAt,
         operation.finishedAt,
         operation.initiatorChainDepth,
-        JSON.stringify(operation.completion)
+        JSON.stringify(receipt ?? operation.completion),
+        receipt ? 0 : 1,
+        receipt ? null : this.now()
       );
+    if (!receipt) return;
     this.requestAutomatic(
       {
         workspaceId: operation.workspaceId,
@@ -463,6 +476,18 @@ export class InboxSqlite {
       .get(workspaceId, sessionId) as { input_id: string } | undefined;
     return row?.input_id;
   }
+  inputCancellationReason(
+    workspaceId: string,
+    sessionId: string,
+    inputId: string
+  ): 'user_stop' | undefined {
+    const row = this.db
+      .prepare(
+        'SELECT cancellation_reason FROM inbox_inputs WHERE workspace_id=? AND session_id=? AND input_id=?'
+      )
+      .get(workspaceId, sessionId, inputId) as { cancellation_reason: string | null } | undefined;
+    return row?.cancellation_reason === 'user_stop' ? 'user_stop' : undefined;
+  }
   inputCanceled(workspaceId: string, sessionId: string, inputId: string): boolean {
     const row = this.db
       .prepare(
@@ -560,7 +585,7 @@ export class InboxSqlite {
           .run(s.workspaceId, s.sessionId, s.userId, id, current.revision);
       this.db
         .prepare(
-          'UPDATE inbox_inputs SET canceled=1 WHERE workspace_id=? AND session_id=? AND finished=0'
+          "UPDATE inbox_inputs SET canceled=1,cancellation_reason='user_stop' WHERE workspace_id=? AND session_id=? AND finished=0"
         )
         .run(s.workspaceId, s.sessionId);
       this.db
@@ -571,7 +596,7 @@ export class InboxSqlite {
       return true;
     });
   }
-  cancelExecution(s: InboxScope, executionId: string): boolean {
+  cancelExecution(s: InboxScope, executionId: string, reason?: 'user_stop'): boolean {
     return this.transaction(() => {
       const state = this.state(s);
       if (state.active_execution !== executionId || !state.active_input) return false;
@@ -582,9 +607,9 @@ export class InboxSqlite {
         .run(s.workspaceId, s.sessionId, s.userId, state.active_input, state.revision);
       this.db
         .prepare(
-          'UPDATE inbox_inputs SET canceled=1 WHERE workspace_id=? AND session_id=? AND input_id=?'
+          'UPDATE inbox_inputs SET canceled=1,cancellation_reason=COALESCE(?,cancellation_reason) WHERE workspace_id=? AND session_id=? AND input_id=?'
         )
-        .run(s.workspaceId, s.sessionId, state.active_input);
+        .run(reason ?? null, s.workspaceId, s.sessionId, state.active_input);
       return true;
     });
   }

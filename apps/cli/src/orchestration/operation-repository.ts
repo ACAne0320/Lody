@@ -24,6 +24,11 @@ export class OperationRepository extends Context.Service<
       unknown
     >;
     get(sessionId: SessionId, operationId: string): Effect.Effect<StoredLodyOperation, unknown>;
+    inputCancellationReason(
+      workspaceId: WorkspaceId,
+      sessionId: SessionId,
+      inputId: string
+    ): Effect.Effect<'user_stop' | undefined, unknown>;
     finish(
       sessionId: SessionId,
       operationId: string,

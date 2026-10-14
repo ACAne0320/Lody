@@ -1,3 +1,4 @@
+import type { LodyOperationCompletion, LodyOperationItemTarget } from '@lody/shared';
 import type { InboxBatch, InboxInput } from './model';
 
 export type SessionFenceState = {
@@ -36,3 +37,44 @@ export const canFenceBatch = (
   state.active_execution === id &&
   count > 0 &&
   count === batch.memberCount;
+
+/** Preserve queryable cancellation, but user Stop is not an Agent continuation. */
+export const operationInboxCompletion = (
+  completion: LodyOperationCompletion
+): LodyOperationCompletion | undefined => {
+  if (completion.type !== 'result') return completion;
+  const items = completion.value.items.filter(
+    (item) => item.status !== 'cancelled' || item.cancellationReason !== 'user_stop'
+  );
+  if (items.length === completion.value.items.length) return completion;
+  return items.length ? { ...completion, value: { ...completion.value, items } } : undefined;
+};
+
+/** Apply the Stop records captured inside the final completion transaction. */
+export const cancelManuallyStoppedTargets = (
+  completion: LodyOperationCompletion,
+  stopped: readonly LodyOperationItemTarget[]
+): LodyOperationCompletion => {
+  if (completion.type !== 'result' || stopped.length === 0) return completion;
+  return {
+    ...completion,
+    value: {
+      ...completion.value,
+      items: completion.value.items.map((item) =>
+        item.target &&
+        stopped.some(
+          (target) =>
+            target.sessionId === item.target?.sessionId &&
+            target.userTurnId === item.target?.userTurnId
+        )
+          ? {
+              status: 'cancelled',
+              cancellationReason: 'user_stop',
+              target: item.target,
+              ...(item.label ? { label: item.label } : {}),
+            }
+          : item
+      ),
+    },
+  };
+};

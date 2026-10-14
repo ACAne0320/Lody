@@ -5,7 +5,7 @@ Root/CLI rules apply; `specs/session-orchestration.md` owns behavior.
 - `operation-store.ts` is the shared machine-local WAL SQLite source of truth.
   Key: `(requesterSessionId, operationId)`; foreign Session lookup must be
   indistinguishable from absence. Operation finalization and Inbox result insertion
-  are one transaction. Cleanup retains retired ids; accepting them again is forbidden.
+  are one transaction. Manual target Stop stays queryable but never queues a receipt; persist its cause atomically. Cleanup retains retired ids; accepting them again is forbidden.
   Result/system-Turn ids include both key parts; never
   derive a globally unique id from the Session-scoped `operationId` alone.
 - Target input creation is fenced by the SQLite item-materialization claim.
@@ -49,9 +49,9 @@ Root/CLI rules apply; `specs/session-orchestration.md` owns behavior.
   paths must not add blocking waits on top of the driver's `busy_timeout`.
 - `operation-model.ts` is the reduced executable race model. Update its bounded
   exploration and concrete traces whenever scheduling semantics change.
-- Inbox receipts carry wake eligibility. Idle/unpaused/released Sessions persist one coalesced
-  wake intent in the completion transaction; busy Sessions wait for normal release. At claim,
-  require a wakeable result and freeze all unconsumed/unclaimed queue members. Post-claim arrivals wait; pause, empty queues and duplicates cannot wake.
+- Receipts coalesce into one intent when idle, unpaused and released; busy Sessions wait
+  for normal release. Claim requires a wakeable result and freezes all available members.
+  Later arrivals wait; pause, empty queues and duplicates cannot wake.
 - `inbox/service.ts` is native Effect v4. Scope owns its signal/fibers and repository connection;
   one per-Session admission covers Stop, trusted human acceptance and actual transport start.
   Core imports no platform/consumers; registered bridges execute. Submit/settle through execution owners.

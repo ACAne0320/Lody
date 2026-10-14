@@ -880,6 +880,10 @@ export class SessionExecutionService {
   getPreferredInboxHumanInput(sessionId: SessionId): string | undefined {
     return this.operationInbox?.preferredHumanInput(this.deps.workspaceId, sessionId);
   }
+  getInboxInputCancellationReason(sessionId: SessionId, inputId: string): 'user_stop' | undefined {
+    return this.operationInbox?.inputCancellationReason(this.deps.workspaceId, sessionId, inputId);
+  }
+
   isInboxInputCanceled(sessionId: SessionId, inputId: string): boolean {
     return this.operationInbox?.inputCanceled(this.deps.workspaceId, sessionId, inputId) ?? false;
   }
@@ -2633,6 +2637,10 @@ export class SessionExecutionService {
             kind: 'user-status',
             turnId,
             status: projectedStatus,
+            cancellationReason:
+              projectedStatus === 'canceled'
+                ? this.getInboxInputCancellationReason(sessionId, turnId)
+                : undefined,
             ...(status === 'pending'
               ? { requeueUndelivered: true }
               : {
@@ -4631,11 +4639,17 @@ export class SessionExecutionService {
   private async setUserTurnStatus(
     backend: SessionBackend,
     userTurnId: string,
-    status: 'pending' | 'seen' | 'processing' | 'handled' | 'failed' | 'canceled'
+    status: 'pending' | 'seen' | 'processing' | 'handled' | 'failed' | 'canceled',
+    cancellationReason?: 'user_stop'
   ): Promise<boolean> {
     let matched = false;
     await backend
-      .applyHistoryAction({ kind: 'user-status', turnId: userTurnId, status })
+      .applyHistoryAction({
+        kind: 'user-status',
+        turnId: userTurnId,
+        status,
+        ...(status === 'canceled' ? { cancellationReason: cancellationReason } : {}),
+      })
       .then((result) => {
         matched = result.matched ?? false;
       });
@@ -4680,7 +4694,14 @@ export class SessionExecutionService {
       await this.setSteerHistoryStatus(sessionId, sessionDoc, userTurnId, status);
       return;
     }
-    const matched = await this.setUserTurnStatus(backend, userTurnId, status);
+    const matched = await this.setUserTurnStatus(
+      backend,
+      userTurnId,
+      status,
+      status === 'canceled'
+        ? this.getInboxInputCancellationReason(sessionId, userTurnId)
+        : undefined
+    );
     if (!matched) {
       this.recordTerminalTurnWithoutEntry(sessionId, userTurnId, status);
     }
@@ -4960,7 +4981,7 @@ export class SessionExecutionService {
   ): Promise<void> {
     const existingMeta = await this.getSessionMeta(sessionId);
     const cancelledUserMsgId =
-      existingMeta?.processingUserMsgId ?? userTurnId ?? existingMeta?.latestUserMsgId;
+      userTurnId ?? existingMeta?.processingUserMsgId ?? existingMeta?.latestUserMsgId;
     if (cancelledUserMsgId) {
       await this.setTerminalUserTurnStatus(sessionId, sessionDoc, cancelledUserMsgId, 'canceled');
       await this.upsertSessionMeta(sessionId, {
@@ -6827,7 +6848,8 @@ export class SessionExecutionService {
       if (
         !(await this.operationInbox.cancelExecution(
           stoppedRuntime.inboxOwner!.input,
-          stoppedRuntime.inboxOwner?.id ?? turnId
+          stoppedRuntime.inboxOwner?.id ?? turnId,
+          options.pauseInbox !== false && message.pauseInbox !== false ? 'user_stop' : undefined
         ))
       )
         return { success: false, error: 'Execution changed before cancellation.' };

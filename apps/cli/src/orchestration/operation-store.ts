@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { InboxSqlite } from './inbox/sqlite';
+import { cancelManuallyStoppedTargets } from './inbox/rules';
 
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
@@ -745,7 +746,34 @@ export class LodyOperationStore {
           false
         );
       }
-      const durableCompletion = current.state === 'finished' ? current.completion : bounded;
+      const stopped =
+        current.state === 'active' && bounded.type === 'result'
+          ? bounded.value.items.flatMap((item) =>
+              item.target &&
+              this.inbox.inputCancellationReason(
+                current.workspaceId,
+                item.target.sessionId,
+                item.target.userTurnId
+              ) === 'user_stop'
+                ? [item.target]
+                : []
+            )
+          : [];
+      const terminal = this.assertCompletionBound(cancelManuallyStoppedTargets(bounded, stopped));
+      const durableCompletion = current.state === 'finished' ? current.completion : terminal;
+      if (stopped.length) {
+        const items = cancelManuallyStoppedTargets(
+          { type: 'result', value: { items: current.items } },
+          stopped
+        );
+        if (items.type === 'result')
+          this.db
+            .prepare(
+              "UPDATE operations SET items_json=? WHERE requester_session_id=? AND operation_id=? AND state='active'"
+            )
+            .run(JSON.stringify(items.value.items), requesterSessionId, operationId);
+      }
+
       if (!durableCompletion) throw new Error('Finished Operation is missing its completion.');
       if (current.state === 'active') {
         this.db
@@ -754,7 +782,7 @@ export class LodyOperationStore {
              SET state = 'finished', completion_json = ?, finished_at = ?
              WHERE requester_session_id = ? AND operation_id = ? AND state = 'active'`
           )
-          .run(JSON.stringify(bounded), finishedAt, requesterSessionId, operationId);
+          .run(JSON.stringify(terminal), finishedAt, requesterSessionId, operationId);
       }
       this.inbox.indexCompletion({
         ...current,
