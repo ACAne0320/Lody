@@ -17,6 +17,8 @@ maintenance commands here.
   dependencies/imports, unresolved `workspace:` dependencies, closed-path
   documentation, internal absolute paths in any publishable text, and captured
   transcript fixtures.
+- `check-local-loro-writer-boundary.mjs` protects native writer execution/platform
+  boundaries and the single CLI repo unloader; behavior suites prove its effects.
 - Root `specs/` and the `.agents/` tree may contain public client and protocol
   documentation and may be linked from other documents. Root `docs/` stays a
   closed path. Their contents still undergo the same private-path, internal-path,
@@ -56,6 +58,11 @@ maintenance commands here.
   Lody revision; rebuilds must never overwrite published immutable bytes.
 
 ## Install ownership
+
+- Effect lint uses the installing workspace's pinned tools. Patch Oxlint only
+  (`--no-typescript --oxlint`); never install a second store in an embedded
+  checkout. `lint:effect` must show warnings and disable nested config discovery;
+  keep `lint:fast` free of type-aware rules.
 
 - `package-pi-runtime.mjs` builds a frozen isolated Pi dependency closure, including
   all supported optional platform packages. Windows Job binaries must be supplied
