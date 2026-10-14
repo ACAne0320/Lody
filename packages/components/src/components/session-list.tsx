@@ -814,9 +814,9 @@ const SessionGroupRow = memo(function SessionGroupRow({
         }
       }}
       onWheel={(event) => {
-        const row = event.currentTarget;
-        const clip = row.querySelector<HTMLElement>('[data-sidebar-title-clip]');
-        const title = row.querySelector<HTMLElement>('[data-sidebar-session-title]');
+        const rowElement = event.currentTarget;
+        const clip = rowElement.querySelector<HTMLElement>('[data-sidebar-title-clip]');
+        const title = rowElement.querySelector<HTMLElement>('[data-sidebar-session-title]');
         if (!clip || !title) return;
         const bounds = clip.getBoundingClientRect();
         if (
@@ -830,15 +830,15 @@ const SessionGroupRow = memo(function SessionGroupRow({
 
         const delta = Math.abs(event.deltaX) > 0 ? event.deltaX : event.shiftKey ? event.deltaY : 0;
         if (Math.abs(delta) < 1) return;
-        if (!row.hasAttribute('data-sidebar-title-overflow')) {
-          measureSidebarSessionTitle(row, false);
+        if (!rowElement.hasAttribute('data-sidebar-title-overflow')) {
+          measureSidebarSessionTitle(rowElement, false);
         }
         const distance = Math.abs(
           Number.parseFloat(title.style.getPropertyValue('--sidebar-title-distance'))
         );
         if (!Number.isFinite(distance) || distance <= 8) return;
         const offset = getSidebarSessionTitleOffset(title) - delta;
-        setSidebarSessionTitleSwipeOffset(row, title, distance, offset);
+        setSidebarSessionTitleSwipeOffset(rowElement, title, distance, offset);
         event.preventDefault();
       }}
       onMouseLeave={(event) => {
@@ -853,9 +853,9 @@ const SessionGroupRow = memo(function SessionGroupRow({
       }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
-        const row = event.currentTarget;
-        const clip = row.querySelector<HTMLElement>('[data-sidebar-title-clip]');
-        const title = row.querySelector<HTMLElement>('[data-sidebar-session-title]');
+        const rowElement = event.currentTarget;
+        const clip = rowElement.querySelector<HTMLElement>('[data-sidebar-title-clip]');
+        const title = rowElement.querySelector<HTMLElement>('[data-sidebar-session-title]');
         if (!clip || !title) return;
         const bounds = clip.getBoundingClientRect();
         if (
