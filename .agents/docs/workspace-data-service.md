@@ -1,11 +1,12 @@
 # WorkspaceData Effect Service design
 
 Status: proposed
+PR: [#1572](https://github.com/LodyAI/Lody/pull/1572)
 Translation: current
 
 [中文](workspace-data-service.zh.md)
 
-This document designs the business data boundary shared by daemon and renderer. Phase one migrates in-process implementations by domain and ships independently; phase two uses a shared independent Node host on desktop, while headless daemons may permanently embed the same owner Layer. The [communication architecture](../../specs/communication-architecture.md) owns intent; the [data process proposal](../notes/proposed/architecture/2026-10-14-desktop-data-process.md) records decisions, consumer audits and validation. This is a proposal.
+This document brings together the shared daemon/renderer/main business data interface, owner topology, decisions and migration acceptance. Phase one migrates in-process implementations by domain and ships independently; phase two shares an independent Node host on desktop while permanently supporting the same embedded owner Layer in headless daemon. The proposal remains proposed; production Services/host are not implemented.
 
 ## Background, core requirements and long-term goals
 
@@ -17,12 +18,12 @@ The goals are a faster application, fewer replicas and duplicate downlink, and f
 
 | Stage | Delivery |
 | --- | --- |
-| Baseline and slice selection | Record current behavior before implementing the first domain, then choose an independently verifiable scenario; the owning Note holds the measurement plan. |
+| Baseline and slice selection | Measure current behavior before the first domain and select an independently verifiable scenario; metrics are in §9.4. |
 | Phase one: common business boundary | Both consumers adopt the same contracts by domain, preserving read/write/sync/error behavior; each complete slice can ship independently. This is a refactor; the main performance benefits belong to phase two. |
 | Phase two: unified data owner | Desktop uses an independent Node host; headless defaults to the same embedded Layer. Complete recovery and storage migration for each topology before retiring duplicate persistence/connections. |
 | Separate management product unit | Ship write-only credentials, editor context and conflict UX separately. It precedes phase-two catalog host cutover and is outside the phase-one mainline. |
 
-Complete I/O centralization includes login, native credentials, media and file capabilities. The proposal separately defines isolation for I/O actually performed by Git, terminals and Agent/ACP subprocesses. Public OSS stays local-only; official cloud composition supplies optional ports.
+Complete I/O ownership includes login, native credentials, media, attachments and files. Git/terminal/Agent/ACP subprocesses and embedded-page I/O belong to execution-environment boundaries; further centralization requires execution capabilities/network isolation. Native login/proxy/certificates/cookies/secure storage still require host ports; delegating from Node to main does not complete physical I/O migration. Public OSS remains local-only; official cloud composition injects optional cloud ports.
 
 ## 1. Core decisions
 
@@ -109,7 +110,7 @@ Deliver this unit **before** phase-two catalog host cutover. The old management 
 
 Workspace mcpServer/agentRole and machine dotlodyPath, localProject, memory, agentConfig/agentConfigIndex, acpCapability/acpModelCapability, rateLimit and builtinAgentOptOut belong to catalog. Legacy sessionLaunchConfig is a readonly compatibility input composed by MachineLaunchData, not a new write API. Magpie coordinates agentConfig/providerSetup and UI pending state; it has no separate invented Flock family.
 
-archiveSessionCommand, deleteSessionCommand, deleteLocalProjectCommand and providerSetup/providerSetupCancellation belong to MachineCommands. Trusted consumers coordinate config-change-triggered setup rechecks. Meta directories, schedule registry and file indexes have separate owners. The owning Note registers every family's projections, commands, read/write authorization, secrets and consumers. MCP retains real active-Turn requester, summary allowlists and credential-reference rules; readable summaries do not grant management access.
+archiveSessionCommand, deleteSessionCommand, deleteLocalProjectCommand and providerSetup/providerSetupCancellation belong to MachineCommands. Trusted consumers coordinate config-change-triggered setup rechecks. Meta directories, schedule registry and file indexes have separate owners. Each migration slice registers family projections, commands, grants, secrets and consumers (§9.3). MCP retains real active-Turn requester, summary allowlists and credential-reference rules; readable summaries do not grant management access.
 
 ### 2.4 Upload barriers and remote authority
 
@@ -154,7 +155,7 @@ session-control denotes the session's Loro control/delivery plane. For the Loro 
 
 observeAuthority provides gap-free initial state and changes; DirectoryStatus.cloud uses that same state (§3.1). refresh performs explicit catch-up for this call. authoritativeResyncs feeds scan repair through the same handler as live events, retaining existing startup/manual/dirty wakeups.
 
-Upload waits report existing barriers, preserve local write results and prove neither per-write remote acceptance nor Agent execution. Every phase-one policy requires a real caller with registered deadline, cancellation and false/error handling; unsupported policies remain phase two. retain-until-ack maps existing schedule uploader references, not new independent custody. Cancellation preserves existing writes/resource ownership; phase two separately verifies upload recovery after client exit. Detailed outcomes/callers live in the [sync register](../notes/proposed/architecture/2026-10-14-desktop-data-process.md#syncauthority-caller-register).
+Upload waits report existing barriers, preserve local write results and prove neither per-write remote acceptance nor Agent execution. Every phase-one policy requires a real caller with registered deadline, cancellation and false/error handling; unsupported policies remain phase two. retain-until-ack maps existing schedule uploader references, not new independent custody. Cancellation preserves existing writes/resource ownership; phase two separately verifies upload recovery after client exit. Outcomes and real callers are in §9.3.
 
 ### 2.5 Durable machine commands
 
@@ -201,7 +202,7 @@ Presence.publishSessionViewing(sessionId) acquires a scoped lease with binding-i
 
 Owner manages heartbeats, reannouncement and final clear. Windows retain separate viewing references; closing one does not clear another. Machine online and active-turn publication exist only while the corresponding daemon's SessionExecutionPresence lease is valid; host survival cannot extend them. Ordinary renderer has no execution publication capability.
 
-In phase two host revokes that source on daemon link closure. An injected-Clock local lease deadline detects silent loss; within a configured bounded cleanup deadline it stops renewal, removes local projections and initiates remote clear. Failed delivery converges through existing TTL/observation freshness; host crashes require that fallback too. State reports offline/unknown without claiming actual ACP completion. Normal completion joins actual ACP release before clear; link loss revokes publication only, leaving execution/recovery ownership with daemon. Reconnection reacquires a new host/daemon/lease generation; stale heartbeats cannot revive entries or clear successors. The Note defines failure gates.
+In phase two host revokes that source on daemon link closure. An injected-Clock local lease deadline detects silent loss; within a configured bounded cleanup deadline it stops renewal, removes local projections and initiates remote clear. Failed delivery converges through existing TTL/observation freshness; host crashes require that fallback too. State reports offline/unknown without claiming actual ACP completion. Normal completion joins actual ACP release before clear; link loss revokes publication only, leaving execution/recovery ownership with daemon. Reconnection reacquires a new host/daemon/lease generation; stale heartbeats cannot revive entries or clear successors. Phase two uses fake Clock to verify link close/silent loss, failed clear, host restart, multiple viewers and old/new daemon generations. Detection/local-cleanup deadlines must be bounded and prototype-calibrated rather than depend only on cloud TTL.
 
 Retain local-author/global-replica origin partitioning, unknown versus offline, observer-driven monitor leases and local-IPC/remote-authorization rules, using existing rate/size budgets/native owners. Steer routing still combines positive activity, native support and unfinished-turn barrier; target daemon validates actual execution. Presence proves neither persistence, deletion nor uploads. PR viewing activity remains ephemeral; control/presence delivery does not wait for body throttling.
 
@@ -234,7 +235,7 @@ ConversationView still has its own await-based hydration/replacement paths. Phas
 
 Queue IDs map existing $cid. Drafts, selection and edit-operation identity remain local UI state; old ACKs do not overwrite new drafts. Control/queue/permission changes are not throttled with body rendering.
 
-Submissions distinguish held memory, durable ready input, owner receipts, delivery and execution; retain frozen config, FIFO/predecessor barriers, same-ID landed deduplication and scope cancellation. Pending source display does not modify authoritative history. The owning Note holds detailed consumer audits and the complete I/O inventory.
+Submissions distinguish held memory, durable ready input, owner receipts, delivery and execution; retain frozen config, FIFO/predecessor barriers, same-ID landed deduplication and scope cancellation. Pending source display does not modify authoritative history. Use §9.3 to trace actual consumers, separately verifying sole-copy inputs, attachments and recovery states.
 
 ## 5. Commands and results
 
@@ -256,7 +257,21 @@ Product editAndResend retains success/error; internal import/tail replacement re
 
 Selected backend owners capture/copy for fork through the existing stored-copy WeakMap, returning complete operation results. Edit compensation awaits conditional rollback before follow-up metadata, preserving later appends and opaque content. Roost uses its real writer and shared helpers.
 
-Only trusted execution Layers expose MachineLaunchData; in-process scoped current() retains the synchronous prepared peek/claim guard. Independent-host mode moves data-condition rechecks into complete owner commands; daemon still owns the physical ACP resource claim. The [phase-two revision Note](../notes/proposed/architecture/2026-10-14-desktop-data-process.md#phase-two-owner-placement-and-read-transport-revision-2026-10-14) inventories auto-seen, permissions, summaries, import, fork, queue and other synchronous dependencies, including cross-process linearization/cancellation/recovery. One prepared guard does not establish complete migration.
+Only trusted execution Layers expose MachineLaunchData; in-process scoped current() retains synchronous prepared peek/claim guards. Independently, host checks data authorization/current configuration while daemon claims the actual ACP resource. Reuse authorization binds request/preparation/owner generation; claim miss/cancel/disconnect queries or releases that same authorization. Configuration changes before authorization reject; later launch retains frozen configuration. Phase two proves configuration-change → authorization → resource-claim → spawn consistency/cancellation. Until proven, do not advertise prepared reuse; use explicitly revalidated cold launch.
+
+Treat synchronous reads by consequence. Embedded deployment preserves their timing; independent deployment cannot replace each with remote read-await-write:
+
+| Synchronous dependency | Independent-host migration |
+| --- | --- |
+| Auto-seen, model summaries, backend/watch initial | Owner establishes gap-free observations and narrow reads/publication; explicit execution interest alone enables auto-seen, retaining last-copy guards |
+| Permission location/terminal state, plan/runtime-config, stored user copies | Complete conditional commands bind request/turn/input; owner rechecks current state, winners, sensitive-field filters and serialization |
+| Agent batches, import/tail/capture, queue/control | Fixed enqueue-time assistant/user/epoch enters real writer once, retaining cursor/promotion/queue order and indeterminate outcomes; batch transport |
+| Fork/rollback/operation receipts | Owner conditionally reserves/queries; daemon owns ACP/worktree saga and compensates with the same operation identity rather than stale deletion snapshots |
+| Prepared/launch | Host authorizes data, daemon claims/spawns resources; prove the handoff above |
+| Readonly catalog, ordering/evidence/export | Await finite DTOs with binding/revision/cancellation/late-result fences; display caches do not authorize writes |
+| Schedule/provider read-modify | Complete conditional publish/setup in owner retains cancellation, transactions and flush/registry order; daemon owns execution resources/slots |
+
+Atomicity means existing conditional read/check/write and domain transactions, not a global Doc/cloud/ACP transaction. MessageHandler permission-outcome waiters already await; no-new-await guarantees belong inside real writers/guards.
 
 ## 7. Lifetimes, errors and cancellation
 
@@ -264,11 +279,22 @@ Workspace binding registers scoped holders. Handle closure ends related observer
 
 Errors include scope-closed, access-denied, validation-rejected, condition-changed, unsupported, backend/owner-unavailable, read/write/cleanup-failed and phase-two-reserved observation-reset-required. Adapters preserve original Causes; business/IPC diagnostics use safe identifiers. Existing Roost recovery remains; client Layers implement new IPC errors.
 
-Shutdown retires entry → awaits/records work/writers → final flush → storage/owner close. Cleanup failures retain their owner/recovery responsibility. The owning Note holds detailed state machines/backoff/protocol validation.
+Shutdown retires entry → awaits/records work/writers → final flush → storage/owner close. Cleanup failures retain their owner/recovery responsibility. Phase-two retries use injected Clock. Canceling observers/waiters does not terminate actual I/O; release failure retains queryable recovery responsibility rather than creating another owner.
 
 ## 8. Layers, topology and phase-two IPC
 
 RendererDataLive composes needed ordinary Services and authorized management capabilities. DaemonDataLive adds trusted execution Services. Domain Layers share internal owners/ports. Each application reuses a runtime; business code composes Effects and React uses the registered facade.
+
+Phase-two desktop target; headless defaults to the same DataOwnerLive embedded in daemon, with direct calls.
+
+```mermaid
+flowchart LR
+  R["Renderer memory View"] -->|"domain interfaces"| H["Independent Node data host"]
+  M["Electron main"] -->|"domain interfaces"| H
+  D["Daemon execution / ACP"] -->|"data operations and execution lease"| H
+  H -->|"RPC execution handoff"| D
+  H --> S["Application storage, grants, sync / RPC / presence transport"]
+```
 
 ### 8.1 Machine RPC and control channels
 
@@ -276,7 +302,7 @@ MachineRpc exposes typed session, prepare, preview/files/Code Collab/LSP, Agent 
 
 Complete submit/edit/fork/steer/goal commands compose RPC in their data/execution coordinator; UI expresses intent. Existing request* calls migrate through registered Legacy facades. RPC replies prove neither saved data, upload nor execution. Canceling a waiter retains actual request/resource ownership; unknown writes/steers never replay automatically.
 
-Phase two chooses centralized remote transport: DataOwnerLive owns the Streams RPC client and server request-read/response-write, tokens and recovery; daemon retains execution handlers and ACP/terminal resources. This explicitly accepts the cloud→host→daemon hop and host's impact on remote control availability to retain unified Streams I/O/authorization. Keeping all server connections in daemon would require an exception; the Note compares both choices.
+Phase two chooses centralized remote transport: DataOwnerLive owns the Streams RPC client and server request-read/response-write, tokens and recovery; daemon retains execution handlers and ACP/terminal resources. This explicitly accepts the cloud→host→daemon hop and host's impact on remote control availability to retain unified Streams I/O/authorization. Keeping server in daemon removes a hop but makes its Streams connection/token refresh an I/O exception; host-issued tokens alone still depend on host recovery.
 
 When host is unavailable before daemon handoff, remote callers reach their existing method deadline. After handoff, losing the response yields unknown: stopping a waiter does not prove nonexecution and must not replay automatically. A live host with no daemon lease returns execution-unavailable. Daemon retains execution/release ownership; local main→daemon control ingress remains separate, while data-dependent commands report owner-unavailable/unknown. Known-local failures never go cloud. Before server cutover, phase two verifies host failure windows, a control lane independent of body backpressure, lease cleanup and result queries after recovery.
 
@@ -292,7 +318,7 @@ Authorized requests retain frozen business requester; this is neither host machi
 | Headless shared service or independent lifetime | Optionally use an independent host with the same core Layer and local socket/named-pipe client |
 | Remote/old machines | Each machine has its own owner; remotes use existing ports/RPC, old versions retain isolated storage and explicit compatibility |
 
-Connection sharing comes from one owner, which daemon itself can provide. Desktop prefers an independent host because UI still needs data when local Agent execution is disabled/restarted, and data recovery needs a separate lifetime. Measure added IPC, memory and launch costs; the Note compares alternatives. Supervisor describes an existing process-management role, not an additional permanent supervisor process.
+Connection sharing comes from one owner, which daemon itself can provide. Desktop prefers an independent host because UI still needs data when local Agent execution is disabled/restarted, and data recovery needs a separate lifetime. Measure added IPC, memory and launch costs; a daemon data-only mode is valid too but must separate execution switches/data scopes. Supervisor describes an existing process-management role, not an additional permanent supervisor process.
 
 Embedded and independent deployment share domain code, persistence rules and the new storage layout; both are permanently valid. Persistent bootstrap state fixes embedded/independent placement per directory, never startup races. Independent-mode daemon always connects/launches host; handshake refusal cannot fall back to embedding. While any daemon lease exists, host remains running; desktop app exit does not end host. Unexpected host exit is recovered by the daemon-side supervisor in the directory's persisted mode, completing exclusive recovery with a new owner generation. Until recovery, report owner-unavailable. Live placement changes require explicit user action, stopping all Agents/writers and joining actual I/O before drain/flush/exclusive release, publishing mode and acquiring a new owner generation. Record placement, protocol version and data format separately. Rejected handshakes cannot create another writer.
 
@@ -300,7 +326,7 @@ Embedded and independent deployment share domain code, persistence rules and the
 
 New owners use a versioned new path under `getLodyDataDir()`, such as `data-owner/v1/<binding-storage-key>/`, distinct from old repo.sqlite3 paths and renderer IndexedDB names. Preserve account/workspace/environment/channel isolation. Stop old producers, export/reconcile saved and unuploaded daemon/window data, import into the new path and verify recovery, then publish a one-way cutover record. Per source/document, durable host readback Loro OpLog vectors must dominate frozen renderer versions with no pending imports; keep old IDB readonly/undeleted until then. Separately verify Flock versions/tombstones, sole-copy inputs and unuploaded custody. Markers coordinate new clients only.
 
-Supported compatibility entries require upgrade and block editing. Freeze legacy directories as recovery archives rather than writable replicas. Protocol-unaware binaries cannot gain new UI behavior from markers: test path isolation/read-only handling, launcher restrictions and legacy credential invalidation separately. Register affected local/remote deployments and upgrade routes first; shared account/workspace/CLI credentials may affect old remote daemons. Block cloud cutover when impact cannot be isolated rather than invalidating globally. New paths prevent opening the host primary through old paths; preventing a newly created legacy store from uploading to cloud is a separate migration gate. The Note records sequence/limits. Cutover does not enable automatic dual writes or reimport legacy stores.
+Supported compatibility entries require upgrade and block editing. Freeze legacy directories as recovery archives rather than writable replicas. Protocol-unaware binaries cannot gain new UI behavior from markers: test path isolation/read-only handling, launcher restrictions and legacy credential invalidation separately. Register affected local/remote deployments and upgrade routes first; shared account/workspace/CLI credentials may affect old remote daemons. Block cloud cutover when impact cannot be isolated rather than invalidating globally. New paths prevent opening the host primary through old paths; preventing a newly created legacy store from uploading to cloud is a separate migration gate. Verify these conditions before phase-two cutover; cutover does not enable automatic dual writes or legacy reimport.
 
 ### 8.4 Versions and capabilities
 
@@ -333,7 +359,7 @@ Observed in-progress turns use versioned deltas and bounded backpressure, avoidi
 
 One candidate is a narrow business projection: start with tail text append and affected-item replacement; domain events retain directory/scalar changes. Another is a memory-only Loro replica inside a private renderer adapter, receiving one-way binary increments from host. Business code keeps the same DTOs/commands with no public Doc, renderer persistence, cloud connection or binary write channel. Roost retains its own projection adapter.
 
-Compare bootstrap/increment/rebuild bytes, decode/total memory, latency, unknown content, tools/subagents and remote Roost end-to-end cost before choosing each backend's private transport. Start the narrow projection prototype first; general splice/nested bindings are outside the current contract. Existing subagent streaming must pass behavioral/performance gates before cutover; frequent full-item replacement does not pass O(N) acceptance. The Note owns alternatives, the earlier protocol sketch and uncalibrated budgets.
+Compare bootstrap/increment/rebuild bytes, decode/total memory, latency, unknown content, tools/subagents and remote Roost end-to-end cost before choosing each backend's private transport. Start the narrow projection prototype first; general splice/nested bindings are outside the current contract. Existing subagent streaming must pass behavioral/performance gates before cutover; frequent full-item replacement does not pass O(N) acceptance. Baseline/prototype metrics are in §9.4; implementation determines budgets/wire details.
 
 ### 8.7 Phase-two View recovery
 
@@ -347,7 +373,7 @@ DataScopeClosed means local acquisition ended; host replacement invalidating a r
 
 ### 9.1 Inventory-driven domain acceptance
 
-The owning Note's consumer ledger pins source SHA and covers Repo/Doc/Mirror, Flock, sync/authority, RPC/presence and durable inputs. Every file/API maps to Service methods or an explicit adapter/exemption reason/removal gate. Candidate scans prove neither complete call graphs nor migration. Removing public WorkspaceRuntime.repo, SessionDocStore.doc and generic writers requires all consumers; tours use synthetic InMemory Layers.
+Implementation slices pin source SHA and cover Repo/Doc/Mirror, Flock, sync/authority, RPC/presence and durable inputs. Every file/API maps to a Service method or explicit adapter/exemption/removal condition. §9.3 supplies starting points; candidate scans establish neither complete call graphs nor migration. Removing public WorkspaceRuntime.repo/SessionDocStore.doc and generic writers covers all consumers; tours use synthetic InMemory Layers.
 
 Define required contracts before the first slice. Implementation adds AST boundaries as lint in pnpm check (Oxlint rule or dedicated script) for migrated domains in components/components, hooks and CLI/session, commands, mcp and orchestration: no Repo/Doc/transport imports, aliases/type escapes or raw fields except individually registered adapters. Unmigrated rows retain bounded baselines/removal gates without new escapes; register new raw dependencies first. Check imports/member access/reexports; behavioral tests cover dynamic authorization/state. Move the existing no-materialized-history-in-components source constraint into lint with its slice; preserve behavioral tests instead of using Vitest source-reading boundary tests.
 
@@ -359,4 +385,47 @@ Phase-one sync/command/RPC/presence Layers may adapt existing implementations th
 
 Phase two validates permanent embedded/independent compositions, local handshake/remote capabilities, every synchronous dependency's migration, authorization generations, increments/rebuild/backpressure, prepared handoff, durable writes/upload recovery, credential prerequisites and legacy storage isolation. Compare benefits and added costs with baseline. Real prototypes determine protocols and budgets.
 
-[Validation records and finite models](../notes/proposed/architecture/2026-10-14-desktop-data-process.md#research-validation-and-limits) live in the owning Note. Source references include session-data, ConversationView, roost-session-bridge, workspace runtime/writer, CLI session backend/manager and machine-protocol-capabilities.
+### 9.3 Sync callers and consumer migration starting points
+
+Source inspection pins [main df5b5a068e2f6a44118a30d0cc8fa34c2e4fcc49](https://github.com/LodyAI/Lody/tree/df5b5a068e2f6a44118a30d0cc8fa34c2e4fcc49). Line numbers below belong to that revision; refresh the target revision/call graph before each slice. Candidate inspection covers CLI/components raw data APIs, injected callbacks and storage entries. These are implementation starting points, not completed migrations.
+
+| Phase-one upload policy | Existing callers | Behavior to preserve |
+| --- | --- | --- |
+| wait-for-route | create-workspace-runtime:4394–4426,4518–4524; use-session-doc:456; session-send-delivery:179 | Transport/join and selected binding; Loro same-Doc control/history coverage supports send confirmation/head editing; retain detached/missing-room/Abort branches |
+| bounded-confirmation | CLI loro/doc:2505–2542; session-backend:503; dispatch-watcher, message-handler, local-project-history-sync-service | Original default 4s; unavailable/deadline false; preserve ignore/error/notification fallback per caller |
+| require-route | streams-room-binding:63–65; connection-recovery:409,1000–1001 | Missing-route errors retain existing refresh/deadline wrappers, not a blanket CLI-store default |
+| retain-until-ack | schedule-write-sync:5,24,43,60–65; create-workspace-runtime:4572–4585 | Local writes return first; uploader ref survives idle/reconnect; dispose/Abort also ends waiting without proving remote ACK |
+
+UploadReceipt distinguishes barrier-completed (local-primary/remote), not-attempted, not-confirmed and not-required-local. Destination/reason fields use known evidence only. Throws remain errors, false never becomes success and interruption fabricates no receipt. Roost roost-node-session:2009 only flushes local history; roost-session-backend:400–404 still combines history flush and control waiting, without a remote Roost-upload claim.
+
+| Authority dependency | Target and gate |
+| --- | --- |
+| Worktree GC, empty catalog | workspace-meta/catalog baseline and complete local index, distinguishing deleted from unseen |
+| machine-flock-command-watcher, provider setup/cancel | Existing machine-data authoritative join/rescan; recheck cancellation before final publication |
+| schedule-sync-gate | Reestablish current each connection generation; the first-sync Promise cannot authorize later connections |
+| Explicit sync/export, reconnect repair | This-call refresh/per-target Results; retain --offline/startup/manual/dirty and separate cheap-online wakeups from rate-limited Meta scans |
+
+Register each file/API in these groups with destination method, authorization/secrets, adapter scope and removal condition. Shared packages, Electron/platform ports, public return types and dynamic injection belong to the corresponding slice call graph.
+
+| Domain | Key consumers and completion conditions |
+| --- | --- |
+| Directory/access | GC, pr-poller, CLI session/sync/export/MCP, chat-landing/tour; equivalent full metadata/deletion/live pagination |
+| History/control/submissions | MessageHandler, dispatch/execution, ConversationView/use-session-doc, export/import, pending/input storage; preserve synchronous facade, real writers, sole copies and unknown delivery |
+| Catalog/machine commands | agent-config/MCP/Role, resource discovery, memory, Magpie, local projects/settings; close each family, grant, credential-preservation and cancellation rule |
+| RPC/presence/adjacent data | operation-coordinator, submit routing, preview/files/LSP, Shortcuts, file-index LRU, eager worker, Roost bridge; retain grants, origin/leases, receipts and target routes |
+
+Start with session directory: close Meta observation/index and SyncAuthority projection, query/pagination and create/rename, then compose archive/delete through MachineCommands. Real consumer end-to-end behavior closes the scope. Complete slices may ship while other domains remain pending.
+
+### 9.4 Measurement and validation limits
+
+Capture baseline before implementation; compare phase two using the same data/window/machine scale:
+
+| Metric | Purpose |
+| --- | --- |
+| Per-room/principal subscriptions, bootstrap/downlink bytes, grants and token-refresh counts | Identify legally shareable duplication rather than count different identities/logical connections as benefits |
+| Cold/cached first frames, streaming turn latency, incremental/rebuild IPC bytes and backpressure queues | Verify faster UI without O(N²) rereads of long bodies |
+| Agent batch enqueue → host admission → writer apply → local durability → visible UI | Measure desktop hot-write latency/throughput/queueing separately; embedded headless adds no IPC |
+| RSS, JS heap and Wasm memory across host/daemon/all renderers, startup/decode costs | Compare narrow projections and readonly Loro replicas at total multi-window cost |
+| Host/daemon restart, cancellation, authorization generations, upload recovery and RPC handoff | Performance gains retain existing data-safety/availability boundaries |
+
+This is a business/architecture contract awaiting implementation. Fixed-source inspection, framework type references and earlier finite models clarify the design. Real Effect/Repo/SQLite/IndexedDB/IPC integration, prepared handoff, Clock/cleanup behavior and product performance require validation with implementation. Documentation/translation checks establish neither runtime acceptance nor approval of existing protocol changes.

@@ -1,11 +1,12 @@
 # WorkspaceData Effect Service 设计
 
 Status: proposed
+PR: [#1572](https://github.com/LodyAI/Lody/pull/1572)
 Translation: current
 
 [English](workspace-data-service.md)
 
-本文设计 daemon 与 renderer 共用的数据业务边界。一期按领域迁移进程内实现，独立发布；二期桌面共享独立 Node host，无头 daemon 可长期内嵌同一 owner Layer。[通讯架构](../../specs/communication-architecture.zh.md)表达目标，[数据进程提案](../notes/proposed/architecture/2026-10-14-desktop-data-process.zh.md)记录取舍、消费者审计和验证。本文为提案。
+本文集中说明 daemon、renderer 与 main 共用的数据业务接口、owner 拓扑、取舍及迁移验收。一期按领域迁移进程内实现，可独立发布；二期桌面共享独立 Node host，无头 daemon 长期支持内嵌同一 owner Layer。方案保持 proposed，生产 Services 和 host 尚未实现。
 
 ## 背景、核心需求与长期目标
 
@@ -17,12 +18,12 @@ renderer 与 daemon 当前分别持有 Loro 副本、持久化和同步生命周
 
 | 阶段 | 交付内容 |
 | --- | --- |
-| 基线与切片选择 | 在投入第一个领域实现前，记录现状，选择能独立验证的真实场景；测量计划见 owning Note。 |
+| 基线与切片选择 | 在第一个领域实现前测量现状，选择能独立验证的真实场景；指标见 §9.4。 |
 | 一期：共同业务边界 | 两端按领域接入相同业务契约，保持原读写、同步与错误行为；每个已闭合切片可独立发布。这是重构，主要性能收益在二期。 |
 | 二期：统一数据 owner | 桌面使用独立 Node host，无头默认内嵌同一 Layer；完成各自恢复与存储迁移后，再退出重复持久化/连接。 |
 | 独立管理产品单元 | write-only 凭据、编辑上下文与冲突 UX 单独交付；它是二期 catalog 接入 host 的前置条件，不计入一期主线。 |
 
-完整 I/O 目标还涉及登录、原生凭据、媒体和文件能力。Git、终端与 Agent/ACP 子进程实际执行 I/O 的隔离由提案另行界定。公共 OSS 组合保持 local-only，官方 cloud composition 提供可选云 ports。
+完整 I/O 目标包括登录、原生凭据、媒体、附件与文件能力。Git、终端、Agent/ACP 子进程及嵌入网页自身 I/O 属于执行环境边界，进一步集中需要执行能力与网络隔离设计。原生登录/代理/证书/cookie/安全存储仍需宿主 port；只有 Node 委托 main 执行时，物理 I/O 尚未全部迁入 Node。公共 OSS 保持 local-only，官方 cloud composition 注入可选云 ports。
 
 ## 1. 核心决定
 
@@ -109,7 +110,7 @@ write-only 凭据、`keep/replace/clear`、短期 editToken 和编辑条件冲�
 
 workspace Flock 的 mcpServer/agentRole；machine Flock 的 dotlodyPath、localProject、memory、agentConfig/agentConfigIndex、acpCapability/acpModelCapability、rateLimit、builtinAgentOptOut 归 catalog。旧 sessionLaunchConfig 是只读兼容输入，由 MachineLaunchData 组合，不增加新写入口。Magpie 目前是 agentConfig/providerSetup 的导入协调与 UI pending 状态，不虚构独立 Flock family。
 
-archiveSessionCommand、deleteSessionCommand、deleteLocalProjectCommand、providerSetup/providerSetupCancellation 归 MachineCommands；Agent config 变化触发 setup 重查由可信 consumer 协调。Meta 目录、schedule registry 和文件索引有各自 owner，不归普通 catalog。family 的投影、命令、读写授权、秘密与消费者逐项登记在 owning Note；MCP 保留 active Turn 的真实 requester、summary allowlist 和凭据引用规则，管理权限不从 summary 可读性推导。
+archiveSessionCommand、deleteSessionCommand、deleteLocalProjectCommand、providerSetup/providerSetupCancellation 归 MachineCommands；Agent config 变化触发 setup 重查由可信 consumer 协调。Meta 目录、schedule registry 和文件索引有各自 owner，不归普通 catalog。每个 family 的投影、命令、读写授权、秘密与消费者在迁移切片逐项登记（§9.3）；MCP 保留 active Turn 的真实 requester、summary allowlist 和凭据引用规则，管理权限不从 summary 可读性推导。
 
 ### 2.4 同步回执与远端权威
 
@@ -154,7 +155,7 @@ session-control 仅表示会话的 Loro 控制/delivery 面；Loro 后端时，s
 
 observeAuthority 提供无缺口的初值和状态变化，DirectoryStatus.cloud 复用这份状态（§3.1）。refresh 是本次显式追赶；authoritativeResyncs 是扫描型修复的输入，与实时事件共用处理入口，并保留现有 startup/manual/dirty 唤醒。
 
-上传等待只报告既有屏障，不改变本地写入结果，也不证明逐写远端接收或 Agent 执行。每个一期策略须映射真实调用点，登记期限、取消和 false/异常处理；无调用依据的策略留给二期。retain-until-ack 对应现有 schedule uploader 引用，不等于二期独立 custody。取消保留写入与原资源所有权规则；二期另验客户端退出后的上传恢复。详细结果与调用点见 [同步登记](../notes/proposed/architecture/2026-10-14-desktop-data-process.zh.md#同步权威调用点登记)。
+上传等待只报告既有屏障，不改变本地写入结果，也不证明逐写远端接收或 Agent 执行。每个一期策略须映射真实调用点，登记期限、取消和 false/异常处理；无调用依据的策略留给二期。retain-until-ack 对应现有 schedule uploader 引用，不等于二期独立 custody。取消保留写入与原资源所有权规则；二期另验客户端退出后的上传恢复。结果与真实调用点见 §9.3。
 
 ### 2.5 Machine 持久命令
 
@@ -201,7 +202,7 @@ Presence 的 publishSessionViewing(sessionId) 获取 scoped lease；身份与 or
 
 心跳、重连声明与 final clear 在 owner 内。不同窗口的 viewing lease 分别计引用；关闭一个不清另一个。machine online 和 active-turn 仅在对应 daemon 的 SessionExecutionPresence lease 有效时发布，host 自身存活不延长它们；普通 renderer 无此发布能力。
 
-二期 host 检测 daemon 链路关闭即撤销该来源发布；静默失联由注入 Clock 的本机 lease deadline 检出，并在配置的有界清除期限内停止续期、移除本地投影、发起远端 clear。接收不到 clear 时由原 TTL/观察 freshness 收敛；host 崩溃也只能走该兜底。状态报告 offline/unknown，不宣称实际 ACP 已结束。正常结束仍先 join 实际 ACP 释放；断链只撤销发布权限，daemon 保留真实执行/恢复责任。重连必须以新 host/daemon/lease generation 重新取得声明，旧心跳不能复活或清除新条目。具体失败验收见 Note。
+二期 host 检测 daemon 链路关闭即撤销该来源发布；静默失联由注入 Clock 的本机 lease deadline 检出，并在配置的有界清除期限内停止续期、移除本地投影、发起远端 clear。接收不到 clear 时由原 TTL/观察 freshness 收敛；host 崩溃也只能走该兜底。状态报告 offline/unknown，不宣称实际 ACP 已结束。正常结束仍先 join 实际 ACP 释放；断链只撤销发布权限，daemon 保留真实执行/恢复责任。重连必须以新 host/daemon/lease generation 重新取得声明，旧心跳不能复活或清除新条目。二期用 fake Clock 验 IPC close/静默失联、clear 失败、host 重启、多窗口 viewer 与新旧 daemon generation；检测和本地清除期限须有界，原型校准，不能只等云 TTL。
 
 保留本地作者 store/全局 replica 的 origin 分区、unknown 与 offline 区别、monitor 的 observer lease 与本地 IPC/远端授权限制，复用现有 rate/size budget 和 native owner。steer 路由仍结合正的 live activity、native capability 与 unfinished-turn barrier；目标 daemon 再验证实际执行。presence 不证明数据保存、删除或上传完成；PR poller 的 viewing 活跃度继续使用该临时源。控制与临时更新不等待正文节流。
 
@@ -234,7 +235,7 @@ renderer 使用现有 `ConversationView` 及 control/queue/submission/status 的
 
 queue 行 ID 映射既有 $cid；草稿、选区和 edit operation identity 保留在 UI，旧 ACK 不覆盖新草稿。控制、队列和权限状态不随正文渲染节流。
 
-submissions 区分 held memory input、durable ready input、owner receipt、delivery 与执行，保留冻结配置、FIFO/predecessor barrier、同 ID landed 去重与 scope cancel。pending source 显示不进入权威 history。具体消费者审计与完整 I/O 清单见 owning Note。
+submissions 区分 held memory input、durable ready input、owner receipt、delivery 与执行，保留冻结配置、FIFO/predecessor barrier、同 ID landed 去重与 scope cancel。pending source 显示不进入权威 history。迁移按 §9.3 追踪真实消费者，并单独核对唯一副本输入、附件和恢复状态。
 
 ## 5. 命令与结果
 
@@ -256,7 +257,21 @@ owner 在本地协调内重查权限、目标和业务条件，再由既有真�
 
 fork/copy 由选定 backend owner capture/copy，使用既有 stored-copy WeakMap；公共调用获得完整操作结果。编辑重发的补偿路径 await 条件 rollback，再处理后续 metadata；保留后追加行和 opaque 内容。Roost 使用其真实写者与共享 helpers。
 
-MachineLaunchData 仅由可信执行 Layer 提供，进程内 scoped current() 保留 prepared peek/claim 的同步 guard。独立 host 模式把数据侧条件重查放入完整 owner 命令；实际 ACP 资源 claim 仍由 daemon 持有。跨进程后的线性化、取消与失败恢复，以及 auto-seen、权限、摘要、import、fork、queue 等同步依赖逐项列在 [二期修订 Note](../notes/proposed/architecture/2026-10-14-desktop-data-process.zh.md#二期-owner-部署与读侧传输修订2026-10-14)，不能用一处 prepared guard 代表全部迁移。
+MachineLaunchData 仅由可信执行 Layer 提供；进程内 scoped current() 保留 prepared peek/claim 的同步 guard。独立模式中数据侧授权/当前配置检查由 host 完成，daemon 仍 claim 实际 ACP resource。复用授权绑定 request/preparation/owner generation；claim miss、取消或断线查询/释放同一授权，配置在授权前变化则拒绝。授权后的 launch 使用原冻结配置。二期必须验证“配置变化 → 授权 → resource claim → spawn”的一致性与取消；未证明时不广告 prepared reuse，采用明确重新校验的冷启动路径。
+
+同步读按影响处理；内嵌形态保持原同步调用，独立形态不能逐次远程 read-await-write：
+
+| 同步依赖 | 独立 host 模式迁移 |
+| --- | --- |
+| auto-seen、模型摘要、backend/watch initial | 在 owner 建立无缺口观察并做窄读取/发布；auto-seen 只由明确执行兴趣启用，保留最后副本 guard |
+| permission 定位/终态、plan/runtime-config、用户 stored copies | 固定 request/turn/input 身份的完整条件命令；owner 重查当前状态，保留赢家、敏感字段过滤和原串行顺序 |
+| Agent 批次、import/tail/capture、queue/control | 固定 enqueue-time assistant/user/epoch 一次进入真实 writer，保留 cursor/promotion/queue 顺序和 indeterminate；按批次传输 |
+| fork/rollback/操作回执 | owner 条件预留/查询；daemon 持有 ACP/worktree saga，按同一 operation 身份补偿，不用旧快照决定删除 |
+| prepared/launch | 数据授权在 host，实际 claim/spawn 在 daemon；按上述 handoff 证明一致性 |
+| 只读 catalog、ordering/evidence/export | 可 awaited 有限 DTO，保留 binding/revision/取消与晚回复 fence；展示缓存不作写入许可 |
+| schedule/provider 读改 | 完整 conditional publish/setup 命令在 owner，保留取消优先、原事务与 flush/registry 顺序；执行资源/slots 归 daemon |
+
+这里的原子性是原条件读/检查/写及领域既有事务，不是跨 Doc/云/ACP 的全局事务。MessageHandler 的 permission outcome waiter 已异步；无新增 await 缺口的要求在实际 writer/guard 内。
 
 ## 7. 生命周期、错误与取消
 
@@ -264,11 +279,22 @@ workspace binding 登记所有 scoped holder。句柄关闭结束关联观察并
 
 错误包含 scope-closed、access-denied、validation-rejected、condition-changed、unsupported、backend/owner-unavailable、read/write/cleanup-failed，以及为二期保留的 observation-reset-required。adapter 保留原始 Cause，业务/IPC diagnostics 使用安全标识。原有 Roost 错误恢复继续存在；新 IPC 错误由 client Layer 实现。
 
-关闭顺序为退役入口 → 等待/记录工作与写者 → 最终 flush → 关闭存储/owner。清理失败保留原 owner 和恢复责任。详细状态机、退避和协议验证放在 owning Note。
+关闭顺序为退役入口 → 等待/记录工作与写者 → 最终 flush → 关闭存储/owner。清理失败保留原 owner 和恢复责任。二期重试用注入 Clock，取消观察/等待不等于终止实际 I/O；release 失败须有可查询的恢复责任，不能再造 owner。
 
 ## 8. Layer、拓扑与二期 IPC
 
 RendererDataLive 按所需领域组合普通 Services 与授权管理能力；DaemonDataLive 额外提供可信执行 Services。领域 Layer 共享 internal owner/ports。每个应用入口复用 runtime，普通业务组合 Effects，React 由登记 facade 桥接。
+
+二期桌面目标结构如下；无头默认将同一 DataOwnerLive 内嵌在 daemon，直接调用。
+
+```mermaid
+flowchart LR
+  R["Renderer 内存 View"] -->|"领域接口"| H["独立 Node data host"]
+  M["Electron main"] -->|"领域接口"| H
+  D["Daemon 执行 / ACP"] -->|"数据操作与执行 lease"| H
+  H -->|"RPC 执行交接"| D
+  H --> S["应用存储、授权、同步 / RPC / presence transport"]
+```
 
 ### 8.1 Machine RPC 与控制通道
 
@@ -276,7 +302,7 @@ MachineRpc 按 session、prepare、preview/files/Code Collab/LSP、Agent 安装/
 
 完整 submit/edit/fork/steer/goal 命令在其数据/执行协调 owner 组合 RPC，UI 只表达意图；已有原始 request* 作为登记 Legacy facade 逐个迁移。RPC replies 不替代数据保存/上传/执行证明。取消等待保留原始在途请求与资源 owner；未知写入/steer 不自动重发。
 
-二期选择集中远端传输：DataOwnerLive 持有 Streams RPC client，以及 server 的请求读/响应写、token 与重连；执行 handler、ACP/终端资源仍由 daemon 持有。接受云→host→daemon 的额外一跳和 host 对远端控制的可用性影响，以满足统一 Streams I/O 与授权。保留 server 全部连接在 daemon 会引入例外；两个方案的取舍见 Note。
+二期选择集中远端传输：DataOwnerLive 持有 Streams RPC client，以及 server 的请求读/响应写、token 与重连；执行 handler、ACP/终端资源仍由 daemon 持有。接受云→host→daemon 的额外一跳和 host 对远端控制的可用性影响，以满足统一 Streams I/O 与授权。server 留在 daemon 可以减少一跳，但它的 Streams 连接与 token 刷新会成为集中 I/O 的例外；只由 host 发 token 仍依赖 host 恢复。
 
 host 不可用且请求尚未交给 daemon 时，远端沿用方法 deadline 超时；已经交接、响应丢失时为 unknown，停止等待不证明未执行，也不自动重发。host 活着但 daemon lease 不可用时返回明确 execution-unavailable。正在执行的 daemon 保留执行/释放责任；本机 main→daemon 控制入口独立保留，涉及数据的命令仍报告 owner-unavailable/unknown。本机已确定路由失败不转云。二期须验证 host 故障各窗口、control lane 不受正文背压、lease 清除与恢复后结果查询，再切 server。
 
@@ -292,7 +318,7 @@ host 不可用且请求尚未交给 daemon 时，远端沿用方法 deadline 超
 | 无头共享服务或需独立生命周期 | 按需独立 host，使用同一核心 Layer，加本机 socket/named pipe client |
 | 远端/旧版机器 | 每台机器有自己的 owner；远端经既有 ports/RPC，旧版保留隔离数据与明确兼容模式 |
 
-共享网络连接来自一个 owner，daemon 自身也能承担 owner。桌面首选独立 host，是因为停用/重启本机 Agent 后 UI 仍需数据，数据恢复不应绑定执行进程的生命周期；新增进程的 IPC、内存和启动成本必须实测。取舍见 Note。supervisor 是既有进程管理角色，不要求另开一个常驻 supervisor 进程。
+共享网络连接来自一个 owner，daemon 自身也能承担 owner。桌面首选独立 host，是因为停用/重启本机 Agent 后 UI 仍需数据，数据恢复不应绑定执行进程的生命周期；新增进程的 IPC、内存和启动成本必须实测。daemon data-only 模式也是合法备选，但须拆开执行开关与数据 scope。supervisor 是既有进程管理角色，不要求另开一个常驻 supervisor 进程。
 
 内嵌与独立部署共用领域实现、持久化规则和新存储布局；它们是长期合法形态。每个数据目录以持久 bootstrap 状态固定 embedded/independent 位置，不按启动竞争选择。independent 模式的 daemon 总是连接/启动 host；协议拒绝不内嵌 fallback。只要还有 daemon lease，host 就保持运行；桌面 app 退出不结束 host。host 意外退出时，由 daemon 侧 supervisor 按目录持久模式重新拉起/连接 host，并完成排他恢复与新 owner generation；恢复前报告 owner-unavailable。运行中位置切换由用户显式发起，先停止所有 Agent 与其他写者、join 实际 I/O，再 drain/flush/释放独占权，发布新模式并取得新 owner generation。进程位置、协议版本和数据格式分别记录，不由阶段或版本猜测；拒绝握手不启动第二个写者。
 
@@ -300,7 +326,7 @@ host 不可用且请求尚未交给 daemon 时，远端沿用方法 deadline 超
 
 新 owner 使用 `getLodyDataDir()` 下的版本化新路径，例如 `data-owner/v1/<binding-storage-key>/`，不复用旧 repo.sqlite3 路径或 renderer IndexedDB 名称。绑定保留账号/workspace/环境/channel 隔离。先停止旧生产者，导出并核对 daemon 与各窗口的已保存和待上传数据，迁入新路径并验证恢复，再单向发布切换记录。逐来源/逐文档验证 host 持久读回的 Loro OpLog 版本向量包含冻结 renderer 版本，且无 pending import；满足前旧 IDB 保持只读、不删除。VV 之外仍核对 Flock tombstone/版本、唯一副本输入与未上传 custody；marker 只协调新客户端。
 
-产品兼容入口对旧格式提示升级并禁止编辑；旧目录冻结为恢复用归档，不继续作为可写副本。不识别协议的旧二进制无法靠 marker 获得新 UI：旧路径隔离/只读、启动器限制、旧凭据失效等须分别实测。撤销前登记受影响的本机/远端部署与升级入口；共享账号/workspace/CLI 凭据可能影响远端旧 daemon，无法隔离影响时先阻塞该云切换，不做全局失效。新路径保证它不能按旧路径打开 host 的主库；阻止它另建旧库后向云端写入是额外迁移条件。具体顺序与限制见 Note，切换后不自动双写或重新导入旧库。
+产品兼容入口对旧格式提示升级并禁止编辑；旧目录冻结为恢复用归档，不继续作为可写副本。不识别协议的旧二进制无法靠 marker 获得新 UI：旧路径隔离/只读、启动器限制、旧凭据失效等须分别实测。撤销前登记受影响的本机/远端部署与升级入口；共享账号/workspace/CLI 凭据可能影响远端旧 daemon，无法隔离影响时先阻塞该云切换，不做全局失效。新路径保证它不能按旧路径打开 host 的主库；阻止它另建旧库后向云端写入是额外迁移条件。这些条件在二期切换前逐项验证；切换后不自动双写或重新导入旧库。
 
 ### 8.4 版本与能力
 
@@ -333,7 +359,7 @@ host 不可用且请求尚未交给 daemon 时，远端沿用方法 deadline 超
 
 候选一为窄业务投影：先支持尾部文本追加与受影响单项替换，目录/标量沿用领域事件。候选二为 renderer private adapter 持有纯内存 Loro replica，由 host 单向转发 Loro 增量；业务仍使用相同 DTO/命令，Doc 不公开，renderer 不持久化、不连云、无二进制写入通道。Roost 仍由自己的 adapter 提供投影。
 
-两者比较 bootstrap/增量/重建字节、解码与总内存、流式延迟、未知内容、工具/子会话和远端 Roost 的端到端成本，再确定 backend 私有传输实现。首选原型为窄投影；通用 splice/嵌套 bindings 暂不进入契约。已有子会话流式场景必须通过性能与行为 gate 后才能切换，不能把高频整项替换算作 O(N) 已通过。候选比较、上一版协议草案与未校准预算放在 Note。
+两者比较 bootstrap/增量/重建字节、解码与总内存、流式延迟、未知内容、工具/子会话和远端 Roost 的端到端成本，再确定 backend 私有传输实现。首选原型为窄投影；通用 splice/嵌套 bindings 暂不进入契约。已有子会话流式场景必须通过性能与行为 gate 后才能切换，不能把高频整项替换算作 O(N) 已通过。基线与原型指标见 §9.4，预算与 wire 细节在实施时定案。
 
 ### 8.7 二期 View 恢复
 
@@ -347,7 +373,7 @@ DataScopeClosed 表示本地 acquisition 已结束；仍活跃 acquisition 的�
 
 ### 9.1 清单驱动的领域验收
 
-owning Note 的消费者 ledger 固定源码 SHA，覆盖 Repo/Doc/Mirror、Flock、同步/权威、RPC/presence 与持久输入；每文件/API 映射到 Service 方法，或列出 adapter/豁免原因和删除 gate。候选扫描不是完整调用图，也不算迁移通过；公共 WorkspaceRuntime.repo、SessionDocStore.doc 和泛型 writer 的删除须覆盖所有消费者。tour 使用合成的 InMemory Layer。
+实施切片固定源码 SHA，覆盖 Repo/Doc/Mirror、Flock、同步/权威、RPC/presence 与持久输入；每文件/API 映射到 Service 方法，或明确 adapter/豁免原因和删除条件。§9.3 提供同步与消费者起点；候选扫描不是完整调用图，也不算迁移通过。公共 WorkspaceRuntime.repo、SessionDocStore.doc 和泛型 writer 的删除覆盖所有消费者；tour 使用合成 InMemory Layer。
 
 第一个切片前定所需 Service 契约。实现时将 AST 静态边界作为 pnpm check 的 lint（Oxlint 规则或独立脚本）：components/components、hooks 与 CLI/session、commands、mcp、orchestration 的已迁移领域禁止 Repo/Doc/transport 导入、别名/类型逃逸与 raw 字段访问；只允许逐文件登记的 adapter。未迁移行保留有期限/删除条件的 baseline，不新增逃逸；新 raw 依赖须先登记。静态检查覆盖 import、成员访问和 re-export，行为测试负责动态授权/状态。现有 no-materialized-history-in-components 的源码约束随切片迁入 lint；行为测试保留，不用 Vitest 读取源码充当边界检查。
 
@@ -359,4 +385,47 @@ owning Note 的消费者 ledger 固定源码 SHA，覆盖 Repo/Doc/Mirror、Floc
 
 二期分别验证长期内嵌/独立 host 两种组合、本机握手/远程能力、全部同步依赖的迁移、权限换代、增量/重建/背压、prepared handoff、写入与上传恢复、凭据前置单元及旧存储隔离；与基线比较收益和额外成本。协议与预算由真实原型结果确定。
 
-[验证记录与有限模型](../notes/proposed/architecture/2026-10-14-desktop-data-process.zh.md#研究验证与限制)集中在 owning Note；源码参考为 session-data、ConversationView、roost-session-bridge、workspace runtime/writer、CLI session backend/manager 和 machine-protocol-capabilities。
+### 9.3 同步调用点与消费者迁移起点
+
+源码审计固定在 [main df5b5a068e2f6a44118a30d0cc8fa34c2e4fcc49](https://github.com/LodyAI/Lody/tree/df5b5a068e2f6a44118a30d0cc8fa34c2e4fcc49)。以下行号属于该版本；每个实施切片先刷新目标版本与调用图。候选扫描覆盖 CLI/components 的原始数据 API、注入回调与存储入口，下面给出实施起点，不表示消费者已完成迁移。
+
+| 一期上传策略 | 现有调用依据 | 必须保留的行为 |
+| --- | --- | --- |
+| wait-for-route | create-workspace-runtime:4394–4426、4518–4524；use-session-doc:456；session-send-delivery:179 | transport/join 与选定 binding；Loro 同 Doc 控制/历史覆盖支撑发送确认和队头编辑；保留 detached/无 room/Abort 分支 |
+| bounded-confirmation | CLI loro/doc:2505–2542；session-backend:503；dispatch-watcher、message-handler、local-project-history-sync-service | 原默认 4s；不可用/超时 false；忽略、报错、通知 fallback 逐调用点保留 |
+| require-route | streams-room-binding:63–65；connection-recovery:409、1000–1001 | 缺路由错误按既有 refresh/deadline 包装处理，不作为全部 CLI store 默认行为 |
+| retain-until-ack | schedule-write-sync:5、24、43、60–65；create-workspace-runtime:4572–4585 | 本地写先返回，上传引用穿过 idle/reconnect；dispose/Abort 也结束等待，不能据此报告远端 ACK |
+
+UploadReceipt 区分 barrier-completed（local-primary/remote）、not-attempted、not-confirmed、not-required-local；目的地和原因只报告实现实际知道的值。throw 留在错误通道，false 不升格为成功，中断不伪造回执。Roost 的 roost-node-session:2009 只 flush 本地历史；roost-session-backend:400–404 仍组合 history flush 与 control 等待，不能报告 Roost 远端上传。
+
+| 权威依赖 | 目标与门控 |
+| --- | --- |
+| worktree GC、空 catalog | workspace-meta/catalog 的 baseline 与完整本地索引；区分删除与尚未看到 |
+| machine-flock-command-watcher、provider setup/cancel | machine-data 的原 authoritative join/rescan；取消在最终发布前再检查 |
+| schedule-sync-gate | 每次连接 generation 重建 current，首次同步 Promise 不能授权后续连接 |
+| 显式 sync/export、重连修复 | 本次 refresh 与逐 target Result；保留 --offline、startup/manual/dirty；廉价在线唤醒与限频 Meta 扫描分开 |
+
+消费者按下列分组逐文件/API 登记，记录目标方法、权限/秘密、adapter 范围和删除条件；共享 packages、Electron/platform ports、公开返回类型与动态注入也进入对应切片调用图。
+
+| 领域 | 重点消费者与关闭条件 |
+| --- | --- |
+| 目录与访问 | GC、pr-poller、CLI session/sync/export/MCP、chat-landing/tour；完整 metadata、删除与实时分页行为等价 |
+| 历史/control/submissions | MessageHandler、dispatch/execution、ConversationView/use-session-doc、export/import、pending/input storage；同步 facade、真实 writer、唯一副本与未知 delivery 保留 |
+| catalog/机器命令 | agent-config/MCP/Role、resource discovery、memory、Magpie、本地项目与设置表单；每 family、授权、凭据保留和取消优先分别关闭 |
+| RPC/presence/附属数据 | operation-coordinator、submit routing、preview/files/LSP、Shortcuts、file-index LRU、eager worker、Roost bridge；连接授权、origin/lease、回执及 target 路由保留 |
+
+首个切片选择会话目录：先闭合 Meta 观察/索引与 SyncAuthority 投影、查询/分页及创建改名，再通过 MachineCommands 承接归档/删除。按真实消费者的端到端行为关闭范围，范围内完成的切片可以发布；其余领域保留待迁移状态。
+
+### 9.4 测量与验证限制
+
+动工前采相同场景的基线，二期在相同数据/窗口/机器规模下比较：
+
+| 指标 | 验证目的 |
+| --- | --- |
+| 每 room/principal 的订阅、bootstrap、下行字节、授权与 token refresh 次数 | 找到可合法共享的重复成本，避免把不同身份或逻辑连接数当收益 |
+| 冷/缓存首帧、流式 turn 延迟、IPC 增量/重建字节、背压队列 | 验证界面更快，长正文没有 O(N²) 重读 |
+| Agent batch enqueue → host admission → writer apply → 本地 durable → UI 可见 | 单列桌面热写延迟、吞吐和排队；无头内嵌不增加 IPC |
+| host/daemon/所有 renderer 的 RSS、JS heap 与 Wasm 内存，启动/解码成本 | 多窗口比较窄投影与只读 Loro replica 的总成本 |
+| host/daemon 重启、取消、权限换代、上传恢复与 RPC handoff | 性能收益同时满足原数据安全和可用性边界 |
+
+本方案是待实施的业务与架构契约。固定源码审计、框架类型参照和早期有限模型用于澄清设计；真实 Effect/Repo/SQLite/IndexedDB/IPC 集成、prepared handoff、Clock/清理行为和产品性能仍须在对应实现中验证。文档与翻译检查不代表运行时实现通过，也不批准现行协议变更。
