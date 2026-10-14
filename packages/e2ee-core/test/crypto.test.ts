@@ -3,7 +3,11 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Cause, Deferred, Effect, Exit, Fiber, Result, Scope } from 'effect';
 import * as Documents from '@lody/e2ee-core/content';
-import { admitStreamsUpdateBatch, makeStreamsUpdateBinding } from '@lody/e2ee-core/content/streams';
+import {
+  admitStreamsUpdateBatch,
+  admitStreamsUpdateBatchEffect,
+  makeStreamsUpdateBinding,
+} from '@lody/e2ee-core/content/streams';
 import type { PayloadProtectionProvider } from '@loro-dev/streams-crdt';
 import * as Signing from '@lody/e2ee-core/signing';
 import * as Ledger from '@lody/e2ee-core/ledger';
@@ -592,6 +596,7 @@ describe('ledger-bound signed document workflows', () => {
       body,
     };
     const admitted = read(admitStreamsUpdateBatch(options));
+    expect(await Effect.runPromise(admitStreamsUpdateBatchEffect(options))).toEqual(admitted);
     expect(admitted).toEqual(body);
     expect(admitted).not.toBe(body);
     expect(

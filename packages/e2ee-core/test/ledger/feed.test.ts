@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { makeSqliteLedgerFeed } from '@lody/e2ee-core/ledger/feed/sqlite';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { verifyLedger, hashRecordBytes } from '@lody/e2ee-core/ledger';
 import { envelopeFixture } from '../keys/fixture';
 import { prepareLedgerPage, frameLedgerRecord } from '@lody/e2ee-core/ledger/feed';
@@ -162,6 +162,246 @@ describe('verified ledger increments without known-record skipping', () => {
 });
 
 describe('durable full-history feed boundary', () => {
+  it('rejects an external point change during native verification without publishing and retries on the same handle', async () => {
+    const f = envelopeFixture(0, 219),
+      dir = mkdtempSync(path.join(tmpdir(), 'ledger-native-conflict-')),
+      file = path.join(dir, 'feed.sqlite');
+    const originals = f.records(),
+      endpoint = f.view();
+    let entered!: () => void,
+      release!: () => void,
+      restore = () => {};
+    const arrived = new Promise<void>((resolve) => {
+        entered = resolve;
+      }),
+      gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const feed = yield* makeSqliteLedgerFeed({
+              path: file,
+              mode: 'create',
+              genesis: f.context.genesis,
+              genesisRecord: f.genesisRecord,
+              expected: { head: hashRecordBytes(f.genesisRecord), length: 1 },
+              budget: { maxRecords: 100, maxBytes: 100000 },
+            });
+            const initial = yield* feed.current(),
+              subtle = globalThis.crypto.subtle,
+              verifyNative = subtle.verify.bind(subtle);
+            const verifying = vi.spyOn(subtle, 'verify').mockImplementation(async (...args) => {
+              entered();
+              await gate;
+              return verifyNative(...args);
+            });
+            restore = () => verifying.mockRestore();
+            const page = {
+                requestOffset: '-1',
+                nextOffset: 'opaque/2',
+                records: f.records(),
+                upToDate: true,
+              },
+              checkpoint = { head: endpoint.head, length: endpoint.length },
+              accepting = yield* Effect.forkChild(Effect.result(feed.accept(page, checkpoint)));
+            try {
+              yield* Effect.promise(() => arrived);
+              // The verifier must keep the original signed bytes and endpoint
+              // despite caller mutation before its actual native completion.
+              page.records[1]!.fill(0);
+              page.nextOffset = 'caller-mutated';
+              checkpoint.length = 99;
+              const disk = new Database(file, { timeout: 0 });
+              try {
+                // A real independent writer succeeds while native verification
+                // is still pending, rather than waiting for an accept write lock.
+                expect(
+                  disk
+                    .prepare('UPDATE ledger_feed_meta SET offset=? WHERE id=1')
+                    .run('external-during-native').changes
+                ).toBe(1);
+              } finally {
+                disk.close();
+              }
+            } finally {
+              release();
+            }
+            const result = yield* Fiber.join(accepting);
+            expect(Result.isFailure(result) && result.failure).toMatchObject({ code: 'conflict' });
+            const disk = new Database(file);
+            try {
+              expect(disk.prepare('SELECT count,offset FROM ledger_feed_meta').get()).toEqual({
+                count: 1,
+                offset: 'external-during-native',
+              });
+              expect(
+                (
+                  disk
+                    .prepare('SELECT record FROM ledger_feed_records ORDER BY position')
+                    .all() as {
+                    record: Uint8Array;
+                  }[]
+                ).map((row) => new Uint8Array(row.record))
+              ).toEqual([originals[0]]);
+              disk.prepare('UPDATE ledger_feed_meta SET offset=? WHERE id=1').run('-1');
+            } finally {
+              disk.close();
+            }
+            const retained = yield* feed.current();
+            expect(retained.view).toBe(initial.view);
+            expect(retained.offset).toBe(initial.offset);
+            const retried = yield* feed.accept(
+              { requestOffset: '-1', nextOffset: 'opaque/2', records: f.records(), upToDate: true },
+              { head: endpoint.head, length: endpoint.length }
+            );
+            expect(retried.view.head.equals(endpoint.head)).toBe(true);
+            expect(retried.offset).toBe('opaque/2');
+            const saved = new Database(file);
+            try {
+              expect(saved.prepare('SELECT count,offset FROM ledger_feed_meta').get()).toEqual({
+                count: 2,
+                offset: 'opaque/2',
+              });
+              expect(
+                (
+                  saved
+                    .prepare('SELECT record FROM ledger_feed_records ORDER BY position')
+                    .all() as {
+                    record: Uint8Array;
+                  }[]
+                ).map((row) => new Uint8Array(row.record))
+              ).toEqual(originals);
+            } finally {
+              saved.close();
+            }
+          })
+        )
+      );
+    } finally {
+      release();
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it.each(['record', 'metadata'] as const)(
+    'does not publish a reopened view when %s changes while signature verification yields',
+    async (fault) => {
+      const f = envelopeFixture(),
+        dir = mkdtempSync(path.join(tmpdir(), 'ledger-reopen-')),
+        file = path.join(dir, 'feed.sqlite');
+      const expected = { head: f.view().head, length: f.view().length };
+      const config = {
+        path: file,
+        genesis: f.context.genesis,
+        genesisRecord: f.genesisRecord,
+        budget: { maxRecords: 100, maxBytes: 100000 },
+      };
+      let published = false;
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const feed = yield* makeSqliteLedgerFeed({
+                ...config,
+                mode: 'create',
+                expected: { head: hashRecordBytes(f.genesisRecord), length: 1 },
+              });
+              yield* feed.accept(
+                {
+                  requestOffset: '-1',
+                  nextOffset: 'opaque/2',
+                  records: f.records(),
+                  upToDate: true,
+                },
+                expected
+              );
+            })
+          )
+        );
+        let markRead = () => {};
+        const read = new Promise<void>((resolve) => {
+            markRead = resolve;
+          }),
+          nativePrepare = Database.prototype.prepare;
+        // Observe the actual owned-row read, then let the real verifier reach its
+        // cooperative yield. The other connection changes real SQL bytes/state.
+        const observed = vi.spyOn(Database.prototype, 'prepare').mockImplementation(function (
+          this: Database.Database,
+          query: string
+        ) {
+          const statement = nativePrepare.call(this, query);
+          if (
+            query === 'SELECT position,record FROM ledger_feed_records ORDER BY position LIMIT ?'
+          ) {
+            const all = statement.all.bind(statement);
+            statement.all = (...parameters: unknown[]) => {
+              const rows = Reflect.apply(all, statement, parameters) as unknown[];
+              markRead();
+              return rows;
+            };
+          }
+          return statement;
+        });
+        const opening = Effect.runPromise(
+          Effect.scoped(
+            makeSqliteLedgerFeed({ ...config, mode: 'open', expected }).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  published = true;
+                })
+              ),
+              Effect.flatMap((feed) => feed.current()),
+              Effect.result
+            )
+          )
+        );
+        try {
+          await read;
+          const disk = new Database(file);
+          try {
+            if (fault === 'record')
+              disk.exec(
+                'UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=2'
+              );
+            else
+              disk
+                .prepare('UPDATE ledger_feed_meta SET offset=? WHERE id=1')
+                .run('external-position');
+          } finally {
+            disk.close();
+          }
+          const result = await opening;
+          expect(Result.isFailure(result)).toBe(true);
+          if (Result.isFailure(result)) expect(result.failure).toMatchObject({ code: 'conflict' });
+          expect(published).toBe(false);
+        } finally {
+          observed.mockRestore();
+          await opening;
+        }
+        const repair = new Database(file);
+        try {
+          repair
+            .prepare('UPDATE ledger_feed_records SET record=? WHERE position=2')
+            .run(f.records()[1]);
+          repair.prepare('UPDATE ledger_feed_meta SET offset=? WHERE id=1').run('opaque/2');
+        } finally {
+          repair.close();
+        }
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const reopened = yield* makeSqliteLedgerFeed({ ...config, mode: 'open', expected });
+              expect((yield* reopened.current()).offset).toBe('opaque/2');
+            })
+          )
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
   it('atomically persists verified history/opaque position and rejects duplicate or rollback pages after reopening', async () => {
     const f = envelopeFixture(),
       dir = mkdtempSync(path.join(tmpdir(), 'ledger-feed-')),
@@ -532,6 +772,90 @@ describe('durable full-history feed boundary', () => {
                 check.exec('DROP TRIGGER final_fault');
               } finally {
                 check.close();
+              }
+              expect((yield* feed.accept(page, endpoint)).offset).toBe('opaque/3');
+            })
+          )
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
+  it.each(['external-overwrite', 'trigger-with-old-schema-version'] as const)(
+    'retains the prior position when another connection changes an audited database: %s',
+    async (fault) => {
+      const f = envelopeFixture(),
+        dir = mkdtempSync(path.join(tmpdir(), 'ledger-external-')),
+        file = path.join(dir, 'feed.sqlite');
+      const originals = f.records(),
+        first = { head: f.view().head, length: f.view().length };
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const feed = yield* makeSqliteLedgerFeed({
+                path: file,
+                mode: 'create',
+                genesis: f.context.genesis,
+                genesisRecord: f.genesisRecord,
+                expected: { head: hashRecordBytes(f.genesisRecord), length: 1 },
+                budget: { maxRecords: 100, maxBytes: 100000 },
+              });
+              yield* feed.accept(
+                { requestOffset: '-1', nextOffset: 'opaque/2', records: originals, upToDate: true },
+                first
+              );
+              // A second successful transaction uses the same verified history before
+              // a separate connection changes bytes/schema without changing the meta point.
+              yield* feed.accept(
+                { requestOffset: 'opaque/2', nextOffset: 'opaque/2', records: [], upToDate: true },
+                first
+              );
+              f.append([5, f.phone.raw]);
+              const endpoint = { head: f.view().head, length: f.view().length },
+                page = {
+                  requestOffset: 'opaque/2',
+                  nextOffset: 'opaque/3',
+                  records: f.records().slice(2),
+                  upToDate: true,
+                };
+              const disk = new Database(file);
+              try {
+                if (fault === 'external-overwrite')
+                  disk.exec(
+                    'UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=2'
+                  );
+                else {
+                  const version = disk.pragma('schema_version', { simple: true }) as number;
+                  disk.exec(
+                    'CREATE TRIGGER external_fault AFTER UPDATE ON ledger_feed_meta BEGIN UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=2; END;'
+                  );
+                  disk.pragma(`schema_version=${version}`);
+                }
+              } finally {
+                disk.close();
+              }
+              expect(Result.isFailure(yield* Effect.result(feed.accept(page, endpoint)))).toBe(
+                true
+              );
+              expect((yield* feed.current()).offset).toBe('opaque/2');
+              const repair = new Database(file);
+              try {
+                expect(repair.prepare('SELECT count,offset FROM ledger_feed_meta').get()).toEqual({
+                  count: 2,
+                  offset: 'opaque/2',
+                });
+                expect(
+                  repair.prepare('SELECT COUNT(*) AS count FROM ledger_feed_records').get()
+                ).toEqual({ count: 2 });
+                if (fault === 'external-overwrite')
+                  repair
+                    .prepare('UPDATE ledger_feed_records SET record=? WHERE position=2')
+                    .run(originals[1]);
+                else repair.exec('DROP TRIGGER external_fault');
+              } finally {
+                repair.close();
               }
               expect((yield* feed.accept(page, endpoint)).offset).toBe('opaque/3');
             })

@@ -14,6 +14,8 @@ export {
 } from './records';
 export {
   verifyLedger,
+  verifyLedgerEffect,
+  extendLedgerEffect,
   extendLedger,
   contentPermissions,
   epochHistoryPacket,

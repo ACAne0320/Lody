@@ -5,7 +5,7 @@ import {
   extendLedger,
   hashRecordBytes,
   requireLedgerContinuation,
-  verifyLedger,
+  verifyLedgerEffect,
   type LedgerCheckpoint,
   type LedgerView,
 } from '../ledger';
@@ -110,9 +110,7 @@ export function makeStreamsSubmissionRemote(input: {
             return yield* fail();
           offset = page.nextOffset;
           if (page.upToDate) {
-            const view = yield* Effect.fromResult(
-              verifyLedger({ anchor, records, checkpoint: expected })
-            );
+            const view = yield* verifyLedgerEffect({ anchor, records, checkpoint: expected });
             if (mapping) yield* Effect.fromResult(requireLedgerContinuation(mapping.view, view));
             yield* guard();
             mapping = { view, offset };

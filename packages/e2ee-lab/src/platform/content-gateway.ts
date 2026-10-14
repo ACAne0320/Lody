@@ -5,7 +5,7 @@ import {
   requireLedgerContinuation,
   type LedgerView,
 } from '@lody/e2ee-core/ledger';
-import { admitStreamsUpdateBatch } from '@lody/e2ee-core/content/streams';
+import { admitStreamsUpdateBatchEffect } from '@lody/e2ee-core/content/streams';
 import type { LabCredential } from './credentials';
 import { makeLabOperations } from './operation-scope';
 import { makeLabSdkOwner } from './sdk-owner';
@@ -76,7 +76,7 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
           (method === 'PUT' && body.length)
         )
           return yield* new LabContentGatewayError({ status: 403 });
-        const authorize = () =>
+        const authorize = (admitBody: boolean) =>
           Effect.gen(function* () {
             const view = yield* ledger();
             const permission = yield* Effect.fromResult(contentPermissions(view, principal));
@@ -86,20 +86,20 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
             observed = view;
             if (!permission.maySealNewContent)
               return yield* new LabContentGatewayError({ status: 403 });
-            if (method === 'POST')
-              yield* Effect.fromResult(
-                admitStreamsUpdateBatch({
-                  genesis: anchor,
-                  resource,
-                  model,
-                  view,
-                  device: principal,
-                  body,
-                })
-              );
+            if (method === 'POST' && admitBody)
+              yield* admitStreamsUpdateBatchEffect({
+                genesis: anchor,
+                resource,
+                model,
+                view,
+                device: principal,
+                body,
+              });
             return undefined;
           });
-        yield* authorize();
+        yield* authorize(true);
+        // Native verification awaited: reselect current genuine authority before send.
+        yield* authorize(false);
         return yield* native.invoke(async () => {
           const reply = await transport(url, {
             method,

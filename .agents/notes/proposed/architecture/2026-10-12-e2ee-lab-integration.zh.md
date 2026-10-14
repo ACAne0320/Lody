@@ -54,6 +54,14 @@ Recovery 可以接收、修复、授权自己的新个人设备，但不能发�
 恢复、错误 offset 账本拒绝、文档隔离及持久状态对保留。原生清理用例保留晚到工作、
 并发关闭和 defect 边界；这些覆盖不代表完整原 Lab 验收。
 
+每个场景拥有固定120秒 Effect 看门狗，包含优雅关闭阶段。到期中断所属 Scope，
+复用进程 stop 发 SIGKILL 并等待真实 close（保留独立5秒释放失败边界），再释放
+此前的 fixture owner。只有清理成功才把最终证据交给写入方。到期是有类型的
+`LabScenarioError/watchdog`，不是已测安全通过，也不改变严格 freshness B。
+TestClock 用例收到明确 worker ready 后推进119+1秒：真实子进程永不返回
+open/close 回包，两个进程仍须均以 SIGKILL 退出、HTTP 宿主关闭且未发布最终证据。
+原39动作行为验证与看门狗测试分开。
+
 `run` 执行有界 JSON 动作，`ok: false` 必须指定精确 refusal tag/code。
 无类型、defect 和无关失败仍是测试设施错误。组合检查逐项保留测量，再取最差结论。
 `inspect` 重算不可信观察，不认证文件，也不重新运行。provider 独立保留测试设施

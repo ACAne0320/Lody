@@ -3,8 +3,21 @@ import { verifyLedger, hasVerifiedCheckpoint } from '@lody/e2ee-core/ledger';
 import { Result } from 'effect';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { Cause, Data, Deferred, Effect, Exit } from 'effect';
+import { Cause, Context, Data, Deferred, Effect, Exit } from 'effect';
 import type { LabProcessConfiguration } from './process-contract';
+/** Native child creation port; tests substitute real IPC workers, not fake exits. */
+export const LabProcessSpawn = Context.Reference<() => ChildProcess>('Lab/ProcessSpawn', {
+  defaultValue: () => () =>
+    spawn(
+      process.execPath,
+      ['--import', 'tsx', fileURLToPath(new URL('./process-worker.ts', import.meta.url))],
+      {
+        cwd: fileURLToPath(new URL('../../', import.meta.url)),
+        stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+        env: { PATH: process.env.PATH, NODE_NO_WARNINGS: '1' },
+      }
+    ),
+});
 export class LabProcessError extends Data.TaggedError('LabProcessError')<{
   readonly code:
     | 'closed'
@@ -42,6 +55,7 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
   configuration: (mode: 'create' | 'open') => Effect.Effect<LabProcessConfiguration, unknown>
 ) {
   const config = configuration;
+  const spawnChild = yield* LabProcessSpawn;
   let current: Lease | undefined,
     closed = false,
     sequence = 0;
@@ -144,15 +158,7 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
       if (closed) return yield* new LabProcessError({ code: 'closed' });
       yield* Effect.try({
         try: () => {
-          const child = spawn(
-            process.execPath,
-            ['--import', 'tsx', fileURLToPath(new URL('./process-worker.ts', import.meta.url))],
-            {
-              cwd: fileURLToPath(new URL('../../', import.meta.url)),
-              stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
-              env: { PATH: process.env.PATH, NODE_NO_WARNINGS: '1' },
-            }
-          );
+          const child = spawnChild();
           const exited = Deferred.makeUnsafe<{
             code: number | null;
             signal: NodeJS.Signals | null;

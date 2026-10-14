@@ -15,7 +15,7 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   independently verified context. Frame metadata is unverified. Signature success
   establishes neither current permission nor AEAD validity.
 - Ed25519 requires canonical nonzero prime-subgroup A and canonical prime-subgroup
-  R with `zip215: false`. No caller-supplied point cache or verifier bypass.
+  R, S<L. Fixed native Effects and private exact caches preserve these checks.
 - Public byte wrappers own copies. Ordinary secret epoch keys have no public byte export;
   native private-key custody belongs to platform adapters, not this module. The explicit
   host-only epoch protection boundary is governed by [keys rules](src/keys/AGENTS.md).

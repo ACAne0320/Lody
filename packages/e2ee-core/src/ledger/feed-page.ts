@@ -1,7 +1,9 @@
-import { Data, Result } from 'effect';
+import { Data, Effect, Result } from 'effect';
 import { MAX_RECORD_BYTES } from '../cbor';
+import { recordHash } from '../bytes';
 import {
   extendLedger,
+  extendLedgerEffect,
   hashRecordBytes,
   requireLedgerContinuation,
   type LedgerView,
@@ -21,7 +23,8 @@ export class LedgerFeedError extends Data.TaggedError('LedgerFeedError')<{
     | 'storage'
     | 'corrupt'
     | 'conflict'
-    | 'transport';
+    | 'transport'
+    | 'native-unavailable';
 }> {}
 export const validLedgerOffset = (offset: unknown): offset is string =>
   typeof offset === 'string' &&
@@ -53,7 +56,7 @@ export function frameLedgerRecord(record: Uint8Array): Result.Result<Uint8Array,
 /** Caller persists the resulting verified state AND transport position atomically.
  * No hash-based known-record skipping: an old record at a new position is not an increment.
  * Only the initial exact genesis occurrence can bind a newly created genesis-only feed. */
-export function prepareLedgerPage(
+function captureLedgerPage(
   state: LedgerFeedState,
   page: LedgerReadPage,
   expected: LedgerCheckpoint
@@ -63,6 +66,13 @@ export function prepareLedgerPage(
       requireLedgerContinuation(state.view, state.view),
       () => new LedgerFeedError({ code: 'wrong-parent' })
     );
+    expected = {
+      head: yield* Result.mapError(
+        recordHash(expected.head.toBytes()),
+        () => new LedgerFeedError({ code: 'wrong-parent' })
+      ),
+      length: expected.length,
+    };
     if (
       typeof state.bootstrap !== 'boolean' ||
       !validLedgerOffset(state.offset) ||
@@ -91,7 +101,7 @@ export function prepareLedgerPage(
         return yield* Result.fail(new LedgerFeedError({ code: 'invalid-offset' }));
       if (!state.view.head.equals(expected.head) || state.view.length !== expected.length)
         return yield* Result.fail(new LedgerFeedError({ code: 'wrong-parent' }));
-      return { view: state.view, offset: state.offset, bootstrap: state.bootstrap };
+      return { retained: state, records: [] as Uint8Array[], expected };
     }
     if (page.nextOffset === state.offset)
       return yield* Result.fail(new LedgerFeedError({ code: 'invalid-offset' }));
@@ -106,10 +116,44 @@ export function prepareLedgerPage(
         return yield* Result.fail(new LedgerFeedError({ code: 'wrong-parent' }));
       start = 1;
     }
-    const view = yield* Result.mapError(
-      extendLedger(state.view, records.slice(start), expected),
-      () => new LedgerFeedError({ code: 'wrong-parent' })
-    );
-    return { view, offset: page.nextOffset, bootstrap: false };
+    return {
+      retained: undefined,
+      base: state.view,
+      records: records.slice(start),
+      expected,
+      nextOffset: page.nextOffset,
+    };
   });
 }
+export function prepareLedgerPage(
+  state: LedgerFeedState,
+  page: LedgerReadPage,
+  expected: LedgerCheckpoint
+) {
+  return Result.gen(function* () {
+    const captured = yield* captureLedgerPage(state, page, expected);
+    if (captured.retained) return captured.retained;
+    const view = yield* Result.mapError(
+      extendLedger(captured.base!, captured.records, captured.expected),
+      () => new LedgerFeedError({ code: 'wrong-parent' })
+    );
+    return { view, offset: captured.nextOffset!, bootstrap: false };
+  });
+}
+export const prepareLedgerPageEffect = Effect.fnUntraced(function* (
+  state: LedgerFeedState,
+  page: LedgerReadPage,
+  expected: LedgerCheckpoint
+) {
+  const captured = yield* Effect.fromResult(captureLedgerPage(state, page, expected));
+  if (captured.retained) return captured.retained;
+  const view = yield* extendLedgerEffect(captured.base!, captured.records, captured.expected).pipe(
+    Effect.mapError(
+      (error) =>
+        new LedgerFeedError({
+          code: error.code === 'native-unavailable' ? 'native-unavailable' : 'wrong-parent',
+        })
+    )
+  );
+  return { view, offset: captured.nextOffset!, bootstrap: false };
+});

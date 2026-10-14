@@ -16,10 +16,13 @@ import {
   MAX_CONTENT_BYTES,
   copyContentAdditionalData,
   inspectContentFrame,
+  parseContentFrame,
+  contentSigningBytes,
   type ContentScope,
 } from '../content-format';
 import { scopedDocumentKey } from './document-key';
 import { admitDocument, authenticateDocument, openDocument, sealDocument } from './index';
+import { verifySignatureEffect, NativeSignatureError } from '../signature';
 
 const error = (code: string) => new ContentError({ code });
 /** Settled header 3 update binding. The snapshot writer format remains a separate decision. */
@@ -205,7 +208,7 @@ export function makeStreamsUpdateBinding(input: {
  * preflight of a bounded batch; caller sends these returned originals unchanged.
  * Snapshot/legacy headers, plaintext, unknown kind and empty batches are refused.
  * No SDK private import, key lookup, decryption or injected signature verifier. */
-export function admitStreamsUpdateBatch(input: {
+function captureStreamsUpdateBatch(input: {
   readonly genesis: Bytes.GenesisHash;
   readonly resource: string;
   readonly model: 'loro' | 'flock';
@@ -229,6 +232,7 @@ export function admitStreamsUpdateBatch(input: {
       return yield* Result.fail(error('invalid-streams-batch'));
     // Own before inspecting; one capture cannot be substituted during processing.
     const body = new Uint8Array(candidate);
+    const admissions: { scope: ContentScope; frame: Uint8Array; aad: Uint8Array }[] = [];
     let at = 0,
       count = 0;
     const aadDomain = new TextEncoder().encode('loro-streams-crdt-payload-protection/v2\0');
@@ -260,9 +264,8 @@ export function admitStreamsUpdateBatch(input: {
       const aad = new Uint8Array(aadDomain.length + 11);
       aad.set(aadDomain);
       aad.set(item.subarray(0, 11), aadDomain.length);
-      yield* admitDocument(
-        view,
-        {
+      admissions.push({
+        scope: {
           genesis: keyId(genesis.toBytes()),
           resource,
           epoch: metadata.epoch,
@@ -270,10 +273,46 @@ export function admitStreamsUpdateBatch(input: {
           purpose: model === 'loro' ? 'doc-update' : 'flock-update',
         },
         frame,
-        device,
-        aad
-      );
+        aad,
+      });
     }
-    return body;
+    return { body, view, device, admissions };
   });
 }
+type StreamsAdmission = Parameters<typeof captureStreamsUpdateBatch>[0];
+export function admitStreamsUpdateBatch(input: StreamsAdmission) {
+  return Result.gen(function* () {
+    const captured = yield* captureStreamsUpdateBatch(input);
+    for (const row of captured.admissions)
+      yield* admitDocument(captured.view, row.scope, row.frame, captured.device, row.aad);
+    return captured.body;
+  });
+}
+/** Fixed native signature work; current view selection remains the caller's responsibility. */
+export const admitStreamsUpdateBatchEffect = Effect.fnUntraced(function* (input: StreamsAdmission) {
+  const captured = yield* Effect.fromResult(captureStreamsUpdateBatch(input));
+  yield* Effect.fromResult(
+    Result.mapError(requireLedgerContinuation(captured.view, captured.view), () =>
+      error('unauthorized')
+    )
+  );
+  for (const row of captured.admissions) {
+    const parsed = yield* Effect.fromResult(parseContentFrame(row.frame));
+    const message = yield* Effect.fromResult(
+      contentSigningBytes(row.scope, parsed.unsigned, row.aad)
+    );
+    const sig = Uint8Array.from(parsed.signatureHex.match(/../g)!, (byte) => parseInt(byte, 16));
+    yield* verifySignatureEffect(captured.device.toBytes(), message, sig).pipe(
+      Effect.catch((cause) =>
+        cause instanceof NativeSignatureError
+          ? Effect.fail(error('native-unavailable'))
+          : Effect.void
+      )
+    );
+    // Keep the same authority/context/error kernel after mathematical verification.
+    yield* Effect.fromResult(
+      admitDocument(captured.view, row.scope, row.frame, captured.device, row.aad)
+    );
+  }
+  return captured.body;
+});

@@ -1,6 +1,6 @@
 import { Data, Effect } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
-import { decodeRecord, verifyLedger, type LedgerCheckpoint } from '@lody/e2ee-core/ledger';
+import { decodeRecord, verifyLedgerEffect, type LedgerCheckpoint } from '@lody/e2ee-core/ledger';
 import {
   makeStreamsSubmissionRemote,
   type LedgerSubmissionStream,
@@ -87,9 +87,11 @@ export function makeLabControlGateway(input: {
               },
             });
             const history = yield* remote.read(anchor);
-            const view = yield* Effect.fromResult(
-              verifyLedger({ anchor, records: history.records, checkpoint: history.checkpoint })
-            );
+            const view = yield* verifyLedgerEffect({
+              anchor,
+              records: history.records,
+              checkpoint: history.checkpoint,
+            });
             yield* Effect.fromResult(
               authorizeLabStream({
                 view,

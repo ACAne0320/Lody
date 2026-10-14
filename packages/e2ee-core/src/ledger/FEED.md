@@ -66,3 +66,18 @@ list and published view change only after transaction success.
 Page copies read bounded array indices and construct fresh typed arrays without calling caller-provided array methods or iterators. The same owned copies are validated, written and retained; later caller mutation cannot alter expected history. An overridden input `.map` neither lends bytes to the journal nor suppresses validation.
 
 The SDK/CAS consuming layer also restores original transport-cycle screening: every partial-frame request tracks seen opaque offsets, and empty responses cannot change position. Complete assembled signed bytes do not validate a repeated intermediate position.
+
+
+Reopening still audits all retained signed originals against an independently
+provided endpoint. Fixed native verification yields cooperatively outside SQL
+transactions; a second complete transactional byte/metadata comparison precedes
+publication, so another connection cannot replace the captured history meanwhile.
+Normal append verifies its owned suffix before acquiring the writer lock, then
+checks that the observed local/SQL point still matches.
+
+A complete first audit permits indexed suffix readback for the exact known
+trigger-free schema with unchanged external-write counters. The transaction still
+checks actual changes and all final metadata, including genesis, after its last
+DML. Changed schemas, triggers or external writes retain full-history readback.
+This avoids a normal O(N) write scan without treating counters or SQL metadata as
+a trusted checkpoint. No snapshot bootstrap or skipped signature check is added.

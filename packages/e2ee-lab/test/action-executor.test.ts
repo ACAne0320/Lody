@@ -1,13 +1,15 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
-import { Effect, Result } from 'effect';
+import { Deferred, Effect, Exit, Fiber, Result } from 'effect';
+import { TestClock } from 'effect/testing';
 import { expect, it } from 'vitest';
-import { runLabScenario } from '../src/platform/scenario-runner';
+import { LabScenarioError, runLabScenario } from '../src/platform/scenario-runner';
 import { executeLabActions } from '../src/platform/action-executor';
 import { makeLabScenarioFixture } from '../src/platform/scenario-fixture';
-import { makeLabProcessActor } from '../src/platform/process-actor';
+import { LabProcessSpawn, makeLabProcessActor } from '../src/platform/process-actor';
 import { exportDevice } from '../src/platform/device';
 import type { LabProcessReply } from '../src/platform/process-actor';
 it('executes all finite kinds on real OS/HPKE/SQLite/SDK actors; bad cipher/storage retain the measured durable pair and lost ACK retries original bytes', async () => {
@@ -43,6 +45,106 @@ it('executes all finite kinds on real OS/HPKE/SQLite/SDK actors; bad cipher/stor
     rmSync(root, { recursive: true, force: true });
   }
 }, 0);
+it.each(['open', 'close'] as const)(
+  'the 120s scenario watchdog awaits every real child and host before a typed harness failure when %s never replies',
+  async (stalled) => {
+    const root = mkdtempSync(join(tmpdir(), 'lab-action-watchdog-'));
+    const children: ChildProcess[] = [];
+    const closes: Promise<void>[] = [];
+    const exits: { pid: number | undefined; signal: NodeJS.Signals | null }[] = [];
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const blocked = yield* Deferred.make<string, unknown>();
+            // Explicit worker-protocol substitution. Both children are real; one
+            // announces readiness but never replies to open or graceful close.
+            const create = () => {
+              const first = children.length === 0;
+              const child = spawn(
+                process.execPath,
+                [
+                  '-e',
+                  `let baseUrl;
+                process.on('message', (message) => {
+                  if (message.configuration) baseUrl = message.configuration.baseUrl;
+                  if (message.operation === '${stalled}' && ${stalled === 'open' ? !first : first})
+                    process.send({ ready: true, baseUrl });
+                  else process.send({ id: message.id, ok: true });
+                });`,
+                ],
+                { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] }
+              );
+              children.push(child);
+              closes.push(
+                new Promise<void>((resolve) =>
+                  child.once('close', (_code, signal) => {
+                    exits.push({ pid: child.pid, signal });
+                    resolve();
+                  })
+                )
+              );
+              child.on('message', (message) => {
+                if (
+                  message &&
+                  typeof message === 'object' &&
+                  'ready' in message &&
+                  'baseUrl' in message &&
+                  typeof message.baseUrl === 'string'
+                )
+                  Deferred.doneUnsafe(blocked, Effect.succeed(message.baseUrl));
+              });
+              return child;
+            };
+            const scenario = yield* Effect.forkChild(
+              Effect.result(
+                runLabScenario({
+                  directory: root,
+                  actions: [
+                    { kind: 'start', actor: 'owner', mode: 'create', expect: { ok: true } },
+                    { kind: 'start', actor: 'peer', mode: 'create', expect: { ok: true } },
+                  ],
+                }).pipe(
+                  Effect.provideService(LabProcessSpawn, create),
+                  Effect.onExit((exit) =>
+                    Exit.isFailure(exit) ? Deferred.failCause(blocked, exit.cause) : Effect.void
+                  )
+                )
+              )
+            );
+            const baseUrl = yield* Deferred.await(blocked);
+            expect(children).toHaveLength(2);
+            yield* Effect.promise(async () => {
+              const response = await fetch(`${baseUrl}/healthz`);
+              expect(response.status).toBe(200);
+              await response.body?.cancel();
+            });
+            yield* TestClock.adjust('119 seconds');
+            expect(scenario.pollUnsafe()).toBeUndefined();
+            expect(exits).toEqual([]);
+            yield* TestClock.adjust('1 second');
+            const result = yield* Fiber.join(scenario);
+            expect(Result.isFailure(result)).toBe(true);
+            if (Result.isFailure(result)) {
+              expect(result.failure).toBeInstanceOf(LabScenarioError);
+              expect(result.failure).toMatchObject({ code: 'watchdog' });
+            }
+            expect(exits).toHaveLength(2);
+            expect(exits.every((exit) => exit.signal === 'SIGKILL')).toBe(true);
+            for (const child of children) expect(() => process.kill(child.pid!, 0)).toThrow();
+            expect(existsSync(join(root, 'evidence.json'))).toBe(false);
+            yield* Effect.promise(() => expect(fetch(`${baseUrl}/healthz`)).rejects.toThrow());
+          })
+        ).pipe(Effect.provide(TestClock.layer()))
+      );
+    } finally {
+      for (const child of children)
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      await Promise.all(closes);
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+);
 it('a known durable-loss defect is measured after actual SIGKILL/reopen, not timeout or a fake boolean', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-action-negative-'));
   try {
@@ -350,6 +452,11 @@ it('preserves ok/outcome failures and missing measurements instead of turning th
     {
       reply: { ok: false },
       expected: { ok: true, text: 'not observed' },
+      verdict: 'harness-error',
+    },
+    {
+      reply: { ok: false, error: { tag: 'LedgerError', code: 'native-unavailable' } },
+      expected: { ok: false, refusal: { tag: 'LedgerError', code: 'native-unavailable' } },
       verdict: 'harness-error',
     },
     { reply: { ok: true }, expected: undefined, verdict: 'unavailable' },

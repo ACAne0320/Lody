@@ -41,10 +41,18 @@ freshness. The caller carries the next hint across the finite round and explicit
 invokes later rounds. No record is skipped to make old Lab failures disappear.
 
 The dedicated version1 sender journal uses0600, WAL/FULL and explicit create/open.
-Every mutation reads back its intended final row and retains all other owned scalar
-task metadata and fixed Org/self binding through the transaction, including trigger
-side effects. This audit loads scalar metadata, not ciphertexts; its work grows
-with retained task history. No old whole-JSON import or cross-file atomicity is
+Every mutation reads back its final original fields and fixed Org/self binding.
+The first complete audit establishes an in-memory baseline. Normal mutations use
+indexed final-row readback and actual change counts while the exact trigger-free
+schema and external-write counters remain unchanged inside the writer transaction.
+Triggers, changed schemas or another connection's writes use the complete scalar
+metadata audit, including unrelated retained rows. Counters detect change; they
+never supply key or ledger authority.
+
+`maxTasks` bounds unacknowledged tasks/results (`consumed=0`), not lifetime rows.
+Explicit acknowledgement frees this capacity while retaining the original task,
+result and ciphertext; finishing existing work remains possible at capacity.
+Retained disk history can still grow and there is no automatic garbage collection. No old whole-JSON import or cross-file atomicity is
 invented. Scope rejects late writes before closing journals; callers cancel/await
 borrowed Effects before destroying their owners. Actual protected native operations
 retain/await their own work and wipe owned temporary key copies.

@@ -27,7 +27,7 @@
   "destinationFingerprints": {
     "src/keys/history.ts": "208892d0953494ff137465c9ed291c0ce92776e3a2064338c34fe330ab024199",
     "src/keys/index.ts": "ee5d7e744df5a9ef69bf94555a25275ecd5e1fae64a2cb28c0d17844181c383b",
-    "src/ledger/replay.ts": "83601c4b551943ed7288bddfbf1a67a5a0a028e8fa38193ce55f9cc707ce250d",
+    "src/ledger/replay.ts": "cd594c8ac181d4c7a10cd67f80d968f39782dbebc0d8c64f51b2a68f0f58b7d3",
     "src/epoch-key.ts": "91a561e0be9418a9e6feb654ad8956359739ec0a24aad7b7b55a5cee4cf5a205"
   },
   "installedHistoryConsumer": {

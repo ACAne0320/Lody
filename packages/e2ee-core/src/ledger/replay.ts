@@ -1,5 +1,5 @@
 import { verifiedSnapshotState, proposalOf, noteOf, type SnapshotTrust } from './snapshot-codec';
-import { Result } from 'effect';
+import { Chunk, Effect, HashSet, Result } from 'effect';
 import {
   genesisHash,
   recordHash,
@@ -12,11 +12,13 @@ import {
 } from '../bytes';
 import { bytesEqual, copyBytes } from '../cbor';
 import { keyId } from '../identifiers';
-import { verifySignature } from '../signature';
+import { verifySignature, verifySignatureEffect, NativeSignatureError } from '../signature';
 import { LedgerError } from './errors';
 import {
   applyOperation,
   cloneState,
+  stateGet,
+  hashAt,
   genesisState,
   inspectState,
   type InternalState,
@@ -55,7 +57,7 @@ function viewOf(state: InternalState): LedgerView {
   const view: LedgerView = Object.freeze(
     Object.assign(Object.create(null), {
       genesis: state.genesis,
-      head: state.hashes[state.hashes.length - 1]!,
+      head: hashAt(state, state.hashes.length - 1)!,
       length: state.hashesOffset + state.hashes.length,
       verification: state.verification,
       historyStart: state.hashesOffset,
@@ -93,7 +95,7 @@ function replay(
           if (!bytesEqual(hash.toBytes(), anchor.toBytes())) return yield* fail('wrong-anchor');
         } else {
           if (body.type !== 'ordinary') return yield* fail('genesis-mismatch');
-          if (!body.previousHash.equals(state.hashes[state.hashes.length - 1]!))
+          if (!body.previousHash.equals(hashAt(state, state.hashes.length - 1)!))
             return yield* fail('wrong-parent');
         }
         yield* Result.mapError(
@@ -107,13 +109,13 @@ function replay(
         if (body.type === 'genesis') return genesisState(body, anchor, hash);
         if (!state) return yield* fail('genesis-mismatch');
         yield* applyAuthorizedOrdinary(state, body);
-        state.hashes.push(hash);
+        state.hashes = Chunk.append(state.hashes, hash);
         return state;
       });
       state = yield* Result.mapError(step, positioned(position));
     }
     if (!state) return yield* fail('genesis-mismatch');
-    if (!state.hashes[state.hashes.length - 1]!.equals(checkpoint.head))
+    if (!hashAt(state, state.hashes.length - 1)!.equals(checkpoint.head))
       return yield* fail('checkpoint-mismatch');
     return viewOf(state);
   });
@@ -137,7 +139,7 @@ export function applyAuthorizedOrdinary(
         () => new LedgerError({ code: 'bad-proof' })
       );
     } else if (op.type === 'admitDevice') {
-      const actor = state.devices.get(keyId(body.signer.toBytes()));
+      const actor = stateGet(state.devices, keyId(body.signer.toBytes()));
       if (!actor) return yield* fail('unauthorized');
       const message = yield* possessionSigningBytes({
         genesis: anchor,
@@ -170,6 +172,100 @@ export function verifyLedger(input: {
     return yield* replay(undefined, anchor, input.records, input.checkpoint);
   });
 }
+/** Full audit for I/O workflows. Same strict replay kernel, bounded owned input
+ * and cooperative batches; no worker-selected state, trust shortcut or verifier. */
+const auditLedgerEffect = Effect.fnUntraced(function* (
+  input: {
+    readonly anchor: GenesisHash;
+    readonly records: readonly Uint8Array[];
+    readonly checkpoint: LedgerCheckpoint;
+  },
+  initial?: LedgerView
+) {
+  if (initial) yield* Effect.fromResult(requireLedgerContinuation(initial, initial));
+  const anchor = yield* Effect.fromResult(
+    Result.mapError(
+      genesisHash(input.anchor.toBytes()),
+      (error) => new LedgerError({ code: error.code })
+    )
+  );
+  const head = yield* Effect.fromResult(
+    Result.mapError(
+      recordHash(input.checkpoint.head.toBytes()),
+      (error) => new LedgerError({ code: error.code })
+    )
+  );
+  const length = input.checkpoint.length,
+    source = input.records;
+  if (!Array.isArray(source) || source.length > 1_000_000)
+    return yield* new LedgerError({ code: 'oversize' });
+  const count = source.length;
+  if (!Number.isSafeInteger(length) || length < 1 || length !== (initial?.length ?? 0) + count)
+    return yield* new LedgerError({ code: 'checkpoint-mismatch' });
+  const records: Uint8Array[] = [];
+  let size = 0;
+  for (let index = 0; index < count; index++) {
+    const row = source[index];
+    if (!(row instanceof Uint8Array) || row.length > 8192)
+      return yield* new LedgerError({ code: 'oversize' });
+    size += row.length;
+    if (size > 64 * 1024 * 1024) return yield* new LedgerError({ code: 'oversize' });
+    records.push(new Uint8Array(row));
+  }
+  if (source.length !== count) return yield* new LedgerError({ code: 'canonical' });
+  let view: LedgerView | undefined = initial;
+  for (let start = 0; start < count; start += 32) {
+    yield* Effect.yieldNow;
+    const batch = records.slice(start, start + 32);
+    // Warm only exact mathematical signature successes. The shared strict replay
+    // kernel still decides chain order, proof/permission failures and positions.
+    for (const bytes of batch) {
+      const parsed = decodeRecord(bytes);
+      if (Result.isSuccess(parsed)) {
+        const record = parsed.success;
+        yield* verifySignatureEffect(
+          record.body.signer.toBytes(),
+          recordSigningBytes(record.bodyBytes),
+          record.signature.toBytes()
+        ).pipe(
+          Effect.catch((error) =>
+            error instanceof NativeSignatureError
+              ? Effect.fail(new LedgerError({ code: 'native-unavailable' }))
+              : Effect.void
+          )
+        );
+      }
+    }
+    const end = start + batch.length;
+    const point = {
+      head: end === count ? head : hashRecordBytes(batch[batch.length - 1]!),
+      length: (initial?.length ?? 0) + end,
+    };
+    view = yield* Effect.fromResult(
+      view
+        ? extendLedger(view, batch, point)
+        : verifyLedger({ anchor, records: batch, checkpoint: point })
+    );
+  }
+  if (!view || !view.head.equals(head))
+    return yield* new LedgerError({ code: 'checkpoint-mismatch' });
+  return view;
+});
+export const verifyLedgerEffect = (input: {
+  readonly anchor: GenesisHash;
+  readonly records: readonly Uint8Array[];
+  readonly checkpoint: LedgerCheckpoint;
+}) => auditLedgerEffect(input);
+export const extendLedgerEffect = (
+  view: LedgerView,
+  records: readonly Uint8Array[],
+  checkpoint: LedgerCheckpoint
+) =>
+  Effect.suspend(() =>
+    states.has(view)
+      ? auditLedgerEffect({ anchor: view.genesis, records, checkpoint }, view)
+      : Effect.fail(new LedgerError({ code: 'unauthorized' }))
+  );
 /** All-or-nothing: failed suffix leaves the preceding verified view unchanged. */
 export function extendLedger(
   view: LedgerView,
@@ -200,8 +296,8 @@ export function contentPermissions(
       signingPublicKey(device.toBytes()),
       (error) => new LedgerError({ code: error.code })
     );
-    const active = state.devices.get(keyId(key.toBytes()));
-    const member = active && state.members.get(keyId(active.membershipId.toBytes()));
+    const active = stateGet(state.devices, keyId(key.toBytes()));
+    const member = active && stateGet(state.members, keyId(active.membershipId.toBytes()));
     const mayWriteDocument = !!(
       active &&
       active.kind !== 'recovery' &&
@@ -226,7 +322,7 @@ export function epochHistoryPacket(
       epochNumber(epoch),
       (error) => new LedgerError({ code: error.code })
     );
-    const row = state.historyPackets.get(number);
+    const row = stateGet(state.historyPackets, number);
     return row
       ? Object.freeze({ ...row, packet: copyBytes(row.packet) })
       : yield* fail('unauthorized');
@@ -245,8 +341,8 @@ export function requireLedgerContinuation(
     return fail('genesis-mismatch');
   const position = before.hashesOffset + before.hashes.length - 1;
   const index = position - after.hashesOffset;
-  const head = index >= 0 ? after.hashes[index] : undefined;
-  return head && bytesEqual(head.toBytes(), before.hashes[before.hashes.length - 1]!.toBytes())
+  const head = index >= 0 ? hashAt(after, index) : undefined;
+  return head && bytesEqual(head.toBytes(), hashAt(before, before.hashes.length - 1)!.toBytes())
     ? Result.succeed(undefined)
     : fail('checkpoint-mismatch');
 }
@@ -282,8 +378,8 @@ export function snapshotTrustFromView(
       (error) => new LedgerError({ code: error.code })
     );
     yield* proposalOf(state, key);
-    const device = state.devices.get(keyId(key.toBytes()))!,
-      member = state.members.get(keyId(device.membershipId.toBytes()))!;
+    const device = stateGet(state.devices, keyId(key.toBytes()))!,
+      member = stateGet(state.members, keyId(device.membershipId.toBytes()))!;
     const role = member.role;
     if (role !== 'owner' && role !== 'admin') return yield* fail('unauthorized');
     const token = Object.freeze(
@@ -357,10 +453,10 @@ export function historicalContentIdentity(
       signingPublicKey(device.toBytes()),
       (error) => new LedgerError({ code: error.code })
     );
-    const author = state.contentAuthors.get(keyId(key.toBytes()));
+    const author = stateGet(state.contentAuthors, keyId(key.toBytes()));
     return author
       ? Object.freeze({ kind: 'member' as const, ...author })
-      : state.usedSigningKeys.has(keyId(key.toBytes()))
+      : HashSet.has(state.usedSigningKeys, keyId(key.toBytes()))
         ? Object.freeze({
             kind: 'device-only' as const,
             device: key,
@@ -382,7 +478,7 @@ export function hasVerifiedRecordHash(
       importHash(hash),
       (error) => new LedgerError({ code: error.code })
     );
-    return state.hashes.some((known) => known.equals(owned));
+    return Chunk.some(state.hashes, (known) => known.equals(owned));
   });
 }
 function importHash(hash: RecordHash) {
@@ -403,7 +499,7 @@ export function hasVerifiedCheckpoint(
       (error) => new LedgerError({ code: error.code })
     );
     const index = point.length - 1 - state.hashesOffset;
-    const known = index >= 0 ? state.hashes[index] : undefined;
+    const known = index >= 0 ? hashAt(state, index) : undefined;
     return !!known && known.equals(owned);
   });
 }

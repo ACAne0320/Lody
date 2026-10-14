@@ -7,7 +7,7 @@
       "sha256": "87030179b2516c8c14365d01b6b5043dcadabe196ac0079914045b7c9ba8bb26",
       "destination": "src/bytes.ts",
       "scope": "OwnedBytes, public byte brands/parsers, epoch number and EpochKey re-export",
-      "destinationSha256": "87030179b2516c8c14365d01b6b5043dcadabe196ac0079914045b7c9ba8bb26"
+      "destinationSha256": "c52d9cf481d30fadecc64d4b11d89115f52e6f326d3dd71dea7493a2939af1d1"
     },
     "pure/epoch-key.ts": {
       "sha256": "012d05cc01234c4919596292d939ba9cbee656f3d282f7132b1c94ba3fd272b3",
@@ -51,7 +51,7 @@
       "sha256": "729ecbddbf833cfb9147cc6d17e62225013128e3b7e4e8b1bad449cb64a10ee6",
       "destination": "src/signature.ts",
       "scope": "Stateless strict Ed25519 algorithm only; no cache, executor, Layer or authority port",
-      "destinationSha256": "668ee60f11a4433fc248284fa4c67c8db159ff96dcdffa02438d5480e1ee7fcd"
+      "destinationSha256": "f75691ff3cc6b4eaee5bde1b47ba14bf3bb78d11041a32bbaf6e59a4e29ae4ea"
     }
   },
   "adaptations": [
@@ -64,7 +64,7 @@
     "L4b adds internal EpochKey disposal for failed/cancelled post-HPKE checks; no public material export or change to merged HPKE primitive.",
     "L1b shares bounded encoder traversal with separate fixed 2MiB/16384-array snapshot budgets; ordinary record/root limits unchanged."
   ],
-  "migratedScopeSha256": "677b2acd2f61167d192d5e108461031eb6e4f177dc6cc21ccc9e949b414d8fa9",
+  "migratedScopeSha256": "1df173d2f17544e9df4355a4f145819a4c7197309282e7223c87e412447f665d",
   "scopeHashEncoding": "UTF-8, destination paths sorted ascending, one line: <destinationSha256>  <destination>\\n",
   "cryptoExtraction": {
     "destination": "src/crypto/content.ts",

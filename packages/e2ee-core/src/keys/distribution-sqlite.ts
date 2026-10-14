@@ -42,6 +42,24 @@ export interface DistributionMailboxRemote extends RecipientMailboxRemote {
   readonly read: (id: string) => Effect.Effect<Uint8Array | null, unknown>;
 }
 const APP = 0x4c454453;
+const distributionSchema: ReadonlyMap<string, string | null> = new Map([
+  [
+    'distribution_meta',
+    'CREATE TABLE distribution_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,sender TEXT NOT NULL)',
+  ],
+  [
+    'distribution_tasks',
+    'CREATE TABLE distribution_tasks(id TEXT PRIMARY KEY,epoch INTEGER NOT NULL,recipient TEXT NOT NULL,revision INTEGER NOT NULL,phase TEXT NOT NULL,consumed INTEGER NOT NULL,UNIQUE(epoch,recipient,revision))',
+  ],
+  ['distribution_pending', 'CREATE INDEX distribution_pending ON distribution_tasks(phase,id)'],
+  [
+    'distribution_results',
+    'CREATE INDEX distribution_results ON distribution_tasks(consumed,phase,id)',
+  ],
+  ['sqlite_autoindex_distribution_tasks_1', null],
+  ['sqlite_autoindex_distribution_tasks_2', null],
+]);
+type StorageStamp = { schema: number; tempSchema: number; data: number };
 const taskId = (delivery: string, revision: number) =>
   keyId(
     sha256(new TextEncoder().encode(`lody-e2ee/local-distribution-task/v0:${delivery}:${revision}`))
@@ -70,6 +88,7 @@ export function makeSqliteKeyDistribution(
     readonly sendStore: {
       readonly path: string;
       readonly mode: 'create' | 'open';
+      /** Unacknowledged tasks/results only; acknowledged originals remain retained. */
       readonly maxTasks?: number;
     };
     readonly outboxStore: { readonly path: string; readonly mode: 'create' | 'open' };
@@ -217,48 +236,106 @@ export function makeSqliteKeyDistribution(
       a.revision === b.revision &&
       a.phase === b.phase &&
       a.consumed === b.consumed;
-    // Retain task metadata originals through every DML, including trigger side effects.
-    // This audits scalar metadata only, never loads a second ciphertext collection.
-    const mutate = (id: string, expected: Task, write: () => void) =>
+    const stamp = (): StorageStamp => ({
+      schema: db.pragma('schema_version', { simple: true }) as number,
+      tempSchema: db.pragma('temp.schema_version', { simple: true }) as number,
+      data: db.pragma('data_version', { simple: true }) as number,
+    });
+    const cleanSchema = () => {
+      const rows = db.prepare('SELECT name,sql FROM sqlite_schema ORDER BY name LIMIT 7').all() as {
+        name: string;
+        sql: unknown;
+      }[];
+      return (
+        rows.length === distributionSchema.size &&
+        rows.every(
+          (row) => distributionSchema.has(row.name) && distributionSchema.get(row.name) === row.sql
+        ) &&
+        !db.prepare('SELECT 1 FROM sqlite_temp_schema LIMIT 1').get()
+      );
+    };
+    const totalChanges = db.prepare('SELECT total_changes()').safeIntegers().pluck();
+    let audited: { stamp: StorageStamp; unconsumed: number } | undefined;
+    // A full scalar-metadata audit establishes the baseline. Only the exact
+    // trigger-free schema with no intervening external write can use indexed
+    // readback instead; unusual schemas/fixtures keep the complete audit.
+    const mutate = (id: string, expected: Task, write: () => number) =>
       sql(() =>
         db
           .transaction(() => {
             guard();
-            const retained = (
-              db
-                .prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id LIMIT ?`)
-                .all(maxTasks + 1) as unknown[]
-            ).map(parse);
-            if (
-              retained.length > maxTasks ||
-              (retained.length === maxTasks && !retained.some((task) => task.id === id))
-            )
-              throw fail('task-limit');
-            write();
-            const originals = new Map(retained.map((task) => [task.id, task]));
-            let count = 0,
-              matched = false;
-            for (const row of db
-              .prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id`)
-              .iterate()) {
-              const task = parse(row);
-              if (++count > maxTasks) throw fail('task-limit');
-              if (task.id === id) {
-                if (!equal(task, expected)) throw fail('corrupt');
-                matched = true;
-              } else {
-                const original = originals.get(task.id);
-                if (!original || !equal(original, task)) throw fail('corrupt');
+            const before = stamp();
+            const baseline =
+              audited !== undefined &&
+              before.schema === audited.stamp.schema &&
+              before.tempSchema === audited.stamp.tempSchema &&
+              before.data === audited.stamp.data
+                ? audited
+                : undefined;
+            const retained = new Map<string, Task>();
+            let unconsumed = baseline?.unconsumed ?? 0;
+            if (!baseline) {
+              for (const row of db
+                .prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id`)
+                .iterate()) {
+                const task = parse(row);
+                retained.set(task.id, task);
+                unconsumed += Number(task.consumed === 0);
               }
             }
-            if (!matched || count !== retained.length + (originals.has(id) ? 0 : 1))
-              throw fail('corrupt');
+            const prior = baseline
+              ? db.prepare(`SELECT ${columns} FROM distribution_tasks WHERE id=?`).get(id)
+              : retained.get(id);
+            const previousTask = prior ? parse(prior) : undefined;
+            const nextUnconsumed =
+              unconsumed - Number(previousTask?.consumed === 0) + Number(expected.consumed === 0);
+            // Finishing/acknowledging existing work must remain possible at capacity.
+            // Acknowledgement frees this budget without deleting the original row.
+            if (nextUnconsumed > unconsumed && nextUnconsumed > maxTasks) throw fail('task-limit');
+            const changesBefore = totalChanges.get() as bigint;
+            if (write() !== 1) throw fail('corrupt');
+            if (baseline) {
+              // No REPLACE, foreign-key actions, views or triggers exist in this
+              // audited schema. Read back after the last DML and check all changes.
+              if (
+                (totalChanges.get() as bigint) - changesBefore !== 1n ||
+                !equal(load(id), expected)
+              )
+                throw fail('corrupt');
+            } else {
+              let count = 0,
+                matched = false;
+              for (const row of db
+                .prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id`)
+                .iterate()) {
+                const task = parse(row);
+                count++;
+                if (task.id === id) {
+                  if (!equal(task, expected)) throw fail('corrupt');
+                  matched = true;
+                } else {
+                  const original = retained.get(task.id);
+                  if (!original || !equal(original, task)) throw fail('corrupt');
+                }
+              }
+              if (!matched || count !== retained.size + (retained.has(id) ? 0 : 1))
+                throw fail('corrupt');
+            }
             const meta = db
               .prepare('SELECT genesis,sender FROM distribution_meta WHERE id=1')
               .get() as { genesis: unknown; sender: unknown } | undefined;
             if (meta?.genesis !== org || meta.sender !== self) throw fail('corrupt');
+            // Sample inside IMMEDIATE; publishing only after COMMIT avoids treating
+            // another connection's later commit as part of our verified baseline.
+            return baseline || cleanSchema()
+              ? { stamp: before, unconsumed: nextUnconsumed }
+              : undefined;
           })
           .immediate()
+      ).pipe(
+        Effect.map((next) => {
+          audited = next;
+        })
       );
     const current = () =>
       Effect.gen(function* () {
@@ -287,10 +364,9 @@ export function makeSqliteKeyDistribution(
       return mutate(task.id, next, () => {
         const actual = load(task.id);
         if (!equal(actual, task)) throw fail('context-changed');
-        db.prepare('UPDATE distribution_tasks SET phase=?,consumed=0 WHERE id=?').run(
-          phase,
-          task.id
-        );
+        return db
+          .prepare('UPDATE distribution_tasks SET phase=?,consumed=0 WHERE id=?')
+          .run(phase, task.id).changes;
       });
     };
     const disposition = (view: LedgerView, task: Task) =>
@@ -367,10 +443,13 @@ export function makeSqliteKeyDistribution(
                   phase: 'Pending',
                   consumed: 0,
                 };
-                yield* mutate(id, next, () =>
-                  db
-                    .prepare('INSERT INTO distribution_tasks VALUES(?,?,?,?,?,?)')
-                    .run(id, epoch, target, next.revision, next.phase, 0)
+                yield* mutate(
+                  id,
+                  next,
+                  () =>
+                    db
+                      .prepare('INSERT INTO distribution_tasks VALUES(?,?,?,?,?,?)')
+                      .run(id, epoch, target, next.revision, next.phase, 0).changes
                 );
                 return true;
               })
@@ -495,8 +574,10 @@ export function makeSqliteKeyDistribution(
             return load(id);
           });
           if (task.phase === 'Pending') return yield* fail('invalid-input');
-          yield* mutate(id, { ...task, consumed: 1 }, () =>
-            db.prepare('UPDATE distribution_tasks SET consumed=1 WHERE id=?').run(id)
+          yield* mutate(
+            id,
+            { ...task, consumed: 1 },
+            () => db.prepare('UPDATE distribution_tasks SET consumed=1 WHERE id=?').run(id).changes
           );
           return undefined;
         }),

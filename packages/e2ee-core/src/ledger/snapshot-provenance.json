@@ -10,10 +10,10 @@
   "scope": "Existing v1 wire/domains, stricter explicit qualification and source provenance; no invented pre-snapshot hash/audit, no old key-list confirmation. Product sourcing/persistence/SDK recovery remain separate.",
   "destinations": {
     "packages/e2ee-core/src/ledger/snapshot.ts": "f5ac809abf7dcc964ddd4edace0103269aba62db8b6c554132f63c002f4a827c",
-    "packages/e2ee-core/src/ledger/snapshot-codec.ts": "cf42f4ecf9f880f73e2b4018ee8c182abefb7cd73ba90999f2212b6672def109",
+    "packages/e2ee-core/src/ledger/snapshot-codec.ts": "e32b9c2eefa6fa2357dd2832f8439b143b7cacf8766fa6e0848b0fd773ec1a17",
     "packages/e2ee-core/src/ledger/snapshot-signing.ts": "d857d33e0d5c141b66f9232e2782d28fa6728ce0623bc948c49035fe1e4cd563",
-    "packages/e2ee-core/src/ledger/replay.ts": "83601c4b551943ed7288bddfbf1a67a5a0a028e8fa38193ce55f9cc707ce250d",
-    "packages/e2ee-core/src/ledger/policy.ts": "4b463afd8148f2a34183bf47912277dbf5fb18e2999f6eccc083f21520e7b4bb",
+    "packages/e2ee-core/src/ledger/replay.ts": "cd594c8ac181d4c7a10cd67f80d968f39782dbebc0d8c64f51b2a68f0f58b7d3",
+    "packages/e2ee-core/src/ledger/policy.ts": "7f6a407a620dc7d6206c9c1b58f717f4217da76e1a23e8e694f7d23e2ecf777d",
     "packages/e2ee-core/src/cbor.ts": "69390d017bde12323bdfde6eb2036bc7c447051fe87043dc1f7f88bd1007c834"
   }
 }

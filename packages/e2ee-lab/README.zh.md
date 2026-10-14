@@ -45,6 +45,9 @@ SIGINT/TERM 先停止接收新工作，再等待真实子进程终止。
 调度、观察及覆盖缺口。其引用的 `fixture/*-transport.jsonl` 仅含受保护协议流量，
 不含凭据；设备私密导出只留在 IPC 内存。`inspect` 根据记录的观察重新计算结论，
 不信任已存 verdict；它不认证文件来源，也不重新执行场景。耗时仅作诊断。
+固定120秒的测试设施看门狗会中断停滞场景，kill 并等待所属子进程、释放资源后
+返回 `LabScenarioError/watchdog`（CLI exit1）。只有 owner 清理成功后才写最终证据；
+它不是耗时通过阈值，也不改变严格 freshness B。
 
 ## 入口与资源归属
 

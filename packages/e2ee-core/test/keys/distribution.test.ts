@@ -412,8 +412,8 @@ describe('verified targets and durable finite distribution', () => {
   );
 });
 
-it('bounds retained task audits without deleting originals or blocking terminal updates at capacity', async () => {
-  const { f, file, config } = await setup(0);
+it('bounds unacknowledged tasks while acknowledgements free capacity without deleting originals', async () => {
+  const { f, file, config, reopen } = await setup(0);
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -432,19 +432,140 @@ it('bounds retained task audits without deleting originals or blocking terminal 
         });
         expect((yield* client.reconcileCurrentEpoch()).scheduled).toBe(1);
         expect((yield* client.resumePendingDeliveries()).processed).toBe(1);
-        const first = (yield* client.deliveryResults()).items[0]!;
-        yield* client.acknowledgeDelivery(first.id);
-        const originals = rows(file('send'));
+        let result = (yield* client.deliveryResults()).items[0]!;
+        const ciphertext = saved(file('outbox'));
+        for (let revision = 1; revision <= 3; revision++) {
+          yield* phone.repair(
+            { genesis: hex(f.context.genesis.toBytes()), epoch: 0, recipient: hex(f.phone.raw) },
+            `bounded-repair-${revision}`
+          );
+          const before = rows(file('send'));
+          expect(yield* client.reconcileCurrentEpoch()).toMatchObject({
+            scheduled: 0,
+            blocked: [hex(f.phone.raw)],
+          });
+          expect(rows(file('send'))).toEqual(before);
+          yield* client.acknowledgeDelivery(result.id);
+          const originals = rows(file('send'));
+          expect((yield* client.deliveryResults()).items).toEqual([]);
+          expect(yield* client.reconcileCurrentEpoch()).toMatchObject({
+            scheduled: 1,
+            blocked: [],
+          });
+          expect((yield* client.resumePendingDeliveries()).blocked).toEqual([]);
+          result = (yield* client.deliveryResults()).items[0]!;
+          expect(result.revision).toBe(revision);
+          const retained = rows(file('send'));
+          expect(retained).toHaveLength(revision + 1);
+          expect(retained.filter((row) => row.id !== result.id)).toEqual(originals);
+          expect(saved(file('outbox'))).toEqual(ciphertext);
+        }
+      })
+    )
+  );
+  const retained = rows(file('send')),
+    ciphertext = saved(file('outbox'));
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const host = yield* makeSqliteKeyMailbox({
+          path: file('host'),
+          mode: 'open',
+          genesis: f.context.genesis,
+          ledger: f.ledger,
+        });
+        const owner = ok(host.bind(f.owner.publicKey)),
+          phone = ok(host.bind(f.phone.publicKey));
+        const client = yield* makeSqliteKeyDistribution({
+          ...reopen(),
+          remote: owner,
+          sendStore: { path: file('send'), mode: 'open', maxTasks: 1 },
+        });
+        const previous = (yield* client.deliveryResults()).items[0]!;
+        expect(previous.revision).toBe(3);
+        yield* client.acknowledgeDelivery(previous.id);
         yield* phone.repair(
           { genesis: hex(f.context.genesis.toBytes()), epoch: 0, recipient: hex(f.phone.raw) },
-          'bounded-repair'
+          'bounded-repair-after-reopen'
         );
-        expect(yield* client.reconcileCurrentEpoch()).toMatchObject({
-          scheduled: 0,
-          blocked: [hex(f.phone.raw)],
-        });
-        expect(rows(file('send'))).toEqual(originals);
+        expect((yield* client.reconcileCurrentEpoch()).scheduled).toBe(1);
+        expect((yield* client.resumePendingDeliveries()).blocked).toEqual([]);
+        const current = (yield* client.deliveryResults()).items[0]!;
+        expect(current.revision).toBe(4);
+        expect(rows(file('send')).filter((row) => row.id !== current.id)).toEqual(
+          retained.map((row) => (row.id === previous.id ? { ...row, consumed: 1 } : row))
+        );
+        expect(saved(file('outbox'))).toEqual(ciphertext);
       })
     )
   );
 });
+
+it.each(['unrelated-trigger', 'external-revision'] as const)(
+  'rechecks retained task metadata after a separate connection changes %s',
+  async (fault) => {
+    const { f, file, config } = await setup();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* makeSqliteKeyMailbox({
+            path: file('host'),
+            mode: 'create',
+            genesis: f.context.genesis,
+            ledger: f.ledger,
+          });
+          const owner = ok(host.bind(f.owner.publicKey)),
+            phone = ok(host.bind(f.phone.publicKey));
+          const client = yield* makeSqliteKeyDistribution({ ...config, remote: owner });
+          yield* client.reconcileCurrentEpoch();
+          yield* client.resumePendingDeliveries();
+          const first = (yield* client.deliveryResults()).items[0]!;
+          yield* client.acknowledgeDelivery(first.id);
+          yield* phone.repair(
+            { genesis: hex(f.context.genesis.toBytes()), epoch: 0, recipient: hex(f.phone.raw) },
+            'metadata-repair'
+          );
+          yield* client.reconcileCurrentEpoch();
+          const originals = rows(file('send')),
+            ciphertext = saved(file('outbox'));
+          const disk = new Database(file('send'));
+          try {
+            if (fault === 'unrelated-trigger') {
+              disk.exec(
+                `CREATE TRIGGER collateral AFTER UPDATE ON distribution_tasks WHEN NEW.id!='${first.id}' BEGIN UPDATE distribution_tasks SET consumed=0 WHERE id='${first.id}'; END;`
+              );
+            } else
+              disk
+                .prepare('UPDATE distribution_tasks SET revision=revision+7 WHERE id=?')
+                .run(first.id);
+          } finally {
+            disk.close();
+          }
+          const failed = yield* Effect.result(client.resumePendingDeliveries());
+          expect(Result.isFailure(failed)).toBe(true);
+          if (Result.isFailure(failed)) expect(failed.failure).toMatchObject({ code: 'corrupt' });
+          expect(
+            rows(file('send')).find((row) => row.revision === 1 && row.id !== first.id)?.phase
+          ).toBe('Pending');
+          const repair = new Database(file('send'));
+          try {
+            if (fault === 'unrelated-trigger') repair.exec('DROP TRIGGER collateral');
+            else
+              repair
+                .prepare('UPDATE distribution_tasks SET revision=? WHERE id=?')
+                .run(first.revision, first.id);
+          } finally {
+            repair.close();
+          }
+          expect(rows(file('send'))).toEqual(originals);
+          expect((yield* client.resumePendingDeliveries()).blocked).toEqual([]);
+          expect((yield* client.deliveryResults()).items[0]!.revision).toBe(1);
+          expect(rows(file('send')).find((row) => row.id === first.id)).toEqual(
+            originals.find((row) => row.id === first.id)
+          );
+          expect(saved(file('outbox'))).toEqual(ciphertext);
+        })
+      )
+    );
+  }
+);

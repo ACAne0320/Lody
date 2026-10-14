@@ -5,7 +5,7 @@ import {
   decodeRecord,
   extendLedger,
   hashRecordBytes,
-  verifyLedger,
+  verifyLedgerEffect,
   type LedgerCheckpoint,
   type LedgerError,
 } from '../ledger';
@@ -86,9 +86,7 @@ const inspect = Effect.fnUntraced(function* (
   const records: Uint8Array[] = [];
   for (const bytes of incoming.records)
     records.push((yield* Effect.fromResult(decodeRecord(bytes))).recordBytes);
-  const view = yield* Effect.fromResult(
-    verifyLedger({ anchor, records, checkpoint: incoming.checkpoint })
-  );
+  const view = yield* verifyLedgerEffect({ anchor, records, checkpoint: incoming.checkpoint });
   if (
     pin &&
     (records.length < pin.length || !hashRecordBytes(records[pin.length - 1]!).equals(pin.head))
@@ -102,13 +100,11 @@ const inspect = Effect.fnUntraced(function* (
   if (parentIndex < 0) return yield* new SubmissionError({ code: 'missing-parent' });
   // Revalidate the exact pending operation against its authenticated predecessor,
   // including after a signer was revoked or a terminal row was tampered with.
-  const predecessor = yield* Effect.fromResult(
-    verifyLedger({
-      anchor,
-      records: records.slice(0, parentIndex + 1),
-      checkpoint: { head: parent, length: parentIndex + 1 },
-    })
-  );
+  const predecessor = yield* verifyLedgerEffect({
+    anchor,
+    records: records.slice(0, parentIndex + 1),
+    checkpoint: { head: parent, length: parentIndex + 1 },
+  });
   yield* Effect.fromResult(
     extendLedger(predecessor, [record], { head: hashRecordBytes(record), length: parentIndex + 2 })
   );

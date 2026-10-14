@@ -1,4 +1,4 @@
-import { Result } from 'effect';
+import { Chunk, HashMap, HashSet, Result } from 'effect';
 import { sha256 } from '@noble/hashes/sha2.js';
 import * as Bytes from '../bytes';
 import { concat } from '../concat';
@@ -13,7 +13,14 @@ import { keyId } from '../identifiers';
 import { verifySignature } from '../signature';
 import { LedgerError } from './errors';
 import { fail, type DeviceKind, type Role } from './records';
-import type { InternalState, Member, Device, EpochHistoryPacket } from './policy';
+import {
+  hashAt,
+  stateGet,
+  type InternalState,
+  type Member,
+  type Device,
+  type EpochHistoryPacket,
+} from './policy';
 
 const domain = (name: string) => new TextEncoder().encode(`lody-e2ee/${name}\0`);
 const lift = <A>(r: Result.Result<A, { readonly code: LedgerError['code'] }>) =>
@@ -37,7 +44,7 @@ const id = (v: { toBytes(): Uint8Array }) => keyId(v.toBytes());
 const raw = (s: string) => Uint8Array.from(s.match(/../g)!.map((x) => Number.parseInt(x, 16)));
 const roles: readonly Role[] = ['owner', 'admin', 'member', 'guest'];
 const kinds: readonly DeviceKind[] = ['personal', 'machine', 'recovery'];
-const sortedKeys = (s: ReadonlySet<string>) => [...s].map(raw).sort(cmp);
+const sortedKeys = (s: Iterable<string>) => [...s].map(raw).sort(cmp);
 
 /** Independent authenticated contact and expected position; never obtained from the snapshot/journal itself. */
 export interface SnapshotIdentityPin {
@@ -141,8 +148,8 @@ function authState(s: InternalState): CborValue {
   ];
 }
 function eligible(s: InternalState, signer: Bytes.SigningPublicKey) {
-  const device = s.devices.get(id(signer));
-  const member = device && s.members.get(id(device.membershipId));
+  const device = stateGet(s.devices, id(signer));
+  const member = device && stateGet(s.members, id(device.membershipId));
   return device?.kind === 'personal' && (member?.role === 'owner' || member?.role === 'admin');
 }
 export function proposalOf(
@@ -151,7 +158,7 @@ export function proposalOf(
 ): Result.Result<SnapshotProposal, LedgerError> {
   return Result.gen(function* () {
     if (!eligible(s, signer)) return yield* fail('unauthorized');
-    const head = s.hashes.at(-1)!;
+    const head = hashAt(s, s.hashes.length - 1)!;
     const bodyBytes = yield* lift(
       encodeSnapshotCbor([
         1,
@@ -174,9 +181,9 @@ export function noteOf(
   signer: Bytes.SigningPublicKey
 ): Result.Result<ComparisonNote, LedgerError> {
   return Result.gen(function* () {
-    const device = s.devices.get(id(signer));
+    const device = stateGet(s.devices, id(signer));
     if (!device || device.kind !== 'personal') return yield* fail('unauthorized');
-    const head = s.hashes.at(-1)!;
+    const head = hashAt(s, s.hashes.length - 1)!;
     const body = yield* lift(
       encodeSnapshotCbor([
         1,
@@ -380,12 +387,12 @@ function claimedSnapshotState(
         closedJoins.size !== 0)
     )
       return yield* fail('canonical');
-    const hashes: InternalState['hashes'] = [head];
+    const hashes = Chunk.of(head);
     const hashesOffset = trust.length - 1;
     const verification = 'endorsed-snapshot' as const;
     const contentAuthors = new Map<
       string,
-      InternalState['contentAuthors'] extends Map<string, infer A> ? A : never
+      InternalState['contentAuthors'] extends HashMap.HashMap<string, infer A> ? A : never
     >();
     for (const [key, d] of devices)
       contentAuthors.set(
@@ -400,19 +407,19 @@ function claimedSnapshotState(
     const state: InternalState = {
       genesis,
       owner,
-      members,
-      devices,
+      members: HashMap.fromIterable(members),
+      devices: HashMap.fromIterable(devices),
       epoch: Object.freeze({ number, keyCommitment, rotationRequired }),
-      usedSigningKeys,
-      usedEncKeys,
-      usedMembershipIds,
-      closedJoins,
-      usedCommitments,
+      usedSigningKeys: HashSet.fromIterable(usedSigningKeys),
+      usedEncKeys: HashSet.fromIterable(usedEncKeys),
+      usedMembershipIds: HashSet.fromIterable(usedMembershipIds),
+      closedJoins: HashSet.fromIterable(closedJoins),
+      usedCommitments: HashSet.fromIterable(usedCommitments),
       hashes,
       hashesOffset,
       verification,
-      historyPackets,
-      contentAuthors,
+      historyPackets: HashMap.fromIterable(historyPackets),
+      contentAuthors: HashMap.fromIterable(contentAuthors),
     };
     if (!eligible(state, signer)) return yield* fail('unauthorized');
     return state;
@@ -440,11 +447,11 @@ export function verifiedSnapshotState(
         ? yield* lift(Bytes.recordHash(trust.stateDigest.toBytes()))
         : undefined;
       const state = yield* claimedSnapshotState(bytes, pin);
-      const device = state.devices.get(id(pin.endorser))!;
+      const device = stateGet(state.devices, id(pin.endorser))!;
       if (
         !device.membershipId.equals(membership) ||
         device.kind !== kind ||
-        state.members.get(id(membership))?.role !== role
+        stateGet(state.members, id(membership))?.role !== role
       )
         return yield* fail('unauthorized');
       if (digest) {
@@ -478,8 +485,8 @@ export function authenticateLedgerSnapshotEvidence(
       const owned = yield* ownedPin(pin),
         state = yield* claimedSnapshotState(bytes, owned),
         note = yield* noteOf(state, owned.endorser);
-      const device = state.devices.get(id(owned.endorser))!,
-        member = state.members.get(id(device.membershipId))!;
+      const device = stateGet(state.devices, id(owned.endorser))!,
+        member = stateGet(state.members, id(device.membershipId))!;
       const role = member.role;
       if (role !== 'owner' && role !== 'admin') return yield* fail('unauthorized');
       return Object.freeze({

@@ -253,7 +253,9 @@ export function assessLabAction(
       reply.error.tag === 'LabHarnessError' ||
       reply.error.tag === 'LabProviderError' ||
       reply.error.tag === 'LabActionFailure' ||
-      ['internal_error', 'unknown', 'native', 'invalid-plan'].includes(reply.error.code) ||
+      ['internal_error', 'unknown', 'native', 'native-unavailable', 'invalid-plan'].includes(
+        reply.error.code
+      ) ||
       !refusal ||
       refusal.tag !== reply.error.tag ||
       refusal.code !== reply.error.code

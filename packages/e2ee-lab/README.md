@@ -50,6 +50,10 @@ protected wire bytes, schedule, observations and coverage gaps. Referenced
 credentials; private device exports stay in IPC memory. `inspect` recomputes
 judgments from recorded observations instead of trusting saved verdicts. It does
 not authenticate an artifact or rerun its scenario. Timing is diagnostic only.
+A fixed120s harness watchdog interrupts stalled scenarios, kills/awaits owned
+children and releases resources before returning `LabScenarioError/watchdog`
+(CLI exit1). Final evidence is written only after successful owner cleanup;
+this watchdog is not a performance pass threshold or strict freshness B.
 
 ## Entry points and owners
 

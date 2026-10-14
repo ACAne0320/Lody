@@ -1,7 +1,7 @@
 import { Effect, Result } from 'effect';
 import * as Bytes from './bytes';
 import { ContentError } from './errors';
-import { verifySignature } from './signature';
+import { NativeSignatureError, verifySignatureEffect } from './signature';
 import { MAX_CONTENT_BYTES } from './content-format';
 const bounded = (message: Uint8Array) =>
   message instanceof Uint8Array && message.byteLength <= MAX_CONTENT_BYTES + 4096;
@@ -21,10 +21,12 @@ export function signVerified(signer: DeviceSigner, message: Uint8Array) {
       const key = yield* Effect.fromResult(Bytes.signingPublicKey(signer.publicKey.toBytes()));
       const signed = yield* signer.sign(new Uint8Array(owned));
       const signature = yield* Effect.fromResult(Bytes.signature(signed.toBytes()));
-      yield* Effect.fromResult(
-        Result.mapError(
-          verifySignature(key.toBytes(), owned, signature.toBytes()),
-          () => new ContentError({ code: 'bad-signature' })
+      yield* verifySignatureEffect(key.toBytes(), owned, signature.toBytes()).pipe(
+        Effect.mapError(
+          (error) =>
+            new ContentError({
+              code: error instanceof NativeSignatureError ? 'native-unavailable' : 'bad-signature',
+            })
         )
       );
       return signature;

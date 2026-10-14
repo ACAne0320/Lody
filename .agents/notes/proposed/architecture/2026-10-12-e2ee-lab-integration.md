@@ -60,6 +60,15 @@ lost-ACK recovery, wrong-offset refusal and document isolation/durable retention
 Cleanup tests retain late-work, concurrent close and defect boundaries. This
 coverage is not full original Lab acceptance.
 
+One scenario owns a fixed 120s Effect watchdog, including graceful shutdown. Expiry
+interrupts its Scope; existing process stop sends SIGKILL and awaits actual close
+(with its separate 5s release-failure bound), then earlier fixture owners release.
+Only successful cleanup hands final evidence to the writer. Expiry is a typed
+`LabScenarioError/watchdog`, never a measured security pass or strict freshness B.
+TestClock cases advance 119+1 seconds after explicit worker readiness: real child
+open/close replies never arrive, both children exit by SIGKILL, the HTTP host closes
+and no final evidence is published. The original 39-action behavior remains separate.
+
 `run` executes bounded JSON actions; `ok: false` requires exact refusal tag/code.
 Untyped, defect and unrelated failures remain harness errors. Conjoined checks
 retain each measurement and aggregate the worst verdict. `inspect` recomputes

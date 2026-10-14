@@ -2,13 +2,17 @@ import { labImplementationIdentity } from './evidence';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { Effect } from 'effect';
+import { Data, Effect } from 'effect';
 import { makeLabScenarioFixture } from './scenario-fixture';
 import { exportDevice } from './device';
 import { makeLabProcessActor } from './process-actor';
 import { executeLabActions, type LabAction } from './action-executor';
 import { fingerprintOf } from '../pure/fingerprint';
 import { worstVerdict } from '../pure/judge';
+import { makeLabSdkOwner } from './sdk-owner';
+export class LabScenarioError extends Data.TaggedError('LabScenarioError')<{
+  readonly code: 'watchdog';
+}> {}
 const good = { ok: true } as const;
 /** Finite shipped scenario, explicitly prepared existing workspace. No creation,
  * candidate publisher, vault/snapshot bootstrap or deterministic first sealing. */
@@ -157,7 +161,7 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
     actions = input.actions ?? existingWorkspaceActions,
     maxSteps = input.maxSteps ?? 256,
     stop = input.stop;
-  return yield* Effect.scoped(
+  const completed = yield* Effect.scoped(
     Effect.gen(function* () {
       const fixture = yield* makeLabScenarioFixture(join(directory, 'fixture'));
       const ownerFixture = yield* exportDevice(fixture.owner),
@@ -186,51 +190,47 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         catch: (cause) => cause,
       });
       const run = yield* executeLabActions({ actors, actions, maxSteps, stop });
+      const evidenceTransport = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
       const ciphertext = [];
       const org = Buffer.from(fixture.genesis.toBytes()).toString('hex');
       for (const stream of ['loro', 'flock']) {
-        const saved = yield* Effect.uninterruptible(
-          Effect.tryPromise({
-            try: async () => {
-              const response = await fetch(
-                `${fixture.server.baseUrl}/ds/${org}/${stream}?offset=-1`
-              );
-              const reader = response.body?.getReader(),
-                chunks: Uint8Array[] = [];
-              let length = 0;
-              try {
-                if (reader)
-                  for (;;) {
-                    const item = await reader.read();
-                    if (item.done) break;
-                    length += item.value.length;
-                    if (length > 16 * 1024 * 1024) throw new Error('evidence-stream-budget');
-                    chunks.push(item.value);
-                  }
-              } finally {
-                if (reader) {
-                  await reader.cancel();
-                  reader.releaseLock();
-                }
+        const saved = yield* evidenceTransport.invoke(async () => {
+          const response = await fetch(`${fixture.server.baseUrl}/ds/${org}/${stream}?offset=-1`, {
+            signal: evidenceTransport.signal,
+          });
+          const reader = response.body?.getReader(),
+            chunks: Uint8Array[] = [];
+          let length = 0;
+          try {
+            if (reader)
+              for (;;) {
+                const item = await reader.read();
+                if (item.done) break;
+                length += item.value.length;
+                if (length > 16 * 1024 * 1024) throw new Error('evidence-stream-budget');
+                chunks.push(item.value);
               }
-              const bytes = new Uint8Array(length);
-              let at = 0;
-              for (const chunk of chunks) {
-                bytes.set(chunk, at);
-                at += chunk.length;
-              }
-              return {
-                stream,
-                status: response.status,
-                bodyHex: Buffer.from(bytes).toString('hex'),
-                sha256: createHash('sha256').update(bytes).digest('hex'),
-                contentType: response.headers.get('content-type'),
-                nextOffset: response.headers.get('stream-next-offset'),
-              };
-            },
-            catch: (cause) => cause,
-          })
-        );
+          } finally {
+            if (reader) {
+              await reader.cancel();
+              reader.releaseLock();
+            }
+          }
+          const bytes = new Uint8Array(length);
+          let at = 0;
+          for (const chunk of chunks) {
+            bytes.set(chunk, at);
+            at += chunk.length;
+          }
+          return {
+            stream,
+            status: response.status,
+            bodyHex: Buffer.from(bytes).toString('hex'),
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+            contentType: response.headers.get('content-type'),
+            nextOffset: response.headers.get('stream-next-offset'),
+          };
+        });
         ciphertext.push(saved);
       }
       const report = {
@@ -267,17 +267,27 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
           'No genesis publication/candidate rotation/vault/snapshot decision',
         ],
       };
-      yield* Effect.try({
-        try: () => {
-          const body = JSON.stringify(artifacts, null, 2) + '\n';
-          writeFileSync(join(directory, 'evidence.json'), body, { mode: 0o600, flag: 'wx' });
-          if (readFileSync(join(directory, 'evidence.json'), 'utf8') !== body)
-            throw new Error('evidence-readback');
-        },
-        catch: (cause) => cause,
-      });
       for (const actor of Object.values(actors)) yield* actor.shutdown();
       return artifacts;
     })
+  ).pipe(
+    // This harness watchdog interrupts the whole owned scenario. Its Scope joins
+    // actual child SIGKILL/close and native body cleanup before returning failure.
+    Effect.timeoutOrElse({
+      duration: '120 seconds',
+      orElse: () => Effect.fail(new LabScenarioError({ code: 'watchdog' })),
+    })
   );
+  // Publish final evidence only after successful scenario completion and owner
+  // cleanup. A hung shutdown must not leave a pass artifact for inspect.
+  yield* Effect.try({
+    try: () => {
+      const body = JSON.stringify(completed, null, 2) + '\n';
+      writeFileSync(join(directory, 'evidence.json'), body, { mode: 0o600, flag: 'wx' });
+      if (readFileSync(join(directory, 'evidence.json'), 'utf8') !== body)
+        throw new Error('evidence-readback');
+    },
+    catch: (cause) => cause,
+  });
+  return completed;
 });

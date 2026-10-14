@@ -1,6 +1,7 @@
 import { Brand, Result } from 'effect';
 import { Point } from '@noble/ed25519';
 import { ValidationError } from './errors';
+import { keyId } from './identifiers';
 
 /** Unexported constructor: successful parsers are the only public constructors. */
 class OwnedBytes<K extends string> implements Brand.Brand<K> {
@@ -38,6 +39,10 @@ export type DeliveryId = OwnedBytes<'DeliveryId'>;
 export type UserId = OwnedBytes<'UserId'>;
 export type EpochNumber = number & Brand.Brand<'EpochNumber'>;
 const epochBrand = Brand.nominal<EpochNumber>();
+// Only exact bytes that passed the fixed point checks enter this bounded cache.
+// A cache hit proves key shape, never signer authority or signature validity.
+const SIGNING_KEY_CACHE_LIMIT = 256;
+const validatedSigningKeys = new Set<string>();
 
 function exact<K extends string>(
   kind: K,
@@ -53,14 +58,20 @@ function exact<K extends string>(
 export function signingPublicKey(input: unknown): Result.Result<SigningPublicKey, ValidationError> {
   return Result.gen(function* () {
     const key = yield* exact('SigningPublicKey', 32, input);
+    const bytes = key.toBytes();
+    const id = keyId(bytes);
+    if (validatedSigningKeys.has(id)) return key;
     const valid = Result.try({
       try: () => {
-        const point = Point.fromBytes(key.toBytes(), false);
+        const point = Point.fromBytes(bytes, false);
         return !point.isSmallOrder() && point.isTorsionFree();
       },
       catch: () => new ValidationError({ code: 'invalid-key' }),
     });
     if (!(yield* valid)) return yield* Result.fail(new ValidationError({ code: 'invalid-key' }));
+    if (validatedSigningKeys.size === SIGNING_KEY_CACHE_LIMIT)
+      validatedSigningKeys.delete(validatedSigningKeys.values().next().value!);
+    validatedSigningKeys.add(id);
     return key;
   });
 }

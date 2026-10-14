@@ -9314,6 +9314,21 @@
     },
     "validation": "Exact head/base/CI and author vs independent acceptance belong to the fixed PR delivery report. No self-referential source hash or mutable live pin table here.",
     "historicalCheckpointRegistry": "Git5ab9394392a3577a76b14ab0552c33f755b3ce48 retains old progress and source/target registry; old evidence is not rewritten.",
-    "remaining": "capabilityAudit.remaining and unimplementedNotRetired; restricted A does not approve other protocol or native custody decisions."
+    "remaining": "capabilityAudit.remaining and unimplementedNotRetired; restricted A does not approve other protocol or native custody decisions.",
+    "verificationWork": {
+      "nativeEffects": "I/O consumers use fixed WebCrypto Ed25519 with strict A/R/S checks; bounded exact mathematical caches do not grant authority; pure Result APIs remain synchronous.",
+      "state": "Private persistent Effect maps/sets/hash prefixes; public inspection stays detached.",
+      "sql": "Complete open audit and transactional original comparison; unchanged exact trigger-free schema permits indexed final readback, external/schema changes retain full audit.",
+      "capacity": "Distribution maxTasks counts unacknowledged rows; explicit ack retains originals and frees active capacity. No physical archival.",
+      "lab": "120s owner-scoped watchdog; real child kill/await and earlier owner cleanup precede final evidence.",
+      "notCompleted": [
+        "snapshot-first join/bootstrap trust acquisition",
+        "O(N) full cryptographic reopen remains",
+        "durable epoch/removal publisher and independent backup contract",
+        "protected content snapshot",
+        "production native protector and product assembly",
+        "unapproved A1/history scope, vault/backup, strict B and replay decisions"
+      ]
+    }
   }
 }

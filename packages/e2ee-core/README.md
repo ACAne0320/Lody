@@ -166,3 +166,34 @@ The explicit [durable repair queue](src/keys/REPAIR.md) binds stable source requ
 The explicit [released-SDK submission adapter](src/submission/STREAMS.md) binds independently verified full history to CAS positions and retains raw non-abortable writes through Scope close. Snapshot bootstrap/provider and actual Lab remain separate.
 
 The explicit [host distribution entry](src/keys/DISTRIBUTION.md) `./keys/host/distribution/sqlite` combines actual receiver/protected-key/outbox owners with finite verified-target sender rounds. It uses already committed keys and preserves original tasks/results/ciphertexts; it does not select backup/rotation/vault formats or enable production.
+
+
+## Verification work and production limits
+
+Pure Result verification remains synchronous. I/O owners use `verifyLedgerEffect`
+and `extendLedgerEffect`: capture bounded originals, yield between batches and
+verify signatures with the fixed host WebCrypto Ed25519 backend. The same pure
+replay kernel still decides permissions, proofs, chain order and error positions.
+Canonical prime-subgroup A/R and S<L checks remain mandatory. Private bounded
+caches retain only exact public-byte mathematical successes; they never cache
+membership, current permissions or endpoint freshness. Native backend failures
+return `native-unavailable`, not a successful refusal measurement. Native work
+settles before owned verification scratch is cleared and interruption completes.
+
+Private ledger maps, sets and hash prefixes use persistent Effect collections;
+independent branches share immutable structure. Inspection returns detached maps.
+Header3 host admission also has an Effect path and rechecks genuine current write
+permission after native verification. Large frames outside the bounded exact-tuple
+cache still run the pure strict check; this is not constant-time batch admission.
+
+Full feed reopening remains an O(N) cryptographic audit; cooperative native work
+reduces CPU cost and event-loop blocking, not the amount of trusted history needed.
+This change does not connect snapshot-first joining or make SQL a trust authority.
+Production still needs independently qualified snapshot/checkpoint acquisition,
+resumable genesis creation, the gated epoch/removal producer, protected content
+snapshots, vault/backup decisions, strict deadline B and actual platform custody.
+A required rotation currently blocks new seals until the separately unfinished
+publisher supplies a valid next epoch; this is a production blocker, not a
+claim of completed revocation recovery. There is no product consumer or activation
+change. See the
+[verification decision](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-cooperative-verification.md).

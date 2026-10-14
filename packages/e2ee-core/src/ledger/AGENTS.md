@@ -26,3 +26,7 @@ Follow the package [boundary](../../AGENTS.md) and [record/replay contract](READ
   remain separate contracts; no fallback append or new snapshot header.
 
 - Current format only: no legacy-ledger adapters, old-state import, schema conversion or version downgrade. Current-format historical replay and rollback protection remain mandatory.
+
+- I/O owners use cooperative fixed-native verification; the same pure replay owns
+  authority. Persisted bytes are fully reverified on open. SQL version counters
+  detect changes after a complete audit; they never establish ledger trust.

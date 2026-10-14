@@ -114,6 +114,77 @@ function comparable(view: Ledger.LedgerView) {
 }
 
 describe('strict records and caller-pinned chain', () => {
+  it('keeps persistent verified branches and failed authorization independent', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    const base = ok(o.verify()),
+      before = comparable(base);
+    const branch = (role: number) =>
+      signed([base.head.toBytes(), owner.pk, [3, id(11), role]], owner);
+    const aBytes = branch(1),
+      bBytes = branch(3);
+    const a = ok(
+      Ledger.extendLedger(base, [aBytes], { head: Ledger.hashRecordBytes(aBytes), length: 3 })
+    );
+    const b = ok(
+      Ledger.extendLedger(base, [bBytes], { head: Ledger.hashRecordBytes(bBytes), length: 3 })
+    );
+    expect(a.inspectState().members.get(hex(ok(Bytes.membershipId(id(11)))))?.role).toBe('admin');
+    expect(b.inspectState().members.get(hex(ok(Bytes.membershipId(id(11)))))?.role).toBe('guest');
+    const wrong = signed([base.head.toBytes(), owner.pk, [3, id(11), 2]], owner);
+    expect(
+      code(
+        Ledger.extendLedger(base, [aBytes, wrong], {
+          head: Ledger.hashRecordBytes(wrong),
+          length: 4,
+        })
+      )
+    ).toBe('wrong-parent');
+    expect(comparable(base)).toEqual(before);
+    expect(code(Ledger.requireLedgerContinuation(a, b))).toBe('checkpoint-mismatch');
+    const detached = a.inspectState().members as Map<string, Ledger.Member>;
+    detached.clear();
+    expect(a.inspectState().members.size).toBe(2);
+    expect(comparable(base)).toEqual(before);
+  });
+
+  it('cooperatively audits actual signed history with the same result and failure position', async () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    for (let index = 0; index < 96; index++) o.append(owner, [3, id(11), index % 2 ? 2 : 1]);
+    const input = { anchor: o.anchor, records: o.records, checkpoint: checkpoint(o.records) };
+    let turns = 0;
+    const view = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const pulse = yield* Effect.forever(
+            Effect.sync(() => {
+              turns++;
+            }).pipe(Effect.andThen(Effect.yieldNow))
+          ).pipe(Effect.forkChild);
+          const verified = yield* Ledger.verifyLedgerEffect(input);
+          yield* Fiber.interrupt(pulse);
+          return verified;
+        })
+      )
+    );
+    expect(turns).toBeGreaterThan(1);
+    expect(comparable(view)).toEqual(comparable(ok(o.verify())));
+    const bad = o.records.map((row) => new Uint8Array(row));
+    bad[50]![bad[50]!.length - 1] ^= 1;
+    const expected = Ledger.verifyLedger({ ...input, records: bad });
+    const actual = await Effect.runPromise(
+      Effect.result(Ledger.verifyLedgerEffect({ ...input, records: bad }))
+    );
+    expect(Result.isFailure(expected)).toBe(true);
+    expect(Result.isFailure(actual)).toBe(true);
+    if (Result.isFailure(expected) && Result.isFailure(actual)) {
+      expect(actual.failure.code).toBe(expected.failure.code);
+      expect(actual.failure.position).toBe(expected.failure.position);
+    }
+    expect(comparable(view)).toEqual(comparable(ok(o.verify())));
+  });
+
   it('uses unchanged native-signed byte domains and P07-a verifier', () => {
     const o = org();
     const parsed = ok(Ledger.decodeRecord(o.records[0]));

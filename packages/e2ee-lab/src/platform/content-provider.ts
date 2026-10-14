@@ -29,7 +29,11 @@ export function makeLabUpdateProvider(input: Parameters<typeof makeStreamsUpdate
       if (cause instanceof PayloadProtectionError) return cause;
       if (!(cause instanceof ContentError) && !(cause instanceof ValidationError))
         harnessFailure = true;
-      if (cause instanceof ContentError && cause.code === 'closed') harnessFailure = true;
+      if (
+        cause instanceof ContentError &&
+        (cause.code === 'closed' || cause.code === 'native-unavailable')
+      )
+        harnessFailure = true;
       const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
       return new PayloadProtectionError(
         code === 'unsupported-streams-context'

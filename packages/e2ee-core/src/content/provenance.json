@@ -34,7 +34,7 @@
   "destinationFingerprints": {
     "src/content/index.ts": "0c8a4030a460b88b46af08719f19f80eb29dcfd449ecf146e3744d6243e7c582",
     "src/content/document-key.ts": "e3191e7cfb6548c8e2c6c0c41428dc47782625590f4f39cc349e06bd1451e48f",
-    "src/signing.ts": "5752345fb3376b02cbd15d0ff57861707858ce36d6d5c87ffa47498d0b0c2d81",
+    "src/signing.ts": "054274d517e93a57ca44f60a7da76537e562305113b11231333681db0be9a7b0",
     "src/crypto/content.ts": "088349bac3a187f70aee8a79a515f8331cff38654305c29ac945ad75f662b4a0"
   }
 }
