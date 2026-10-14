@@ -37,6 +37,11 @@ import {
 import { setWorkspaceContextAtom } from '../src/atoms/workspace-context';
 import { BlockingWaitPlaceholder } from '../src/components/blocking-wait-placeholder';
 import { RouteMessage } from '../src/components/route-message';
+import { StuckConnectionBannerContainer } from '../src/components/stuck-connection-banner';
+import { browserOnlineAtom, lodyControlConnectionStateAtom } from '../src/atoms/control-connection';
+import { authTokenAtom } from '../src/atoms/runtime';
+import { STUCK_CONNECTION_HINT_DELAY_MS } from '../src/hooks/use-stuck-connection';
+import { TestCloudPlatformProvider } from './test-platform';
 import {
   describeBootRequestError,
   recordBootRequestResult,
@@ -484,5 +489,60 @@ describe('RouteMessage', () => {
 
     expect(buttonLabels()).toEqual([]);
     expect(eventsNamed('workspace/boot_wait_stuck')).toEqual([]);
+  });
+});
+
+describe('StuckConnectionBannerContainer', () => {
+  it('reports a connection stuck loading and opens the full recovery page', () => {
+    // Signed in with a workspace id but no runtime: the case where only the
+    // banner, not a route wait, is on screen.
+    const store = createStore();
+    store.set(setWorkspaceContextAtom, { slug: 'acme', workspaceId: runtime.workspaceId });
+    store.set(browserOnlineAtom, true);
+    store.set(authTokenAtom, 'auth-token');
+    store.set(lodyControlConnectionStateAtom, 'idle');
+    renderNode(
+      store,
+      <TestCloudPlatformProvider>
+        <StuckConnectionBannerContainer />
+      </TestCloudPlatformProvider>,
+      'acme'
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(STUCK_CONNECTION_HINT_DELAY_MS - 1);
+    });
+    expect(text()).toBe('');
+    expect(eventsNamed('workspace/boot_wait_stuck')).toEqual([]);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(text()).toContain('Still connecting');
+    expect(eventsNamed('workspace/boot_wait_stuck')).toEqual([
+      {
+        name: 'workspace/boot_wait_stuck',
+        properties: expect.objectContaining({
+          gate: 'control_connection_loading',
+          failed: false,
+          blocker: 'runtime_missing',
+        }),
+      },
+    ]);
+
+    click('Recover…');
+    expect(buttonLabels()).toEqual(
+      expect.arrayContaining(['Reload Lody', 'Clear local cache and retry', 'Copy diagnostics'])
+    );
+    // The full reset replaces the credential, which a cache clear keeps.
+    expect(text()).toContain('Clear all local data and sign out');
+    expect(readPendingLocalClearMode()).toBeNull();
+    expect(eventsNamed('workspace/boot_wait_stuck')).toHaveLength(1);
+
+    // A connection that comes through closes the page instead of trapping the user.
+    act(() => {
+      store.set(lodyControlConnectionStateAtom, 'online');
+    });
+    expect(text()).toBe('');
   });
 });

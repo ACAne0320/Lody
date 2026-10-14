@@ -48,8 +48,11 @@ user wedged before any workspace still gets the wipe, and so the repo IndexedDB 
 opened before the pending clear has run.
 
 `stuck-connection-banner.tsx` is observational because a slow first sync is not a
-failure: the banner offers the cache-clear flow after 45s of continuous `loading` while
-the connection attempt completes exactly as it would without it.
+failure: after 45s of continuous `loading` the banner reports once
+(`workspace/boot_wait_stuck`, gate `control_connection_loading`) and offers the recovery
+page below, while the connection attempt completes exactly as it would without it. A cache
+clear alone was not enough there: it keeps the sign-in credential, which a reinstall
+replaces.
 
 No screen may leave a user with reinstalling as the only way out. Every route wait
 (`routes/index.tsx`, `$workspaceName.tsx`, `$workspaceName/_auth.tsx`) renders

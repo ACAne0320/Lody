@@ -42,8 +42,8 @@ Background: [components](../../../../.agents/docs/components-package.md),
   `RuntimeProvider`, which awaits it before opening repo IndexedDB.
 - Route waits are `BlockingWaitPlaceholder` (recovery at 30s), never bare
   `LoadingPlaceholder`/`BootShell`; failures are `RouteMessage` with a `gate` (`null`:
-  not a failure). `stuck-connection-banner.tsx` (`MainLayout`, 45s `loading`) only
-  offers the clear. Nothing clears automatically: replicas may hold unsynced edits.
+  not a failure). `stuck-connection-banner.tsx` (`MainLayout`, 45s `loading`) opens
+  the same recovery page. Nothing clears automatically: replicas may hold unsynced edits.
 
 ## File Preview and Code Collab
 
