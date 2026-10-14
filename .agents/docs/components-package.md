@@ -15,7 +15,6 @@ and durable state/cursor retention. This [P10 preparation](../notes/implemented/
 does not supply historical-author authorization, a production signer, host snapshot
 admission or client recovery from an unusable remote snapshot.
 
-
 ## Crash surfaces
 
 Recovery and diagnostic contracts, including callers outside `lib/`, are owned by
@@ -51,6 +50,53 @@ opened before the pending clear has run.
 `stuck-connection-banner.tsx` is observational because a slow first sync is not a
 failure: the banner offers the cache-clear flow after 45s of continuous `loading` while
 the connection attempt completes exactly as it would without it.
+
+No screen may leave a user with reinstalling as the only way out. Every route wait
+(`routes/index.tsx`, `$workspaceName.tsx`, `$workspaceName/_auth.tsx`) renders
+`blocking-wait-placeholder.tsx` with a `gate` naming what it waits for. It stays a
+spinner until the wait fails or lasts 30s, then becomes a recovery page:
+
+1. reload;
+2. clear the local cache;
+3. copy diagnostics: gate, scope blocker, idle gap before launch, last clear;
+4. clear all local data and sign out.
+
+Route failures go through `RouteMessage` with a `gate`. It always offers a retry
+(reload when the caller has none, since the mobile app cannot refresh) and the same
+recovery page. `gate: null` marks a message that is not a failure, such as a plan limit.
+
+The two scope blockers nothing retries within a page load, `runtime_init_failed` and
+`doc_meta_scan_failed`, show the recovery page at once instead of after 30s. The page
+says local data may be damaged only for a storage error: a scan failure, or a runtime
+that failed with an IndexedDB or `RepoStorageError` name. Nothing clears
+automatically: the repo replica can hold edits that never synced, and a failure that
+looks terminal can be transient, so every deletion is the person's choice.
+
+A session check that keeps failing (offline, a 5xx, a timeout) is deliberately not
+treated as a sign-out, so a wait can be stuck on the server rather than on local
+data. `lib/boot-request-failures.ts` keeps the latest failing session, workspace-list,
+active-workspace or switch request; while one is failing, the recovery page names it
+(network, server with its HTTP status, rate limit, rejected sign-in) and says the
+device is not the problem.
+
+Clears take effect at the next boot:
+
+- **Restarting into a clear.** Clearing the cache reloads the one window, as Settings
+  always has. Relaunching the desktop stops the embedded CLI and its running agents,
+  so it is used only to retry a clear that left databases behind earlier the same
+  day, because the storage backend that failed lives on in this process. The relaunch
+  goes through the same one-shot request as `lody app reset-cache`. A quit answered
+  Stay arms nothing and withdraws the request.
+- **Verifying a clear.** The boot clear re-enumerates databases and writes
+  `lody:lastLocalClear`. A clear is never re-run on its own: a re-run deletes
+  everything again, which after a hard reset would sign the person out a second time.
+  Within a day of a clear that left databases behind, the recovery page says so.
+- **Hard reset.** It prefers the host: the desktop relaunches into the native wipe, and
+  a mobile shell implements `window.__LODY_NATIVE_RESET__`. Only those delete at the
+  file level, which is what reinstalling did.
+
+A spent workspace-list retry burst retries again on `online`, on return to the
+foreground and every 30s while the page is visible. [Decision](../notes/implemented/bug-fix/2026-10-13-workspace-open-recovery.md).
 
 ## Locally accepted messages
 

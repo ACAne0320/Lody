@@ -59,6 +59,10 @@ approval, before it destroys relays or stops the CLI; Stay cancels quit with the
 app fully running. A quit close whose renderer hangs or dies is destroyed so quit
 cannot wait forever. Never destroy a normally closing window or add a path that
 bypasses unrelated `beforeunload` guards such as unsaved editors.
+A renderer-requested relaunch (`../relaunch-intent.ts`) calls `app.relaunch()` only at
+`will-quit`; a quit the barrier cancels settles `cancelled`, and the IPC caller
+withdraws any reset request it armed, so a later ordinary quit neither relaunches nor
+resets. Relaunching quits the embedded CLI: never make it a default recovery step.
 
 ## Auto-update
 
