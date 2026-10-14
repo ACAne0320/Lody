@@ -61,3 +61,5 @@ independently witnessed signed records; no SQL-selected authority on restart.
 Trace only protected protocol paths, excluding credentials; bound frames/bytes and
 report missing observations. Measured action success is not whole-security or exact
 ciphertext replay. Flock has an explicit monotonic clock and shared document owner.
+
+Negative action expectations require exact refusal tag/code; untyped, defect and unrelated failures are harness errors, never successful negative evidence. Artifact inspection recomputes observations but does not authenticate them. HTTP callbacks use the scoped registered LegacyLabRun bridge.

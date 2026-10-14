@@ -70,3 +70,5 @@
   It never restores historical envelopes, publishes epochs, creates reports,
   selects vault formats or grants current writing rights. Storage failures may
   leave safe originals; retries are explicit and idempotent, never deletion.
+
+- Distributor metadata audits use a captured task budget; reaching capacity never deletes originals. Existing terminal/ack transitions remain possible within budget; new tasks are blocked explicitly.

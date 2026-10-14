@@ -5,6 +5,7 @@ import { Bytes } from '@lody/e2ee-core';
 import type { makeLabCredentials } from './credentials';
 import type { makeLabControlGateway } from './control-gateway';
 import { makeLabOperations } from './operation-scope';
+import { LegacyLabRun } from './run';
 import { dispatchLabMailbox, type LabMailboxHost } from './mailbox-http';
 import { LabJoinError, parseLabJoin, type makeLabJoinMailbox } from './join-mailbox';
 import { LabWorkspaceError, type makeLabWorkspaceRegistry } from './workspace-registry';
@@ -120,6 +121,11 @@ export function makeLabHttpHost(input: {
         })
     );
     const operations = yield* makeLabOperations();
+    // Registered Node HTTP callback bridge, owned by this host Scope.
+    const callbacks = yield* Effect.acquireRelease(
+      Effect.sync(() => new LegacyLabRun(Layer.empty)),
+      (owner) => Effect.promise(() => owner.close())
+    );
     const address = server.address();
     if (!address || typeof address === 'string') return yield* reject(500);
     const body = (request: IncomingMessage, limit: number) =>
@@ -325,7 +331,7 @@ export function makeLabHttpHost(input: {
         abort();
         return;
       }
-      const raw = Effect.runPromise(Effect.result(operations.run(route(request))))
+      const raw = callbacks.run(Effect.result(operations.run(route(request))))
         .then(
           (result) => {
             if (Result.isSuccess(result)) respond(response, 200, result.success);

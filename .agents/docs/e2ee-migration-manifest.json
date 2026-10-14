@@ -9069,159 +9069,167 @@
     {
       "number": 1438,
       "headRefName": "e2ee-migration-baseline",
-      "headRefOid": "59c3840b0165ce8a6637418c1e2b2095b13f6b88",
+      "headRefOid": "d7c4d1fc0d25fadfdf14d97d1576435e2e49f627",
       "baseRefName": "main",
       "isDraft": true,
-      "parentHead": "984c35c5b30600d68abec1ec3e585eca73bcd4f0"
+      "parentHead": "129996ed7d641be68aa1f1f9cc480c7c88d49917"
     },
     {
       "number": 1439,
       "headRefName": "e2ee-ledger-content-facts",
-      "headRefOid": "946965a7fd3ccc10c6a18f41f8f54a38c74232a3",
+      "headRefOid": "49700a726882522f1093022d266d7f7002ace11a",
       "baseRefName": "e2ee-migration-baseline",
       "isDraft": true,
-      "parentHead": "59c3840b0165ce8a6637418c1e2b2095b13f6b88"
+      "parentHead": "d7c4d1fc0d25fadfdf14d97d1576435e2e49f627"
     },
     {
       "number": 1442,
       "headRefName": "e2ee-document-workflows",
-      "headRefOid": "543f82d1c4f4470436d4ad183f0f53259faddf49",
+      "headRefOid": "ea7998dd2954f7207e7e36c02f61f62ba86637ca",
       "baseRefName": "e2ee-ledger-content-facts",
       "isDraft": true,
-      "parentHead": "946965a7fd3ccc10c6a18f41f8f54a38c74232a3"
+      "parentHead": "49700a726882522f1093022d266d7f7002ace11a"
     },
     {
       "number": 1446,
       "headRefName": "e2ee-epoch-history",
-      "headRefOid": "b67e0c062c667046d8c90b7a2512dbbd0834be40",
+      "headRefOid": "85660e6b8f3a305bd240cf0d54417325aabc0eda",
       "baseRefName": "e2ee-document-workflows",
       "isDraft": true,
-      "parentHead": "543f82d1c4f4470436d4ad183f0f53259faddf49"
+      "parentHead": "ea7998dd2954f7207e7e36c02f61f62ba86637ca"
     },
     {
       "number": 1447,
       "headRefName": "e2ee-ledger-signing",
-      "headRefOid": "d87ee2d444a60079ae1adf84565a7bd53faf905e",
+      "headRefOid": "d5d1c18ff9c47f4c7b14aa4d8ed36e04605a8a23",
       "baseRefName": "e2ee-epoch-history",
       "isDraft": true,
-      "parentHead": "b67e0c062c667046d8c90b7a2512dbbd0834be40"
+      "parentHead": "85660e6b8f3a305bd240cf0d54417325aabc0eda"
     },
     {
       "number": 1448,
       "headRefName": "e2ee-epoch-envelopes",
-      "headRefOid": "0a73d464b5c93fab4b4e0f7ce704778ba437ac94",
+      "headRefOid": "37c6c40d8e3680bb8ee7a129a58760e886d42919",
       "baseRefName": "e2ee-ledger-signing",
       "isDraft": true,
-      "parentHead": "d87ee2d444a60079ae1adf84565a7bd53faf905e"
+      "parentHead": "d5d1c18ff9c47f4c7b14aa4d8ed36e04605a8a23"
     },
     {
       "number": 1450,
       "headRefName": "e2ee-key-delivery",
-      "headRefOid": "34b918367fe23f6bf9c2ff1cea31b154de298cb2",
+      "headRefOid": "9c77ac714f10229a4f57c4eb265d86d65ea34bfe",
       "baseRefName": "e2ee-epoch-envelopes",
       "isDraft": true,
-      "parentHead": "0a73d464b5c93fab4b4e0f7ce704778ba437ac94"
+      "parentHead": "37c6c40d8e3680bb8ee7a129a58760e886d42919"
     },
     {
       "number": 1464,
       "headRefName": "e2ee-ledger-snapshots",
-      "headRefOid": "926e1501e69b047d1a367f241b3660cb474d61b8",
+      "headRefOid": "3263358c1c686651979aaa9a741227c9d92ce644",
       "baseRefName": "e2ee-key-delivery",
       "isDraft": true,
-      "parentHead": "34b918367fe23f6bf9c2ff1cea31b154de298cb2",
+      "parentHead": "9c77ac714f10229a4f57c4eb265d86d65ea34bfe",
       "reviewStatus": "original limited NOT READY; author oldfail/newpass and supplemental exact-point regressions done; coordinator/original reviewer incremental recheck pending"
     },
     {
       "number": 1472,
       "headRefName": "e2ee-key-mailbox",
-      "headRefOid": "58cbd49c6869f28d09efb60d3b9a7ec10243e93a",
+      "headRefOid": "6d2dba9f27316c08784b852670f0a8ddad1df3c4",
       "baseRefName": "e2ee-ledger-snapshots",
       "isDraft": true,
-      "parentHead": "926e1501e69b047d1a367f241b3660cb474d61b8",
+      "parentHead": "3263358c1c686651979aaa9a741227c9d92ce644",
       "lastIntegratedParentHead": "5d3967ec94e3b10fdec76220937e9fcfe2623590",
       "syncRequired": true
     },
     {
       "number": 1474,
       "headRefName": "e2ee-content-snapshot-auth",
-      "headRefOid": "f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08",
+      "headRefOid": "2eaa9d353ec139a0d92645b44dda1705a448053e",
       "baseRefName": "e2ee-key-mailbox",
       "isDraft": true,
-      "parentHead": "58cbd49c6869f28d09efb60d3b9a7ec10243e93a"
+      "parentHead": "6d2dba9f27316c08784b852670f0a8ddad1df3c4"
     },
     {
       "number": 1479,
       "headRefName": "e2ee-ledger-admission",
-      "headRefOid": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b",
+      "headRefOid": "f5d2e5c9d108dfda6ea39cc6fdde3ec5a3796198",
       "baseRefName": "e2ee-content-snapshot-auth",
       "isDraft": true,
-      "parentHead": "f6bedf5092b921e8a34f1baacc9a50c6bb9d5a08"
+      "parentHead": "2eaa9d353ec139a0d92645b44dda1705a448053e"
     },
     {
       "number": 1480,
       "headRefName": "e2ee-host-epoch-protection",
-      "headRefOid": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
+      "headRefOid": "f4f0986b313107ef5e5fb8337f703391a72b8273",
       "baseRefName": "e2ee-ledger-admission",
       "isDraft": true,
-      "parentHead": "f7dc8e53b1f5a10f11d3eeebab3a292c3fc3023b"
+      "parentHead": "f5d2e5c9d108dfda6ea39cc6fdde3ec5a3796198"
     },
     {
       "number": 1482,
       "headRefName": "e2ee-epoch-receive-reports",
-      "headRefOid": "4134109a76739d8b36ff5a8a1209e37e16518703",
+      "headRefOid": "fb69ec29fcbc16cf309b511f88c9b1b164ffe7cb",
       "baseRefName": "e2ee-host-epoch-protection",
       "isDraft": true,
-      "parentHead": "e1b6471e558fc11507522fbf1e23431d3b2c0e63",
+      "parentHead": "f4f0986b313107ef5e5fb8337f703391a72b8273",
       "lastIntegratedParentHead": "ec6a02f97aea1445a89ee1bc5a4d72e38f1bf9ee",
       "syncRequired": true
     },
     {
       "number": 1484,
       "headRefName": "e2ee-ledger-feed",
-      "headRefOid": "14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8",
+      "headRefOid": "56333d8b4e0ef3ba7503fc783381448e183da28b",
       "baseRefName": "e2ee-epoch-receive-reports",
       "isDraft": true,
-      "parentHead": "4134109a76739d8b36ff5a8a1209e37e16518703"
+      "parentHead": "fb69ec29fcbc16cf309b511f88c9b1b164ffe7cb"
     },
     {
       "number": 1485,
       "headRefName": "e2ee-mailbox-repairs",
-      "headRefOid": "680686d1442e7f8b12f6f8b84af3f17f3c514b97",
+      "headRefOid": "697d2b5ffb376cbcbbe3731d9ac9337b7bf524c7",
       "baseRefName": "e2ee-ledger-feed",
       "isDraft": true,
-      "parentHead": "14e7c5a1a7fd5beb273d77c5dd936c2b7155a1b8"
+      "parentHead": "56333d8b4e0ef3ba7503fc783381448e183da28b"
     },
     {
       "number": 1487,
       "headRefName": "e2ee-recipient-mailbox",
-      "headRefOid": "098e274221aae13305d29ff75629bee168678ded",
+      "headRefOid": "fa61d95ded0c7e96b71d754b0745e3bba2f11668",
       "baseRefName": "e2ee-mailbox-repairs",
       "isDraft": true,
-      "parentHead": "680686d1442e7f8b12f6f8b84af3f17f3c514b97"
+      "parentHead": "697d2b5ffb376cbcbbe3731d9ac9337b7bf524c7"
     },
     {
       "number": 1491,
       "headRefName": "e2ee-ledger-sdk-cas",
-      "headRefOid": "f82f8634743d5bc4dd8858cf6867b91d80c221ba",
+      "headRefOid": "3c6a46bb4aaeebfec9dff3b13634ddc0139394a1",
       "baseRefName": "e2ee-recipient-mailbox",
       "isDraft": true,
-      "parentHead": "098e274221aae13305d29ff75629bee168678ded"
+      "parentHead": "fa61d95ded0c7e96b71d754b0745e3bba2f11668"
     },
     {
       "number": 1493,
       "headRefName": "e2ee-sender-distribution",
-      "headRefOid": "36ca2685b7eefeb15ebd041e50444796c2686652",
+      "headRefOid": "e2fe6c65c1da595aa36b19097657bedc294f892f",
       "baseRefName": "e2ee-ledger-sdk-cas",
       "isDraft": true,
-      "parentHead": "f82f8634743d5bc4dd8858cf6867b91d80c221ba"
+      "parentHead": "3c6a46bb4aaeebfec9dff3b13634ddc0139394a1"
     },
     {
       "number": 1496,
       "headRefName": "e2ee-content-sdk-binding",
-      "headRefOid": "0418fd69e22d1eeba47553714473ec54762837ec",
+      "headRefOid": "d9e0db0c37e656e8ac510f7a4ea53bcaee93572a",
       "baseRefName": "e2ee-sender-distribution",
       "isDraft": true,
-      "parentHead": "36ca2685b7eefeb15ebd041e50444796c2686652"
+      "parentHead": "e2fe6c65c1da595aa36b19097657bedc294f892f"
+    },
+    {
+      "number": 1557,
+      "headRefName": "e2ee-complete-consumers",
+      "headRefOid": "2f196ddb5a47e85aa7a6981dc54ddbb91929d3a6",
+      "baseRefName": "e2ee-lab-integration",
+      "isDraft": true,
+      "parentHead": "66dd666dbb20352857866ba9103d11bcff985d5f"
     }
   ],
   "lastFetchedMain": {
@@ -9365,11 +9373,11 @@
   },
   "capabilityAudit": {
     "status": "partial-behavior-migration-not-equivalence",
-    "stackHead": "2190d418b3ec2f805246794e5ec1dae72fa8fbc4",
+    "stackHead": "2f196ddb5a47e85aa7a6981dc54ddbb91929d3a6",
     "sourceIdentityMatched": 367,
     "registeredEntries": 380,
     "classificationRule": "Retired implementation does not retire required behavior. File status and path existence are not completion percentages.",
-    "currentLabPR": 1526,
+    "currentLabPR": 1557,
     "remaining": [
       "G genesis/control creation and layout approval",
       "S protected snapshot format/admission/trust qualification and unavailable-history API",
@@ -9521,6 +9529,30 @@
       "protected content snapshot/admission/bootstrap",
       "vault/per-workspace recovery registration",
       "all original entropy/insider/model-driven scenarios and native custody"
-    ]
+    ],
+    "previousStackHead": "2190d418b3ec2f805246794e5ec1dae72fa8fbc4",
+    "stackHeadMeaning": "Pinned external-review baseline; previous audit conclusions are historical, not newly revalidated by this field."
+  },
+  "publishedStackSnapshotScope": "Immutable published baseline at the start of the 2026-10-14 external review fixes; not a live PR status API. Subsequent repair commits are identified by Git ancestry and exact CI checkout, not a self-referential manifest SHA.",
+  "externalReviewFixes": {
+    "baseline": "2f196ddb5a47e85aa7a6981dc54ddbb91929d3a6",
+    "scope": [
+      "exact refusal classification and evidence recomputation",
+      "bounded distribution metadata audit",
+      "final genesis metadata readback",
+      "fixture preparation without thousands of disk flushes",
+      "registered HTTP callback owner"
+    ],
+    "notApproved": [
+      "A1 installed-history product scope decision",
+      "snapshot qualification",
+      "genesis/control layout",
+      "D12",
+      "vault/backup",
+      "strict B",
+      "exact replay entropy"
+    ],
+    "supersededPullRequest": 1540,
+    "supersededReason": "main already owns current ACP lock closure; old patch must not be merged"
   }
 }

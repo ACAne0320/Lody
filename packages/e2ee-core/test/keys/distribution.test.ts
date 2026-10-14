@@ -411,3 +411,40 @@ describe('verified targets and durable finite distribution', () => {
     }
   );
 });
+
+it('bounds retained task audits without deleting originals or blocking terminal updates at capacity', async () => {
+  const { f, file, config } = await setup(0);
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const host = yield* makeSqliteKeyMailbox({
+          path: file('host'),
+          mode: 'create',
+          genesis: f.context.genesis,
+          ledger: f.ledger,
+        });
+        const owner = ok(host.bind(f.owner.publicKey)),
+          phone = ok(host.bind(f.phone.publicKey));
+        const client = yield* makeSqliteKeyDistribution({
+          ...config,
+          remote: owner,
+          sendStore: { ...config.sendStore, maxTasks: 1 },
+        });
+        expect((yield* client.reconcileCurrentEpoch()).scheduled).toBe(1);
+        expect((yield* client.resumePendingDeliveries()).processed).toBe(1);
+        const first = (yield* client.deliveryResults()).items[0]!;
+        yield* client.acknowledgeDelivery(first.id);
+        const originals = rows(file('send'));
+        yield* phone.repair(
+          { genesis: hex(f.context.genesis.toBytes()), epoch: 0, recipient: hex(f.phone.raw) },
+          'bounded-repair'
+        );
+        expect(yield* client.reconcileCurrentEpoch()).toMatchObject({
+          scheduled: 0,
+          blocked: [hex(f.phone.raw)],
+        });
+        expect(rows(file('send'))).toEqual(originals);
+      })
+    )
+  );
+});

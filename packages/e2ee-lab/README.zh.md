@@ -9,6 +9,8 @@ pnpm --filter @lody/e2ee-lab lab inspect /绝对路径/新输出目录/evidence.
 
 默认有限计划用真实子进程、challenge/bearer HTTP、public HPKE/SQLite/P09、已发布Loro/Flock SDK执行39个动作：实际SIGKILL/重开、签名control提交后丢ACK与原字节恢复、坏密文、单文档停止/持久对不推进、客户端完整历史恢复、SQLite ABORT。`evidence.json`记录实际源码/依赖指纹、原签名记录、服务端密文字节、调度、判定与未测范围；私有设备夹具导出只在IPC内存。`fixture/*-transport.jsonl`保存原始/投递保护字节，不记凭据。exit0仅表示已测动作契约通过，不表示三类安全维度/完整迁移全通过；exit2为测得违约/缺口，exit1为harness失败，exit64为CLI用法错误。自定义动作是≤256项JSON数组，未知动作/actor、访问器和必要观测缺失在作用前明确拒绝。SIGINT/TERM中断入口并等待actor终止；不提供精确字节重seal replay。
 
+负向期待必须包含 `refusal: { tag, code }`。`inspect` 忽略自报 verdict，从记录的观察重新计算；这只是对不可信材料的一致性检查，不是认证证据或重新执行。真实进程场景的耗时仅作诊断，不是验收阈值。
+
 `./join-session`先落盘/核验原签名加入意图再POST，丢回执不重签；unbound发现不授予收钥，Owner走public admission/P09并核对持久feed后ACK，新成员才启动key/content。
 
 `./full-session`统一已入组control、receiver/distributor、installed protected keys和每文档Loro/Flock owner；重认证先等旧native操作结束。本地已知pin与当前网络点分开：合成进程桥把返回点与独立见证的签名原件核对，最多尝试两个外部已知重开点，不从SQL自选权限端点。Flock用显式单调逻辑时钟。最新installed钥的历史恢复消费public `./keys/host/history`，核验全链再持久保存/回读旧钥，不回开历史发送信封或candidate备份。夹具准备的是已经发布的完整前缀，不是产品创建或耐久新epoch publisher。历史可用时才可恢复，只停失败文档。

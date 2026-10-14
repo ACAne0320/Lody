@@ -17,21 +17,9 @@ function readBounded(path: string, limit: number) {
   }
 }
 import { resolve } from 'node:path';
-import { Cause, Effect, Exit, Schema } from 'effect';
+import { Cause, Effect, Exit } from 'effect';
 import { runLabScenario } from './platform/scenario-runner';
-const Artifact = Schema.Struct({
-  version: Schema.Literal(1),
-  syntheticOnly: Schema.Literal(true),
-  run: Schema.Struct({
-    verdict: Schema.Literals([
-      'pass',
-      'violation',
-      'unavailable',
-      'outside-model',
-      'harness-error',
-    ]),
-  }),
-});
+import { inspectLabEvidence } from './platform/action-executor';
 const [command, output, plan] = process.argv.slice(2);
 const main = Effect.gen(function* () {
   if (command === 'inspect' && output) {
@@ -39,7 +27,10 @@ const main = Effect.gen(function* () {
       try: () => JSON.parse(readBounded(resolve(output), 64 * 1024 * 1024)) as unknown,
       catch: (cause) => cause,
     });
-    const artifact = yield* Effect.fromResult(Schema.decodeUnknownResult(Artifact)(parsed));
+    const artifact = yield* Effect.try({
+      try: () => inspectLabEvidence(parsed),
+      catch: (cause) => cause,
+    });
     console.log(JSON.stringify(artifact));
     process.exitCode =
       artifact.run.verdict === 'pass' ? 0 : artifact.run.verdict === 'harness-error' ? 1 : 2;

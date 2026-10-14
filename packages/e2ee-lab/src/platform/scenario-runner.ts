@@ -70,7 +70,13 @@ export const existingWorkspaceActions: readonly LabAction[] = [
     expect: good,
   },
   { kind: 'attack', actor: 'peer', attack: 'corrupt-loro', expect: good },
-  { kind: 'call', actor: 'peer', operation: 'pull', document: 'loro', expect: { ok: false } },
+  {
+    kind: 'call',
+    actor: 'peer',
+    operation: 'pull',
+    document: 'loro',
+    expect: { ok: false, refusal: { tag: 'LabContentError', code: 'decrypt_failed' } },
+  },
   {
     kind: 'call',
     actor: 'peer',
@@ -96,7 +102,12 @@ export const existingWorkspaceActions: readonly LabAction[] = [
     expect: { ok: true, text: 'synthetic hello resumed' },
   },
   { kind: 'attack', actor: 'peer', attack: 'deny-loro-persist', expect: good },
-  { kind: 'persist', actor: 'peer', document: 'loro', expect: { ok: false } },
+  {
+    kind: 'persist',
+    actor: 'peer',
+    document: 'loro',
+    expect: { ok: false, refusal: { tag: 'LabDocumentError', code: 'sqlite' } },
+  },
   {
     kind: 'call',
     actor: 'peer',
@@ -114,13 +125,23 @@ export const existingWorkspaceActions: readonly LabAction[] = [
     expect: { ok: true, text: 'synthetic hello resumed' },
   },
   { kind: 'attack', actor: 'owner', attack: 'drop-control-ack', expect: good },
-  { kind: 'call', actor: 'owner', operation: 'revoke-peer', expect: { ok: false } },
+  {
+    kind: 'call',
+    actor: 'owner',
+    operation: 'revoke-peer',
+    expect: { ok: false, refusal: { tag: 'LabTransportFault', code: 'dropped-committed-ack' } },
+  },
   { kind: 'crash', actor: 'owner', expect: good },
   { kind: 'start', actor: 'owner', mode: 'open', expect: good },
   { kind: 'call', actor: 'owner', operation: 'resume', expect: { ok: true, outcome: 'Committed' } },
   { kind: 'call', actor: 'owner', operation: 'refresh', expect: good },
   { kind: 'call', actor: 'owner', operation: 'acknowledge', expect: good },
-  { kind: 'call', actor: 'peer', operation: 'refresh', expect: { ok: false } },
+  {
+    kind: 'call',
+    actor: 'peer',
+    operation: 'refresh',
+    expect: { ok: false, refusal: { tag: 'LedgerFeedError', code: 'forbidden' } },
+  },
 ];
 /** Complete actor execution + bounded artifacts. Expected text and old durable
  * bytes are independent reference observations, not production permissions.

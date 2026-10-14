@@ -6,6 +6,7 @@ import {
   type CrdtAdapter,
   type RemoteCursor,
   type RemoteCursorStore,
+  type TransportError,
 } from '@loro-dev/streams-crdt';
 import type { makeStreamsUpdateBinding } from '@lody/e2ee-core/content/streams';
 import { makeLabUpdateProvider } from './content-provider';
@@ -21,9 +22,18 @@ export interface LabNativeDocument<TVersion extends JsonObject> {
   release(): void;
 }
 export class LabContentError extends Data.TaggedError('LabContentError')<{
-  readonly code: 'closed' | 'document-stopped' | 'storage' | 'native' | 'transport';
+  readonly code:
+    | 'closed'
+    | 'document-stopped'
+    | 'storage'
+    | 'native'
+    | 'transport'
+    | TransportError['code']
+    | import('@loro-dev/streams-crdt').PayloadProtectionFailureReason;
   readonly cause?: unknown;
 }> {}
+const sdkError = (cause: TransportError) =>
+  error(cause.code === 'payload_protection_error' ? cause.reason : cause.code, cause);
 const error = (code: LabContentError['code'], cause?: unknown) =>
   new LabContentError({ code, cause });
 /** One synthetic Lab document, two real SDK modes, one durable state/cursor pair.
@@ -209,7 +219,7 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
           Effect.gen(function* () {
             yield* live();
             const result = yield* useSdk(false, (sdk) => sdk.createStream());
-            if (!result.ok) yield* error('transport', result.error);
+            if (!result.ok) yield* sdkError(result.error);
           })
         ),
       append: (text: string) =>
@@ -234,7 +244,7 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
                 );
               })
             );
-            if (!result.ok) yield* error('transport', result.error);
+            if (!result.ok) yield* sdkError(result.error);
           })
         ),
       persist: () =>
@@ -253,7 +263,7 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
           Effect.gen(function* () {
             yield* live();
             const result = yield* useSdk(false, (sdk) => sdk.catchup());
-            if (!result.ok) yield* error('transport', result.error);
+            if (!result.ok) yield* sdkError(result.error);
           })
         ),
       /** Explicit client recovery; preserves durable local edits, never deletes/changes host snapshots. */
@@ -264,7 +274,7 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
             yield* Scope.close(current.child, Exit.void);
             current = yield* allocate();
             const result = yield* useSdk(true, (sdk) => sdk.catchup());
-            if (!result.ok) yield* error('transport', result.error);
+            if (!result.ok) yield* sdkError(result.error);
             stopped = false;
           })
         ),

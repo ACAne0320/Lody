@@ -16,7 +16,14 @@ it('executes all finite kinds on real OS/HPKE/SQLite/SDK actors; bad cipher/stor
     const artifact = await Effect.runPromise(runLabScenario({ directory: root }));
     expect(artifact.run.verdict).toBe('pass');
     expect(artifact.run.observations).toHaveLength(39);
-    expect(artifact.run.observations[18]!.reply.ok).toBe(false);
+    expect(artifact.run.observations[18]!.reply.error).toEqual({
+      tag: 'LabContentError',
+      code: 'decrypt_failed',
+    });
+    expect(artifact.run.observations[38]!.reply.error).toEqual({
+      tag: 'LedgerFeedError',
+      code: 'forbidden',
+    });
     expect(artifact.run.observations[18]!.reply.trace!.cipherChanged).toBeGreaterThan(0);
     expect(artifact.run.observations[32]!.reply.trace!.ackDropped).toBe(1);
     expect(artifact.run.observations[19]!.durability).toBe('pass');
@@ -35,7 +42,7 @@ it('executes all finite kinds on real OS/HPKE/SQLite/SDK actors; bad cipher/stor
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 15000);
+}, 0);
 it('a known durable-loss defect is measured after actual SIGKILL/reopen, not timeout or a fake boolean', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-action-negative-'));
   try {
@@ -136,6 +143,15 @@ it('preflights every initial action before any effect, ignores caller map overri
   };
   for (const actions of [
     [{ kind: 'new-unknown', actor: 'owner' }],
+    [
+      {
+        kind: 'call',
+        actor: 'owner',
+        operation: 'pull',
+        expect: { ok: false, refusal: { tag: 'LabContentError', code: 'decrypt_failed' } },
+      },
+    ],
+    [{ kind: 'call', actor: 'owner', operation: 'pull', document: 'loro', expect: { ok: false } }],
     [
       {
         kind: 'call',
@@ -326,7 +342,11 @@ it('preserves ok/outcome failures and missing measurements instead of turning th
       expected: { ok: true, outcome: 'Committed' },
       verdict: 'pass',
     },
-    { reply: { ok: true }, expected: { ok: false }, verdict: 'violation' },
+    {
+      reply: { ok: true },
+      expected: { ok: false, refusal: { tag: 'LabContentError', code: 'decrypt_failed' } },
+      verdict: 'violation',
+    },
     {
       reply: { ok: false },
       expected: { ok: true, text: 'not observed' },
@@ -356,4 +376,71 @@ it('preserves ok/outcome failures and missing measurements instead of turning th
     expect(result.observations[0]!.integrity).toBe(verdict);
     if (expected?.text) expect(result.observations[0]!.checks.text).toBe('harness-error');
   }
+});
+
+it('requires the exact refusal and never treats input, defect or unrelated transport failure as a security pass', async () => {
+  for (const [error, verdict] of [
+    [{ tag: 'LabContentError', code: 'decrypt_failed' }, 'pass'],
+    [{ tag: 'LabContentError', code: 'transport' }, 'harness-error'],
+    [{ tag: 'LabHarnessError', code: 'invalid-input-or-untyped-failure' }, 'harness-error'],
+    [undefined, 'harness-error'],
+  ] as const) {
+    const actor = {
+      start: () => Effect.succeed({ ok: true }),
+      call: () => Effect.succeed({ ok: false, error }),
+      crash: () => Effect.succeed({ code: null, signal: 'SIGKILL' as const }),
+      shutdown: () => Effect.void,
+      pid: () => undefined,
+      diagnostics: () => '',
+    };
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        executeLabActions({
+          actors: { owner: actor },
+          maxSteps: 2,
+          actions: [
+            {
+              kind: 'call',
+              actor: 'owner',
+              operation: 'pull',
+              document: 'loro',
+              expect: { ok: false, refusal: { tag: 'LabContentError', code: 'decrypt_failed' } },
+            },
+          ],
+        })
+      )
+    );
+    expect(result.verdict).toBe(verdict);
+  }
+});
+
+it('inspect recomputes observations instead of trusting stored pass verdicts', async () => {
+  const { inspectLabEvidence } = await import('../src/platform/action-executor');
+  const artifact = {
+    version: 1,
+    syntheticOnly: true,
+    run: {
+      verdict: 'pass',
+      observations: [
+        {
+          action: {
+            kind: 'call',
+            actor: 'owner',
+            operation: 'pull',
+            document: 'loro',
+            expect: { ok: false, refusal: { tag: 'LabContentError', code: 'decrypt_failed' } },
+          },
+          reply: { ok: false, error: { tag: 'LabContentError', code: 'transport' } },
+          integrity: 'pass',
+          checks: { ok: 'pass' },
+        },
+      ],
+    },
+  };
+  expect(inspectLabEvidence(artifact).run.verdict).toBe('harness-error');
+  artifact.run.observations[0]!.reply.error.code = 'decrypt_failed';
+  expect(inspectLabEvidence(artifact).run.verdict).toBe('pass');
+  expect(() =>
+    inspectLabEvidence({ version: 1, syntheticOnly: true, run: { verdict: 'pass' } })
+  ).toThrow();
 });

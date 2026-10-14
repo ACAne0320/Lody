@@ -2,7 +2,7 @@ import { appendFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 // Application entrypoint: one Effect Scope owns the complete synthetic session.
-import { Cause, Effect, Queue, Result } from 'effect';
+import { Cause, Effect, Queue, Result, Schema } from 'effect';
 import { join, isAbsolute } from 'node:path';
 import type { SubmissionResult } from '@lody/e2ee-core/submission';
 import { Bytes } from '@lody/e2ee-core';
@@ -11,6 +11,35 @@ import { openLabWorkspaceSession } from './full-session';
 import { labSyntheticProtector } from './synthetic-protection';
 import type { LabProcessConfiguration } from './process-contract';
 const ok = Result.getOrThrow;
+const FailureIdentity = Schema.Struct({ _tag: Schema.String, code: Schema.String });
+const StreamRefusal = Schema.Struct({
+  code: Schema.Literals(['forbidden', 'unauthorized']),
+  status: Schema.Literals([401, 403]),
+});
+// Do not flatten defects, interruption or multiple causes into an expected refusal.
+const projectFailure = (cause: Cause.Cause<unknown>, droppedAck: boolean) => {
+  const reason = cause.reasons[0];
+  if (cause.reasons.length !== 1 || !reason || !Cause.isFailReason(reason))
+    return { tag: 'LabHarnessError', code: 'non-domain-failure' };
+  const submission = Schema.decodeUnknownResult(
+    Schema.Struct({ _tag: Schema.Literal('SubmissionRemoteError') })
+  )(reason.error);
+  if (Result.isSuccess(submission))
+    return droppedAck
+      ? { tag: 'LabTransportFault', code: 'dropped-committed-ack' }
+      : { tag: 'SubmissionRemoteError', code: 'failed' };
+  const decoded = Schema.decodeUnknownResult(FailureIdentity)(reason.error);
+  if (Result.isFailure(decoded))
+    return { tag: 'LabHarnessError', code: 'invalid-input-or-untyped-failure' };
+  const error = decoded.success;
+  if (error._tag === 'LedgerFeedError' && error.code === 'transport') {
+    const native = Schema.decodeUnknownResult(Schema.Struct({ cause: StreamRefusal }))(
+      reason.error
+    );
+    if (Result.isSuccess(native)) return { tag: error._tag, code: native.success.cause.code };
+  }
+  return { tag: error._tag, code: error.code };
+};
 const hash = (value: string) => {
   if (!/^[0-9a-f]{64}$/.test(value)) throw new Error('fixture-hash');
   return new Uint8Array(Buffer.from(value, 'hex'));
@@ -341,6 +370,7 @@ const program = Effect.scoped(
     });
     while (true) {
       const command = yield* Queue.take(queue);
+      const droppedBefore = ackDropped;
       const result = yield* Effect.exit(handle(command));
       const known = session && !ending ? yield* Effect.result(session.current()) : undefined;
       const localPoint =
@@ -364,12 +394,7 @@ const program = Effect.scoped(
               ok: false,
               localPoint,
               trace: { frames: traceFrames, cipherChanged, ackDropped },
-              error: {
-                tag: String(
-                  (Cause.squash(result.cause) as { _tag?: string })?._tag ?? 'LabActionFailure'
-                ),
-                code: String((Cause.squash(result.cause) as { code?: string })?.code ?? 'failed'),
-              },
+              error: projectFailure(result.cause, ackDropped > droppedBefore),
             };
       yield* Effect.uninterruptible(
         Effect.callback<void, Error>((resume) => {
