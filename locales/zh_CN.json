@@ -4656,6 +4656,7 @@
   "sessions.permission.question.tool": "允许这个操作？",
   "sessions.permission.subject": "Agent 想要执行的操作",
   "sessions.permission.inDirectory": "位于 {{path}}",
+  "sessions.permission.commandTruncated": "该命令超过 1 KB，只显示了开头部分。请确认信任未显示的部分后再批准。",
   "sessions.permission.position": "{{index}}/{{total}}",
   "sessions.permission.previous": "上一个请求",
   "sessions.permission.next": "下一个请求",

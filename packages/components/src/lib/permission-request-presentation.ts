@@ -84,7 +84,13 @@ export const resolvePermissionReason = (permission: PermissionRequest): string |
  * subject here: the plan is the message directly above it.
  */
 export type PermissionSubject =
-  | { type: 'command'; command: string; cwd: string | null }
+  | {
+      type: 'command';
+      command: string;
+      cwd: string | null;
+      /** History kept only the head of a long command: the user cannot see all of it. */
+      truncated: boolean;
+    }
   | { type: 'paths'; paths: string[] }
   | { type: 'text'; text: string };
 
@@ -103,6 +109,7 @@ export const resolvePermissionSubject = (toolCall: ToolCallContent): PermissionS
         type: 'command',
         command,
         cwd: commandBlock.cwd ? normalizeWorktreePath(commandBlock.cwd) : null,
+        truncated: commandBlock.truncated === true,
       };
     }
   }
@@ -117,7 +124,7 @@ export const resolvePermissionSubject = (toolCall: ToolCallContent): PermissionS
   const title = toolCall.title?.trim();
   if (title) {
     return questionKind === 'command'
-      ? { type: 'command', command: normalizeWorktreePath(title), cwd: null }
+      ? { type: 'command', command: normalizeWorktreePath(title), cwd: null, truncated: false }
       : { type: 'text', text: normalizeWorktreePath(title) };
   }
   return null;

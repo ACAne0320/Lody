@@ -313,6 +313,7 @@ describe('acp history apply', () => {
       storedTool(rawInput).content?.find((block) => block.type === 'terminal_command') as {
         command: string;
         args?: string[];
+        truncated?: boolean;
       };
     const storedBytes = (block: { command: string; args?: string[] }) =>
       [block.command, ...(block.args ?? [])].reduce(
@@ -323,6 +324,7 @@ describe('acp history apply', () => {
     const claude = commandOf({ command: `echo ${base64} | base64 -d > out.png` });
     expect(claude.command.startsWith(`echo ${base64.slice(0, 100)}`)).toBe(true);
     expect(claude.command.endsWith('…')).toBe(true);
+    expect(claude.truncated).toBe(true);
     expect(storedBytes(claude)).toBeLessThanOrEqual(MAX_STORED_TERMINAL_COMMAND_BYTES);
 
     // Codex puts the script in args: `bash -lc <script>` shares the same budget.
@@ -331,6 +333,8 @@ describe('acp history apply', () => {
     expect(codex.args).toHaveLength(2);
     expect(codex.args?.[0]).toBe('-lc');
     expect(codex.args?.[1]?.endsWith('…')).toBe(true);
+    expect(codex.truncated).toBe(true);
+    expect(commandOf({ command: 'ls -la' }).truncated).toBeUndefined();
     expect(storedBytes(codex)).toBeLessThanOrEqual(MAX_STORED_TERMINAL_COMMAND_BYTES);
 
     // Claude's adapter titles a Bash call with the command itself.

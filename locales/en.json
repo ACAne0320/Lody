@@ -4656,6 +4656,7 @@
   "sessions.permission.question.tool": "Allow this action?",
   "sessions.permission.subject": "What the agent wants to do",
   "sessions.permission.inDirectory": "in {{path}}",
+  "sessions.permission.commandTruncated": "This command is longer than 1 KB and only its beginning is shown. Approve only if you trust the rest.",
   "sessions.permission.position": "{{index}}/{{total}}",
   "sessions.permission.previous": "Previous request",
   "sessions.permission.next": "Next request",

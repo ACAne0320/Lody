@@ -270,7 +270,7 @@ const utf8Head = (value: string, maxBytes: number): { end: number; bytes: number
 
 /** Keep the head of a command and its args within one shared 1 KiB budget. */
 export const truncateTerminalCommandForHistory = <
-  T extends { command: string; args?: string[] },
+  T extends { command: string; args?: string[]; truncated?: boolean },
 >(
   block: T
 ): T => {
@@ -301,7 +301,7 @@ export const truncateTerminalCommandForHistory = <
     break;
   }
   const [command = '', ...args] = kept;
-  return { ...block, command, ...(block.args === undefined ? {} : { args }) };
+  return { ...block, command, ...(block.args === undefined ? {} : { args }), truncated: true };
 };
 
 /**
