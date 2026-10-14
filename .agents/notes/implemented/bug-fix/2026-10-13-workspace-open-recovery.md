@@ -124,6 +124,12 @@ Two specific dead ends were also found:
   "long unused" pattern. `workspace/recovery_outcome` is sent after a boot clear:
   `ready` when the workspace opened, `stuck_again` when another recovery page
   appeared. That tells whether a clear is enough or the host wipe is needed.
+- **The stuck-connection banner opens the same page.** A workspace whose id is known
+  renders the ordinary layout even while its runtime never appears, so no route wait
+  is on screen and the 45-second `loading` banner was the only way out, offering just
+  the cache clear. That clear keeps the sign-in credential, which a reinstall replaces.
+  The banner now opens the recovery page and reports `workspace/boot_wait_stuck` once
+  with gate `control_connection_loading`; the page closes if the connection recovers.
 
 ## Alternatives not taken
 

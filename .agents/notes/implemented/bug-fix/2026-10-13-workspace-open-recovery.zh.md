@@ -83,6 +83,10 @@ PR: https://github.com/LodyAI/Lody/pull/1531
   恢复页时只发送一次 `workspace/boot_wait_stuck`，包含 gate、卡住原因、闲置时长和应用版本；
   闲置时长用于检验“很久没用”这一规律。启动时清除之后发送 `workspace/recovery_outcome`：工作区打开了是 `ready`，
   又出现恢复页是 `stuck_again`。据此可以判断清除缓存是否足够，还是需要宿主清除。
+- **连接卡住提示条打开同一个恢复页。** 已知 id 的工作区即使 runtime 一直没有出现，也会渲染普通布局，
+  屏幕上没有路由等待，唯一的出口是 45 秒 `loading` 提示条，而它只提供清除缓存。清除缓存会保留登录凭证，
+  重装则会替换它。提示条现在打开恢复页，并以 gate `control_connection_loading` 上报一次
+  `workspace/boot_wait_stuck`；连接恢复后页面自动关闭。
 
 ## 未采用的方案
 
