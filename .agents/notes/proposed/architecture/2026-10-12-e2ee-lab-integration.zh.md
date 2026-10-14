@@ -250,8 +250,6 @@ CI3006保留关闭修复但仍红：串行后Flock3096ms／gateway3320ms通过�
 
 CI 预算修正：key-distribution 夹具在 HTTP/接收/repair 查询中重复验证不变签名历史。现在复用真实验证的 view；仅在该私有只追加夹具新增记录后完整验证新历史。保留 epoch1、发送者撤销断言及独立 OS 子进程验证，全部 HPKE/HTTP/SQLite/报告/repair 步骤和原 15 秒限制不变。连接当前 core 的本地对照从 2757ms 到 1718ms。这是作者夹具证据，不是原生存钥或永久计时保证。父层带有失败信封定位，供明确的持久定向 repair 使用，不自动跳过。
 
-## 精确拒绝与证据检查
+## HTTP 回调与 permit 所有权
 
-负向期待必须给出精确 refusal tag/code；无关失败不能通过。非法计划、未分类错误、defect 和多重 cause 均保持 harness 失败。保留 SDK 保护失败原因与 HTTP forbidden，只输出安全分类，不序列化可能含秘密的 cause。丢 ACK 分类同时要求真实故障见证及 typed submission 失败。inspect 从观察重新计算且标明材料不可信，不认证文件，也不重跑场景。真实 39 步场景不以墙钟耗时判定性能（CI job 超时兜底仍保留）；耗时仅供观察。
-
-Node HTTP 回调使用已登记的 LegacyLabRun，由 host Scope 持有并等待关闭。driver 在放行同步 phase 前发布 permit 计数，避免完成重入误报外部 permit。本修复不批准任何协议提案或 installed-history 的产品范围。
+Node HTTP 回调使用已有的 scoped LegacyLabRun，并在销毁 owner 前等待回调完成。有限 driver 在放行同步 phase 前发布 permit 计数，避免完成重入误报外部 permit。负向期待和证据 inspect 的修复归后续完整消费者层。
