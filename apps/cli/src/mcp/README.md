@@ -3,6 +3,21 @@
 Binding rules remain in [AGENTS.md](AGENTS.md). This document explains interoperability
 and lifecycle decisions behind them; it does not introduce additional requirements.
 
+## Stdio lifetime
+
+`commands/internal.ts` executes `serveStdioMcp` with the SDK/Node adapter in
+`stdio/lifecycle.ts`. Its scoped connection waits for stdin EOF/close, SDK transport
+close, SIGINT or SIGTERM. Input/output errors fail the command; malformed protocol
+messages retain the SDK's existing error behavior. Subscriptions are installed before
+connection, and partial startup is cleaned up before returning. Only after the command
+finishes may `index.ts` close the shared shell-cache/Presence application runtime.
+
+SDK 2.0.0 stdio `close()` synchronously detaches stream listeners and cancels SDK
+requests, without asynchronous I/O. Tool handler Promises still belong to their
+existing owners: SDK cancellation does not establish raw-work completion. This
+migration covers the stdio host, not HTTP, daemon or tool orchestration.
+See the [decision and verification](../../../../.agents/notes/implemented/bug-fix/2026-10-14-mcp-stdio-lifetime.md).
+
 ## HTTP and loopback
 
 - The MCP HTTP host answers a strict HTTP client (Grok's Rust `rmcp`), which reports a
@@ -45,6 +60,26 @@ and lifecycle decisions behind them; it does not introduce additional requiremen
   the prompt. Completion is delivered automatically — no public wait tool — and legacy `wait=true`
   is a temporary adapter new callers must not use.
 
+## Machine catalog retry guidance
+
+- A retryable Machine catalog `SYNC_UNAVAILABLE` means freshness could not be confirmed
+  and the local catalog could not validate a selection. It does not prove that an id is
+  valid; a typo or inaccessible catalog may remain unresolved. Permanent transport/auth
+  failures and explicit validation errors retain their existing non-retryable classification.
+- Without an active Operation handle, an Agent must wait at least 5 seconds between calls
+  and make at most **3 total attempts** (initial call plus 2 retries) for the same request.
+  Reuse the identical arguments and `operationId`; never mint ids to bypass this budget.
+  After the third failure, stop and report the catalog blocker so the user can check the
+  selection, access, and connectivity. This is caller guidance, not a server-enforced counter.
+- Chat can fail after acceptance. Retrying with the same id recovers the existing fixed
+  target rather than appending a second prompt. Once an active handle is returned, stop
+  resubmitting: the daemon owns recovery and completion arrives automatically. Existing
+  Operation status tools remain available for an intentional status check; do not poll in a loop.
+- The Agent call budget does not shorten an accepted Operation's deadline. Daemon
+  materialization retains its existing 1–30 second backoff until the Operation deadline
+  (24 hours by default, configurable up to 7 days), always rechecking the fixed target
+  Turn before writing.
+
 ## Role dispatch
 
 - `session_create` and `session_create_many` resolve an explicit Agent Role id directly from
@@ -78,6 +113,20 @@ and lifecycle decisions behind them; it does not introduce additional requiremen
 
 ## Bounded collaboration
 
+If A sends an Agent-authored input to B, B cannot issue a new `session_chat` back to
+A while that exact input drives its active turn. This is a per-turn sender restriction,
+not a parent/child relationship or a permanent restriction between conversations.
+Single and legacy chats return non-retryable `REVERSE_CHAT_FORBIDDEN` before accepting
+work. Mixed batches retain unrelated items; a batch containing only reverse targets
+is rejected without creating an Operation. Matching accepted retries retain their
+existing identity and do not append another prompt.
+
+The runtime selects the exact source input id; its history author supplies only the
+sender provenance, never human authorization. Missing input history blocks a new chat;
+legacy inputs without Agent sender metadata cannot be classified by this guard. A new
+human-authored turn does not inherit an earlier input's restriction. This small fix does
+not change completion scheduling or add a note tool or ancestor graph.
+
 The shared causal chain limit is 16 hops, including delegated target turns and
 completion continuations. A turn at the cap cannot start another Operation;
 the existing guard returns non-retryable `CHAIN_DEPTH_EXCEEDED` before acceptance.
@@ -89,3 +138,10 @@ replies, and use automatic completion delivery instead of manually sending the
 same result back. At the cap, report remaining work to the user without retrying
 or creating another session to evade the limit. These prompts guide behavior;
 the runtime guard enforces the depth bound.
+
+Completed work is persisted and batched at normal release or fresh human input; result
+arrival alone never wakes idle or paused sessions. `lody_operation_batch_get` reads
+a fixed, Session/user-bound batch without new work. Pages are bounded to 128 KiB; large
+individual members return ordered `member-json` fragments. This reader does not grant
+submission permission. Human recovery provenance comes from fixed UI/CLI producers,
+never model tool fields, role or userId.

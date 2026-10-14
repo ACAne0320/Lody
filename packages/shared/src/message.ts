@@ -138,6 +138,10 @@ export interface SessionCancelRequest {
   workspaceId: WorkspaceId;
   /** Target assistant turn id. This is intentionally not the userTurnId. */
   turnId: string;
+  /** Shared identity for the Stop RPC and its durable fallback. */
+  cancelId?: string;
+  /** Internal cancellation does not persist a user message pause. */
+  pauseInbox?: boolean;
   /** When present, cancel only this native subagent; never cancel the parent turn. */
   subagentTaskId?: string;
 }
@@ -334,6 +338,20 @@ export interface MachineUpgradeResponse {
   currentVersion?: string;
   targetVersion?: string;
   error?: string;
+}
+
+export interface MachineProviderRateLimitsRefreshRequest {
+  type: 'machine/provider-rate-limits-refresh';
+  machineId: MachineId;
+  workspaceId: WorkspaceId;
+  configId: AgentConfigId;
+}
+
+export interface MachineProviderRateLimitsRefreshResponse {
+  type: 'machine/provider-rate-limits-refresh_response';
+  machineId: MachineId;
+  configId: AgentConfigId;
+  success: boolean;
 }
 
 export interface MachineAcpCapabilitiesRefreshRequest {
@@ -775,6 +793,7 @@ export interface SessionHistoryReadRequest {
 
 /** Bounded logical reads over the owner session's active history branch. */
 export type SessionHistoryReadQuery =
+  | { readonly kind: 'inputAcceptance'; readonly entry: unknown }
   | { readonly kind: 'count' }
   | { readonly kind: 'readAt'; readonly position: number }
   | { readonly kind: 'readTurn'; readonly turnId: string }
@@ -799,6 +818,7 @@ export interface SessionHistoryReadResponse {
 }
 
 export type SessionHistoryWriteOperation =
+  | 'accept_input'
   | 'append'
   | 'replace'
   | 'respond_permission'
@@ -838,6 +858,7 @@ export type LocalSessionControlRequest =
   | MachinePingRequest
   | MachineRestartRequest
   | MachineUpgradeRequest
+  | MachineProviderRateLimitsRefreshRequest
   | MachineAcpCapabilitiesRefreshRequest
   | MachineAcpAuthenticateRequest
   | MachineAcpBinaryStatusRequest
@@ -865,6 +886,7 @@ export type LocalSessionControlResponse =
   | MachinePingResponse
   | MachineRestartResponse
   | MachineUpgradeResponse
+  | MachineProviderRateLimitsRefreshResponse
   | MachineAcpCapabilitiesRefreshResponse
   | MachineAcpAuthenticateResponse
   | MachineAcpAuthenticationProgressMessage
@@ -1287,6 +1309,7 @@ export type ClientToServer =
   | MachinePingRequest
   | MachineRestartRequest
   | MachineUpgradeRequest
+  | MachineProviderRateLimitsRefreshRequest
   | MachineAcpCapabilitiesRefreshRequest
   | MachineAcpAuthenticateRequest
   | MachineAcpBinaryStatusRequest
@@ -1304,6 +1327,7 @@ export type ServerToClient =
   | MachinePingResponse
   | MachineRestartResponse
   | MachineUpgradeResponse
+  | MachineProviderRateLimitsRefreshResponse
   | MachineAcpCapabilitiesRefreshResponse
   | MachineAcpAuthenticateResponse
   | MachineAcpAuthenticationProgressMessage
@@ -1321,6 +1345,7 @@ export type MachineToServer =
   | MachinePingResponse
   | MachineRestartResponse
   | MachineUpgradeResponse
+  | MachineProviderRateLimitsRefreshResponse
   | MachineAcpCapabilitiesRefreshResponse
   | MachineAcpAuthenticateResponse
   | MachineAcpAuthenticationProgressMessage
@@ -1338,6 +1363,7 @@ export type ServerToMachine =
   | MachinePingRequest
   | MachineRestartRequest
   | MachineUpgradeRequest
+  | MachineProviderRateLimitsRefreshRequest
   | MachineAcpCapabilitiesRefreshRequest
   | MachineAcpAuthenticateRequest
   | MachineAcpBinaryStatusRequest
