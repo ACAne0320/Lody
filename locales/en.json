@@ -651,6 +651,7 @@
   "chat.runConfig.modelSearchEmpty": "No models match",
   "chat.runConfig.modelSearchPlaceholder": "Search models",
   "chat.runConfig.permissionLabel": "Permission",
+  "chat.runConfig.modeLabel": "Mode",
   "chat.runConfig.reasoningLabel": "Reasoning",
   "chat.runConfig.recentLabel": "Recently used",
   "chat.runConfig.roles.create": "New role",
