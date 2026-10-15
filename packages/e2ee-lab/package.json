@@ -12,6 +12,7 @@
     "./content-session": "./src/platform/content-session.ts",
     "./replay": "./src/pure/replay.ts",
     "./gateway": "./src/platform/gateway.ts",
+    "./epoch-staging": "./src/platform/epoch-staging.ts",
     "./key-mailbox": "./src/platform/key-mailbox.ts",
     "./credentials": "./src/platform/credentials.ts",
     "./control-gateway": "./src/platform/control-gateway.ts",
@@ -69,7 +70,8 @@
     "vitest": "3.2.4",
     "oxfmt": "^0.65.0",
     "tsx": "4.23.7",
-    "@types/better-sqlite3": "catalog:"
+    "@types/better-sqlite3": "catalog:",
+    "@lody/cloud-api": "workspace:*"
   },
   "bin": {
     "e2ee-lab": "./bin/e2ee-lab.mjs"

@@ -1,34 +1,60 @@
-# D12：原子移除的编码提案
+# 原子移除成员与先暂存后提交的换代
 
 Status: draft
 Translation: current
 
 [English](atomic-removal.md)
 
-## 已定与现行实现
+## 账本状态转换
 
-同条记录、一次 CAS 同时移除成员并启用新代已经确定；不再询问是否原子。准备阶段持久保存候选钥和签名原文，未知结果查原文；成功读回验证后才向仍获准设备投递。移除目标成员实例的全部个人、机器及 R，不连带撤其他成员的已入账设备。投递不属于该 CAS。
+看到 `rotationRequired = true` 的活跃 Owner/Admin 个人设备可生成 tag 7。
+tag 8 固定为 `[8, targetMembershipId, nextEpoch, commitment, previousEpochKey]`，
+使用现有普通记录、固定项数及原有 sig/v1、rec/v1 域。只有当前 Owner 的个人
+设备能生成；目标必须存在且不能是 Owner。新 epoch 恰好加一，拒绝溢出和重复
+commitment。tag 2 仍拒绝；没有旧版双读或迁移。
 
-当前公开账本是 canonical CBOR v1：创世 body `[1, signer, user, member, encKey, commitment]`，普通 body `[previousHash, signer, operation]`，record `[body, signature]`。普通 body 没有独立 version 字段；签名为 `lody-e2ee/sig/v1\0 || canonical(body)`，记录摘要为 SHA256(`lody-e2ee/rec/v1\0 || canonical(record)`)。未知创世版本失败为 unknown-version；未知 operation、旧 tag2 都失败为 unknown-operation，不跳过。tag7 目前只发布新代；不能拼接 tag2/tag7 来实现 D12。
+一条 tag 8 同时移除成员及其全部 personal、machine、Recovery 设备，保留历史
+作者与退役身份事实，写入新 commitment 和既有 72 字节历史包，清除
+rotationRequired。发布者打开历史包核对旧 commitment；回放检查签名、结构与
+前态权限，不能仅凭密文长度证明包内密钥正确。
 
-## 推荐工程落实
+## 先暂存，一次提交
 
-新增未占用 tag8，operation 编码 `[8, targetMembershipId, nextEpoch, commitment, previousEpochKey]`；使用普通 body、明确的签名域、记录哈希及精确长度校验，不复活 tag2。函数名可用 removeMemberAndPublishEpoch。最终账本格式须明确支持的操作集合；没有线上旧账本或旧端兼容要求。
+1. 生成候选 key、原始签名记录 R 和哈希 h，以及发给换代后**全部**活跃设备
+   （包括 Recovery、Guest）的签名 HPKE 信封。发送前在本地持久保存全部原件；
+   候选 key 经初始化的宿主 port 保护。
+2. 按 `(genesis, nextEpoch, commitment, h, recipient)` 一次暂存整组。
+   Convex 一次 mutation 全写或全不写。随后读回，核对数量和每个信封原字节。
+   暂存或读回失败，不发 CAS。
+3. 将同一 R 经既有 P09 CAS 提交。Streams 不检查内容。
+4. 账本是唯一生效点。冲突后废弃本地受保护候选，不安装、不重签、不偷偷另造
+   候选；结果未知按 P09 用 R 原字节对账，重启也沿用同一组暂存信封。
 
-前态权限只允许当前 Owner 的有效 personal 设备，目标须当前存在且不是 Owner；移除 Owner 先按现行移交规则处理。nextEpoch 必须前态 epoch+1（越界拒绝），commitment 使用现行 Org/代次绑定，拒绝已用 commitment；与 tag7 相同。一次私有状态转移删除目标当前成员/全部设备、保留历史作者及已退役身份/公钥事实，保存新承诺和历史包，清除 rotationRequired；任何校验失败不发布新 view、也不推进持久游标。
+只有真实已验证账本包含该 tag 7/8，且 epoch、commitment、签名者一致时，接收
+端才打开暂存信封。未提交候选是惰性的。这里使用历史发布记录作为证明，与普通
+mailbox 的当前发送资格分开：发布者后来撤权不能阻断仍获准的接收者。安装前后
+仍核对接收设备当前资格、加密公钥以及实际 HPKE/commitment。后来加入的设备
+继续使用现有 mailbox 和 repair。
 
-历史包沿用现行72B：24B nonce + 用新钥加密的32B旧钥 +16B AEAD tag；AAD 为 epoch-history/v1 用途、Org、u32be 新代次（上一代确定为 n-1）。与 commitment 一起纳入同一签名/CAS。发布客户端先实解包并核旧承诺；宿主/纯回放只验证结构、顺序、签名和前态权限，不能从 opaque 包证明密钥内容正确。读端恢复旧钥仍核对每代承诺。
+只有真实账本在同一个 epoch 已提交了**另一个 commitment**，才能清理该暂存组。
+超时、年龄、服务器提示或缺少记录均不能授权删除。本地原件、结果仍须显式确认。
 
-## 首次上线使用一套一致格式
+## 边界与已知限制
 
-E2EE 尚未上线。删除旧端升级路径、双快照读者、降写旧格式，以及仅用于区分上线前格式的 capability pin。不支持的格式或操作直接失败，不提供兼容迁移。
+core 仅定义暂存、读回、按条件删除 port；DTO 归 cloud-api；Convex 实现归私有
+仓库。Lab SQLite 用一个真实事务写整组。存储和账号角色都不代替签名账本权限；
+调用方独立提供并核验真实 view，存储不能证明全局新鲜度。
 
-最终原子移除格式与权限快照须表达同一状态转移和精确认证位置；已实现的编码与签名／摘要用途域仍须接受互操作和安全审查。当前快照不能绕过授权及独立新鲜度 pin，不能靠快照自报建立权限。这不要求新格式选定后仍保留 v1 读者，也不默认选择 snapshot-v2 或新用途域。
+有 bug 或恶意管理者可绕过暂存直接提交合法记录，等同扣留新 key；账本换代后
+其他设备可能无法继续。Lab 必须测量这个结果。本期不让 Streams 阻止此事，也
+不引入跨库事务。暂存保护诚实发布者的崩溃窗口，不保证恶意方生成可解密信封或
+永不删除数据。
 
-## 需要审阅的增量
+## 审批与证据
 
-原子性、Owner 管理范围、后态排除目标、原文重试和成功后发钥均沿用已定规则；字段/函数名是工程选择。需要审阅的是最终 operation／snapshot 编码与认证位置契约；旧端兼容不在范围内；不扩大 Admin/R 权限，不变更算法、历史共享范围或 U03B。本文仍为未批准 draft；实验 codec 已实现 tag8 供审查，不接入生产或批准备份策略。
-
-## 证据
-
-[现行 codec](../../packages/e2ee-core/src/ledger/records.ts)、[权限](../../packages/e2ee-core/src/ledger/policy.ts)、[历史包](../../packages/e2ee-core/src/keys/history.ts)。真实签名回放、同点 snapshot／完整状态对照、错误权限及退役身份复用拒绝、一次 CAS 原件恢复和移除后实际 HPKE 发钥已由所属测试覆盖；这些行为证据不是安全证明或产品批准。
+以上方向来自用户明确要求；修订后的 Spec 仍为 **draft，待审批**，不代表生产
+启用，也未决定 vault、原生保管、严格 B、账号恢复或 MLS 替换。
+参见[准入](../../packages/e2ee-core/src/ledger/ADMISSION.md)、
+[暂存 port](../../packages/e2ee-core/src/keys/staging.ts)、
+[换代流程](../../packages/e2ee-core/src/keys/epoch-rotation.ts)和
+[Lab](../../packages/e2ee-lab/README.zh.md)。

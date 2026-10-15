@@ -7,7 +7,14 @@ import { ContentError } from '../errors';
 import { disposeEpochKey } from '../epoch-key';
 import { verifySignature } from '../signature';
 import { signVerified, type DeviceSigner } from '../signing';
-import { epochHistoryPacket, requireLedgerContinuation, type LedgerView } from '../ledger';
+import {
+  decodeRecord,
+  epochHistoryPacket,
+  extendLedger,
+  hashRecordBytes,
+  requireLedgerContinuation,
+  type LedgerView,
+} from '../ledger';
 import {
   epochHpkeAad,
   sealEpochKeyHpke,
@@ -76,19 +83,19 @@ function recheck(before: LedgerView, after: LedgerView, context: EpochEnvelopeCo
     return latest;
   });
 }
-/** Signature/admission only: a host cannot verify the encrypted key preimage. */
-export function authenticateEpochEnvelope(
-  view: LedgerView,
+/** Fixed outer signature and expected routing only; grants no ledger permission,
+ * committed publication, decryption or key-possession evidence. */
+export function authenticateEpochEnvelopeSignature(
   inputContext: EpochEnvelopeContext,
   input: Uint8Array
 ) {
   return Result.gen(function* () {
     const context = yield* ownContext(inputContext);
-    const bound = yield* eligibility(view, context);
+    const aad = yield* epochHpkeAad(context);
     if (
       !(input instanceof Uint8Array) ||
-      input.byteLength !== bound.aad.length + 144 ||
-      !bytesEqual(input.subarray(0, bound.aad.length), bound.aad)
+      input.byteLength !== aad.length + 144 ||
+      !bytesEqual(input.subarray(0, aad.length), aad)
     )
       return yield* fail('invalid-envelope');
     const bytes = copyBytes(input);
@@ -100,10 +107,19 @@ export function authenticateEpochEnvelope(
       ),
       () => new ContentError({ code: 'bad-signature' })
     );
-    return {
-      enc: bytes.slice(bound.aad.length, bound.aad.length + 32),
-      ct: bytes.slice(bound.aad.length + 32, -64),
-    };
+    return { enc: bytes.slice(aad.length, aad.length + 32), ct: bytes.slice(aad.length + 32, -64) };
+  });
+}
+/** Signature/admission only: a host cannot verify the encrypted key preimage. */
+export function authenticateEpochEnvelope(
+  view: LedgerView,
+  inputContext: EpochEnvelopeContext,
+  input: Uint8Array
+) {
+  return Result.gen(function* () {
+    const context = yield* ownContext(inputContext);
+    yield* eligibility(view, context);
+    return yield* authenticateEpochEnvelopeSignature(context, input);
   });
 }
 /** Creates one signed ciphertext only. Durable delivery/retry belongs to its owner. */
@@ -112,11 +128,53 @@ export function prepareEpochEnvelope<E, R>(input: {
   readonly key: Bytes.EpochKey;
   readonly signer: DeviceSigner;
   readonly ledger: () => Effect.Effect<LedgerView, E, R>;
+  /** Original signed publication; fixed replay derives its genuine candidate poststate. */
+  readonly candidate?: { readonly before: LedgerView; readonly record: Uint8Array };
 }) {
   return Effect.suspend(() =>
     Effect.gen(function* () {
       const context = yield* Effect.fromResult(ownContext(input.context));
-      const before = yield* input.ledger();
+      if (
+        input.candidate &&
+        (!(input.candidate.record instanceof Uint8Array) ||
+          input.candidate.record.length < 1 ||
+          input.candidate.record.length > 8192)
+      )
+        return yield* Effect.fail(new ContentError({ code: 'invalid-envelope' }));
+      const candidate = input.candidate && {
+        before: input.candidate.before,
+        record: new Uint8Array(input.candidate.record),
+      };
+      if (candidate) {
+        const record = yield* Effect.fromResult(decodeRecord(candidate.record));
+        if (
+          record.body.type !== 'ordinary' ||
+          (record.body.operation.type !== 'publishEpoch' &&
+            record.body.operation.type !== 'removeMemberAndPublishEpoch') ||
+          record.body.operation.epoch !== context.epoch ||
+          !record.body.signer.equals(context.sender)
+        )
+          return yield* Effect.fail(new ContentError({ code: 'unauthorized' }));
+      }
+      const lookup = candidate
+        ? () =>
+            Effect.gen(function* () {
+              const current = yield* input.ledger();
+              yield* Effect.fromResult(requireLedgerContinuation(candidate.before, current));
+              if (
+                !current.head.equals(candidate.before.head) ||
+                current.length !== candidate.before.length
+              )
+                return yield* Effect.fail(new ContentError({ code: 'content-context-mismatch' }));
+              return yield* Effect.fromResult(
+                extendLedger(candidate.before, [candidate.record], {
+                  head: hashRecordBytes(candidate.record),
+                  length: candidate.before.length + 1,
+                })
+              );
+            })
+        : input.ledger;
+      const before = yield* lookup();
       const bound = yield* Effect.fromResult(eligibility(before, context));
       if (!input.signer.publicKey.equals(context.sender))
         return yield* Effect.fail(new ContentError({ code: 'unauthorized' }));
@@ -128,7 +186,7 @@ export function prepareEpochEnvelope<E, R>(input: {
       const sealed = yield* sealEpochKeyHpke(bound.recipientKey, input.key, context);
       const unsigned = concat([bound.aad, sealed.enc, sealed.ct]);
       const signature = yield* signVerified(input.signer, signingBytes(unsigned));
-      const after = yield* input.ledger();
+      const after = yield* lookup();
       yield* Effect.fromResult(recheck(before, after, context));
       const frame = concat([unsigned, signature.toBytes()]);
       yield* Effect.fromResult(authenticateEpochEnvelope(after, context, frame));

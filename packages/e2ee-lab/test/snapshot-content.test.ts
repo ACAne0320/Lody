@@ -1,6 +1,4 @@
 import { join } from 'node:path';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import { Deferred, Effect, Exit, Fiber, Result, Scope } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
@@ -17,11 +15,12 @@ import { makeSqliteSnapshotPublication } from '@lody/e2ee-core/content/snapshot/
 import { makeLabLoroSession } from '../src/platform/content-session';
 import { makeLabFlockSession } from '../src/platform/flock-session';
 import { makeLabContentGateway } from '../src/platform/content-gateway';
+import { makeLabRiverrunSnapshotBoundary } from '../src/platform/snapshot-boundary';
 import { labSyntheticProtector } from '../src/platform/synthetic-protection';
 import { fixture, history } from './ledger-fixture';
 
 const ok = Result.getOrThrow;
-describe('current header4 protected snapshots with the released SDK', () => {
+describe('current content-v0 protected snapshots with the released SDK', () => {
   it.each(['loro', 'flock'] as const)(
     'uploads and bootstraps %s, authenticates the host position and preserves failed durable reads',
     async (model) => {
@@ -74,15 +73,17 @@ describe('current header4 protected snapshots with the released SDK', () => {
                 mode: 'create' as const,
               };
               let time = 100;
-              const session = (file: string, upload = false) =>
+              const session = (file: string, upload = false, transport: typeof fetch = fetch) =>
                 model === 'loro'
                   ? makeLabLoroSession({
                       ...common,
+                      fetch: transport,
                       path: join(f.dir, file),
                       snapshotUpload: upload,
                     })
                   : makeLabFlockSession({
                       ...common,
+                      fetch: transport,
                       path: join(f.dir, file),
                       snapshotUpload: upload,
                       replica: file,
@@ -108,6 +109,62 @@ describe('current header4 protected snapshots with the released SDK', () => {
               yield* writer.append(' after snapshot');
               yield* reader.pull();
               expect(yield* reader.text()).toBe('before snapshot after snapshot');
+              const tailAfterSuffix = yield* Effect.promise(() => raw.head());
+              if (!tailAfterSuffix.ok) throw new Error('missing actual suffix head');
+              // Move an authentic old snapshot to a later existing position, or alter
+              // its signed raw offset bytes. Neither failure may persist native state
+              // or advance the exact durable SDK cursor.
+              for (const attack of ['move-context', 'tamper-content-offset'] as const) {
+                let writes = 0,
+                  modified = false;
+                const hostile: typeof fetch = async (target, init) => {
+                  if (init?.method === 'PUT' || init?.method === 'POST') writes++;
+                  const reply = await fetch(target, init);
+                  if (!String(target).endsWith('/bootstrap')) return reply;
+                  modified = true;
+                  const bytes = new Uint8Array(await reply.arrayBuffer());
+                  const headers = new Headers(reply.headers);
+                  if (attack === 'move-context') {
+                    headers.set('stream-snapshot-offset', tailAfterSuffix.result.nextOffset);
+                  } else {
+                    const at = Buffer.from(bytes).indexOf(body);
+                    if (at < 0) throw new Error('missing original encrypted snapshot in bootstrap');
+                    bytes[at + 11 + 41] ^= 1;
+                  }
+                  return new Response(bytes, { status: reply.status, headers });
+                };
+                const attacked = yield* session(`${attack}.sqlite`, false, hostile);
+                const refused = yield* Effect.result(attacked.pull());
+                expect(Result.isFailure(refused) && refused.failure).toMatchObject({
+                  _tag: 'LabContentError',
+                  code: 'decrypt_failed',
+                });
+                expect(modified).toBe(true);
+                expect(writes).toBe(0);
+                expect(yield* attacked.cursor()).toBeNull();
+                const durable = new Database(join(f.dir, `${attack}.sqlite`), { readonly: true });
+                try {
+                  expect(
+                    durable.prepare('SELECT count(*) AS n FROM lab_document_state').get()
+                  ).toEqual({ n: 0 });
+                } finally {
+                  durable.close();
+                }
+              }
+              const remoteStorage = new Database(f.server.dbPath, { readonly: true });
+              try {
+                const rows = remoteStorage
+                  .prepare(`SELECT body FROM entries UNION ALL SELECT body FROM snapshots`)
+                  .all() as { body: Uint8Array }[];
+                for (const row of rows) {
+                  expect(Buffer.from(row.body).includes(Buffer.from('before snapshot'))).toBe(
+                    false
+                  );
+                  expect(Buffer.from(row.body).includes(Buffer.from('after snapshot'))).toBe(false);
+                }
+              } finally {
+                remoteStorage.close();
+              }
               const snapshotStore = yield* makeSqliteSnapshotPublication({
                 path: join(f.dir, 'snapshot-admission.sqlite'),
                 mode: 'create',
@@ -122,6 +179,11 @@ describe('current header4 protected snapshots with the released SDK', () => {
                 baseUrl: f.server.baseUrl,
                 ledger,
                 snapshotStore,
+                snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
+                  path: f.server.dbPath,
+                  genesis: genesis.genesis,
+                  model,
+                }),
                 now: () => 0,
               });
               const request = {
@@ -198,8 +260,9 @@ describe('current header4 protected snapshots with the released SDK', () => {
 });
 
 it('refuses a snapshot when the genuine epoch changes during actual native signature verification', async () => {
-  const owner = history().owner;
-  const directory = mkdtempSync(join(tmpdir(), 'snapshot-epoch-change-'));
+  const f = await fixture(),
+    owner = f.owner,
+    directory = f.dir;
   let forwarded = false;
   try {
     await Effect.runPromise(
@@ -221,6 +284,21 @@ it('refuses a snapshot when the genuine epoch changes during actual native signa
               checkpoint: { head: hashRecordBytes(genesis.record), length: 1 },
             })
           );
+          const org = Buffer.from(genesis.genesis.toBytes()).toString('hex');
+          expect(
+            (yield* Effect.promise(() => fetch(`${f.server.baseUrl}/ds/${org}`, { method: 'PUT' })))
+              .ok
+          ).toBe(true);
+          const raw = new StreamsClient({
+            url: `${f.server.baseUrl}/ds/${org}/loro`,
+            retry: { maxAttempts: 1 },
+          });
+          expect(
+            (yield* Effect.promise(() => raw.create({ contentType: 'application/octet-stream' })))
+              .ok
+          ).toBe(true);
+          const head = yield* Effect.promise(() => raw.head());
+          if (!head.ok) throw new Error('missing real native head');
           const binding = yield* makeStreamsUpdateBinding({
             genesis: genesis.genesis,
             resource: 'document',
@@ -234,7 +312,7 @@ it('refuses a snapshot when the genuine epoch changes during actual native signa
             protocol: 'loro-streams-crdt-payload-protection',
             version: 2,
             kind: 'snapshot',
-            continuationOffset: '0_1',
+            continuationOffset: head.result.nextOffset,
           } as const;
           let prefix!: Uint8Array;
           const sealed = yield* binding.seal({
@@ -264,19 +342,18 @@ it('refuses a snapshot when the genuine epoch changes during actual native signa
             genesis: genesis.genesis,
             resource: 'document',
             model: 'loro',
-            baseUrl: 'http://127.0.0.1',
+            baseUrl: f.server.baseUrl,
             ledger: () => Effect.succeed(view),
             snapshotStore,
+            snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
+              path: f.server.dbPath,
+              genesis: genesis.genesis,
+              model: 'loro',
+            }),
             now: () => 0,
-            fetch: async (_url, init) => {
-              if (init?.method === 'GET') return new Response(null, { status: 404 });
-              if (init?.method === 'HEAD')
-                return new Response(null, {
-                  status: 200,
-                  headers: { 'stream-next-offset': '0_1' },
-                });
-              forwarded = true;
-              return new Response(null, { status: 204 });
+            fetch: async (url, init) => {
+              if (init?.method === 'PUT') forwarded = true;
+              return fetch(url, init);
             },
           });
           const entered = yield* Deferred.make<void>(),
@@ -340,7 +417,7 @@ it('refuses a snapshot when the genuine epoch changes during actual native signa
       )
     );
   } finally {
-    rmSync(directory, { recursive: true, force: true });
+    await f.close();
   }
 });
 
@@ -418,6 +495,15 @@ it('reopens an uncertain snapshot and confirms only its original bytes; older re
           const offset = head.result.nextOffset,
             original = yield* sealedAt(offset),
             file = join(f.dir, 'publication.sqlite');
+          // Preserve a snapshot of an earlier real boundary while the host grows.
+          // The gateway must admit that boundary without ordering opaque tokens.
+          expect(
+            (yield* Effect.promise(() =>
+              raw.append({
+                part: { contentType: 'application/octet-stream', body: new Uint8Array([7, 8, 9]) },
+              })
+            )).ok
+          ).toBe(true);
           const credential = {
             account: 'synthetic-owner',
             token: 'first-authenticated-token',
@@ -444,6 +530,11 @@ it('reopens an uncertain snapshot and confirms only its original bytes; older re
               baseUrl: f.server.baseUrl,
               ledger,
               snapshotStore: store,
+              snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
+                path: f.server.dbPath,
+                genesis: genesis.genesis,
+                model: 'loro',
+              }),
               now: () => clock,
               fetch: async (url, init) => {
                 const reply = await fetch(url, init);
@@ -472,6 +563,40 @@ it('reopens an uncertain snapshot and confirms only its original bytes; older re
             continuationOffset: offset,
             body: original,
           };
+          const nativeDb = new Database(f.server.dbPath, { readonly: true });
+          let invalidPositions: string[];
+          try {
+            const row = nativeDb
+              .prepare(
+                `SELECT printf('%020d', next_offset + 1) AS ahead FROM streams WHERE bucket_id = ? AND stream_id = 'loro'`
+              )
+              .get(org) as { ahead: string };
+            const middle = nativeDb
+              .prepare(
+                `SELECT printf('%020d', start_offset + 1) AS middle FROM entries e JOIN streams s ON s.id = e.stream_id_fk WHERE s.bucket_id = ? AND s.stream_id = 'loro' ORDER BY e.id LIMIT 1`
+              )
+              .get(org) as { middle: string };
+            invalidPositions = [row.ahead, middle.middle, 'not-a-native-position'];
+          } finally {
+            nativeDb.close();
+          }
+          for (const invalid of invalidPositions) {
+            const refused = yield* Effect.result(
+              first.gateway.snapshot({
+                ...request,
+                continuationOffset: invalid,
+                body: yield* sealedAt(invalid),
+              })
+            );
+            expect(Result.isFailure(refused) && refused.failure).toMatchObject({
+              _tag: 'LabContentGatewayError',
+              status: 409,
+            });
+            expect(puts).toBe(0);
+            expect(yield* first.store.pending()).toBeNull();
+            const unchanged = yield* Effect.promise(() => raw.readLatestSnapshot());
+            expect(unchanged.ok && unchanged.result).toBeNull();
+          }
           expect(Result.isFailure(yield* Effect.result(first.gateway.snapshot(request)))).toBe(
             true
           );

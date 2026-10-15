@@ -14,6 +14,8 @@ import { makeLabStreamReader } from './stream-read';
 import { makeLabContentGateway } from './content-gateway';
 import { makeLabJoinMailbox } from './join-mailbox';
 import { makeLabHttpHost } from './host';
+import { makeLabEpochStaging } from './epoch-staging';
+import { makeLabRiverrunSnapshotBoundary } from './snapshot-boundary';
 
 export class LabHostSessionError extends Data.TaggedError('LabHostSessionError')<{
   readonly code: 'configuration';
@@ -136,6 +138,11 @@ export const makeLabHostSession = Effect.fn('Lab.makeHostSession')(function* (in
         genesis: creation.genesis,
         ledger,
       });
+      const staging = yield* makeLabEpochStaging({
+        path: join(directory, 'epoch-staging.sqlite'),
+        mode,
+        ledger: () => ledger(),
+      });
       const stores = {
         loro: yield* makeSqliteSnapshotPublication({
           path: join(directory, 'loro-snapshots.sqlite'),
@@ -160,6 +167,11 @@ export const makeLabHostSession = Effect.fn('Lab.makeHostSession')(function* (in
           baseUrl: native.baseUrl,
           ledger,
           snapshotStore: stores.loro,
+          snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
+            path: join(directory, 'riverrun.sqlite'),
+            genesis: creation.genesis,
+            model: 'loro',
+          }),
           now,
           fetch: transport,
         }),
@@ -170,6 +182,11 @@ export const makeLabHostSession = Effect.fn('Lab.makeHostSession')(function* (in
           baseUrl: native.baseUrl,
           ledger,
           snapshotStore: stores.flock,
+          snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
+            path: join(directory, 'riverrun.sqlite'),
+            genesis: creation.genesis,
+            model: 'flock',
+          }),
           now,
           fetch: transport,
         }),
@@ -195,6 +212,8 @@ export const makeLabHostSession = Effect.fn('Lab.makeHostSession')(function* (in
         credentials,
         workspaces: registry,
         creation,
+        staging: (anchor) =>
+          anchor.equals(creation.genesis) ? { port: staging, ledger } : undefined,
         control: (anchor) => (anchor.equals(creation.genesis) ? control : undefined),
         streams: (anchor) => (anchor.equals(creation.genesis) ? reader : undefined),
         contents: (anchor, model) =>
@@ -212,6 +231,7 @@ export const makeLabHostSession = Effect.fn('Lab.makeHostSession')(function* (in
         mailbox,
         joins,
         snapshots: stores,
+        staging,
         current: creation.refresh,
         checkpoint: () =>
           ledger().pipe(Effect.map((view) => ({ head: view.head, length: view.length }))),

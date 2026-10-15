@@ -8,7 +8,7 @@ The root foundation and synchronous ledger exports remain separate.
 The application Scope owns the journal Layer and provides `SubmissionRemote`.
 That trusted host port must return complete history and an independently expected
 head/count for the caller-pinned genesis, and perform conditional append with
-exact-body idempotency. It must enforce the same P08 signature/permission rules;
+exact-body idempotency. It must enforce the same [P08](../../README.md#terms) signature/permission rules;
 a packet's endpoint or document credential is insufficient. No production
 Convex/Streams adapter, background runtime or retry scheduler is supplied.
 

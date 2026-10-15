@@ -22,8 +22,9 @@ pnpm --filter @lody/e2ee-lab lab replay /absolute/new-output-directory/evidence.
 pnpm --filter @lody/e2ee-lab lab minimize /absolute/failing-run/evidence.json /absolute/new-shrink-directory
 ```
 
-`run` 要求输出目录尚不存在。默认计划执行 39 个动作；自定义计划是最多 256 个
-动作的 JSON 数组。不支持的动作和访问器在执行前失败；缺少必需观察也明确失败。
+`run` 要求输出目录尚不存在。默认计划执行 39 个动作；自定义计划可以是最多 256 个
+动作的数组，也可以是 `{ actors, actions }`，显式配置 Owner/Admin/Member/Guest 与
+绑定成员的设备。不支持的动作和访问器在执行前失败；缺少必需观察也明确失败。
 SIGINT/TERM 先停止接收新工作，再等待真实子进程终止。
 
 失败预期必须指定精确拒绝原因，例如：
@@ -36,16 +37,18 @@ SIGINT/TERM 先停止接收新工作，再等待真实子进程终止。
 每项 ok/outcome/text/持久状态不变检查保留自己的结论；某项通过不能覆盖
 另一项已测违规或缺失测量。
 
-| 退出码 | 含义 |
-| --- | --- |
-| 0 | 已测动作契约通过 |
-| 1 | 测试设施失败 |
-| 2 | 已测违规或覆盖缺口 |
-| 64 | CLI 用法无效 |
+| 退出码 | 含义               |
+| ------ | ------------------ |
+| 0      | 已测动作契约通过   |
+| 1      | 测试设施失败       |
+| 2      | 已测违规或覆盖缺口 |
+| 64     | CLI 用法无效       |
 
 `evidence.json` 保存实际载入源码/依赖的哈希、原始签名记录、受保护传输字节、
 调度、观察及覆盖缺口。其引用的 `fixture/*-transport.jsonl` 仅含受保护协议流量，
-不含凭据；设备私密导出只留在 IPC 内存。`inspect` 根据记录的观察重新计算结论，
+不含凭据。独立的 `private-replay/` 保存合成设备私密导出、初始签名记录和逐动作原输入，
+供 replay／缩减使用；目录权限 `0700`，文件权限 `0600`。这些文件必须保持私有，公开
+`evidence.json` 用格式／摘要引用它，不能脱离原私有目录重放动作。`inspect` 根据记录的观察重新计算结论，
 不信任已存 verdict；它不认证文件来源，也不重新执行场景。执行与检查共用一套
 动作语义校验和观察汇总。耗时仅作诊断。
 固定120秒的测试设施看门狗会中断停滞场景，kill 并等待所属子进程、释放资源后
@@ -54,17 +57,17 @@ SIGINT/TERM 先停止接收新工作，再等待真实子进程终止。
 
 ## 入口与资源归属
 
-| 入口 | 职责 |
-| --- | --- |
-| `./workspace-session`、`./full-session` | 已获准的现有 control/P09、身份、密钥和逐文档资源；重新认证先关闭旧 owner |
-| `./workspace-creation`、`./workspace-creation-request`、`./host-session` | 原 genesis 先落盘、创建重试及完整 HTTP／Riverrun／SQLite 宿主关闭重开 |
-| `./repro`、`./repro-runner`、`./attacks`、`./attack-transport` | 原密文读取、动作结果重跑／缩减、真实响应拦截和有界攻击测量 |
-| `./join-session` | 持久化原签名加入申请，丢回执后重试；真实获准后再普通启动 |
-| `./key-round` | 一轮有限修复/接收/报告/分发；明确保留阻塞任务和各页游标 |
-| `./content-session`、`src/platform/flock-session.ts` | Loro/Flock 适配，共用文档生命周期及原生状态/游标原子存储 |
-| `./host`、`./http-identity` | 合成 challenge/bearer HTTP、签名 genesis 发现、加入、mailbox 及有界控制/内容传输 |
-| `./driver`、`./actions`、`./scenarios` | 原生 Effect 放行、有限动作、真实进程崩溃及测量证据 |
-| `./snapshot-cache`、`./reference-model`、`./replay` | 重验账本快照字节、独立预期及静态材料比较 |
+| 入口                                                                     | 职责                                                                                                     |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `./workspace-session`、`./full-session`                                  | 已获准的现有 control/[P09](../e2ee-core/README.md#terms)、身份、密钥和逐文档资源；重新认证先关闭旧 owner |
+| `./workspace-creation`、`./workspace-creation-request`、`./host-session` | 原 genesis 先落盘、创建重试及完整 HTTP／Riverrun／SQLite 宿主关闭重开                                    |
+| `./repro`、`./repro-runner`、`./attacks`、`./attack-transport`           | 原密文读取、原输入 replay／缩减、真实响应拦截和有界攻击测量                                              |
+| `./join-session`                                                         | 持久化原签名加入申请，丢回执后重试；真实获准后再普通启动                                                 |
+| `./key-round`                                                            | 一轮有限修复/接收/报告/分发；明确保留阻塞任务和各页游标                                                  |
+| `./content-session`、`src/platform/flock-session.ts`                     | Loro/Flock 适配，共用文档生命周期及原生状态/游标原子存储                                                 |
+| `./host`、`./http-identity`                                              | 合成 challenge/bearer HTTP、签名 genesis 发现、加入、mailbox 及有界控制/内容传输                         |
+| `./driver`、`./actions`、`./scenarios`                                   | 原生 Effect 放行、有限动作、真实进程崩溃及测量证据                                                       |
+| `./snapshot-cache`、`./reference-model`、`./replay`                      | 重验账本快照字节、独立预期及静态材料比较                                                                 |
 
 receiver 拥有唯一的受保护已安装密钥存储；distributor 和完整会话借用它的
 `installedEpochKeys`，不重复打开存储 owner。原生阶段直接组合 Effect。
@@ -88,7 +91,12 @@ Promise-phase API 已删除。父事件身份使用 JSON tuple；replay 精确�
 进程 actor 通过 `keyCommand` 暴露相同流程，自定义 CLI 动作计划可直接使用：
 
 ```json
-{ "kind": "key-command", "actor": "peer", "command": { "operation": "repair", "requestId": "explicit-repair-1" }, "expect": { "ok": true } }
+{
+  "kind": "key-command",
+  "actor": "peer",
+  "command": { "operation": "repair", "requestId": "explicit-repair-1" },
+  "expect": { "ok": true }
+}
 ```
 
 命令包括 `repair`、`keys`（可选 `limit`/`cursors`）、`key-results`、
@@ -110,7 +118,9 @@ P09 写入仍要求已发布完整签名控制前缀（含原 genesis）。
 快照缓存每次按调用方固定的资格重验；具备资格本身不代表快照已获准或当前权限成立。
 
 每个文档把原生状态与精确 SDK 游标原子提交。导入、保存或恢复失败只停止该文档，
-保留先前的持久状态对。全历史恢复要求历史仍可读取，不重置宿主 offset，
+保留先前的持久状态对。显式恢复重建原生 owner，使用已发布 SDK 可读取的历史，
+或经过认证的内容快照加 suffix。Native 快照保留策略可能让从头读取返回410，但 bootstrap
+仍成功；这不等于恢复已裁剪的前缀。恢复材料不足时 fail closed，不重置宿主 offset，
 也不删除快照。Flock 使用明确的单调逻辑时钟。
 
 关闭先停止接收新工作、abort 请求，再等待真实原始工作与响应体结束，
@@ -128,9 +138,9 @@ Control 复用具体 SDK adapter 同次验证的 genuine view，不再重放同�
 ## 尚未完成的边界
 
 - 生产 checkpoint 资格的取得；当前合成宿主已持久保存验证原件／checkpoint，并能续做创建与丢 ACK 间隙。
-- 内容快照的生产资格来源及保留历史读取 API；实验 header4 已认证精确续读位置。
-- 独立候选备份策略及恢复库；本地 tag7 与原子 tag8 发布、原件重试已实现。
-- 重新加密得到相同密文，以及完整对抗／持续协作探索。原密文读取、动作 replay／缩减和后端／旧钥攻击测量已实现，各项覆盖仍分别报告。
+- 内容快照的生产资格来源及历史保留政策；当前 content v0 字段认证精确续读位置。
+- 恢复库及生产／原生候选保护。
+- 完整对抗／持续协作探索。原输入 replay／缩减、原密文读取及后端／旧钥攻击测量各有明确覆盖；不承诺重新加密得到相同密文。
 - 比较 note 的权威、严格 freshness B、原生存钥和产品接线。
 
 受限 A 仅覆盖可信初始化时保护已安装密钥。已知密钥 AES protector 和可导出设备
@@ -146,25 +156,27 @@ Control 复用具体 SDK adapter 同次验证的 genuine view，不再重放同�
 完整会话可选 `epochRotation: { path, mode, protector }`，初始化独立的本地候选 owner。
 `rotateEpoch`、`resumeEpochRotation`、`acknowledgeEpochRotation` 共用 control actor 的
 P09 日志及接收器唯一 installed 存储；文档每次从真实账本选择当前代再固定本次加密。
-实际流程覆盖发布、安装、分发与重开，不承诺独立备份或发布设备永久丢失恢复。
+本地候选恢复与下文完整暂存发布共同工作；恢复库及生产／原生保护仍单独保留。
 
-现有工作区启动可选 `snapshot: { bytes, trust, offset }`。认证前先捕获并验证独立资格；
+现有工作区启动可选账本／授权快照起点 `snapshot: { bytes, trust, offset }`。认证前先捕获并验证独立资格；
 metadata 不能选择权限。重开仍需相同显式起点和独立预期终点。读取启动无需重放旧前缀；
 P09 写入仍独立验证全历史。生产资格取得和 snapshot-only P09 写入尚未完成。
-
 
 ## 当前快照与原子移除消费者
 
 文档配置显式 `snapshotUpload: true` 才开放 `uploadSnapshot(id)`。Lab 调用已发布
-SDK 标为 internal 的 `uploadSnapshotForTesting`，不是产品公开上传 API。header4
-认证实际续读位置；接收方先验签再取钥、解密，native 文档与 cursor 仍原子保存。
-Riverrun 缺少恢复历史时继续 fail closed，不重置 earliest offset 掩盖缺口。
+SDK 标为 internal 的 `uploadSnapshotForTesting`，不是产品公开上传 API。Provider header4
+仅为 `[4]`；content v0 在签名公钥后紧接 u16be 字节长度和原样 ASCII 续读位置，
+完整字段进入签名与 AEAD。四种文档 purpose 共用文档叶，docEpoch=0；update 的 content-frame
+开销保持 143 字节，快照另加2 字节及 offset 字节数。网关核对不晚于 native head 的真实记录边界，
+不解释调用方不透明 offset；接收方解密后对比精确位置，native 文档与 cursor 原子保存。
+[三角色计划](test/plan-snapshot.test.ts) 实际消费 Loro／Flock 快照加 tail，篡改响应位置时
+不推进持久状态，再通过新的真实 bootstrap 恢复；native 保留策略与普通读取410都保持原样。
 
 `removeMemberAndRotate(member)` 复用同一个候选 publisher/P09，把移除与新代写成
 一条记录。已入账 R 为本人新 personal 登记、丢回执后重开原记录、认证收钥和读文档
 已有真实消费者；这不包含恢复文件或 vault。`comparisonNote()` 仅导出刷新的个人设备
 观察，原始比较仍不是独立确认，调用方必须另给实际可信信道取得的 exact tuple。
-
 
 本地快照 gateway 必须借入显式初始化的持久接纳 journal，没有内存后备。PUT 结果不明时，
 宿主 `resumeSnapshot` 只通过 native GET 确认保存的原件，不再次 PUT。Accepted 精确重试
@@ -172,7 +184,6 @@ Riverrun 缺少恢复历史时继续 fail closed，不重置 earliest offset 掩
 同一 resource/model 必须只有一个 gateway，等待原生工作真正结束后再重开；不提供多宿主
 fencing 或 Riverrun+SQLite 跨库事务。原始未确认尝试过期后明确 blocked，不能靠新 token
 悄悄续期；这属于 fail-closed 保留状态，不是完整宿主可用性恢复的证明。
-
 
 ## 可恢复创建与实际重现
 
@@ -182,17 +193,21 @@ cursor 后才返回。崩溃或丢 ACK 均重试原字节。宿主重开仍需�
 决定客户端新鲜度。token 绑定不续期，也不授予成员身份。Lab 只采用这一种当前实验布局，
 不添加 metadata 补前缀 reader。
 
-`replay` 在新的真实进程执行原动作／放行顺序，比较已知结果、精确拒绝、文本和故障命中次数，
-并重算每轮持久状态关系；不声称随机身份或新密文相等。`minimize` 先实际重现原违规，再为
-每个有限候选创建独立文件／资源，保留同一具体失败观察。缺少依赖和无关的测试设施错误
-不能当作保留成功。
+`replay` 在新的真实进程和 SQLite owner 执行原动作／放行顺序，复用原合成身份、签名记录、
+HPKE／密文帧、发送前候选／outbox 输入与原生本地编辑 delta。真实 HTTP／P09、SDK 导入、
+持久化与 cursor 提交再次执行；不回灌已记录 reply、终态结果或文档／cursor 后态。比较实际
+结果、精确拒绝、文本、故障命中及每轮内部持久关系；不替换安全随机数，也不支持新加密
+密文相等。`minimize` 先实际重现原违规，再为每个有限候选用这些原输入建立独立文件／资源，
+保留同一具体失败观察。缺少依赖和无关的测试设施错误不能当作保留成功。
 
 精确原字节读取由 `replayLabCapturedReads` 消费签名历史、header3／header4 密文与预期明文
 哈希。调用方另给独立 checkpoint 和取钥能力；pack 不含私钥，也不自己选择信任。实际验签、
 解密原字节，不替换安全随机数。
 
-场景把私有写入事实接到独立参考模型，并扫描真实后端字节中的已知合成明文。攻击观察器还
-实际测量伪造 control、错误上下文／当前作者拒绝和被排除者旧钥读取。攻击能力仅接触后端
+场景把私有写入事实接到独立参考模型，只读扫描 native SQLite `entries` 与 `snapshots` 的
+body 中是否出现已知合成明文；实际普通 HTTP 410 保持不变，已保留快照也纳入观察。
+证据记录来源及有界行数／字节数，SQL 不选择账本权限。攻击观察器还实际测量伪造 control、
+错误上下文／当前作者拒绝和被排除者旧钥读取。攻击能力仅接触后端
 字节，不拿正常设备密钥或客户端路径。每项分别报告通过／违规／未测／设施错误；单个后端
 扫描通过不能代表完整保密性或整个 Lab 验收。
 
@@ -211,7 +226,17 @@ cursor 后才返回。崩溃或丢 ACK 均重试原字节。宿主重开仍需�
 并行成员合并、SQL 故障重试及已移除成员拒绝均保留本地编辑；不另建一套内容 outbox。
 
 有限攻击计划通过 `makeLabAttackTransport`／`runLabAttackPlan` 控制真实响应的丢弃、重复、
-截断、替换和显式延迟，也可对特定成员暂留已验证旧前缀后释放。计划不接触凭据和设备秘密；
+截断、替换、允许响应头修改和显式延迟，也可对特定成员暂留已验证旧前缀后释放。计划不接触凭据和设备秘密；
 命中以实际响应事件报告。旧前缀仅说明尚未同步，不自动证明恶意分叉；独立渠道获得的
 exact tuple 才可用于比较确认。三成员真实换代／排除、离线恢复和原字节读取都有独立
 测量，不能由一次通过推成所有攻击已覆盖。
+
+## 暂存换代与术语
+
+换代先持久保存候选、原签名和全部换代后设备信封，再整组暂存并逐字节读回，
+最后提交 P09 CAS。冲突候选废弃；未知结果和崩溃沿同原件重试。会话 keyRound
+先验证并接收已提交暂存组，随后继续既有 mailbox/repair。真实已提交完整组的接收者
+可在发布者永久丢失后收钥，不依赖其磁盘。这替代旧发布者独立备份选项，不代表 vault 或
+原生保管获批。无暂存直接 CAS 仍是可测量的管理者扣钥／可用性限制。
+
+[P07–P14、D12、strict B、RestrictedA 术语](../e2ee-core/README.md#terms)。

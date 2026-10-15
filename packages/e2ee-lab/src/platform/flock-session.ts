@@ -23,18 +23,46 @@ export function makeLabFlockSession(
       if (!value) throw new Error('flock-closed');
       return value;
     };
+    type Adapter = ReturnType<typeof createFlockAdapter>;
+    const replayListeners = new Set<Parameters<Adapter['subscribeLocalUpdates']>[0]>();
     return {
-      adapter: () => createFlockAdapter(current()),
+      adapter: () => {
+        const adapter = createFlockAdapter(current());
+        return {
+          ...adapter,
+          subscribeLocalUpdates: (listener: Parameters<Adapter['subscribeLocalUpdates']>[0]) => {
+            replayListeners.add(listener);
+            const unsubscribe = adapter.subscribeLocalUpdates(listener);
+            return () => {
+              replayListeners.delete(listener);
+              unsubscribe();
+            };
+          },
+        };
+      },
       exportSnapshot: () => current().exportFile(),
       importSnapshot: (bytes) => {
         value = Flock.fromFile(bytes, replica);
       },
-      append: (text) => {
+      importUpdate: (bytes) => {
+        const adapter = createFlockAdapter(current()),
+          before = adapter.exportUpdates(adapter.emptyVersion())?.version ?? adapter.emptyVersion();
+        current().importJsonStr(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+        const actual = adapter.exportUpdates(before);
+        if (actual)
+          for (const listener of replayListeners)
+            listener({ ...actual, updates: [new Uint8Array(bytes)] });
+      },
+      append: (text, captureDelta) => {
+        const before = captureDelta ? current().version() : undefined;
         const old = current().get(['text']);
         if (old !== undefined && typeof old !== 'string') throw new Error('flock-state');
         const time = now();
         if (!Number.isSafeInteger(time) || time < 0) throw new Error('flock-clock');
         current().put(['text'], (old ?? '') + text, time);
+        return before
+          ? new TextEncoder().encode(JSON.stringify(current().exportJson(before)))
+          : undefined;
       },
       text: () => {
         const text = current().get(['text']);

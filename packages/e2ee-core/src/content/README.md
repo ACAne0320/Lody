@@ -77,14 +77,18 @@ ledger commitment before deriving a scoped leaf and clears both after use.
 Historical signatures are checked before untrusted frame epochs can request keys.
 It contains no Promise runner, production protector or SDK transport. Lab owns the
 actual SDK bridge, plaintext disposal after use and transport/native lifetime.
-The sole current snapshot provider header is `[4, offsetByteLength(u16be), offsetUTF8]`,
-at most512 bytes in total. The explicit nonempty canonical UTF8 continuation offset
-is at most509 bytes; control characters and the dynamic `now` selector are rejected.
-The released SDK includes the complete header in AAD, so signature and AEAD bind
-that exact read position. A transplanted snapshot fails before key lookup. Bare
-header4 and obsolete provider headers have no reader or migration. Header3 remains
-one unchanged byte. These are experimental current encodings pending independent
-review, not a production-activation approval. See [binding provenance](streams-provenance.json).
+The sole snapshot provider header is `[4]`. Snapshot content v0 inserts a u16be
+length and raw ASCII continuationOffset immediately after the signing public key;
+the complete header participates in signature and AEAD. Readers compare the exact
+SDK continuation after authenticating/decrypting, so a transplanted snapshot fails
+without durable advancement. Updates retain their unchanged header3 and 143B
+content overhead; snapshots add 2 + offset bytes. The generic u16 limit is65535;
+the released SDK's4096B maximum sealing overhead limits its adapter to3950 ASCII
+bytes. Unsupported provider/header encodings have no compatibility reader.
+The user selected v0 over v2; sharing one document leaf supports future per-document
+grants, while purpose-bound AAD/signatures prevent cross-purpose substitution.
+See the revised [draft Spec](../../../../specs/e2ee-foundations.md).
+
 
 
 Host consumers may use `admitDocument` for fresh writes: a genuine current view,
@@ -93,7 +97,7 @@ binds the same author. Historical `authenticateDocument` remains separate.
 `admitStreamsUpdateBatch` checks released streams-crdt0.17 framing and header3,
 rejecting the entire mixed batch before a host forwards unchanged original bytes.
 `admitStreamsSnapshot` and its Effect form check the released kind2 envelope,
-complete position-bound header4, exact authenticated submitting device and current
+fixed provider header4 and position-bound content frame, exact authenticated submitting device and current
 write/epoch permission. Both admission paths recheck after native work at the host.
 They do not decrypt or prove ciphertext usability; readers still verify AEAD.
 
@@ -116,3 +120,9 @@ need current permission and the first persisted credential window. A fresh token
 cannot extend an unconfirmed attempt. Exact native bytes can be confirmed later
 without another PUT. The fixed database
 contains ciphertext/public identity only and supplies no ledger authority.
+
+The host also supplies an actual `snapshotBoundary` capability. It must prove the
+opaque offset exists at a native record boundary no later than head; neither string
+ordering nor an SDK HEAD echo proves this. The Lab's read-only Riverrun adapter
+checks actual row boundaries. Boundary validation is additional to signature/current
+permission; it never establishes independent snapshot trust.

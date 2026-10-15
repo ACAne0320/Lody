@@ -6,6 +6,7 @@ import { captureLabActionPack, LabReproError } from './repro-pack';
 import { runLabScenario } from './scenario-runner';
 import { summarizeLabActions, type LabAction, type LabActionObservation } from './action-executor';
 import { fingerprintOf, preserveSecurityFailure, isSecurityFingerprint } from '../pure/fingerprint';
+import { worstVerdict, type JudgeVerdict } from '../pure/judge';
 import { minimizeCounterexample } from '../pure/minimize';
 
 const projection = (observation: LabActionObservation) => {
@@ -33,6 +34,7 @@ const projection = (observation: LabActionObservation) => {
 export const replayLabActions = Effect.fn('Lab.replayActions')(function* (input: {
   readonly pack: unknown;
   readonly directory: string;
+  readonly sourceDirectory: string;
 }) {
   const directory = input.directory;
   const pack = yield* Effect.try({
@@ -41,6 +43,10 @@ export const replayLabActions = Effect.fn('Lab.replayActions')(function* (input:
   });
   const replay = yield* runLabScenario({
     directory,
+    replaySource: {
+      directory: join(input.sourceDirectory, 'private-replay'),
+      sha256: pack.privateReplay.sha256,
+    },
     actions: pack.observations.map((row) => row.action),
     schedule: pack.schedule,
     maxSteps: 256,
@@ -58,8 +64,10 @@ export const replayLabActions = Effect.fn('Lab.replayActions')(function* (input:
     if (JSON.stringify(expected) !== JSON.stringify(actual))
       differences.push({ index, expected, actual });
   }
+  if (JSON.stringify(pack.properties) !== JSON.stringify(replay.run.properties))
+    differences.push({ index: -1, expected: pack.properties, actual: replay.run.properties });
   return {
-    scope: 'fresh-execution-observed-outcomes' as const,
+    scope: 'captured-original-action-material' as const,
     verdict: replay.run.verdict,
     matched: differences.length === 0,
     reproduced:
@@ -68,11 +76,12 @@ export const replayLabActions = Effect.fn('Lab.replayActions')(function* (input:
     differences,
     run: replay.run,
     coverage: {
-      originalCiphertextReplay: 'use-captured-read-pack' as const,
+      originalCiphertextReplay:
+        'exact-original-inputs-with-actual-crypto-import-and-persistence' as const,
       resealEquality: 'unsupported' as const,
-      confidentiality: 'unavailable' as const,
+      confidentiality: 'measured-properties-only' as const,
       frameCountComparison: 'not-compared' as const,
-      nativeIdentityAndDurableBytes: 'not-compared-between-fresh-runs' as const,
+      nativeIdentityAndDurableBytes: 'original-synthetic-device-and-fresh-native-owners' as const,
     },
   };
 });
@@ -83,6 +92,7 @@ export const replayLabActions = Effect.fn('Lab.replayActions')(function* (input:
 export const minimizeLabActions = Effect.fn('Lab.minimizeActions')(function* (input: {
   readonly pack: unknown;
   readonly directory: string;
+  readonly sourceDirectory: string;
   readonly maxTrials?: number;
 }) {
   const directory = input.directory,
@@ -99,29 +109,47 @@ export const minimizeLabActions = Effect.fn('Lab.minimizeActions')(function* (in
   }));
   const fingerprint = (
     observations: readonly LabActionObservation[],
-    indices: readonly number[]
+    indices: readonly number[],
+    properties: readonly { id: string; verdict: JudgeVerdict }[] = []
   ) => {
     const report = summarizeLabActions(observations);
     const value = fingerprintOf({
-      integrity: report.integrity,
-      durability: report.durability,
-      confidentiality: 'unavailable',
+      integrity: worstVerdict([
+        report.integrity,
+        ...properties
+          .filter((row) => row.id.startsWith('integrity.') && row.verdict !== 'unavailable')
+          .map((row) => row.verdict),
+      ]),
+      durability: worstVerdict([
+        report.durability,
+        ...properties
+          .filter((row) => row.id.startsWith('durability.') && row.verdict !== 'unavailable')
+          .map((row) => row.verdict),
+      ]),
+      confidentiality: worstVerdict(
+        properties
+          .filter((row) => row.id.startsWith('confidentiality.') && row.verdict !== 'unavailable')
+          .map((row) => row.verdict)
+      ),
     });
     // Stable original action identities retain the actual failing measurement.
     // A different removed action causing the same coarse verdict is insufficient.
     return {
       ...value,
-      rules: observations.flatMap((row, index) =>
-        ['integrity', 'durability'].flatMap((dimension) =>
-          row[dimension as 'integrity' | 'durability'] === 'violation'
-            ? [
-                `${dimension}.action.${indices[index]}.${createHash('sha256')
-                  .update(JSON.stringify(projection(row)))
-                  .digest('hex')}`,
-              ]
-            : []
-        )
-      ),
+      rules: [
+        ...properties.filter((row) => row.verdict === 'violation').map((row) => row.id),
+        ...observations.flatMap((row, index) =>
+          ['integrity', 'durability'].flatMap((dimension) =>
+            row[dimension as 'integrity' | 'durability'] === 'violation'
+              ? [
+                  `${dimension}.action.${indices[index]}.${createHash('sha256')
+                    .update(JSON.stringify(projection(row)))
+                    .digest('hex')}`,
+                ]
+              : []
+          )
+        ),
+      ],
     };
   };
   yield* Effect.try({
@@ -130,7 +158,8 @@ export const minimizeLabActions = Effect.fn('Lab.minimizeActions')(function* (in
   });
   const original = fingerprint(
     pack.observations,
-    items.map((row) => row.originalIndex)
+    items.map((row) => row.originalIndex),
+    pack.properties
   );
   if (!isSecurityFingerprint(original)) return yield* new LabReproError({ code: 'not-reproduced' });
   const baselinePath = join(directory, 'baseline');
@@ -140,6 +169,10 @@ export const minimizeLabActions = Effect.fn('Lab.minimizeActions')(function* (in
   });
   const baseline = yield* runLabScenario({
     directory: baselinePath,
+    replaySource: {
+      directory: join(input.sourceDirectory, 'private-replay'),
+      sha256: pack.privateReplay.sha256,
+    },
     actions: items.map((row) => row.action),
     schedule: pack.schedule,
     maxSteps: 256,
@@ -149,7 +182,8 @@ export const minimizeLabActions = Effect.fn('Lab.minimizeActions')(function* (in
       original,
       fingerprint(
         baseline.run.observations,
-        items.map((row) => row.originalIndex)
+        items.map((row) => row.originalIndex),
+        baseline.run.properties
       )
     ).preserved
   )
@@ -176,13 +210,28 @@ export const minimizeLabActions = Effect.fn('Lab.minimizeActions')(function* (in
         const path = join(directory, `trial-${++trial}`);
         yield* Effect.try({ try: () => mkdirSync(path, { mode: 0o700 }), catch: (cause) => cause });
         const measured = yield* Effect.result(
-          runLabScenario({ directory: path, actions, maxSteps: 256 })
+          runLabScenario({
+            directory: path,
+            actions,
+            maxSteps: 256,
+            sourceIndices: indices,
+            replaySource: {
+              directory: join(input.sourceDirectory, 'private-replay'),
+              sha256: pack.privateReplay.sha256,
+            },
+          })
         );
         // This deliberately does not catch defects or interruption. A typed failed
         // trial is merely not preserved; its directory retains actual evidence.
         if (measured._tag === 'Failure') return { fingerprint: null };
         if (measured.success.run.verdict === 'harness-error') return { fingerprint: null };
-        return { fingerprint: fingerprint(measured.success.run.observations, indices) };
+        return {
+          fingerprint: fingerprint(
+            measured.success.run.observations,
+            indices,
+            measured.success.run.properties
+          ),
+        };
       }),
   });
   if (result.items.length === 0) return yield* new LabReproError({ code: 'missing-observation' });
@@ -200,11 +249,12 @@ export const minimizeLabActions = Effect.fn('Lab.minimizeActions')(function* (in
             },
           }
     ),
-    baseline: 'reproduced-with-fresh-owners' as const,
+    baseline: 'reproduced-with-original-material-and-fresh-owners' as const,
     scope: 'finite-action-outcomes' as const,
     coverage: 'partial' as const,
     limits: [
-      'Fresh crypto per trial',
+      'Captured signed and ciphertext originals reused per trial',
+      'Only prepared immutable inputs are restored; results, native documents and cursors execute anew',
       'No entropy or regenerated-ciphertext equality',
       'Not a globally minimal proof',
     ],

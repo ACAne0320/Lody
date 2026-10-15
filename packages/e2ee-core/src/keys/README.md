@@ -129,8 +129,21 @@ sender-envelope restoration, and it creates no delivery report.
 ## Explicit local epoch publication
 
 `./keys/host/rotation/sqlite` migrates local candidate generation, durable original
-publication, exact retry and installation. It borrows the existing P09 journal and
+publication, exact retry and installation. It borrows the existing [P09](../../README.md#terms) journal and
 remote, the actual installed-key store and an independently verified ledger
 supplier. Its candidate protector is a separate initialization-time host boundary;
 restricted installed-key approval A cannot protect an unpublished candidate.
 See [publisher contract](HOST-PROTECTION.md#local-publisher-candidates).
+
+## Staged publication port
+
+`./keys/staging` owns the bounded immutable public group shape and genuine-ledger
+checks; storage implements only `stageGroup`, `readGroup` and conditional
+`deleteGroup`. Every post-transition active device, including Guest and Recovery,
+gets a signed HPKE frame before CAS. Exact staged readback gates submission.
+The ledger is the single activation point; an uncommitted group is inert.
+A later publisher revocation does not change the historical signer of the committed
+publication. Current recipient eligibility and key commitment are still checked.
+A different commitment occupying that same epoch is the sole cleanup condition.
+The private cloud adapter stores opaque rows; the Lab adapter uses one SQLite
+transaction. Ordinary later-join mailbox and repair remain separate.

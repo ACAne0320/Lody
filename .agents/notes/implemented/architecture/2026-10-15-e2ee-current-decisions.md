@@ -119,15 +119,20 @@ save/reload precede Committed. Explicit ACK retains original history. Publisher
 operations do not hold the control actor permit while borrowing installed-key
 reads, because those reads refresh the same actor. Full-session operations own
 closure, and current-epoch document binding rechecks after asynchronous signing.
-Independent backup/permanent-device-loss policy remains proposed.
+The selected staging port retains the complete post-state recipient group and
+exact readback gates P09 CAS. Conflicts discard the candidate; unknown outcomes
+reuse originals. Recipients verify the genuine committed post-state before
+receiving that group, so permanent publisher loss after commitment no longer
+requires its disk. This supersedes the old independent publisher-backup options;
+vault/native custody remain separate. A manager can still bypass staging and
+commit directly, causing a measurable withholding/availability failure.
 
-Snapshot consumers now accept an explicitly independently qualified signed origin
+Ledger/auth snapshot consumers accept an explicitly independently qualified signed origin
 and persist only its bytes, genuine suffix and cursor. Every reopen supplies trust
 again. The authenticated workspace captures qualification before native auth and
 can start reading without the genesis prefix. Offsets and SQL do not select
 permission; P09 still verifies full history for writes. This changes no snapshot
 wire or qualification rule and does not complete production trust acquisition.
-
 
 ## Current atomic removal and content snapshot completion
 
@@ -136,16 +141,29 @@ Owner-personal-signed transition. The original candidate and P09 paths are reuse
 retired member/device facts and history remain, while distribution excludes the
 removed devices. The existing snapshot auth state already represents that exact
 post-state; no old-client capability negotiation or second decoder is introduced.
-The encoding remains experimental and the linked Spec remains draft for review.
+The encoding remains experimental. Related protocol Specs remain drafts for review;
+implementation and tests do not grant approval.
 
-Content header4 carries its bounded canonical continuation offset in the provider
-header, hence both released SDK AAD and content signature/AEAD authenticate it.
-Updates retain exact header3 bytes. Readers reject transplant/model/purpose/signature
+Snapshot content v0 carries a u16be byte length and raw ASCII continuation offset
+immediately after the signing public key; the complete field enters signature/AEAD.
+Provider header4 is exactly `[4]`. The host checks an actual record boundary no
+later than the native head without interpreting opaque caller tokens; readers
+compare the exact continuation after decryption. All four document purposes share
+the leaf key and retain docEpoch=0. Update content-frame overhead stays 143 bytes;
+snapshots add 2+offset byte count. Updates retain exact header3 bytes. Readers reject transplant/model/purpose/signature
 and AEAD errors before durable advancement. Host admission binds the authenticated
 principal and current writer/epoch before and after native verification. A snapshot
 must also retain its admitted original identity and position across retries; raw
 Riverrun PUT alone is not that contract. Production retention/trust and strict B
 remain separate. The Lab's internal-marked SDK upload method is identified honestly.
+
+Native snapshot retention can make an ordinary read from the beginning return HTTP 410
+while the released SDK still recovers from an authenticated snapshot plus suffix.
+The Lab preserves this behavior rather than resetting earliest offsets. A read-only
+native SQLite observation scans both retained entries and snapshot bodies for
+synthetic plaintext; it measures backend storage without assigning ledger authority
+or pretending that a pruned prefix remains readable. Three-role Loro/Flock plans
+exercise moved-offset refusal, unchanged durable state and actual recovery/reopen.
 
 The remaining active-R→own-personal consumer reuses public proof/P09/HTTP/HPKE
 instead of adding a wrapper service. Fresh personal comparison notes still require
@@ -153,7 +171,6 @@ an explicit independently obtained exact tuple; a server observation cannot upgr
 itself. A structure assessment recommends keeping domain directories and splitting
 only large mixed rotation/receive/distribution owners into pure/workflow/platform.
 No files were moved or architecture refactor performed in this migration increment.
-
 
 ## Current creation and reproduction consumers
 
@@ -163,16 +180,27 @@ publishing its durable floor; it resumes remote-write/local-checkpoint gaps with
 re-signing. Reopen still needs an independent minimum. Host observations are not
 a client freshness oracle. The registry and P09 retain their existing owners.
 
-Recorded action replay compares fresh measured outcomes, exact refusal/fault facts
-and within-run durability relationships. Original read packs authenticate/decrypt
-captured bytes with caller-qualified history/keys. No global entropy replacement
-or regenerated-ciphertext equality is promised. Shrink first reproduces the same
-concrete failure, then gives each candidate fresh real owners. Bounded attack ports
-exclude honest private paths/keys; missing measurements remain explicit.
+Action replay uses fresh OS processes and SQLite owners with the original synthetic
+identities, signed/HPKE/ciphertext inputs, prepared candidate/outbox inputs and
+native local-edit deltas. Capturing inputs avoids a second core entropy contract;
+injecting recorded replies, terminal results or document/cursor post-state would
+bypass the crypto/import/persistence behavior being tested and is excluded. Actual
+HTTP/P09, SDK import, persistence and cursor commits execute again. Measurements
+compare outcomes, exact refusal/fault facts and within-run durable relationships,
+without global entropy replacement or fresh-reseal equality. Shrink reproduces
+the same concrete failure with original inputs and fresh owners for each candidate.
+
+The private replay directory retains synthetic secret exports and original inputs
+with `0700`/`0600` directory/file permissions; public evidence records its binding
+digest, not those secrets, and action replay requires the private source directory.
+The separate public captured-read pack contains no key: it authenticates/decrypts
+original ciphertext only with caller-qualified history and key capability. Bounded
+attacker ports exclude honest private paths/keys; missing measurements remain explicit.
 
 The complete Lab host refreshes real control before authorization. Failed persistence keeps a
 monotonic observed floor in that object and blocks current/checkpoint and older prefixes until
 confirmation; reopen still needs an independent minimum. Offline edits persist native state/old
 cursor and the existing SDK publishes under the current epoch, without another outbox. Finite
-attack plans receive actual response controls only; unrelated or harness failures never substitute
+attack plans receive actual response controls, including allowed header-only mutation;
+plans can declare multiple roles and snapshot upload actions. Unrelated or harness failures never substitute
 for a measured refusal, and host observations never invent independent comparison confirmation.

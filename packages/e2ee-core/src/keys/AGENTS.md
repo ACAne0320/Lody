@@ -63,7 +63,7 @@
   outbox ciphertext and every per-revision task/result through explicit acknowledgement.
   Hints only trigger retries; only genuine epoch/revocation changes terminate tasks.
   Exact readback is observation, never installation. Use already committed protected
-  keys; candidate backup/rotation/vault decisions remain separately gated.
+  keys; staged publication is a separate owner and vault/native custody stay separate.
 
 - `./keys/host/history` borrows installed protected-store capabilities at trusted
   initialization. Recover from the installed latest key only, fixed-verify the
@@ -81,5 +81,9 @@
   protector and authenticated purpose/context/original record. Never call installed
   protection on an unpublished key. Persist and actually open the candidate before
   P09; retry exact records, install only genuine committed epochs, retain Conflict
-  and original results through explicit ACK. Local crash recovery is not independent
-  backup or approval of a production publication policy.
+  and original results through explicit ACK. Persist all complete post-transition
+  recipient frames, stage atomically and compare exact readback before CAS. A
+  conflict discards the protected candidate; committed staged recipients bind
+  original R/signer and current recipient eligibility. Delete staged groups only
+  for a genuine different commitment occupying the same epoch. The storage
+  service never supplies signed-ledger authority.

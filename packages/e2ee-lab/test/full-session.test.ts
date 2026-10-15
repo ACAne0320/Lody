@@ -99,7 +99,11 @@ it('publishes and installs real new epochs, distributes them, resumes current-ep
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const f = yield* makeLabScenarioFixture(join(root, 'fixture'));
+          const f = yield* makeLabScenarioFixture(join(root, 'fixture'), [
+            { id: 'owner', role: 'owner' },
+            { id: 'peer', role: 'owner', memberOf: 'owner' },
+            { id: 'retired', role: 'owner', memberOf: 'owner' },
+          ]);
           const original = f.input('owner', 'create');
           const input = {
             ...original,
@@ -117,6 +121,11 @@ it('publishes and installs real new epochs, distributes them, resumes current-ep
           yield* owner.append('loro', 'epoch zero');
           yield* peer.pull('loro');
 
+          const unused = yield* owner.submit({
+            _tag: 'RevokeDevice',
+            target: f.devices.get('retired')!.publicKey,
+          });
+          yield* owner.acknowledge(unused);
           const first = yield* owner.rotateEpoch();
           expect(first.outcome).toBe('Committed');
           expect(first.epoch).toBe(1);
@@ -317,7 +326,16 @@ it('closes the two original Lab2 behaviors through the complete session: genuine
               Effect.succeed({
                 syntheticOnly: true,
                 device,
-                peerSigningKey: Buffer.from(f.peer.publicKey.toBytes()).toString('hex'),
+                targets: Object.fromEntries(
+                  [...f.devices].map(([id, native]) => [
+                    id,
+                    {
+                      signingKey: Buffer.from(native.publicKey.toBytes()).toString('hex'),
+                      membership: Buffer.from(f.memberships.get(id)!.toBytes()).toString('hex'),
+                    },
+                  ])
+                ),
+                initialKeyOwner: true,
                 baseUrl: f.host.baseUrl,
                 directory: f.directory,
                 actor: 'owner',

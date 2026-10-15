@@ -3,12 +3,14 @@ import { closeSync, openSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { Data, Deferred, Effect, Result, Schema, Semaphore } from 'effect';
 import * as Bytes from '../bytes';
-import { bytesEqual, encodeCbor } from '../cbor';
+import { bytesEqual, decodeSnapshotCbor, encodeCbor, encodeSnapshotCbor } from '../cbor';
 import { copyEpochKeyBytes, disposeEpochKey } from '../epoch-key';
 import { keyId } from '../identifiers';
+import { sha256 } from '@noble/hashes/sha2.js';
 import {
   decodeRecord,
   epochHistoryPacket,
+  extendLedger,
   hashRecordBytes,
   hasVerifiedCheckpoint,
   requireLedgerContinuation,
@@ -26,6 +28,15 @@ import {
   type SubmissionResult,
 } from '../submission';
 import { commitEpochKey, openHistoryPacket, sealHistoryPacket } from './history';
+import { prepareEpochEnvelope } from './envelope';
+import {
+  authenticateEpochStagedGroup,
+  ownEpochStagedGroup,
+  sameEpochStagedGroup,
+  obsoleteEpochStagedGroup,
+  type EpochStagedGroup,
+  type EpochStagingPort,
+} from './staging';
 import type { NativeEpochProtector } from './host-protection';
 import type { makeSqliteProtectedEpochKeys } from './protected-sqlite';
 
@@ -38,7 +49,9 @@ export class EpochRotationError extends Data.TaggedError('EpochRotationError')<{
     | 'unauthorized'
     | 'context-changed'
     | 'candidate-missing'
-    | 'native-failed';
+    | 'native-failed'
+    | 'rotation-not-required'
+    | 'stage-readback';
 }> {}
 export interface EpochRotationResult extends SubmissionResult {
   readonly epoch: number;
@@ -48,7 +61,8 @@ export interface EpochRotationResult extends SubmissionResult {
 const APP = 0x4c455243;
 const MAX_BLOB = 24576;
 const purpose = new TextEncoder().encode('lody-e2ee/local-epoch-candidate/v1\0');
-const HEADER = purpose.length + 32 * 5 + 4 * 3;
+const HEADER = purpose.length + 32 * 6 + 4 * 3;
+const MAX_ENVELOPES = 2 * 1024 * 1024;
 const Row = Schema.Struct({
   id: Schema.String,
   parent: Schema.Uint8Array,
@@ -56,6 +70,7 @@ const Row = Schema.Struct({
   epoch: Schema.Int,
   commitment: Schema.Uint8Array,
   record: Schema.Uint8Array,
+  envelopes: Schema.Uint8Array,
   blob: Schema.Uint8Array,
   outcome: Schema.NullOr(Schema.Literals(['Committed', 'Conflict'])),
   binding: Schema.NullOr(Schema.Literals(['current', 'historical'])),
@@ -85,6 +100,7 @@ const same = (a: Candidate, b: Candidate) =>
   bytesEqual(a.parent, b.parent) &&
   bytesEqual(a.commitment, b.commitment) &&
   bytesEqual(a.record, b.record) &&
+  bytesEqual(a.envelopes, b.envelopes) &&
   bytesEqual(a.blob, b.blob) &&
   a.outcome === b.outcome &&
   a.binding === b.binding &&
@@ -104,6 +120,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
   readonly ledger: () => Effect.Effect<LedgerView, unknown>;
   readonly installed: Effect.Success<ReturnType<typeof makeSqliteProtectedEpochKeys>>;
   readonly protector: NativeEpochProtector;
+  readonly staging: EpochStagingPort;
 }) {
   const { path, mode } = input;
   const anchor = yield* Effect.fromResult(Bytes.genesisHash(input.genesis.toBytes()));
@@ -111,6 +128,11 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     Bytes.signingPublicKey(input.signer.publicKey.toBytes())
   );
   const signer = Object.freeze({ publicKey, sign: input.signer.sign.bind(input.signer) });
+  const staging = {
+    stageGroup: input.staging.stageGroup.bind(input.staging),
+    readGroup: input.staging.readGroup.bind(input.staging),
+    deleteGroup: input.staging.deleteGroup.bind(input.staging),
+  };
   const lookup = input.ledger,
     read = input.installed.read.bind(input.installed),
     save = input.installed.saveAndReload.bind(input.installed),
@@ -178,7 +200,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
   yield* sql(() => {
     const app = db.pragma('application_id', { simple: true }),
       version = db.pragma('user_version', { simple: true });
-    if (mode === 'open' && (app !== APP || version !== 1)) throw fail('corrupt');
+    if (mode === 'open' && (app !== APP || version !== 2)) throw fail('corrupt');
     if (
       mode === 'create' &&
       (app !== 0 ||
@@ -194,9 +216,9 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     if (mode === 'create')
       db.transaction(() => {
         db.exec(`CREATE TABLE epoch_rotation_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,publisher TEXT NOT NULL,head BLOB,count INTEGER);
-        CREATE TABLE epoch_rotation_candidates(id TEXT PRIMARY KEY,parent BLOB NOT NULL,parent_count INTEGER NOT NULL,epoch INTEGER NOT NULL,commitment BLOB NOT NULL,record BLOB NOT NULL,blob BLOB NOT NULL,outcome TEXT,binding TEXT,consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)));
+        CREATE TABLE epoch_rotation_candidates(id TEXT PRIMARY KEY,parent BLOB NOT NULL,parent_count INTEGER NOT NULL,epoch INTEGER NOT NULL,commitment BLOB NOT NULL,record BLOB NOT NULL,envelopes BLOB NOT NULL,blob BLOB NOT NULL,outcome TEXT,binding TEXT,consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)));
         CREATE UNIQUE INDEX epoch_rotation_active ON epoch_rotation_candidates(consumed) WHERE consumed=0;
-        PRAGMA application_id=${APP};PRAGMA user_version=1;`);
+        PRAGMA application_id=${APP};PRAGMA user_version=2;`);
         db.prepare('INSERT INTO epoch_rotation_meta(id,genesis,publisher) VALUES(1,?,?)').run(
           org,
           publisher
@@ -305,7 +327,8 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     CASE WHEN length(parent)=32 THEN parent END AS parent,parent_count,epoch,
     CASE WHEN length(commitment)=32 THEN commitment END AS commitment,
     CASE WHEN length(record) BETWEEN 1 AND 8192 THEN record END AS record,
-    CASE WHEN length(blob) BETWEEN 1 AND ${MAX_BLOB} THEN blob END AS blob,
+    CASE WHEN length(envelopes) BETWEEN 1 AND ${MAX_ENVELOPES} THEN envelopes END AS envelopes,
+    CASE WHEN length(blob) BETWEEN 0 AND ${MAX_BLOB} THEN blob END AS blob,
     outcome,binding,consumed FROM epoch_rotation_candidates`;
   const load = (id?: string): Candidate | null => {
     guard();
@@ -331,7 +354,10 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
       row.epoch > 0xffffffff ||
       row.record.length < 1 ||
       row.record.length > 8192 ||
-      row.blob.length < 1 ||
+      (row.blob.length < 1 && row.outcome !== 'Conflict') ||
+      (row.outcome === 'Conflict' && row.blob.length !== 0) ||
+      row.envelopes.length < 1 ||
+      row.envelopes.length > MAX_ENVELOPES ||
       row.blob.length > MAX_BLOB ||
       (row.consumed !== 0 && row.consumed !== 1) ||
       row.id !== keyId(hashRecordBytes(row.record).toBytes()) ||
@@ -355,8 +381,33 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
       parent: new Uint8Array(row.parent),
       commitment: new Uint8Array(row.commitment),
       record: new Uint8Array(row.record),
+      envelopes: new Uint8Array(row.envelopes),
       blob: new Uint8Array(row.blob),
     };
+  };
+  const group = (row: Candidate): EpochStagedGroup => {
+    const decoded = Result.getOrThrow(decodeSnapshotCbor(row.envelopes));
+    if (!Array.isArray(decoded)) throw fail('corrupt');
+    const envelopes = decoded.map((item) => {
+      if (
+        !Array.isArray(item) ||
+        item.length !== 2 ||
+        !(item[0] instanceof Uint8Array) ||
+        !(item[1] instanceof Uint8Array)
+      )
+        throw fail('corrupt');
+      return { recipient: keyId(item[0]), frame: item[1] };
+    });
+    return Result.getOrThrow(
+      ownEpochStagedGroup({
+        genesis: org,
+        epoch: row.epoch,
+        commitment: keyId(row.commitment),
+        recordHash: row.id,
+        record: row.record,
+        envelopes,
+      })
+    );
   };
   const payload = (row: Candidate, key: Bytes.EpochKey) => {
     const body = new Uint8Array(HEADER + row.record.length + 32),
@@ -370,6 +421,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
       row.parent,
       row.commitment,
       hashRecordBytes(row.record).toBytes(),
+      sha256(row.envelopes),
     ]) {
       body.set(bytes, at);
       at += 32;
@@ -463,12 +515,12 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
   const confirm = Effect.fnUntraced(function* (
     row: Candidate,
     outcome: 'Committed' | 'Conflict',
-    key: Bytes.EpochKey
+    key?: Bytes.EpochKey
   ) {
     const view = yield* current();
     const bound = yield* sql(() => binding(view, row));
     if (outcome === 'Committed') {
-      if (!bound) return yield* fail('context-changed');
+      if (!bound || !key) return yield* fail('context-changed');
       yield* save(row.epoch, key);
       yield* Effect.acquireUseRelease(
         read(row.epoch),
@@ -485,7 +537,12 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     } else if (bound || view.length <= row.parent_count) return yield* fail('context-changed');
     // Binding reports the first confirmed local installation. A later epoch must
     // not invalidate acknowledgement of the same durable original/result.
-    const next = { ...row, outcome, binding: row.outcome ? row.binding : bound };
+    const next = {
+      ...row,
+      blob: outcome === 'Conflict' ? new Uint8Array() : row.blob,
+      outcome,
+      binding: row.outcome ? row.binding : bound,
+    };
     if (row.outcome && row.outcome !== outcome) return yield* fail('corrupt');
     yield* sql(() =>
       db
@@ -495,9 +552,9 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
           if (
             db
               .prepare(
-                'UPDATE epoch_rotation_candidates SET outcome=?,binding=? WHERE id=? AND consumed=0'
+                'UPDATE epoch_rotation_candidates SET outcome=?,binding=?,blob=? WHERE id=? AND consumed=0'
               )
-              .run(outcome, next.binding, row.id).changes !== 1
+              .run(outcome, next.binding, next.blob, row.id).changes !== 1
           )
             throw fail('corrupt');
           const after = load(row.id);
@@ -508,23 +565,40 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     );
     return result(next)!;
   });
-  const settle = (row: Candidate) =>
-    withKey(row, (key) =>
+  const settle = (row: Candidate) => {
+    const work = (key?: Bytes.EpochKey) =>
       Effect.gen(function* () {
         const view = yield* current();
-        yield* sql(() => {
-          binding(view, row);
-        });
+        const bound = yield* sql(() => binding(view, row));
         const entry = yield* journal.load(anchor);
         if (entry.record && !bytesEqual(entry.record, row.record)) return yield* fail('busy');
         if (row.outcome && !entry.record) return yield* confirm(row, row.outcome, key);
+        // The immutable complete group is durable locally and remotely before P09
+        // may attempt a CAS. An advanced verified prefix lets P09 reconcile only.
+        if (!bound && view.length === row.parent_count) {
+          const proposed = yield* Effect.fromResult(
+            extendLedger(view, [row.record], {
+              head: hashRecordBytes(row.record),
+              length: view.length + 1,
+            })
+          );
+          const original = yield* sql(() => group(row));
+          yield* Effect.fromResult(authenticateEpochStagedGroup(proposed, original, true));
+          yield* staging.stageGroup(yield* Effect.fromResult(ownEpochStagedGroup(original)));
+          const stored = yield* staging.readGroup(original);
+          if (!stored) return yield* fail('stage-readback');
+          const owned = yield* Effect.fromResult(ownEpochStagedGroup(stored));
+          if (!sameEpochStagedGroup(original, owned)) return yield* fail('stage-readback');
+          yield* Effect.fromResult(authenticateEpochStagedGroup(proposed, owned, true));
+        }
         const submitted = entry.record
           ? yield* provide(resumeSubmission(anchor))
           : yield* provide(submitRecord(anchor, row.record));
         if (!submitted || !bytesEqual(submitted.record, row.record)) return yield* fail('corrupt');
         return yield* confirm(row, submitted.outcome, key);
-      })
-    );
+      });
+    return row.outcome === 'Conflict' ? work() : withKey(row, work);
+  };
   const resume = Effect.fnUntraced(function* () {
     yield* current();
     const row = yield* sql(() => load());
@@ -565,6 +639,8 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
       );
     }
     yield* manager(view, target);
+    if (!target && !view.inspectState().epoch.rotationRequired)
+      return yield* fail('rotation-not-required');
     const state = view.inspectState(),
       epoch = yield* Effect.fromResult(Bytes.epochNumber(state.epoch.number + 1));
     return yield* Effect.acquireUseRelease(
@@ -620,6 +696,56 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
               );
               const proposal = yield* Effect.fromResult(prepareLedgerRecord(view, body));
               const record = yield* signLedgerRecord(proposal, signer);
+              const proposed = yield* Effect.fromResult(
+                extendLedger(view, [record], {
+                  head: hashRecordBytes(record),
+                  length: view.length + 1,
+                })
+              );
+              const envelopes: { recipient: string; frame: Uint8Array }[] = [];
+              for (const [recipient] of [...proposed.inspectState().devices].sort(([a], [b]) =>
+                a.localeCompare(b)
+              )) {
+                envelopes.push({
+                  recipient,
+                  frame: yield* prepareEpochEnvelope({
+                    context: {
+                      genesis: anchor,
+                      epoch,
+                      sender: publicKey,
+                      recipient: yield* Effect.fromResult(
+                        Bytes.signingPublicKey(
+                          Uint8Array.from(recipient.match(/../g) ?? [], (x) => parseInt(x, 16))
+                        )
+                      ),
+                    },
+                    key,
+                    signer,
+                    ledger: current,
+                    candidate: { before: view, record },
+                  }),
+                });
+              }
+              const originals = yield* Effect.fromResult(
+                ownEpochStagedGroup({
+                  genesis: org,
+                  epoch,
+                  commitment: keyId(commitment.toBytes()),
+                  recordHash: keyId(hashRecordBytes(record).toBytes()),
+                  record,
+                  envelopes,
+                })
+              );
+              yield* Effect.fromResult(authenticateEpochStagedGroup(proposed, originals, true));
+              const envelopeBytes = yield* Effect.fromResult(
+                encodeSnapshotCbor(
+                  originals.envelopes.map((item) => [
+                    Uint8Array.from(item.recipient.match(/../g) ?? [], (x) => parseInt(x, 16)),
+                    item.frame,
+                  ])
+                )
+              );
+              if (envelopeBytes.length > MAX_ENVELOPES) return yield* fail('corrupt');
               let row: Candidate = {
                 id: keyId(hashRecordBytes(record).toBytes()),
                 parent: view.head.toBytes(),
@@ -627,6 +753,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
                 epoch,
                 commitment: commitment.toBytes(),
                 record,
+                envelopes: envelopeBytes,
                 blob: new Uint8Array(),
                 outcome: null,
                 binding: null,
@@ -661,7 +788,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
                     if (
                       db
                         .prepare(
-                          'INSERT INTO epoch_rotation_candidates(id,parent,parent_count,epoch,commitment,record,blob,consumed) VALUES(?,?,?,?,?,?,?,0)'
+                          'INSERT INTO epoch_rotation_candidates(id,parent,parent_count,epoch,commitment,record,envelopes,blob,consumed) VALUES(?,?,?,?,?,?,?,?,0)'
                         )
                         .run(
                           row.id,
@@ -670,6 +797,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
                           row.epoch,
                           row.commitment,
                           row.record,
+                          row.envelopes,
                           row.blob
                         ).changes !== 1
                     )
@@ -748,6 +876,20 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
         sql(() => {
           const row = load();
           return row ? result(row) : null;
+        })
+      ),
+    /** Explicit cleanup; only a genuinely occupied same epoch with another commitment permits deletion. */
+    cleanupStaged: () =>
+      lease(
+        Effect.gen(function* () {
+          const view = yield* current();
+          const row = yield* sql(() => load());
+          if (!row) return false;
+          const original = yield* sql(() => group(row));
+          const occupied = yield* Effect.fromResult(obsoleteEpochStagedGroup(view, original));
+          yield* staging.deleteGroup(original, occupied);
+          if ((yield* staging.readGroup(original)) !== null) return yield* fail('stage-readback');
+          return true;
         })
       ),
     acknowledge: (expected: EpochRotationResult) =>

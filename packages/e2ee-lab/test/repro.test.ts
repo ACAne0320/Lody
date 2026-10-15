@@ -269,7 +269,10 @@ it('reexecutes finite captured action outcomes on fresh actual processes and det
         ],
       })
     );
-    const rerun = await Effect.runPromise(replayLabActions({ pack: artifact, directory: replay }));
+    const rerun = await Effect.runPromise(
+      replayLabActions({ sourceDirectory: record, pack: artifact, directory: replay })
+    );
+    expect(rerun.differences).toEqual([]);
     expect(rerun.matched).toBe(true);
     expect(rerun.reproduced).toBe(true);
     expect(rerun.verdict).toBe('pass');
@@ -287,13 +290,13 @@ it('reexecutes finite captured action outcomes on fresh actual processes and det
       )
     );
     expect(cli.reproduced).toBe(true);
-    expect(cli.scope).toBe('fresh-execution-observed-outcomes');
+    expect(cli.scope).toBe('captured-original-action-material');
     // Edit an inert artifact, not an actor or verifier. Reexecution must measure
     // the actual text and expose this evidence mismatch.
     const corrupted = JSON.parse(readFileSync(join(record, 'evidence.json'), 'utf8'));
     corrupted.run.observations.at(-1).reply.value.text = 'unwitnessed text';
     const mismatch = await Effect.runPromise(
-      replayLabActions({ pack: corrupted, directory: changed })
+      replayLabActions({ sourceDirectory: record, pack: corrupted, directory: changed })
     );
     expect(mismatch.matched).toBe(false);
     expect(mismatch.differences.at(-1)?.index).toBe(4);
@@ -318,7 +321,8 @@ it('compares exact measured fault hit counts rather than coarsening every nonzer
           {
             kind: 'call',
             actor: 'owner',
-            operation: 'revoke-peer',
+            operation: 'revoke',
+            target: 'peer',
             expect: {
               ok: false,
               refusal: { tag: 'LabTransportFault', code: 'dropped-committed-ack' },
@@ -330,7 +334,9 @@ it('compares exact measured fault hit counts rather than coarsening every nonzer
     expect(artifact.run.observations[2]!.reply.trace?.ackDropped).toBe(1);
     const altered = JSON.parse(JSON.stringify(artifact));
     altered.run.observations[2].reply.trace.ackDropped = 2;
-    const result = await Effect.runPromise(replayLabActions({ pack: altered, directory: replay }));
+    const result = await Effect.runPromise(
+      replayLabActions({ sourceDirectory: record, pack: altered, directory: replay })
+    );
     expect(result.matched).toBe(false);
     expect(result.differences[0]?.index).toBe(2);
     expect(result.run.observations[2]!.reply.trace?.ackDropped).toBe(1);
@@ -369,7 +375,12 @@ it('minimizes measured action violations with fresh real trials and refuses an a
     );
     expect(artifact.run.verdict).toBe('violation');
     const minimized = await Effect.runPromise(
-      minimizeLabActions({ pack: artifact, directory: join(directory, 'trials'), maxTrials: 8 })
+      minimizeLabActions({
+        sourceDirectory: record,
+        pack: artifact,
+        directory: join(directory, 'trials'),
+        maxTrials: 8,
+      })
     );
     expect(minimized.originalSize).toBe(4);
     expect(minimized.trials).toBeLessThanOrEqual(8);
@@ -380,7 +391,11 @@ it('minimizes measured action violations with fresh real trials and refuses an a
     allPass.run.observations.at(-1).action.expect.text = '';
     const refused = await Effect.runPromise(
       Effect.result(
-        minimizeLabActions({ pack: allPass, directory: join(directory, 'no-security') })
+        minimizeLabActions({
+          sourceDirectory: record,
+          pack: allPass,
+          directory: join(directory, 'no-security'),
+        })
       )
     );
     expect(Result.isFailure(refused)).toBe(true);
@@ -390,7 +405,11 @@ it('minimizes measured action violations with fresh real trials and refuses an a
     unwitnessed.run.observations.at(-1).reply.value.text = 'a different claimed failure';
     const differentFailure = await Effect.runPromise(
       Effect.result(
-        minimizeLabActions({ pack: unwitnessed, directory: join(directory, 'unwitnessed') })
+        minimizeLabActions({
+          sourceDirectory: record,
+          pack: unwitnessed,
+          directory: join(directory, 'unwitnessed'),
+        })
       )
     );
     expect(Result.isFailure(differentFailure)).toBe(true);

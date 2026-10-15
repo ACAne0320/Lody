@@ -580,7 +580,7 @@ describe('v0 content context and signature', () => {
 });
 
 it('rejects mixed-torsion A and R even when the cofactored equation accepts them', async () => {
-  const { utils, verify: cofactoredVerify } = await import('@noble/ed25519');
+  const { utils } = await import('@noble/ed25519');
   const { sha512 } = await import('@noble/hashes/sha2.js');
   const L = 2n ** 252n + 27742317777372353535851937790883648493n;
   const le = (bytes: Uint8Array) => {
@@ -605,7 +605,12 @@ it('rejects mixed-torsion A and R even when the cofactored equation accepts them
         : Point.BASE.multiply(r).toBytes();
     const k = le(sha512(new Uint8Array([...R, ...A, ...message]))) % L;
     const sig = new Uint8Array([...R, ...le32((r + k * ext.scalar) % L)]);
-    expect(cofactoredVerify(sig, message, A, { zip215: false })).toBe(true);
+    // Establish the cofactored equation directly; noble's verify policy is
+    // independent of the strict public verifier under test.
+    const S = le(sig.subarray(32));
+    const left = Point.BASE.multiply(S).multiply(8n);
+    const right = Point.fromBytes(R, false).add(Point.fromBytes(A, false).multiply(k)).multiply(8n);
+    expect(left.equals(right)).toBe(true);
     expect(Result.isFailure(verifySignature(A, message, sig))).toBe(true);
     expect(
       Result.isFailure(

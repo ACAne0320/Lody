@@ -21,9 +21,9 @@ a second Scope.close call alone is not a cleanup wait. Flock has
 no public deterministic free/dispose: close subscriptions and drop references.
 Never reset host earliest offsets or delete snapshots to make recovery tests pass.
 
-This package is being migrated. Missing content, host, scheduler, attacker,
-replay and CLI paths stay explicit in README and the migration manifest.
-Do not claim the original Lab is migrated from a smaller consumer's green tests.
+Current consumers and remaining product/platform boundaries stay explicit in README.
+Source-disposition records are historical evidence, not a live completeness checklist.
+Do not infer unmeasured security or production acceptance from a consumer's green tests.
 
 Exact fingerprint replay compares all known fields and reports missing observations
 as coverage gaps. Shrink preserves measured violations and known trigger facts;
@@ -83,3 +83,9 @@ sealing; the existing SDK synchronizes deltas under current epoch/permission.
 Attack plans receive bounded public response controls, never credentials or
 honest-device secrets. A retained old prefix is pending sync, not automatically
 a detected fork; compare only externally qualified exact observations.
+
+Staged epoch plans reuse original pre-dispatch groups and candidate inputs, never
+recorded terminal results, installed keys, documents or cursors. Replay reexecutes
+real native imports, HTTP, validation and persistence. Backend confidentiality
+observations read bounded actual entries/snapshots without changing retention or
+using SQLite to select authority. Missing property observations stay unavailable.

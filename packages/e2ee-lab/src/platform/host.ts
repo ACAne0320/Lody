@@ -7,10 +7,16 @@ import type { makeLabControlGateway } from './control-gateway';
 import { makeLabOperations } from './operation-scope';
 import { LabCallbackRunner } from './run';
 import { dispatchLabMailbox, type LabMailboxHost } from './mailbox-http';
+import { LabEpochStagingError } from './epoch-staging';
 import { LabJoinError, parseLabJoin, type makeLabJoinMailbox } from './join-mailbox';
 import { LabWorkspaceError, type makeLabWorkspaceRegistry } from './workspace-registry';
 import { LabStreamReply, LabStreamReadError, type makeLabStreamReader } from './stream-read';
 import { LabWorkspaceCreationError, type makeLabWorkspaceCreation } from './workspace-creation';
+import {
+  LabEpochStagingHttpError,
+  dispatchLabEpochStaging,
+  type LabEpochStagingHost,
+} from './epoch-staging-http';
 
 type Credentials = Effect.Success<ReturnType<typeof makeLabCredentials>>;
 type Control = Effect.Success<ReturnType<typeof makeLabControlGateway>>;
@@ -65,6 +71,7 @@ export function makeLabHttpHost(input: {
   readonly control: (genesis: Bytes.GenesisHash) => Control | undefined;
   readonly mailbox?: (genesis: Bytes.GenesisHash) => LabMailboxHost | undefined;
   readonly joins?: (genesis: Bytes.GenesisHash) => Joins | undefined;
+  readonly staging?: (genesis: Bytes.GenesisHash) => LabEpochStagingHost | undefined;
 }) {
   return Effect.gen(function* () {
     const port = input.port ?? 0;
@@ -76,7 +83,8 @@ export function makeLabHttpHost(input: {
       creation = input.creation,
       control = input.control,
       mailbox = input.mailbox,
-      joins = input.joins;
+      joins = input.joins,
+      staging = input.staging;
     const active = new Set<Promise<void>>();
     // Same-Org control and content admissions linearize at this host; a queued
     // write checks permission only after earlier control CAS has actually settled.
@@ -347,6 +355,24 @@ export function makeLabHttpHost(input: {
             expiresAt: credential.expiresAt,
           };
         }
+        const stageMatch = /^\/v1\/spaces\/([0-9a-f]{64})\/epoch-staging$/.exec(path);
+        if (stageMatch) {
+          if (request.method !== 'POST') return yield* reject(405);
+          const authorization = request.headers.authorization;
+          if (typeof authorization !== 'string' || !/^Bearer [0-9a-f]{64}$/.test(authorization))
+            return yield* reject(401);
+          const credential = yield* credentials.authenticate(authorization.slice(7));
+          const anchor = yield* Effect.fromResult(Bytes.genesisHash(hex(stageMatch[1], 32)));
+          if (!credential.genesis?.equals(anchor)) return yield* reject(403);
+          const owner = staging?.(anchor);
+          if (!owner) return yield* reject(404);
+          return yield* dispatchLabEpochStaging({
+            value: yield* json(request, 6 * 1024 * 1024),
+            genesis: anchor,
+            credential,
+            ...owner,
+          });
+        }
         const mailboxMatch = /^\/v1\/spaces\/([0-9a-f]{64})\/key-mailbox$/.exec(path);
         if (mailboxMatch) {
           const authorization = request.headers.authorization;
@@ -419,7 +445,23 @@ export function makeLabHttpHost(input: {
                             : result.failure.code === 'closed'
                               ? 503
                               : 403
-                    : 403,
+                    : result.failure instanceof LabEpochStagingError
+                      ? result.failure.code === 'storage' || result.failure.code === 'corrupt'
+                        ? 500
+                        : result.failure.code === 'closed'
+                          ? 503
+                          : result.failure.code === 'invalid-input'
+                            ? 400
+                            : 409
+                      : result.failure instanceof LabEpochStagingHttpError
+                        ? result.failure.code === 'invalid-request'
+                          ? 400
+                          : result.failure.code === 'unauthorized'
+                            ? 403
+                            : result.failure.code === 'closed'
+                              ? 503
+                              : 502
+                        : 403,
                 { error: 'refused' }
               );
           },

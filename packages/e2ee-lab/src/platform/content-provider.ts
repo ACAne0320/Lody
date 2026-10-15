@@ -10,7 +10,7 @@ export class LabProviderError extends Data.TaggedError('LabProviderError')<{
 
 /** Lab-only Promise/SDK callback boundary. No injected runner, verifier or alternate core.
  * The surrounding Scope owns this adapter before its SDK transports/Wasm owners are released.
- * Header4 snapshot positions are authenticated by the core binding and SDK AAD. */
+ * Header4 marks snapshots; the core authenticates their content-header positions. */
 export function makeLabUpdateProvider(input: Parameters<typeof makeStreamsUpdateBinding>[0]) {
   return Effect.gen(function* () {
     const binding = yield* makeStreamsUpdateBinding(input);

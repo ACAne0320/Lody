@@ -16,7 +16,7 @@ function readBounded(path: string, limit: number) {
     closeSync(fd);
   }
 }
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { Cause, Effect, Exit } from 'effect';
 import { runLabScenario } from './platform/scenario-runner';
 import { inspectLabEvidence } from './platform/action-executor';
@@ -34,11 +34,19 @@ const main = Effect.gen(function* () {
         try: () => mkdirSync(directory, { mode: 0o700 }),
         catch: (cause) => cause,
       });
-      const result = yield* replayLabActions({ pack, directory });
+      const result = yield* replayLabActions({
+        pack,
+        directory,
+        sourceDirectory: dirname(resolve(output)),
+      });
       console.log(JSON.stringify(result));
       process.exitCode = result.reproduced ? 0 : 2;
     } else {
-      const result = yield* minimizeLabActions({ pack, directory });
+      const result = yield* minimizeLabActions({
+        pack,
+        directory,
+        sourceDirectory: dirname(resolve(output)),
+      });
       console.log(JSON.stringify(result));
       process.exitCode = 0;
     }
@@ -66,18 +74,33 @@ const main = Effect.gen(function* () {
     return;
   }
   const directory = resolve(output);
-  const actions = plan
+  const configuration = plan
     ? yield* Effect.try({
         try: () => {
           const body = readBounded(resolve(plan), 1024 * 1024);
           if (body.length > 1024 * 1024) throw new Error('plan-budget');
-          return JSON.parse(body) as unknown[];
+          const value = JSON.parse(body) as unknown;
+          return Array.isArray(value)
+            ? { actions: value }
+            : (value as {
+                actions: readonly unknown[];
+                actors?: import('./pure/actor-config').LabActorConfiguration[];
+              });
         },
         catch: (cause) => cause,
       })
     : undefined;
   yield* Effect.try({ try: () => mkdirSync(directory, { mode: 0o700 }), catch: (cause) => cause });
-  const result = yield* runLabScenario({ directory, actions });
+  const result = yield* runLabScenario({ directory, ...configuration });
+  if (result.run.verdict === 'violation') {
+    const minimized = yield* minimizeLabActions({
+      pack: result,
+      directory: resolve(directory, 'automatic-minimize'),
+      sourceDirectory: directory,
+      maxTrials: 16,
+    });
+    console.log(JSON.stringify({ automaticMinimize: minimized }));
+  }
   console.log(
     JSON.stringify({
       directory,

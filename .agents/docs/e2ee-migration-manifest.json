@@ -8878,7 +8878,7 @@
       "targetPath": null,
       "status": "旧方案淘汰",
       "layer": "L2",
-      "reason": "Superseded JSON/hex/content-v2/deleted demo or unimplemented UI plan is pinned history. Actual demo host/session coverage moved to e2ee-lab; do not reconstruct its deleted UI or obsolete protocols as migrated functionality."
+      "reason": "按决策采用 content v0 替代 v2；保留 docEpoch=0 和四种 document purpose 共用叶密钥，不保留 v2 读端。"
     },
     {
       "sourcePath": ".agents/notes/implemented/architecture/2026-10-09-e2ee-content-v2.zh.md",
@@ -8889,7 +8889,7 @@
       "targetPath": null,
       "status": "旧方案淘汰",
       "layer": "L2",
-      "reason": "Superseded JSON/hex/content-v2/deleted demo or unimplemented UI plan is pinned history. Actual demo host/session coverage moved to e2ee-lab; do not reconstruct its deleted UI or obsolete protocols as migrated functionality."
+      "reason": "按决策采用 content v0 替代 v2；保留 docEpoch=0 和四种 document purpose 共用叶密钥，不保留 v2 读端。"
     },
     {
       "sourcePath": ".agents/notes/implemented/architecture/2026-10-09-e2ee-effect-v4.md",
@@ -9672,5 +9672,30 @@
         "Pending preserves the first credential cutoff; a fresh token does not authorize another PUT after it. Exact already-stored bytes may be confirmed GET-only."
       ]
     }
+  },
+  "approvedGapClosure20261015": {
+    "scope": "public protocol and synthetic Lab consumers; production remains separately gated",
+    "currentContracts": [
+      "specs/e2ee/atomic-removal.md",
+      "specs/e2ee/publisher-key-recoverability.md",
+      "specs/e2ee-foundations.md"
+    ],
+    "implemented": [
+      "stage-before-CAS tag7/tag8 publication with original-byte crash recovery and complete post-state recipients",
+      "committed staged-envelope receiving and conditional obsolete-group cleanup",
+      "content-v0 position-authenticated snapshot publication and bootstrap",
+      "configurable roles and real malicious-host action controls",
+      "original-input action/permit replay with real native persistence and finite minimization",
+      "independent reference predictions and individual measured properties"
+    ],
+    "unchangedExternalBoundaries": [
+      "production platform protector and product activation",
+      "recovery vault and identity recovery",
+      "strict deadline B",
+      "production independently acquired freshness and snapshot qualification"
+    ],
+    "provenanceLifecycle": "archive this manifest and package source provenance at the fixed implementation commit; current READMEs own behavior and gaps",
+    "specRevisionStatus": "draft for human review",
+    "privateAdapter": "separate private-repository implementation; no private code in this public stack"
   }
 }

@@ -92,6 +92,7 @@ export function makeSqliteRecipientMailbox(
       installedEpochKeys: receiver.installedEpochKeys,
       observeLedger: receiver.observeLedger,
       receive: receiver.receive,
+      receiveStagedGroup: receiver.receiveStagedGroup,
       recordLocalInstallation: receiver.recordLocalInstallation,
       resume: receiver.resume,
       flushReports: receiver.flushReports,

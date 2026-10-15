@@ -8,14 +8,14 @@
 
 [manifest](e2ee-migration-manifest.json)保留全部380项固定来源、core/candidate SHA 与源导出清单。淘汰原实现不等于取消当前必要行为。原 source/design/candidate 只读。当前依赖以 package/lock 为准，不以旧检查点进度为准。
 
-| 当前 owner | 职责 |
-|---|---|
-| [core](../../packages/e2ee-core/README.md) | 规范字节、签名、账本事实／权限、固定密码学及显式子入口 |
-| [ledger](../../packages/e2ee-core/src/ledger/README.md) | 完整／增量回放、快照资格、普通命令准入及独立预期 checkpoint |
-| [keys](../../packages/e2ee-core/src/keys/README.md) | 信封／历史、接收／修复／报告／分发；共享接收器持有的单一保护存储 |
-| [submission](../../packages/e2ee-core/src/submission/README.md) | 已合入 P09：CAS前保存原字节、不重签、核原件与实际读回 |
-| [content](../../packages/e2ee-core/src/content/README.md) | header3 更新、有位置认证的 header4 快照与当前作者接纳，同一操作复用自有字节 |
-| [Lab](../../packages/e2ee-lab/README.md) | 真实SDK／HTTP／SQLite／Loro／Flock／OS进程和有限动作／CLI证据 |
+| 当前 owner                                                      | 职责                                                                        |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [core](../../packages/e2ee-core/README.md)                      | 规范字节、签名、账本事实／权限、固定密码学及显式子入口                      |
+| [ledger](../../packages/e2ee-core/src/ledger/README.md)         | 完整／增量回放、快照资格、普通命令准入及独立预期 checkpoint                 |
+| [keys](../../packages/e2ee-core/src/keys/README.md)             | 信封／历史、接收／修复／报告／分发；共享接收器持有的单一保护存储            |
+| [submission](../../packages/e2ee-core/src/submission/README.md) | 已合入 P09：CAS前保存原字节、不重签、核原件与实际读回                       |
+| [content](../../packages/e2ee-core/src/content/README.md)       | header3 更新、有位置认证的 header4 快照与当前作者接纳，同一操作复用自有字节 |
+| [Lab](../../packages/e2ee-lab/README.md)                        | 真实SDK／HTTP／SQLite／Loro／Flock／OS进程和有限动作／CLI证据               |
 
 ## 当前格式与简化实现
 
@@ -27,11 +27,11 @@
 
 - 生产独立可信 checkpoint 的取得；合成创建／原请求和宿主丢 ACK 耐久性恢复已有实际消费者。
 - 内容快照的生产资格来源及实际有权限的全历史保留／读取 API；当前 header4 已认证续读位置。
-- 独立 candidate 备份门槛／永久设备丢失例外与恢复 vault 决定。当前原子 tag8 复用本地候选持久化、原件提交与崩溃恢复；编码仍待审。
-- fresh seal 熵重放和完整持续／模型探索。原密文读取、真实动作 replay／缩减及攻击测量已接通，部分覆盖单列。
+- 恢复 vault 和真实平台保管仍单独处理。当前 tag7/tag8 在 CAS 前持久准备所有换代后设备的信封、整组暂存并精确读回，发布者丢失后仍可收钥。绕过暂存的管理设备仍能扣留新钥；Lab 实际测量这个限制。
+- 动作和放行顺序确定性重执行，复用录制的合成身份、签名／密文输入与原生编辑；不注入结果、文档或游标，不替换安全随机数。各项性质测量和有限缩减已有真实消费者，缺测仍为未测；不承诺无限探索或重新加密得到相同密文。
 - comparison-note 额外签名权限、严格期限 B、真实 native protector 与私有产品接线；个人 note 和显式 exact-tuple 确认已有真实消费者。
 
-受限A仅批准初始化保护已验证installed钥，不批准完整恢复／vault／publisher范围。无完整修订批准的Specs仍draft。教程有Spec，但固定来源没有应用源码。作者验证、CI、独立审查、生产验收分别归属；测试数与文件状态不是完成百分比。
+受限A仅批准初始化保护已验证installed钥；单独确定的先暂存后CAS发布契约不批准恢复vault或真实平台保管。无完整修订批准的Specs仍draft。教程有Spec，但固定来源没有应用源码。作者验证、CI、独立审查、生产验收分别归属；测试数与文件状态不是完成百分比。
 
 ## 交付
 

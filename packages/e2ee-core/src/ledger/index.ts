@@ -19,6 +19,7 @@ export {
   extendLedger,
   contentPermissions,
   epochHistoryPacket,
+  epochPublicationRecord,
   type ContentPermissions,
   type LedgerView,
   type LedgerCheckpoint,

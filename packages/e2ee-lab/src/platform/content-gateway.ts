@@ -37,6 +37,9 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
   readonly baseUrl: string;
   readonly ledger: () => Effect.Effect<LedgerView, unknown>;
   readonly fetch?: typeof fetch;
+  /** Trusted native-store observation: exact actual record boundary at or before
+   * its current head. The opaque token must never be ordered by this gateway. */
+  readonly snapshotBoundary?: (offset: string) => Effect.Effect<boolean, unknown>;
   readonly snapshotStore?: Effect.Success<ReturnType<typeof makeSqliteSnapshotPublication>>;
   /** Existing credential clock, captured once; required with snapshotStore. Not strict B. */
   readonly now?: () => number;
@@ -47,8 +50,10 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
     ledger = input.ledger,
     transport = input.fetch ?? fetch,
     store = input.snapshotStore,
+    snapshotBoundary = input.snapshotBoundary,
     now = input.now;
-  if (store && typeof now !== 'function') return yield* new LabContentGatewayError({ status: 400 });
+  if (store && (typeof now !== 'function' || typeof snapshotBoundary !== 'function'))
+    return yield* new LabContentGatewayError({ status: 400 });
   const url = yield* Effect.try({
     try: () => {
       const origin = new URL(input.baseUrl);
@@ -202,7 +207,8 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
     operations.run(
       serial.withPermit(
         Effect.gen(function* () {
-          if (!store || !now) return yield* new LabContentGatewayError({ status: 502 });
+          if (!store || !now || !snapshotBoundary)
+            return yield* new LabContentGatewayError({ status: 502 });
           const { principal, body, issuedAt, expiresAt } = yield* capture(request),
             offset = request.continuationOffset,
             signer = Buffer.from(principal.toBytes()).toString('hex');
@@ -238,6 +244,8 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
           // Receipt bytes do not authenticate a retry; the original signer and exact
           // historical signature/context still have to match this authenticated device.
           yield* authenticateStreamsSnapshotEffect(admission(view));
+          if (!(yield* snapshotBoundary(offset)))
+            return yield* new LabContentGatewayError({ status: 409 });
           if (row?.phase === 'Accepted') return yield* receipt();
           const remote = yield* latest();
           if (remote?.offset === offset) {
@@ -260,7 +268,7 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
           if (row) yield* credentialsValid(row);
           yield* admitStreamsSnapshotEffect(admission(yield* current()));
           const tail = yield* invoke(url, 'HEAD');
-          if (tail.status !== 200 || header(tail, 'stream-next-offset') !== offset)
+          if (tail.status !== 200 || !(yield* snapshotBoundary(offset)))
             return yield* new LabContentGatewayError({ status: 409 });
           if (!row) row = yield* store.reserve({ offset, signer, body, issuedAt, expiresAt });
           // HEAD and fixed native verification awaited: recheck the genuine current
@@ -275,6 +283,8 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
             row.body
           );
           if (reply.status < 200 || reply.status >= 300) return reply;
+          if (!(yield* snapshotBoundary(row.offset)))
+            return yield* new LabContentGatewayError({ status: 409 });
           const stored = yield* latest();
           if (!stored || stored.offset !== row.offset || !equal(stored.body, row.body))
             return yield* new LabContentGatewayError({ status: 502 });
@@ -287,7 +297,8 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
     operations.run(
       serial.withPermit(
         Effect.gen(function* () {
-          if (!store) return yield* new LabContentGatewayError({ status: 502 });
+          if (!store || !snapshotBoundary)
+            return yield* new LabContentGatewayError({ status: 502 });
           const { principal } = yield* capture({ ...request, body: new Uint8Array() });
           const row = yield* store.pending();
           if (!row) return yield* receipt();
@@ -302,6 +313,8 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
             body: row.body,
             continuationOffset: row.offset,
           });
+          if (!(yield* snapshotBoundary(row.offset)))
+            return yield* new LabContentGatewayError({ status: 409 });
           const stored = yield* latest();
           if (!stored || stored.offset !== row.offset || !equal(stored.body, row.body))
             return yield* new LabContentGatewayError({ status: 502 });

@@ -3,7 +3,7 @@ import { Bytes } from '@lody/e2ee-core';
 import { readBoundedBody } from './bounded-body';
 
 const Name = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/));
-const Stream = Schema.Literals(['control', 'loro', 'flock']);
+const Stream = Schema.Literals(['control', 'loro', 'flock', 'mailbox', 'stagedgroup']);
 const Method = Schema.Literals(['GET', 'HEAD', 'POST', 'PUT']);
 const Target = Schema.Struct({
   actor: Name,
@@ -12,7 +12,20 @@ const Target = Schema.Struct({
   occurrence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(4095)),
 });
 const Mutation = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal('headers'),
+    headers: Schema.Record(Schema.String, Schema.String),
+  }),
   Schema.Struct({ kind: Schema.Literals(['drop', 'duplicate', 'delay']) }),
+  Schema.Struct({
+    kind: Schema.Literal('replay'),
+    eventId: Schema.String,
+    nextOffset: Schema.optional(Schema.String),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal('flip'),
+    offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  }),
   Schema.Struct({
     kind: Schema.Literal('truncate'),
     length: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -24,9 +37,10 @@ const Mutation = Schema.Union([
     headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   }),
 ]);
-const Action = Schema.Union([
+export const LabTransportAttackActionSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal('intercept'), target: Target, mutation: Mutation }),
   Schema.Struct({ kind: Schema.Literal('release-delay'), target: Target }),
+  Schema.Struct({ kind: Schema.Literal('wait-response'), target: Target }),
   Schema.Struct({
     kind: Schema.Literal('fork'),
     eventId: Schema.String.check(Schema.isMaxLength(256)),
@@ -34,10 +48,10 @@ const Action = Schema.Union([
   Schema.Struct({ kind: Schema.Literal('release'), actor: Name, stream: Stream }),
 ]);
 const PlanAction = Schema.Union([
-  Action,
+  LabTransportAttackActionSchema,
   Schema.Struct({ kind: Schema.Literal('step'), name: Name }),
 ]);
-export type LabTransportAttackAction = typeof Action.Type;
+export type LabTransportAttackAction = typeof LabTransportAttackActionSchema.Type;
 export type LabAttackPlanAction = typeof PlanAction.Type;
 type Selector = typeof Target.Type;
 type MutationValue = typeof Mutation.Type;
@@ -188,7 +202,11 @@ export const makeLabAttackTransport = Effect.fn('Lab.makeAttackTransport')(funct
       if (url.origin !== origin || url.username || url.password || url.hash)
         return Promise.reject(fail('configuration'));
       const tail = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : '',
-        candidateStream = tail.split('/')[0];
+        candidateStream = url.pathname.endsWith('/key-mailbox')
+          ? 'mailbox'
+          : /staged|epoch-group|epoch-staging/.test(url.pathname)
+            ? 'stagedgroup'
+            : tail.split('/')[0];
       const selected = Schema.decodeUnknownResult(Stream)(candidateStream),
         method = Schema.decodeUnknownResult(Method)(request.method);
       const protocol = Result.isSuccess(selected) && Result.isSuccess(method);
@@ -239,10 +257,26 @@ export const makeLabAttackTransport = Effect.fn('Lab.makeAttackTransport')(funct
         guard();
         const mutation = id ? mutations.get(id) : undefined;
         let delivered = new Uint8Array(original);
-        if (mutation?.kind === 'replace') {
+        if (mutation?.kind === 'replay') {
+          const captured = events.find((event) => event.id === mutation.eventId);
+          if (!captured) throw fail('missed-target');
+          delivered = new Uint8Array(Buffer.from(captured.bodyHex, 'hex'));
+          status = captured.status;
+          headers = {
+            ...captured.headers,
+            ...(mutation.nextOffset === undefined
+              ? {}
+              : { 'stream-next-offset': mutation.nextOffset }),
+          };
+        } else if (mutation?.kind === 'flip') {
+          if (mutation.offset >= delivered.length) throw fail('invalid-action');
+          delivered[mutation.offset] = delivered[mutation.offset]! ^ 1;
+        } else if (mutation?.kind === 'replace') {
           status = mutation.status;
           headers = { ...(mutation.headers ?? {}) };
           delivered = new Uint8Array(Buffer.from(mutation.bodyHex, 'hex'));
+        } else if (mutation?.kind === 'headers') {
+          headers = { ...headers, ...mutation.headers };
         } else if (mutation?.kind === 'duplicate') {
           if (original.length > maxBytes / 2) throw fail('budget');
           delivered = new Uint8Array(original.length * 2);
@@ -268,7 +302,16 @@ export const makeLabAttackTransport = Effect.fn('Lab.makeAttackTransport')(funct
           observed.get(id)?.resolve(event);
         }
         if (mutation?.kind === 'drop') throw fail('dropped');
-        if (mutation?.kind === 'delay') await gates.get(id!)!.promise;
+        if (mutation?.kind === 'delay')
+          await new Promise<void>((resolve, reject) => {
+            const aborted = () => reject(fail('closed'));
+            if (request.signal.aborted) return aborted();
+            request.signal.addEventListener('abort', aborted, { once: true });
+            gates
+              .get(id!)!
+              .promise.then(resolve, reject)
+              .finally(() => request.signal.removeEventListener('abort', aborted));
+          });
         guard();
         return response(status, headers, delivered, request.method);
       })();
@@ -282,9 +325,14 @@ export const makeLabAttackTransport = Effect.fn('Lab.makeAttackTransport')(funct
   };
   const apply = Effect.fnUntraced(function* (value: unknown) {
     const action = yield* Effect.try({
-      try: () => Schema.decodeUnknownSync(Action)(value),
+      try: () => Schema.decodeUnknownSync(LabTransportAttackActionSchema)(value),
       catch: () => fail('invalid-action'),
     });
+    if (action.kind === 'wait-response') {
+      const event = yield* waitForEvent(action.target);
+      actions.push(action);
+      return { index: actions.length - 1, kind: action.kind, eventId: event.id };
+    }
     return yield* Effect.try({
       try: () => {
         guard();
@@ -296,10 +344,12 @@ export const makeLabAttackTransport = Effect.fn('Lab.makeAttackTransport')(funct
                 JSON.stringify([action.target.actor, action.target.stream, action.target.method])
               ) ?? 0;
           if (existing > action.target.occurrence || mutations.has(id)) throw fail('missed-target');
-          if (action.mutation.kind === 'replace') {
+          if (action.mutation.kind === 'replace' || action.mutation.kind === 'headers') {
             if (
-              action.mutation.bodyHex.length > maxBytes * 2 ||
-              ([204, 205, 304].includes(action.mutation.status) && action.mutation.bodyHex.length)
+              action.mutation.kind === 'replace' &&
+              (action.mutation.bodyHex.length > maxBytes * 2 ||
+                ([204, 205, 304].includes(action.mutation.status) &&
+                  action.mutation.bodyHex.length))
             )
               throw fail('invalid-action');
             const headers: Record<string, string> = {};
@@ -312,7 +362,7 @@ export const makeLabAttackTransport = Effect.fn('Lab.makeAttackTransport')(funct
                 throw fail('invalid-action');
               headers[name] = header;
             }
-            charge(action.mutation.bodyHex.length / 2);
+            if (action.mutation.kind === 'replace') charge(action.mutation.bodyHex.length / 2);
             mutations.set(
               id,
               Object.freeze({ ...action.mutation, headers: Object.freeze(headers) })
@@ -393,7 +443,9 @@ export const makeLabAttackTransport = Effect.fn('Lab.makeAttackTransport')(funct
         guard();
         return Object.freeze({
           transportActions: Object.freeze(
-            actions.map((action) => Schema.decodeUnknownSync(Action)(action))
+            actions.map((action) =>
+              Schema.decodeUnknownSync(LabTransportAttackActionSchema)(action)
+            )
           ),
           events: Object.freeze(events.map(copyEvent)),
           hits: Object.freeze(

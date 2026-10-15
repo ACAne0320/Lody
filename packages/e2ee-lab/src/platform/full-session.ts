@@ -2,12 +2,14 @@ import { makeInstalledEpochHistory } from '@lody/e2ee-core/keys/host/history';
 import type { NativeEpochProtector } from '@lody/e2ee-core/keys/host';
 import type { EpochRotationResult } from '@lody/e2ee-core/keys/host/rotation/sqlite';
 import { Bytes } from '@lody/e2ee-core';
-import { Data, Effect, Exit, Scope, Semaphore } from 'effect';
+import { Data, Effect, Exit, Result, Scope, Semaphore } from 'effect';
 import type { LedgerCheckpoint } from '@lody/e2ee-core/ledger';
 import { comparisonNote } from '@lody/e2ee-core/ledger/snapshot';
 import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
 import { openLabExistingWorkspace } from './workspace-session';
 import { makeLabMailboxRemote } from './key-mailbox';
+import { makeLabEpochStagingRemote } from './epoch-staging-http';
+import { getCommittedEpochStagingKey } from '@lody/e2ee-core/keys/staging';
 import { runLabKeyRound, type LabKeyRoundCursors } from './key-round';
 import { makeLabFlockSession } from './flock-session';
 import { makeLabLoroSession } from './content-session';
@@ -162,6 +164,10 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
         ledger,
         remote,
       });
+      const stageRemote = yield* makeLabEpochStagingRemote({
+        url: `${control.identity.url.replace(/key-mailbox$/, 'epoch-staging')}`,
+        fetch: control.identity.fetch,
+      });
       const history = yield* makeInstalledEpochHistory({
         genesis,
         ledger,
@@ -171,8 +177,32 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
         ? yield* control.control.makeEpochRotation({
             ...epochConfig,
             installed: distribution.installedEpochKeys,
+            staging: stageRemote,
           })
         : undefined;
+      const receiveCommittedEpoch = Effect.fnUntraced(function* () {
+        const view = yield* ledger();
+        const epoch = view.inspectState().epoch.number;
+        if (epoch === 0) return { staged: false, installed: false } as const;
+        const located = getCommittedEpochStagingKey(view, epoch);
+        // A qualified snapshot may not retain its original publication bytes.
+        // It cannot authorize a staged envelope; ordinary later-join mailbox
+        // and repair remain available without inventing a publication hash.
+        if (Result.isFailure(located) && view.verification === 'endorsed-snapshot')
+          return {
+            staged: false,
+            installed: false,
+            reason: 'publication-original-unavailable',
+          } as const;
+        const key = yield* Effect.fromResult(located);
+        const group = yield* stageRemote.readGroup(key);
+        if (!group) return { staged: false, installed: false } as const;
+        const self = Buffer.from(signer.publicKey.toBytes()).toString('hex');
+        if (!group.envelopes.some((row) => row.recipient === self))
+          return { staged: true, installed: false } as const;
+        yield* distribution.receiveStagedGroup(group);
+        return { staged: true, installed: true } as const;
+      });
       const sessions = new Map<string, LabWorkspaceDocument>();
       for (const doc of docs) {
         const config = {
@@ -230,9 +260,19 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
           ),
         submit: (command: Parameters<typeof control.control.execute>[0]) =>
           run(serial.withPermit(control.control.execute(command))),
+        submitOriginal: (record: Uint8Array) =>
+          run(serial.withPermit(control.control.executeOriginal(record))),
         resume: () => run(serial.withPermit(control.control.resume())),
         acknowledge: (result: Parameters<typeof control.control.acknowledge>[0]) =>
           run(serial.withPermit(control.control.acknowledge(result))),
+        receiveCommittedEpoch: () => run(receiveCommittedEpoch()),
+        epochStaging: stageRemote,
+        cleanupStagedEpoch: () =>
+          run(
+            rotation
+              ? rotation.cleanupStaged()
+              : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
+          ),
         rotateEpoch: () =>
           run(
             serial.withPermit(
@@ -281,7 +321,9 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
           ),
         listJoins: () => run(control.identity.listJoins()),
         keyRound: (limit = 100, cursors: LabKeyRoundCursors = {}) =>
-          run(serial.withPermit(runLabKeyRound(distribution, limit, cursors))),
+          run(
+            serial.withPermit(runLabKeyRound(distribution, limit, cursors, receiveCommittedEpoch()))
+          ),
         enqueueRepair: (requestId: string, rejectedDigest?: string) =>
           run(serial.withPermit(distribution.enqueueRepair(requestId, rejectedDigest))),
         receiveResults: (limit = 100) => run(serial.withPermit(distribution.results(limit))),

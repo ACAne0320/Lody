@@ -20,7 +20,7 @@ const ReadCase = Schema.Struct({
   resource: Schema.String.check(Schema.isPattern(/^[!-~]{1,1024}$/)),
   model: Schema.Literals(['loro', 'flock']),
   kind: Schema.Literals(['update_batch', 'snapshot']),
-  continuationOffset: Schema.optional(Schema.String.check(Schema.isMaxLength(509))),
+  continuationOffset: Schema.optional(Schema.String.check(Schema.isMaxLength(3950))),
   header: hex,
   sealed: hex,
   additionalData: hex,
@@ -277,11 +277,38 @@ export function captureLabActionPack(input: unknown) {
       }),
     })
   )(owned).run.observations;
+  const privateReplay = Schema.decodeUnknownSync(
+    Schema.Struct({
+      privateReplay: Schema.Struct({
+        format: Schema.Literal('lody-lab-private-replay/v1'),
+        sha256: hash,
+      }),
+    })
+  )(owned).privateReplay;
   return {
     observations: measured.run.observations.map((row, index) => ({
       ...row,
       reply: { ...row.reply, trace: traces[index]?.reply.trace },
     })),
     schedule,
+    privateReplay,
+    properties: Schema.decodeUnknownSync(
+      Schema.Struct({
+        run: Schema.Struct({
+          properties: Schema.Array(
+            Schema.Struct({
+              id: Schema.String,
+              verdict: Schema.Literals([
+                'pass',
+                'violation',
+                'unavailable',
+                'outside-model',
+                'harness-error',
+              ]),
+            })
+          ),
+        }),
+      })
+    )(owned).run.properties,
   };
 }

@@ -22,42 +22,47 @@ Observe genuine fixed-Org/known-prefix authority before epoch/recipient rejectio
 Org, publisher/signer, genuine ledger lookup, borrowed installed store and a
 separate trusted native protector. The local candidate payload authenticates its
 own purpose, Org, publisher, parent/count, epoch, commitment, record hash, exact
-signed record and key. It is not the installed-key payload, a mailbox wire change,
+signed record, complete staged-envelope digest and key. It is not the installed-key payload, a mailbox wire change,
 a vault or an independent backup. No real platform backend is selected.
 
 `publish` first resumes an existing candidate. Otherwise a current Owner/Admin
-personal device reads its actual previous installed key, generates secure host
+personal device observing rotationRequired=true reads its actual previous installed key, generates secure host
 randomness, seals the established history packet and signs the existing E7 record.
-The protected candidate is inserted and actually opened from SQLite before P09 may
-submit it. Concurrent first attempts can generate separate transient candidates;
+The protected candidate and complete original envelope group are inserted and
+actually read back from SQLite. The staging port atomically saves the whole group
+and exact count/byte readback must match before P09 may submit. Concurrent first attempts can generate separate transient candidates;
 only the one stored active original may be submitted. No cross-process promise
 of a single random generation is made. A retained candidate never regenerates or
 re-signs on retry.
 
 `resume` needs no signing operation: it reconciles the exact original through P09.
 Committed bytes must be present at the genuine exact position and match the epoch
-packet before actual installed save/reload/read verification. Conflict never
-installs the candidate. `binding` records the first confirmed local attempt;
+packet before actual installed save/reload/read verification. Conflict clears the protected candidate and never
+installs it. `binding` records the first confirmed local attempt;
 later genuine epoch advancement is revalidated without falsifying that history.
 `result` is local attempt history, not fresh authorization or current possession.
 
 Explicit `acknowledge` reconciles that same terminal result, acknowledges P09 and
 marks the candidate consumed with transactional readback. If the second write
-fails, retry the same result; acknowledged originals and protected blobs remain.
+fails, retry the same result; acknowledged public originals remain; a conflicted candidate key is discarded.
 The Lab actor persists its real feed before exposing that result for ACK. Close
 rejects new operations, waits native settlement and owned-key cleanup, then closes
 SQLite. No database transaction spans crypto or network I/O.
 
-This restores process-crash and lost-ACK behavior from the old workflow, not
-recovery after permanent loss of the publishing device. Independent backup gates,
-vault policy and emergency exceptions remain separate decisions.
+After successful staging, a crash resumes the exact same group/record. After CAS,
+other recipients do not need the publisher's disk. `receiveStagedGroup` verifies
+the genuine committed publication and historical signer before actual HPKE and
+current-recipient checks; ordinary mailbox sender policy is unchanged. A direct
+CAS that bypasses staging is an explicit key-withholding limitation. `cleanupStaged`
+requires a genuine different commitment at that same epoch. No vault/native
+protector or emergency exception is selected by these storage operations.
 
 `publishRemoving(membershipId)` uses the same candidate journal and exact-byte
 recovery to sign current tag8. Only a current Owner personal device can remove a
 non-Owner member. Removal of every target device and activation of the next epoch
 are one private transition and one P09 CAS, never two records. It cannot resume an
 active candidate for another operation/target under a new intent; use explicit
-`resume` for the saved original. Distribution starts after verified inclusion and
-excludes all removed personal/machine/Recovery devices. History, retired identities
+`resume` for the saved original. Complete envelopes are staged before CAS; they become usable only after verified
+inclusion and exclude all removed personal/machine/Recovery devices. History, retired identities
 and replay-prevention facts remain authenticated. This encoding is under review;
 it does not select an independent backup or emergency-loss exception.

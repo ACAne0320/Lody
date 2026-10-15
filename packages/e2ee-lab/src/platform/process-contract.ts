@@ -34,10 +34,16 @@ export type LabKeyCommand = typeof LabKeyCommand.Type;
 export interface LabProcessConfiguration {
   readonly syntheticOnly: true;
   readonly device: string;
-  readonly peerSigningKey: string;
+  readonly targets: Readonly<
+    Record<string, { readonly signingKey: string; readonly membership: string }>
+  >;
+  readonly initialKeyOwner: boolean;
+  readonly epochRotation?: boolean;
+  readonly privateReplayDirectory?: string;
+  readonly replaySourceDirectory?: string;
   readonly baseUrl: string;
   readonly directory: string;
-  readonly actor: 'owner' | 'peer';
+  readonly actor: string;
   readonly mode: 'create' | 'open';
   readonly genesis: string;
   readonly records: readonly string[];

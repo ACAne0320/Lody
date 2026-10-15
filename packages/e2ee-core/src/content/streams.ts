@@ -13,6 +13,7 @@ import { commitEpochKey } from '../keys/history';
 import type { DeviceSigner } from '../signing';
 import {
   CONTENT_OVERHEAD_BYTES,
+  encodeSnapshotContinuationOffset,
   MAX_CONTENT_BYTES,
   copyContentAdditionalData,
   inspectContentFrame,
@@ -26,35 +27,13 @@ import { verifySignatureEffect, NativeSignatureError } from '../signature';
 import { bytesEqual } from '../cbor';
 
 const error = (code: string) => new ContentError({ code });
-const offsetHeader = (offset: unknown) =>
-  Result.try({
-    try: () => {
-      if (
-        typeof offset !== 'string' ||
-        !offset.length ||
-        offset.length > 509 ||
-        offset === 'now' ||
-        offset === '-1' ||
-        offset.trim() !== offset ||
-        Array.from(offset).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
-      )
-        throw error('invalid-snapshot-offset');
-      const bytes = new TextEncoder().encode(offset);
-      if (
-        bytes.length > 509 ||
-        new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) !== offset
-      )
-        throw error('invalid-snapshot-offset');
-      const header = new Uint8Array(3 + bytes.length);
-      header[0] = 4;
-      new DataView(header.buffer).setUint16(1, bytes.length, false);
-      header.set(bytes, 3);
-      return header;
-    },
-    catch: () => error('invalid-snapshot-offset'),
-  });
-/** Header3 updates and one current header4 snapshot format. Snapshot position is
- * visible in the provider header and authenticated by the released SDK's AAD. */
+// Released SDK0.17 permits at most 4KiB total provider overhead. Generic content
+// v0 still supports the full u16 field; this adapter must fit its public contract.
+const STREAMS_MAX_SEAL_OVERHEAD_BYTES = 4096;
+const STREAMS_MAX_SNAPSHOT_OFFSET_BYTES =
+  STREAMS_MAX_SEAL_OVERHEAD_BYTES - CONTENT_OVERHEAD_BYTES - 2 - 1;
+/** Header3 marks updates; header4 marks snapshots. The authoritative snapshot
+ * position lives in the signed content header, never the provider marker. */
 export function makeStreamsUpdateBinding(input: {
   readonly genesis: Bytes.GenesisHash;
   readonly resource: string;
@@ -120,17 +99,34 @@ export function makeStreamsUpdateBinding(input: {
         observed = view;
         return view;
       }).pipe(Effect.mapError(() => error('unauthorized')));
-    const context = (value: PayloadProtectionSealInput['context']) => {
+    const context = (
+      value: PayloadProtectionSealInput['context']
+    ): Result.Result<
+      | { readonly kind: 'update_batch'; readonly header: Uint8Array }
+      | {
+          readonly kind: 'snapshot';
+          readonly header: Uint8Array;
+          readonly continuationOffset: string;
+        },
+      ContentError
+    > => {
       if (value?.protocol !== 'loro-streams-crdt-payload-protection' || value.version !== 2)
         return Result.fail(error('unsupported-streams-context'));
       if (value.kind === 'update_batch' && value.continuationOffset === undefined)
         return Result.succeed({ kind: value.kind, header: new Uint8Array([3]) });
-      if (value.kind === 'snapshot')
-        return Result.map(offsetHeader(value.continuationOffset), (header) => ({
-          kind: value.kind,
-          header,
+      if (
+        value.kind === 'snapshot' &&
+        typeof value.continuationOffset === 'string' &&
+        value.continuationOffset.length <= STREAMS_MAX_SNAPSHOT_OFFSET_BYTES
+      )
+        return Result.map(encodeSnapshotContinuationOffset(value.continuationOffset), () => ({
+          kind: 'snapshot' as const,
+          header: new Uint8Array([4]),
+          continuationOffset: value.continuationOffset!,
         }));
-      return Result.fail(error('unsupported-streams-context'));
+      return Result.fail(
+        error(value.kind === 'snapshot' ? 'invalid-snapshot-offset' : 'unsupported-streams-context')
+      );
     };
     const scope = (number: number, kind: 'update_batch' | 'snapshot'): ContentScope => ({
       genesis: keyId(anchor.toBytes()),
@@ -168,7 +164,7 @@ export function makeStreamsUpdateBinding(input: {
         (owned) => Effect.sync(() => disposeEpochKey(owned))
       );
     return Object.freeze({
-      maxSealOverheadBytes: CONTENT_OVERHEAD_BYTES + 512,
+      maxSealOverheadBytes: STREAMS_MAX_SEAL_OVERHEAD_BYTES,
       seal: (request: PayloadProtectionSealInput) =>
         lease(
           Effect.gen(function* () {
@@ -200,6 +196,9 @@ export function makeStreamsUpdateBinding(input: {
                       ledger,
                       plaintext,
                       additionalData: binding,
+                      ...(selected.kind === 'snapshot'
+                        ? { continuationOffset: selected.continuationOffset }
+                        : {}),
                     })
                   );
                   yield* guard();
@@ -218,7 +217,9 @@ export function makeStreamsUpdateBinding(input: {
               !bytesEqual(request.header, selected.header)
             )
               return yield* error('unsupported-streams-header');
-            const metadata = yield* Effect.fromResult(inspectContentFrame(request.sealed));
+            const metadata = yield* Effect.fromResult(
+              inspectContentFrame(request.sealed, scope(0, selected.kind).purpose)
+            );
             const frame = new Uint8Array(request.sealed);
             const binding = yield* Effect.fromResult(
               copyContentAdditionalData(request.additionalData)
@@ -237,6 +238,11 @@ export function makeStreamsUpdateBinding(input: {
                   Effect.succeed(opened.plaintext),
                   (plaintext) =>
                     Effect.gen(function* () {
+                      if (
+                        selected.kind === 'snapshot' &&
+                        opened.header.continuationOffset !== selected.continuationOffset
+                      )
+                        return yield* error('invalid-snapshot-offset');
                       const latest = yield* ledger();
                       yield* Effect.fromResult(
                         authenticateDocument(
@@ -353,7 +359,7 @@ function captureStreamsSnapshot(input: SnapshotAdmission) {
       return yield* Result.fail(error('invalid-streams-snapshot'));
     const body = new Uint8Array(input.body);
     if (
-      body.length < 14 ||
+      body.length < 12 ||
       body[0] !== 76 ||
       body[1] !== 83 ||
       body[2] !== 67 ||
@@ -366,11 +372,17 @@ function captureStreamsSnapshot(input: SnapshotAdmission) {
     )
       return yield* Result.fail(error('invalid-streams-snapshot'));
     const length = new DataView(body.buffer).getUint16(6, false);
-    const expected = yield* offsetHeader(input.continuationOffset);
+    yield* encodeSnapshotContinuationOffset(input.continuationOffset);
+    const expected = new Uint8Array([4]);
     if (length !== expected.length || !bytesEqual(body.subarray(10, 10 + length), expected))
       return yield* Result.fail(error('invalid-snapshot-offset'));
     const frame = body.subarray(10 + length);
-    const metadata = yield* inspectContentFrame(frame);
+    const metadata = yield* inspectContentFrame(
+      frame,
+      input.model === 'loro' ? 'doc-snapshot' : 'flock-snapshot'
+    );
+    if (metadata.continuationOffset !== input.continuationOffset)
+      return yield* Result.fail(error('invalid-snapshot-offset'));
     const domain = new TextEncoder().encode('loro-streams-crdt-payload-protection/v2\0');
     const aad = new Uint8Array(domain.length + 10 + length);
     aad.set(domain);
@@ -431,7 +443,7 @@ const admitCapturedEffect = Effect.fnUntraced(function* (
     )
   );
   for (const row of captured.admissions) {
-    const parsed = yield* Effect.fromResult(parseContentFrame(row.frame));
+    const parsed = yield* Effect.fromResult(parseContentFrame(row.frame, row.scope.purpose));
     const message = yield* Effect.fromResult(
       contentSigningBytes(row.scope, parsed.unsigned, row.aad)
     );

@@ -7,6 +7,7 @@ import { Bytes } from '@lody/e2ee-core';
 import {
   signGenesisRecord,
   prepareDeviceAdmission,
+  prepareJoinRequest,
   prepareLedgerCommand,
 } from '@lody/e2ee-core/ledger/admission';
 import { signLedgerRecord } from '@lody/e2ee-core/ledger/signing';
@@ -15,36 +16,58 @@ import { frameLedgerRecord } from '@lody/e2ee-core/ledger/feed';
 import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
 import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { makeSqliteSnapshotPublication } from '@lody/e2ee-core/content/snapshot/sqlite';
-import { generateDevice } from './device';
+import type { PrivateReplayMaterial } from './private-replay';
+import { generateDevice, importDevice } from './device';
 import { labSyntheticProtector } from './synthetic-protection';
 import { makeLabCredentials } from './credentials';
 import { makeLabWorkspaceRegistry } from './workspace-registry';
 import { makeLabControlGateway } from './control-gateway';
 import { makeLabStreamReader } from './stream-read';
 import { makeLabContentGateway } from './content-gateway';
+import { makeLabRiverrunSnapshotBoundary } from './snapshot-boundary';
 import { makeLabHttpHost } from './host';
+import { makeLabEpochStaging } from './epoch-staging';
 import { makeLabJoinMailbox } from './join-mailbox';
 import type { LabWorkspaceSessionInput } from './full-session';
+import { captureLabActors, type LabActorConfiguration } from '../pure/actor-config';
 const ok = Result.getOrThrow;
 /** Explicit synthetic prepared-existing-workspace fixture, not createSpace or
  * epoch publication acceptance. Builds real signed full prefix/HPKE/SQLite/HTTP.
  * Independent harness pins are original records it witnessed, not server offsets.
  * Directory/private devices are local test materials, never product custody. */
 export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(function* (
-  directory: string
+  directory: string,
+  actorConfiguration?: readonly LabActorConfiguration[],
+  replay?: PrivateReplayMaterial
 ) {
   yield* Effect.try({ try: () => mkdirSync(directory, { mode: 0o700 }), catch: (cause) => cause });
-  const owner = yield* generateDevice(),
-    peer = yield* generateDevice();
+  const configuration = captureLabActors(actorConfiguration);
+  const primary = configuration.find((row) => row.role === 'owner' && !row.memberOf)!;
+  const devices = new Map<string, Effect.Success<ReturnType<typeof generateDevice>>>();
+  for (const row of configuration)
+    devices.set(
+      row.id,
+      replay ? yield* importDevice(replay.devices[row.id]!) : yield* generateDevice()
+    );
+  const owner = devices.get(primary.id)!;
+  const peer = devices.get(configuration.find((row) => row.id !== primary.id)?.id ?? primary.id)!;
+  const memberships = new Map<string, Bytes.MembershipId>();
   const initialKey = ok(Bytes.epochKey(new Uint8Array(32).fill(117)));
   const membership = ok(Bytes.membershipId(new Uint8Array(16).fill(118)));
-  const genesis = yield* signGenesisRecord({
-    userId: ok(Bytes.userId(new Uint8Array(32).fill(119))),
-    membershipId: membership,
-    encryptionPublicKey: owner.enc,
-    initialKey,
-    signer: owner,
-  });
+  memberships.set(primary.id, membership);
+  const originalGenesis = replay && new Uint8Array(Buffer.from(replay.initialRecords[0]!, 'hex'));
+  const genesis = originalGenesis
+    ? {
+        record: originalGenesis,
+        genesis: ok(Bytes.genesisHash(hashRecordBytes(originalGenesis).toBytes())),
+      }
+    : yield* signGenesisRecord({
+        userId: ok(Bytes.userId(new Uint8Array(32).fill(119))),
+        membershipId: membership,
+        encryptionPublicKey: owner.enc,
+        initialKey,
+        signer: owner,
+      });
   const records: Uint8Array[] = [new Uint8Array(genesis.record)];
   const point = () => ({ head: hashRecordBytes(records.at(-1)!), length: records.length });
   // This synthetic authority owns its witnessed history. Reuse a genuine view
@@ -71,16 +94,104 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
     }
     return ok(verifiedView);
   };
-  const admission = yield* prepareDeviceAdmission({
-    genesis: genesis.genesis,
-    membershipId: membership,
-    encryptionPublicKey: peer.enc,
-    kind: 'personal',
-    signer: peer,
-  });
-  records.push(
-    yield* signLedgerRecord(ok(prepareLedgerCommand(view(), owner.publicKey, admission)), owner)
-  );
+  if (!replay) {
+    // Every initial permission is installed by the same public signed commands as
+    // later user actions. The reference receives these witnessed originals only.
+    let seed = 120;
+    for (const row of configuration.filter(
+      (configured) => configured.id !== primary.id && !configured.memberOf
+    )) {
+      const device = devices.get(row.id)!;
+      const member = ok(Bytes.membershipId(new Uint8Array(16).fill(seed++)));
+      memberships.set(row.id, member);
+      const request = yield* prepareJoinRequest({
+        genesis: genesis.genesis,
+        requestId: ok(Bytes.requestId(new Uint8Array(16).fill(seed++))),
+        userId: ok(Bytes.userId(new Uint8Array(32).fill(seed++))),
+        encryptionPublicKey: device.enc,
+        expiresAt: null,
+        signer: device,
+      });
+      records.push(
+        yield* signLedgerRecord(
+          ok(
+            prepareLedgerCommand(view(), owner.publicKey, {
+              _tag: 'AdmitMember',
+              membershipId: member,
+              request,
+            })
+          ),
+          owner
+        )
+      );
+      if (row.role === 'admin' || row.role === 'guest')
+        records.push(
+          yield* signLedgerRecord(
+            ok(
+              prepareLedgerCommand(view(), owner.publicKey, {
+                _tag: 'SetRole',
+                membershipId: member,
+                role: row.role,
+              })
+            ),
+            owner
+          )
+        );
+    }
+    for (const row of configuration.filter(
+      (configured) => configured.id !== primary.id && configured.memberOf
+    )) {
+      const memberActor = row.memberOf!;
+      const member = memberships.get(memberActor)!;
+      memberships.set(row.id, member);
+      const device = devices.get(row.id)!,
+        author = devices.get(memberActor)!;
+      const admission = yield* prepareDeviceAdmission({
+        genesis: genesis.genesis,
+        membershipId: member,
+        encryptionPublicKey: device.enc,
+        kind: row.kind ?? 'personal',
+        signer: device,
+      });
+      records.push(
+        yield* signLedgerRecord(
+          ok(prepareLedgerCommand(view(), author.publicKey, admission)),
+          author
+        )
+      );
+    }
+    for (const row of configuration.filter(
+      (configured) => configured.behavior === 'revoked-device'
+    ))
+      records.push(
+        yield* signLedgerRecord(
+          ok(
+            prepareLedgerCommand(view(), owner.publicKey, {
+              _tag: 'RevokeDevice',
+              target: devices.get(row.id)!.publicKey,
+            })
+          ),
+          owner
+        )
+      );
+  } else {
+    records.splice(
+      0,
+      records.length,
+      ...replay.initialRecords.map((record) => new Uint8Array(Buffer.from(record, 'hex')))
+    );
+    const actual = view().inspectState();
+    for (const [id, device] of devices) {
+      const row = actual.devices.get(Buffer.from(device.publicKey.toBytes()).toString('hex'));
+      if (
+        !row &&
+        !configuration.some((actor) => actor.id === id && actor.behavior === 'revoked-device')
+      )
+        throw new Error('replay-device-binding');
+      if (row) memberships.set(id, row.membershipId);
+    }
+  }
+  const initialRecords = records.map((record) => new Uint8Array(record));
   const server = yield* Effect.acquireRelease(
     Effect.uninterruptible(
       Effect.tryPromise({
@@ -191,6 +302,11 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
     resource: 'document-A',
     model: 'loro',
     snapshotStore: loroSnapshots,
+    snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
+      path: server.dbPath,
+      genesis: genesis.genesis,
+      model: 'loro',
+    }),
     now: () => 0,
     baseUrl: server.baseUrl,
     ledger,
@@ -200,6 +316,11 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
     resource: 'document-B',
     model: 'flock',
     snapshotStore: flockSnapshots,
+    snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
+      path: server.dbPath,
+      genesis: genesis.genesis,
+      model: 'flock',
+    }),
     now: () => 0,
     baseUrl: server.baseUrl,
     ledger,
@@ -216,7 +337,13 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
     genesis: genesis.genesis,
     ledger,
   });
+  const staging = yield* makeLabEpochStaging({
+    path: join(directory, 'epoch-staging.sqlite'),
+    mode: 'create',
+    ledger: () => ledger(),
+  });
   const host = yield* makeLabHttpHost({
+    staging: () => ({ port: staging, ledger }),
     credentials,
     workspaces: registry,
     streams: () => reader,
@@ -226,7 +353,7 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
     joins: () => joins,
   });
   const ownerKeys = yield* makeSqliteProtectedEpochKeys({
-    path: join(directory, 'owner-keys.sqlite'),
+    path: join(directory, `${primary.id}-keys.sqlite`),
     mode: 'create',
     genesis: genesis.genesis,
     recipient: owner.publicKey,
@@ -235,66 +362,76 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
   });
   yield* ownerKeys.saveAndReload(0, initialKey);
   let time = 100;
-  const input = (actor: 'owner' | 'peer', mode: 'create' | 'open'): LabWorkspaceSessionInput => ({
-    baseUrl: host.baseUrl,
-    genesis: genesis.genesis,
-    signer: actor === 'owner' ? owner : peer,
-    path: join(directory, `${actor}-feed.sqlite`),
-    journalPath: join(directory, `${actor}-journal.sqlite`),
-    mode,
-    expected: mode === 'open' ? point() : undefined,
-    checkpoint: () => Effect.sync(() => point()),
-    budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
-    keys: {
-      path: join(directory, `${actor}-receive.sqlite`),
+  const input = (actor: string, mode: 'create' | 'open'): LabWorkspaceSessionInput => {
+    const device = devices.get(actor);
+    if (!device) throw new Error('unknown-fixture-actor');
+    return {
+      baseUrl: host.baseUrl,
+      genesis: genesis.genesis,
+      signer: device,
+      path: join(directory, `${actor}-feed.sqlite`),
+      journalPath: join(directory, `${actor}-journal.sqlite`),
       mode,
-      pair: (actor === 'owner' ? owner : peer).encryption,
-      keyStore: {
-        path: join(directory, `${actor}-keys.sqlite`),
-        mode: actor === 'owner' ? 'open' : mode,
-        protector: labSyntheticProtector,
-      },
-      repairStore: { path: join(directory, `${actor}-repair.sqlite`), mode },
-      sendStore: { path: join(directory, `${actor}-send.sqlite`), mode },
-      outboxStore: { path: join(directory, `${actor}-outbox.sqlite`), mode },
-      currentPublication: (current) =>
-        Effect.sync(() => {
-          const epoch = current.inspectState().epoch.number;
-          for (let index = records.length - 1; index >= 0; index--) {
-            const record = records[index]!,
-              decoded = ok(decodeRecord(record));
-            if (
-              (epoch === 0 && decoded.body.type === 'genesis') ||
-              (decoded.body.type === 'ordinary' &&
-                (decoded.body.operation.type === 'publishEpoch' ||
-                  decoded.body.operation.type === 'removeMemberAndPublishEpoch') &&
-                decoded.body.operation.epoch === epoch)
-            )
-              return new Uint8Array(record);
-          }
-          return null;
-        }),
-    },
-    documents: [
-      {
-        id: 'loro',
-        resource: 'document-A',
-        path: join(directory, `${actor}-loro.sqlite`),
+      expected: mode === 'open' ? point() : undefined,
+      checkpoint: () => Effect.sync(() => point()),
+      budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
+      keys: {
+        path: join(directory, `${actor}-receive.sqlite`),
         mode,
-        streamUrl: `${host.baseUrl}/ds/${org}/loro`,
+        pair: device.encryption,
+        keyStore: {
+          path: join(directory, `${actor}-keys.sqlite`),
+          mode: actor === primary.id ? 'open' : mode,
+          protector: labSyntheticProtector,
+        },
+        repairStore: { path: join(directory, `${actor}-repair.sqlite`), mode },
+        sendStore: { path: join(directory, `${actor}-send.sqlite`), mode },
+        outboxStore: { path: join(directory, `${actor}-outbox.sqlite`), mode },
+        currentPublication: (current) =>
+          Effect.sync(() => {
+            const epoch = current.inspectState().epoch.number;
+            for (let index = records.length - 1; index >= 0; index--) {
+              const record = records[index]!,
+                decoded = ok(decodeRecord(record));
+              if (
+                (epoch === 0 && decoded.body.type === 'genesis') ||
+                (decoded.body.type === 'ordinary' &&
+                  (decoded.body.operation.type === 'publishEpoch' ||
+                    decoded.body.operation.type === 'removeMemberAndPublishEpoch') &&
+                  decoded.body.operation.epoch === epoch)
+              )
+                return new Uint8Array(record);
+            }
+            return null;
+          }),
       },
-      {
-        id: 'flock',
-        model: 'flock',
-        now: () => ++time,
-        resource: 'document-B',
-        path: join(directory, `${actor}-flock.sqlite`),
-        mode,
-        streamUrl: `${host.baseUrl}/ds/${org}/flock`,
-      },
-    ],
-  });
+      documents: [
+        {
+          id: 'loro',
+          resource: 'document-A',
+          path: join(directory, `${actor}-loro.sqlite`),
+          mode,
+          streamUrl: `${host.baseUrl}/ds/${org}/loro`,
+        },
+        {
+          id: 'flock',
+          model: 'flock',
+          now: () => ++time,
+          resource: 'document-B',
+          path: join(directory, `${actor}-flock.sqlite`),
+          mode,
+          streamUrl: `${host.baseUrl}/ds/${org}/flock`,
+        },
+      ],
+    };
+  };
   return {
+    staging,
+    initialRecords,
+    configuration,
+    primary: primary.id,
+    devices,
+    memberships,
     input,
     point,
     view,

@@ -230,7 +230,16 @@ it('a known durable-loss defect is measured after actual SIGKILL/reopen, not tim
             Effect.sync(() => ({
               syntheticOnly: true as const,
               device,
-              peerSigningKey: Buffer.from(f.peer.publicKey.toBytes()).toString('hex'),
+              targets: Object.fromEntries(
+                [...f.devices].map(([id, native]) => [
+                  id,
+                  {
+                    signingKey: Buffer.from(native.publicKey.toBytes()).toString('hex'),
+                    membership: Buffer.from(f.memberships.get(id)!.toBytes()).toString('hex'),
+                  },
+                ])
+              ),
+              initialKeyOwner: true,
               baseUrl: f.host.baseUrl,
               directory: f.directory,
               actor: 'owner' as const,
@@ -477,7 +486,16 @@ it.each([
               Effect.sync(() => ({
                 syntheticOnly: true as const,
                 device,
-                peerSigningKey: Buffer.from(f.peer.publicKey.toBytes()).toString('hex'),
+                targets: Object.fromEntries(
+                  [...f.devices].map(([id, native]) => [
+                    id,
+                    {
+                      signingKey: Buffer.from(native.publicKey.toBytes()).toString('hex'),
+                      membership: Buffer.from(f.memberships.get(id)!.toBytes()).toString('hex'),
+                    },
+                  ])
+                ),
+                initialKeyOwner: true,
                 baseUrl: f.host.baseUrl,
                 directory: f.directory,
                 actor: 'owner' as const,
@@ -598,7 +616,7 @@ it('preserves ok/outcome failures and missing measurements instead of turning th
       verdict: 'harness-error',
     },
     {
-      reply: { ok: true, value: { outcome: 'Conflicted' } },
+      reply: { ok: true, value: { outcome: 'Conflict' } },
       expected: { ok: true, outcome: 'Committed' },
       verdict: 'harness-error',
     },
@@ -621,6 +639,11 @@ it('preserves ok/outcome failures and missing measurements instead of turning th
       reply: { ok: false, error: { tag: 'LedgerError', code: 'native-unavailable' } },
       expected: { ok: false, refusal: { tag: 'LedgerError', code: 'native-unavailable' } },
       verdict: 'harness-error',
+    },
+    {
+      reply: { ok: true, value: { outcome: 'Conflict' } },
+      expected: { ok: true, outcome: 'Conflict' },
+      verdict: 'pass',
     },
     { reply: { ok: true }, expected: undefined, verdict: 'unavailable' },
   ]) {

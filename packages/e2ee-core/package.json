@@ -13,6 +13,7 @@
     "./keys": "./src/keys/index.ts",
     "./ledger/signing": "./src/ledger/signing.ts",
     "./keys/envelope": "./src/keys/envelope.ts",
+    "./keys/staging": "./src/keys/staging.ts",
     "./keys/delivery": "./src/keys/delivery.ts",
     "./keys/delivery/sqlite": "./src/keys/delivery-sqlite.ts",
     "./ledger/snapshot": "./src/ledger/snapshot.ts",

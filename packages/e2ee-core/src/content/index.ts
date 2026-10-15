@@ -74,6 +74,8 @@ export function sealDocument(input: {
   readonly ledger: () => Effect.Effect<LedgerView, ContentError>;
   readonly plaintext: Uint8Array;
   readonly additionalData?: Uint8Array;
+  /** Required for snapshot purposes, forbidden for updates. */
+  readonly continuationOffset?: string;
 }) {
   return Effect.suspend(() =>
     Effect.gen(function* () {
@@ -90,6 +92,7 @@ export function sealDocument(input: {
         sign: borrowed.sign.bind(borrowed),
       });
       const lookup = input.ledger;
+      const continuationOffset = input.continuationOffset;
       return yield* Effect.acquireUseRelease(
         Effect.sync(() => new Uint8Array(source)),
         (plaintext) =>
@@ -100,6 +103,7 @@ export function sealDocument(input: {
               ...scope,
               docEpoch: 0,
               device: keyId(signer.toBytes()),
+              ...(continuationOffset === undefined ? {} : { continuationOffset }),
             };
             const prefix = yield* Effect.fromResult(encodeContentHeader(header));
             const sealed = yield* Effect.fromResult(
@@ -132,7 +136,7 @@ export function authenticateDocument(
   frame: Uint8Array,
   additionalData?: Uint8Array
 ) {
-  return Result.flatMap(parseContentFrame(frame), (parsed) =>
+  return Result.flatMap(parseContentFrame(frame, scope.purpose), (parsed) =>
     authenticateParsed(view, scope, parsed, additionalData)
   );
 }
@@ -151,7 +155,14 @@ function authenticateParsed(
     const author = yield* boundAuthority(view, scope, signer, false);
     const metadata = yield* verifyParsedContentSignature(parsed, scope, signer, additionalData);
     return Object.freeze({
-      header: Object.freeze({ ...scope, device: metadata.device, docEpoch: 0 as const }),
+      header: Object.freeze({
+        ...scope,
+        device: metadata.device,
+        docEpoch: 0 as const,
+        ...(metadata.continuationOffset === undefined
+          ? {}
+          : { continuationOffset: metadata.continuationOffset }),
+      }),
       author,
     });
   });
@@ -183,7 +194,7 @@ export function openDocument(
   additionalData?: Uint8Array
 ) {
   return Result.gen(function* () {
-    const parsed = yield* parseContentFrame(frame);
+    const parsed = yield* parseContentFrame(frame, scope.purpose);
     const authenticated = yield* authenticateParsed(view, scope, parsed, additionalData);
     const key = yield* documentKeyForScope(documentKey, scope);
     const plaintext = yield* openContentAead(

@@ -12,9 +12,11 @@ foundation package provides that check without enabling an encrypted workspace.
 The caller supplies the independently trusted organization genesis, document
 resource, epoch, purpose and signing public key. None is trusted merely because
 it appears in a packet or URL. Content v0 retains `docEpoch = 0`; unsupported
-versions and generations fail. Encoding remains fixed: version byte, u32be Org
+versions and generations fail. Update encoding remains fixed: version byte, u32be Org
 epoch, u16be document epoch, 32-byte signing key, 24-byte nonce, ciphertext/tag,
-64-byte signature. Document context binds genesis and resource; purpose and
+64-byte signature (143 bytes overhead). Snapshot purposes insert a u16be length
+and the exact ASCII continuationOffset immediately after the signing key; their
+overhead is 143 + 2 + offset bytes. The complete header binds signature and AAD. Document context binds genesis and resource; purpose and
 optional external binding participate in authentication. The four document
 update/snapshot purposes share key-derivation context, not authentication bytes.
 
@@ -56,8 +58,8 @@ Installation reporting must follow durable save, actual reload/unprotect and
 independent commitment verification. Failure must never claim reported installation.
 Native settlement and temporary cleanup precede cancellation/Scope completion.
 No plaintext fallback or production composition is allowed. Native adapter choice,
-recovery file/wrapping/concurrency and publisher-loss backup remain unresolved
-separate decisions. This Spec revision stays draft; accepted boundary direction
+recovery file/wrapping/concurrency and native custody remain separate decisions; publisher availability uses
+[stage-before-CAS](e2ee/publisher-key-recoverability.md). This Spec revision stays draft; accepted boundary direction
 and executed synthetic tests do not approve this entire revision or native custody.
 
 [Host contract and validation boundary](../packages/e2ee-core/src/keys/HOST-PROTECTION.md).
@@ -67,3 +69,24 @@ and executed synthetic tests do not approve this entire revision or native custo
 [Module and entrypoints](../packages/e2ee-core/README.md),
 [fixed vectors and negative cases](../packages/e2ee-core/test/foundation.test.ts),
 [source fingerprints](../packages/e2ee-core/provenance.json).
+
+## Settled content v0 and snapshot continuation
+
+Content v0 with docEpoch=0 is the selected format, replacing the proposed v2;
+there is no v2 reader. All four document purposes share one document leaf to
+support future per-document grants; distinct purpose-bound AAD/signatures stop
+cross-purpose substitution. Update wire bytes are unchanged.
+
+Snapshot provider header is exactly [4]; the offset lives in the encrypted-content
+frame's authenticated clear header, never an unauthenticated provider extension.
+The admission gateway checks that it is a real record boundary at or before the
+actual head before forwarding to content-blind Streams. The reader compares the
+exact SDK snapshot continuation after authenticating and decrypting. Tampering,
+transplanting, a future offset or a mid-record position fails without advancing
+the durable document/cursor pair. Opaque offsets are never numerically ordered
+by clients. Native boundary lookup is a host capability, not snapshot authority.
+
+Generic ASCII offsets use the u16 length bound; the released SDK's 4096-byte
+sealing-overhead limit imposes a smaller adapter bound. A snapshot plus subsequent
+updates bootstraps through actual Loro/Flock consumers. These design decisions do
+not mark this revised draft approved or enable product encryption.

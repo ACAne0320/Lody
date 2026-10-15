@@ -27,6 +27,7 @@ import {
   contentAad,
   encodeContentHeader,
   contentSigningBytes,
+  inspectContentFrame,
   verifyContentSignature,
   type ContentHeader,
   type ContentKey,
@@ -159,7 +160,13 @@ describe('public scoped content crypto', () => {
     'matches independent Python HMAC + libsodium vector: $purpose / $binding',
     (vector) => {
       fixedRandom();
-      const scope = { ...header, purpose: vector.purpose as ContentScope['purpose'] };
+      const scope = {
+        ...header,
+        purpose: vector.purpose as ContentScope['purpose'],
+        ...('continuationOffset' in vector
+          ? { continuationOffset: vector.continuationOffset }
+          : {}),
+      };
       const key = keyFor(scope);
       const binding = bytes(vector.binding);
       expect(hex(nativeKey(scope))).toBe(vector.key);
@@ -190,7 +197,11 @@ describe('public scoped content crypto', () => {
       'deriveBits',
     ]);
     for (const purpose of purposes) {
-      const scope = { ...header, purpose };
+      const scope = {
+        ...header,
+        purpose,
+        ...(purpose.endsWith('snapshot') ? { continuationOffset: 'opaque:0_123' } : {}),
+      };
       const expected = new Uint8Array(
         await platform.subtle.deriveBits(
           { name: 'HKDF', hash: 'SHA-256', salt: readSalt(), info: read(contentKeyInfo(scope)) },
@@ -216,8 +227,59 @@ describe('public scoped content crypto', () => {
     const shared = keyFor();
     for (const purpose of purposes.slice(0, 4))
       expect(
-        Result.isSuccess(sealContentAead(shared, { ...header, purpose }, new Uint8Array()))
+        Result.isSuccess(
+          sealContentAead(
+            shared,
+            {
+              ...header,
+              purpose,
+              ...(purpose.endsWith('snapshot') ? { continuationOffset: 'opaque:0_123' } : {}),
+            },
+            new Uint8Array()
+          )
+        )
       ).toBe(true);
+  });
+
+  it('supports the full ASCII u16 snapshot field and rejects missing, malformed or update-only fields', () => {
+    fixedRandom();
+    const snapshot: ContentHeader = {
+      ...header,
+      purpose: 'doc-snapshot',
+      continuationOffset: 'x'.repeat(65535),
+    };
+    const prefix = read(encodeContentHeader(snapshot));
+    expect(prefix.length).toBe(39 + 2 + 65535);
+    expect(prefix.subarray(39, 41)).toEqual(new Uint8Array([255, 255]));
+    const key = keyFor(snapshot),
+      plaintext = new Uint8Array([5, 6]);
+    const sealed = read(sealContentAead(key, snapshot, plaintext));
+    expect(read(openContentAead(key, snapshot, sealed.nonce, sealed.ciphertext))).toEqual(
+      plaintext
+    );
+    const frame = new Uint8Array(
+      Buffer.concat([prefix, sealed.nonce, sealed.ciphertext, new Uint8Array(64)])
+    );
+    expect(read(inspectContentFrame(frame, 'doc-snapshot')).continuationOffset).toBe(
+      snapshot.continuationOffset
+    );
+    for (const at of [39, 40, 41]) {
+      const changed = new Uint8Array(frame);
+      if (at === 41) changed[at] = 128;
+      else {
+        changed[39] = 0;
+        changed[40] = 0;
+      }
+      expect(code(inspectContentFrame(changed, 'doc-snapshot'))).toBe('invalid-snapshot-offset');
+    }
+    expect(Result.isFailure(inspectContentFrame(frame.subarray(0, -3), 'doc-snapshot'))).toBe(true);
+    for (const continuationOffset of [undefined, '', 'x'.repeat(65536), 'é', 'now', '-1', 'x y'])
+      expect(code(encodeContentHeader({ ...snapshot, continuationOffset }))).toBe(
+        'invalid-snapshot-offset'
+      );
+    expect(code(encodeContentHeader({ ...header, continuationOffset: 'opaque' }))).toBe(
+      'invalid-snapshot-offset'
+    );
   });
 
   it('rejects wrong context even with freshly derived keys and authenticates the trusted signer header', () => {
@@ -227,7 +289,7 @@ describe('public scoped content crypto', () => {
       { ...header, genesis: '12'.repeat(32) },
       { ...header, epoch: 5 },
       { ...header, resource: 'other' },
-      { ...header, purpose: 'doc-snapshot' },
+      { ...header, purpose: 'doc-snapshot', continuationOffset: 'opaque:0_123' },
       { ...header, device: '3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c' },
     ];
     for (const scope of alternatives) {
@@ -702,7 +764,7 @@ describe('ledger-bound signed document workflows', () => {
     expect(Result.isFailure(await result(binding.seal(updateInput)))).toBe(true);
   });
   it.each(['loro', 'flock'] as const)(
-    'authenticates %s snapshot position in the visible header and current host admission',
+    'authenticates %s snapshot position inside content v0 and current host admission',
     async (model) => {
       const f = ledgerFixture(true);
       const context = { ...updateContext, kind: 'snapshot' as const, continuationOffset: '0_123' };
@@ -719,8 +781,10 @@ describe('ledger-bound signed document workflows', () => {
           Effect.gen(function* () {
             const binding = yield* makeStreamsUpdateBinding({ ...bindingOptions(f), model });
             const sealed = yield* binding.seal({ ...updateInput, context, additionalData: aadFor });
-            expect(sealed.header).toEqual(
-              new Uint8Array([4, 0, 5, ...new TextEncoder().encode('0_123')])
+            expect(sealed.header).toEqual(new Uint8Array([4]));
+            expect(sealed.sealed.length - updateInput.plaintext.length).toBe(143 + 2 + 5);
+            expect(sealed.sealed.subarray(39, 46)).toEqual(
+              new Uint8Array([0, 5, ...new TextEncoder().encode('0_123')])
             );
             const aad = aadFor(sealed.header);
             expect(yield* binding.open({ ...sealed, context, additionalData: aad })).toEqual(
@@ -756,7 +820,7 @@ describe('ledger-bound signed document workflows', () => {
               )
             ).toBe(true);
             expect(
-              Result.isFailure(
+              code(
                 yield* Effect.result(
                   binding.open({
                     ...sealed,
@@ -765,8 +829,8 @@ describe('ledger-bound signed document workflows', () => {
                   })
                 )
               )
-            ).toBe(true);
-            const oldHeader = new Uint8Array([4]);
+            ).toBe('invalid-snapshot-offset');
+            const oldHeader = new Uint8Array([4, 0, 5, ...new TextEncoder().encode('0_123')]);
             expect(
               Result.isFailure(
                 yield* Effect.result(
@@ -788,8 +852,17 @@ describe('ledger-bound signed document workflows', () => {
                 )
               )
             ).toBe(true);
+            const tamperedOffset = new Uint8Array(sealed.sealed);
+            tamperedOffset[45] ^= 1;
+            expect(
+              code(
+                yield* Effect.result(
+                  binding.open({ ...sealed, sealed: tamperedOffset, context, additionalData: aad })
+                )
+              )
+            ).toBe('bad-content-signature');
             const bad = new Uint8Array(sealed.sealed);
-            bad[63] ^= 1;
+            bad[45] ^= 1;
             const scope = {
               ...f.scope,
               purpose: model === 'loro' ? ('doc-snapshot' as const) : ('flock-snapshot' as const),
@@ -799,13 +872,27 @@ describe('ledger-bound signed document workflows', () => {
               bad.length - 64
             );
             expect(
-              Result.isFailure(
+              code(
                 yield* Effect.result(
-                  binding.open({ ...sealed, sealed: bad, context, additionalData: aad })
+                  binding.open({
+                    ...sealed,
+                    sealed: bad,
+                    context: { ...context, continuationOffset: '0_122' },
+                    additionalData: aad,
+                  })
                 )
               )
-            ).toBe(true);
-            for (const offset of ['', 'now', '-1', ' padded', 'x\n', '\ud800', 'x'.repeat(510)])
+            ).toBe('content-authentication-failed');
+            for (const offset of [
+              '',
+              'now',
+              '-1',
+              ' padded',
+              'x\n',
+              '\ud800',
+              'é',
+              'x'.repeat(65536),
+            ])
               expect(
                 code(
                   yield* Effect.result(
@@ -1151,6 +1238,7 @@ describe('ledger-bound signed document workflows', () => {
       })
     );
     expect(read(verifyContentSignature(frame, f.scope, f.owner.publicKey, binding)).epoch).toBe(0);
+    expect(frame.length - plaintext.length).toBe(143);
     const opened = read(Documents.openDocument(f.view(), f.scope, f.key, frame, binding));
     expect(opened.plaintext).toEqual(plaintext);
     expect(opened.author.kind).toBe('member');
@@ -1167,12 +1255,17 @@ describe('ledger-bound signed document workflows', () => {
     const snap = await Effect.runPromise(
       Documents.sealDocument({
         scope: snapshot,
+        continuationOffset: 'opaque:0_123',
         documentKey: f.key,
         signer: f.owner.signer,
         ledger: () => Effect.succeed(f.view()),
         plaintext,
       })
     );
+    expect(snap.length - plaintext.length).toBe(143 + 2 + 'opaque:0_123'.length);
+    expect(
+      read(Documents.openDocument(f.view(), snapshot, f.key, snap)).header.continuationOffset
+    ).toBe('opaque:0_123');
     expect(read(Documents.openDocument(f.view(), snapshot, f.key, snap)).plaintext).toEqual(
       plaintext
     );

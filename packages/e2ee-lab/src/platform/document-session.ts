@@ -1,4 +1,4 @@
-import { Data, Deferred, Effect, Exit, Result, Scope, Semaphore } from 'effect';
+import { Context, Data, Deferred, Effect, Exit, Result, Scope, Semaphore } from 'effect';
 
 import {
   StreamsCrdt,
@@ -17,10 +17,25 @@ export interface LabNativeDocument<TVersion extends JsonObject> {
   adapter(): CrdtAdapter<TVersion>;
   exportSnapshot(): Uint8Array;
   importSnapshot(bytes: Uint8Array): void;
-  append(text: string): void;
+  /** Capture only when a Lab replay observer owns this operation. */
+  append(text: string, captureDelta?: boolean): Uint8Array | undefined;
+  importUpdate(bytes: Uint8Array): void;
   text(): string;
   release(): void;
 }
+export interface LabLocalEditReplayHooks {
+  readonly take: (model: 'loro' | 'flock', text: string) => Uint8Array | undefined;
+  /** Receives an owned original input, before local persistence or encryption.
+   * Loro uses native update bytes; Flock uses UTF8 native ExportBundle JSON. */
+  readonly capture: (model: 'loro' | 'flock', text: string, delta: Uint8Array) => void;
+}
+/** Synthetic Lab replay input only. The ordinary product path has no observer. */
+export const LabLocalEditReplay = Context.Reference<LabLocalEditReplayHooks | undefined>(
+  'Lab/LocalEditReplay',
+  { defaultValue: () => undefined }
+);
+const MAX_LOCAL_EDIT_BYTES = 16 * 1024 * 1024;
+
 export class LabContentError extends Data.TaggedError('LabContentError')<{
   readonly code:
     | 'closed'
@@ -55,6 +70,7 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
     const path = input.path,
       mode = input.mode,
       streamUrl = input.streamUrl;
+    const editReplay = yield* LabLocalEditReplay;
     const nativeFetch = input.fetch,
       snapshotUpload = input.snapshotUpload === true;
     let closed = false,
@@ -220,7 +236,52 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
         )
       );
     const editLocal = Effect.fnUntraced(function* (text: string) {
-      yield* Effect.try({ try: () => current.doc.append(text), catch: () => error('native') });
+      // Hook failures (including missing recorded input) retain their original
+      // typed harness error instead of becoming an expected native rejection.
+      yield* Effect.acquireUseRelease(
+        Effect.try({
+          try: () => {
+            const original = editReplay?.take(input.model, text);
+            if (original === undefined) return undefined;
+            if (
+              !(original instanceof Uint8Array) ||
+              !original.length ||
+              original.length > MAX_LOCAL_EDIT_BYTES
+            )
+              throw error('native');
+            return new Uint8Array(original);
+          },
+          catch: (cause) => cause,
+        }),
+        (original) =>
+          original === undefined
+            ? Effect.acquireUseRelease(
+                Effect.try({
+                  try: () => current.doc.append(text, editReplay !== undefined),
+                  catch: () => error('native'),
+                }),
+                (delta) =>
+                  Effect.gen(function* () {
+                    if (!editReplay) return yield* Effect.void;
+                    if (
+                      !(delta instanceof Uint8Array) ||
+                      !delta.length ||
+                      delta.length > MAX_LOCAL_EDIT_BYTES
+                    )
+                      return yield* error('native');
+                    return yield* Effect.try({
+                      try: () => editReplay.capture(input.model, text, new Uint8Array(delta)),
+                      catch: (cause) => cause,
+                    });
+                  }),
+                (delta) => Effect.sync(() => delta?.fill(0))
+              )
+            : Effect.try({
+                try: () => current.doc.importUpdate(original),
+                catch: () => error('native'),
+              }),
+        (original) => Effect.sync(() => original?.fill(0))
+      );
       yield* Effect.acquireUseRelease(
         Effect.sync(() => current.doc.exportSnapshot()),
         (bytes) => store.persistLocal(bytes),

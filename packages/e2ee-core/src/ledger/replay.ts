@@ -1,5 +1,5 @@
 import { verifiedSnapshotState, proposalOf, noteOf, type SnapshotTrust } from './snapshot-codec';
-import { Chunk, Effect, HashSet, Result } from 'effect';
+import { Chunk, Effect, HashMap, HashSet, Result } from 'effect';
 import {
   genesisHash,
   recordHash,
@@ -109,6 +109,15 @@ function replay(
         if (body.type === 'genesis') return genesisState(body, anchor, hash);
         if (!state) return yield* fail('genesis-mismatch');
         yield* applyAuthorizedOrdinary(state, body);
+        if (
+          body.operation.type === 'publishEpoch' ||
+          body.operation.type === 'removeMemberAndPublishEpoch'
+        )
+          state.epochPublications = HashMap.set(
+            state.epochPublications ?? HashMap.empty(),
+            body.operation.epoch,
+            copyBytes(record.recordBytes)
+          );
         state.hashes = Chunk.append(state.hashes, hash);
         return state;
       });
@@ -309,6 +318,16 @@ export function contentPermissions(
       maySealNewContent: mayWriteDocument && !state.epoch.rotationRequired,
     });
   });
+}
+/** Exact signed publication actually verified in this view's retained history. */
+export function epochPublicationRecord(
+  view: LedgerView,
+  epoch: number
+): Result.Result<Uint8Array, LedgerError> {
+  const state = states.get(view);
+  if (!state) return fail('unauthorized');
+  const row = state.epochPublications && stateGet(state.epochPublications, epoch);
+  return row ? Result.succeed(copyBytes(row)) : fail('unauthorized');
 }
 /** Owns a detached packet copy. Signed publication is not authenticated decryption. */
 export function epochHistoryPacket(

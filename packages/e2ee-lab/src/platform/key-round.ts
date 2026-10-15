@@ -31,10 +31,11 @@ export class LabKeyRoundError extends Data.TaggedError('LabKeyRoundError')<{
  * The caller keeps its scope alive until this Effect has settled. Errors propagate;
  * next is returned only after install/report/send phases finish. Blocked native
  * tasks and each independent page cursor stay explicit, never fabricated success. */
-export function runLabKeyRound(
+export function runLabKeyRound<E = never, R = never>(
   distribution: LabKeyDistribution,
   limit = 100,
-  cursors: LabKeyRoundCursors = {}
+  cursors: LabKeyRoundCursors = {},
+  beforeReceive?: Effect.Effect<unknown, E, R>
 ) {
   return Effect.gen(function* () {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
@@ -59,6 +60,7 @@ export function runLabKeyRound(
         }),
       catch: () => new LabKeyRoundError({ code: 'invalid-owner' }),
     });
+    if (beforeReceive) yield* beforeReceive;
     const repairs = yield* owner.repair(limit, pages.repairs);
     const resumed = yield* owner.resume(limit, pages.resumed);
     const received = yield* owner.receive(pages.received, limit);

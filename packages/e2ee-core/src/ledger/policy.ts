@@ -39,6 +39,8 @@ export interface EpochHistoryPacket {
   readonly packet: Uint8Array;
 }
 export interface InternalState {
+  /** Only original tag7/8 bytes actually replayed; endorsed snapshots do not invent them. */
+  epochPublications?: HashMap.HashMap<number, Uint8Array>;
   contentAuthors: HashMap.HashMap<string, HistoricalContentAuthor>;
   historyPackets: HashMap.HashMap<number, EpochHistoryPacket>;
   genesis: Bytes.GenesisHash;

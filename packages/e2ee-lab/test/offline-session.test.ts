@@ -1,10 +1,18 @@
 import Database from 'better-sqlite3';
 import { LoroDoc } from 'loro-crdt';
+import { Flock } from '@loro-dev/flock-wasm';
+import {
+  LabLocalEditReplay,
+  makeLabLoroSession,
+  type LabLocalEditReplayHooks,
+} from '../src/platform/content-session';
+import { makeLabFlockSession } from '../src/platform/flock-session';
+import { history } from './ledger-fixture';
 import { StreamsClient } from '@loro-dev/streams-client';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Effect, Result } from 'effect';
+import { Data, Effect, Exit, Result, Scope } from 'effect';
 import { expect, it } from 'vitest';
 import { Bytes, inspectContentFrame } from '@lody/e2ee-core';
 import { prepareJoinRequest } from '@lody/e2ee-core/ledger/admission';
@@ -162,6 +170,8 @@ it('merges three independent members after durable offline edits/reopen, seals q
           yield* bob.editOffline('loro', ' / queued across rotation');
           offline = false;
           expect(yield* bob.cursor('loro')).toEqual(syncedCursor);
+          const retired = yield* owner.submit({ _tag: 'RevokeDevice', target: f.peer.publicKey });
+          yield* owner.acknowledge(retired);
           const rotation = yield* owner.rotateEpoch();
           expect(rotation.epoch).toBe(1);
           yield* owner.acknowledgeEpochRotation(rotation);
@@ -254,3 +264,144 @@ it('merges three independent members after durable offline edits/reopen, seals q
     rmSync(root, { recursive: true, force: true });
   }
 }, 15000);
+
+class MissingLocalEditInput extends Data.TaggedError('MissingLocalEditInput')<{
+  readonly code: 'missing-original-input';
+}> {}
+it.each(['loro', 'flock'] as const)(
+  'replays captured native %s edit inputs through real import and durable local persistence',
+  async (model) => {
+    const directory = mkdtempSync(join(tmpdir(), 'lab-native-edit-replay-'));
+    const f = history(),
+      captured: { model: string; text: string; delta: Uint8Array }[] = [];
+    const countsBeforeCapture: number[] = [];
+    const noNetwork: typeof fetch = async () => {
+      throw new Error('local edit must not use transport');
+    };
+    const inspect = (file: string) => {
+      const db = new Database(join(directory, file), { readonly: true });
+      try {
+        return db.prepare('SELECT document FROM lab_document_state WHERE id=1').get() as
+          | { document: Uint8Array }
+          | undefined;
+      } finally {
+        db.close();
+      }
+    };
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const make = (
+              file: string,
+              mode: 'create' | 'open',
+              hooks?: LabLocalEditReplayHooks
+            ) => {
+              const common = {
+                path: join(directory, file),
+                mode,
+                streamUrl: 'http://127.0.0.1:1/ds/synthetic/replay',
+                fetch: noNetwork,
+                genesis: f.anchor,
+                resource: 'native-edit-replay',
+                writeEpoch: 'current' as const,
+                signer: f.owner,
+                ledger: () => Effect.succeed(f.view),
+                readEpochKey: () => Effect.die('offline edits must not read keys'),
+              };
+              return (
+                model === 'loro'
+                  ? makeLabLoroSession(common)
+                  : makeLabFlockSession({
+                      ...common,
+                      replica: file,
+                      now: () => (file === 'source.sqlite' ? 100 : 999999),
+                    })
+              ).pipe(Effect.provideService(LabLocalEditReplay, hooks));
+            };
+            const source = yield* make('source.sqlite', 'create', {
+              take: () => undefined,
+              capture: (kind, text, delta) => {
+                countsBeforeCapture.push(inspect('source.sqlite') ? 1 : 0);
+                captured.push({ model: kind, text, delta });
+              },
+            });
+            yield* source.editOffline('first');
+            yield* source.editOffline(' second');
+            expect(yield* source.text()).toBe('first second');
+            expect(countsBeforeCapture).toEqual([0, 1]);
+            expect(captured.map((row) => [row.model, row.text])).toEqual([
+              [model, 'first'],
+              [model, ' second'],
+            ]);
+            const owner = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+              Scope.close(scope, Exit.void)
+            );
+            let at = 0;
+            const replayed = yield* make('replayed.sqlite', 'create', {
+              take: (selected, text) => {
+                const original = captured[at++];
+                if (!original || original.model !== selected || original.text !== text)
+                  throw new MissingLocalEditInput({ code: 'missing-original-input' });
+                return original.delta;
+              },
+              capture: () => {
+                throw new Error('replay must not generate a replacement local edit');
+              },
+            }).pipe(Effect.provideService(Scope.Scope, owner));
+            yield* replayed.editOffline('first');
+            yield* replayed.editOffline(' second');
+            expect(at).toBe(2);
+            expect(yield* replayed.text()).toBe('first second');
+            expect(yield* replayed.cursor()).toBeNull();
+            yield* Scope.close(owner, Exit.void);
+            const reopened = yield* make('replayed.sqlite', 'open');
+            expect(yield* reopened.text()).toBe('first second');
+            expect(yield* reopened.cursor()).toBeNull();
+            const sourceBytes = inspect('source.sqlite')!.document,
+              replayBytes = inspect('replayed.sqlite')!.document;
+            if (model === 'loro') {
+              const before = new LoroDoc(),
+                after = new LoroDoc();
+              try {
+                before.import(sourceBytes);
+                after.import(replayBytes);
+                const a = before.version(),
+                  b = after.version();
+                try {
+                  expect(b.toJSON()).toEqual(a.toJSON());
+                } finally {
+                  a.free();
+                  b.free();
+                }
+              } finally {
+                before.free();
+                after.free();
+              }
+            } else {
+              const before = Flock.fromFile(sourceBytes, 'inspect-source'),
+                after = Flock.fromFile(replayBytes, 'inspect-replay');
+              expect(after.version()).toEqual(before.version());
+              expect(after.get(['text'])).toBe('first second');
+            }
+            const missing = new MissingLocalEditInput({ code: 'missing-original-input' });
+            const failed = yield* make('missing.sqlite', 'create', {
+              take: () => {
+                throw missing;
+              },
+              capture: () => {
+                throw new Error('missing inputs cannot become new edits');
+              },
+            });
+            const result = yield* Effect.result(failed.editOffline('not-recorded'));
+            expect(Result.isFailure(result) && result.failure).toBe(missing);
+            expect(inspect('missing.sqlite')).toBeUndefined();
+            expect(yield* failed.cursor()).toBeNull();
+          })
+        )
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+);

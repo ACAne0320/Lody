@@ -2,12 +2,28 @@ import { appendFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 // Application entrypoint: one Effect Scope owns the complete synthetic session.
-import { Cause, Effect, Queue, Result, Schema } from 'effect';
+import { Cause, Effect, Exit, Queue, Result, Schema } from 'effect';
 import { join, isAbsolute } from 'node:path';
 import type { SubmissionResult } from '@lody/e2ee-core/submission';
-import { Bytes } from '@lody/e2ee-core';
+import { decodeRecord } from '@lody/e2ee-core/ledger';
+import { StreamsClient } from '@loro-dev/streams-client';
+import { commitEpochKey, sealHistoryPacket } from '@lody/e2ee-core/keys';
+import { prepareLedgerRecord, signLedgerRecord } from '@lody/e2ee-core/ledger/signing';
+import { LedgerFeedError, frameLedgerRecord } from '@lody/e2ee-core/ledger/feed';
+import { Bytes, encodeCbor } from '@lody/e2ee-core';
+import { makeLabHttpIdentity } from './http-identity';
+import {
+  capturePreparedInputs,
+  loadActorReplay,
+  seedPreparedInputs,
+  saveActorReplay,
+  type LabPreparedInputs,
+  type LabOriginalLocalEdit,
+  type LabOriginalRequest,
+} from './actor-replay';
 import { importDevice } from './device';
 import { openLabWorkspaceSession } from './full-session';
+import { LabLocalEditReplay } from './content-session';
 import { labSyntheticProtector } from './synthetic-protection';
 import { LabKeyCommand, type LabProcessConfiguration } from './process-contract';
 const ok = Result.getOrThrow;
@@ -47,7 +63,39 @@ const hash = (value: string) => {
 const program = Effect.scoped(
   Effect.gen(function* () {
     const queue = yield* Queue.unbounded<Record<string, unknown>>();
+    let checkpointSequence = 0;
+    const pendingCheckpoints = new Map<
+      number,
+      {
+        resolve: (value: {
+          point: { head: string; length: number };
+          records: readonly string[];
+        }) => void;
+        reject: (error: unknown) => void;
+      }
+    >();
     const listener = (message: unknown) => {
+      if (
+        message &&
+        typeof message === 'object' &&
+        'kind' in message &&
+        message.kind === 'checkpoint-result' &&
+        'requestId' in message
+      ) {
+        const value = message as unknown as {
+          requestId: number;
+          point: { head: string; length: number };
+          records: readonly string[];
+          error?: boolean;
+        };
+        const pending = pendingCheckpoints.get(value.requestId);
+        if (pending) {
+          pendingCheckpoints.delete(value.requestId);
+          if (value.error) pending.reject(new Error('checkpoint-unavailable'));
+          else pending.resolve(value);
+        }
+        return;
+      }
       if (
         message &&
         typeof message === 'object' &&
@@ -64,17 +112,33 @@ const program = Effect.scoped(
       }),
       () =>
         Effect.sync(() => {
+          for (const pending of pendingCheckpoints.values())
+            pending.reject(new Error('checkpoint-owner-closed'));
+          pendingCheckpoints.clear();
           process.off('message', listener);
           process.off('disconnect', disconnected);
         })
     );
+    let configuration: LabProcessConfiguration | undefined;
+    let requests: LabOriginalRequest[] = [];
+    let prepared: LabPreparedInputs = { outbox: [] };
+    let localEdits: LabOriginalLocalEdit[] = [];
+    let replayExpectedRequests: LabOriginalRequest[] | undefined;
+    let replayLocalEdits: LabOriginalLocalEdit[] | undefined;
+    let activeIndex: number | undefined;
     let session: Effect.Success<ReturnType<typeof openLabWorkspaceSession>> | undefined;
     let point: { head: Bytes.RecordHash; length: number } | undefined;
     let ending = false;
-    let fault: 'none' | 'corrupt-loro' | 'drop-control-ack' = 'none';
+    let fault: 'none' | 'corrupt-loro' | 'drop-control-ack' | 'control-ack-dropped' = 'none';
     let directory = '',
       actor = '',
-      peerSigningKey = '';
+      targets: LabProcessConfiguration['targets'] = {};
+    let originals: readonly string[] = [];
+    let lastRotation:
+      | Parameters<
+          Effect.Success<ReturnType<typeof openLabWorkspaceSession>>['acknowledgeEpochRotation']
+        >[0]
+      | undefined;
     let lastResult: SubmissionResult | null = null,
       logicalTime = 0;
     let traceFrames = 0,
@@ -82,17 +146,64 @@ const program = Effect.scoped(
       cipherChanged = 0,
       ackDropped = 0;
     const nativeFetch: typeof fetch = async (input, init) => {
-      const request = new Request(input, init),
-        url = new URL(request.url),
+      let request = new Request(input, init);
+      const url = new URL(request.url),
         method = request.method;
-      const selected = url.pathname.includes('/ds/') || url.pathname.endsWith('/key-mailbox');
-      const requestBytes = selected
-        ? new Uint8Array(await request.clone().arrayBuffer())
-        : undefined;
+      // This finite unknown-outcome control drops the accepted CAS reply and
+      // withholds subsequent confirmation until the process is reopened/cleared.
+      // Otherwise real P09 can correctly reconcile the lost ACK immediately.
+      if (
+        fault === 'control-ack-dropped' &&
+        ['GET', 'HEAD'].includes(method) &&
+        url.pathname.endsWith('/control')
+      )
+        throw new Error('Lab committed ACK and confirmation withheld');
+      const selected =
+        url.pathname.includes('/ds/') ||
+        url.pathname.endsWith('/key-mailbox') ||
+        /staged|epoch-group|epoch-staging/.test(url.pathname);
+      let requestBytes = selected ? new Uint8Array(await request.clone().arrayBuffer()) : undefined;
+      if (selected && ['POST', 'PUT', 'DELETE'].includes(method)) {
+        if (replayExpectedRequests) {
+          const expected = replayExpectedRequests.shift();
+          if (
+            !expected ||
+            expected.method !== method ||
+            expected.path !== url.pathname + url.search
+          )
+            throw { _tag: 'LabReplayError', code: 'original-input-mismatch' };
+          // Reuse only the recorded encrypted input. Real local editing/import,
+          // current-authority sealing, HTTP admission, SDK open and persistence
+          // still execute. No recorded reply, cursor or resulting row is injected.
+          if (/\/(loro|flock)(?:\/snapshot\/[^/]+)?$/.test(url.pathname)) {
+            requestBytes = new Uint8Array(Buffer.from(expected.bodyHex, 'hex'));
+            request = new Request(request, { body: requestBytes });
+          } else if (expected.bodyHex !== Buffer.from(requestBytes!).toString('hex'))
+            throw { _tag: 'LabReplayError', code: 'original-input-mismatch' };
+        }
+        const captured = capturePreparedInputs(directory, actor);
+        const previous = new Map(prepared.outbox.map((row) => [row.slot, row]));
+        for (const row of captured.outbox) previous.set(row.slot, row);
+        prepared = {
+          outbox: [...previous.values()],
+          rotation: captured.rotation ?? prepared.rotation,
+        };
+      }
       const response = await fetch(request);
       if (!selected) return response; // credentials/tokens are never recorded
       const original = new Uint8Array(await response.arrayBuffer()),
         bytes = new Uint8Array(original);
+      if (selected && ['POST', 'PUT', 'DELETE'].includes(method)) {
+        const headers: Record<string, string> = {};
+        for (const [name, value] of request.headers)
+          if (!/auth|cookie/i.test(name)) headers[name] = value;
+        requests.push({
+          method,
+          path: url.pathname + url.search,
+          headers,
+          bodyHex: Buffer.from(requestBytes!).toString('hex'),
+        });
+      }
       let changed = false,
         dropped = false;
       if (
@@ -101,7 +212,7 @@ const program = Effect.scoped(
         url.pathname.endsWith('/control/append-cas') &&
         response.ok
       ) {
-        fault = 'none';
+        fault = 'control-ack-dropped';
         ackDropped++;
         dropped = true;
       }
@@ -164,13 +275,15 @@ const program = Effect.scoped(
         if (
           c.syntheticOnly !== true ||
           !isAbsolute(c.directory) ||
-          !['owner', 'peer'].includes(c.actor) ||
+          !/^[a-z][a-z0-9-]{0,63}$/.test(c.actor) ||
           !['create', 'open'].includes(c.mode)
         )
           return yield* Effect.fail(new Error('fixture-configuration'));
+        configuration = c;
         directory = c.directory;
         actor = c.actor;
-        peerSigningKey = c.peerSigningKey;
+        targets = c.targets;
+        originals = c.records;
         const device = yield* importDevice(c.device),
           genesis = ok(Bytes.genesisHash(hash(c.genesis)));
         point = { head: ok(Bytes.recordHash(hash(c.point.head))), length: c.point.length };
@@ -190,7 +303,38 @@ const program = Effect.scoped(
                   length: (c.localPoint ?? c.point).length,
                 }
               : undefined,
-          checkpoint: () => Effect.succeed(point!),
+          checkpoint: () =>
+            Effect.tryPromise({
+              try: () =>
+                new Promise<{
+                  point: { head: string; length: number };
+                  records: readonly string[];
+                }>((resolve, reject) => {
+                  const requestId = ++checkpointSequence;
+                  pendingCheckpoints.set(requestId, { resolve, reject });
+                  if (!process.send) {
+                    pendingCheckpoints.delete(requestId);
+                    reject(new Error('checkpoint-owner-closed'));
+                    return;
+                  }
+                  process.send({ kind: 'checkpoint-request', requestId }, (error) => {
+                    if (error) {
+                      pendingCheckpoints.delete(requestId);
+                      reject(error);
+                    }
+                  });
+                }),
+              catch: (cause) => new LedgerFeedError({ code: 'transport', cause }),
+            }).pipe(
+              Effect.map((value) => {
+                point = {
+                  head: ok(Bytes.recordHash(hash(value.point.head))),
+                  length: value.point.length,
+                };
+                originals = value.records;
+                return point;
+              })
+            ),
           fetch: nativeFetch,
           budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
           keys: {
@@ -199,18 +343,39 @@ const program = Effect.scoped(
             pair: device.encryption,
             keyStore: {
               path: file('keys'),
-              mode: c.actor === 'owner' ? 'open' : c.mode,
+              mode: c.initialKeyOwner ? 'open' : c.mode,
               protector: labSyntheticProtector,
             },
             repairStore: { path: file('repair'), mode: c.mode },
             sendStore: { path: file('send'), mode: c.mode },
             outboxStore: { path: file('outbox'), mode: c.mode },
-            currentPublication: () =>
-              Effect.succeed(new Uint8Array(Buffer.from(c.records[0]!, 'hex'))),
+            currentPublication: (current) =>
+              Effect.sync(() => {
+                const epoch = current.inspectState().epoch.number;
+                for (const original of originals.slice().reverse()) {
+                  const bytes = new Uint8Array(Buffer.from(original, 'hex')),
+                    decoded = ok(decodeRecord(bytes));
+                  if (
+                    (epoch === 0 && decoded.body.type === 'genesis') ||
+                    (decoded.body.type === 'ordinary' &&
+                      ['publishEpoch', 'removeMemberAndPublishEpoch'].includes(
+                        decoded.body.operation.type
+                      ) &&
+                      'epoch' in decoded.body.operation &&
+                      decoded.body.operation.epoch === epoch)
+                  )
+                    return bytes;
+                }
+                return null;
+              }),
           },
+          epochRotation: c.epochRotation
+            ? { path: file('rotation'), mode: c.mode, protector: labSyntheticProtector }
+            : undefined,
           documents: [
             {
               id: 'loro',
+              snapshotUpload: true,
               resource: 'document-A',
               path: file('loro'),
               mode: c.mode,
@@ -218,6 +383,7 @@ const program = Effect.scoped(
             },
             {
               id: 'flock',
+              snapshotUpload: true,
               model: 'flock',
               now: () => ++logicalTime,
               resource: 'document-B',
@@ -226,7 +392,31 @@ const program = Effect.scoped(
               streamUrl: `${c.baseUrl}/ds/${c.genesis}/flock`,
             },
           ],
-        });
+        }).pipe(
+          Effect.provideService(
+            LabLocalEditReplay,
+            c.privateReplayDirectory || c.replaySourceDirectory
+              ? {
+                  take: (model, text) => {
+                    if (!c.replaySourceDirectory) return undefined;
+                    const edit = replayLocalEdits?.shift();
+                    if (
+                      !edit ||
+                      edit.model !== model ||
+                      edit.text !== text ||
+                      !/^(?:[0-9a-f]{2}){1,16777216}$/.test(edit.deltaHex)
+                    )
+                      throw { _tag: 'LabReplayError', code: 'missing-local-edit-input' };
+                    return new Uint8Array(Buffer.from(edit.deltaHex, 'hex'));
+                  },
+                  capture: (model, text, delta) => {
+                    localEdits.push({ model, text, deltaHex: Buffer.from(delta).toString('hex') });
+                    delta.fill(0);
+                  },
+                }
+              : undefined
+          )
+        );
         return { pid: process.pid };
       }
       if (!session) return yield* Effect.fail(new Error('not-started'));
@@ -234,6 +424,7 @@ const program = Effect.scoped(
         const p = command.point as { head: string; length: number };
         point = { head: ok(Bytes.recordHash(hash(p.head))), length: p.length };
       }
+      if (Array.isArray(command.records)) originals = command.records as string[];
       const doc = command.document;
       if (
         [
@@ -245,6 +436,7 @@ const program = Effect.scoped(
           'observe',
           'edit-offline',
           'flush-offline',
+          'upload-snapshot',
         ].includes(String(command.operation)) &&
         typeof doc !== 'string'
       )
@@ -291,15 +483,125 @@ const program = Effect.scoped(
               }
             : null;
         }
-        case 'revoke-peer':
+        case 'revoke':
           lastResult = yield* session.submit({
             _tag: 'RevokeDevice',
-            target: ok(Bytes.signingPublicKey(hash(peerSigningKey))),
+            target: ok(Bytes.signingPublicKey(hash(targets[String(command.target)]!.signingKey))),
           });
           return {
             outcome: lastResult.outcome,
             recordHex: Buffer.from(lastResult.record).toString('hex'),
           };
+        case 'publish-without-stage': {
+          const current = yield* session.refresh(),
+            view = current.view,
+            state = view.inspectState();
+          // Explicit synthetic compromised-manager capability: retain fixture E0,
+          // pass the genuine ordinary tag7 verifier, then deliberately skip staging.
+          const previous = ok(Bytes.epochKey(new Uint8Array(32).fill(117)));
+          if (
+            state.epoch.number !== 0 ||
+            !ok(commitEpochKey(view.genesis, 0, previous)).equals(state.epoch.keyCommitment)
+          )
+            return yield* Effect.fail({ _tag: 'LabAttackError', code: 'unsupported-known-key' });
+          const raw = crypto.getRandomValues(new Uint8Array(32)),
+            key = ok(Bytes.epochKey(raw));
+          raw.fill(0);
+          const commitment = ok(commitEpochKey(view.genesis, 1, key)),
+            packet = ok(
+              sealHistoryPacket({
+                genesis: view.genesis,
+                epoch: 1,
+                currentKey: key,
+                previousKey: previous,
+              })
+            );
+          const device = yield* importDevice(configuration!.device);
+          const body = ok(
+            encodeCbor([
+              view.head.toBytes(),
+              device.publicKey.toBytes(),
+              [7, 1, commitment.toBytes(), packet],
+            ])
+          );
+          const record = yield* signLedgerRecord(ok(prepareLedgerRecord(view, body)), device);
+          const identity = yield* makeLabHttpIdentity({
+              baseUrl: configuration!.baseUrl,
+              genesis: view.genesis,
+              fetch: nativeFetch,
+            }),
+            auth = yield* identity.authenticate(device);
+          const sdk = new StreamsClient({
+            url: `${configuration!.baseUrl}/ds/${configuration!.genesis}/control`,
+            fetch: auth.fetch,
+            retry: { maxAttempts: 1 },
+          });
+          const result = yield* Effect.uninterruptible(
+            Effect.tryPromise({
+              try: () =>
+                sdk.appendCas({
+                  expectedOffset: current.offset,
+                  part: {
+                    contentType: 'application/octet-stream',
+                    body: ok(frameLedgerRecord(record)),
+                  },
+                }),
+              catch: (cause) => cause,
+            })
+          );
+          if (!result.ok || result.result.kind !== 'ok')
+            return yield* Effect.fail({ _tag: 'LabAttackError', code: 'cas-refused' });
+          yield* session.refresh();
+          return {
+            outcome: 'Committed',
+            epoch: 1,
+            recordHex: Buffer.from(record).toString('hex'),
+            staged: false,
+          };
+        }
+        case 'set-role': {
+          const target = targets[String(command.target)];
+          if (!target || !['admin', 'member', 'guest'].includes(String(command.role)))
+            return yield* Effect.fail(new Error('invalid-target'));
+          lastResult = yield* session.submit({
+            _tag: 'SetRole',
+            membershipId: ok(
+              Bytes.membershipId(new Uint8Array(Buffer.from(target.membership, 'hex')))
+            ),
+            role: command.role as 'admin' | 'member' | 'guest',
+          });
+          return {
+            outcome: lastResult.outcome,
+            recordHex: Buffer.from(lastResult.record).toString('hex'),
+          };
+        }
+        case 'rotate-epoch':
+        case 'remove-member-and-rotate':
+        case 'resume-epoch-rotation': {
+          const target = targets[String(command.target)];
+          if (command.operation === 'remove-member-and-rotate' && !target)
+            return yield* Effect.fail(new Error('invalid-target'));
+          lastRotation =
+            (yield* command.operation === 'rotate-epoch'
+              ? session.rotateEpoch()
+              : command.operation === 'resume-epoch-rotation'
+                ? session.resumeEpochRotation()
+                : session.removeMemberAndRotate(
+                    ok(Bytes.membershipId(new Uint8Array(Buffer.from(target!.membership, 'hex'))))
+                  )) ?? undefined;
+          return lastRotation
+            ? {
+                outcome: lastRotation.outcome,
+                epoch: lastRotation.epoch,
+                recordHex: Buffer.from(lastRotation.record).toString('hex'),
+              }
+            : null;
+        }
+        case 'acknowledge-epoch-rotation':
+          if (!lastRotation) return yield* Effect.fail(new Error('missing-original-result'));
+          yield* session.acknowledgeEpochRotation(lastRotation);
+          lastRotation = undefined;
+          return null;
         case 'acknowledge':
           if (!lastResult) return yield* Effect.fail(new Error('missing-original-result'));
           yield* session.acknowledge(lastResult);
@@ -327,6 +629,8 @@ const program = Effect.scoped(
         case 'recover':
           yield* session.recoverDocument(doc as string);
           return null;
+        case 'upload-snapshot':
+          return yield* session.uploadSnapshot(doc as string);
         case 'persist':
           yield* session.persist(doc as string);
           return null;
@@ -405,10 +709,72 @@ const program = Effect.scoped(
           return yield* Effect.fail(new Error('unsupported-action'));
       }
     });
+    const replay = Effect.fnUntraced(function* (command: Record<string, unknown>) {
+      const config = configuration!,
+        row = loadActorReplay(
+          config.replaySourceDirectory!,
+          actor,
+          Number(command.materialIndex),
+          String(command.operation)
+        );
+      replayExpectedRequests = [...row.requests];
+      replayLocalEdits = [...row.localEdits];
+      yield* Effect.sync(() => seedPreparedInputs(directory, actor, row.prepared));
+      if (['revoke', 'set-role', 'publish-without-stage'].includes(String(command.operation))) {
+        const request = row.requests.find((item) => item.path.endsWith('/control/append-cas'));
+        if (!request) return yield* handle(command);
+        const framed = new Uint8Array(Buffer.from(request.bodyHex, 'hex'));
+        lastResult = yield* session!.submitOriginal(new Uint8Array(framed.subarray(4)));
+        if (command.operation === 'publish-without-stage') {
+          const current = yield* session!.refresh();
+          return {
+            outcome: lastResult.outcome,
+            epoch: current.view.inspectState().epoch.number,
+            recordHex: Buffer.from(lastResult.record).toString('hex'),
+            staged: false,
+          };
+        }
+        return {
+          outcome: lastResult.outcome,
+          recordHex: Buffer.from(lastResult.record).toString('hex'),
+        };
+      }
+      // All document operations consume the original local delta/crypto input
+      // through the same live SDK owner and return freshly measured outcomes.
+      return yield* handle(command);
+    });
     while (true) {
       const command = yield* Queue.take(queue);
       const droppedBefore = ackDropped;
-      const result = yield* Effect.exit(handle(command));
+      activeIndex = typeof command.materialIndex === 'number' ? command.materialIndex : undefined;
+      requests = [];
+      prepared = { outbox: [] };
+      localEdits = [];
+      replayExpectedRequests = undefined;
+      replayLocalEdits = undefined;
+      const materialOperation = [
+        'keys',
+        'append',
+        'edit-offline',
+        'flush-offline',
+        'revoke',
+        'set-role',
+        'rotate-epoch',
+        'remove-member-and-rotate',
+        'resume-epoch-rotation',
+        'acknowledge-epoch-rotation',
+        'publish-without-stage',
+        'upload-snapshot',
+      ].includes(String(command.operation));
+      let result = yield* Effect.exit(
+        configuration?.replaySourceDirectory && materialOperation
+          ? replay(command)
+          : handle(command)
+      );
+      const pendingOriginals = () =>
+        (replayExpectedRequests?.length ?? 0) + (replayLocalEdits?.length ?? 0);
+      if (result._tag === 'Success' && pendingOriginals())
+        result = Exit.fail({ _tag: 'LabReplayError', code: 'missing-original-request' });
       const known = session && !ending ? yield* Effect.result(session.current()) : undefined;
       const localPoint =
         known && Result.isSuccess(known)
@@ -433,6 +799,20 @@ const program = Effect.scoped(
               trace: { frames: traceFrames, cipherChanged, ackDropped },
               error: projectFailure(result.cause, ackDropped > droppedBefore),
             };
+      if (configuration?.privateReplayDirectory && activeIndex !== undefined)
+        yield* Effect.sync(() =>
+          saveActorReplay({
+            privateDirectory: configuration!.privateReplayDirectory!,
+            actor,
+            row: {
+              index: activeIndex!,
+              operation: String(command.operation),
+              requests,
+              prepared,
+              localEdits,
+            },
+          })
+        );
       yield* Effect.uninterruptible(
         Effect.callback<void, Error>((resume) => {
           if (!process.send) return resume(Effect.fail(new Error('ipc-closed')));

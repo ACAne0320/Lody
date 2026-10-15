@@ -9,11 +9,21 @@ import { keyId } from '../identifiers';
 import { hasVerifiedCheckpoint, requireLedgerContinuation, type LedgerView } from '../ledger';
 import { signVerified, type DeviceSigner } from '../signing';
 import { verifySignature } from '../signature';
-import { authenticateEpochEnvelope, openEpochEnvelope } from './envelope';
+import {
+  authenticateEpochEnvelope,
+  authenticateEpochEnvelopeSignature,
+  openEpochEnvelope,
+} from './envelope';
 import { commitEpochKey } from './history';
+import { openEpochKeyHpke } from '../crypto/hpke';
 import type { NativeEpochProtector } from './host-protection';
 import { makeSqliteProtectedEpochKeys } from './protected-sqlite';
 import * as Reports from './reports';
+import {
+  authenticateEpochStagedGroup,
+  ownEpochStagedGroup,
+  type EpochStagedGroup,
+} from './staging';
 
 export class ReceiveError extends Data.TaggedError('ReceiveError')<{
   readonly code:
@@ -505,6 +515,61 @@ export function makeSqliteEpochReceiver(input: {
       installedEpochKeys: keys,
       /** Genuine public observation only; persists the known prefix, grants no eligibility. */
       observeLedger: current,
+      /** Remote staged rows remain inert until their exact tag7/8 is genuinely committed.
+       * This installs through the same owned protected store; ordinary late-join
+       * delivery/report tasks remain on receive(). Retry reads the original group. */
+      receiveStagedGroup: (inputGroup: EpochStagedGroup) =>
+        Effect.gen(function* () {
+          const original = yield* Effect.fromResult(ownEpochStagedGroup(inputGroup));
+          const view = yield* current();
+          const { sender } = yield* Effect.fromResult(authenticateEpochStagedGroup(view, original));
+          const own = original.envelopes.find((row) => row.recipient === self);
+          if (!own) return yield* fail('missing-task');
+          const context = {
+            genesis: anchor,
+            epoch: yield* Effect.fromResult(Bytes.epochNumber(original.epoch)),
+            sender,
+            recipient: signer.publicKey,
+          };
+          const recipient = view.inspectState().devices.get(self);
+          if (
+            !recipient ||
+            !view.inspectState().members.has(keyId(recipient.membershipId.toBytes()))
+          )
+            return yield* fail('context-changed');
+          const sealed = yield* Effect.fromResult(
+            authenticateEpochEnvelopeSignature(context, own.frame)
+          );
+          yield* Effect.acquireUseRelease(
+            openEpochKeyHpke(pair, recipient.encryptionPublicKey, context, sealed),
+            (key) =>
+              Effect.gen(function* () {
+                const commitment = yield* Effect.fromResult(
+                  commitEpochKey(anchor, original.epoch, key)
+                );
+                if (keyId(commitment.toBytes()) !== original.commitment)
+                  return yield* fail('corrupt');
+                const after = yield* current();
+                yield* Effect.fromResult(authenticateEpochStagedGroup(after, original));
+                const activeRecipient = after.inspectState().devices.get(self);
+                if (
+                  !activeRecipient ||
+                  !after
+                    .inspectState()
+                    .members.has(keyId(activeRecipient.membershipId.toBytes())) ||
+                  !activeRecipient.encryptionPublicKey.equals(recipient.encryptionPublicKey)
+                )
+                  return yield* fail('context-changed');
+                return yield* keys.saveAndReload(original.epoch, key);
+              }),
+            (key) => Effect.sync(() => disposeEpochKey(key))
+          );
+          return {
+            outcome: 'Installed' as const,
+            epoch: original.epoch,
+            recordHash: original.recordHash,
+          };
+        }),
       receive: (senderInput: Bytes.SigningPublicKey, inputFrame: Uint8Array) =>
         Effect.suspend(() =>
           Effect.gen(function* () {

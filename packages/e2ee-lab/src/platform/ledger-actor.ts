@@ -2,7 +2,7 @@ import { Context, Data, Effect, Layer, Result, Semaphore } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 import { prepareLedgerCommand, type LedgerCommand } from '@lody/e2ee-core/ledger/admission';
 import { signLedgerRecord } from '@lody/e2ee-core/ledger/signing';
-import { hasVerifiedCheckpoint, type LedgerCheckpoint } from '@lody/e2ee-core/ledger';
+import { decodeRecord, hasVerifiedCheckpoint, type LedgerCheckpoint } from '@lody/e2ee-core/ledger';
 import type { DeviceSigner } from '@lody/e2ee-core/signing';
 import { makeSqliteEpochRotation } from '@lody/e2ee-core/keys/host/rotation/sqlite';
 import {
@@ -128,7 +128,7 @@ export function makeLabLedgerActor(
       makeEpochRotation: (
         config: Pick<
           Parameters<typeof makeSqliteEpochRotation>[0],
-          'path' | 'mode' | 'installed' | 'protector'
+          'path' | 'mode' | 'installed' | 'protector' | 'staging'
         >
       ) =>
         Effect.gen(function* () {
@@ -150,9 +150,27 @@ export function makeLabLedgerActor(
               guard().pipe(Effect.andThen(publisher.publishRemoving(membership))),
             resume: () => guard().pipe(Effect.andThen(publisher.resume())),
             result: () => guard().pipe(Effect.andThen(publisher.result())),
+            cleanupStaged: () => guard().pipe(Effect.andThen(publisher.cleanupStaged())),
             acknowledge: (result: Parameters<typeof publisher.acknowledge>[0]) =>
               guard().pipe(Effect.andThen(publisher.acknowledge(result))),
           });
+        }),
+      executeOriginal: (source: Uint8Array) =>
+        Effect.gen(function* () {
+          const parsed = yield* Effect.fromResult(decodeRecord(new Uint8Array(source)));
+          return yield* serial.withPermit(
+            Effect.gen(function* () {
+              yield* guard();
+              if ((yield* journal.load(anchor)).record)
+                return yield* new LabLedgerActorError({ code: 'pending' });
+              if (parsed.body.type !== 'ordinary' || !parsed.body.signer.equals(signer.publicKey))
+                return yield* new LabLedgerActorError({ code: 'invalid-command' });
+              yield* refresh();
+              const result = yield* provide(submitRecord(anchor, parsed.recordBytes));
+              yield* refresh();
+              return result;
+            })
+          );
         }),
       execute: (command: LedgerCommand) =>
         Effect.gen(function* () {

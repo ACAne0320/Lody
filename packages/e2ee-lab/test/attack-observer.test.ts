@@ -289,6 +289,7 @@ it('measures real backend bytes, refused signed control/content and the actual b
             },
           });
           expect(measured.properties).toEqual([
+            { id: 'durability.committed-rotation-complete-group', verdict: 'unavailable' },
             { id: 'confidentiality.backend-plaintext', verdict: 'pass' },
             { id: 'integrity.forged-control', verdict: 'pass' },
             { id: 'integrity.wrong-context', verdict: 'pass' },
@@ -343,9 +344,9 @@ it('measures real backend bytes, refused signed control/content and the actual b
           ] as const;
           for (const probe of wrongReasonProbes) {
             const wrongReason = yield* observer.observe({ content: [probe] });
-            expect(wrongReason.properties[probe.kind === 'wrong-context' ? 2 : 3].verdict).toBe(
-              'harness-error'
-            );
+            expect(
+              wrongReason.properties.find((row) => row.id === `integrity.${probe.kind}`)?.verdict
+            ).toBe('harness-error');
             expect(wrongReason.report.integrity).toBe('harness-error');
           }
           // Positive leak control against actual native backend bytes.
@@ -357,7 +358,9 @@ it('measures real backend bytes, refused signed control/content and the actual b
             )).ok
           ).toBe(true);
           const leaked = yield* observer.observe();
-          expect(leaked.properties[0].verdict).toBe('violation');
+          expect(
+            leaked.properties.find((row) => row.id === 'confidentiality.backend-plaintext')?.verdict
+          ).toBe('violation');
           expect(leaked.report.confidentiality).toBe('violation');
           expect(leaked.report.integrity).toBe('unavailable');
         })
@@ -386,9 +389,11 @@ it('does not treat missing observations or a failed transport as negative eviden
             integrity: 'unavailable',
             durability: 'unavailable',
           });
-          expect(result.properties.slice(1).every((row) => row.verdict === 'unavailable')).toBe(
-            true
-          );
+          expect(
+            result.properties
+              .filter((row) => row.id !== 'confidentiality.backend-plaintext')
+              .every((row) => row.verdict === 'unavailable')
+          ).toBe(true);
           const unavailable = yield* makeLabAttackObserver({
             genesis: f.genesis,
             ledger: f.ledger,
@@ -404,7 +409,9 @@ it('does not treat missing observations or a failed transport as negative eviden
               retained: f.ledger,
             },
           });
-          expect(transportFailure.properties[1]).toEqual({
+          expect(
+            transportFailure.properties.find((row) => row.id === 'integrity.forged-control')
+          ).toEqual({
             id: 'integrity.forged-control',
             verdict: 'harness-error',
           });
@@ -502,7 +509,10 @@ it('retains an actual later-epoch leak even when an expected plaintext is wrong 
             laterSamples: 1,
             laterOpened: 1,
           });
-          expect(result.properties.at(-1)!.verdict).toBe('violation');
+          expect(
+            result.properties.find((row) => row.id === 'confidentiality.insider-post-exclusion')
+              ?.verdict
+          ).toBe('violation');
           expect(result.report.confidentiality).toBe('violation');
         })
       )

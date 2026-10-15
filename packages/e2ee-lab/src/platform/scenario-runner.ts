@@ -1,8 +1,15 @@
+import {
+  type LedgerView,
+  decodeRecord,
+  hashRecordBytes,
+  verifyLedger,
+} from '@lody/e2ee-core/ledger';
+import { getCommittedEpochStagingKey } from '@lody/e2ee-core/keys/staging';
 import { labImplementationIdentity } from './evidence';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { Data, Effect } from 'effect';
+import { Result, Data, Effect } from 'effect';
 import { makeLabScenarioFixture } from './scenario-fixture';
 import { exportDevice } from './device';
 import { makeLabProcessActor } from './process-actor';
@@ -11,16 +18,24 @@ import { fingerprintOf } from '../pure/fingerprint';
 import { makeLabSdkOwner } from './sdk-owner';
 import { readBoundedBody } from './bounded-body';
 import type { ScheduleChoice } from '../pure/schedule';
+import { loadPrivateReplay, savePrivateReplay } from './private-replay';
+import { captureLabActors, type LabActorConfiguration } from '../pure/actor-config';
 import { refStateFromOrg, refWriteExpectation } from '../pure/reference-model';
 import { makeLabContentTrace } from './content-trace';
+import { makeLabAttackTransport } from './attack-transport';
+import { applyLabStorageMutation } from './storage-attack';
+import { makeLabActorProxy } from './attack-proxy';
+import { measureLabCursors } from './cursor-observer';
+import { observeLabBackendBytes } from './backend-observer';
+import { measureLabScenarioProbes } from './scenario-probes';
 import { makeLabAttackObserver } from './attack-observer';
 import { judgeWriteObservation, worstVerdict } from '../pure/judge';
 export class LabScenarioError extends Data.TaggedError('LabScenarioError')<{
   readonly code: 'watchdog';
 }> {}
 const good = { ok: true } as const;
-/** Finite shipped scenario, explicitly prepared existing workspace. No creation,
- * candidate publisher, vault/snapshot bootstrap or deterministic first sealing. */
+/** Finite default scenario for an explicitly prepared existing workspace.
+ * Other plans opt into staged epochs and snapshots; no deterministic first seal. */
 export const existingWorkspaceActions: readonly LabAction[] = [
   { kind: 'start', actor: 'owner', mode: 'create', expect: good },
   { kind: 'start', actor: 'peer', mode: 'create', expect: good },
@@ -137,7 +152,8 @@ export const existingWorkspaceActions: readonly LabAction[] = [
   {
     kind: 'call',
     actor: 'owner',
-    operation: 'revoke-peer',
+    operation: 'revoke',
+    target: 'peer',
     expect: { ok: false, refusal: { tag: 'LabTransportFault', code: 'dropped-committed-ack' } },
   },
   { kind: 'crash', actor: 'owner', expect: good },
@@ -159,6 +175,9 @@ export const existingWorkspaceActions: readonly LabAction[] = [
 export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
   readonly directory: string;
   readonly actions?: readonly unknown[];
+  readonly actors?: readonly LabActorConfiguration[];
+  readonly replaySource?: { readonly directory: string; readonly sha256: string };
+  readonly sourceIndices?: readonly number[];
   readonly maxSteps?: number;
   readonly schedule?: readonly ScheduleChoice[];
   readonly stop?: Effect.Effect<void>;
@@ -169,17 +188,61 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
     stop = input.stop;
   const completed = yield* Effect.scoped(
     Effect.gen(function* () {
-      const fixture = yield* makeLabScenarioFixture(join(directory, 'fixture'));
-      const ownerFixture = yield* exportDevice(fixture.owner),
-        peerFixture = yield* exportDevice(fixture.peer);
+      const replayMaterial = input.replaySource
+        ? loadPrivateReplay(input.replaySource.directory, input.replaySource.sha256)
+        : undefined;
+      const actorConfiguration = captureLabActors(replayMaterial?.actors ?? input.actors);
+      const fixture = yield* makeLabScenarioFixture(
+        join(directory, 'fixture'),
+        actorConfiguration,
+        replayMaterial
+      );
+      const exported = new Map<string, string>();
+      for (const [label, device] of fixture.devices)
+        exported.set(label, yield* exportDevice(device));
+      const privateReplayDirectory = join(directory, 'private-replay');
+      const privateReplay = savePrivateReplay(privateReplayDirectory, {
+        format: 'lody-lab-private-replay/v1',
+        syntheticOnly: true,
+        actors: [...actorConfiguration],
+        devices: Object.fromEntries(exported),
+        initialRecords: fixture.initialRecords.map((record) => Buffer.from(record).toString('hex')),
+      });
+      const attackTransport = yield* makeLabAttackTransport({
+        origin: fixture.host.baseUrl,
+        genesis: fixture.genesis,
+        maxEvents: 4096,
+        maxBytes: 64 * 1024 * 1024,
+      });
+      const endpoints = new Map<string, string>();
+      for (const { id } of actorConfiguration)
+        endpoints.set(
+          id,
+          (yield* makeLabActorProxy({
+            origin: fixture.host.baseUrl,
+            fetch: attackTransport.fetchFor(id),
+          })).baseUrl
+        );
       const actors: Record<string, Effect.Success<ReturnType<typeof makeLabProcessActor>>> = {};
-      for (const label of ['owner', 'peer'] as const)
+      for (const { id: label } of actorConfiguration)
         actors[label] = yield* makeLabProcessActor((mode) =>
           Effect.sync(() => ({
             syntheticOnly: true as const,
-            peerSigningKey: Buffer.from(fixture.peer.publicKey.toBytes()).toString('hex'),
-            device: label === 'owner' ? ownerFixture : peerFixture,
-            baseUrl: fixture.host.baseUrl,
+            targets: Object.fromEntries(
+              [...fixture.devices].map(([id, device]) => [
+                id,
+                {
+                  signingKey: Buffer.from(device.publicKey.toBytes()).toString('hex'),
+                  membership: Buffer.from(fixture.memberships.get(id)!.toBytes()).toString('hex'),
+                },
+              ])
+            ),
+            initialKeyOwner: label === fixture.primary,
+            epochRotation: true,
+            privateReplayDirectory,
+            replaySourceDirectory: input.replaySource?.directory,
+            device: exported.get(label)!,
+            baseUrl: endpoints.get(label)!,
             directory: fixture.directory,
             actor: label,
             mode,
@@ -203,9 +266,47 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         accepted: boolean;
         refusal?: { readonly tag: string; readonly code: string };
       }[] = [];
+      const retainedInsiderViews = new Map<string, LedgerView>();
+      for (const row of actorConfiguration)
+        if (row.behavior === 'insider') retainedInsiderViews.set(row.id, fixture.view());
+      const explicitMeasurements: Effect.Success<ReturnType<typeof measureLabScenarioProbes>>[] =
+        [];
       let observedActions = 0;
       const run = yield* executeLabActions({
         actors,
+        measure: (action) =>
+          measureLabScenarioProbes({
+            fixture,
+            trace,
+            actor: action.actor,
+            probes: action.probes,
+            retained: retainedInsiderViews.get(action.actor),
+            actorClosed: actors[action.actor]!.pid() === undefined,
+          }).pipe(
+            Effect.scoped,
+            Effect.tap((measurement) =>
+              Effect.sync(() => {
+                explicitMeasurements.push(measurement);
+              })
+            )
+          ),
+        sourceIndices: input.sourceIndices,
+        transport: attackTransport,
+        mutateStorage: (action) =>
+          applyLabStorageMutation(
+            join(
+              fixture.directory,
+              action.store === 'host-mailbox'
+                ? 'mailbox.sqlite'
+                : action.store === 'host-stagedgroup'
+                  ? 'epoch-staging.sqlite'
+                  : action.store === 'host-streams'
+                    ? 'riverrun.sqlite'
+                    : `${action.actor}-${action.store}.sqlite`
+            ),
+            action.mutation,
+            action.store === 'host-streams' ? fixture.genesis : undefined
+          ),
         actions,
         maxSteps,
         stop,
@@ -213,10 +314,20 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         onObservation: (observation) =>
           Effect.gen(function* () {
             const action = observation.action;
+            const observed = fixture.view();
+            for (const row of actorConfiguration)
+              if (
+                row.behavior === 'insider' &&
+                observed
+                  .inspectState()
+                  .devices.has(
+                    Buffer.from(fixture.devices.get(row.id)!.publicKey.toBytes()).toString('hex')
+                  )
+              )
+                retainedInsiderViews.set(row.id, observed);
             const index = observedActions++;
             if (action.kind !== 'call' || action.operation !== 'append') return;
-            const device =
-              action.actor === 'owner' ? fixture.owner.publicKey : fixture.peer.publicKey;
+            const device = fixture.devices.get(action.actor)!.publicKey;
             const deviceHex = Buffer.from(device.toBytes()).toString('hex');
             // Facts come from independently witnessed original host records, not
             // from the child or the implementation's write-permission function.
@@ -270,54 +381,161 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         });
         ciphertext.push(saved);
       }
-      const attackObserver = yield* makeLabAttackObserver({
+      // Native retention can make ordinary offset=-1 return 410 after a valid
+      // snapshot. The insider property reads actual stored bytes in one read-only
+      // transaction; it neither repairs retention nor supplies client authority.
+      const backend = yield* observeLabBackendBytes({
+        path: fixture.server.dbPath,
         genesis: fixture.genesis,
-        backend: {
-          read: () =>
-            Effect.try({
-              try: () => {
-                if (ciphertext.some((row) => row.status !== 200 || !row.upToDate))
-                  throw new Error('Incomplete backend byte observations');
-                return ciphertext.map((row) => new Uint8Array(Buffer.from(row.bodyHex, 'hex')));
-              },
-              catch: (cause) => cause,
-            }),
-        },
+      });
+      const attackObserver = yield* makeLabAttackObserver({
+        maxFrames: 4096,
+        genesis: fixture.genesis,
+        backend: { read: () => Effect.succeed(backend.rows.map((row) => row.body)) },
         ledger: fixture.ledger,
+        committedGroups: () =>
+          Effect.gen(function* () {
+            const rows = [];
+            for (const [index, record] of fixture.records.entries()) {
+              const parsed = Result.getOrThrow(decodeRecord(record));
+              if (
+                parsed.body.type !== 'ordinary' ||
+                !['publishEpoch', 'removeMemberAndPublishEpoch'].includes(
+                  parsed.body.operation.type
+                )
+              )
+                continue;
+              const view = Result.getOrThrow(
+                verifyLedger({
+                  anchor: fixture.genesis,
+                  records: fixture.records.slice(0, index + 1),
+                  checkpoint: { head: hashRecordBytes(record), length: index + 1 },
+                })
+              );
+              const key = Result.getOrThrow(
+                getCommittedEpochStagingKey(view, view.inspectState().epoch.number)
+              );
+              if (key) rows.push({ view, record, group: yield* fixture.staging.readGroup(key) });
+            }
+            return rows;
+          }),
         trace,
       });
-      const measured = yield* attackObserver.observe();
+      const automaticMeasurement = yield* attackObserver.observe();
+      const propertyMap = new Map(
+        automaticMeasurement.properties.map((row) => [row.id, { ...row }])
+      );
+      for (const explicit of explicitMeasurements)
+        for (const property of explicit.properties) {
+          const prior = propertyMap.get(property.id);
+          if (!prior || prior.verdict === 'unavailable')
+            propertyMap.set(property.id, { ...property });
+          else if (property.verdict !== 'unavailable')
+            propertyMap.set(property.id, {
+              id: property.id,
+              verdict: worstVerdict([prior.verdict, property.verdict]),
+            });
+        }
+      const writerVerdict = worstVerdict(writerMeasurements.map(judgeWriteObservation));
+      propertyMap.set('integrity.author-write-permission', {
+        id: 'integrity.author-write-permission',
+        verdict: writerVerdict,
+      });
+      propertyMap.set('integrity.full-ledger-verification', {
+        id: 'integrity.full-ledger-verification',
+        verdict: propertyMap.get('integrity.forged-control')?.verdict ?? 'unavailable',
+      });
+      propertyMap.set('durability.cursor-boundary-and-no-rollback', {
+        id: 'durability.cursor-boundary-and-no-rollback',
+        verdict: yield* measureLabCursors({
+          path: fixture.server.dbPath,
+          genesis: org,
+          observations: run.observations,
+        }),
+      });
+      propertyMap.set('durability.no-data-loss', {
+        id: 'durability.no-data-loss',
+        verdict: worstVerdict(
+          run.observations.map((row) => row.durability).filter((value) => value !== 'unavailable')
+        ),
+      });
+      propertyMap.set('confidentiality.excluded-device-and-member', {
+        id: 'confidentiality.excluded-device-and-member',
+        verdict:
+          propertyMap.get('confidentiality.insider-post-exclusion')?.verdict ?? 'unavailable',
+      });
+      const properties = [...propertyMap.values()];
+      const measured = {
+        ...automaticMeasurement,
+        properties,
+        report: {
+          integrity: worstVerdict(
+            properties.filter((row) => row.id.startsWith('integrity.')).map((row) => row.verdict)
+          ),
+          durability: worstVerdict(
+            properties.filter((row) => row.id.startsWith('durability.')).map((row) => row.verdict)
+          ),
+          confidentiality: worstVerdict(
+            properties
+              .filter((row) => row.id.startsWith('confidentiality.'))
+              .map((row) => row.verdict)
+          ),
+        },
+      };
       const { integrity, durability } = summarizeLabActions(run.observations);
       const writers = worstVerdict(writerMeasurements.map(judgeWriteObservation));
       const report = {
         integrity: worstVerdict([integrity, writers]),
-        durability,
+        durability: worstVerdict([durability, measured.report.durability]),
         confidentiality: measured.report.confidentiality,
       };
       const artifacts = {
         version: 1,
         syntheticOnly: true,
         scope: 'existing-workspace finite action execution',
-        identity: {
-          owner: Buffer.from(fixture.owner.publicKey.toBytes()).toString('hex'),
-          peer: Buffer.from(fixture.peer.publicKey.toBytes()).toString('hex'),
-        },
+        privateReplay,
+        actorConfiguration,
+        identity: Object.fromEntries(
+          [...fixture.devices].map(([id, device]) => [
+            id,
+            Buffer.from(device.publicKey.toBytes()).toString('hex'),
+          ])
+        ),
         implementation,
         ciphertext,
-        rawTransportFiles: ['fixture/owner-transport.jsonl', 'fixture/peer-transport.jsonl'],
+        rawTransportFiles: actorConfiguration.map(({ id }) => `fixture/${id}-transport.jsonl`),
         originals: fixture.records.map((record) => ({
           hex: Buffer.from(record).toString('hex'),
           sha256: createHash('sha256').update(record).digest('hex'),
         })),
-        run,
-        measurements: { writerMeasurements, attacks: measured },
+        run: {
+          ...run,
+          verdict: worstVerdict([
+            run.verdict,
+            ...measured.properties
+              .filter((row) => row.verdict !== 'unavailable')
+              .map((row) => row.verdict),
+          ]),
+          properties: measured.properties,
+        },
+        measurements: {
+          writerMeasurements,
+          backend: { source: backend.source, metadata: backend.metadata },
+          attacks: measured,
+          explicitMeasurements,
+          transport: yield* attackTransport.material(),
+        },
         report,
         fingerprint: fingerprintOf(report),
+        overallVerdict: worstVerdict([
+          run.verdict,
+          ...measured.properties.map((row) => row.verdict),
+        ]),
         limits: [
-          'No exact-ciphertext regeneration/replay entropy approval',
-          'Confidentiality/insider scan unmeasured',
+          'Original-input replay does not replace the secure RNG or prove fresh-ciphertext equality',
+          'Missing individual confidentiality/insider/context probes remain unavailable',
           'No production/native custody',
-          'No genesis publication/candidate rotation/vault/snapshot decision',
+          'This action plan covers only its actual executed operations; production/native vault acceptance is separate',
         ],
       };
       for (const actor of Object.values(actors)) yield* actor.shutdown();

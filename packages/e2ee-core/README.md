@@ -3,17 +3,17 @@
 An independently testable extraction, with no production consumers. The root
 foundation entry is `@lody/e2ee-core`; it uses the root Effect 4.0.2 catalog.
 
-| Entry | Responsibility |
-| --- | --- |
-| `Bytes` | Copy-owning public keys, hashes, IDs, signatures and opaque epoch secrets |
-| `encodeCbor` / `decodeCbor` | Bounded canonical array/scalar CBOR; no ledger schemas |
-| Context/header/AAD/signing-byte encoders | Existing content v0 byte domains, document generation zero |
-| `inspectContentFrame` | Unverified routing metadata only |
-| `verifySignature` | Strict Ed25519 Result; no signing or private-key input |
-| `verifyContentSignature` | v0 signature against caller-supplied scope and trusted signer |
-| `deriveContentKey` | HKDF-SHA-256 scoped opaque leaf from `Bytes.EpochKey` |
-| `sealContentAead` / `openContentAead` | Content v0 XChaCha20-Poly1305 primitive; separate signature/authority checks required |
-| `epochHpkeAad` / `sealEpochKeyHpke` / `openEpochKeyHpke` | Fixed Base epoch HPKE primitive; no sender authentication, authority or installation |
+| Entry                                                    | Responsibility                                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `Bytes`                                                  | Copy-owning public keys, hashes, IDs, signatures and opaque epoch secrets             |
+| `encodeCbor` / `decodeCbor`                              | Bounded canonical array/scalar CBOR; no ledger schemas                                |
+| Context/header/AAD/signing-byte encoders                 | Existing content v0 byte domains, document generation zero                            |
+| `inspectContentFrame`                                    | Unverified routing metadata only                                                      |
+| `verifySignature`                                        | Strict Ed25519 Result; no signing or private-key input                                |
+| `verifyContentSignature`                                 | v0 signature against caller-supplied scope and trusted signer                         |
+| `deriveContentKey`                                       | HKDF-SHA-256 scoped opaque leaf from `Bytes.EpochKey`                                 |
+| `sealContentAead` / `openContentAead`                    | Content v0 XChaCha20-Poly1305 primitive; separate signature/authority checks required |
+| `epochHpkeAad` / `sealEpochKeyHpke` / `openEpochKeyHpke` | Fixed Base epoch HPKE primitive; no sender authentication, authority or installation  |
 
 Compose HPKE Effects directly and use `Effect.fromResult` for Result primitives
 in existing workflows; this package starts no runtime.
@@ -26,7 +26,7 @@ independent binding. It does not decrypt, establish membership, approve a
 snapshot, or grant publication permission. A valid signature can cover invalid
 ciphertext. `contentKeyInfo` returns derivation context, not derived key material.
 
-P14 can consume `Bytes.SigningPublicKey`, `Bytes.EncryptionPublicKey`,
+[P14](#terms) can consume `Bytes.SigningPublicKey`, `Bytes.EncryptionPublicKey`,
 `Bytes.Signature` and the validators from this root entry. Private keys and native
 handles stay in the platform owner. `EncryptionPublicKey` preserves the candidate's
 32-byte, nonzero wire-shape check; it is not proof of safe X25519 agreement or
@@ -52,7 +52,7 @@ See the [Spec](../../specs/e2ee-foundations.md) and
 [extraction decision](../../.agents/notes/implemented/architecture/2026-10-10-e2ee-foundations.md)
 for trust boundaries, failure ownership and validation limits.
 
-## Content AEAD primitive (P07-b)
+## Content AEAD primitive ([P07-b](#terms))
 
 `deriveContentKey(epochKey, trustedScope)` consumes an opaque `Bytes.EpochKey`.
 The returned opaque key owns its bytes and derivation context; it has no public
@@ -72,13 +72,14 @@ verifies author authority, or checks permission/freshness. Callers must perform
 those checks separately before consuming plaintext or publishing bytes.
 
 Inputs are bounded before large copies: plaintext 0..16 MiB, ciphertext 16..16 MiB
-+ 16, nonce exactly 24 bytes, external binding 0..1024 bytes. Scope/header errors
-retain the existing content codes; malformed nonce/ciphertext have separate codes,
-context-key mismatch is `content-key-scope-mismatch`, tag failure is
-`content-authentication-failed`. Errors contain codes only. Temporary epoch-key
-copies, HKDF PRK, operation key copies and encryption plaintext copies are wiped
-in `finally`; the derived key lasts while its opaque object is reachable. This is
-best-effort JavaScript cleanup, not a guarantee that runtimes erase all copies.
+
+- 16, nonce exactly 24 bytes, external binding 0..1024 bytes. Scope/header errors
+  retain the existing content codes; malformed nonce/ciphertext have separate codes,
+  context-key mismatch is `content-key-scope-mismatch`, tag failure is
+  `content-authentication-failed`. Errors contain codes only. Temporary epoch-key
+  copies, HKDF PRK, operation key copies and encryption plaintext copies are wiped
+  in `finally`; the derived key lasts while its opaque object is reachable. This is
+  best-effort JavaScript cleanup, not a guarantee that runtimes erase all copies.
 
 [Fixed synthetic vectors](test/crypto-vector.json) use Python HMAC-SHA256 and
 PyNaCl 1.6.2/libsodium with independently encoded v0 bytes. Tests also compare with
@@ -100,7 +101,7 @@ fingerprints are [separate](src/ledger/provenance.json).
 
 The [submission subentry](src/submission/README.md) adds finite persistent recovery
 for existing-ledger ordinary records, with an explicit Scope-owned SQLite Layer.
-It calls P08 replay before CAS and readback, retains exact signed bytes and
+It calls [P08](#terms) replay before CAS and readback, retains exact signed bytes and
 unconsumed results across process restart, and exposes no production host or signer.
 
 ## HPKE epoch primitive (P07-c)
@@ -167,7 +168,6 @@ The explicit [released-SDK submission adapter](src/submission/STREAMS.md) binds 
 
 The explicit [host distribution entry](src/keys/DISTRIBUTION.md) `./keys/host/distribution/sqlite` combines actual receiver/protected-key/outbox owners with finite verified-target sender rounds. It uses already committed keys and preserves original tasks/results/ciphertexts; it does not select backup/rotation/vault formats or enable production.
 
-
 ## Verification work and production limits
 
 Pure Result verification remains synchronous. I/O owners use `verifyLedgerEffect`
@@ -191,17 +191,39 @@ reduces CPU cost and event-loop blocking, not the amount of trusted history need
 An explicit independently qualified snapshot origin supports read/startup/reopen;
 SQL never selects trust. Experimental current tag8 adds atomic member removal and
 header4 binds protected content snapshots to their continuation positions.
-Production still needs independent qualification acquisition, resumable workspace
-creation, publisher backup/vault decisions, strict deadline B and actual platform custody.
-The explicit local candidate publisher now generates, durably retains and
-submits an E7 through P09, then installs the verified committed key. This permits
-Lab revocation recovery and current-epoch writes. Independent backup policy remains unresolved; current tag8 shares that local
-publication/recovery path without selecting a permanent-device-loss exception. There is no product consumer or activation
-change. See the
-[verification decision](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#verification-work).
+Production still needs independent qualification acquisition, vault policy, strict
+B and actual platform custody. The current publisher protects and durably retains
+the candidate, signed record and all post-transition HPKE frames, stages the entire
+group and checks exact readback before P09 CAS. A conflict discards the candidate;
+unknown outcomes resume the same originals. Committed staged recipients can recover
+without the publisher's disk. A manager bypassing staging remains a measured key-
+withholding limitation. Current tag8 shares that path and excludes all removed
+devices. See the [draft contract](../../specs/e2ee/atomic-removal.md).
+There is no product consumer or activation change.
 
 Local publisher recovery is explicit under
 [`./keys/host/rotation/sqlite`](src/keys/HOST-PROTECTION.md#local-publisher-candidates).
 The independent snapshot-origin reader is documented under
 [`./ledger/feed/snapshot/sqlite`](src/ledger/FEED.md#independently-qualified-snapshot-origin).
 Neither creates a production consumer or changes the portable root exports.
+
+## Terms
+
+These are work-plan labels, not wire versions or security guarantees.
+
+| Term                       | Meaning                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P07                        | Byte formats, scoped keys and crypto primitives                                                                                                   |
+| P08                        | Signed permission ledger, roles and independently qualified snapshots                                                                             |
+| P09                        | Durable original-record submission, CAS and unknown-result reconciliation                                                                         |
+| P10                        | Content protection binding for the released synchronization SDK                                                                                   |
+| P11                        | Central key delivery, receive, reporting and repair workflows                                                                                     |
+| P12                        | Atomic member-removal format, authorization and replay                                                                                            |
+| P13                        | Durable preparation, submission and key delivery for atomic removal                                                                               |
+| P14                        | Platform key-storage port and desktop/CLI adapters; native acceptance separate                                                                    |
+| D12                        | One Owner-personal-signed tag8 removes a non-Owner member and activates next epoch                                                                |
+| strict B                   | Proposed strict deadline/freshness enforcement; ordinary token TTL is not approval                                                                |
+| RestrictedA / restricted A | Approved initialization-time trusted-host protection of already installed keys; no ordinary key export, identity recovery or native custody claim |
+
+[Atomic removal](../../specs/e2ee/atomic-removal.md) and
+[content formats](../../specs/e2ee-foundations.md) remain revised drafts for review.

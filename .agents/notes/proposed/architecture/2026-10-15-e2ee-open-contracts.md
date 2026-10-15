@@ -15,21 +15,18 @@ does not approve any item below.
 
 ## Decisions requiring review
 
-| Owner | Open boundary |
-| --- | --- |
-| [Atomic removal](../../../../specs/e2ee/atomic-removal.md) | One removal+epoch record and one CAS are settled; current tag8 plus same-state snapshot representation is implemented experimentally; encoding acceptance still needs review. No old-client capability or downgrade mechanism is required. |
-| [Recovery vault](../../../../specs/e2ee/recovery-vault.md) | Derivation/wrapping, concurrent CAS/reservation, retention and fresh recovery remain draft. Valid old ciphertext does not prove latest state. |
-| [Publisher recoverability](../../../../specs/e2ee/publisher-key-recoverability.md) | Independent pre-publication key backup versus accepting the first-delivery loss window remains undecided. Restricted installed-key protection does not approve candidate backup or recover management identity. |
-| Snapshot and checkpoint trust | Current header4 authenticates content continuation position and has a durable original-admission reference; production permission-snapshot qualification/current checkpoint sourcing remain unfinished; explicit qualified read/startup consumers now exist. Existing update binding or SQL caches do not supply those guarantees. |
-| Other product/protocol scope | Installed-history product scope, signed comparison notes, strict deadline B and entropy-based exact replay are separate decisions. Secure first sealing and existing ordinary tolerance remain unchanged. |
+| Owner                                                                              | Open boundary                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Atomic removal](../../../../specs/e2ee/atomic-removal.md)                         | Tag8 encoding and stage-before-CAS direction are selected. The revised Spec remains draft for review; no old-client capability or downgrade reader is required.                                                                                                                                                                                   |
+| [Recovery vault](../../../../specs/e2ee/recovery-vault.md)                         | Derivation/wrapping, concurrent CAS/reservation, retention and fresh recovery remain draft. Valid old ciphertext does not prove latest state.                                                                                                                                                                                                     |
+| [Publisher recoverability](../../../../specs/e2ee/publisher-key-recoverability.md) | The former backup A/B alternatives are superseded by whole-group staging before CAS. A committed group is recoverable without the publisher disk; a noncompliant manager can still withhold keys. Vault and management-identity recovery remain separate.                                                                                         |
+| Snapshot and checkpoint trust                                                      | The selected content-v0 snapshot field authenticates continuation position and has a durable original-admission reference; production permission-snapshot qualification/current checkpoint sourcing remain unfinished; explicit qualified read/startup consumers now exist. Existing update binding or SQL caches do not supply those guarantees. |
+| Other product/protocol scope                                                       | Installed-history product activation, signed comparison notes and strict deadline B remain separate. Replay now reexecutes captured original inputs without a core entropy hook; secure first sealing and ordinary tolerance are unchanged.                                                                                                       |
 
 ## Integration still unfinished
 
 The [manifest](../../../docs/e2ee-migration-manifest.json) owns detailed disposition.
-Remaining work includes resumable workspace creation/checkpoint durability, a durable
-independent publisher backup contract (local durable publication is implemented), production content-snapshot qualification and upstream
-history retention/recovery, original model-driven attack/replay coverage, machine
-execution and other content consumers, real native protectors and product assembly.
+Remaining work is production freshness/qualification sourcing, authorized retained-history access, machine execution and other product consumers, real native protectors and product assembly. Current creation/host recovery, staged publication, model-driven finite action plans and original-input replay are implemented, with missing measurements explicitly unavailable.
 The tutorial has a Spec but no migrated application source. These gaps are not all
 new protocol decisions; implement settled work without inventing the unresolved parts.
 

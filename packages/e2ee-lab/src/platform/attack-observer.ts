@@ -1,4 +1,5 @@
 import { Data, Effect, Result, Schema } from 'effect';
+import { authenticateEpochStagedGroup, type EpochStagedGroup } from '@lody/e2ee-core/keys/staging';
 import { Bytes, type ContentScope } from '@lody/e2ee-core';
 import {
   admitDocument,
@@ -85,6 +86,14 @@ export const makeLabAttackObserver = Effect.fn('Lab.makeAttackObserver')(functio
   readonly trace?: {
     readonly contentWritesFor: (org: string) => Effect.Effect<readonly ContentWriteFact[], unknown>;
   };
+  readonly committedGroups?: () => Effect.Effect<
+    readonly {
+      readonly view: LedgerView;
+      readonly record: Uint8Array;
+      readonly group: EpochStagedGroup | null;
+    }[],
+    unknown
+  >;
   readonly maxFrames?: number;
   readonly maxBytes?: number;
 }) {
@@ -130,7 +139,7 @@ export const makeLabAttackObserver = Effect.fn('Lab.makeAttackObserver')(functio
     if (rows.length !== count) throw new LabAttackObservationError({ code: 'budget' });
     return { rows: owned, size };
   };
-  const view = Effect.fnUntraced(function* () {
+  const currentView = Effect.fnUntraced(function* () {
     const current = yield* ledger();
     yield* Effect.fromResult(requireLedgerContinuation(current, current));
     if (!current.genesis.equals(anchor))
@@ -213,8 +222,55 @@ export const makeLabAttackObserver = Effect.fn('Lab.makeAttackObserver')(functio
           : new LabAttackObservationError({ code: 'context' }),
     });
     const { control, content, insider } = capturedProbes;
-    const current = yield* view();
+    const current = yield* currentView();
     const properties: { id: string; verdict: JudgeVerdict }[] = [];
+    const committedGroupFacts: {
+      epoch: number;
+      expected: string[];
+      actual: string[];
+      recordMatches: boolean;
+    }[] = [];
+    let completeGroups: JudgeVerdict = 'unavailable';
+    if (input.committedGroups) {
+      const rows = yield* Effect.result(input.committedGroups());
+      if (Result.isFailure(rows)) completeGroups = 'harness-error';
+      else
+        completeGroups = worstVerdict(
+          rows.success.map(({ view, record, group }) => {
+            const recipients = [...view.inspectState().devices.keys()].sort();
+            if (!group) {
+              committedGroupFacts.push({
+                epoch: view.inspectState().epoch.number,
+                expected: recipients,
+                actual: [],
+                recordMatches: false,
+              });
+              return 'violation';
+            }
+            const actual = group.envelopes.map((row) => row.recipient).sort();
+            committedGroupFacts.push({
+              epoch: view.inspectState().epoch.number,
+              expected: recipients,
+              actual,
+              recordMatches: equal(group.record, record),
+            });
+            return group.genesis === org &&
+              group.epoch === view.inspectState().epoch.number &&
+              group.recordHash === hex(hashRecordBytes(record).toBytes()) &&
+              Result.isSuccess(authenticateEpochStagedGroup(view, group, true)) &&
+              equal(group.record, record) &&
+              recipients.length === actual.length &&
+              recipients.every((id, index) => id === actual[index]) &&
+              group.envelopes.every((row) => row.frame.length > 0)
+              ? 'pass'
+              : 'violation';
+          })
+        );
+    }
+    properties.push({
+      id: 'durability.committed-rotation-complete-group',
+      verdict: completeGroups,
+    });
     const raw = yield* Effect.result(readBackend());
     let backendFrames = 0,
       backendBytes = 0,
@@ -423,7 +479,7 @@ export const makeLabAttackObserver = Effect.fn('Lab.makeAttackObserver')(functio
       integrity: worstVerdict(
         properties.filter((row) => row.id.startsWith('integrity.')).map((row) => row.verdict)
       ),
-      durability: 'unavailable' as const,
+      durability: completeGroups,
     });
     return Object.freeze({
       report,
@@ -438,6 +494,7 @@ export const makeLabAttackObserver = Effect.fn('Lab.makeAttackObserver')(functio
         }
       ),
       observations: Object.freeze({
+        committedGroupFacts,
         backendFrames,
         backendBytes,
         plaintextSamples,

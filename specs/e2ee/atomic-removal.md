@@ -1,34 +1,72 @@
-# D12: atomic removal encoding proposal
+# Atomic member removal and staged epoch publication
 
 Status: draft
 Translation: current
 
 [中文](atomic-removal.zh.md)
 
-## Settled intent and current implementation
+## Ledger transition
 
-One record and one CAS remove a member and activate the next epoch together; atomicity is already settled. Persist the candidate key and original signed bytes, reconcile unknown outcomes by those bytes, and distribute only after verified inclusion. Remove the target membership's personal, machine and Recovery devices; retain other admitted devices. Delivery is outside this CAS.
+An active Owner/Admin personal device observing `rotationRequired = true` may
+produce tag 7. Tag 8 is `[8, targetMembershipId, nextEpoch, commitment,
+previousEpochKey]` in the existing ordinary record, with exact arity and unchanged
+`lody-e2ee/sig/v1\0` and `lody-e2ee/rec/v1\0` domains. Only the current Owner's
+personal device may produce tag 8; its target must exist and cannot be Owner.
+The next epoch is exactly current + 1; overflow and reused commitments fail.
+Tag 2 remains unsupported. There is one current prelaunch format, no dual reader.
 
-The public ledger uses canonical CBOR v1: genesis body `[1, signer, user, member, encKey, commitment]`, ordinary body `[previousHash, signer, operation]`, record `[body, signature]`. Ordinary bodies have no separate version field. Signatures cover `lody-e2ee/sig/v1\0 || canonical(body)`; record hashes cover `lody-e2ee/rec/v1\0 || canonical(record)` with SHA256. Unknown genesis versions fail unknown-version. Unknown operations and obsolete tag2 fail unknown-operation, never skip. Current tag7 publishes an epoch only; tag2 plus tag7 cannot implement D12.
+One tag 8 transition removes the membership and all its personal, machine and
+Recovery devices, retains historical authors and retired identities, stores the
+new commitment and existing 72-byte history packet, and clears rotationRequired.
+The publisher opens the packet and checks the old commitment. Replay verifies
+signature, shape and pre-state authority; ciphertext shape cannot prove its key.
 
-## Recommended implementation
+## Stage first, commit once
 
-Add unused tag8 with operation `[8, targetMembershipId, nextEpoch, commitment, previousEpochKey]`. Use ordinary framing, explicit signature/hash domains and exact arity; do not revive tag2. The function may be removeMemberAndPublishEpoch. The final ledger format must define the supported operations explicitly. There is no deployed legacy-ledger or old-client compatibility requirement.
+1. Generate the candidate key, original signed record R and its hash h, and signed
+   HPKE envelopes for **every** post-transition active device, including Recovery
+   and Guest. Persist all originals locally before dispatch. Protect the candidate
+   key with the initialized host port.
+2. Stage the whole group atomically, addressed by
+   `(genesis, nextEpoch, commitment, h, recipient)`. One Convex mutation writes
+   all recipient rows or none. Read back the group and compare count and every
+   original frame byte. A failed stage/readback never dispatches CAS.
+3. Submit the same R through the existing P09 CAS. Streams remains content-blind.
+4. On success the ledger is the only activation point. On conflict discard the
+   local protected candidate; do not install, re-sign or silently retry another
+   candidate. On an unknown outcome reconcile exact original R through P09 and
+   retain/reuse the same staged group, including after a process crash.
 
-Pre-state authorization requires the current Owner's active personal device. The target must exist and cannot be Owner; use the existing transfer first. Require exactly the next epoch, reject overflow and reused commitments, and reuse the current Org/epoch-bound commitment rules. One private transition removes the current target member/devices, retains historical author and retired identity/key facts, stores the commitment/history packet, and clears rotationRequired. A failed check publishes no new view or durable cursor.
+A staged envelope is inert until a genuine verified ledger includes its tag 7/8
+record, exact epoch, commitment and signer. This historical publication proof
+remains distinct from ordinary mailbox sender eligibility: later revocation of
+that publisher does not strand still-eligible staged recipients. Recipients
+verify their current device/key binding and the actual HPKE/commitment before
+installation. Later-joined devices use the existing mailbox and repair path.
 
-Reuse the existing 72B history packet: 24B nonce, 32B old key encrypted under the new key, and 16B AEAD tag. AAD contains epoch-history/v1 purpose, Org and u32be new epoch; the predecessor is n-1. Include packet and commitment in the same signature/CAS. The publishing client opens it and checks the prior commitment before submission. Host/pure replay check shape, order, signature and pre-state authorization; an opaque packet does not prove correct key contents. Recovery checks each old commitment.
+Only a genuine committed *different commitment at the same epoch* permits group
+cleanup. A timeout, age, untrusted host hint or absent record never does. Local
+results/originals retain their explicit acknowledgement contract.
 
-## One coherent prelaunch format
+## Owners and limits
 
-E2EE has not shipped. Remove old-client upgrade paths, dual snapshot readers, downgrade emission and capability pins whose only purpose is distinguishing prelaunch formats. Unsupported formats and operations fail; there is no compatibility migration.
+Core exposes only stage/read/conditional-delete effects. Portable DTOs live in
+cloud-api; the private Convex adapter owns cloud persistence, and the Lab's SQLite
+adapter uses one native transaction per whole group. Neither storage nor an
+account role supplies signed-ledger authority. The client supplies and verifies
+its independent genuine view; storage cannot certify global freshness.
 
-The final atomic-removal format and permission snapshot must represent the same state transition and exact authenticated position. Their implemented encoding and signature/hash domains still need interoperability and security review before acceptance. A current snapshot must not bypass authorization or independently pinned freshness; snapshot self-claims never establish authority. This does not require retaining a v1 reader after a replacement is selected, nor does it select snapshot-v2 or any new domain by default.
+A buggy or malicious manager can bypass staging and directly CAS a valid record.
+This is key withholding: the epoch commits but recipients may be stuck without
+its key. It is a measured Lab limitation, not prevented by Streams or cross-store
+transactions. Staging protects the honest publisher's crash window; it does not
+force a malicious publisher to make usable ciphertext or preserve it forever.
 
-## Review delta
+## Approval and evidence
 
-Atomicity, Owner authority, target exclusion, exact-byte reconciliation and post-inclusion delivery are settled. Field/function names are engineering choices. Review the final operation/snapshot encoding and authenticated position contract together. Old-client compatibility is excluded. No Admin/Recovery authority, algorithm, historical sharing or U03B change is proposed. This Spec remains draft and unapproved. The experimental codec implements tag8 for review; it does not enable production or approve backup policy.
-
-## Evidence
-
-[Codec](../../packages/e2ee-core/src/ledger/records.ts), [policy](../../packages/e2ee-core/src/ledger/policy.ts), [history packet](../../packages/e2ee-core/src/keys/history.ts). Real signed replay, same-point snapshot/full-state comparison, rejected authority/retired-identity reuse, one-CAS original recovery and actual post-removal HPKE distribution are covered by owning tests. These are behavioral evidence, not a security proof or product approval.
+The design direction above is supplied by the user; this revised Spec remains
+**draft for approval**. It does not enable production, select vault/native custody,
+strict B, account recovery or an MLS replacement. See [producer and replay](../../packages/e2ee-core/src/ledger/ADMISSION.md),
+[staging port](../../packages/e2ee-core/src/keys/staging.ts),
+[rotation workflow](../../packages/e2ee-core/src/keys/epoch-rotation.ts) and
+[Lab](../../packages/e2ee-lab/README.md).

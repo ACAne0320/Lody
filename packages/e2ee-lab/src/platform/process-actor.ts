@@ -4,6 +4,7 @@ import { Result } from 'effect';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Cause, Context, Data, Deferred, Effect, Exit, Schema } from 'effect';
+import { LabCallbackRunner } from './run';
 import { LabKeyCommand, type LabProcessConfiguration } from './process-contract';
 /** Native child creation port; tests substitute real IPC workers, not fake exits. */
 export const LabProcessSpawn = Context.Reference<() => ChildProcess>('Lab/ProcessSpawn', {
@@ -56,6 +57,10 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
 ) {
   const config = configuration;
   const spawnChild = yield* LabProcessSpawn;
+  const callbacks = yield* Effect.acquireRelease(
+    Effect.sync(() => new LabCallbackRunner()),
+    (owner) => Effect.promise(() => owner.close())
+  );
   let current: Lease | undefined,
     closed = false,
     sequence = 0;
@@ -149,7 +154,7 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
           if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)) yield* stop(lease);
         })
     );
-  const start = (mode: 'create' | 'open') =>
+  const start = (mode: 'create' | 'open', materialIndex?: number) =>
     Effect.gen(function* () {
       if (closed) return yield* new LabProcessError({ code: 'closed' });
       if (current && !current.done) return yield* new LabProcessError({ code: 'already-started' });
@@ -175,6 +180,32 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
             stderr = (stderr + bytes.toString()).slice(-64 * 1024);
           });
           child.on('message', (message: unknown) => {
+            if (
+              message &&
+              typeof message === 'object' &&
+              'kind' in message &&
+              message.kind === 'checkpoint-request' &&
+              'requestId' in message &&
+              typeof message.requestId === 'number'
+            ) {
+              const requestId = message.requestId;
+              void callbacks.run(config('open')).then(
+                (trusted) => {
+                  if (child.connected)
+                    child.send({
+                      kind: 'checkpoint-result',
+                      requestId,
+                      point: trusted.point,
+                      records: trusted.records,
+                    });
+                },
+                () => {
+                  if (child.connected)
+                    child.send({ kind: 'checkpoint-result', requestId, error: true });
+                }
+              );
+              return;
+            }
             if (
               !message ||
               typeof message !== 'object' ||
@@ -210,7 +241,11 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
         catch: () => new LabProcessError({ code: 'native' }),
       });
       const selected = { ...owned, localPoint: owned.localPoint ?? localPoint };
-      const result = yield* call({ operation: 'open', configuration: selected }).pipe(
+      const result = yield* call({
+        operation: 'open',
+        configuration: selected,
+        materialIndex,
+      }).pipe(
         Effect.onExit((exit) =>
           Exit.isFailure(exit) && current ? stop(current).pipe(Effect.asVoid) : Effect.void
         )
@@ -232,11 +267,11 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
     });
   return Object.freeze({
     start,
-    keyCommand: (command: LabKeyCommand) =>
+    keyCommand: (command: LabKeyCommand, materialIndex?: number) =>
       Effect.gen(function* () {
         const owned = yield* Effect.fromResult(Schema.decodeUnknownResult(LabKeyCommand)(command));
         const trusted = yield* config('open');
-        return yield* call({ ...owned, point: trusted.point });
+        return yield* call({ ...owned, point: trusted.point, materialIndex });
       }),
     call: (
       operation:
@@ -245,6 +280,7 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
         | 'resume'
         | 'create'
         | 'append'
+        | 'upload-snapshot'
         | 'edit-offline'
         | 'flush-offline'
         | 'pull'
@@ -252,14 +288,32 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
         | 'observe'
         | 'persist'
         | 'attack'
-        | 'revoke-peer'
-        | 'acknowledge',
+        | 'acknowledge'
+        | 'revoke'
+        | 'set-role'
+        | 'rotate-epoch'
+        | 'remove-member-and-rotate'
+        | 'resume-epoch-rotation'
+        | 'acknowledge-epoch-rotation'
+        | 'publish-without-stage',
       document?: string,
-      text?: string
+      text?: string,
+      options?: {
+        readonly target?: string;
+        readonly role?: 'admin' | 'member' | 'guest';
+        readonly materialIndex?: number;
+      }
     ) =>
       Effect.gen(function* () {
         const trusted = yield* config('open');
-        return yield* call({ operation, document, text, point: trusted.point });
+        return yield* call({
+          operation,
+          document,
+          text,
+          ...options,
+          point: trusted.point,
+          records: trusted.records,
+        });
       }),
     crash: () =>
       Effect.suspend(() =>

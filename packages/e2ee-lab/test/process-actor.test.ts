@@ -22,7 +22,16 @@ it('hard kills a real actor after protected writes, restarts with independent pi
             makeLabProcessActor((mode) =>
               Effect.sync(() => ({
                 syntheticOnly: true as const,
-                peerSigningKey: Buffer.from(f.peer.publicKey.toBytes()).toString('hex'),
+                targets: Object.fromEntries(
+                  [...f.devices].map(([id, device]) => [
+                    id,
+                    {
+                      signingKey: Buffer.from(device.publicKey.toBytes()).toString('hex'),
+                      membership: Buffer.from(f.memberships.get(id)!.toBytes()).toString('hex'),
+                    },
+                  ])
+                ),
+                initialKeyOwner: label === f.primary,
                 device: label === 'owner' ? ownerFixture : peerFixture,
                 baseUrl: f.host.baseUrl,
                 directory: f.directory,

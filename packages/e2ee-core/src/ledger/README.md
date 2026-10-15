@@ -7,7 +7,7 @@ endorsement, private key or content cipher is introduced.
 ```text
 caller-pinned genesis + expected (head, length) + raw records
   bounded canonical parsing
-  predecessor check + P07-a strict signature verification
+  predecessor check + [P07](../../README.md#terms)-a strict signature verification
   Org/member/kind-bound join or possession proof
   permission from preceding state
   private state transition

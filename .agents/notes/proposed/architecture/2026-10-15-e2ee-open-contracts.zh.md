@@ -11,16 +11,16 @@ Translation: current
 
 ## 需要审议的决定
 
-| 归属 | 未定边界 |
-| --- | --- |
-| [原子移除](../../../../specs/e2ee/atomic-removal.zh.md) | 移除与换 epoch 同条记录、一次 CAS 已定；当前 tag8 及同态 snapshot 表示已有实验实现，编码验收仍需审查。不需要旧客户端 capability 或降级机制。 |
-| [Recovery vault](../../../../specs/e2ee/recovery-vault.zh.md) | 派生/包装、并发 CAS/reservation、保留和恢复新鲜度仍是 draft；合法旧密文不证明最新状态。 |
-| [发布者可恢复性](../../../../specs/e2ee/publisher-key-recoverability.zh.md) | 发布前独立备份与接受首次交付前丢失窗口之间仍未决定。受限 installed-key 保护不批准候选备份，也不能恢复管理身份。 |
-| Snapshot 与 checkpoint 信任 | 当前 header4 已认证内容 continuation 位置，且有耐久原件接纳参考实现；生产权限 snapshot 的资格/当前 checkpoint 来源未接通；显式合资格读取/启动消费者已实现。已有 update binding 或 SQL cache 不提供这些保证。 |
-| 其他产品/协议范围 | Installed-history 产品范围、签名比较 notes、严格期限 B、基于 entropy 的精确 replay 各自需要决定。首次 seal 的安全随机和现行普通容忍没有改变。 |
+| 归属                                                                        | 未定边界                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [原子移除](../../../../specs/e2ee/atomic-removal.zh.md)                     | tag8 编码与先暂存后 CAS 方向已定；修订的 Spec 仍 draft 待审。不需要旧客户端 capability 或降级读取。                                                                                                                 |
+| [Recovery vault](../../../../specs/e2ee/recovery-vault.zh.md)               | 派生/包装、并发 CAS/reservation、保留和恢复新鲜度仍是 draft；合法旧密文不证明最新状态。                                                                                                                             |
+| [发布者可恢复性](../../../../specs/e2ee/publisher-key-recoverability.zh.md) | 旧备份 A/B 选项已被整组信封先暂存后 CAS 替代。已提交组可在发布者磁盘丢失后恢复；不遵守协议的管理者仍可扣留钥。vault 和管理身份恢复仍独立。                                                                          |
+| Snapshot 与 checkpoint 信任                                                 | 已选的 content-v0 快照字段认证 continuation 位置，且有耐久原件接纳参考实现；生产权限 snapshot 的资格/当前 checkpoint 来源未接通；显式合资格读取/启动消费者已实现。已有 update binding 或 SQL cache 不提供这些保证。 |
+| 其他产品/协议范围                                                           | Installed-history 产品启用、签名比较 notes 与严格期限 B 仍独立。Replay 已重执行原始输入，不增加 core 熵接口；首次 seal 的安全随机和普通容忍未变。                                                                   |
 
 ## 尚未完成的集成
 
-逐项去向归 [manifest](../../../docs/e2ee-migration-manifest.json)。剩余包括可恢复的 workspace 创建/checkpoint 持久化、独立 publisher 备份契约（本地耐久发布已实现）、内容 snapshot 的生产资格来源、上游历史保留/恢复、原模型驱动的攻击与 replay 覆盖、机器执行和其他内容消费者、真实原生 protector 与产品组装。教程只有 Spec，没有已迁应用源码。这些缺口并非全是新协议决定；已定工作可以推进，不能发明未定部分。
+逐项去向归 [manifest](../../../docs/e2ee-migration-manifest.json)。剩余是生产新鲜度／资格取得、有权限的历史保留读取、机器执行和其他产品消费者、真实原生 protector 与产品组装。当前创建／宿主恢复、暂存发布、有限模型动作计划及原输入重放已实现，缺测明确为未测。教程只有 Spec，没有已迁应用源码。这些缺口并非全是新协议决定；已定工作可以推进，不能发明未定部分。
 
 本文不选择待定方案。Note、来源清单、合成测试或祖先 READY/CI，都不能代替人类批准或生产验收。

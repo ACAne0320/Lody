@@ -7,6 +7,7 @@ import { ContentError } from '../../src/errors';
 import { decodeRecord, hashRecordBytes, verifyLedger } from '../../src/ledger';
 import { SubmissionJournal, SubmissionRemote, SubmissionRemoteError } from '../../src/submission';
 import { sqliteSubmissionJournal } from '../../src/submission/sqlite';
+import { ownEpochStagedGroup, type EpochStagedGroup } from '../../src/keys/staging';
 import { makeSqliteEpochRotation } from '../../src/keys/epoch-rotation';
 import { makeSqliteProtectedEpochKeys } from '../../src/keys/protected-sqlite';
 import { synthetic } from './protection-fixture';
@@ -85,6 +86,7 @@ await Effect.runPromise(
             return Effect.void;
           }),
       });
+      let staged: EpochStagedGroup | null = null;
       const rotation = yield* makeSqliteEpochRotation({
         path: config.files.candidate,
         mode: 'open',
@@ -100,6 +102,17 @@ await Effect.runPromise(
         ledger,
         installed,
         protector: native.protector,
+        staging: {
+          stageGroup: (group) =>
+            Effect.sync(() => {
+              staged = ok(ownEpochStagedGroup(group));
+            }),
+          readGroup: () => Effect.sync(() => staged),
+          deleteGroup: () =>
+            Effect.sync(() => {
+              staged = null;
+            }),
+        },
       }).pipe(
         Effect.provideService(SubmissionJournal, journal),
         Effect.provideService(SubmissionRemote, remote)

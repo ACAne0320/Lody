@@ -1,11 +1,13 @@
-import { Data, Effect, Schema } from 'effect';
+import { Data, Effect, Fiber, Schema } from 'effect';
 import { makeLabRuntime } from './runtime';
 import { driveLabPermits } from './driver';
 import type { makeLabProcessActor, LabProcessReply } from './process-actor';
 import { judgeClientDurability, worstVerdict, type JudgeVerdict } from '../pure/judge';
 import type { ScheduleChoice } from '../pure/schedule';
 import { LabKeyCommand } from './process-contract';
+import { LabStorageMutation } from './storage-attack';
 import { LabKeyRoundCursors } from './key-round';
+import { LabTransportAttackActionSchema, type makeLabAttackTransport } from './attack-transport';
 const Name = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/));
 const Text = Schema.String.check(Schema.isMaxLength(4096));
 const Index = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -13,12 +15,67 @@ const Refusal = Schema.Struct({ tag: Text, code: Text });
 const Expect = Schema.Struct({
   ok: Schema.Boolean,
   refusal: Schema.optional(Refusal),
-  outcome: Schema.optional(Schema.Literals(['Committed', 'Conflicted'])),
+  outcome: Schema.optional(Schema.Literals(['Committed', 'Conflict'])),
   text: Schema.optional(Text),
   unchangedFrom: Schema.optional(Index),
 });
 const Base = { actor: Name, expect: Schema.optional(Expect) };
 const Action = Schema.Union([
+  Schema.Struct({
+    ...Base,
+    kind: Schema.Literal('measure'),
+    probes: Schema.Array(
+      Schema.Literals([
+        'insider-post-exclusion',
+        'wrong-context',
+        'unauthorized-writer',
+        'forged-control',
+      ])
+    ).check(Schema.isMaxLength(4)),
+  }),
+  Schema.Struct({
+    ...Base,
+    kind: Schema.Literal('storage'),
+    store: Schema.Literals([
+      'loro',
+      'flock',
+      'feed',
+      'journal',
+      'receive',
+      'keys',
+      'repair',
+      'send',
+      'outbox',
+      'host-mailbox',
+      'host-stagedgroup',
+      'host-streams',
+    ]),
+    mutation: LabStorageMutation,
+  }),
+  Schema.Struct({
+    ...Base,
+    kind: Schema.Literal('transport'),
+    action: LabTransportAttackActionSchema,
+  }),
+  Schema.Struct({
+    ...Base,
+    kind: Schema.Literal('begin-call'),
+    id: Name,
+    operation: Schema.Literals([
+      'pull',
+      'refresh',
+      'append',
+      'flush-offline',
+      'rotate-epoch',
+      'remove-member-and-rotate',
+      'resume-epoch-rotation',
+      'upload-snapshot',
+    ]),
+    target: Schema.optional(Name),
+    document: Schema.optional(Schema.Literals(['loro', 'flock'])),
+    text: Schema.optional(Text),
+  }),
+  Schema.Struct({ ...Base, kind: Schema.Literal('join-call'), id: Name }),
   Schema.Struct({ ...Base, kind: Schema.Literal('key-command'), command: LabKeyCommand }),
   Schema.Struct({
     ...Base,
@@ -34,16 +91,25 @@ const Action = Schema.Union([
       'resume',
       'create',
       'append',
+      'upload-snapshot',
       'pull',
       'recover',
       'observe',
-      'revoke-peer',
       'acknowledge',
       'edit-offline',
       'flush-offline',
+      'revoke',
+      'set-role',
+      'rotate-epoch',
+      'remove-member-and-rotate',
+      'resume-epoch-rotation',
+      'acknowledge-epoch-rotation',
+      'publish-without-stage',
     ]),
     document: Schema.optional(Schema.Literals(['loro', 'flock'])),
     text: Schema.optional(Text),
+    target: Schema.optional(Name),
+    role: Schema.optional(Schema.Literals(['admin', 'member', 'guest'])),
   }),
   Schema.Struct({
     ...Base,
@@ -84,6 +150,8 @@ export interface LabActionObservation {
 function assertLabActionSemantics(row: LabAction, index: number) {
   if (
     (row.expect?.unchangedFrom !== undefined && row.expect.unchangedFrom >= index) ||
+    (row.kind === 'storage' &&
+      (row.store === 'host-streams') !== (row.mutation.stream !== undefined)) ||
     (row.expect?.ok === false &&
       (row.expect.outcome !== undefined || row.expect.refusal === undefined)) ||
     (row.expect?.ok === true && row.expect.refusal !== undefined) ||
@@ -120,11 +188,19 @@ export function summarizeLabActions(
 export const executeLabActions = Effect.fn('Lab.executeActions')(function* (input: {
   readonly actors: Readonly<Record<string, LabActionActor>>;
   readonly actions: readonly unknown[];
+  readonly sourceIndices?: readonly number[];
   readonly maxSteps: number;
   readonly schedule?: readonly ScheduleChoice[];
   readonly stop?: Effect.Effect<void>;
   /** Run-private factual instrumentation, never an authorization decision or a
    * replacement for the actor. Called after the actual operation settles. */
+  readonly measure?: (
+    action: Extract<LabAction, { kind: 'measure' }>
+  ) => Effect.Effect<unknown, unknown>;
+  readonly mutateStorage?: (
+    action: Extract<LabAction, { kind: 'storage' }>
+  ) => Effect.Effect<unknown, unknown>;
+  readonly transport?: Effect.Success<ReturnType<typeof makeLabAttackTransport>>;
   readonly onObservation?: (observation: LabActionObservation) => Effect.Effect<void, unknown>;
 }) {
   const onObservation = input.onObservation;
@@ -164,7 +240,59 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
           'attack',
           'command',
           'expect',
+          'action',
+          'target',
+          'role',
+          'id',
+          'store',
+          'mutation',
+          'probes',
         ]);
+        if (captured.action !== undefined) {
+          const action = own(captured.action, [
+            'kind',
+            'target',
+            'mutation',
+            'eventId',
+            'actor',
+            'stream',
+          ]);
+          if (action.target !== undefined)
+            action.target = own(action.target, ['actor', 'stream', 'method', 'occurrence']);
+          if (action.mutation !== undefined) {
+            const mutation = own(action.mutation, [
+              'kind',
+              'eventId',
+              'nextOffset',
+              'offset',
+              'length',
+              'status',
+              'bodyHex',
+              'headers',
+            ]);
+            if (mutation.headers !== undefined)
+              mutation.headers = own(mutation.headers, Object.keys(mutation.headers as object));
+            action.mutation = mutation;
+          }
+          captured.action = action;
+        }
+        if (captured.probes !== undefined) {
+          if (!Array.isArray(captured.probes)) throw new LabActionError({ code: 'invalid-plan' });
+          const probeCount = captured.probes.length,
+            probes: unknown[] = [];
+          if (probeCount > 4) throw new LabActionError({ code: 'invalid-plan' });
+          for (let index = 0; index < probeCount; index++) {
+            const descriptor = Object.getOwnPropertyDescriptor(captured.probes, String(index));
+            if (!descriptor || !('value' in descriptor))
+              throw new LabActionError({ code: 'invalid-plan' });
+            probes.push(descriptor.value);
+          }
+          if (captured.probes.length !== probeCount)
+            throw new LabActionError({ code: 'invalid-plan' });
+          captured.probes = probes;
+        }
+        if (captured.mutation !== undefined)
+          captured.mutation = own(captured.mutation, ['kind', 'table', 'column', 'stream']);
         if (captured.command !== undefined) {
           const command = own(captured.command, [
             'operation',
@@ -217,8 +345,10 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
   });
   const runtime = yield* makeLabRuntime({ mode: 'manual', time: 0, fetch });
   const observations: LabActionObservation[] = [];
+  const pending = new Map<string, Fiber.Fiber<LabProcessReply, unknown>>();
   const work = Effect.gen(function* () {
-    for (const action of actions) {
+    for (const [index, action] of actions.entries()) {
+      const materialIndex = input.sourceIndices?.[index] ?? index;
       const actor = actors.get(action.actor)!;
       const operation = action.kind === 'call' ? action.operation : action.kind;
       const reply = yield* runtime.phaseEffect(
@@ -227,16 +357,48 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
         'execute',
         Effect.gen(function* () {
           switch (action.kind) {
+            case 'measure':
+              if (!input.measure) return yield* new LabActionError({ code: 'invalid-plan' });
+              return { ok: true, value: yield* input.measure(action) };
+            case 'storage':
+              if (!input.mutateStorage) return yield* new LabActionError({ code: 'invalid-plan' });
+              return { ok: true, value: yield* input.mutateStorage(action) };
+            case 'transport':
+              if (!input.transport) return yield* new LabActionError({ code: 'invalid-plan' });
+              return { ok: true, value: yield* input.transport.apply(action.action) };
+            case 'begin-call':
+              if (pending.has(action.id))
+                return yield* new LabActionError({ code: 'invalid-plan' });
+              pending.set(
+                action.id,
+                yield* Effect.forkChild(
+                  actor.call(action.operation, action.document, action.text, {
+                    materialIndex,
+                    target: action.target,
+                  })
+                )
+              );
+              return { ok: true };
+            case 'join-call': {
+              const fiber = pending.get(action.id);
+              if (!fiber) return yield* new LabActionError({ code: 'missing-observation' });
+              pending.delete(action.id);
+              return yield* Fiber.join(fiber);
+            }
             case 'key-command':
-              return yield* actor.keyCommand(action.command);
+              return yield* actor.keyCommand(action.command, materialIndex);
             case 'start':
-              return yield* actor.start(action.mode);
+              return yield* actor.start(action.mode, materialIndex);
             case 'call':
-              return yield* actor.call(action.operation, action.document, action.text);
+              return yield* actor.call(action.operation, action.document, action.text, {
+                target: action.target,
+                role: action.role,
+                materialIndex,
+              });
             case 'persist':
-              return yield* actor.call('persist', action.document);
+              return yield* actor.call('persist', action.document, undefined, { materialIndex });
             case 'attack':
-              return yield* actor.call('attack', action.attack);
+              return yield* actor.call('attack', action.attack, undefined, { materialIndex });
             case 'crash':
               return { ok: true, value: yield* actor.crash() };
             default:
@@ -252,6 +414,7 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
       if (onObservation) yield* onObservation(observation);
       observations.push(observation);
     }
+    if (pending.size) return yield* new LabActionError({ code: 'missing-observation' });
     return observations;
   });
   yield* driveLabPermits(runtime, input.schedule ?? 'record', work, {
