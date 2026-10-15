@@ -133,6 +133,9 @@ See the [global scale decision](../../../../../.agents/notes/implemented/simplif
 for scope and retained exceptions.
 `AssistantTurnAlignment.ConversationRhythm` renders a synthetic two-round conversation;
 `ConversationRhythmTheme` applies a scoped StyleX theme to the same components.
+`MobileConversationRhythm` renders the same rounds at phone width: one left rail,
+the round gap below the always-visible footer, and only the newest turn's
+buttons at rest (`tests/assistant-turn-action-inset.test.ts` covers tap reveal).
 `ConversationRhythmReading` and its streaming variant add continuous mixed-script
 paragraphs to verify real wrapped-line pitch and compare reading density.
 `ConversationRhythmProgress` and its streaming variant interleave long progress

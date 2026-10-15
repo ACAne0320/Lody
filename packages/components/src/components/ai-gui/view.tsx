@@ -223,6 +223,11 @@ import {
 import { cn } from '@/lib/utils';
 import { withClassName } from '@/lib/stylex';
 import { conversationSurface } from './surface';
+import {
+  isMessageActionsToggleTap,
+  toggleMobileMessageActions,
+  useMobileMessageActionsRevealed,
+} from './mobile-message-actions';
 import { ConversationColumn } from '@/components/shared/conversation-column';
 import type { TurnIndexRow } from '@/lib/conversation-view';
 import { TurnPlaceholderRow, estimatePlaceholderHeight } from './turn-placeholder-row';
@@ -689,8 +694,9 @@ const AgentActivityStatus = ({
       aria-live="polite"
       data-agent-activity-status=""
       className={cn(
-        'flex w-full items-center py-0.5 text-muted-foreground',
-        isMobile ? 'gap-1.5 pr-1' : 'px-[4px]'
+        /* `px-[4px]` is `conversation.railInset`: the status sits on the prose rail. */
+        'flex w-full items-center px-[4px] py-0.5 text-muted-foreground',
+        isMobile && 'gap-1.5'
       )}
     >
       <span
@@ -2458,6 +2464,7 @@ export const SessionChatStreamView = forwardRef<
               onWorkedGroupExpandedChange={handleAssistantWorkedGroupExpandedChange}
               isTurnHovered={hoveredAssistantMessageId === row.item.message.id}
               onTurnHoverChange={handleAssistantTurnHoverChange}
+              isLatestTurn={row.item.message.id === lastAssistantMessageId}
               conversationFontSize={conversationFontSize}
               shimmerGroupHeader={row.key === liveGroupHeaderRowKey}
               liveStatus={row.key === liveStatusRowKey ? liveTurnStatus : null}
@@ -3740,6 +3747,7 @@ const UserMessageRowView = ({
   const { copyContext } = useContext(SessionChatActionContext);
   const copyWorkspaceId = useSessionCopyWorkspaceId();
   const isMobile = useIsMobile();
+  const mobileActionsRevealed = useMobileMessageActionsRevealed(message.id);
   // The RPC fast-path ACK overlays "delivered" before the entry's CRDT status
   // flip syncs back (the machine may run the whole turn before it can see the
   // entry to flip it).
@@ -3863,6 +3871,13 @@ const UserMessageRowView = ({
           ),
           'group/usermsg'
         )}
+        onClick={
+          isMobile
+            ? (event) => {
+                if (isMessageActionsToggleTap(event.target)) toggleMobileMessageActions(message.id);
+              }
+            : undefined
+        }
       >
         <div {...stylex.props(conversationSurface.metadata)} data-testid="user-message-metadata">
           {message.author?.kind === 'agent' ? (
@@ -3973,7 +3988,15 @@ const UserMessageRowView = ({
         {/* While editing, the row's own actions (edit/pin/copy) would compete with
             the editor's Cancel / Save & resend — hide them until it closes. */}
         {(hasTextContent || copyContext) && !isEditing ? (
-          <div {...stylex.props(conversationSurface.userActions)} data-user-message-actions="">
+          <div
+            {...withClassName(
+              stylex.props(conversationSurface.userActions),
+              /* Touch has no hover: a tap on the message reveals its actions. */
+              isMobile && !mobileActionsRevealed ? 'invisible' : undefined
+            )}
+            data-user-message-actions=""
+            data-mobile-actions-hidden={isMobile && !mobileActionsRevealed ? '' : undefined}
+          >
             {copyContext && (
               <AssistantForkButton
                 turnId={message.id}
@@ -4527,7 +4550,14 @@ function ProcessDisclosureButton({
     </span>
   );
   const title = (
-    <span className={cn(ACTIVITY_GROUP_LABEL_CLASS(isMobile), shimmer && 'agent-shimmer')}>
+    <span
+      className={cn(
+        ACTIVITY_GROUP_LABEL_CLASS(isMobile),
+        /* The chevron follows the label rather than the column's far edge. */
+        'flex-initial',
+        shimmer && 'agent-shimmer'
+      )}
+    >
       {liveMessage ? <LiveActivityLabel label={label} message={liveMessage} /> : label}
     </span>
   );
@@ -4550,17 +4580,10 @@ function ProcessDisclosureButton({
       }}
       aria-expanded={expanded}
     >
-      {isMobile ? (
-        <>
-          {chevron}
-          {title}
-        </>
-      ) : (
-        <>
-          {title}
-          {chevron}
-        </>
-      )}
+      {/* Label first on every layout: it starts on the prose rail, and the
+          chevron (always shown on touch, hover-only on desktop) trails it. */}
+      {title}
+      {chevron}
     </button>
   );
 }
@@ -5080,6 +5103,7 @@ export const AssistantTurnFooter = ({
   showDuration,
   isLive = false,
   isTurnHovered,
+  isLatestTurn = false,
   onFork,
   forkWorktreeAvailability = 'hidden',
   onForkWorktreeMenuOpen,
@@ -5094,6 +5118,8 @@ export const AssistantTurnFooter = ({
   /** This turn is the live one: its duration slot counts up. */
   isLive?: boolean;
   isTurnHovered: boolean;
+  /** The conversation's newest assistant turn: on mobile its actions rest visible. */
+  isLatestTurn?: boolean;
   onFork?: (turnId: string, destination?: SessionForkDestination) => void;
   forkWorktreeAvailability?: SessionForkWorktreeAvailability;
   onForkWorktreeMenuOpen?: () => void;
@@ -5102,6 +5128,7 @@ export const AssistantTurnFooter = ({
   const { t, i18n } = useTranslation();
   const { copyContext } = useContext(SessionChatActionContext);
   const isMobile = useIsMobile();
+  const mobileActionsRevealed = useMobileMessageActionsRevealed(message.id);
   const [didCopy, setDidCopy] = useState(false);
   const textContent = useMemo(() => {
     const contentItems = buildAssistantMessageRenderItems(message.items).map(
@@ -5143,6 +5170,10 @@ export const AssistantTurnFooter = ({
     (durationLabel.length > 0 && (isMobile || showDuration)) ||
     hasTurnConfigInfo;
   const showActionBar = hasActionBarContent || onFork !== undefined || !!copyContext;
+  /* Touch has no hover: only the newest turn's buttons rest visible, and a tap
+     on an older turn reveals its own. The duration slot always stays. */
+  const mobileButtonsHidden =
+    isMobile && !isLatestTurn && !mobileActionsRevealed && !(showFinishedMetadata && isForking);
 
   const handleCopy = useCallback(async () => {
     if (!hasCopyableText) return;
@@ -5185,7 +5216,8 @@ export const AssistantTurnFooter = ({
             ),
             isMobile ? 'min-h-6 gap-1' : 'min-h-7 gap-2',
             !isMobile && 'opacity-0 transition-opacity duration-150 focus-within:opacity-100',
-            !isMobile && (isTurnHovered || (showFinishedMetadata && isForking)) && 'opacity-100'
+            !isMobile && (isTurnHovered || (showFinishedMetadata && isForking)) && 'opacity-100',
+            isMobile && stylex.props(conversationSurface.mobileTurnActions).className
           )}
           data-assistant-turn-actions
         >
@@ -5215,7 +5247,14 @@ export const AssistantTurnFooter = ({
           {/* Keep the leading button inside the column; only the trailing hover
              area bleeds into the metadata gap. Mobile retains its leading slot. */}
           {hasCopyableText || hasTurnConfigInfo || onFork || copyContext ? (
-            <div className="flex items-center gap-0.5 -mr-[7px]">
+            <div
+              className={cn(
+                'flex items-center gap-0.5 -mr-[7px]',
+                /* `invisible` keeps the row's height: revealing never shifts the list. */
+                mobileButtonsHidden && 'invisible'
+              )}
+              data-mobile-actions-hidden={mobileButtonsHidden ? '' : undefined}
+            >
               {showStreamingContextCopy ? (
                 <Tooltip.Provider>
                   <Tooltip.Root>
@@ -5369,6 +5408,8 @@ interface AssistantChatItemProps {
   onWorkedGroupExpandedChange: (messageId: string, segmentKey: string, expanded: boolean) => void;
   isTurnHovered: boolean;
   onTurnHoverChange: (messageId: string, hovered: boolean) => void;
+  /** The conversation's newest assistant turn: on mobile its actions rest visible. */
+  isLatestTurn: boolean;
   conversationFontSize: ConversationFontSize;
   /** This row is the live turn's collapsed bottom group: shimmer its label. */
   shimmerGroupHeader?: boolean;
@@ -5464,6 +5505,7 @@ const areAssistantChatItemPropsEqual = (
   prev.isForking === next.isForking &&
   prev.isTurnHovered === next.isTurnHovered &&
   prev.onTurnHoverChange === next.onTurnHoverChange &&
+  prev.isLatestTurn === next.isLatestTurn &&
   prev.conversationFontSize === next.conversationFontSize &&
   prev.shimmerGroupHeader === next.shimmerGroupHeader &&
   prev.liveStatusFollowsSurface === next.liveStatusFollowsSurface &&
@@ -5485,6 +5527,7 @@ const AssistantChatItem = memo(function AssistantChatItem({
   onWorkedGroupExpandedChange,
   isTurnHovered,
   onTurnHoverChange,
+  isLatestTurn,
   conversationFontSize,
   shimmerGroupHeader = false,
   liveStatus = null,
@@ -5492,6 +5535,7 @@ const AssistantChatItem = memo(function AssistantChatItem({
 }: AssistantChatItemProps) {
   const message = row.item.message;
   const { content } = row;
+  const isMobile = useIsMobile();
   const handleMouseLeave = (event: ReactMouseEvent<HTMLDivElement>) => {
     const nextTurn =
       event.relatedTarget instanceof Element
@@ -5610,6 +5654,7 @@ const AssistantChatItem = memo(function AssistantChatItem({
               showDuration={content.showDuration}
               isLive={content.isLive}
               isTurnHovered={isTurnHovered}
+              isLatestTurn={isLatestTurn}
               onFork={onFork}
               forkWorktreeAvailability={forkWorktreeAvailability}
               onForkWorktreeMenuOpen={onForkWorktreeMenuOpen}
@@ -5668,13 +5713,20 @@ const AssistantChatItem = memo(function AssistantChatItem({
         row.isFirstRowForMessage && conversationSurface.firstRow,
         row.isLastRowForMessage && conversationSurface.lastRow,
         row.endsRound &&
-          (content.kind === 'footer'
+          (content.kind === 'footer' && !isMobile
             ? conversationSurface.roundFooterRow
             : conversationSurface.roundLastRow)
       )}
       data-assistant-turn-id={message.id}
       onMouseEnter={() => onTurnHoverChange(message.id, true)}
       onMouseLeave={handleMouseLeave}
+      onClick={
+        isMobile
+          ? (event) => {
+              if (isMessageActionsToggleTap(event.target)) toggleMobileMessageActions(message.id);
+            }
+          : undefined
+      }
     >
       <div className={cn('w-full', hasWideContent && 'scrollbar-pro overflow-x-auto')}>
         <div
@@ -5694,7 +5746,10 @@ const AssistantChatItem = memo(function AssistantChatItem({
           style={conversationTextFontSizeStyle(conversationFontSize)}
           data-native-selection-allow
         >
-          {row.endsRound && content.kind === 'footer' ? (
+          {/* Desktop footer actions rest hidden, so they may sit inside the round
+              reserve. Mobile always shows the footer: the reserve goes below it
+              (`roundLastRow` above) or the next round reads as crowded. */}
+          {row.endsRound && content.kind === 'footer' && !isMobile ? (
             <div {...stylex.props(conversationSurface.roundFooter)}>{rowBody}</div>
           ) : (
             rowBody
