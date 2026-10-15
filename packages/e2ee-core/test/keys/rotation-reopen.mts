@@ -4,7 +4,7 @@ import { Context, Effect, Layer, Result, Schema } from 'effect';
 import * as Bytes from '../../src/bytes';
 import { bytesEqual } from '../../src/cbor';
 import { ContentError } from '../../src/errors';
-import { hashRecordBytes, verifyLedger } from '../../src/ledger';
+import { decodeRecord, hashRecordBytes, verifyLedger } from '../../src/ledger';
 import { SubmissionJournal, SubmissionRemote, SubmissionRemoteError } from '../../src/submission';
 import { sqliteSubmissionJournal } from '../../src/submission/sqlite';
 import { makeSqliteEpochRotation } from '../../src/keys/epoch-rotation';
@@ -107,6 +107,20 @@ await Effect.runPromise(
       const result = yield* rotation.resume();
       if (!result) throw new Error('missing-candidate');
       yield* rotation.acknowledge(result);
+      const parsed = ok(decodeRecord(result.record)),
+        removed =
+          parsed.body.type === 'ordinary' &&
+          parsed.body.operation.type === 'removeMemberAndPublishEpoch'
+            ? parsed.body.operation.membershipId
+            : null;
+      if (removed) {
+        const state = load().view.inspectState();
+        if (
+          state.members.has(Buffer.from(removed.toBytes()).toString('hex')) ||
+          [...state.devices.values()].some((device) => device.membershipId.equals(removed))
+        )
+          throw Error('removed member retained current eligibility');
+      }
       const db = new Database(config.files.candidate);
       let consumed: unknown;
       try {
@@ -125,6 +139,7 @@ await Effect.runPromise(
           record: Buffer.from(result.record).toString('hex'),
           signed,
           consumed,
+          removedMembershipId: removed ? Buffer.from(removed.toBytes()).toString('hex') : null,
         })
       );
     })

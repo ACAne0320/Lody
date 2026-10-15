@@ -23,12 +23,12 @@ Reuse the existing 72B history packet: 24B nonce, 32B old key encrypted under th
 
 E2EE has not shipped. Remove old-client upgrade paths, dual snapshot readers, downgrade emission and capability pins whose only purpose is distinguishing prelaunch formats. Unsupported formats and operations fail; there is no compatibility migration.
 
-The final atomic-removal format and permission snapshot must represent the same state transition and exact authenticated position. Their encoding and signature/hash domains still need review before implementation. A current snapshot must not bypass authorization or independently pinned freshness; snapshot self-claims never establish authority. This does not require retaining a v1 reader after a replacement is selected, nor does it select snapshot-v2 or any new domain by default.
+The final atomic-removal format and permission snapshot must represent the same state transition and exact authenticated position. Their implemented encoding and signature/hash domains still need interoperability and security review before acceptance. A current snapshot must not bypass authorization or independently pinned freshness; snapshot self-claims never establish authority. This does not require retaining a v1 reader after a replacement is selected, nor does it select snapshot-v2 or any new domain by default.
 
 ## Review delta
 
-Atomicity, Owner authority, target exclusion, exact-byte reconciliation and post-inclusion delivery are settled. Field/function names are engineering choices. Review the final operation/snapshot encoding and authenticated position contract together. Old-client compatibility is excluded. No Admin/Recovery authority, algorithm, historical sharing or U03B change is proposed. This draft is unapproved and inactive; the current codec still rejects tag8.
+Atomicity, Owner authority, target exclusion, exact-byte reconciliation and post-inclusion delivery are settled. Field/function names are engineering choices. Review the final operation/snapshot encoding and authenticated position contract together. Old-client compatibility is excluded. No Admin/Recovery authority, algorithm, historical sharing or U03B change is proposed. This Spec remains draft and unapproved. The experimental codec implements tag8 for review; it does not enable production or approve backup policy.
 
 ## Evidence
 
-[Codec](../../packages/e2ee-core/src/ledger/records.ts), [policy](../../packages/e2ee-core/src/ledger/policy.ts), [history packet](../../packages/e2ee-core/src/keys/history.ts). Inspected implementation and proposal only; no new-format interoperability test or security proof.
+[Codec](../../packages/e2ee-core/src/ledger/records.ts), [policy](../../packages/e2ee-core/src/ledger/policy.ts), [history packet](../../packages/e2ee-core/src/keys/history.ts). Real signed replay, same-point snapshot/full-state comparison, rejected authority/retired-identity reuse, one-CAS original recovery and actual post-removal HPKE distribution are covered by owning tests. These are behavioral evidence, not a security proof or product approval.

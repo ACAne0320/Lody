@@ -6,6 +6,9 @@ import * as Documents from '@lody/e2ee-core/content';
 import {
   admitStreamsUpdateBatch,
   admitStreamsUpdateBatchEffect,
+  admitStreamsSnapshot,
+  admitStreamsSnapshotEffect,
+  authenticateStreamsSnapshotEffect,
   makeStreamsUpdateBinding,
 } from '@lody/e2ee-core/content/streams';
 import type { PayloadProtectionProvider } from '@loro-dev/streams-crdt';
@@ -681,9 +684,9 @@ describe('ledger-bound signed document workflows', () => {
           };
           const sealed = yield* value.seal(updateInput);
           expect(sealed.header).toEqual(new Uint8Array([3]));
-          expect(sealed.header.length + sealed.sealed.length - updateInput.plaintext.length).toBe(
-            sdk.maxSealOverheadBytes
-          );
+          expect(
+            sealed.header.length + sealed.sealed.length - updateInput.plaintext.length
+          ).toBeLessThanOrEqual(sdk.maxSealOverheadBytes);
           expect(code(deriveContentKey(owned!, header))).toBe('invalid-content-key');
           const opened = yield* value.open({
             ...sealed,
@@ -698,6 +701,147 @@ describe('ledger-bound signed document workflows', () => {
     );
     expect(Result.isFailure(await result(binding.seal(updateInput)))).toBe(true);
   });
+  it.each(['loro', 'flock'] as const)(
+    'authenticates %s snapshot position in the visible header and current host admission',
+    async (model) => {
+      const f = ledgerFixture(true);
+      const context = { ...updateContext, kind: 'snapshot' as const, continuationOffset: '0_123' };
+      const aadFor = (providerHeader: Uint8Array) => {
+        const prefix = new Uint8Array(10 + providerHeader.length);
+        prefix.set([76, 83, 67, 69, 2, 2, 0, 0, 0, 0]);
+        new DataView(prefix.buffer).setUint16(6, providerHeader.length, false);
+        prefix.set(providerHeader, 10);
+        const domain = new TextEncoder().encode('loro-streams-crdt-payload-protection/v2\0');
+        return new Uint8Array(Buffer.concat([domain, prefix]));
+      };
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const binding = yield* makeStreamsUpdateBinding({ ...bindingOptions(f), model });
+            const sealed = yield* binding.seal({ ...updateInput, context, additionalData: aadFor });
+            expect(sealed.header).toEqual(
+              new Uint8Array([4, 0, 5, ...new TextEncoder().encode('0_123')])
+            );
+            const aad = aadFor(sealed.header);
+            expect(yield* binding.open({ ...sealed, context, additionalData: aad })).toEqual(
+              updateInput.plaintext
+            );
+            const prefix = aad.subarray(
+              new TextEncoder().encode('loro-streams-crdt-payload-protection/v2\0').length
+            );
+            const body = new Uint8Array(Buffer.concat([prefix, sealed.sealed]));
+            const input = {
+              genesis: f.view().genesis,
+              resource: f.scope.resource,
+              model,
+              view: f.view(),
+              device: f.owner.publicKey,
+              body,
+              continuationOffset: '0_123',
+            };
+            expect(read(admitStreamsSnapshot(input))).toEqual(body);
+            expect(yield* admitStreamsSnapshotEffect(input)).toEqual(body);
+            expect(code(admitStreamsSnapshot({ ...input, continuationOffset: '0_124' }))).toBe(
+              'invalid-snapshot-offset'
+            );
+            expect(
+              Result.isFailure(admitStreamsSnapshot({ ...input, device: f.phone.publicKey }))
+            ).toBe(true);
+            expect(Result.isFailure(admitStreamsSnapshot({ ...input, resource: 'wrong' }))).toBe(
+              true
+            );
+            expect(
+              Result.isFailure(
+                admitStreamsSnapshot({ ...input, model: model === 'loro' ? 'flock' : 'loro' })
+              )
+            ).toBe(true);
+            expect(
+              Result.isFailure(
+                yield* Effect.result(
+                  binding.open({
+                    ...sealed,
+                    context: { ...context, continuationOffset: '0_124' },
+                    additionalData: aad,
+                  })
+                )
+              )
+            ).toBe(true);
+            const oldHeader = new Uint8Array([4]);
+            expect(
+              Result.isFailure(
+                yield* Effect.result(
+                  binding.open({ ...sealed, header: oldHeader, context, additionalData: aad })
+                )
+              )
+            ).toBe(true);
+            const changedHeader = new Uint8Array(sealed.header);
+            changedHeader[changedHeader.length - 1] ^= 1;
+            expect(
+              Result.isFailure(
+                yield* Effect.result(
+                  binding.open({
+                    ...sealed,
+                    header: changedHeader,
+                    context: { ...context, continuationOffset: '0_122' },
+                    additionalData: aadFor(changedHeader),
+                  })
+                )
+              )
+            ).toBe(true);
+            const bad = new Uint8Array(sealed.sealed);
+            bad[63] ^= 1;
+            const scope = {
+              ...f.scope,
+              purpose: model === 'loro' ? ('doc-snapshot' as const) : ('flock-snapshot' as const),
+            };
+            bad.set(
+              f.owner.signBytes(read(contentSigningBytes(scope, bad.subarray(0, -64), aad))),
+              bad.length - 64
+            );
+            expect(
+              Result.isFailure(
+                yield* Effect.result(
+                  binding.open({ ...sealed, sealed: bad, context, additionalData: aad })
+                )
+              )
+            ).toBe(true);
+            for (const offset of ['', 'now', '-1', ' padded', 'x\n', '\ud800', 'x'.repeat(510)])
+              expect(
+                code(
+                  yield* Effect.result(
+                    binding.seal({
+                      ...updateInput,
+                      context: { ...context, continuationOffset: offset },
+                      additionalData: aadFor,
+                    })
+                  )
+                )
+              ).toBe('invalid-snapshot-offset');
+            f.addPhone();
+            f.append([5, f.phone.raw]);
+            expect(code(admitStreamsSnapshot({ ...input, view: f.view() }))).toBe('unauthorized');
+            expect(yield* authenticateStreamsSnapshotEffect({ ...input, view: f.view() })).toEqual(
+              body
+            );
+            expect(
+              Result.isFailure(
+                yield* Effect.result(
+                  authenticateStreamsSnapshotEffect({
+                    ...input,
+                    view: f.view(),
+                    device: f.phone.publicKey,
+                  })
+                )
+              )
+            ).toBe(true);
+            expect(yield* binding.open({ ...sealed, context, additionalData: aad })).toEqual(
+              updateInput.plaintext
+            );
+          })
+        )
+      );
+    }
+  );
   it('selects each current genuine epoch for new updates while retaining authenticated historical reads', async () => {
     const f = ledgerFixture(true);
     const nextSecret = new Uint8Array(32).fill(8);
@@ -936,7 +1080,7 @@ describe('ledger-bound signed document workflows', () => {
       )
     );
   });
-  it('rejects forged authors, wrong key commitments, bad AAD and undeclared snapshot format', async () => {
+  it('rejects forged authors, wrong key commitments, bad AAD and missing snapshot position', async () => {
     const f = ledgerFixture(true);
     await Effect.runPromise(
       Effect.scoped(
@@ -982,11 +1126,11 @@ describe('ledger-bound signed document workflows', () => {
               yield* Effect.result(
                 good.seal({
                   ...updateInput,
-                  context: { ...updateContext, kind: 'snapshot', continuationOffset: '1' },
+                  context: { ...updateContext, kind: 'snapshot', continuationOffset: '' },
                 })
               )
             )
-          ).toBe('unsupported-streams-context');
+          ).toBe('invalid-snapshot-offset');
         })
       )
     );

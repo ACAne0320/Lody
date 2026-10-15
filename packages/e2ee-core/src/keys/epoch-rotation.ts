@@ -13,6 +13,7 @@ import {
   hasVerifiedCheckpoint,
   requireLedgerContinuation,
   type LedgerView,
+  type Operation,
 } from '../ledger';
 import { prepareLedgerRecord, signLedgerRecord } from '../ledger/signing';
 import type { DeviceSigner } from '../signing';
@@ -24,7 +25,7 @@ import {
   submitRecord,
   type SubmissionResult,
 } from '../submission';
-import { commitEpochKey, sealHistoryPacket } from './history';
+import { commitEpochKey, openHistoryPacket, sealHistoryPacket } from './history';
 import type { NativeEpochProtector } from './host-protection';
 import type { makeSqliteProtectedEpochKeys } from './protected-sqlite';
 
@@ -68,6 +69,10 @@ const Meta = Schema.Struct({
 });
 type Candidate = typeof Row.Type;
 const fail = (code: EpochRotationError['code']) => new EpochRotationError({ code });
+const publication = (
+  operation: Operation
+): operation is Extract<Operation, { type: 'publishEpoch' | 'removeMemberAndPublishEpoch' }> =>
+  operation.type === 'publishEpoch' || operation.type === 'removeMemberAndPublishEpoch';
 const sql = <A>(work: () => A) =>
   Effect.try({
     try: work,
@@ -277,7 +282,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     )
       throw fail('corrupt');
   };
-  const manager = (view: LedgerView) => {
+  const manager = (view: LedgerView, removing?: Bytes.MembershipId) => {
     const state = view.inspectState(),
       device = state.devices.get(publisher),
       member = device && state.members.get(keyId(device.membershipId.toBytes()));
@@ -285,6 +290,13 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
       device?.kind !== 'personal' ||
       !member ||
       (member.role !== 'owner' && member.role !== 'admin')
+    )
+      return Effect.fail(fail('unauthorized'));
+    if (
+      removing &&
+      (member.role !== 'owner' ||
+        removing.equals(state.owner) ||
+        !state.members.has(keyId(removing.toBytes())))
     )
       return Effect.fail(fail('unauthorized'));
     return Effect.void;
@@ -333,7 +345,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
       decoded.body.type !== 'ordinary' ||
       !decoded.body.signer.equals(publicKey) ||
       !bytesEqual(decoded.body.previousHash.toBytes(), row.parent) ||
-      decoded.body.operation.type !== 'publishEpoch' ||
+      !publication(decoded.body.operation) ||
       decoded.body.operation.epoch !== row.epoch ||
       !bytesEqual(decoded.body.operation.commitment.toBytes(), row.commitment)
     )
@@ -432,7 +444,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     const record = Result.getOrThrow(decodeRecord(row.record));
     if (
       record.body.type !== 'ordinary' ||
-      record.body.operation.type !== 'publishEpoch' ||
+      !publication(record.body.operation) ||
       !bytesEqual(packet.commitment.toBytes(), row.commitment) ||
       !bytesEqual(packet.packet, record.body.operation.previousEpochKey)
     )
@@ -520,25 +532,39 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     const entry = yield* journal.load(anchor);
     if (entry.record) {
       const decoded = yield* Effect.fromResult(decodeRecord(entry.record));
-      if (decoded.body.type === 'ordinary' && decoded.body.operation.type === 'publishEpoch')
+      if (decoded.body.type === 'ordinary' && publication(decoded.body.operation))
         return yield* fail('candidate-missing');
     }
     return null;
   });
-  const publish = Effect.fnUntraced(function* () {
+  const publish = Effect.fnUntraced(function* (removing?: Bytes.MembershipId) {
+    const target = removing
+      ? yield* Effect.fromResult(Bytes.membershipId(removing.toBytes()))
+      : undefined;
     const view = yield* current();
     const existing = yield* sql(() => load());
-    if (existing) return yield* settle(existing);
+    if (existing) {
+      const decoded = yield* Effect.fromResult(decodeRecord(existing.record));
+      if (
+        decoded.body.type !== 'ordinary' ||
+        (target
+          ? decoded.body.operation.type !== 'removeMemberAndPublishEpoch' ||
+            !decoded.body.operation.membershipId.equals(target)
+          : decoded.body.operation.type !== 'publishEpoch')
+      )
+        return yield* fail('busy');
+      return yield* settle(existing);
+    }
     const pending = yield* journal.load(anchor);
     if (pending.record) {
       const decoded = yield* Effect.fromResult(decodeRecord(pending.record));
       return yield* fail(
-        decoded.body.type === 'ordinary' && decoded.body.operation.type === 'publishEpoch'
+        decoded.body.type === 'ordinary' && publication(decoded.body.operation)
           ? 'candidate-missing'
           : 'busy'
       );
     }
-    yield* manager(view);
+    yield* manager(view, target);
     const state = view.inspectState(),
       epoch = yield* Effect.fromResult(Bytes.epochNumber(state.epoch.number + 1));
     return yield* Effect.acquireUseRelease(
@@ -568,11 +594,28 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
                     previousKey: previous,
                   })
                 );
+              yield* Effect.acquireUseRelease(
+                Effect.fromResult(
+                  openHistoryPacket({ genesis: anchor, epoch, currentKey: key, packet })
+                ),
+                (restored) =>
+                  Effect.gen(function* () {
+                    const restoredCommitment = yield* Effect.fromResult(
+                      commitEpochKey(anchor, state.epoch.number, restored)
+                    );
+                    if (!restoredCommitment.equals(state.epoch.keyCommitment))
+                      return yield* fail('corrupt');
+                    return undefined;
+                  }),
+                (restored) => Effect.sync(() => disposeEpochKey(restored))
+              );
               const body = yield* Effect.fromResult(
                 encodeCbor([
                   view.head.toBytes(),
                   publicKey.toBytes(),
-                  [7, epoch, commitment.toBytes(), packet],
+                  target
+                    ? [8, target.toBytes(), epoch, commitment.toBytes(), packet]
+                    : [7, epoch, commitment.toBytes(), packet],
                 ])
               );
               const proposal = yield* Effect.fromResult(prepareLedgerRecord(view, body));
@@ -608,7 +651,7 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
               );
               row = { ...row, blob };
               const now = yield* current();
-              yield* manager(now);
+              yield* manager(now, target);
               if (!now.head.equals(view.head) || now.length !== view.length)
                 return yield* fail('context-changed');
               yield* sql(() =>
@@ -696,6 +739,8 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     });
   return Object.freeze({
     publish: () => lease(publish()),
+    /** One signed record removes the target's current devices and enables the next epoch. */
+    publishRemoving: (membership: Bytes.MembershipId) => lease(publish(membership)),
     resume: () => lease(resume()),
     /** Local original/result history only. Use resume to reconcile remote authority. */
     result: () =>

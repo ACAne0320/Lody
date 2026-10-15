@@ -146,6 +146,8 @@ export function makeLabLedgerActor(
           // same actor. P09 still rejects any competing original atomically.
           return Object.freeze({
             publish: () => guard().pipe(Effect.andThen(publisher.publish())),
+            publishRemoving: (membership: Bytes.MembershipId) =>
+              guard().pipe(Effect.andThen(publisher.publishRemoving(membership))),
             resume: () => guard().pipe(Effect.andThen(publisher.resume())),
             result: () => guard().pipe(Effect.andThen(publisher.result())),
             acknowledge: (result: Parameters<typeof publisher.acknowledge>[0]) =>

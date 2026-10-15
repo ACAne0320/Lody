@@ -124,8 +124,8 @@ Control 复用具体 SDK adapter 同次验证的 genuine view，不再重放同�
 ## 尚未完成的边界
 
 - 可恢复工作区创建，以及独立取得并持久保存的宿主 checkpoint。
-- 受保护内容快照的位置/格式、资格及保留历史读取 API。
-- 原子成员移除发布者、独立候选备份策略及恢复库；本地新 epoch 发布与重试已实现。
+- 内容快照的生产资格来源及保留历史读取 API；实验 header4 已认证精确续读位置。
+- 独立候选备份策略及恢复库；本地 tag7 与原子 tag8 发布、原件重试已实现。
 - 精确熵/密文字节重建、其余原始 actor/攻击场景及保密性测量。
 - 比较 note 的权威、严格 freshness B、原生存钥和产品接线。
 
@@ -146,4 +146,25 @@ P09 日志及接收器唯一 installed 存储；文档每次从真实账本选�
 
 现有工作区启动可选 `snapshot: { bytes, trust, offset }`。认证前先捕获并验证独立资格；
 metadata 不能选择权限。重开仍需相同显式起点和独立预期终点。读取启动无需重放旧前缀；
-P09 写入仍独立验证全历史。生产资格取得、受保护内容快照和 snapshot-only 写入尚未完成。
+P09 写入仍独立验证全历史。生产资格取得和 snapshot-only P09 写入尚未完成。
+
+
+## 当前快照与原子移除消费者
+
+文档配置显式 `snapshotUpload: true` 才开放 `uploadSnapshot(id)`。Lab 调用已发布
+SDK 标为 internal 的 `uploadSnapshotForTesting`，不是产品公开上传 API。header4
+认证实际续读位置；接收方先验签再取钥、解密，native 文档与 cursor 仍原子保存。
+Riverrun 缺少恢复历史时继续 fail closed，不重置 earliest offset 掩盖缺口。
+
+`removeMemberAndRotate(member)` 复用同一个候选 publisher/P09，把移除与新代写成
+一条记录。已入账 R 为本人新 personal 登记、丢回执后重开原记录、认证收钥和读文档
+已有真实消费者；这不包含恢复文件或 vault。`comparisonNote()` 仅导出刷新的个人设备
+观察，原始比较仍不是独立确认，调用方必须另给实际可信信道取得的 exact tuple。
+
+
+本地快照 gateway 必须借入显式初始化的持久接纳 journal，没有内存后备。PUT 结果不明时，
+宿主 `resumeSnapshot` 只通过 native GET 确认保存的原件，不再次 PUT。Accepted 精确重试
+不能复活旧快照。再次调用 SDK 上传方法会生成新随机密文，同位置第二次上传应当冲突。
+同一 resource/model 必须只有一个 gateway，等待原生工作真正结束后再重开；不提供多宿主
+fencing 或 Riverrun+SQLite 跨库事务。原始未确认尝试过期后明确 blocked，不能靠新 token
+悄悄续期；这属于 fail-closed 保留状态，不是完整宿主可用性恢复的证明。

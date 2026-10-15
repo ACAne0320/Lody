@@ -60,3 +60,22 @@ Publisher 借用 installed 读钥时不持有 control actor 的许可，因为�
 每次重开重新提供资格。认证工作区在原生认证前捕获资格，可不读 genesis 前缀而启动读取。
 Offset 和 SQL 不选择权限，P09 写入仍验证全历史。这不改变 snapshot wire 或资格规则，
 也不代表生产信任取得已完成。
+
+
+## 当前原子移除与内容快照补齐
+
+当前 tag8 由 Owner 的 personal 设备签成一条记录，同时移除目标并启用新代。
+复用原候选与 P09，保留退役成员／设备事实和历史，发钥只面向剩余设备。现行快照
+授权状态已能表达同一后态，不增加旧端 capability 协商或第二 decoder。该编码仍为
+实验实现，关联 Spec 保持 draft，供互操作与安全审查。
+
+内容 header4 在 provider header 内携带有界规范续读位置，因此已发布 SDK AAD、
+内容签名和 AEAD 都认证该位置。update 保留原 header3 字节；移位、model、purpose、
+签名或 AEAD 错误不推进持久状态。宿主在 native 验签前后核当前写权／epoch及提交者。
+快照还须跨重试保留已接纳原件身份和当前位置；单独调用 Riverrun PUT 不满足该契约。
+生产历史保留／信任来源与严格 B 仍单独待定。Lab 明示 SDK 上传方法带 internal 标记。
+
+已入账 R→本人 personal 消费者复用公开 proof/P09/HTTP/HPKE，不增加同义 service。
+个人设备刷新的比较 note 仍须调用方给出真实独立信道取得的精确 tuple，宿主观察
+不能自行升级为确认。代码结构评估建议保留领域目录，只拆过大的 rotation／receive／
+distribution 中纯规则、流程和平台存储；本次没有移动文件或执行架构重构。

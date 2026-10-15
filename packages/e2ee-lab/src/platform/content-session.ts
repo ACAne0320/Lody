@@ -10,6 +10,7 @@ export function makeLabLoroSession(
     readonly mode: 'create' | 'open';
     readonly streamUrl: string;
     readonly fetch: (input: string, init?: RequestInit) => Promise<Response>;
+    readonly snapshotUpload?: boolean;
   }
 ) {
   return makeLabDocumentSession({ ...input, model: 'loro' }, () => {

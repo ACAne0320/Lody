@@ -6,7 +6,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Effect, Result } from 'effect';
 import { decodeRecord } from '@lody/e2ee-core/ledger';
-import { signLedgerSnapshot, type SnapshotTrust } from '@lody/e2ee-core/ledger/snapshot';
+import {
+  signLedgerSnapshot,
+  compareNotes,
+  confirmIndependentComparison,
+  type SnapshotTrust,
+} from '@lody/e2ee-core/ledger/snapshot';
 import { labSyntheticProtector } from '../src/platform/synthetic-protection';
 import { openLabExistingWorkspace } from '../src/platform/workspace-session';
 import { expect, it } from 'vitest';
@@ -175,7 +180,11 @@ it('starts real admitted peers, installs HPKE keys/reports, syncs both SDK model
       Effect.scoped(
         Effect.gen(function* () {
           const fixture = yield* makeLabScenarioFixture(join(root, 'fixture'));
-          const input = fixture.input('owner', 'create');
+          const originalInput = fixture.input('owner', 'create');
+          const input = {
+            ...originalInput,
+            documents: originalInput.documents.map((doc) => ({ ...doc, snapshotUpload: true })),
+          };
           const owner = yield* openLabWorkspaceSession(input);
           const peer = yield* openLabWorkspaceSession(fixture.input('peer', 'create'));
           yield* owner.keyRound();
@@ -184,10 +193,34 @@ it('starts real admitted peers, installs HPKE keys/reports, syncs both SDK model
           yield* owner.createDocument('flock');
           yield* owner.append('loro', 'original loro');
           yield* owner.append('flock', 'original flock');
+          yield* owner.uploadSnapshot('loro');
+          yield* owner.uploadSnapshot('flock');
           yield* peer.pull('loro');
           yield* peer.pull('flock');
           expect(yield* peer.text('loro')).toBe('original loro');
           expect(yield* peer.text('flock')).toBe('original flock');
+          const localNote = yield* owner.comparisonNote();
+          const remoteNote = yield* peer.comparisonNote();
+          expect(Result.getOrThrow(compareNotes(localNote, remoteNote))).toMatchObject({
+            kind: 'agree',
+            independent: false,
+          });
+          expect(
+            Result.getOrThrow(
+              confirmIndependentComparison(localNote, remoteNote, fixture.owner.publicKey, {
+                source: 'authenticated-channel',
+                expected: remoteNote,
+              })
+            )
+          ).toMatchObject({ kind: 'agree', independent: true });
+          expect(
+            Result.isFailure(
+              confirmIndependentComparison(localNote, remoteNote, fixture.owner.publicKey, {
+                source: 'manual',
+                expected: { ...remoteNote, length: remoteNote.length + 1 },
+              })
+            )
+          ).toBe(true);
           expect(yield* peer.cursor('loro')).not.toBeNull();
           expect(yield* peer.cursor('flock')).not.toBeNull();
           yield* owner.persist('loro');
@@ -369,7 +402,14 @@ it('durably retries an unadmitted join original after a lost receipt, then start
           const reopened = yield* openLabJoinSession({ ...joinInput, mode: 'open' });
           expect(reopened.original()).toEqual(original);
           const submitted = yield* reopened.submit();
-          const owner = yield* openLabWorkspaceSession(f.input('owner', 'create'));
+          const owner = yield* openLabWorkspaceSession({
+            ...f.input('owner', 'create'),
+            epochRotation: {
+              path: join(f.directory, 'removal-candidates.sqlite'),
+              mode: 'create',
+              protector: labSyntheticProtector,
+            },
+          });
           const requests = yield* owner.listJoins();
           expect(requests).toHaveLength(1);
           expect(requests[0]!.requestId.equals(submitted.requestId)).toBe(true);
@@ -403,6 +443,37 @@ it('durably retries an unadmitted join original after a lost receipt, then start
           yield* session.keyRound();
           yield* session.pull('loro');
           expect(yield* session.text('loro')).toBe('only admitted readers');
+          const before = f.records.length;
+          const removal = yield* owner.removeMemberAndRotate(
+            Result.getOrThrow(Bytes.membershipId(new Uint8Array(16).fill(125)))
+          );
+          expect(removal.outcome).toBe('Committed');
+          expect(removal.epoch).toBe(1);
+          expect(f.records).toHaveLength(before + 1);
+          const removedRecord = Result.getOrThrow(decodeRecord(removal.record));
+          expect(removedRecord.body.type === 'ordinary' && removedRecord.body.operation.type).toBe(
+            'removeMemberAndPublishEpoch'
+          );
+          expect(
+            f
+              .view()
+              .inspectState()
+              .devices.has(Buffer.from(device.publicKey.toBytes()).toString('hex'))
+          ).toBe(false);
+          expect(f.view().inspectState().epoch.rotationRequired).toBe(false);
+          yield* owner.acknowledgeEpochRotation(removal);
+          yield* owner.keyRound();
+          yield* owner.append('loro', ' / after removal');
+          expect(Result.isFailure(yield* Effect.result(session.refresh()))).toBe(true);
+          expect(yield* session.text('loro')).toBe('only admitted readers');
+          const stored = new Database(file('keys'), { readonly: true });
+          try {
+            expect(
+              stored.prepare('SELECT epoch FROM protected_epoch_keys ORDER BY epoch').all()
+            ).toEqual([{ epoch: 0 }]);
+          } finally {
+            stored.close();
+          }
         })
       )
     );

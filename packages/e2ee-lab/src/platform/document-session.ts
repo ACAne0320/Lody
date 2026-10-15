@@ -28,6 +28,7 @@ export class LabContentError extends Data.TaggedError('LabContentError')<{
     | 'storage'
     | 'native'
     | 'transport'
+    | 'snapshot-disabled'
     | TransportError['code']
     | import('@loro-dev/streams-crdt').PayloadProtectionFailureReason;
   readonly cause?: unknown;
@@ -38,13 +39,15 @@ const error = (code: LabContentError['code'], cause?: unknown) =>
   new LabContentError({ code, cause });
 /** One synthetic Lab document, two real SDK modes, one durable state/cursor pair.
  * Failure stops this document only. Recovery explicitly reloads its durable native
- * state and replays encrypted history from -1; no snapshot writer/compatibility choice. */
+ * state and replays encrypted history from -1. Snapshot publication is explicit. */
 export function makeLabDocumentSession<TVersion extends JsonObject>(
   input: Parameters<typeof makeStreamsUpdateBinding>[0] & {
     readonly path: string;
     readonly mode: 'create' | 'open';
     readonly streamUrl: string;
     readonly fetch: (input: string, init?: RequestInit) => Promise<Response>;
+    /** Lab-only opt-in to the released SDK's explicit experimental snapshot uploader. */
+    readonly snapshotUpload?: boolean;
   },
   createNative: () => LabNativeDocument<TVersion>
 ) {
@@ -52,7 +55,8 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
     const path = input.path,
       mode = input.mode,
       streamUrl = input.streamUrl;
-    const nativeFetch = input.fetch;
+    const nativeFetch = input.fetch,
+      snapshotUpload = input.snapshotUpload === true;
     let closed = false,
       stopped = false;
     const active = new Set<Deferred.Deferred<void>>();
@@ -175,7 +179,7 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
                 },
                 payloadProtectionRequired: true,
                 e2ee: { provider, readPolicy: 'encrypted-only', writePolicy: 'encrypt' },
-                snapshotUpload: { enabled: false, canUpload: () => false },
+                snapshotUpload: { enabled: snapshotUpload, canUpload: () => snapshotUpload },
               })
           );
           yield* Effect.acquireRelease(
@@ -266,6 +270,17 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
             yield* live();
             const result = yield* useSdk(false, (sdk) => sdk.catchup());
             if (!result.ok) yield* sdkError(result.error);
+          })
+        ),
+      /** Uses the released SDK's public internal test hook, not a production publish API. */
+      uploadSnapshot: () =>
+        execute(
+          Effect.gen(function* () {
+            yield* live();
+            if (!snapshotUpload) return yield* error('snapshot-disabled');
+            const result = yield* useSdk(false, (sdk) => sdk.uploadSnapshotForTesting());
+            if (!result.ok) return yield* sdkError(result.error);
+            return result.value;
           })
         ),
       /** Explicit client recovery; preserves durable local edits, never deletes/changes host snapshots. */

@@ -18,7 +18,8 @@
     "Replace reflective class authority with closure-backed views registered in a private WeakMap.",
     "Require caller-pinned genesis and expected head/count; suffix failure preserves the preceding view.",
     "Omit snapshots, journal, services, content-author and history decryption APIs.",
-    "Reject obsolete tag 2 non-atomic removal; P12 owns replacement."
+    "Reject obsolete tag 2 non-atomic removal; P12 owns replacement.",
+    "Current tag8 is Owner-personal atomic target removal plus next epoch, reusing existing signature/hash domains and 72B history. Snapshot state is unchanged and matches full replay; no tag2/dual decoder/capability compatibility."
   ],
   "historicalFactsExtraction": {
     "sources": {

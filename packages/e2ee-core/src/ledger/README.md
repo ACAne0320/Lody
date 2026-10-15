@@ -133,7 +133,7 @@ and upgrades no audit provenance. No new comparison wire/signature domain is add
 
 ## Admission consent and ordinary intent
 
-The explicit [`./ledger/admission`](ADMISSION.md) entry adds fixed-verified borrowed signing of joining consent/device possession proofs, genuine-view ordinary command preparation and v1 genesis production from an already retained initial epoch key. Account identity, expiry enforcement, durable key custody, publication and atomic-removal/rotation orchestration remain separate owners.
+The explicit [`./ledger/admission`](ADMISSION.md) entry adds fixed-verified borrowed signing of joining consent/device possession proofs, genuine-view ordinary command preparation and v1 genesis production from an already retained initial epoch key. Account identity, expiry enforcement, durable key custody, publication and atomic-removal/rotation orchestration use the explicit local candidate owner, not the ordinary command union.
 
 ## Full-history feed and durable position
 
@@ -143,3 +143,13 @@ transport position. They reject repeated records and rollback pages, require a
 separately trusted exact endpoint, and retain/await borrowed SDK reads on close.
 No snapshot-prefix skipping, submission/CAS replacement or endpoint discovery is
 introduced. Local budgets retain history on failure.
+
+
+Current tag8 is `[8, membershipId, nextEpoch, commitment, previousEpochKey]`.
+It removes a non-Owner member and all its current devices while installing the
+next commitment/history packet in one transition. Only the pre-state Owner's
+personal device may sign it. Current snapshot-v1 already contains the resulting
+members/devices, epoch, history packets and used identities; the same-point state
+digest is identical after full replay or independently qualified snapshot replay.
+Historical authors are retained when their history is available. No second snapshot
+format, capability-negotiation layer, old-tag2 reader or dual emission is added.

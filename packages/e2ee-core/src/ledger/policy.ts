@@ -265,10 +265,26 @@ export function applyOperation(
         s.owner = op.successorMembershipId;
         break;
       }
-      case 'publishEpoch': {
-        if (!manage) return yield* fail('unauthorized');
+      case 'publishEpoch':
+      case 'removeMemberAndPublishEpoch': {
+        if (op.type === 'removeMemberAndPublishEpoch') {
+          if (
+            !owner ||
+            op.membershipId.equals(s.owner) ||
+            !HashMap.has(s.members, id(op.membershipId))
+          )
+            return yield* fail('unauthorized');
+        } else if (!manage) return yield* fail('unauthorized');
         if (op.epoch !== s.epoch.number + 1) return yield* fail('invalid-operation');
         if (HashSet.has(s.usedCommitments, id(op.commitment))) return yield* fail('replay');
+        if (op.type === 'removeMemberAndPublishEpoch') {
+          s.members = HashMap.remove(s.members, id(op.membershipId));
+          // Retain author identity, used keys and membership IDs. Only current
+          // membership/devices disappear in this same epoch transition.
+          for (const [key, device] of s.devices)
+            if (device.membershipId.equals(op.membershipId))
+              s.devices = HashMap.remove(s.devices, key);
+        }
         s.usedCommitments = HashSet.add(s.usedCommitments, id(op.commitment));
         s.historyPackets = HashMap.set(
           s.historyPackets,

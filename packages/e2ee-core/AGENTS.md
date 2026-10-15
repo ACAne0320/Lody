@@ -37,7 +37,8 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   Revocation retains old author identity but grants no current write permission.
   Recovery/Guest never write; required rotation blocks new seals. Returned packet
   bytes are owned copies, not decrypted keys or commitment-preimage proofs.
-- Reject legacy non-atomic member removal; its replacement belongs to P12.
+- Reject legacy tag2. Current tag8 removes a non-Owner member and activates the
+  next epoch atomically, under pre-state Owner personal authority only.
 
 - Submission persists original signed bytes before CAS, retries exact bytes, and
   reads back before reporting success. Conflicts never re-sign. Terminal result,
@@ -76,39 +77,22 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   post-crypto verified-prefix recheck. Recovery receives but never sends. It returns
   no durable installation/delivery receipt; failed owned opens wipe/invalidate their key.
 
-- Finite `./keys/delivery` never accepts an injected authorization callback or trusts
-  disk as ledger authority. Persist the first ciphertext before send, retry original
-  bytes, reverify each send and reject known in-round rollback/forks. Readback proves
-  ciphertext observation only. Node `./keys/delivery/sqlite` owns closure through Scope,
-  indexes bounded rows and never converts old JSON or deletes pending/history on close.
-
-- `./ledger/snapshot` requires independent exact Org/point/device/member/management
-  role/personal-kind confirmation, or a private token from a genuine same-point view.
-  Neither snapshot/journal self-claims nor a pubkey pin alone establish qualification.
-  Signature-only evidence is never authority. Endorsed bootstrap is explicitly distinct
-  from genesis audit; retain only actual known suffix hashes, never sparse placeholders.
-- Raw note equality is not independent confirmation. Bind caller-confirmed actual
-  genesis/head/count/stateDigest/peer and its manual/authenticated-channel source;
-  never infer confirmation from a key list, or upgrade history/permissions by comparison.
-
-- `./keys/mailbox/sqlite` is a public local reference, never production authentication.
-  Bind principals only from trusted composition; fixed-verify current envelope/report
-  admission. Index recipient rows and deduplicate exact ciphertext; no global read limit.
-  Verified observations survive failed pin writes in the same owner; success requires
-  exact fixed-context/head/count readback. Failed persistence makes no reopen promise.
-  Reports are claims, not custody proof. Repair invalidates prior reports; indexed
-  storage rejects foreign formats without import.
-  Callers cancel/await borrowed work before Scope closes storage.
+- Delivery, mailbox, receiver, repair and distribution follow the nearest
+  [keys rules](src/keys/AGENTS.md); ledger snapshot qualification/comparison follows
+  the [ledger rules](src/ledger/AGENTS.md). Preserve original-byte recovery,
+  authenticated contexts and separate authority from remote/disk hints.
 
 - Content author identity preserves full member mapping when known; endorsed retired
   devices may authenticate only device identity, never a guessed user or current write
   right. Capture seal inputs/capabilities before waiting, wipe owned plaintext through
   a real resource bracket, and reject later views outside the known verified prefix.
 
-- Host header3 update admission lives under `./content/streams`: current genuine
-  view, authenticated signer, exact resource/model/epoch and bounded whole batch
-  precede forwarding. Historical authorship is not current write permission or
-  decryption proof. Unsupported headers fail; no new snapshot protocol.
+- Host header3/update and position-bound header4/snapshot admission lives under
+  `./content/streams`: genuine current writer, submitting signer, resource/model/epoch
+  and complete original precede forwarding. Historical authentication grants no new
+  write right. Snapshot publication retains exact signer/offset/body and current
+  receipt; uncertain native outcomes remain Pending, old retries never republish.
+  One resource/model owner serializes native writes through actual settlement.
 
 - Current formats: no legacy imports, dual decoders or schema upgrades. Reject unsupported input without rewriting; keep current reopen/history.
 

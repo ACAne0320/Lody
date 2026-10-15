@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,16 +10,56 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as Bytes from '../../src/bytes';
 import { encodeCbor } from '../../src/cbor';
 import { disposeEpochKey } from '../../src/epoch-key';
-import { extendLedger, hashRecordBytes, type LedgerView } from '../../src/ledger';
+import {
+  decodeRecord,
+  extendLedger,
+  hashRecordBytes,
+  verifyLedger,
+  type LedgerView,
+} from '../../src/ledger';
+import {
+  prepareDeviceAdmission,
+  prepareJoinRequest,
+  prepareLedgerCommand,
+} from '../../src/ledger/admission';
 import { prepareLedgerRecord, signLedgerRecord } from '../../src/ledger/signing';
 import { SubmissionJournal, SubmissionRemote, SubmissionRemoteError } from '../../src/submission';
 import { sqliteSubmissionJournal } from '../../src/submission/sqlite';
 import { makeSqliteEpochRotation } from '../../src/keys/epoch-rotation';
-import { commitEpochKey, sealHistoryPacket } from '../../src/keys/history';
+import { commitEpochKey, recoverLedgerHistory, sealHistoryPacket } from '../../src/keys/history';
 import { makeSqliteProtectedEpochKeys } from '../../src/keys/protected-sqlite';
-import { envelopeFixture } from './fixture';
+import { makeSqliteKeyDistribution } from '../../src/keys/distribution-sqlite';
+import { makeSqliteKeyMailbox } from '../../src/keys/mailbox-sqlite';
+import { makeSqliteRecipientMailbox } from '../../src/keys/mailbox-client';
+import { envelopeFixture, recipientPair } from './fixture';
 import { synthetic } from './protection-fixture';
 const ok = Result.getOrThrow;
+function memberDevice(seed: number) {
+  const privateKey = createPrivateKey({
+    key: Buffer.concat([
+      Buffer.from('302e020100300506032b657004220420', 'hex'),
+      Buffer.alloc(32, seed),
+    ]),
+    format: 'der',
+    type: 'pkcs8',
+  });
+  const publicKey = ok(
+    Bytes.signingPublicKey(
+      new Uint8Array(
+        createPublicKey(privateKey).export({ format: 'der', type: 'spki' }).subarray(-32)
+      )
+    )
+  );
+  return {
+    publicKey,
+    encryptionPublicKey: ok(Bytes.encryptionPublicKey(new Uint8Array(32).fill(seed + 100))),
+    signer: {
+      publicKey,
+      sign: (message: Uint8Array) =>
+        Effect.sync(() => ok(Bytes.signature(new Uint8Array(sign(null, message, privateKey))))),
+    },
+  };
+}
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -36,7 +77,8 @@ function fixture(kind: 0 | 1 | 2 = 0) {
   };
   let view = f.view(),
     records = f.records(),
-    mode: 'ok' | 'unavailable' | 'lost-ack' = 'ok',
+    mode: 'ok' | 'unavailable' | 'lost-ack' | 'lost-readback' = 'ok',
+    readbackLost = false,
     signed = 0;
   const persist = () =>
     writeFileSync(
@@ -54,10 +96,14 @@ function fixture(kind: 0 | 1 | 2 = 0) {
   const lookup = () => Effect.sync(() => view);
   const remote = SubmissionRemote.of({
     read: () =>
-      Effect.sync(() => ({
-        records: records.map((r) => new Uint8Array(r)),
-        checkpoint: { head: view.head, length: view.length },
-      })),
+      Effect.suspend(() =>
+        readbackLost
+          ? Effect.fail(new SubmissionRemoteError())
+          : Effect.sync(() => ({
+              records: records.map((r) => new Uint8Array(r)),
+              checkpoint: { head: view.head, length: view.length },
+            }))
+      ),
     appendCas: (_anchor, expected, record) =>
       Effect.suspend(() => {
         // Observe both actual durable originals at the transport boundary, not
@@ -86,6 +132,7 @@ function fixture(kind: 0 | 1 | 2 = 0) {
         if (!view.head.equals(expected.head) || view.length !== expected.length)
           return Effect.fail(new SubmissionRemoteError());
         append(record);
+        if (mode === 'lost-readback') readbackLost = true;
         return mode === 'lost-ack' ? Effect.fail(new SubmissionRemoteError()) : Effect.void;
       }),
   });
@@ -155,6 +202,7 @@ function fixture(kind: 0 | 1 | 2 = 0) {
     records: () => records.map((r) => new Uint8Array(r)),
     mode: (next: typeof mode) => {
       mode = next;
+      readbackLost = false;
     },
     signed: () => signed,
   };
@@ -164,6 +212,253 @@ const failureCode = (exit: Exit.Exit<unknown, unknown>, code: string) => {
   if (Exit.isFailure(exit)) expect(JSON.stringify(exit.cause)).toContain(code);
 };
 describe('durable local epoch rotation', () => {
+  it('removes one member and all its device kinds through the same durable candidate and real P09 after process reopen', async () => {
+    const f = fixture(),
+      target = ok(Bytes.membershipId(new Uint8Array(16).fill(90))),
+      devices = [memberDevice(41), memberDevice(42), memberDevice(43)],
+      originalHistory = f.records();
+    let initial: string[] = [];
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const request = yield* prepareJoinRequest({
+            genesis: f.context.genesis,
+            requestId: ok(Bytes.requestId(new Uint8Array(16).fill(91))),
+            userId: ok(Bytes.userId(new Uint8Array(32).fill(90))),
+            encryptionPublicKey: devices[0]!.encryptionPublicKey,
+            expiresAt: null,
+            signer: devices[0]!.signer,
+          });
+          f.append(
+            yield* signLedgerRecord(
+              ok(
+                prepareLedgerCommand(f.view(), f.owner.publicKey, {
+                  _tag: 'AdmitMember',
+                  membershipId: target,
+                  request,
+                })
+              ),
+              f.owner.signer
+            )
+          );
+          for (const [index, kind] of ['machine', 'recovery'].entries()) {
+            const device = devices[index + 1]!,
+              command = yield* prepareDeviceAdmission({
+                genesis: f.context.genesis,
+                membershipId: target,
+                encryptionPublicKey: device.encryptionPublicKey,
+                kind: kind as 'machine' | 'recovery',
+                signer: device.signer,
+              });
+            f.append(
+              yield* signLedgerRecord(
+                ok(prepareLedgerCommand(f.view(), devices[0]!.publicKey, command)),
+                devices[0]!.signer
+              )
+            );
+          }
+          const { rotation } = yield* f.open();
+          failureCode(
+            yield* Effect.exit(rotation.publishRemoving(f.view().inspectState().owner)),
+            'unauthorized'
+          );
+          failureCode(
+            yield* Effect.exit(
+              rotation.publishRemoving(ok(Bytes.membershipId(new Uint8Array(16).fill(99))))
+            ),
+            'unauthorized'
+          );
+          expect(f.signed()).toBe(0);
+          f.mode('unavailable');
+          failureCode(yield* Effect.exit(rotation.publishRemoving(target)), 'unconfirmed');
+          const original = f.row()!,
+            parsed = ok(decodeRecord(original.record));
+          expect(parsed.body.type === 'ordinary' && parsed.body.operation).toMatchObject({
+            type: 'removeMemberAndPublishEpoch',
+            epoch: 1,
+          });
+          expect(
+            f.view().inspectState().members.has(Buffer.from(target.toBytes()).toString('hex'))
+          ).toBe(true);
+          expect(f.view().inspectState().epoch.number).toBe(0);
+          expect(f.signed()).toBe(1);
+          failureCode(yield* Effect.exit(rotation.publish()), 'busy');
+          failureCode(
+            yield* Effect.exit(
+              rotation.publishRemoving(ok(Bytes.membershipId(new Uint8Array(16).fill(99))))
+            ),
+            'busy'
+          );
+          expect(f.signed()).toBe(1);
+          initial = f.records().map((record) => Buffer.from(record).toString('hex'));
+          f.mode('lost-readback');
+          failureCode(
+            yield* Effect.exit(rotation.publishRemoving(target)),
+            'SubmissionRemoteError'
+          );
+          expect(f.row()!.record).toEqual(original.record);
+          expect(f.row()!.outcome).toBeNull();
+          expect(f.view().inspectState().epoch.number).toBe(1);
+          expect(
+            f.view().inspectState().members.has(Buffer.from(target.toBytes()).toString('hex'))
+          ).toBe(false);
+          expect(f.signed()).toBe(1);
+        })
+      )
+    );
+    const original = f.row()!,
+      config = path.join(path.dirname(f.files.candidate), 'remove-child.json');
+    expect(initial).toHaveLength(originalHistory.length + 3);
+    writeFileSync(
+      config,
+      JSON.stringify({
+        genesis: Buffer.from(f.context.genesis.toBytes()).toString('hex'),
+        publisher: Buffer.from(f.owner.publicKey.toBytes()).toString('hex'),
+        files: f.files,
+        initial,
+        candidate: original.record.toString('hex'),
+      }),
+      { mode: 0o600 }
+    );
+    const child = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', fileURLToPath(new URL('./rotation-reopen.mts', import.meta.url)), config],
+      { cwd: fileURLToPath(new URL('../..', import.meta.url)), encoding: 'utf8' }
+    );
+    expect(child.status, child.stderr).toBe(0);
+    expect(JSON.parse(child.stdout.trim())).toMatchObject({
+      outcome: 'Committed',
+      epoch: 1,
+      signed: 0,
+      consumed: 1,
+      removedMembershipId: Buffer.from(target.toBytes()).toString('hex'),
+    });
+    const retained = f.row()!;
+    expect(retained.record).toEqual(original.record);
+    expect(retained.blob).toEqual(original.blob);
+    expect(retained.consumed).toBe(1);
+    const records = (JSON.parse(readFileSync(f.files.history, 'utf8')) as string[]).map(
+        (hex) => new Uint8Array(Buffer.from(hex, 'hex'))
+      ),
+      view = ok(
+        verifyLedger({
+          anchor: f.context.genesis,
+          records,
+          checkpoint: {
+            head: hashRecordBytes(records[records.length - 1]!),
+            length: records.length,
+          },
+        })
+      );
+    expect(records).toHaveLength(initial.length + 1);
+    expect(view.inspectState().members.has(Buffer.from(target.toBytes()).toString('hex'))).toBe(
+      false
+    );
+    for (const device of devices)
+      expect(
+        view.inspectState().devices.has(Buffer.from(device.publicKey.toBytes()).toString('hex'))
+      ).toBe(false);
+    expect(
+      view.inspectState().devices.has(Buffer.from(f.owner.publicKey.toBytes()).toString('hex'))
+    ).toBe(true);
+    expect(
+      view.inspectState().devices.has(Buffer.from(f.phone.publicKey.toBytes()).toString('hex'))
+    ).toBe(true);
+    expect(view.inspectState().epoch).toMatchObject({ number: 1, rotationRequired: false });
+    const pair = await recipientPair();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const ledger = () => Effect.succeed(view),
+            file = (name: string) => path.join(path.dirname(f.files.candidate), `${name}.sqlite`),
+            hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
+          const host = yield* makeSqliteKeyMailbox({
+              path: file('mailbox'),
+              mode: 'create',
+              genesis: f.context.genesis,
+              ledger,
+            }),
+            ownerRemote = ok(host.bind(f.owner.publicKey)),
+            phoneRemote = ok(host.bind(f.phone.publicKey));
+          const distributor = yield* makeSqliteKeyDistribution({
+            path: file('publisher-receive'),
+            mode: 'create',
+            genesis: f.context.genesis,
+            signer: f.owner.signer,
+            pair,
+            ledger,
+            remote: ownerRemote,
+            keyStore: { path: f.files.keys, mode: 'open', protector: f.native.protector },
+            repairStore: { path: file('publisher-repair'), mode: 'create' },
+            sendStore: { path: file('distribution'), mode: 'create' },
+            outboxStore: { path: file('outbox'), mode: 'create' },
+            currentPublication: () => Effect.succeed(new Uint8Array(original.record)),
+          });
+          expect(yield* distributor.reconcileCurrentEpoch()).toEqual({
+            scheduled: 1,
+            blocked: [],
+            next: null,
+          });
+          expect(yield* distributor.resumePendingDeliveries()).toMatchObject({
+            processed: 1,
+            blocked: [],
+          });
+          yield* distributor.flushReports();
+          expect(
+            (yield* ownerRemote.status({
+              genesis: hex(f.context.genesis.toBytes()),
+              epoch: 1,
+              recipient: hex(f.owner.publicKey.toBytes()),
+            })).status
+          ).toBe('InstallationReported');
+          const receiver = yield* makeSqliteRecipientMailbox({
+            path: file('phone-receive'),
+            mode: 'create',
+            genesis: f.context.genesis,
+            signer: f.phone.signer,
+            pair,
+            ledger,
+            remote: phoneRemote,
+            keyStore: { path: file('phone-keys'), mode: 'create', protector: f.native.protector },
+            repairStore: { path: file('phone-repair'), mode: 'create' },
+          });
+          expect(yield* receiver.fetchAndInstall()).toEqual({ processed: 1, next: null });
+          yield* receiver.flushReports();
+          expect(
+            (yield* phoneRemote.status({
+              genesis: hex(f.context.genesis.toBytes()),
+              epoch: 1,
+              recipient: hex(f.phone.publicKey.toBytes()),
+            })).status
+          ).toBe('InstallationReported');
+          const key = yield* receiver.installedEpochKeys.read(1);
+          try {
+            expect(ok(commitEpochKey(f.context.genesis, 1, key))).toEqual(
+              view.inspectState().epoch.keyCommitment
+            );
+            const history = ok(recoverLedgerHistory(view, key));
+            try {
+              expect(ok(commitEpochKey(f.context.genesis, 0, history.get(0)!))).toEqual(
+                ok(commitEpochKey(f.context.genesis, 0, f.secret))
+              );
+            } finally {
+              for (const old of history.values()) disposeEpochKey(old);
+            }
+          } finally {
+            disposeEpochKey(key);
+          }
+          const db = new Database(file('mailbox'));
+          try {
+            expect(
+              db.prepare('SELECT DISTINCT recipient FROM mailbox_envelopes WHERE epoch=1').all()
+            ).toEqual([{ recipient: hex(f.phone.publicKey.toBytes()) }]);
+          } finally {
+            db.close();
+          }
+        })
+      )
+    );
+  });
   it('persists and actually opens one candidate before CAS; lost ACK keeps original and explicit ACK releases the next epoch', async () => {
     const f = fixture();
     f.mode('lost-ack');

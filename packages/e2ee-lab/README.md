@@ -142,8 +142,8 @@ genuine read result rather than replaying the same history twice.
 ## Remaining boundaries
 
 - Resumable workspace creation and independently acquired durable host checkpoints.
-- Protected content-snapshot position/format, qualification and retained-history API.
-- Atomic member-removal producer, independent candidate backup policy and recovery vault. Local E7 publication/retry is implemented.
+- Production qualification and retained-history APIs for content snapshots; experimental header4 authenticates the exact continuation position.
+- Independent candidate backup policy and recovery vault. Local E7 and atomic tag8 publication/retry are implemented.
 - Exact entropy/ciphertext regeneration, remaining original actors/attacks and confidentiality measurements.
 - Comparison-note authority, strict freshness B, native key custody and product wiring.
 
@@ -170,4 +170,34 @@ origin in existing-workspace startup. Capture/verify precedes authentication;
 metadata cannot choose authority. Reopening requires the same explicit origin and
 an independent expected endpoint. Read startup avoids the old control prefix;
 P09 writes still require full-history verification. Production trust acquisition,
-protected content snapshots and snapshot-only writes remain incomplete.
+production snapshot qualification acquisition and snapshot-only P09 writes remain incomplete.
+
+
+## Current content snapshots and atomic removal consumers
+
+Document configuration explicitly enables `snapshotUpload: true` before
+`uploadSnapshot(id)`. The Lab uses the released SDK's internal-marked
+`uploadSnapshotForTesting`, not a public production upload API. Header4 authenticates
+the actual continuation offset. Opening authenticates before key lookup and AEAD;
+native document state and cursor still commit together. Unavailable retained
+history remains fail-closed; no earliest-offset reset masks missing recovery.
+
+`removeMemberAndRotate(member)` shares the existing candidate publisher/P09 and
+writes one removal+epoch record. A real admitted R now exercises personal-device
+proof/submission, lost-receipt original recovery, new authentication, HPKE receipt
+and document reads. It does not add a recovery file or vault. `comparisonNote()`
+exports only a refreshed personal-device observation. Raw equality remains
+unconfirmed; callers separately supply the exact tuple from their actual trusted
+channel for independent confirmation.
+
+
+The local snapshot gateway uses an explicitly initialized publication journal;
+there is no memory fallback. After an unknown PUT outcome, its host-owned
+`resumeSnapshot` confirms the saved original through native GET without another
+PUT. Accepted exact retries cannot resurrect an older snapshot. Calling the SDK
+upload hook again creates fresh random ciphertext, so a second upload at the same
+position correctly conflicts. One resource/model gateway stays alive until raw
+work settles; multi-host fencing and crash-atomic Riverrun+SQLite writes are not
+provided. An expired unconfirmed first attempt remains blocked rather than being
+silently reauthorized by a new token. This fail-closed state is explicit evidence,
+not proof of complete host availability recovery.

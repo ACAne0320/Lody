@@ -23,12 +23,12 @@ Translation: current
 
 E2EE 尚未上线。删除旧端升级路径、双快照读者、降写旧格式，以及仅用于区分上线前格式的 capability pin。不支持的格式或操作直接失败，不提供兼容迁移。
 
-最终原子移除格式与权限快照须表达同一状态转移和精确认证位置；编码与签名／摘要用途域仍须在实现前审阅。当前快照不能绕过授权及独立新鲜度 pin，不能靠快照自报建立权限。这不要求新格式选定后仍保留 v1 读者，也不默认选择 snapshot-v2 或新用途域。
+最终原子移除格式与权限快照须表达同一状态转移和精确认证位置；已实现的编码与签名／摘要用途域仍须接受互操作和安全审查。当前快照不能绕过授权及独立新鲜度 pin，不能靠快照自报建立权限。这不要求新格式选定后仍保留 v1 读者，也不默认选择 snapshot-v2 或新用途域。
 
 ## 需要审阅的增量
 
-原子性、Owner 管理范围、后态排除目标、原文重试和成功后发钥均沿用已定规则；字段/函数名是工程选择。需要审阅的是最终 operation／snapshot 编码与认证位置契约；旧端兼容不在范围内；不扩大 Admin/R 权限，不变更算法、历史共享范围或 U03B。本提案未被批准、未接入生产；当前 codec 仍拒绝 tag8。
+原子性、Owner 管理范围、后态排除目标、原文重试和成功后发钥均沿用已定规则；字段/函数名是工程选择。需要审阅的是最终 operation／snapshot 编码与认证位置契约；旧端兼容不在范围内；不扩大 Admin/R 权限，不变更算法、历史共享范围或 U03B。本文仍为未批准 draft；实验 codec 已实现 tag8 供审查，不接入生产或批准备份策略。
 
 ## 证据
 
-[现行 codec](../../packages/e2ee-core/src/ledger/records.ts)、[权限](../../packages/e2ee-core/src/ledger/policy.ts)、[历史包](../../packages/e2ee-core/src/keys/history.ts)。这是代码核对及提案，不是新格式互操作测试或安全证明。
+[现行 codec](../../packages/e2ee-core/src/ledger/records.ts)、[权限](../../packages/e2ee-core/src/ledger/policy.ts)、[历史包](../../packages/e2ee-core/src/keys/history.ts)。真实签名回放、同点 snapshot／完整状态对照、错误权限及退役身份复用拒绝、一次 CAS 原件恢复和移除后实际 HPKE 发钥已由所属测试覆盖；这些行为证据不是安全证明或产品批准。

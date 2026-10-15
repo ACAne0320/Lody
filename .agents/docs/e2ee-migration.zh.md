@@ -14,7 +14,7 @@
 | [ledger](../../packages/e2ee-core/src/ledger/README.md) | 完整／增量回放、快照资格、普通命令准入及独立预期 checkpoint |
 | [keys](../../packages/e2ee-core/src/keys/README.md) | 信封／历史、接收／修复／报告／分发；共享接收器持有的单一保护存储 |
 | [submission](../../packages/e2ee-core/src/submission/README.md) | 已合入 P09：CAS前保存原字节、不重签、核原件与实际读回 |
-| [content](../../packages/e2ee-core/src/content/README.md) | header3更新与当前作者接纳，同一操作复用已解析的自有字节 |
+| [content](../../packages/e2ee-core/src/content/README.md) | header3 更新、有位置认证的 header4 快照与当前作者接纳，同一操作复用自有字节 |
 | [Lab](../../packages/e2ee-lab/README.md) | 真实SDK／HTTP／SQLite／Loro／Flock／OS进程和有限动作／CLI证据 |
 
 ## 当前格式与简化实现
@@ -26,10 +26,10 @@
 ## 剩余事项
 
 - 可续做workspace创建、独立可信checkpoint取得和host崩溃／丢ACK耐久性收口。
-- 受保护内容快照位置／格式及实际有权限的全历史保留／读取API。
-- 原子成员移除编码、独立candidate备份门槛／永久设备丢失例外与恢复vault决定。本地候选持久化、原件提交与崩溃恢复已迁入。
+- 内容快照的生产资格来源及实际有权限的全历史保留／读取 API；当前 header4 已认证续读位置。
+- 独立 candidate 备份门槛／永久设备丢失例外与恢复 vault 决定。当前原子 tag8 复用本地候选持久化、原件提交与崩溃恢复；编码仍待审。
 - 原字节replay熵及剩余原actor／attack场景；纯比较不等于执行覆盖。
-- comparison-note权限、严格期限B、真实native protector与私有产品接线。
+- comparison-note 额外签名权限、严格期限 B、真实 native protector 与私有产品接线；个人 note 和显式 exact-tuple 确认已有真实消费者。
 
 受限A仅批准初始化保护已验证installed钥，不批准完整恢复／vault／publisher范围。无完整修订批准的Specs仍draft。教程有Spec，但固定来源没有应用源码。作者验证、CI、独立审查、生产验收分别归属；测试数与文件状态不是完成百分比。
 

@@ -188,14 +188,15 @@ cache still run the pure strict check; this is not constant-time batch admission
 
 Full feed reopening remains an O(N) cryptographic audit; cooperative native work
 reduces CPU cost and event-loop blocking, not the amount of trusted history needed.
-This change does not connect snapshot-first joining or make SQL a trust authority.
-Production still needs independently qualified snapshot/checkpoint acquisition,
-resumable genesis creation, atomic member removal and independent publisher backup, protected content
-snapshots, vault/backup decisions, strict deadline B and actual platform custody.
+An explicit independently qualified snapshot origin supports read/startup/reopen;
+SQL never selects trust. Experimental current tag8 adds atomic member removal and
+header4 binds protected content snapshots to their continuation positions.
+Production still needs independent qualification acquisition, resumable workspace
+creation, publisher backup/vault decisions, strict deadline B and actual platform custody.
 The explicit local candidate publisher now generates, durably retains and
 submits an E7 through P09, then installs the verified committed key. This permits
-Lab revocation recovery and current-epoch writes. Independent backup policy and
-atomic member removal remain unresolved production gates. There is no product consumer or activation
+Lab revocation recovery and current-epoch writes. Independent backup policy remains unresolved; current tag8 shares that local
+publication/recovery path without selecting a permanent-device-loss exception. There is no product consumer or activation
 change. See the
 [verification decision](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#verification-work).
 

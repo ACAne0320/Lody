@@ -218,6 +218,37 @@ export function makeLabHttpHost(input: {
           yield* owner.put(credential, candidate);
           return { ok: true };
         }
+        const snapshotWrite = /^\/ds\/([0-9a-f]{64})\/(loro|flock)\/snapshot\/([^/?#]+)$/.exec(
+          path
+        );
+        if (snapshotWrite && request.method === 'PUT') {
+          const authorization = request.headers.authorization;
+          if (typeof authorization !== 'string' || !/^Bearer [0-9a-f]{64}$/.test(authorization))
+            return yield* reject(401);
+          const credential = yield* credentials.authenticate(authorization.slice(7));
+          const anchor = yield* Effect.fromResult(Bytes.genesisHash(hex(snapshotWrite[1], 32)));
+          if (!credential.genesis?.equals(anchor)) return yield* reject(403);
+          const gateway = contents?.(anchor, snapshotWrite[2] as 'loro' | 'flock');
+          if (!gateway) return yield* reject(404);
+          const offset = yield* Effect.try({
+            try: () => {
+              const value = decodeURIComponent(snapshotWrite[3]!);
+              if (encodeURIComponent(value) !== snapshotWrite[3]) throw reject(400);
+              return value;
+            },
+            catch: () => reject(400),
+          });
+          const original = yield* body(request, 16 * 1024 * 1024);
+          return yield* write(
+            anchor,
+            gateway.snapshot({
+              credential,
+              requestGenesis: anchor,
+              continuationOffset: offset,
+              body: original,
+            })
+          );
+        }
         const contentMatch = /^\/ds\/([0-9a-f]{64})\/(loro|flock)$/.exec(path);
         if (contentMatch && (request.method === 'PUT' || request.method === 'POST')) {
           const authorization = request.headers.authorization;

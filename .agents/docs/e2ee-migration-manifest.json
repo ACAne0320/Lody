@@ -1333,7 +1333,7 @@
       "targetPath": "packages/e2ee-core/src/ledger/snapshot.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Authenticate full snapshot state from external trust; validate Owner reachability and persist no journal-derived authority.",
+      "reason": "Authenticate full snapshot state from external trust; validate Owner reachability and persist no journal-derived authority. Explicit independently qualified snapshot-origin startup/reopen exists; current tag8 full replay and snapshot state/digest match without old-format capability layers.",
       "coverage": [
         {
           "layer": "L1b",
@@ -1363,7 +1363,12 @@
           "decodeSignedSnapshot"
         ]
       },
-      "targetPathState": "existing"
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/src/ledger/snapshot.ts",
+        "packages/e2ee-core/src/ledger/snapshot-codec.ts",
+        "packages/e2ee-core/src/ledger/snapshot-feed-sqlite.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/ledger/submit.ts",
@@ -1566,10 +1571,10 @@
         "core": "65074e5bbbc998e897f1dc954d7882f44bea023f2fc56a07a1ac8f4edf16fe05",
         "candidate": "65074e5bbbc998e897f1dc954d7882f44bea023f2fc56a07a1ac8f4edf16fe05"
       },
-      "targetPath": "packages/e2ee-core/src/content/node-snapshot-publication-store.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/content/snapshot-store-sqlite.ts",
+      "status": "已迁",
       "layer": "L3",
-      "reason": "Real host admission binds trusted submitter, exact SDK AAD and continuation offset; fix known offset substitution.",
+      "reason": "Current-format scoped SQLite original/admission owner retains immutable signer/body/offset, uncertain Pending, exact Accepted retry and current pointer; no original class/API compatibility. Real native/SQL/OS-child behavior and first-cutoff oldfail/newpass are tested; final root and independent acceptance are recorded separately, not inferred. Production custody is not implied. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
       "sourceDeclaredExports": {
         "core": [
           "SqliteSnapshotPublicationStore"
@@ -1578,7 +1583,7 @@
           "SqliteSnapshotPublicationStore"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing"
     },
     {
       "sourcePath": "packages/e2ee-core/src/node-store.ts",
@@ -2098,10 +2103,10 @@
         "core": "311948fcae151485de85bb21d31a310de215b6cdca688f77f7d4666e83b6f796",
         "candidate": "0fc26740bc9f9e0b0b5b75020c5105c1cea41fb3a9d0b83992657294805513b9"
       },
-      "targetPath": "packages/e2ee-core/src/content/snapshot-admission.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/content/streams.ts",
+      "status": "已迁",
       "layer": "L3",
-      "reason": "Real host admission binds trusted submitter, exact SDK AAD and continuation offset; fix known offset substitution.",
+      "reason": "Current position-bound header4 fixed signature/AEAD and signer/current-writer admission, scoped durable originals and actual native readback; original numeric offset guessing/Promise APIs not copied. Production strict deadline/retention and trust acquisition remain separate. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
       "sourceDeclaredExports": {
         "core": [
           "snapshotStoreLayer",
@@ -2116,7 +2121,12 @@
           "admissionClockLayer"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/src/content/streams.ts",
+        "packages/e2ee-core/src/content/snapshot-store-sqlite.ts",
+        "packages/e2ee-lab/src/platform/content-gateway.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/platform/streams-epoch.ts",
@@ -2196,7 +2206,7 @@
       "targetPath": "packages/e2ee-core/src/keys/epoch-rotation.ts",
       "status": "已迁",
       "layer": "L4",
-      "reason": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy.",
+      "reason": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy. Current tag8 atomic removal shares this exact candidate/P09 owner and excludes all target current devices without dropping historical/replay facts.",
       "coverage": [
         {
           "layer": "L4e",
@@ -3480,10 +3490,10 @@
         "core": "b4d0639eef6de95ebcc9ac12e6ba5821652dc6be2a850dc874b82120ba1cd7d4",
         "candidate": "b4d0639eef6de95ebcc9ac12e6ba5821652dc6be2a850dc874b82120ba1cd7d4"
       },
-      "targetPath": "packages/e2ee-core/src/ledger/ledger-snapshot.ts",
+      "targetPath": "packages/e2ee-core/src/ledger/snapshot.ts",
       "status": "需迁并修复",
       "layer": "L1",
-      "reason": "Authenticate full snapshot state from external trust; validate Owner reachability and persist no journal-derived authority.",
+      "reason": "Authenticate full snapshot state from external trust; validate Owner reachability and persist no journal-derived authority. Explicit independently qualified snapshot-origin startup/reopen exists; current tag8 full replay and snapshot state/digest match without old-format capability layers.",
       "coverage": [
         {
           "layer": "L1b",
@@ -3527,7 +3537,12 @@
           "compareNotes"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/src/ledger/snapshot.ts",
+        "packages/e2ee-core/src/ledger/snapshot-codec.ts",
+        "packages/e2ee-core/src/ledger/snapshot-feed-sqlite.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/ledger-state.ts",
@@ -3716,10 +3731,10 @@
         "core": "d3b3843de9531074edacbe7b2e7a07b480b13615578db26f437b0c618f3cb1a6",
         "candidate": "d3b3843de9531074edacbe7b2e7a07b480b13615578db26f437b0c618f3cb1a6"
       },
-      "targetPath": "packages/e2ee-core/src/content/snapshot-admission.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/content/streams.ts",
+      "status": "已迁",
       "layer": "L3",
-      "reason": "Real host admission binds trusted submitter, exact SDK AAD and continuation offset; fix known offset substitution.",
+      "reason": "Current position-bound header4 fixed signature/AEAD and signer/current-writer admission, scoped durable originals and actual native readback; original numeric offset guessing/Promise APIs not copied. Production strict deadline/retention and trust acquisition remain separate. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
       "sourceDeclaredExports": {
         "core": [
           "SnapshotTxView",
@@ -3752,7 +3767,12 @@
           "checkSnapshotPut"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/src/content/streams.ts",
+        "packages/e2ee-core/src/content/snapshot-store-sqlite.ts",
+        "packages/e2ee-lab/src/platform/content-gateway.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/streams-content.ts",
@@ -3761,11 +3781,13 @@
         "candidate": "148977e28dcad01a9212abaae9da80e387571dcda9a37403f3aa453e02cca4b1"
       },
       "targetPath": "packages/e2ee-core/src/content/streams.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L2",
-      "reason": "Reuse v0 public crypto and published SDK; retain current-write gate and immutable historical author identity. Settled header3 update Effect binding and owned key cleanup implemented here; Actual released SDK/Loro/Flock consumption now passes in the uncommitted Lab24 checkpoint; snapshot format and the full original provider/session/harness remain incomplete. Do not treat type-contract tests as runnable whole-provider migration.",
+      "reason": "Current header3 updates plus sole current header4 with authenticated continuation offset, historical authentication/key commitment/AEAD and owned key cleanup. Real released Loro/Flock SDK consumers; independent new encoding acceptance and final checks remain explicit.",
       "coveragePaths": [
-        "packages/e2ee-core/test/crypto.test.ts"
+        "packages/e2ee-core/src/content/streams.ts",
+        "packages/e2ee-lab/src/platform/document-session.ts",
+        "packages/e2ee-lab/test/snapshot-content.test.ts"
       ],
       "sourceDeclaredExports": {
         "core": [
@@ -3956,10 +3978,10 @@
         "core": "962caca10e9d6db247f1acacc76c5596eb9d97ccc2f1bac23f9a00f9bd90c7b3",
         "candidate": "ca9caabd824cdcdc22946e12ab4be4a3ba075bb559adbb66021fce4971cdd199"
       },
-      "targetPath": "packages/e2ee-core/src/content/snapshot-admission.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/content/streams.ts",
+      "status": "已迁",
       "layer": "L3",
-      "reason": "Real host admission binds trusted submitter, exact SDK AAD and continuation offset; fix known offset substitution.",
+      "reason": "Current position-bound header4 fixed signature/AEAD and signer/current-writer admission, scoped durable originals and actual native readback; original numeric offset guessing/Promise APIs not copied. Production strict deadline/retention and trust acquisition remain separate. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
       "sourceDeclaredExports": {
         "core": [
           "CONTENT_SNAPSHOT_ADMISSION_WINDOW_MS",
@@ -3984,7 +4006,12 @@
           "ContentSnapshotPublication"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/src/content/streams.ts",
+        "packages/e2ee-core/src/content/snapshot-store-sqlite.ts",
+        "packages/e2ee-lab/src/platform/content-gateway.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/snapshot-publication-store.ts",
@@ -3992,10 +4019,10 @@
         "core": "f4cbf2f84a1ca75308c75dfea4d0300ac713dba6e065f5e8bdde38f1b3de7665",
         "candidate": "f4cbf2f84a1ca75308c75dfea4d0300ac713dba6e065f5e8bdde38f1b3de7665"
       },
-      "targetPath": "packages/e2ee-core/src/content/snapshot-publication-store.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/content/snapshot-store-sqlite.ts",
+      "status": "已迁",
       "layer": "L3",
-      "reason": "Real host admission binds trusted submitter, exact SDK AAD and continuation offset; fix known offset substitution.",
+      "reason": "Current-format scoped SQLite original/admission owner retains immutable signer/body/offset, uncertain Pending, exact Accepted retry and current pointer; no original class/API compatibility. Real native/SQL/OS-child behavior and first-cutoff oldfail/newpass are tested; final root and independent acceptance are recorded separately, not inferred. Production custody is not implied. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
       "sourceDeclaredExports": {
         "core": [
           "PublishedSnapshot",
@@ -4010,7 +4037,7 @@
           "MemorySnapshotPublicationStore"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing"
     },
     {
       "sourcePath": "packages/e2ee-core/src/streams-content.ts",
@@ -4019,11 +4046,13 @@
         "candidate": "e75c8644f6644182de949199dab5c9542b25d916f19ba14ae8026fd398a59fb8"
       },
       "targetPath": "packages/e2ee-core/src/content/streams.ts",
-      "status": "待明确决定",
+      "status": "已迁",
       "layer": "L2",
-      "reason": "Migrate real published-SDK protection bridge and cancellation ownership. Old snapshot header4 hides offset in ciphertext, so host cannot verify actual submission position. Discuss new offset-authenticated provider header or linked upstream SDK contract before implementing; update header3 is separately stable. Settled header3 update Effect binding and owned key cleanup implemented here; Actual released SDK/Loro/Flock consumption now passes in the uncommitted Lab24 checkpoint; snapshot format and the full original provider/session/harness remain incomplete. Do not treat type-contract tests as runnable whole-provider migration.",
+      "reason": "Current header3 updates plus sole current header4 with authenticated continuation offset, historical authentication/key commitment/AEAD and owned key cleanup. Real released Loro/Flock SDK consumers; independent new encoding acceptance and final checks remain explicit.",
       "coveragePaths": [
-        "packages/e2ee-core/test/crypto.test.ts"
+        "packages/e2ee-core/src/content/streams.ts",
+        "packages/e2ee-lab/src/platform/document-session.ts",
+        "packages/e2ee-lab/test/snapshot-content.test.ts"
       ],
       "sourceDeclaredExports": {
         "core": [
@@ -4353,7 +4382,7 @@
       "targetPath": "packages/e2ee-core/src/keys/epoch-rotation.ts",
       "status": "已迁",
       "layer": "L4",
-      "reason": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy.",
+      "reason": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy. Current tag8 atomic removal shares this exact candidate/P09 owner and excludes all target current devices without dropping historical/replay facts.",
       "sourceDeclaredExports": {
         "core": [
           "EpochRotationOutcome",
@@ -4595,10 +4624,10 @@
         "core": "a8ef96316bb488a5b336b37baad99386cdaeffce8f380114b6cd4cb28b9589b4",
         "candidate": "a8ef96316bb488a5b336b37baad99386cdaeffce8f380114b6cd4cb28b9589b4"
       },
-      "targetPath": "packages/e2ee-core/src/content/snapshot-admission.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/content/streams.ts",
+      "status": "已迁",
       "layer": "L3",
-      "reason": "Real host admission binds trusted submitter, exact SDK AAD and continuation offset; fix known offset substitution.",
+      "reason": "Current position-bound header4 fixed signature/AEAD and signer/current-writer admission, scoped durable originals and actual native readback; original numeric offset guessing/Promise APIs not copied. Production strict deadline/retention and trust acquisition remain separate. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
       "sourceDeclaredExports": {
         "core": [
           "admitSnapshot"
@@ -4607,7 +4636,12 @@
           "admitSnapshot"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/src/content/streams.ts",
+        "packages/e2ee-core/src/content/snapshot-store-sqlite.ts",
+        "packages/e2ee-lab/src/platform/content-gateway.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/verification.ts",
@@ -5334,11 +5368,15 @@
         "core": "ee7f3e4abccafa7d2e3b66780feff3a876305a04dcba50a99e82414aeb9a04ea",
         "candidate": "ee7f3e4abccafa7d2e3b66780feff3a876305a04dcba50a99e82414aeb9a04ea"
       },
-      "targetPath": "packages/e2ee-core/test/snapshot-admission-retry.test.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/test/snapshot-publication.test.ts",
+      "status": "已迁",
       "layer": "L3",
-      "reason": "Port observable synthetic regression behavior into the owning suite and retain old-fail/new-pass evidence; consolidate duplicates only after behavior mapping.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable synthetic regression behavior into the owning suite and retain old-fail/new-pass evidence; consolidate duplicates only after behavior mapping. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/test/snapshot-publication.test.ts",
+        "packages/e2ee-lab/test/snapshot-content.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/test/snapshot-admission.test.ts",
@@ -5346,11 +5384,15 @@
         "core": "840460331aa26432c891a17da553202d8ce0211996e769358f3dcef1e76ab672",
         "candidate": "cdae9577bfc278facd4edc46a79d17a3b33f4de55ad1ae0082d19f9a6c45c59d"
       },
-      "targetPath": "packages/e2ee-core/test/snapshot-admission.test.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/test/snapshot-publication.test.ts",
+      "status": "已迁",
       "layer": "L3",
-      "reason": "Port observable synthetic regression behavior into the owning suite and retain old-fail/new-pass evidence; consolidate duplicates only after behavior mapping.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable synthetic regression behavior into the owning suite and retain old-fail/new-pass evidence; consolidate duplicates only after behavior mapping. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/test/snapshot-publication.test.ts",
+        "packages/e2ee-lab/test/snapshot-content.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/test/snapshot-publication-child.ts",
@@ -5370,11 +5412,15 @@
         "core": "5035380c5762c9d7fc02ae3fc32778acd953282de895b28584cae76c75aa9d5a",
         "candidate": "5035380c5762c9d7fc02ae3fc32778acd953282de895b28584cae76c75aa9d5a"
       },
-      "targetPath": "packages/e2ee-core/test/snapshot-publication-store.test.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/test/snapshot-publication.test.ts",
+      "status": "已迁",
       "layer": "L3",
-      "reason": "Port observable synthetic regression behavior into the owning suite and retain old-fail/new-pass evidence; consolidate duplicates only after behavior mapping.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable synthetic regression behavior into the owning suite and retain old-fail/new-pass evidence; consolidate duplicates only after behavior mapping. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/test/snapshot-publication.test.ts",
+        "packages/e2ee-lab/test/snapshot-content.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/test/streams-content.test.ts",
@@ -8614,9 +8660,9 @@
         "candidate": "a4afb9fc0f8de7ea64b18495655cb5d43597bb6b7b22ebf90f7f101f51fcf8c1"
       },
       "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L2",
-      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
       "targetPathState": "existing"
     },
     {
@@ -8626,9 +8672,9 @@
         "candidate": "1689b92843488c4cb44b664cb14fc7e7a4888ed97a8936d4f59c33501ac7d8b1"
       },
       "targetPath": ".agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L2",
-      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims.",
+      "reason": "Consolidate still-relevant public rationale and reproducible behavioral evidence into the owning layer note. Retain original run history at the pinned source; do not copy transcripts, private product references or superseded claims. First credential cutoff is persisted with the immutable attempt; fresh-token retry cannot extend it. Accepted originals remain historical receipts and never republish old positions.",
       "targetPathState": "existing"
     },
     {
@@ -9130,11 +9176,16 @@
     "tutorialApplication": "No application source at either pinned source; draft intent only.",
     "snapshotBypass": "Final atomic-removal/snapshot authentication still needs review. No old-client capability-pin/dual-reader requirement; prelaunch formats are not supported concurrently.",
     "coordinationChoicesPending": [
-      "D12 final operation/snapshot encoding and authenticated position",
-      "Recovery direct-derived key/wrapping plus per-entry/index CAS alternatives",
-      "Emergency atomic removal when independent backup unavailable: deny or explicit risk acceptance"
+      "Recovery vault derivation/wrapping, concurrency and retained-entry policy",
+      "Independent publisher backup versus permanent-device-loss window/emergency exception",
+      "Captured-original replay versus byte-exact fresh resealing",
+      "Strict freshness B and independent product trust acquisition"
     ],
-    "choicesAnswered": false
+    "choicesAnswered": false,
+    "experimentalImplemented": {
+      "atomicRemoval": "tag8 Owner-personal one-transition+one-CAS with existing snapshot-state equality; encoding pending acceptance",
+      "protectedContentSnapshot": "position-bound header4 and durable single-host original admission; production trust/retention not implied"
+    }
   },
   "submissionMigration": {
     "status": "已迁",
@@ -9162,16 +9213,15 @@
     "classificationRule": "Retired implementation does not retire required behavior. File status and path existence are not completion percentages.",
     "currentLabPR": 1557,
     "remaining": [
-      "G resumable workspace creation/checkpoint durability; current full signed control history only",
-      "S protected content snapshot format/admission, production qualification acquisition and unavailable-history API; explicit qualified ledger snapshot-origin reading/reopen implemented",
-      "K/V independent candidate backup/emergency exception and vault/recovery format; local durable publisher/retry implemented",
-      "D final atomic operation/snapshot encoding approval; no legacy compatibility",
-      "R exact-original replay entropy decision",
-      "N additional comparison-note signing authority",
-      "B strict freshness approval",
-      "Native platform protector and private product wiring; synthetic not equivalent"
+      "G resumable workspace creation and independently acquired durable checkpoints; existing-workspace startup is implemented",
+      "S production qualification acquisition, authorized retained-history availability and snapshot-only P09 writes; explicit qualified ledger-origin and protected position-bound content snapshots implemented for review",
+      "K/V independent candidate backup/emergency loss exception and recovery vault/file/concurrency/retention product decisions; local candidate durability is implemented",
+      "D current tag8 and unchanged complete snapshot-state consistency implemented; final format independently reviewed before acceptance, Spec remains draft",
+      "R exact-original replay mode versus entropy regeneration product decision and remaining model-driven actor/attack execution",
+      "N additional signed comparison-note authority; personal-only observation and explicit exact-tuple confirmation are implemented consumers",
+      "B strict freshness approval; native platform protector and private product wiring remain separate"
     ],
-    "currentScope": "Existing-workspace/join consumers, finite actors/actions/CLI, local durable E7 publisher and explicit independently qualified ledger-snapshot reading/reopen. Original full migration remains incomplete; no new protocol/product approvals inferred.",
+    "currentScope": "Current-format core plus actual synthetic consumers: local E7/tag8 original publication, independent qualified ledger-snapshot origin, protected header4 snapshot publication/read, R-to-own-personal original recovery and personal comparison notes. Not full product/custody/vault acceptance.",
     "capabilities": [
       {
         "old": "DemoSession start/reauth/read/write/submit/resume/receive",
@@ -9372,14 +9422,14 @@
       "foreign-format rejection and rollback/fork protection",
       "required SDK Promise/Effect callback boundaries"
     ],
-    "unapprovedFormatsRemainUnimplemented": true
+    "experimentalFormatsDoNotEnableProduction": true
   },
   "currentImplementation": {
     "scope": "Current-format public core plus synthetic Lab; implementation and incomplete behavior recorded by source item and capability, not checkpoint counts.",
     "owners": {
       "ledger": "One genuine-view replay/authority implementation; full or separately qualified snapshot identity.",
       "keys": "One receiver-owned protected store borrowed by distributor and installed history.",
-      "content": "One owned parsed frame per operation; fixed signature/AEAD verification and pre/post authority checks.",
+      "content": "One owned parsed frame per operation; header3 updates and position-bound header4 snapshots. Native current admission is distinct from historical authentication and durable exact-original snapshot identity.",
       "lab": "Native Effect scheduling and one fixed-scope Node/SDK callback bridge; actual faults through action/HTTP/SQL owners."
     },
     "validation": "Exact head/base/CI and author vs independent acceptance belong to the fixed PR delivery report. No self-referential source hash or mutable live pin table here.",
@@ -9402,6 +9452,28 @@
       "keyQueues": "Session/process/CLI forward explicit stable-ID repair, phase/result page hints and exact-ID receive/repair/delivery acknowledgement. No automatic consumption or new owner; originals retained.",
       "epochPublication": "One initialized protected local candidate owner; existing E7 and P09, actual installed save/reload and fixed original ACK, no automatic independent-backup policy.",
       "snapshotReading": "Explicit independently qualified signed origin plus exact retained suffix/cursor, full requalification and suffix audit on reopen. P09 writes still full-history."
+    },
+    "architectureAssessment": {
+      "decision": "assessment-only; no files moved",
+      "recommended": "Keep domain outer directories, split only large mixed rotation/receive/distribution owners into pure rules, workflow and platform storage",
+      "reason": "Reduce mixed responsibilities without global directory churn, duplicate capabilities or new authority constructors"
+    },
+    "atomicRemoval": {
+      "operation": "[8,targetMembershipId,nextEpoch,commitment,previousEpochKey]",
+      "authority": "pre-state Owner personal only; non-Owner target",
+      "state": "remove all current target devices/member; retain historical/replay facts; same complete snapshot state",
+      "producer": "one protected local original and P09 CAS; explicit resume/result/ACK; no independent backup approval"
+    },
+    "contentSnapshot": {
+      "header": "[4,UTF8Length(u16be),canonicalOffsetUTF8], total<=512B",
+      "authentication": "same complete provider header enters released SDK AAD and existing signature/AEAD; context continuationOffset must match",
+      "admission": "retained signer/original Pending->Accepted and current pointer, exact native readback, no old retry republish",
+      "limits": [
+        "single trusted host reference, not cross-storage transaction",
+        "SDK Lab upload uses internal-marked released method",
+        "no unavailable-history reset or production trust/custody acceptance",
+        "Pending preserves the first credential cutoff; a fresh token does not authorize another PUT after it. Exact already-stored bytes may be confirmed GET-only."
+      ]
     }
   }
 }

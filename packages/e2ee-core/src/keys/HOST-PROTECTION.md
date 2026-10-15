@@ -50,4 +50,14 @@ SQLite. No database transaction spans crypto or network I/O.
 
 This restores process-crash and lost-ACK behavior from the old workflow, not
 recovery after permanent loss of the publishing device. Independent backup gates,
-vault policy, emergency exceptions and member removal remain separate decisions.
+vault policy and emergency exceptions remain separate decisions.
+
+`publishRemoving(membershipId)` uses the same candidate journal and exact-byte
+recovery to sign current tag8. Only a current Owner personal device can remove a
+non-Owner member. Removal of every target device and activation of the next epoch
+are one private transition and one P09 CAS, never two records. It cannot resume an
+active candidate for another operation/target under a new intent; use explicit
+`resume` for the saved original. Distribution starts after verified inclusion and
+excludes all removed personal/machine/Recovery devices. History, retired identities
+and replay-prevention facts remain authenticated. This encoding is under review;
+it does not select an independent backup or emergency-loss exception.

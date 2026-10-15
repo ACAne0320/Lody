@@ -10,6 +10,7 @@ export function makeLabFlockSession(
     readonly mode: 'create' | 'open';
     readonly streamUrl: string;
     readonly fetch: (input: string, init?: RequestInit) => Promise<Response>;
+    readonly snapshotUpload?: boolean;
     readonly replica: string;
     readonly now: () => number;
   }

@@ -4,6 +4,7 @@ import type { EpochRotationResult } from '@lody/e2ee-core/keys/host/rotation/sql
 import { Bytes } from '@lody/e2ee-core';
 import { Data, Effect, Exit, Scope, Semaphore } from 'effect';
 import type { LedgerCheckpoint } from '@lody/e2ee-core/ledger';
+import { comparisonNote } from '@lody/e2ee-core/ledger/snapshot';
 import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
 import { openLabExistingWorkspace } from './workspace-session';
 import { makeLabMailboxRemote } from './key-mailbox';
@@ -38,12 +39,14 @@ export interface LabWorkspaceSessionInput extends ControlInput {
     readonly mode: 'create' | 'open';
     readonly resource: string;
     readonly streamUrl: string;
+    readonly snapshotUpload?: boolean;
   }[];
 }
 interface LabWorkspaceDocument {
   create(): Effect.Effect<void, unknown>;
   append(text: string): Effect.Effect<void, unknown>;
   persist(): Effect.Effect<void, unknown>;
+  uploadSnapshot(): Effect.Effect<void, unknown>;
   pull(): Effect.Effect<void, unknown>;
   recoverFromFullHistory(): Effect.Effect<void, unknown>;
   text(): Effect.Effect<string, unknown>;
@@ -52,8 +55,8 @@ interface LabWorkspaceDocument {
 }
 /** Existing full-prefix workspace, externally selected checkpoint. Identity/control,
  * public key receive/distribution and protected documents have one child owner.
- * No transport/SQLite row can choose authority; no snapshot/vault or independent
- * publisher-backup policy is selected. */
+ * No transport/SQLite row can choose authority. Content snapshots bind their exact
+ * continuation offset; vault and independent publisher-backup policy remain separate. */
 export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(function* (
   input: LabWorkspaceSessionInput
 ) {
@@ -74,6 +77,7 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
         mode: doc.mode,
         resource: doc.resource,
         streamUrl: doc.streamUrl,
+        snapshotUpload: doc.snapshotUpload,
       })
     );
   }
@@ -235,6 +239,14 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
                 : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
             )
           ),
+        removeMemberAndRotate: (membershipId: Bytes.MembershipId) =>
+          run(
+            serial.withPermit(
+              rotation
+                ? rotation.publishRemoving(membershipId)
+                : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
+            )
+          ),
         resumeEpochRotation: () =>
           run(
             serial.withPermit(
@@ -249,6 +261,20 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
               rotation
                 ? rotation.acknowledge(result)
                 : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
+            )
+          ),
+        /** A refreshed personal-device observation. Channel authentication and exact
+         * independent confirmation remain explicit caller responsibilities. */
+        comparisonNote: () =>
+          run(
+            serial.withPermit(
+              control.control
+                .refresh()
+                .pipe(
+                  Effect.flatMap(({ view }) =>
+                    Effect.fromResult(comparisonNote(view, signer.publicKey))
+                  )
+                )
             )
           ),
         listJoins: () => run(control.identity.listJoins()),
@@ -269,6 +295,7 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
         createDocument: (id: string) => document(id, (doc) => doc.create()),
         append: (id: string, text: string) => document(id, (doc) => doc.append(text)),
         persist: (id: string) => document(id, (doc) => doc.persist()),
+        uploadSnapshot: (id: string) => document(id, (doc) => doc.uploadSnapshot()),
         pull: (id: string) => document(id, (doc) => doc.pull()),
         recoverDocument: (id: string) => document(id, (doc) => doc.recoverFromFullHistory()),
         text: (id: string) => document(id, (doc) => doc.text()),

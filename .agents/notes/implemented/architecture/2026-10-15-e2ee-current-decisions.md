@@ -127,3 +127,29 @@ again. The authenticated workspace captures qualification before native auth and
 can start reading without the genesis prefix. Offsets and SQL do not select
 permission; P09 still verifies full history for writes. This changes no snapshot
 wire or qualification rule and does not complete production trust acquisition.
+
+
+## Current atomic removal and content snapshot completion
+
+The current tag8 operation removes the target and activates the next epoch in one
+Owner-personal-signed transition. The original candidate and P09 paths are reused;
+retired member/device facts and history remain, while distribution excludes the
+removed devices. The existing snapshot auth state already represents that exact
+post-state; no old-client capability negotiation or second decoder is introduced.
+The encoding remains experimental and the linked Spec remains draft for review.
+
+Content header4 carries its bounded canonical continuation offset in the provider
+header, hence both released SDK AAD and content signature/AEAD authenticate it.
+Updates retain exact header3 bytes. Readers reject transplant/model/purpose/signature
+and AEAD errors before durable advancement. Host admission binds the authenticated
+principal and current writer/epoch before and after native verification. A snapshot
+must also retain its admitted original identity and position across retries; raw
+Riverrun PUT alone is not that contract. Production retention/trust and strict B
+remain separate. The Lab's internal-marked SDK upload method is identified honestly.
+
+The remaining active-R→own-personal consumer reuses public proof/P09/HTTP/HPKE
+instead of adding a wrapper service. Fresh personal comparison notes still require
+an explicit independently obtained exact tuple; a server observation cannot upgrade
+itself. A structure assessment recommends keeping domain directories and splitting
+only large mixed rotation/receive/distribution owners into pure/workflow/platform.
+No files were moved or architecture refactor performed in this migration increment.

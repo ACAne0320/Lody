@@ -335,6 +335,178 @@ describe('strict records and caller-pinned chain', () => {
   });
 });
 
+describe('atomic member removal and epoch publication', () => {
+  const publicKey = (key: Keys) => ok(Bytes.signingPublicKey(key.pk));
+  const permissions = (view: Ledger.LedgerView, key: Keys) =>
+    ok(Ledger.contentPermissions(view, publicKey(key)));
+  const fullAuthor = (view: Ledger.LedgerView, key: Bytes.SigningPublicKey) => {
+    const author = ok(Snapshots.historicalContentIdentity(view, key));
+    if (author.kind !== 'member') throw new Error('expected original author facts');
+    return author;
+  };
+  function populated() {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    for (const [device, kind] of [
+      [phone, 0],
+      [machine, 1],
+      [recovery, 2],
+    ] as const)
+      o.append(bob, o.device(device, kind, id(11)));
+    o.append(owner, o.join(carol, 12));
+    return o;
+  }
+  const operation = (
+    member = id(11),
+    epoch = 1,
+    commitment = filled(21),
+    packet = filled(30, 72)
+  ) => [8, member, epoch, commitment, packet] as const;
+  it('removes every target device and enables the next epoch in one signed record while preserving history', () => {
+    const o = populated();
+    o.append(bob, [5, phone.pk]);
+    const before = ok(o.verify()),
+      original = comparable(before);
+    expect(before.inspectState().epoch.rotationRequired).toBe(true);
+    const record = signed([before.head.toBytes(), owner.pk, operation()], owner);
+    const view = ok(
+      Ledger.extendLedger(before, [record], {
+        head: Ledger.hashRecordBytes(record),
+        length: before.length + 1,
+      })
+    );
+    const decoded = ok(Ledger.decodeRecord(record));
+    expect(decoded.body.type === 'ordinary' && decoded.body.operation.type).toBe(
+      'removeMemberAndPublishEpoch'
+    );
+    expect(view.length).toBe(before.length + 1);
+    expect(view.inspectState().members.has(keyId(id(11)))).toBe(false);
+    expect(view.inspectState().members.has(keyId(id(12)))).toBe(true);
+    for (const device of [bob, phone, machine, recovery]) {
+      expect(view.inspectState().devices.has(keyId(device.pk))).toBe(false);
+      expect(permissions(view, device)).toEqual({
+        mayWriteDocument: false,
+        maySealNewContent: false,
+      });
+      expect(hex(fullAuthor(view, publicKey(device)).memberInstance)).toBe(keyId(id(11)));
+    }
+    expect(view.inspectState().devices.has(keyId(owner.pk))).toBe(true);
+    expect(view.inspectState().devices.has(keyId(carol.pk))).toBe(true);
+    expect(view.inspectState().epoch).toMatchObject({ number: 1, rotationRequired: false });
+    expect(ok(Ledger.epochHistoryPacket(view, 1)).packet).toEqual(filled(30, 72));
+    expect(hex(ok(Ledger.epochHistoryPacket(view, 0)).commitment)).toBe(keyId(filled(20)));
+    expect(comparable(before)).toEqual(original);
+    expect(permissions(view, owner).maySealNewContent).toBe(true);
+  });
+  it('checks pre-state Owner personal authority, target and epoch before publishing any successor', () => {
+    const o = populated();
+    o.append(owner, [3, id(11), 1]);
+    const base = ok(o.verify()),
+      original = comparable(base);
+    const cases: readonly [Keys, readonly CborValue[], Ledger.LedgerError['code']][] = [
+      [bob, operation(), 'unauthorized'],
+      [machine, operation(), 'unauthorized'],
+      [recovery, operation(), 'unauthorized'],
+      [carol, operation(), 'unauthorized'],
+      [owner, operation(id(10)), 'unauthorized'],
+      [owner, operation(id(99)), 'unauthorized'],
+      [owner, operation(id(11), 2), 'invalid-operation'],
+      [owner, operation(id(11), 1, filled(20)), 'replay'],
+    ];
+    for (const [actor, op, expected] of cases) {
+      const record = signed([base.head.toBytes(), actor.pk, op], actor);
+      expect(
+        code(
+          Ledger.extendLedger(base, [record], {
+            head: Ledger.hashRecordBytes(record),
+            length: base.length + 1,
+          })
+        )
+      ).toBe(expected);
+      expect(comparable(base)).toEqual(original);
+      expect(base.inspectState().members.has(keyId(id(11)))).toBe(true);
+      expect(base.inspectState().epoch.number).toBe(0);
+    }
+    for (const op of [
+      [2, id(11)],
+      operation(id(11), 0),
+      operation(id(11), 1, filled(21), filled(30, 71)),
+      [8, id(11), 1, filled(21), filled(30, 72), 0],
+    ]) {
+      const record = signed([base.head.toBytes(), owner.pk, op], owner);
+      expect(Result.isFailure(Ledger.decodeRecord(record))).toBe(true);
+    }
+  });
+  it('retains retired member and device replay prevention in full replay and the single snapshot format', () => {
+    const o = populated(),
+      before = ok(o.verify()),
+      priorSnapshot = ok(Snapshots.verifyLedgerSnapshot(endorsed(before)));
+    const record = o.append(owner, operation()),
+      full = ok(o.verify());
+    const suffix = ok(Ledger.extendLedger(priorSnapshot, [record], checkpoint(o.records)));
+    const fresh = ok(Snapshots.verifyLedgerSnapshot(endorsed(full)));
+    for (const view of [suffix, fresh]) {
+      expect(comparable(view)).toEqual(comparable(full));
+      expect(hex(ok(Snapshots.comparisonNote(view, publicKey(owner))).stateDigest)).toBe(
+        hex(ok(Snapshots.comparisonNote(full, publicKey(owner))).stateDigest)
+      );
+      expect(ok(Ledger.epochHistoryPacket(view, 1)).packet).toEqual(filled(30, 72));
+      for (const op of [o.join(attacker, 11), o.join(bob, 13), o.device(phone, 0, id(10))]) {
+        const reuse = signed([view.head.toBytes(), owner.pk, op], owner);
+        expect(
+          code(
+            Ledger.extendLedger(view, [reuse], {
+              head: Ledger.hashRecordBytes(reuse),
+              length: view.length + 1,
+            })
+          )
+        ).toBe('replay');
+      }
+    }
+    expect(Snapshots.historicalContentIdentity(fresh, publicKey(bob))).toMatchObject({
+      _tag: 'Success',
+      success: { kind: 'device-only', reason: 'missing-history-context' },
+    });
+    expect(hex(fullAuthor(suffix, publicKey(bob)).memberInstance)).toBe(keyId(id(11)));
+    // The removal record is authenticated at its one exact position; old-point
+    // trust never accepts a new post-removal state merely because the signer agrees.
+    expect(
+      code(
+        Snapshots.verifyLedgerSnapshot({
+          snapshot: endorsed(full).snapshot,
+          trust: endorsed(before).trust,
+        })
+      )
+    ).toBe('checkpoint-mismatch');
+  });
+  it('accepts a currently authorized second Owner personal device, but never a target that became Owner', () => {
+    const o = org();
+    o.append(owner, o.device(phone, 0));
+    o.append(owner, o.join(bob, 11));
+    const before = ok(o.verify()),
+      candidate = signed([before.head.toBytes(), phone.pk, operation()], phone);
+    expect(
+      Result.isSuccess(
+        Ledger.extendLedger(before, [candidate], {
+          head: Ledger.hashRecordBytes(candidate),
+          length: before.length + 1,
+        })
+      )
+    ).toBe(true);
+    o.append(owner, [6, id(11)]);
+    const transferred = ok(o.verify());
+    const invalid = signed([transferred.head.toBytes(), owner.pk, operation()], owner);
+    expect(
+      code(
+        Ledger.extendLedger(transferred, [invalid], {
+          head: Ledger.hashRecordBytes(invalid),
+          length: transferred.length + 1,
+        })
+      )
+    ).toBe('unauthorized');
+  });
+});
+
 describe('deterministic permissions from preceding state', () => {
   it.each(['member', 'guest', 'admin'] as const)(
     '%s cannot change roles or transfer Owner',

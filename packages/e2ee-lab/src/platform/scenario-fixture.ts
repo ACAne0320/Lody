@@ -14,6 +14,7 @@ import { decodeRecord, hashRecordBytes, verifyLedger } from '@lody/e2ee-core/led
 import { frameLedgerRecord } from '@lody/e2ee-core/ledger/feed';
 import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
 import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
+import { makeSqliteSnapshotPublication } from '@lody/e2ee-core/content/snapshot/sqlite';
 import { generateDevice } from './device';
 import { labSyntheticProtector } from './synthetic-protection';
 import { makeLabCredentials } from './credentials';
@@ -175,10 +176,22 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
     ledger,
     maxBytes: 16 * 1024 * 1024,
   });
+  const snapshotStore = (model: 'loro' | 'flock', resource: string) =>
+    makeSqliteSnapshotPublication({
+      path: join(directory, `${model}-snapshots.sqlite`),
+      mode: 'create',
+      genesis: genesis.genesis,
+      model,
+      resource,
+    });
+  const loroSnapshots = yield* snapshotStore('loro', 'document-A');
+  const flockSnapshots = yield* snapshotStore('flock', 'document-B');
   const loro = yield* makeLabContentGateway({
     genesis: genesis.genesis,
     resource: 'document-A',
     model: 'loro',
+    snapshotStore: loroSnapshots,
+    now: () => 0,
     baseUrl: server.baseUrl,
     ledger,
   });
@@ -186,6 +199,8 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
     genesis: genesis.genesis,
     resource: 'document-B',
     model: 'flock',
+    snapshotStore: flockSnapshots,
+    now: () => 0,
     baseUrl: server.baseUrl,
     ledger,
   });
@@ -251,7 +266,8 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
             if (
               (epoch === 0 && decoded.body.type === 'genesis') ||
               (decoded.body.type === 'ordinary' &&
-                decoded.body.operation.type === 'publishEpoch' &&
+                (decoded.body.operation.type === 'publishEpoch' ||
+                  decoded.body.operation.type === 'removeMemberAndPublishEpoch') &&
                 decoded.body.operation.epoch === epoch)
             )
               return new Uint8Array(record);

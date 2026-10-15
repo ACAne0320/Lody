@@ -14,7 +14,7 @@ The [manifest](e2ee-migration-manifest.json) retains all380 pinned source items,
 | [ledger](../../packages/e2ee-core/src/ledger/README.md) | Full/suffix replay, snapshot qualification, signed ordinary admission and exact expected checkpoints |
 | [keys](../../packages/e2ee-core/src/keys/README.md) | Fixed envelopes/history, recipient/repair/report/distribution; one receiver-owned protected store |
 | [submission](../../packages/e2ee-core/src/submission/README.md) | Already merged P09 persists original bytes before CAS and reconciles/readbacks without re-signing |
-| [content](../../packages/e2ee-core/src/content/README.md) | Header3 update binding and current-author host admission; copied parsed bytes reused within one operation |
+| [content](../../packages/e2ee-core/src/content/README.md) | Header3 updates, position-bound header4 snapshots and current-author host admission; one owned parse per operation |
 | [Lab](../../packages/e2ee-lab/README.md) | Actual SDK/HTTP/SQLite/Loro/Flock/OS processes and finite action/CLI evidence |
 
 ## Current formats and simplified implementation
@@ -26,10 +26,10 @@ No legacy JSON journal import, schema upgrade, dual decoder or metadata-prefix g
 ## Remaining work
 
 - Resumable workspace creation, independent trusted-checkpoint acquisition and durable host crash/lost-ACK closure.
-- Final authenticated content-snapshot position/format and actual authorized history-retention/read APIs.
-- Atomic member-removal encoding, independent candidate backup/permanent-device-loss policy and recovery vault decisions. Local candidate persistence, original-byte publication and crash recovery are implemented.
+- Production snapshot qualification and actual authorized history-retention/read APIs; current header4 authenticates its continuation position.
+- Independent candidate backup/permanent-device-loss policy and recovery vault decisions. Current tag8 atomic removal reuses local candidate persistence, original-byte publication and crash recovery; its encoding remains under review.
 - Exact-original replay entropy and remaining original actor/attack scenarios; pure comparison is not execution coverage.
-- Comparison-note authority, strict deadlineB, real native protector and private product wiring.
+- Additional comparison-note signing authority, strict deadlineB, real native protector and private product wiring. Personal-only notes and explicit exact-tuple confirmation already have real consumers.
 
 RestrictedA approves initialization-time protection of verified installed keys only; it does not approve the whole recovery/vault/publisher scope. All linked Specs remain drafts where no complete revision approval exists. The tutorial has a Spec but no application source at the pinned sources. Current author/CI/independent review/production acceptance are separate evidence; test counts and file statuses are not completion percentages.
 

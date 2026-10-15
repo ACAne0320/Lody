@@ -40,6 +40,13 @@ export type Operation =
       readonly epoch: Bytes.EpochNumber;
       readonly commitment: Bytes.EpochCommitment;
       readonly previousEpochKey: Uint8Array;
+    }
+  | {
+      readonly type: 'removeMemberAndPublishEpoch';
+      readonly membershipId: Bytes.MembershipId;
+      readonly epoch: Bytes.EpochNumber;
+      readonly commitment: Bytes.EpochCommitment;
+      readonly previousEpochKey: Uint8Array;
     };
 export type RecordBody =
   | {
@@ -105,7 +112,7 @@ function parseOperation(value: CborValue): Result.Result<Operation, LedgerError>
           membershipId: yield* lift(Bytes.membershipId(p[1])),
           request: yield* parseJoin(p[2]!),
         });
-      // Tag 2 is the obsolete non-atomic removal. P12 owns its replacement.
+      // Tag 2 is retired. Member removal is only the atomic tag 8 operation.
       case 3: {
         yield* array(p, 3);
         const role = p[2] === 1 ? 'admin' : p[2] === 2 ? 'member' : p[2] === 3 ? 'guest' : null;
@@ -151,6 +158,19 @@ function parseOperation(value: CborValue): Result.Result<Operation, LedgerError>
           epoch,
           commitment: yield* lift(Bytes.epochCommitment(p[2])),
           previousEpochKey: new Uint8Array(p[3]),
+        });
+      }
+      case 8: {
+        yield* array(p, 5);
+        const epoch = yield* lift(Bytes.epochNumber(p[2]));
+        if (epoch === 0 || !(p[4] instanceof Uint8Array) || p[4].length !== 72)
+          return yield* fail('invalid-operation');
+        return Object.freeze({
+          type: 'removeMemberAndPublishEpoch',
+          membershipId: yield* lift(Bytes.membershipId(p[1])),
+          epoch,
+          commitment: yield* lift(Bytes.epochCommitment(p[3])),
+          previousEpochKey: new Uint8Array(p[4]),
         });
       }
       default:

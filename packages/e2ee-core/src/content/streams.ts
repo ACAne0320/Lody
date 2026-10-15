@@ -23,9 +23,38 @@ import {
 import { scopedDocumentKey } from './document-key';
 import { admitDocument, authenticateDocument, openDocument, sealDocument } from './index';
 import { verifySignatureEffect, NativeSignatureError } from '../signature';
+import { bytesEqual } from '../cbor';
 
 const error = (code: string) => new ContentError({ code });
-/** Settled header 3 update binding. The snapshot writer format remains a separate decision. */
+const offsetHeader = (offset: unknown) =>
+  Result.try({
+    try: () => {
+      if (
+        typeof offset !== 'string' ||
+        !offset.length ||
+        offset.length > 509 ||
+        offset === 'now' ||
+        offset === '-1' ||
+        offset.trim() !== offset ||
+        Array.from(offset).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+      )
+        throw error('invalid-snapshot-offset');
+      const bytes = new TextEncoder().encode(offset);
+      if (
+        bytes.length > 509 ||
+        new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) !== offset
+      )
+        throw error('invalid-snapshot-offset');
+      const header = new Uint8Array(3 + bytes.length);
+      header[0] = 4;
+      new DataView(header.buffer).setUint16(1, bytes.length, false);
+      header.set(bytes, 3);
+      return header;
+    },
+    catch: () => error('invalid-snapshot-offset'),
+  });
+/** Header3 updates and one current header4 snapshot format. Snapshot position is
+ * visible in the provider header and authenticated by the released SDK's AAD. */
 export function makeStreamsUpdateBinding(input: {
   readonly genesis: Bytes.GenesisHash;
   readonly resource: string;
@@ -91,23 +120,36 @@ export function makeStreamsUpdateBinding(input: {
         observed = view;
         return view;
       }).pipe(Effect.mapError(() => error('unauthorized')));
-    const context = (value: PayloadProtectionSealInput['context']) =>
-      value?.protocol === 'loro-streams-crdt-payload-protection' &&
-      value.version === 2 &&
-      value.kind === 'update_batch' &&
-      value.continuationOffset === undefined
-        ? Result.succeed(undefined)
-        : Result.fail(error('unsupported-streams-context'));
-    const scope = (number: number): ContentScope => ({
+    const context = (value: PayloadProtectionSealInput['context']) => {
+      if (value?.protocol !== 'loro-streams-crdt-payload-protection' || value.version !== 2)
+        return Result.fail(error('unsupported-streams-context'));
+      if (value.kind === 'update_batch' && value.continuationOffset === undefined)
+        return Result.succeed({ kind: value.kind, header: new Uint8Array([3]) });
+      if (value.kind === 'snapshot')
+        return Result.map(offsetHeader(value.continuationOffset), (header) => ({
+          kind: value.kind,
+          header,
+        }));
+      return Result.fail(error('unsupported-streams-context'));
+    };
+    const scope = (number: number, kind: 'update_batch' | 'snapshot'): ContentScope => ({
       genesis: keyId(anchor.toBytes()),
       resource,
       epoch: number,
       docEpoch: 0,
-      purpose: model === 'loro' ? 'doc-update' : 'flock-update',
+      purpose:
+        model === 'loro'
+          ? kind === 'snapshot'
+            ? 'doc-snapshot'
+            : 'doc-update'
+          : kind === 'snapshot'
+            ? 'flock-snapshot'
+            : 'flock-update',
     });
     const withKey = <A, E, R>(
       view: LedgerView,
       number: number,
+      kind: 'update_batch' | 'snapshot',
       use: (key: import('./document-key').DocumentKey) => Effect.Effect<A, E, R>
     ) =>
       Effect.acquireUseRelease(
@@ -119,24 +161,24 @@ export function makeStreamsUpdateBinding(input: {
               const packet = yield* Effect.fromResult(epochHistoryPacket(view, number));
               const commitment = yield* Effect.fromResult(commitEpochKey(anchor, number, owned));
               if (!packet.commitment.equals(commitment)) return yield* error('commitment-mismatch');
-              const key = yield* scopedDocumentKey(scope(number), owned);
+              const key = yield* scopedDocumentKey(scope(number, kind), owned);
               return yield* use(key);
             })
           ),
         (owned) => Effect.sync(() => disposeEpochKey(owned))
       );
     return Object.freeze({
-      maxSealOverheadBytes: CONTENT_OVERHEAD_BYTES + 1,
+      maxSealOverheadBytes: CONTENT_OVERHEAD_BYTES + 512,
       seal: (request: PayloadProtectionSealInput) =>
         lease(
           Effect.gen(function* () {
-            yield* Effect.fromResult(context(request.context));
+            const selected = yield* Effect.fromResult(context(request.context));
             if (
               !(request.plaintext instanceof Uint8Array) ||
               request.plaintext.byteLength > MAX_CONTENT_BYTES
             )
               return yield* error('content-too-large');
-            const header = new Uint8Array([3]);
+            const header = selected.header;
             const binding = yield* Effect.fromResult(
               Result.try({
                 try: () => request.additionalData(new Uint8Array(header)),
@@ -150,9 +192,9 @@ export function makeStreamsUpdateBinding(input: {
                   const view = yield* ledger();
                   const epoch =
                     writeEpoch === 'current' ? view.inspectState().epoch.number : writeEpoch;
-                  const sealed = yield* withKey(view, epoch, (key) =>
+                  const sealed = yield* withKey(view, epoch, selected.kind, (key) =>
                     sealDocument({
-                      scope: scope(epoch),
+                      scope: scope(epoch, selected.kind),
                       documentKey: key,
                       signer,
                       ledger,
@@ -170,11 +212,10 @@ export function makeStreamsUpdateBinding(input: {
       open: (request: PayloadProtectionOpenInput) =>
         lease(
           Effect.gen(function* () {
-            yield* Effect.fromResult(context(request.context));
+            const selected = yield* Effect.fromResult(context(request.context));
             if (
               !(request.header instanceof Uint8Array) ||
-              request.header.length !== 1 ||
-              request.header[0] !== 3
+              !bytesEqual(request.header, selected.header)
             )
               return yield* error('unsupported-streams-header');
             const metadata = yield* Effect.fromResult(inspectContentFrame(request.sealed));
@@ -185,12 +226,12 @@ export function makeStreamsUpdateBinding(input: {
             const view = yield* ledger();
             // Untrusted epoch metadata cannot trigger key lookup until fixed historical authentication succeeds.
             yield* Effect.fromResult(
-              authenticateDocument(view, scope(metadata.epoch), frame, binding)
+              authenticateDocument(view, scope(metadata.epoch, selected.kind), frame, binding)
             );
-            return yield* withKey(view, metadata.epoch, (key) =>
+            return yield* withKey(view, metadata.epoch, selected.kind, (key) =>
               Effect.gen(function* () {
                 const opened = yield* Effect.fromResult(
-                  openDocument(view, scope(metadata.epoch), key, frame, binding)
+                  openDocument(view, scope(metadata.epoch, selected.kind), key, frame, binding)
                 );
                 return yield* Effect.acquireUseRelease(
                   Effect.succeed(opened.plaintext),
@@ -198,7 +239,12 @@ export function makeStreamsUpdateBinding(input: {
                     Effect.gen(function* () {
                       const latest = yield* ledger();
                       yield* Effect.fromResult(
-                        authenticateDocument(latest, scope(metadata.epoch), frame, binding)
+                        authenticateDocument(
+                          latest,
+                          scope(metadata.epoch, selected.kind),
+                          frame,
+                          binding
+                        )
                       );
                       return new Uint8Array(plaintext);
                     }),
@@ -296,9 +342,89 @@ export function admitStreamsUpdateBatch(input: StreamsAdmission) {
     return captured.body;
   });
 }
+type SnapshotAdmission = Omit<StreamsAdmission, 'body'> & {
+  readonly body: Uint8Array;
+  /** Actual host-selected snapshot path position, never inferred from the frame. */
+  readonly continuationOffset: string;
+};
+function captureStreamsSnapshot(input: SnapshotAdmission) {
+  return Result.gen(function* () {
+    if (!(input.body instanceof Uint8Array) || input.body.length > MAX_CONTENT_BYTES)
+      return yield* Result.fail(error('invalid-streams-snapshot'));
+    const body = new Uint8Array(input.body);
+    if (
+      body.length < 14 ||
+      body[0] !== 76 ||
+      body[1] !== 83 ||
+      body[2] !== 67 ||
+      body[3] !== 69 ||
+      body[4] !== 2 ||
+      body[5] !== 2 ||
+      body[8] !== 0 ||
+      body[9] !== 0 ||
+      !['loro', 'flock'].includes(input.model)
+    )
+      return yield* Result.fail(error('invalid-streams-snapshot'));
+    const length = new DataView(body.buffer).getUint16(6, false);
+    const expected = yield* offsetHeader(input.continuationOffset);
+    if (length !== expected.length || !bytesEqual(body.subarray(10, 10 + length), expected))
+      return yield* Result.fail(error('invalid-snapshot-offset'));
+    const frame = body.subarray(10 + length);
+    const metadata = yield* inspectContentFrame(frame);
+    const domain = new TextEncoder().encode('loro-streams-crdt-payload-protection/v2\0');
+    const aad = new Uint8Array(domain.length + 10 + length);
+    aad.set(domain);
+    aad.set(body.subarray(0, 10 + length), domain.length);
+    return {
+      body,
+      view: input.view,
+      device: input.device,
+      admissions: [
+        {
+          scope: {
+            genesis: keyId(input.genesis.toBytes()),
+            resource: input.resource,
+            epoch: metadata.epoch,
+            docEpoch: 0,
+            purpose: input.model === 'loro' ? 'doc-snapshot' : 'flock-snapshot',
+          } satisfies ContentScope,
+          frame,
+          aad,
+        },
+      ],
+    };
+  });
+}
+/** Current host writer admission, not decryption or authority derived from snapshot metadata. */
+export function admitStreamsSnapshot(input: SnapshotAdmission) {
+  return Result.gen(function* () {
+    const captured = yield* captureStreamsSnapshot(input);
+    for (const row of captured.admissions)
+      yield* admitDocument(captured.view, row.scope, row.frame, captured.device, row.aad);
+    return captured.body;
+  });
+}
 /** Fixed native signature work; current view selection remains the caller's responsibility. */
 export const admitStreamsUpdateBatchEffect = Effect.fnUntraced(function* (input: StreamsAdmission) {
   const captured = yield* Effect.fromResult(captureStreamsUpdateBatch(input));
+  return yield* admitCapturedEffect(captured);
+});
+export const admitStreamsSnapshotEffect = Effect.fnUntraced(function* (input: SnapshotAdmission) {
+  const captured = yield* Effect.fromResult(captureStreamsSnapshot(input));
+  return yield* admitCapturedEffect(captured);
+});
+/** Historical signature/context only, for an already admitted exact original.
+ * This does not grant a new snapshot write or refresh an admission lease. */
+export const authenticateStreamsSnapshotEffect = Effect.fnUntraced(function* (
+  input: SnapshotAdmission
+) {
+  const captured = yield* Effect.fromResult(captureStreamsSnapshot(input));
+  return yield* admitCapturedEffect(captured, false);
+});
+const admitCapturedEffect = Effect.fnUntraced(function* (
+  captured: Result.Result.Success<ReturnType<typeof captureStreamsUpdateBatch>>,
+  writing = true
+) {
   yield* Effect.fromResult(
     Result.mapError(requireLedgerContinuation(captured.view, captured.view), () =>
       error('unauthorized')
@@ -318,9 +444,17 @@ export const admitStreamsUpdateBatchEffect = Effect.fnUntraced(function* (input:
       )
     );
     // Keep the same authority/context/error kernel after mathematical verification.
-    yield* Effect.fromResult(
-      admitDocument(captured.view, row.scope, row.frame, captured.device, row.aad)
-    );
+    if (writing)
+      yield* Effect.fromResult(
+        admitDocument(captured.view, row.scope, row.frame, captured.device, row.aad)
+      );
+    else {
+      const author = yield* Effect.fromResult(
+        authenticateDocument(captured.view, row.scope, row.frame, row.aad)
+      );
+      if (author.header.device !== keyId(captured.device.toBytes()))
+        return yield* error('unauthorized');
+    }
   }
   return captured.body;
 });
