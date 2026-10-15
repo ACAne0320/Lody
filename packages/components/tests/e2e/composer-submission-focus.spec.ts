@@ -1,5 +1,90 @@
 import { expect, test } from '@playwright/test';
 
+test.describe('permission option wrapping', () => {
+  for (const width of [320, 390, 1280]) {
+    for (const story of ['long-options', 'long-chinese-options']) {
+      test(`${story} stays readable at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(`/iframe.html?id=sessions-permissionprompt--${story}&viewMode=story`);
+        const prompt = page.getByRole('group');
+        const refusal = prompt.getByRole('button', { name: 'Decline', exact: true });
+        await expect(refusal).toBeVisible();
+        await expect
+          .poll(() =>
+            prompt.evaluate((card) => {
+              const bounds = card.getBoundingClientRect();
+              return Array.from(card.querySelectorAll('button')).every((button) => {
+                const box = button.getBoundingClientRect();
+                return box.left >= bounds.left && box.right <= bounds.right;
+              });
+            })
+          )
+          .toBe(true);
+
+        const expectWrapped = async (label: typeof refusal) => {
+          await expect
+            .poll(() =>
+              label.evaluate((element) => {
+                const bounds = element.getBoundingClientRect();
+                const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+                const lines: DOMRect[] = [];
+                while (walker.nextNode()) {
+                  const text = document.createRange();
+                  text.selectNodeContents(walker.currentNode);
+                  lines.push(...text.getClientRects());
+                }
+                return (
+                  lines.length > 1 &&
+                  lines.every(
+                    (line) =>
+                      line.left >= bounds.left - 1 &&
+                      line.right <= bounds.right + 1 &&
+                      line.top >= bounds.top - 1 &&
+                      line.bottom <= bounds.bottom + 1
+                  ) &&
+                  Array.from(element.querySelectorAll('*')).every(
+                    (child) => child.scrollWidth <= child.clientWidth + 1
+                  )
+                );
+              })
+            )
+            .toBe(true);
+        };
+        const controls = prompt.getByRole('button');
+        for (const control of await controls.all()) {
+          expect((await control.boundingBox())!.height).toBeLessThanOrEqual(32);
+        }
+        await expect(page.getByRole('status', { name: 'Selected option' })).toBeEmpty();
+
+        const menus = prompt.locator('button[aria-haspopup="menu"]');
+        for (let index = 0; index < (await menus.count()); index += 1) {
+          await menus.nth(index).click();
+          const option = page.getByRole('menuitem');
+          await expect(option.first()).toBeVisible();
+          for (const item of await option.all()) await expectWrapped(item);
+          const box = await page.getByRole('menu').boundingBox();
+          expect(box!.x).toBeGreaterThanOrEqual(0);
+          expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+          await page.keyboard.press('Escape');
+          await expect(option.first()).toBeHidden();
+        }
+        await refusal.focus();
+        await page.keyboard.press('Enter');
+        const originalRefusal = page.getByRole('menuitem', {
+          name: /^(Deny this request|拒绝本次请求)/,
+        });
+        await expect(originalRefusal).toBeVisible();
+        await expect(page.getByRole('status', { name: 'Selected option' })).toBeEmpty();
+        await originalRefusal.click();
+        await expect(page.getByRole('status', { name: 'Selected option' })).toHaveText('reject');
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          width
+        );
+      });
+    }
+  }
+});
+
 for (const openWith of ['click', 'keyboard'] as const) {
   test(`project search receives focus on ${openWith} and on reopening`, async ({ page }) => {
     await page.goto('/iframe.html?id=chat-unifiedprojectselector--selected-private&viewMode=story');
