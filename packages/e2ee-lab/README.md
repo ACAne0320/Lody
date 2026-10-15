@@ -158,6 +158,8 @@ genuine read result rather than replaying the same history twice.
 
 ## Remaining boundaries
 
+- After [loro-streams#421](https://github.com/loro-dev/loro-streams/pull/421) is released,
+  upgrade the SQLite dependency and delete `patches/@loro-dev__sqlite-riverrun@0.3.0.patch`.
 - Production checkpoint qualification acquisition; the current synthetic host now persists verified originals/checkpoints and resumes creation or lost-ACK gaps.
 - Production qualification and retention policy for content snapshots; the current content-v0 field authenticates the exact continuation position.
 - Recovery vault and production/native candidate protection.

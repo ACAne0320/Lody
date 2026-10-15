@@ -188,7 +188,7 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
           const authorize = Effect.fnUntraced(function* (nativeSignature: boolean) {
             const view = yield* current(),
               permission = yield* Effect.fromResult(contentPermissions(view, principal));
-            if (!permission.maySealNewContent)
+            if (!permission.mayWriteDocument)
               return yield* new LabContentGatewayError({ status: 403 });
             if (method === 'POST') {
               const admission = { genesis: anchor, resource, model, view, device: principal, body };

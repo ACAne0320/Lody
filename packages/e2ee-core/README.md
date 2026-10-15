@@ -207,7 +207,6 @@ The independent snapshot-origin reader is documented under
 [`./ledger/feed/snapshot/sqlite`](src/ledger/FEED.md#independently-qualified-snapshot-origin).
 Neither creates a production consumer or changes the portable root exports.
 
-
 The staging adapter verifies device possession and original signatures and keeps
 each group's bytes immutable. Only the original publication-signing device can
 delete its group; an account role or occupied-slot claim is insufficient. Honest
@@ -238,7 +237,6 @@ Migration source records are immutable archive evidence. Current entrypoints,
 contracts and explicit production gaps are maintained in these READMEs and Specs;
 archiving does not turn old per-file statuses into current acceptance.
 
-
 ## Workspace and recovery composition
 
 `@lody/e2ee-core/workspace` exposes the Scope-owned `E2eeWorkspace` facade:
@@ -251,6 +249,9 @@ No product E2EE switch is enabled.
 `@lody/e2ee-core/recovery` implements vault-v1 encryption, immutable entries,
 encrypted-index CAS, durable setup/restore and rollback pins. Its server/local
 storage ports have no hidden platform defaults. See the [draft vault specification](../../specs/e2ee/recovery-vault.md).
+Failed candidate entries are retained permanently; this revision provides no
+candidate garbage collection API. Retired indexed entries have a separate
+explicit risk-confirmed cleanup operation.
 The desktop main adapter lives in `apps/electron/src/main/e2ee-custody.mts`;
 Web/mobile/CLI custody remains unavailable. Recovery-device secrets are temporary.
 

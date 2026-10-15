@@ -416,6 +416,88 @@ it('starts and reopens an authenticated workspace from an independently qualifie
     rmSync(root, { recursive: true, force: true });
   }
 }, 15000);
+it('exposes verified rotation state and drives a permitted required rotation through the facade', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-rotation-status-'));
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const f = yield* makeLabScenarioFixture(join(root, 'fixture'), [
+            { id: 'owner', role: 'owner' },
+            { id: 'admin', role: 'admin' },
+            { id: 'member', role: 'member' },
+            { id: 'machine', role: 'owner', memberOf: 'owner', kind: 'machine' },
+            { id: 'recovery', role: 'owner', memberOf: 'owner', kind: 'recovery' },
+            { id: 'retired', role: 'owner', memberOf: 'owner' },
+          ]);
+          const owner = yield* openLabWorkspaceSession({
+            ...f.input('owner', 'create'),
+            documents: [],
+            epochRotation: {
+              path: join(root, 'owner-candidates.sqlite'),
+              mode: 'create',
+              protector: labSyntheticProtector,
+            },
+          });
+          expect(typeof owner.rotationStatus).toBe('function');
+          const others = yield* Effect.forEach(['admin', 'member', 'machine', 'recovery'], (id) =>
+            openLabWorkspaceSession({ ...f.input(id, 'create'), documents: [] })
+          );
+          const mayRotate = [true, false, false, false];
+          expect(yield* owner.rotationStatus()).toEqual({
+            rotationRequired: false,
+            epoch: 0,
+            mayRotate: true,
+          });
+          expect(yield* owner.rotateIfRequired()).toBeNull();
+          const revoked = yield* owner.submit({
+            _tag: 'RevokeDevice',
+            target: f.devices.get('retired')!.publicKey,
+          });
+          yield* owner.acknowledge(revoked);
+          expect(yield* owner.rotationStatus()).toEqual({
+            rotationRequired: true,
+            epoch: 0,
+            mayRotate: true,
+          });
+          for (const [index, client] of others.entries()) {
+            yield* client.refresh();
+            expect(yield* client.rotationStatus()).toEqual({
+              rotationRequired: true,
+              epoch: 0,
+              mayRotate: mayRotate[index],
+            });
+          }
+          const before = f.records.length;
+          expect(yield* others[1]!.rotateIfRequired()).toBeNull();
+          expect(f.records.length).toBe(before);
+          const rotated = yield* owner.rotateIfRequired();
+          expect(rotated).toMatchObject({ outcome: 'Committed', epoch: 1 });
+          expect(yield* owner.rotationStatus()).toEqual({
+            rotationRequired: false,
+            epoch: 1,
+            mayRotate: true,
+          });
+          for (const [index, client] of others.entries()) {
+            yield* client.refresh();
+            expect(yield* client.rotationStatus()).toEqual({
+              rotationRequired: false,
+              epoch: 1,
+              mayRotate: mayRotate[index],
+            });
+          }
+          yield* owner.close();
+          expect(yield* Effect.result(owner.rotationStatus())).toMatchObject({
+            _tag: 'Failure',
+            failure: { code: 'closed' },
+          });
+        })
+      )
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 0);
 it('publishes and installs real new epochs, distributes them, resumes current-epoch document writes and reopens retained candidates', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-real-epoch-publisher-'));
   try {

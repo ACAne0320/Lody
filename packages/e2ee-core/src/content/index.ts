@@ -39,7 +39,7 @@ function boundAuthority(
   view: LedgerView,
   scope: ContentScope,
   signer: Bytes.SigningPublicKey,
-  writing: boolean
+  mode: 'authenticate' | 'admit' | 'seal'
 ) {
   return Result.gen(function* () {
     // Queries below also authenticate the view's runtime provenance.
@@ -54,12 +54,17 @@ function boundAuthority(
       historicalContentIdentity(view, signer),
       () => new ContentError({ code: 'unauthorized' })
     );
-    if (writing) {
+    if (mode !== 'authenticate') {
       const permissions = yield* Result.mapError(
         contentPermissions(view, signer),
         () => new ContentError({ code: 'unauthorized' })
       );
-      if (!permissions.maySealNewContent || epoch.epoch !== view.inspectState().epoch.number)
+      const currentEpoch = view.inspectState().epoch.number;
+      if (
+        mode === 'seal'
+          ? !permissions.maySealNewContent || epoch.epoch !== currentEpoch
+          : !permissions.mayWriteDocument || epoch.epoch > currentEpoch
+      )
         return yield* fail('unauthorized');
     }
     return author;
@@ -98,7 +103,7 @@ export function sealDocument(input: {
         (plaintext) =>
           Effect.gen(function* () {
             const view = yield* lookup();
-            yield* Effect.fromResult(boundAuthority(view, scope, signer, true));
+            yield* Effect.fromResult(boundAuthority(view, scope, signer, 'seal'));
             const header: ContentHeader = {
               ...scope,
               docEpoch: 0,
@@ -121,7 +126,7 @@ export function sealDocument(input: {
                 () => new ContentError({ code: 'unauthorized' })
               )
             );
-            yield* Effect.fromResult(boundAuthority(latest, scope, signer, true));
+            yield* Effect.fromResult(boundAuthority(latest, scope, signer, 'seal'));
             return frame;
           }),
         (plaintext) => Effect.sync(() => plaintext.fill(0))
@@ -152,7 +157,7 @@ function authenticateParsed(
       Bytes.signingPublicKey(parsed.unsigned.subarray(7, 39)),
       () => new ContentError({ code: 'invalid-signing-key' })
     );
-    const author = yield* boundAuthority(view, scope, signer, false);
+    const author = yield* boundAuthority(view, scope, signer, 'authenticate');
     const metadata = yield* verifyParsedContentSignature(parsed, scope, signer, additionalData);
     return Object.freeze({
       header: Object.freeze({
@@ -167,7 +172,7 @@ function authenticateParsed(
     });
   });
 }
-/** Host new-write admission, distinct from historical authentication and AEAD open.
+/** Host upload admission, distinct from new sealing, historical authentication and AEAD open.
  * The caller selects current genuine view, exact scope and authenticated principal.
  * Admission proves signature/current writing permission, never valid plaintext. */
 export function admitDocument(
@@ -179,7 +184,7 @@ export function admitDocument(
 ) {
   return Result.gen(function* () {
     const principal = yield* Bytes.signingPublicKey(authenticatedDevice.toBytes());
-    yield* boundAuthority(view, scope, principal, true);
+    yield* boundAuthority(view, scope, principal, 'admit');
     const authenticated = yield* authenticateDocument(view, scope, frame, additionalData);
     if (authenticated.header.device !== keyId(principal.toBytes()))
       return yield* fail('unauthorized');

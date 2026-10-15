@@ -13,7 +13,7 @@ Reject when safeStorage encryption is unavailable. On Linux reject basic_text an
 
 ## Persistence and cleanup
 
-Publish complete encrypted files atomically and preserve the first original. Corrupt or incompatible retained files fail without replacement. Reopen decrypts KEK through safeStorage and checks protected key-pair binding. Files are private; no plaintext keys are persisted or logged. Scope close rejects new work, waits actual native operations, then clears owned KEK bytes. Native handles and JavaScript strings cannot be promised deterministic zeroization.
+Publish complete encrypted files atomically and preserve the first original. Corrupt or incompatible retained files fail without replacement. Reopen decrypts KEK through safeStorage and checks protected key-pair binding. When safeStorage reports `shouldReEncrypt`, rewrap the same KEK, validate the replacement, atomically publish it, then read back and decrypt it again. A lock covers only this initialization replacement; a competing initialization fails explicitly. Keep the previous encrypted wrapper until final verification, and restore it on failure. Return `rewrap-failed`; never silently continue with a failed rewrap. An interrupted replacement or failed rollback can leave the lock and encrypted original for explicit recovery: subsequent initialization refuses rather than stealing a stale lock, choosing a backup or deleting key material. Files are private; no plaintext keys are persisted or logged. Scope close rejects new work, waits actual native operations, then clears owned KEK bytes. Native handles and JavaScript strings cannot be promised deterministic zeroization.
 
 ## Acceptance boundary
 

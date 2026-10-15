@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, writeFile, stat } from 'node:fs/promises'
+import fileSystem from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -160,6 +162,300 @@ void test('installed and candidate data authenticate full context and reopen wit
     assert.equal(stored.includes(body.subarray(-32)), false)
     assert.equal(stored.includes(candidate.subarray(-32)), false)
   }
+})
+void test('native key rotation rewraps the same KEK and retained protected data still opens', async (t) => {
+  const directory = await fixture(t)
+  const file = join(directory, 'kek.safe-storage')
+  let protectedKey, original
+  await execute(
+    Effect.gen(function* () {
+      const owner = yield* makeDesktopE2eeCustody({
+        directory,
+        platform: 'linux',
+        safeStorage: backend()
+      })
+      protectedKey = yield* Effect.promise(() => owner.installed.protect(installedBody()))
+      original = yield* Effect.promise(() => readFile(file))
+    })
+  )
+  const native = backend()
+  const decrypt = native.decryptStringAsync
+  native.decryptStringAsync = async (value) => ({
+    ...(await decrypt(value)),
+    shouldReEncrypt: Buffer.from(value).equals(original)
+  })
+  await execute(
+    Effect.gen(function* () {
+      const owner = yield* makeDesktopE2eeCustody({
+        directory,
+        platform: 'linux',
+        safeStorage: native
+      })
+      assert.deepEqual(
+        Buffer.from(yield* Effect.promise(() => owner.installed.unprotect(protectedKey))),
+        installedBody()
+      )
+    })
+  )
+  const replacement = await readFile(file)
+  assert.notDeepEqual(replacement, original, 'shouldReEncrypt must publish a fresh wrapped KEK')
+  assert.equal((await decrypt(replacement)).result, (await decrypt(original)).result)
+  await execute(
+    Effect.gen(function* () {
+      const owner = yield* makeDesktopE2eeCustody({
+        directory,
+        platform: 'linux',
+        safeStorage: backend()
+      })
+      assert.deepEqual(
+        Buffer.from(yield* Effect.promise(() => owner.installed.unprotect(protectedKey))),
+        installedBody()
+      )
+    })
+  )
+  assert.deepEqual(await readdir(directory), ['kek.safe-storage'])
+})
+void test('failed KEK rewrap preserves the complete previous wrapper and protected keys', async (t) => {
+  for (const fault of ['wrap', 'candidate', 'replace', 'readback']) {
+    const directory = await fixture(t)
+    const file = join(directory, 'kek.safe-storage')
+    let protectedKey
+    await execute(
+      Effect.gen(function* () {
+        const owner = yield* makeDesktopE2eeCustody({
+          directory,
+          platform: 'linux',
+          safeStorage: backend()
+        })
+        protectedKey = yield* Effect.promise(() => owner.installed.protect(installedBody()))
+      })
+    )
+    const original = await readFile(file)
+    const storage = backend()
+    const encrypt = storage.encryptStringAsync
+    const decrypt = storage.decryptStringAsync
+    let replacementDecrypts = 0
+    storage.encryptStringAsync = async (value) => {
+      if (fault === 'wrap') throw new Error('native re-encryption unavailable')
+      return encrypt(value)
+    }
+    storage.decryptStringAsync = async (value) => {
+      const opened = await decrypt(value)
+      if (Buffer.from(value).equals(original)) return { ...opened, shouldReEncrypt: true }
+      replacementDecrypts++
+      if (fault === 'candidate') return { result: '0'.repeat(64), shouldReEncrypt: false }
+      if (fault === 'readback' && replacementDecrypts === 2)
+        throw new Error('native readback failed after publication')
+      return opened
+    }
+    const rename = fileSystem.rename
+    if (fault === 'replace') {
+      fileSystem.rename = async (from, to) => {
+        if (to === file) throw new Error('atomic replacement failed')
+        return rename(from, to)
+      }
+      syncBuiltinESMExports()
+    }
+    let result
+    try {
+      result = await execute(
+        Effect.result(
+          makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: storage })
+        )
+      )
+    } finally {
+      fileSystem.rename = rename
+      syncBuiltinESMExports()
+    }
+    assert.equal(result.failure?.code, 'rewrap-failed', fault)
+    assert.deepEqual(await readFile(file), original, fault)
+    assert.deepEqual(await readdir(directory), ['kek.safe-storage'], fault)
+    await execute(
+      Effect.gen(function* () {
+        const owner = yield* makeDesktopE2eeCustody({
+          directory,
+          platform: 'linux',
+          safeStorage: backend()
+        })
+        assert.deepEqual(
+          Buffer.from(yield* Effect.promise(() => owner.installed.unprotect(protectedKey))),
+          installedBody(),
+          fault
+        )
+      })
+    )
+  }
+})
+void test('a failed rollback retains the encrypted original and refuses automatic recovery', async (t) => {
+  const directory = await fixture(t)
+  const file = join(directory, 'kek.safe-storage')
+  await execute(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() }))
+  const original = await readFile(file)
+  const storage = backend(),
+    decrypt = storage.decryptStringAsync
+  let replacementDecrypts = 0
+  storage.decryptStringAsync = async (value) => {
+    const opened = await decrypt(value)
+    const isOriginal = Buffer.from(value).equals(original)
+    if (!isOriginal && ++replacementDecrypts === 2) throw new Error('readback failed')
+    return { ...opened, shouldReEncrypt: isOriginal }
+  }
+  const rename = fileSystem.rename
+  fileSystem.rename = async (from, to) => {
+    if (from.endsWith('.original')) throw new Error('rollback storage unavailable')
+    return rename(from, to)
+  }
+  syncBuiltinESMExports()
+  let result
+  try {
+    result = await execute(
+      Effect.result(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: storage }))
+    )
+  } finally {
+    fileSystem.rename = rename
+    syncBuiltinESMExports()
+  }
+  assert.equal(result.failure?.code, 'rewrap-failed')
+  const files = await readdir(directory)
+  const backup = files.find((name) => name.endsWith('.original'))
+  assert.ok(backup, 'the original encrypted wrapper must survive failed rollback')
+  assert.deepEqual(await readFile(join(directory, backup)), original)
+  assert.ok(files.includes('kek.safe-storage.rewrap-lock'))
+  const reopening = await execute(
+    Effect.result(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() }))
+  )
+  assert.equal(reopening.failure?.code, 'rewrap-failed')
+  assert.deepEqual(await readFile(join(directory, backup)), original)
+  // Explicit fixture recovery, never an automatic production backup choice.
+  await rename(join(directory, backup), file)
+  await fileSystem.unlink(join(directory, 'kek.safe-storage.rewrap-lock'))
+  await execute(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() }))
+  assert.deepEqual(await readFile(file), original)
+})
+void test('a competing KEK rewrap refuses safely while the first native replacement is pending', async (t) => {
+  const directory = await fixture(t)
+  const file = join(directory, 'kek.safe-storage')
+  await execute(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() }))
+  const original = await readFile(file)
+  const storage = backend()
+  const encrypt = storage.encryptStringAsync,
+    decrypt = storage.decryptStringAsync
+  let release, began
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  const started = new Promise((resolve) => {
+    began = resolve
+  })
+  t.after(() => release())
+  storage.encryptStringAsync = async (value) => {
+    began()
+    await gate
+    return encrypt(value)
+  }
+  storage.decryptStringAsync = async (value) => ({
+    ...(await decrypt(value)),
+    shouldReEncrypt: Buffer.from(value).equals(original)
+  })
+  const first = execute(
+    makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: storage })
+  )
+  try {
+    await started
+    const second = await execute(
+      Effect.result(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: storage }))
+    )
+    assert.equal(second.failure?.code, 'rewrap-failed')
+    assert.deepEqual(await readFile(file), original)
+  } finally {
+    release()
+    await first
+  }
+  assert.notDeepEqual(await readFile(file), original)
+  assert.deepEqual(await readdir(directory), ['kek.safe-storage'])
+})
+void test('Scope close retains native KEK rewrap until it settles and then refuses new work', async (t) => {
+  const directory = await fixture(t)
+  const file = join(directory, 'kek.safe-storage')
+  await execute(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() }))
+  const original = await readFile(file)
+  const storage = backend()
+  const encrypt = storage.encryptStringAsync,
+    decrypt = storage.decryptStringAsync
+  let release, began, closeBegan
+  let nativeSettled = false,
+    releasedEarly = false,
+    replacementDecrypts = 0
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  const started = new Promise((resolve) => {
+    began = resolve
+  })
+  const closeStarted = new Promise((resolve) => {
+    closeBegan = resolve
+  })
+  t.after(() => release())
+  storage.encryptStringAsync = async (value) => {
+    const encoded = await encrypt(value)
+    began()
+    await gate
+    return encoded
+  }
+  storage.decryptStringAsync = async (value) => {
+    const opened = await decrypt(value)
+    const isOriginal = Buffer.from(value).equals(original)
+    if (!isOriginal && ++replacementDecrypts === 2) nativeSettled = true
+    return { ...opened, shouldReEncrypt: isOriginal }
+  }
+  await execute(
+    Effect.gen(function* () {
+      const scope = yield* Scope.make()
+      yield* Scope.addFinalizer(
+        scope,
+        Effect.sync(() => {
+          releasedEarly = !nativeSettled
+        })
+      )
+      yield* Effect.addFinalizer(() => {
+        release()
+        return Scope.close(scope, Exit.void)
+      })
+      try {
+        const opening = yield* makeDesktopE2eeCustody({
+          directory,
+          platform: 'linux',
+          safeStorage: storage
+        }).pipe(Effect.provideService(Scope.Scope, scope), Effect.forkChild)
+        yield* Effect.promise(() => started)
+        yield* Scope.addFinalizer(
+          scope,
+          Effect.sync(() => closeBegan())
+        )
+        const closing = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild)
+        yield* Effect.promise(() => closeStarted)
+        release()
+        const owner = yield* Fiber.join(opening)
+        yield* Fiber.join(closing)
+        assert.equal(
+          releasedEarly,
+          false,
+          'owner must not release before native KEK readback settles'
+        )
+        const denied = yield* Effect.result(
+          Effect.tryPromise({
+            try: () => owner.installed.protect(installedBody()),
+            catch: (cause) => cause
+          })
+        )
+        assert.equal(denied.failure?.code, 'closed')
+      } finally {
+        release()
+      }
+    })
+  )
+  assert.notDeepEqual(await readFile(file), original)
+  assert.deepEqual(await readdir(directory), ['kek.safe-storage'])
 })
 void test('opaque personal/machine identity persists; native keys are nonextractable; recovery cannot persist', async (t) => {
   const directory = await fixture(t)

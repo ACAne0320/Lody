@@ -551,20 +551,6 @@ const makeSession = Effect.fnUntraced(function* (input: {
           return yield* Effect.void;
         })
       ),
-    cleanupCandidate: (entryId: string) =>
-      ownedOperation(
-        Effect.gen(function* () {
-          yield* attempt(guard);
-          const current = yield* index();
-          if (!current.header || current.value.entries.some((ref) => ref.entryId === entryId))
-            return yield* vaultError('conflict');
-          // A local journal cannot rule out another session's durable pending
-          // index intent. Keep the immutable candidate until an authenticated
-          // global reservation/reconciliation contract can prove it unreferenced.
-          // Retired indexed entries use the separate explicit risk-confirmed path.
-          return yield* vaultError('pending');
-        })
-      ),
     readCandidate: (entryId: string) =>
       ownedOperation(
         Effect.gen(function* () {

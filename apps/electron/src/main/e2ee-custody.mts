@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { constants } from 'node:fs'
-import { link, lstat, mkdir, open, unlink } from 'node:fs/promises'
+import { link, lstat, mkdir, open, rename, unlink } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { Data, Effect, Result } from 'effect'
@@ -17,7 +17,14 @@ export interface DesktopSafeStorage {
   decryptStringAsync(value: Buffer): Promise<{ result: string; shouldReEncrypt: boolean }>
 }
 export class DesktopE2eeCustodyError extends Data.TaggedError('DesktopE2eeCustodyError')<{
-  readonly code: 'unavailable' | 'basic-text' | 'closed' | 'storage' | 'corrupt' | 'invalid-input'
+  readonly code:
+    | 'unavailable'
+    | 'basic-text'
+    | 'closed'
+    | 'storage'
+    | 'corrupt'
+    | 'invalid-input'
+    | 'rewrap-failed'
 }> {}
 const fail = (code: DesktopE2eeCustodyError['code']) => new DesktopE2eeCustodyError({ code })
 const domain = Buffer.from('lody-e2ee/desktop-custody/v1\0')
@@ -91,6 +98,82 @@ async function publish(path: string, value: Uint8Array) {
       if (cause.code !== 'ENOENT') throw cause
     })
   }
+}
+/** Only the initialization rewrap owns this lock; never steal a stale lock. */
+async function rewrapKek(
+  path: string,
+  original: Uint8Array,
+  plaintext: string,
+  wrap: DesktopSafeStorage['encryptStringAsync'],
+  unwrap: DesktopSafeStorage['decryptStringAsync']
+) {
+  const lockPath = `${path}.rewrap-lock`
+  const token = randomBytes(16).toString('hex')
+  const candidate = `${path}.${token}.pending`
+  const backup = `${path}.${token}.original`
+  let lock: Awaited<ReturnType<typeof open>> | undefined
+  let retained = false,
+    replaced = false,
+    recoveryRequired = false,
+    failed = false
+  const remove = (file: string) =>
+    unlink(file).catch((cause: NodeJS.ErrnoException) => {
+      if (cause.code !== 'ENOENT') throw cause
+    })
+  try {
+    lock = await open(lockPath, 'wx', 0o600)
+    if (!equal(await readOwned(path, 8192), original)) throw fail('rewrap-failed')
+    const encrypted = await wrap(plaintext)
+    if (!(encrypted instanceof Uint8Array) || encrypted.length < 1 || encrypted.length > 8192)
+      throw fail('rewrap-failed')
+    const replacement = new Uint8Array(encrypted)
+    const validate = async (file: string) => {
+      const actual = await readOwned(file, 8192)
+      if (!equal(actual, replacement)) throw fail('rewrap-failed')
+      const result = await unwrap(Buffer.from(actual))
+      if (result.result !== plaintext || result.shouldReEncrypt) throw fail('rewrap-failed')
+    }
+    if (!(await publish(candidate, replacement))) throw fail('rewrap-failed')
+    // Validate before changing the retained path, and once again after publishing.
+    await validate(candidate)
+    await link(path, backup)
+    retained = true
+    await rename(candidate, path)
+    replaced = true
+    await validate(path)
+    await remove(backup)
+    retained = false
+  } catch {
+    failed = true
+    if (lock) {
+      try {
+        // The exclusive lock prevents another rewrap from publishing while this
+        // original is restored. A failed rollback retains the encrypted backup
+        // and lock for explicit recovery instead of guessing which file is newer.
+        if (replaced) await rename(backup, path)
+        else if (retained) await remove(backup)
+        retained = false
+      } catch {
+        recoveryRequired = true
+      }
+    }
+  } finally {
+    if (lock) {
+      try {
+        await remove(candidate)
+      } catch {
+        recoveryRequired = true
+        failed = true
+      }
+      try {
+        await lock.close()
+        if (!recoveryRequired) await remove(lockPath)
+      } catch {
+        failed = true
+      }
+    }
+  }
+  if (failed) throw fail('rewrap-failed')
 }
 export interface PreparedDesktopE2eeDevice extends DeviceSigner {
   readonly enc: Bytes.EncryptionPublicKey
@@ -173,38 +256,47 @@ export const makeDesktopE2eeCustody = Effect.fnUntraced(function* (input: {
     kek = undefined
   }
   yield* Effect.addFinalizer(() => native(close).pipe(Effect.orDie))
-  yield* native(async () => {
-    await mkdir(directory, { recursive: true, mode: 0o700 })
-    const info = await lstat(directory)
-    if (
-      !info.isDirectory() ||
-      info.isSymbolicLink() ||
-      (process.platform !== 'win32' && (info.mode & 0o077) !== 0)
-    )
-      throw fail('storage')
-    const file = join(directory, 'kek.safe-storage')
-    let wrapped: Uint8Array
-    try {
-      wrapped = await readOwned(file, 8192)
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
-      const candidate = random(new Uint8Array(32))
+  yield* native(() =>
+    track(async () => {
+      await mkdir(directory, { recursive: true, mode: 0o700 })
+      const info = await lstat(directory)
+      if (
+        !info.isDirectory() ||
+        info.isSymbolicLink() ||
+        (process.platform !== 'win32' && (info.mode & 0o077) !== 0)
+      )
+        throw fail('storage')
+      const file = join(directory, 'kek.safe-storage')
       try {
-        const encoded = await wrap(Buffer.from(candidate).toString('hex'))
-        if (!(encoded instanceof Uint8Array) || encoded.length < 1 || encoded.length > 8192)
-          throw fail('corrupt')
-        await publish(file, encoded)
-      } finally {
-        candidate.fill(0)
+        await lstat(`${file}.rewrap-lock`)
+        throw fail('rewrap-failed')
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
       }
-      wrapped = await readOwned(file, 8192)
-    }
-    const recovered = await unwrap(Buffer.from(wrapped))
-    if (!/^[0-9a-f]{64}$/.test(recovered.result)) throw fail('corrupt')
-    kek = new Uint8Array(Buffer.from(recovered.result, 'hex'))
-    // Native strings/handles cannot be deterministically erased. Never log or
-    // persist this decrypted string; owned byte copies are cleared on close.
-  })
+      let wrapped: Uint8Array
+      try {
+        wrapped = await readOwned(file, 8192)
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
+        const candidate = random(new Uint8Array(32))
+        try {
+          const encoded = await wrap(Buffer.from(candidate).toString('hex'))
+          if (!(encoded instanceof Uint8Array) || encoded.length < 1 || encoded.length > 8192)
+            throw fail('corrupt')
+          await publish(file, encoded)
+        } finally {
+          candidate.fill(0)
+        }
+        wrapped = await readOwned(file, 8192)
+      }
+      const recovered = await unwrap(Buffer.from(wrapped))
+      if (!/^[0-9a-f]{64}$/.test(recovered.result)) throw fail('corrupt')
+      if (recovered.shouldReEncrypt) await rewrapKek(file, wrapped, recovered.result, wrap, unwrap)
+      kek = new Uint8Array(Buffer.from(recovered.result, 'hex'))
+      // Native strings/handles cannot be deterministically erased. Never log or
+      // persist this decrypted string; owned byte copies are cleared on close.
+    })
+  )
   const seal = (body: Uint8Array, aad: Uint8Array) => {
     if (!kek) throw fail('closed')
     const nonce = random(new Uint8Array(24))

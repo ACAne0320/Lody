@@ -63,7 +63,7 @@ interruption signals. Crypto completion gating is a stated test boundary; no
 sleeps, real keys or physical-device claims are involved.
 
 [Trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
- · [Source fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/content/provenance.json).
+· [Source fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/content/provenance.json).
 
 `./content/streams` adds `makeStreamsUpdateBinding`, an Effect-native header3 update
 and header4 snapshot codec, consumed by released streams-crdt0.17 in the Lab. Its initialization Scope closes
@@ -89,18 +89,24 @@ The user selected v0 over v2; sharing one document leaf supports future per-docu
 grants, while purpose-bound AAD/signatures prevent cross-purpose substitution.
 See the revised [draft Spec](../../../../specs/e2ee-foundations.md).
 
-
-
-Host consumers may use `admitDocument` for fresh writes: a genuine current view,
-exact scope and externally authenticated device must qualify; the fixed signature
-binds the same author. Historical `authenticateDocument` remains separate.
+Host consumers use `admitDocument` to upload already sealed originals. The genuine
+current view must grant `mayWriteDocument` to the externally authenticated signing
+device, and the frame epoch must have a verified history packet and be no later
+than that view's current epoch. A required rotation or a later tag7/tag8 publication
+does not invalidate an active writer's earlier sealed bytes. New `sealDocument`
+and streams-binding seals instead require `maySealNewContent` and the exact
+current epoch, before encryption and again after asynchronous signing. Revoked,
+removed, Guest or Recovery writers still cannot upload; historical
+`authenticateDocument` remains separate and grants no upload permission.
 `admitStreamsUpdateBatch` checks released streams-crdt0.17 framing and header3,
-rejecting the entire mixed batch before a host forwards unchanged original bytes.
+rejecting the entire batch if any frame is invalid before the host forwards
+unchanged original bytes. A batch may contain valid frames from different
+published epochs; retries never reseal an older frame.
 `admitStreamsSnapshot` and its Effect form check the released kind2 envelope,
 fixed provider header4 and position-bound content frame, exact authenticated submitting device and current
-write/epoch permission. Both admission paths recheck after native work at the host.
+write permission and a verified published epoch no later than the current one.
+Both admission paths recheck after native work at the host.
 They do not decrypt or prove ciphertext usability; readers still verify AEAD.
-
 
 `./content/snapshot/sqlite` owns the single-host reference publication journal.
 It binds one Org/resource/model and retains immutable offset/signer/body originals,

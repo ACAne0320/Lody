@@ -32,6 +32,15 @@ view; signature-only evidence and equal comparison notes do not supply that trus
 Unknown pre-snapshot hashes and missing user attribution cannot be fabricated.
 Current permission and known-prefix checks repeat after asynchronous work.
 
+Host upload admission and honest sealing are different gates. Previously sealed
+original bytes may upload under current document-write permission when their epoch
+is published in the genuine ledger, including while rotation is required. Only
+new seals require the current epoch and cleared rotation flag. The workspace
+facade exposes the verified epoch/rotation requirement and personal-manager
+eligibility without publishing; Lab uses that signal for a required-rotation round.
+Failed vault candidates have no cleanup API and remain permanently retained in
+this revision. Retired indexed entries keep their separate risk-confirmed cleanup.
+
 The concrete Streams adapter returns its genuine view from the same verified read;
 Lab control reuses it. Generic remote records still require independent P09
 verification. Shared route screening covers actual reads/control only, while key

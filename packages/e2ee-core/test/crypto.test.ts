@@ -724,6 +724,204 @@ describe('ledger-bound signed document workflows', () => {
     ).toBe(true);
     expect(code(admitStreamsUpdateBatch({ ...options, view: f.view() }))).toBe('unauthorized');
   });
+  it.each(['tag7', 'tag8', 'rotation-required'] as const)(
+    'admits original sealed updates and snapshots after %s while retaining the new-seal gate',
+    async (transition) => {
+      const f = ledgerFixture(true);
+      f.addPhone();
+      const removedMembership = new Uint8Array(16).fill(11);
+      if (transition === 'tag8') {
+        const request = [
+          new Uint8Array(16).fill(11),
+          new Uint8Array(32).fill(11),
+          f.attacker.raw,
+          new Uint8Array(32).fill(103),
+          null,
+        ] as const;
+        const message = new Uint8Array(
+          Buffer.concat([
+            Buffer.from('lody-e2ee/join/v1\0'),
+            read(encodeCbor([f.view().genesis.toBytes(), ...request])),
+          ])
+        );
+        f.append([1, removedMembership, [...request, f.attacker.signBytes(message)]]);
+      }
+      const oldView = f.view();
+      const nextSecret = new Uint8Array(32).fill(8);
+      const snapshotContext = {
+        ...updateContext,
+        kind: 'snapshot' as const,
+        continuationOffset: '0_123',
+      };
+      const prefix = (snapshot: boolean) =>
+        new Uint8Array([76, 83, 67, 69, 2, snapshot ? 2 : 1, 0, 1, 0, 0, snapshot ? 4 : 3]);
+      const aadFor = (snapshot: boolean) =>
+        new Uint8Array(
+          Buffer.concat([
+            Buffer.from('loro-streams-crdt-payload-protection/v2\0'),
+            prefix(snapshot),
+          ])
+        );
+      const batch = (frames: readonly Uint8Array[]) =>
+        new Uint8Array(
+          Buffer.concat(
+            frames.map((frame) => {
+              const size = new Uint8Array(4);
+              new DataView(size.buffer).setUint32(0, prefix(false).length + frame.length, false);
+              return Buffer.concat([size, prefix(false), frame]);
+            })
+          )
+        );
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const binding = yield* makeStreamsUpdateBinding({
+              ...bindingOptions(f),
+              writeEpoch: 'current',
+              readEpochKey: (epoch) =>
+                Effect.sync(() => read(Bytes.epochKey(epoch === 0 ? source : nextSecret))),
+            });
+            const old = yield* binding.seal({
+              ...updateInput,
+              additionalData: () => aadFor(false),
+            });
+            const snapshot = yield* binding.seal({
+              ...updateInput,
+              context: snapshotContext,
+              additionalData: () => aadFor(true),
+            });
+            const originalUpdate = new Uint8Array(old.sealed);
+            const originalSnapshot = new Uint8Array(snapshot.sealed);
+            if (transition === 'tag7') f.publishEpoch(nextSecret);
+            else if (transition === 'tag8') {
+              const previousKey = read(Bytes.epochKey(source));
+              const currentKey = read(Bytes.epochKey(nextSecret));
+              try {
+                f.append([
+                  8,
+                  removedMembership,
+                  1,
+                  read(EpochKeys.commitEpochKey(oldView.genesis, 1, currentKey)).toBytes(),
+                  read(
+                    EpochKeys.sealHistoryPacket({
+                      genesis: oldView.genesis,
+                      epoch: 1,
+                      currentKey,
+                      previousKey,
+                    })
+                  ),
+                ]);
+              } finally {
+                disposeEpochKey(previousKey);
+                disposeEpochKey(currentKey);
+              }
+            } else f.append([5, f.phone.raw]);
+            const view = f.view();
+            expect(view.inspectState().epoch).toMatchObject(
+              transition === 'rotation-required'
+                ? { number: 0, rotationRequired: true }
+                : { number: 1, rotationRequired: false }
+            );
+            const input = {
+              genesis: view.genesis,
+              resource: f.scope.resource,
+              model: 'loro' as const,
+              view,
+              device: f.owner.publicKey,
+              body: batch([old.sealed]),
+            };
+            const direct = Documents.admitDocument(
+              view,
+              f.scope,
+              old.sealed,
+              f.owner.publicKey,
+              aadFor(false)
+            );
+            expect(Result.isSuccess(direct)).toBe(true);
+            expect(read(direct).header.epoch).toBe(0);
+            expect(read(admitStreamsUpdateBatch(input))).toEqual(input.body);
+            expect(yield* admitStreamsUpdateBatchEffect(input)).toEqual(input.body);
+            const snapshotInput = {
+              ...input,
+              body: new Uint8Array(Buffer.concat([prefix(true), snapshot.sealed])),
+              continuationOffset: snapshotContext.continuationOffset,
+            };
+            expect(read(admitStreamsSnapshot(snapshotInput))).toEqual(snapshotInput.body);
+            expect(yield* admitStreamsSnapshotEffect(snapshotInput)).toEqual(snapshotInput.body);
+            const next = yield* Effect.result(
+              binding.seal({ ...updateInput, additionalData: () => aadFor(false) })
+            );
+            if (transition === 'rotation-required') expect(code(next)).toBe('unauthorized');
+            else {
+              const mixed = { ...input, body: batch([old.sealed, read(next).sealed]) };
+              expect(read(admitStreamsUpdateBatch(mixed))).toEqual(mixed.body);
+              expect(yield* admitStreamsUpdateBatchEffect(mixed)).toEqual(mixed.body);
+              // The same genuinely signed epoch1 bytes were unknown to the old endpoint.
+              expect(
+                code(
+                  admitStreamsUpdateBatch({
+                    ...input,
+                    view: oldView,
+                    body: batch([read(next).sealed]),
+                  })
+                )
+              ).toBe('unauthorized');
+            }
+            // A real signature cannot manufacture an unpublished/future epoch.
+            const futureScope = { ...f.scope, epoch: 9 };
+            const forged = new Uint8Array(old.sealed);
+            new DataView(forged.buffer).setUint32(1, futureScope.epoch, false);
+            forged.set(
+              f.owner.signBytes(
+                read(contentSigningBytes(futureScope, forged.subarray(0, -64), aadFor(false)))
+              ),
+              forged.length - 64
+            );
+            expect(
+              code(
+                Documents.admitDocument(view, futureScope, forged, f.owner.publicKey, aadFor(false))
+              )
+            ).toBe('unauthorized');
+            expect(
+              code(admitStreamsUpdateBatch({ ...input, body: batch([old.sealed, forged]) }))
+            ).toBe('unauthorized');
+            expect(
+              code(
+                yield* Effect.result(
+                  admitStreamsUpdateBatchEffect({ ...input, body: batch([old.sealed, forged]) })
+                )
+              )
+            ).toBe('unauthorized');
+            const futureSnapshotScope = { ...futureScope, purpose: 'doc-snapshot' as const };
+            const futureSnapshot = new Uint8Array(snapshot.sealed);
+            new DataView(futureSnapshot.buffer).setUint32(1, futureScope.epoch, false);
+            futureSnapshot.set(
+              f.owner.signBytes(
+                read(
+                  contentSigningBytes(
+                    futureSnapshotScope,
+                    futureSnapshot.subarray(0, -64),
+                    aadFor(true)
+                  )
+                )
+              ),
+              futureSnapshot.length - 64
+            );
+            const unknownSnapshot = {
+              ...snapshotInput,
+              body: new Uint8Array(Buffer.concat([prefix(true), futureSnapshot])),
+            };
+            expect(code(admitStreamsSnapshot(unknownSnapshot))).toBe('unauthorized');
+            expect(code(yield* Effect.result(admitStreamsSnapshotEffect(unknownSnapshot)))).toBe(
+              'unauthorized'
+            );
+            expect(old.sealed).toEqual(originalUpdate);
+            expect(snapshot.sealed).toEqual(originalSnapshot);
+          })
+        )
+      );
+    }
+  );
   it('binds settled header3 updates to real ledger, signer and commitment using published SDK types', async () => {
     const f = ledgerFixture(true);
     let owned: Bytes.EpochKey | undefined;
@@ -906,7 +1104,14 @@ describe('ledger-bound signed document workflows', () => {
               ).toBe('invalid-snapshot-offset');
             f.addPhone();
             f.append([5, f.phone.raw]);
-            expect(code(admitStreamsSnapshot({ ...input, view: f.view() }))).toBe('unauthorized');
+            expect(read(admitStreamsSnapshot({ ...input, view: f.view() }))).toEqual(body);
+            expect(
+              code(
+                yield* Effect.result(
+                  binding.seal({ ...updateInput, context, additionalData: aadFor })
+                )
+              )
+            ).toBe('unauthorized');
             expect(yield* authenticateStreamsSnapshotEffect({ ...input, view: f.view() })).toEqual(
               body
             );

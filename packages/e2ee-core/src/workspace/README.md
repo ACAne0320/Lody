@@ -21,6 +21,13 @@ P09 outcome and never silently re-signs. `rotate`/`removeMember` use the supplie
 staged publisher; an unconfigured publisher fails explicitly. `document` returns
 seal/open/position-bound snapshot plus the platform's native document owner.
 
+`rotationStatus()` returns `rotationRequired`, `epoch` and `mayRotate` from the
+current verified view. Only an active Owner/Admin personal device has `mayRotate`;
+this reports permission, not whether a publisher adapter was configured. Refresh
+explicitly to observe remote changes. The query never signs or publishes. Lab's
+`rotateIfRequired` refreshes, reads this signal and invokes the same publisher only
+when rotation is needed and permitted; explicit manual rotation stays available.
+
 `recovery.setup/test/status` use the explicitly configured recovery workflow.
 `recovery.skip` requires explicit recovery-loss confirmation, while
 `recovery.replace` resumes the same durable replacement workflow. Product callers

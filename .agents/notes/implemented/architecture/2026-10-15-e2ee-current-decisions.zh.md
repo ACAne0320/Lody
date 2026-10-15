@@ -17,6 +17,12 @@ Translation: current
 
 权限只由一套已登记 genuine view 重放/规则产生。SQL、传输 offset、ACK、报告和服务器 revision 都不能选择账本权限。合法历史签名不赋予当前写入或发钥权。Snapshot 背书需要独立的同位置资格，或真正合资格 view 创建的私有 token；只有签名证据或比较相等的 notes 不能产生该信任。不能伪造未知的 snapshot 前缀 hash，也不能猜测缺失的用户归属。异步工作后重新核对当前权限与已知前缀。
 
+宿主上传准入与诚实客户端的新密封分开判断。已密封原件只要所属 epoch 已在 genuine
+账本发布、作者仍有当前文档写权限，就允许上传，包括等待换代期间。只有新密封要求
+当前 epoch 且换代标记已清除。门面只读返回已验证 epoch、换代需求及个人管理设备
+资格，不自行发布；Lab 用这个信号执行需要的换代轮次。本轮没有失败候选清理 API，
+候选永久保留；已退役索引条目仍走单独的风险确认清理。
+
 具体 Streams adapter 返回同次验证产生的 genuine view，Lab control 直接复用；通用 remote 的 records 仍由 P09 独立验证。共享路由筛查只覆盖实际读取/control，mailbox 和内容写入保留各自真正的准入路径。
 
 ## 已安装密钥保护

@@ -1,7 +1,8 @@
 import { Cause, Context, Data, Effect, Exit, Layer, Result, Scope, Semaphore } from 'effect';
 import * as Bytes from '../bytes';
 import type { DeviceSigner } from '../signing';
-import type { LedgerView } from '../ledger';
+import { contentPermissions, type LedgerView } from '../ledger';
+import { keyId } from '../identifiers';
 import { comparisonNote } from '../ledger/snapshot';
 import { makeInstalledEpochHistory } from '../keys/installed-history';
 import { makeStreamsUpdateBinding } from '../content/streams';
@@ -32,6 +33,11 @@ export class WorkspaceError extends Data.TaggedError('WorkspaceError')<{
   readonly code: 'closed' | 'configuration' | 'unknown-document' | 'recovery-unavailable';
 }> {}
 export type WorkspaceModel = 'loro' | 'flock';
+export interface WorkspaceRotationStatus {
+  readonly rotationRequired: boolean;
+  readonly epoch: number;
+  readonly mayRotate: boolean;
+}
 type Control = Effect.Success<ReturnType<typeof makeWorkspaceControl>>;
 type Distribution = Effect.Success<ReturnType<typeof makeSqliteKeyDistribution>>;
 type RawRotation = Effect.Success<ReturnType<typeof makeSqliteEpochRotation>>;
@@ -177,6 +183,20 @@ export const makeE2eeWorkspace = Effect.fn('E2eeWorkspace.acquire')(function* (
         );
       const ordered = <A, E, R>(effect: Effect.Effect<A, E, R | Scope.Scope>) =>
         run(serial.withPermit(effect));
+      const rotationStatus = Effect.fnUntraced(function* () {
+        const { view } = yield* control.current();
+        // Authenticate runtime provenance before inspecting the detached facts.
+        yield* Effect.fromResult(contentPermissions(view, signer.publicKey));
+        const state = view.inspectState(),
+          device = state.devices.get(keyId(signer.publicKey.toBytes())),
+          member = device && state.members.get(keyId(device.membershipId.toBytes()));
+        return Object.freeze({
+          rotationRequired: state.epoch.rotationRequired,
+          epoch: state.epoch.number,
+          mayRotate:
+            device?.kind === 'personal' && (member?.role === 'owner' || member?.role === 'admin'),
+        } satisfies WorkspaceRotationStatus);
+      });
       const receiveCommittedEpoch = Effect.fnUntraced(function* () {
         const view = yield* ledger(),
           epoch = view.inspectState().epoch.number;
@@ -275,6 +295,7 @@ export const makeE2eeWorkspace = Effect.fn('E2eeWorkspace.acquire')(function* (
         signer,
         current: () => run(control.current()),
         refresh: () => ordered(control.refresh()),
+        rotationStatus: () => ordered(rotationStatus()),
         execute: (command: Parameters<typeof control.execute>[0]) =>
           ordered(control.execute(command)),
         executeOriginal: (record: Uint8Array) => ordered(control.executeOriginal(record)),

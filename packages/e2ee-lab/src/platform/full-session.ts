@@ -317,6 +317,11 @@ export const makeLabWorkspacePlatform = Effect.fn('Lab.makeWorkspacePlatform')(f
         epochStaging: workspace.staging,
         cleanupStagedEpoch: workspace.cleanupStaged,
         rotateEpoch: workspace.rotate,
+        rotateIfRequired: Effect.fnUntraced(function* () {
+          yield* workspace.refresh();
+          const status = yield* workspace.rotationStatus();
+          return status.rotationRequired && status.mayRotate ? yield* workspace.rotate() : null;
+        }),
         removeMemberAndRotate: workspace.removeMember,
         resumeEpochRotation: workspace.resumeRotation,
         acknowledgeEpochRotation: workspace.acknowledgeRotation,

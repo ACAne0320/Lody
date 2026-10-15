@@ -92,13 +92,11 @@ Active packages never expire automatically. Routine replacement verifies the
 new package and R before retiring/revoking the old R. Known compromise prioritizes
 revocation, even if recovery becomes temporarily unavailable. Retired ciphertext
 remains until explicit user cleanup warns that recovery options may be lost.
-Deleting cloud ciphertext does not revoke already copied secrets. Cleanup requires
-an up-to-date index CAS and confirmation that no durable pending operation refers
-to the candidate; arbitrary age alone never permits garbage collection. A local
-journal alone cannot prove that other sessions have no pending reference. Until a
-global authenticated reservation/reconciliation contract is available, automatic
-failed-candidate cleanup refuses with pending and retains its ciphertext. Explicit
-risk-confirmed cleanup of retired indexed entries remains separate.
+Deleting cloud ciphertext does not revoke already copied secrets. Failed candidate
+entries are retained permanently in this revision: there is no candidate garbage
+collection API. A local journal cannot prove that another session has no pending
+reference. Explicit risk-confirmed cleanup of retired indexed entries remains a
+separate operation and requires an up-to-date index CAS.
 
 ## Boundaries and validation
 

@@ -592,7 +592,7 @@ describe('encrypted recovery vault and genuine workflow', () => {
         )
       );
     }));
-  it('refuses a dangling index when another native session deletes after candidate readback, and retains candidates without global pending proof', async () =>
+  it('refuses a dangling index when another native session deletes after candidate readback, retaining the existing indexed identity', async () =>
     inDir(async (dir) => {
       await Effect.runPromise(
         Effect.scoped(
@@ -604,10 +604,6 @@ describe('encrypted recovery vault and genuine workflow', () => {
             const other = yield* makeLabRecoveryVaultStore({
               path: join(dir, 'vault.sqlite'),
               mode: 'open',
-            });
-            const otherLocal = yield* makeLabRecoveryVaultStore({
-              path: join(dir, 'other-local.sqlite'),
-              mode: 'create',
             });
             const f = yield* fixture();
             const created = yield* createRecoveryVault({
@@ -638,18 +634,6 @@ describe('encrypted recovery vault and genuine workflow', () => {
             });
             const candidate = yield* created.vault.upload(candidatePackage);
             wipeRecoveryPackage(candidatePackage);
-            const secondSession = yield* openRecoveryVault({
-              recoveryFile: created.recoveryFile,
-              store: other.store,
-              local: otherLocal.local,
-            });
-            const cleanup = yield* Effect.result(secondSession.cleanupCandidate(candidate.entryId));
-            expect(Result.isFailure(cleanup)).toBe(true);
-            if (Result.isFailure(cleanup))
-              expect(cleanup.failure).toMatchObject({
-                _tag: 'RecoveryVaultError',
-                code: 'pending',
-              });
             expect(
               yield* other.store.readEntry(created.vault.vaultId, candidate.entryId)
             ).not.toBeNull();
