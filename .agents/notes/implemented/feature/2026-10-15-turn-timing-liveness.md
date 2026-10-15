@@ -20,6 +20,9 @@ age covers only updates received since the conversation was opened.
 
 ## Request
 
+PR: [#1589](https://github.com/LodyAI/Lody/pull/1589).
+
+
 A community user (Discord thread "More Detailed Turn Information") wanted to
 check a turn that seemed to be running a `local_bash` lint gate. They needed its
 start time and the time of its last history update to judge whether it was busy

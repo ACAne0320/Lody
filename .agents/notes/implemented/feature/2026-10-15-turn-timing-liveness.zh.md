@@ -12,6 +12,9 @@ Other language: [English](2026-10-15-turn-timing-liveness.md)
 
 ## 需求
 
+PR：[#1589](https://github.com/LodyAI/Lody/pull/1589)。
+
+
 一位社区用户（Discord 帖子「More Detailed Turn Information」）想排查一个看上去正在跑 `local_bash` lint 检查的 turn。要判断它是在忙还是卡住，需要知道它的开始时间和最后一次历史更新的时间。
 
 ## 决定
