@@ -141,7 +141,6 @@ export const makeLabHostSession = Effect.fn('Lab.makeHostSession')(function* (in
       const staging = yield* makeLabEpochStaging({
         path: join(directory, 'epoch-staging.sqlite'),
         mode,
-        ledger: () => ledger(),
       });
       const stores = {
         loro: yield* makeSqliteSnapshotPublication({

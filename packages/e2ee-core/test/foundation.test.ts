@@ -579,7 +579,7 @@ describe('v0 content context and signature', () => {
   });
 });
 
-it('rejects mixed-torsion A and R even when the cofactored equation accepts them', async () => {
+it('agrees across backends on strict Ed25519 subgroup-edge vectors', async () => {
   const { utils } = await import('@noble/ed25519');
   const { sha512 } = await import('@noble/hashes/sha2.js');
   const L = 2n ** 252n + 27742317777372353535851937790883648493n;
@@ -597,7 +597,8 @@ it('rejects mixed-torsion A and R even when the cofactored equation accepts them
   const torsion = Point.fromBytes(hex('ec' + 'ff'.repeat(30) + '7f'), false);
   const message = new Uint8Array([4, 5]);
   const r = le(sha512(new Uint8Array([...ext.prefix, ...message]))) % L;
-  for (const shift of ['A', 'R']) {
+  const vectors: { name: string; A: Uint8Array; sig: Uint8Array; accepted: boolean }[] = [];
+  for (const shift of ['neither', 'A', 'R']) {
     const A = shift === 'A' ? ext.point.add(torsion).toBytes() : ext.pointBytes;
     const R =
       shift === 'R'
@@ -611,33 +612,54 @@ it('rejects mixed-torsion A and R even when the cofactored equation accepts them
     const left = Point.BASE.multiply(S).multiply(8n);
     const right = Point.fromBytes(R, false).add(Point.fromBytes(A, false).multiply(k)).multiply(8n);
     expect(left.equals(right)).toBe(true);
-    expect(Result.isFailure(verifySignature(A, message, sig))).toBe(true);
-    expect(
-      Result.isFailure(
-        await Effect.runPromise(Effect.result(verifySignatureEffect(A, message, sig)))
-      )
-    ).toBe(true);
+    vectors.push({ name: `torsion shift ${shift}`, A, sig, accepted: shift === 'neither' });
   }
-  // A canonical identity R belongs to the prime subgroup and remains supported.
+  // r=0 gives a valid prime-subgroup equation, but native providers disagree on
+  // this identity R. Both public paths must reject it before native verification.
   const R = Point.ZERO.toBytes(),
     k = le(sha512(new Uint8Array([...R, ...ext.pointBytes, ...message]))) % L;
   const zeroNonceSignature = new Uint8Array([...R, ...le32((k * ext.scalar) % L)]);
-  expect(Result.isSuccess(verifySignature(ext.pointBytes, message, zeroNonceSignature))).toBe(true);
   expect(
-    Result.isSuccess(
-      await Effect.runPromise(
-        Effect.result(verifySignatureEffect(ext.pointBytes, message, zeroNonceSignature))
-      )
-    )
+    Point.BASE.multiply(le(zeroNonceSignature.subarray(32))).equals(ext.point.multiply(k))
   ).toBe(true);
-  const noncanonicalScalar = zeroNonceSignature.slice();
+  vectors.push({ name: 'identity R', A: ext.pointBytes, sig: zeroNonceSignature, accepted: false });
+  // Identity A can satisfy the equation without a signing secret; key validation
+  // rejects it independently of the provider's policy.
+  vectors.push({
+    name: 'identity A',
+    A: Point.ZERO.toBytes(),
+    sig: new Uint8Array([...Point.BASE.multiply(r).toBytes(), ...le32(r)]),
+    accepted: false,
+  });
+  const noncanonicalScalar = vectors[0]!.sig.slice();
   noncanonicalScalar.set(le32(L), 32);
-  expect(Result.isFailure(verifySignature(ext.pointBytes, message, noncanonicalScalar))).toBe(true);
-  expect(
-    Result.isFailure(
-      await Effect.runPromise(
-        Effect.result(verifySignatureEffect(ext.pointBytes, message, noncanonicalScalar))
-      )
-    )
-  ).toBe(true);
+  vectors.push({
+    name: 'noncanonical S',
+    A: ext.pointBytes,
+    sig: noncanonicalScalar,
+    accepted: false,
+  });
+  const noncanonicalR = vectors[0]!.sig.slice();
+  noncanonicalR.fill(255, 0, 32);
+  vectors.push(
+    { name: 'noncanonical R', A: ext.pointBytes, sig: noncanonicalR, accepted: false },
+    {
+      name: 'noncanonical A',
+      A: new Uint8Array(32).fill(255),
+      sig: vectors[0]!.sig,
+      accepted: false,
+    }
+  );
+  for (const edgeVector of vectors) {
+    const pure = verifySignature(edgeVector.A, message, edgeVector.sig),
+      native = await Effect.runPromise(
+        Effect.result(verifySignatureEffect(edgeVector.A, message, edgeVector.sig))
+      );
+    expect(Result.isSuccess(pure), edgeVector.name).toBe(edgeVector.accepted);
+    expect(Result.isSuccess(native), edgeVector.name).toBe(edgeVector.accepted);
+    if (Result.isFailure(pure))
+      expect(Result.isFailure(native) && native.failure.code, edgeVector.name).toBe(
+        pure.failure.code
+      );
+  }
 });

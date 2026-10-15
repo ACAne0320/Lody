@@ -27,7 +27,8 @@ export interface EpochStagingPort {
   readonly stageGroup: (group: EpochStagedGroup) => Effect.Effect<void, unknown>;
   readonly readGroup: (key: EpochStagedGroupKey) => Effect.Effect<EpochStagedGroup | null, unknown>;
   /** The caller verifies genuine occupied history before dispatch. An opaque
-   * storage service cannot establish ledger authority from this condition. */
+   * storage service cannot establish ledger authority from this condition. The
+   * adapter must independently restrict deletion to the original R signing device. */
   readonly deleteGroup: (
     key: EpochStagedGroupKey,
     occupied: { readonly epoch: number; readonly commitment: string }

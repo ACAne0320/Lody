@@ -14,7 +14,7 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
 - Trusted Org genesis, resource, epoch, purpose and signer come from the caller's
   independently verified context. Frame metadata is unverified. Signature success
   establishes neither current permission nor AEAD validity.
-- Ed25519 requires canonical nonzero prime-subgroup A and canonical prime-subgroup
+- Ed25519 requires canonical nonzero prime-subgroup A and canonical nonzero prime-subgroup
   R, S<L. Fixed native Effects and private exact caches preserve these checks.
 - Public byte wrappers own copies. Ordinary secret epoch keys have no public byte export;
   native private-key custody belongs to platform adapters, not this module. The explicit

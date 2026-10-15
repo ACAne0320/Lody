@@ -85,5 +85,7 @@
   recipient frames, stage atomically and compare exact readback before CAS. A
   conflict discards the protected candidate; committed staged recipients bind
   original R/signer and current recipient eligibility. Delete staged groups only
-  for a genuine different commitment occupying the same epoch. The storage
+  for a genuine different commitment occupying the same epoch, by the group's
+  original signing device only. Every cleanup page authenticates that device;
+  account roles or an occupied claim cannot substitute. The storage
   service never supplies signed-ledger authority.

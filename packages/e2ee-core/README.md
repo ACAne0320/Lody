@@ -174,7 +174,7 @@ Pure Result verification remains synchronous. I/O owners use `verifyLedgerEffect
 and `extendLedgerEffect`: capture bounded originals, yield between batches and
 verify signatures with the fixed host WebCrypto Ed25519 backend. The same pure
 replay kernel still decides permissions, proofs, chain order and error positions.
-Canonical prime-subgroup A/R and S<L checks remain mandatory. Private bounded
+Canonical nonzero prime-subgroup A/R and S<L checks remain mandatory. Private bounded
 caches retain only exact public-byte mathematical successes; they never cache
 membership, current permissions or endpoint freshness. Native backend failures
 return `native-unavailable`, not a successful refusal measurement. Native work
@@ -206,6 +206,12 @@ Local publisher recovery is explicit under
 The independent snapshot-origin reader is documented under
 [`./ledger/feed/snapshot/sqlite`](src/ledger/FEED.md#independently-qualified-snapshot-origin).
 Neither creates a production consumer or changes the portable root exports.
+
+
+The staging adapter verifies device possession and original signatures and keeps
+each group's bytes immutable. Only the original publication-signing device can
+delete its group; an account role or occupied-slot claim is insufficient. Honest
+clients additionally verify the genuine competing commitment before cleanup.
 
 ## Terms
 

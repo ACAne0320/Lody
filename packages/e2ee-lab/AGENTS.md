@@ -89,3 +89,9 @@ recorded terminal results, installed keys, documents or cursors. Replay reexecut
 real native imports, HTTP, validation and persistence. Backend confidentiality
 observations read bounded actual entries/snapshots without changing retention or
 using SQLite to select authority. Missing property observations stay unavailable.
+
+Opaque staging storage does not verify an occupied claim against the ledger.
+The HTTP boundary authenticates the original record signer for stage/delete,
+verifies record/envelope signatures and retains immutable whole groups. Other
+management devices cannot delete a publisher's group. Honest clients separately
+qualify same-epoch loss; malicious publishers may still withhold their own key.

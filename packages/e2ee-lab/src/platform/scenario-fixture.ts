@@ -340,7 +340,6 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
   const staging = yield* makeLabEpochStaging({
     path: join(directory, 'epoch-staging.sqlite'),
     mode: 'create',
-    ledger: () => ledger(),
   });
   const host = yield* makeLabHttpHost({
     staging: () => ({ port: staging, ledger }),

@@ -20,7 +20,10 @@ a transaction between Convex and Streams.
 Availability still requires the staging service to retain/deliver the acknowledged
 originals and the publisher to create usable envelopes. Direct CAS without staging
 is a measured malicious-manager withholding case. Only a genuine different
-commitment occupying that same epoch authorizes cleanup. Later joiners use ordinary
+commitment occupying that same epoch authorizes the honest client's cleanup.
+The adapter independently restricts deletion to R's original signing device;
+account membership or another manager's occupied claim cannot delete its group.
+A malicious publisher deleting its own group remains a key-withholding limitation. Later joiners use ordinary
 mailbox/repair. No global freshness or anti-withholding proof is inferred from AEAD.
 
 Restricted A remains installed-key host protection, not a vault or identity

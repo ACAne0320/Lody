@@ -22,7 +22,10 @@ update/snapshot purposes share key-derivation context, not authentication bytes.
 
 Byte wrappers copy public material. Canonical CBOR rejects alternate encodings,
 trailing input and unsupported types, with size/depth/array limits. Strict Ed25519
-rejects invalid signatures and noncanonical or mixed-torsion signing keys.
+rejects invalid signatures, noncanonical or mixed-torsion points, identity public
+keys A and identity nonce points R, and scalars S >= L. Both pure and native
+verification apply this same preflight before the signature equation so native
+provider differences cannot select a different accepted record set.
 
 Signature validity is only one prerequisite. The root foundation entry does not verify current
 membership, freshness, write permission, snapshot history or server admission.

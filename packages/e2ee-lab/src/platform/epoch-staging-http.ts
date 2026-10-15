@@ -141,6 +141,12 @@ export const dispatchLabEpochStaging = Effect.fnUntraced(function* (input: {
     const group = yield* port.readGroup(key);
     return group === null ? null : encodeLabEpochGroup(group);
   }
+  const original = yield* port.readGroup(key);
+  if (original !== null) {
+    const record = yield* Effect.fromResult(decodeRecord(original.record));
+    if (record.body.type !== 'ordinary' || !record.body.signer.equals(principal))
+      return yield* fail('unauthorized');
+  }
   yield* port.deleteGroup(key, request.occupied);
   return { ok: true } as const;
 });

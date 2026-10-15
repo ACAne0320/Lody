@@ -53,7 +53,10 @@ function strictSignature(sig: Uint8Array): Result.Result<void, ValidationError> 
     try: () => {
       let scalar = 0n;
       for (let i = 63; i >= 32; i--) scalar = (scalar << 8n) | BigInt(sig[i]!);
-      if (scalar >= Point.CURVE().n || !Point.fromBytes(sig.subarray(0, 32), false).isTorsionFree())
+      const nonce = Point.fromBytes(sig.subarray(0, 32), false);
+      // Native Ed25519 providers disagree on identity R. Reject it before either
+      // backend so ledger acceptance never depends on the host crypto library.
+      if (scalar >= Point.CURVE().n || nonce.is0() || !nonce.isTorsionFree())
         throw new ValidationError({ code: 'bad-signature' });
     },
     catch: () => new ValidationError({ code: 'bad-signature' }),
@@ -66,7 +69,7 @@ function rememberVerification(id: string | undefined) {
   verifiedSignatures.add(id);
 }
 
-/** Canonical nonzero prime-subgroup A; canonical prime-subgroup R; S < L. */
+/** Canonical nonzero prime-subgroup A and R; S < L. */
 export function verifySignature(
   publicKey: unknown,
   message: Uint8Array,

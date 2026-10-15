@@ -44,8 +44,20 @@ that publisher does not strand still-eligible staged recipients. Recipients
 verify their current device/key binding and the actual HPKE/commitment before
 installation. Later-joined devices use the existing mailbox and repair path.
 
-Only a genuine committed *different commitment at the same epoch* permits group
-cleanup. A timeout, age, untrusted host hint or absent record never does. Local
+The storage adapter must authenticate device possession, bind the staging caller
+to R's signing device, verify R and every envelope's fixed outer signature/context,
+and make the full group immutable at its locator. A retry either matches every
+original byte or fails; it never replaces or shrinks a group. Account membership
+or an account's management role alone is not device possession. Where cloud
+credentials identify only an account, stage/delete requests need a device-signed
+proof bound to the operation, workspace and complete group/request fields.
+
+Only R's original signing device may delete its own group, including every page
+of a physical cleanup. Other members and other management devices are denied,
+even if they supply a genuine occupied tuple. The server enforces this device
+binding; it does not read Streams or accept `occupied` as ledger authority.
+The honest client additionally requires a genuine committed *different commitment
+at the same epoch* before requesting cleanup. A timeout, age, untrusted host hint or absent record never does. Local
 results/originals retain their explicit acknowledgement contract.
 
 ## Owners and limits
@@ -56,7 +68,8 @@ adapter uses one native transaction per whole group. Neither storage nor an
 account role supplies signed-ledger authority. The client supplies and verifies
 its independent genuine view; storage cannot certify global freshness.
 
-A buggy or malicious manager can bypass staging and directly CAS a valid record.
+A buggy or malicious publishing device can bypass staging and directly CAS a valid
+record, or delete its own staged group despite the client cleanup rule.
 This is key withholding: the epoch commits but recipients may be stuck without
 its key. It is a measured Lab limitation, not prevented by Streams or cross-store
 transactions. Staging protects the honest publisher's crash window; it does not

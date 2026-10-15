@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Effect, Exit, Result } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
-import { Bytes, encodeCbor } from '@lody/e2ee-core';
+import { Bytes, encodeCbor, verifySignature } from '@lody/e2ee-core';
+import { signVerified } from '@lody/e2ee-core/signing';
+import { epochStagingRequestSigningBytes } from '@lody/cloud-api/e2ee-epoch-staging';
 import {
   extendLedger,
   hashRecordBytes,
@@ -27,6 +29,7 @@ import {
 } from '@lody/e2ee-core/ledger/admission';
 import { generateDevice } from '../src/platform/device';
 import { makeLabEpochStaging } from '../src/platform/epoch-staging';
+import { encodeLabEpochGroup, dispatchLabEpochStaging } from '../src/platform/epoch-staging-http';
 const ok = Result.getOrThrow;
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
 const dirs: string[] = [];
@@ -72,6 +75,8 @@ const fixture = async () => {
         context: { genesis: genesis.genesis },
         owner: { publicKey: owner.publicKey, signer: owner },
         secret,
+        ownerDevice: owner,
+        otherDevice: recipient,
         before,
       };
     })
@@ -150,7 +155,14 @@ const fixture = async () => {
   }
   const dir = mkdtempSync(path.join(tmpdir(), 'e2ee-stage-'));
   dirs.push(dir);
-  return { path: path.join(dir, 'stage.sqlite'), before, groups, views };
+  return {
+    path: path.join(dir, 'stage.sqlite'),
+    before,
+    groups,
+    views,
+    owner: f.ownerDevice,
+    other: f.otherDevice,
+  };
 };
 const count = (file: string) => {
   const db = new Database(file);
@@ -164,6 +176,141 @@ const count = (file: string) => {
   }
 };
 describe('transactional complete epoch staging', () => {
+  it('binds a device proof to the complete immutable stage or delete request', async () => {
+    const f = await fixture();
+    const group = encodeLabEpochGroup(f.groups[0]!);
+    const stage = { operation: 'stage' as const, workspaceId: 'synthetic-workspace', group };
+    const original = epochStagingRequestSigningBytes(stage);
+    expect(
+      epochStagingRequestSigningBytes({
+        ...stage,
+        group: { ...group, envelopes: [...group.envelopes].reverse() },
+      })
+    ).toEqual(original);
+    const signature = await Effect.runPromise(signVerified(f.owner, original));
+    const verify = (bytes: Uint8Array) =>
+      verifySignature(f.owner.publicKey.toBytes(), bytes, signature.toBytes());
+    expect(Result.isSuccess(verify(original))).toBe(true);
+    const changed = [
+      { ...stage, workspaceId: 'other-workspace' },
+      { ...stage, group: { ...group, genesis: 'aa'.repeat(32) } },
+      { ...stage, group: { ...group, epoch: group.epoch + 1 } },
+      { ...stage, group: { ...group, commitment: 'bb'.repeat(32) } },
+      { ...stage, group: { ...group, recordHash: 'cc'.repeat(32) } },
+      {
+        ...stage,
+        group: {
+          ...group,
+          recordHex: group.recordHex.slice(0, -2) + (group.recordHex.endsWith('00') ? '01' : '00'),
+        },
+      },
+      { ...stage, group: { ...group, envelopes: group.envelopes.slice(0, 1) } },
+      {
+        ...stage,
+        group: {
+          ...group,
+          envelopes: group.envelopes.map((row, index) =>
+            index
+              ? row
+              : {
+                  ...row,
+                  frameHex: row.frameHex.slice(0, -2) + (row.frameHex.endsWith('00') ? '01' : '00'),
+                }
+          ),
+        },
+      },
+    ];
+    for (const request of changed)
+      expect(Result.isFailure(verify(epochStagingRequestSigningBytes(request)))).toBe(true);
+    const deletion = {
+      operation: 'delete' as const,
+      workspaceId: stage.workspaceId,
+      key: group,
+      occupied: { epoch: group.epoch, commitment: f.groups[1]!.commitment },
+    };
+    const deletionBytes = epochStagingRequestSigningBytes(deletion);
+    expect(Result.isFailure(verify(deletionBytes))).toBe(true);
+    const deleteSignature = await Effect.runPromise(signVerified(f.owner, deletionBytes));
+    expect(
+      Result.isFailure(
+        verifySignature(
+          f.owner.publicKey.toBytes(),
+          epochStagingRequestSigningBytes({
+            ...deletion,
+            occupied: { epoch: group.epoch, commitment: 'dd'.repeat(32) },
+          }),
+          deleteSignature.toBytes()
+        )
+      )
+    ).toBe(true);
+    for (const invalid of [
+      { ...stage, group: { ...group, envelopes: [group.envelopes[0]!, group.envelopes[0]!] } },
+      { ...stage, group: { ...group, envelopes: [] } },
+      { ...stage, group: { ...group, recordHex: '00'.repeat(8193) } },
+      {
+        ...stage,
+        group: { ...group, envelopes: [{ ...group.envelopes[0]!, frameHex: '00'.repeat(513) }] },
+      },
+      { ...stage, workspaceId: '' },
+      { ...deletion, occupied: { epoch: group.epoch, commitment: group.commitment } },
+    ])
+      expect(() => epochStagingRequestSigningBytes(invalid)).toThrow(TypeError);
+  });
+
+  it('refuses deletion by another active device even with a genuine occupied commitment', async () => {
+    const f = await fixture(),
+      [winner, loser] = f.groups;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* makeLabEpochStaging({ path: f.path, mode: 'create' });
+          yield* store.stageGroup(winner!);
+          yield* store.stageGroup(loser!);
+          const request = {
+            op: 'delete',
+            key: loser!,
+            occupied: { epoch: 1, commitment: winner!.commitment },
+          };
+          const credential = {
+            token: '',
+            account: 'synthetic-other',
+            device: f.other.publicKey,
+            genesis: f.before.genesis,
+            issuedAt: 0,
+            expiresAt: 1,
+          };
+          const result = yield* Effect.result(
+            dispatchLabEpochStaging({
+              value: request,
+              genesis: f.before.genesis,
+              credential,
+              ledger: () => Effect.succeed(f.views[0]!),
+              port: store,
+            })
+          );
+          expect(Result.isFailure(result)).toBe(true);
+          if (Result.isFailure(result))
+            expect(result.failure).toMatchObject({
+              _tag: 'LabEpochStagingHttpError',
+              code: 'unauthorized',
+            });
+          expect(yield* store.readGroup(loser!)).toEqual(loser);
+          expect(yield* store.readGroup(winner!)).toEqual(winner);
+          const ownResult = yield* dispatchLabEpochStaging({
+            value: request,
+            genesis: f.before.genesis,
+            credential: { ...credential, device: f.owner.publicKey },
+            ledger: () => Effect.succeed(f.views[0]!),
+            port: store,
+          });
+          expect(ownResult).toEqual({ ok: true });
+          expect(yield* store.readGroup(loser!)).toBeNull();
+          expect(yield* store.readGroup(winner!)).toEqual(winner);
+        })
+      )
+    );
+  });
+
   it('rolls back whole groups on ignored or rewritten rows and retains exact ciphertext across reopen', async () => {
     for (const fault of ['ignore-group', 'ignore-envelope', 'rewrite-envelope'] as const) {
       const f = await fixture(),
@@ -174,7 +321,6 @@ describe('transactional complete epoch staging', () => {
             const store = yield* makeLabEpochStaging({
               path: f.path,
               mode: 'create',
-              ledger: () => Effect.succeed(f.before),
             });
             const db = new Database(f.path);
             try {
@@ -204,7 +350,6 @@ describe('transactional complete epoch staging', () => {
             const reopened = yield* makeLabEpochStaging({
               path: f.path,
               mode: 'open',
-              ledger: () => Effect.succeed(f.before),
             });
             const actual = yield* reopened.readGroup(group);
             expect(actual && sameEpochStagedGroup(group, actual)).toBe(true);
@@ -223,7 +368,7 @@ describe('transactional complete epoch staging', () => {
       );
     }
   });
-  it('keeps uncommitted groups and the committed winner; deletes only a verified losing same-epoch commitment', async () => {
+  it('keeps honest-client cleanup qualification separate from opaque storage', async () => {
     const f = await fixture(),
       [winner, loser] = f.groups;
     let view = f.before;
@@ -233,26 +378,13 @@ describe('transactional complete epoch staging', () => {
           const store = yield* makeLabEpochStaging({
             path: f.path,
             mode: 'create',
-            ledger: () => Effect.sync(() => view),
           });
           yield* store.stageGroup(winner!);
           yield* store.stageGroup(loser!);
-          expect(
-            Exit.isFailure(
-              yield* Effect.exit(
-                store.deleteGroup(loser!, { epoch: 1, commitment: winner!.commitment })
-              )
-            )
-          ).toBe(true);
+          expect(Result.isFailure(obsoleteEpochStagedGroup(view, loser!))).toBe(true);
           expect(count(f.path)).toEqual({ groups: 2, envelopes: 4 });
           view = f.views[0]!;
-          expect(
-            Exit.isFailure(
-              yield* Effect.exit(
-                store.deleteGroup(winner!, { epoch: 1, commitment: loser!.commitment })
-              )
-            )
-          ).toBe(true);
+          expect(Result.isFailure(obsoleteEpochStagedGroup(view, winner!))).toBe(true);
           expect(
             Exit.isFailure(
               yield* Effect.exit(

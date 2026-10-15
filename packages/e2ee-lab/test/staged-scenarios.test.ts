@@ -17,6 +17,8 @@ import { executeLabActions } from '../src/platform/action-executor';
 import { makeLabActorProxy } from '../src/platform/attack-proxy';
 import { makeLabAttackTransport } from '../src/platform/attack-transport';
 import { exportDevice } from '../src/platform/device';
+import { makeLabHttpIdentity } from '../src/platform/http-identity';
+import { makeLabEpochStagingRemote } from '../src/platform/epoch-staging-http';
 import { openLabWorkspaceSession } from '../src/platform/full-session';
 import { makeLabProcessActor } from '../src/platform/process-actor';
 import { makeLabScenarioFixture } from '../src/platform/scenario-fixture';
@@ -306,7 +308,35 @@ it('stages concurrent genuine management candidates through HTTP, commits one, i
             'LabEpochStagingHttpError',
             'unauthorized'
           );
-          yield* witness.epochStaging.deleteGroup(
+          // Another active personal device in the same Owner membership is not
+          // the original publisher. A genuine occupied tuple cannot authorize it.
+          const otherIdentity = yield* makeLabHttpIdentity({
+            baseUrl: f.host.baseUrl,
+            genesis: f.genesis,
+          });
+          const otherAuth = yield* otherIdentity.authenticate(f.devices.get('owner')!);
+          const otherRemote = yield* makeLabEpochStagingRemote({
+            url: `${f.host.baseUrl}/v1/spaces/${hex(f.genesis.toBytes())}/epoch-staging`,
+            fetch: otherAuth.fetch,
+          });
+          expectRefusal(
+            yield* Effect.result(
+              otherRemote.deleteGroup(loserKey, ok(obsoleteEpochStagedGroup(view, loserKey)))
+            ),
+            'LabEpochStagingHttpError',
+            'unauthorized'
+          );
+          expect(yield* f.staging.readGroup(loserKey)).not.toBeNull();
+          const publisherIdentity = yield* makeLabHttpIdentity({
+            baseUrl: f.host.baseUrl,
+            genesis: f.genesis,
+          });
+          const publisherAuth = yield* publisherIdentity.authenticate(f.devices.get('survivor')!);
+          const publisherRemote = yield* makeLabEpochStagingRemote({
+            url: `${f.host.baseUrl}/v1/spaces/${hex(f.genesis.toBytes())}/epoch-staging`,
+            fetch: publisherAuth.fetch,
+          });
+          yield* publisherRemote.deleteGroup(
             loserKey,
             ok(obsoleteEpochStagedGroup(view, loserKey))
           );

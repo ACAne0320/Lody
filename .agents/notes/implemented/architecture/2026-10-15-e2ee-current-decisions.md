@@ -204,3 +204,22 @@ cursor and the existing SDK publishes under the current epoch, without another o
 attack plans receive actual response controls, including allowed header-only mutation;
 plans can declare multiple roles and snapshot upload actions. Unrelated or harness failures never substitute
 for a measured refusal, and host observations never invent independent comparison confirmation.
+
+## Staging deletion and signature acceptance
+
+Staging is an opaque availability service: an occupied tuple is a client's claim,
+not ledger proof. It verifies original record/envelope signatures, immutable bytes
+and the caller's device possession. Only the original record signing device can
+delete that group, on every cleanup page. Honest clients still verify a genuine
+same-epoch competing commitment. Another manager cannot supply its identity or
+fabricate occupied to delete the group; the original publisher's own withholding
+remains the accepted limitation. Lab storage applies the same opaque boundary
+instead of silently giving the server a stronger ledger oracle. Cloud account
+authentication requires an additional operation/context-bound device proof.
+
+Both pure and native Ed25519 verification reject identity R before dispatch, in
+addition to existing canonical/subgroup/A/scalar checks. A valid cofactored equation
+is insufficient; host crypto provider choices must not split ledger acceptance.
+The fixed edge vectors run on Node22.x, the supported Node23.6 floor and Node24.x in CI.
+The production content gateway still needs a real stream-boundary query capability;
+the Lab's native SQLite boundary implementation is not that production API.

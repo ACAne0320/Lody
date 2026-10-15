@@ -2,12 +2,10 @@ import Database from 'better-sqlite3';
 import { closeSync, openSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result, Schema } from 'effect';
-import type { LedgerView } from '@lody/e2ee-core/ledger';
 import {
   ownEpochStagedGroup,
   ownEpochStagedGroupKey,
   sameEpochStagedGroup,
-  obsoleteEpochStagedGroup,
   type EpochStagedGroup,
   type EpochStagedGroupKey,
   type EpochStagingPort,
@@ -27,10 +25,8 @@ const args = (key: EpochStagedGroupKey) =>
 export const makeLabEpochStaging = Effect.fnUntraced(function* (input: {
   readonly path: string;
   readonly mode: 'create' | 'open';
-  readonly ledger: (genesis: string) => Effect.Effect<LedgerView, unknown>;
 }) {
-  const { path, mode } = input,
-    lookup = input.ledger;
+  const { path, mode } = input;
   const sql = <A>(work: () => A) =>
     Effect.try({
       try: work,
@@ -122,10 +118,13 @@ export const makeLabEpochStaging = Effect.fnUntraced(function* (input: {
       occupied: { readonly epoch: number; readonly commitment: string }
     ) {
       const key = yield* Effect.fromResult(ownEpochStagedGroupKey(source));
-      const verified = yield* Effect.fromResult(
-        obsoleteEpochStagedGroup(yield* lookup(key.genesis), key)
-      );
-      if (occupied.epoch !== verified.epoch || occupied.commitment !== verified.commitment)
+      // Only the client can qualify the occupied slot. HTTP authenticates the
+      // original signer separately; opaque storage never turns this claim into authority.
+      if (
+        occupied.epoch !== key.epoch ||
+        !/^[0-9a-f]{64}$/.test(occupied.commitment) ||
+        occupied.commitment === key.commitment
+      )
         return yield* fail('not-obsolete');
       return yield* sql(() =>
         db

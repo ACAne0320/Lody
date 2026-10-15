@@ -298,3 +298,8 @@ publisher-backup options; it does not approve a vault or native custody. Direct 
 without staging remains a measured manager-withholding availability limitation.
 
 [P07–P14, D12, strict B and RestrictedA glossary](../e2ee-core/README.md#terms).
+
+Staging deletion is limited to the original record's authenticated device. The
+SQLite port is opaque: it does not verify a client's occupied claim against the
+ledger. The honest publisher checks that condition separately; another manager
+cannot delete its group even when providing a genuine occupied tuple.
