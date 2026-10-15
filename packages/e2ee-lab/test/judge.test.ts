@@ -14,7 +14,6 @@ import {
   judgeFork,
   composeIntegrity,
   composeDurability,
-  defectiveAcceptInvalid,
 } from '../src/pure/judge';
 
 describe('measured Lab verdict contracts, not an attack-executor acceptance', () => {
@@ -53,7 +52,6 @@ describe('measured Lab verdict contracts, not an attack-executor acceptance', ()
     expect(judgeFork({})).toBe('unavailable');
     expect(judgeUnauthorizedContent({ observed: true })).toBe('unavailable');
     expect(composeDurability({ observed: true })).toBe('unavailable');
-    expect(defectiveAcceptInvalid({})).toBe('harness-error');
   });
 
   it('distinguishes current unauthorized acceptance from legitimate historical content and explicit freshness model limits', () => {
@@ -176,7 +174,5 @@ describe('measured Lab verdict contracts, not an attack-executor acceptance', ()
       'outside-model'
     );
     expect(judgeFork({ independentEvidence: true, displayedChecked: true })).toBe('pass');
-    expect(defectiveAcceptInvalid({ invalidRecord: true, accepted: true })).toBe('violation');
-    expect(defectiveAcceptInvalid({ invalidRecord: true, accepted: false })).toBe('pass');
   });
 });

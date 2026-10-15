@@ -133,12 +133,6 @@ export function firstReplayDivergence(
   return null;
 }
 
-export function eventSignature(events: readonly LabEvent[]): string {
-  return events
-    .map((event) => `${event.actor}:${event.operation}:${event.phase}:${event.status}`)
-    .join('|');
-}
-
 export { normalizeFrameHex } from './multipart';
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {

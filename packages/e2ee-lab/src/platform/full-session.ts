@@ -5,7 +5,7 @@ import type { LedgerCheckpoint } from '@lody/e2ee-core/ledger';
 import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
 import { openLabExistingWorkspace } from './workspace-session';
 import { makeLabMailboxRemote } from './key-mailbox';
-import { runLabKeyRound } from './key-round';
+import { runLabKeyRound, type LabKeyRoundCursors } from './key-round';
 import { makeLabFlockSession } from './flock-session';
 import { makeLabLoroSession } from './content-session';
 import { makeLabOperations } from './operation-scope';
@@ -202,7 +202,20 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
         acknowledge: (result: Parameters<typeof control.control.acknowledge>[0]) =>
           run(serial.withPermit(control.control.acknowledge(result))),
         listJoins: () => run(control.identity.listJoins()),
-        keyRound: (limit = 100) => run(serial.withPermit(runLabKeyRound(distribution, limit))),
+        keyRound: (limit = 100, cursors: LabKeyRoundCursors = {}) =>
+          run(serial.withPermit(runLabKeyRound(distribution, limit, cursors))),
+        enqueueRepair: (requestId: string, rejectedDigest?: string) =>
+          run(serial.withPermit(distribution.enqueueRepair(requestId, rejectedDigest))),
+        receiveResults: (limit = 100) => run(serial.withPermit(distribution.results(limit))),
+        repairResults: (limit = 100, cursor: string | null = null) =>
+          run(serial.withPermit(distribution.repairResults(limit, cursor))),
+        deliveryResults: (limit = 100, cursor: string | null = null) =>
+          run(serial.withPermit(distribution.deliveryResults(limit, cursor))),
+        acknowledgeReceive: (id: string) => run(serial.withPermit(distribution.acknowledge(id))),
+        acknowledgeRepair: (id: string) =>
+          run(serial.withPermit(distribution.acknowledgeRepair(id))),
+        acknowledgeDelivery: (id: string) =>
+          run(serial.withPermit(distribution.acknowledgeDelivery(id))),
         createDocument: (id: string) => document(id, (doc) => doc.create()),
         append: (id: string, text: string) => document(id, (doc) => doc.append(text)),
         persist: (id: string) => document(id, (doc) => doc.persist()),

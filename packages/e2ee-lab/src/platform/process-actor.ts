@@ -3,8 +3,8 @@ import { verifyLedger, hasVerifiedCheckpoint } from '@lody/e2ee-core/ledger';
 import { Result } from 'effect';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { Cause, Context, Data, Deferred, Effect, Exit } from 'effect';
-import type { LabProcessConfiguration } from './process-contract';
+import { Cause, Context, Data, Deferred, Effect, Exit, Schema } from 'effect';
+import { LabKeyCommand, type LabProcessConfiguration } from './process-contract';
 /** Native child creation port; tests substitute real IPC workers, not fake exits. */
 export const LabProcessSpawn = Context.Reference<() => ChildProcess>('Lab/ProcessSpawn', {
   defaultValue: () => () =>
@@ -232,6 +232,12 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
     });
   return Object.freeze({
     start,
+    keyCommand: (command: LabKeyCommand) =>
+      Effect.gen(function* () {
+        const owned = yield* Effect.fromResult(Schema.decodeUnknownResult(LabKeyCommand)(command));
+        const trusted = yield* config('open');
+        return yield* call({ ...owned, point: trusted.point });
+      }),
     call: (
       operation:
         | 'keys'

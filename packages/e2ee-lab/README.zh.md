@@ -67,6 +67,30 @@ receiver 拥有唯一的受保护已安装密钥存储；distributor 和完整�
 `LabCallbackRunner` 仅承接真实 Node/SDK Promise 回调；未接通的攻击钩子和
 Promise-phase API 已删除。父事件身份使用 JSON tuple；replay 精确比较 parent 和 occurrence。
 
+## 有限密钥工作与显式结果确认
+
+`session.keyRound(limit, cursors)` 每阶段只执行一页。把各阶段返回的 `next`
+传回各自游标名：`repairs`、`resumed`、`reportsBeforeSend`、`reconciliation`、
+`delivered`、`reportsAfterSend`；最外层 `next` 属于 `received`。
+结果页分别用 `repairResults`、`deliveryResults`。这些提示不是持久 offset，
+也不能选择权限；第一页阻塞时仍可显式继续后页。
+
+调用者显式 `enqueueRepair(stableId, rejectedDigest?)`：只有精确坏帧才提交其摘要，
+本地存储/原生故障应重试，不自动换 repair ID。`receiveResults`、`repairResults`、
+`deliveryResults` 返回保留结果。消费后再以准确 ID 调用对应的 `acknowledgeReceive`、
+`acknowledgeRepair`、`acknowledgeDelivery`。轮次不会自动确认；配送确认释放活动任务
+预算，但原始行继续保留。
+
+进程 actor 通过 `keyCommand` 暴露相同流程，自定义 CLI 动作计划可直接使用：
+
+```json
+{ "kind": "key-command", "actor": "peer", "command": { "operation": "repair", "requestId": "explicit-repair-1" }, "expect": { "ok": true } }
+```
+
+命令包括 `repair`、`keys`（可选 `limit`/`cursors`）、`key-results`、
+`acknowledge-key-result`（显式 `resultKind`/`resultId`）。Worker 保留真实结果和
+下一页提示；没有新增后台排空循环、自动确认或存储 owner。
+
 ## 权限、持久化与关闭
 
 现有会话要求已发布完整签名控制前缀（含原 genesis），并独立提供本地与网络

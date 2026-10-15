@@ -74,6 +74,34 @@ Native phases use Effect directly. `LabCallbackRunner` exists only for actual
 Node/SDK Promise callbacks; unused attack hooks and Promise-phase APIs are removed.
 Parent identities use JSON tuples; replay compares exact parent and occurrence.
 
+## Finite key work and explicit results
+
+`session.keyRound(limit, cursors)` executes one page per phase. Pass each returned
+phase's `next` back under its own cursor name (`repairs`, `resumed`,
+`reportsBeforeSend`, `reconciliation`, `delivered`, `reportsAfterSend`);
+the top-level `next` belongs to `received`. Result pages use `repairResults` and
+`deliveryResults`. These hints are not durable offsets and do not select authority.
+A blocked first page does not prevent explicitly continuing to later work.
+
+Call `enqueueRepair(stableId, rejectedDigest?)` explicitly: reject only an exact
+known-bad frame, and retry local storage/native failures without inventing a new
+request ID. `receiveResults`, `repairResults` and `deliveryResults` expose retained
+outcomes. After consuming one, call the matching `acknowledgeReceive`,
+`acknowledgeRepair` or `acknowledgeDelivery` with its exact ID. Rounds never ACK
+automatically. Delivery ACK frees active task capacity; all original rows remain.
+
+Process actors expose the same work through `keyCommand`; custom CLI action plans
+can use it directly, for example:
+
+```json
+{ "kind": "key-command", "actor": "peer", "command": { "operation": "repair", "requestId": "explicit-repair-1" }, "expect": { "ok": true } }
+```
+
+Commands are `repair`, `keys` (optional `limit`/`cursors`), `key-results`, and
+`acknowledge-key-result` (explicit `resultKind` and `resultId`). Worker replies keep
+the real results and page hints. No background drain, automatic ACK or new store
+owner is added.
+
 ## Authority, persistence and shutdown
 
 Existing sessions require an already published full signed control prefix,

@@ -27,6 +27,12 @@ Translation: current
 
 首次签名记录、密文、报告或 repair ID 先持久化再发送；重试原件，不静默重签、重新加密或 rebase。CAS 不降级为无条件 append。成功前读回最终行与上下文；磁盘 phase、远端 hint 都不能证明安装、持钥或权限。显式确认保留原件并释放活动分发容量，磁盘历史仍可增长。索引存储替代整块 JSON 持久化。
 
+Lab 会话及进程/CLI 命令接通稳定 ID repair、各阶段独立分页和三类结果/确认。
+调用者决定何时已消费结果；密钥轮次不自动确认或丢弃结果。首屏阻塞后可继续后页，
+无需换 ID 或新增队列 owner。接收任务只有一个待安装 Install 阶段：每次重试仍打开
+原密文、保护保存/读回后才签报告并排队，省去保存前的冗余 phase UPDATE。
+本地 receiver schema2 直接拒绝已不支持的 schema1，无迁移；协议认证域不变。
+
 一个 receiver 拥有 installed-key 存储，分发和历史消费者借用它。Owner 先拒绝新工作，中止可停止的操作，等待真实 native/SDK/body 结束，再释放数据库和原生资源。Promise 桥只用于实际 SDK/Node 回调。StreamsClient.close 发布协议 EOF，不是释放资源；SDK close 也不自动等待所有操作。自有临时数组在真实结束后清理，借用句柄和运行时内部副本有各自生命周期。HTTP 关闭先中止传入 body，再等待回调；Scope 逆序清理不能让中止操作排在它等待的 body 后面。有界 body 读取在既有 lease 内共用一个内部 helper；EOF 释放 reader，未读完则等待 cancel，并确保释放锁。
 
 ## 验证开销

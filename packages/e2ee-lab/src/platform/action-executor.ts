@@ -4,6 +4,8 @@ import { driveLabPermits } from './driver';
 import type { makeLabProcessActor, LabProcessReply } from './process-actor';
 import { judgeClientDurability, worstVerdict, type JudgeVerdict } from '../pure/judge';
 import type { ScheduleChoice } from '../pure/schedule';
+import { LabKeyCommand } from './process-contract';
+import { LabKeyRoundCursors } from './key-round';
 const Name = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/));
 const Text = Schema.String.check(Schema.isMaxLength(4096));
 const Index = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -17,6 +19,7 @@ const Expect = Schema.Struct({
 });
 const Base = { actor: Name, expect: Schema.optional(Expect) };
 const Action = Schema.Union([
+  Schema.Struct({ ...Base, kind: Schema.Literal('key-command'), command: LabKeyCommand }),
   Schema.Struct({
     ...Base,
     kind: Schema.Literal('start'),
@@ -149,8 +152,23 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
           'document',
           'text',
           'attack',
+          'command',
           'expect',
         ]);
+        if (captured.command !== undefined) {
+          const command = own(captured.command, [
+            'operation',
+            'limit',
+            'cursors',
+            'requestId',
+            'rejectedDigest',
+            'resultKind',
+            'resultId',
+          ]);
+          if (command.cursors !== undefined)
+            command.cursors = own(command.cursors, Object.keys(LabKeyRoundCursors.fields));
+          captured.command = command;
+        }
         if (captured.expect !== undefined) {
           const expected = own(captured.expect, [
             'ok',
@@ -176,6 +194,7 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
       Object.freeze({
         start: actor.start.bind(actor),
         call: actor.call.bind(actor),
+        keyCommand: actor.keyCommand.bind(actor),
         crash: actor.crash.bind(actor),
       }),
     ])
@@ -198,6 +217,8 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
         'execute',
         Effect.gen(function* () {
           switch (action.kind) {
+            case 'key-command':
+              return yield* actor.keyCommand(action.command);
             case 'start':
               return yield* actor.start(action.mode);
             case 'call':

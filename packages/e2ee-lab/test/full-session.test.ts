@@ -275,3 +275,129 @@ it('revalidates changed signed fixture originals before reusing synthetic author
     rmSync(root, { recursive: true, force: true });
   }
 }, 10000);
+
+it('continues blocked repair pages, retries a lost HTTP ACK after reopen and explicitly frees sender capacity without deleting originals', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-key-results-'));
+  const rows = (file: string, table: string) => {
+    const db = new Database(file, { readonly: true, fileMustExist: true });
+    try {
+      return db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all() as Record<string, unknown>[];
+    } finally {
+      db.close();
+    }
+  };
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const f = yield* makeLabScenarioFixture(join(root, 'fixture'));
+          const ownerInput = f.input('owner', 'create');
+          const owner = yield* openLabWorkspaceSession({
+            ...ownerInput,
+            documents: [],
+            keys: {
+              ...ownerInput.keys,
+              sendStore: { ...ownerInput.keys.sendStore, maxTasks: 1 },
+            },
+          });
+          let drop = true;
+          const repairTransport: typeof fetch = async (input, init) => {
+            const request = new Request(input, init);
+            const body =
+              request.method === 'POST' && request.url.endsWith('/key-mailbox')
+                ? ((await request.clone().json()) as { op: string })
+                : undefined;
+            const response = await fetch(request);
+            if (drop && body?.op === 'repair' && response.ok) {
+              drop = false;
+              await response.body?.cancel();
+              throw new Error('lost-committed-repair-ack');
+            }
+            return response;
+          };
+          const peerInput = { ...f.input('peer', 'create'), documents: [], fetch: repairTransport };
+          const peer = yield* openLabWorkspaceSession(peerInput);
+          const sent = yield* owner.keyRound(1);
+          expect(sent.deliveryResults.items).toHaveLength(1);
+          const firstDelivery = sent.deliveryResults.items[0]!;
+          expect(firstDelivery.outcome).toBe('Observed');
+          yield* peer.keyRound(1);
+          const originalOutbox = rows(ownerInput.keys.outboxStore.path, 'epoch_delivery');
+          const installed = rows(peerInput.keys.keyStore.path, 'protected_epoch_keys');
+          expect(installed).toHaveLength(1);
+          yield* peer.enqueueRepair('000-blocked', 'ff'.repeat(32));
+          yield* peer.enqueueRepair('001-lost');
+          yield* peer.enqueueRepair('002-next');
+          const first = yield* peer.keyRound(1);
+          expect(first.repairs).toEqual({
+            processed: 1,
+            blocked: ['000-blocked'],
+            next: '000-blocked',
+          });
+          const lost = yield* peer.keyRound(1, { repairs: first.repairs.next });
+          expect(lost.repairs).toEqual({ processed: 1, blocked: ['001-lost'], next: '001-lost' });
+          expect(rows(join(f.directory, 'mailbox.sqlite'), 'mailbox_repairs')).toHaveLength(1);
+          const pending = rows(peerInput.keys.repairStore.path, 'repair_tasks');
+          expect(pending.find((row) => row.id === '001-lost')?.phase).toBe('Pending');
+          const reopened = yield* reauthenticateLabWorkspaceSession(peer, peerInput, f.point());
+          const retried = yield* reopened.keyRound(1, { repairs: first.repairs.next });
+          expect(retried.repairs).toEqual({ processed: 1, blocked: [], next: '001-lost' });
+          expect(rows(join(f.directory, 'mailbox.sqlite'), 'mailbox_repairs')).toHaveLength(1);
+          const next = yield* reopened.keyRound(1, { repairs: retried.repairs.next });
+          expect(next.repairs).toEqual({ processed: 1, blocked: [], next: null });
+          const remoteRepairs = rows(join(f.directory, 'mailbox.sqlite'), 'mailbox_repairs');
+          expect(remoteRepairs.map((row) => row.id)).toEqual(['001-lost', '002-next']);
+          const results = yield* reopened.repairResults(1);
+          expect(results.items).toEqual([{ id: '001-lost', outcome: 'Repaired' }]);
+          expect(results.next).toBe('001-lost');
+          expect((yield* reopened.repairResults(1, results.next)).items).toEqual([
+            { id: '002-next', outcome: 'Repaired' },
+          ]);
+          const blocked = yield* owner.keyRound(1);
+          expect(blocked.reconciliation.scheduled).toBe(0);
+          expect(blocked.reconciliation.blocked).toEqual([
+            Buffer.from(f.peer.publicKey.toBytes()).toString('hex'),
+          ]);
+          expect((yield* owner.deliveryResults()).items).toEqual([firstDelivery]);
+          yield* owner.acknowledgeDelivery(firstDelivery.id);
+          expect((yield* owner.deliveryResults()).items).toEqual([]);
+          const resent = yield* owner.keyRound(1);
+          expect(resent.reconciliation.scheduled).toBe(1);
+          expect(resent.deliveryResults.items[0]!.revision).toBe(2);
+          expect(rows(ownerInput.keys.sendStore.path, 'distribution_tasks')).toHaveLength(2);
+          expect(rows(ownerInput.keys.outboxStore.path, 'epoch_delivery')).toEqual(originalOutbox);
+          const received = yield* reopened.keyRound(1);
+          expect(received.results.length).toBeGreaterThan(0);
+          for (const result of yield* reopened.receiveResults())
+            yield* reopened.acknowledgeReceive(result.id);
+          yield* reopened.acknowledgeRepair('001-lost');
+          yield* reopened.acknowledgeRepair('002-next');
+          expect((yield* reopened.repairResults()).items).toEqual([]);
+          expect(yield* reopened.receiveResults()).toEqual([]);
+          expect(rows(peerInput.keys.repairStore.path, 'repair_tasks')).toEqual([
+            pending[0],
+            { ...pending[1], phase: 'Repaired', consumed: 1 },
+            { ...pending[2], phase: 'Repaired', consumed: 1 },
+          ]);
+          expect(rows(peerInput.keys.keyStore.path, 'protected_epoch_keys')).toEqual(installed);
+          expect(rows(join(f.directory, 'mailbox.sqlite'), 'mailbox_repairs')).toEqual(
+            remoteRepairs
+          );
+          const receiveHistory = rows(peerInput.keys.path, 'receive_tasks');
+          expect(receiveHistory.every((row) => row.frame !== null && row.report !== null)).toBe(
+            true
+          );
+          yield* reopened.close();
+          expect(Result.isFailure(yield* Effect.result(reopened.enqueueRepair('closed')))).toBe(
+            true
+          );
+          expect(
+            Result.isFailure(yield* Effect.result(reopened.acknowledgeRepair('001-lost')))
+          ).toBe(true);
+        })
+      )
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 0);

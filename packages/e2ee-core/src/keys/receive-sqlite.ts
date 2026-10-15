@@ -47,7 +47,7 @@ interface Task {
   readonly frame: Uint8Array | null;
   readonly publication: Uint8Array | null;
   readonly report: Uint8Array | null;
-  readonly phase: 'Verify' | 'Install' | 'Report' | 'Reported' | 'Obsolete' | 'Revoked';
+  readonly phase: 'Install' | 'Report' | 'Reported' | 'Obsolete' | 'Revoked';
 }
 const APP = 0x4c455231;
 const bounded = (value: unknown, max: number): value is Uint8Array =>
@@ -112,7 +112,7 @@ export function makeSqliteEpochReceiver(input: {
     yield* sql(() => {
       const app = db.pragma('application_id', { simple: true }),
         version = db.pragma('user_version', { simple: true });
-      if (mode === 'open' && (app !== APP || version !== 1)) throw fail('corrupt');
+      if (mode === 'open' && (app !== APP || version !== 2)) throw fail('corrupt');
       if (
         mode === 'create' &&
         (app !== 0 ||
@@ -131,9 +131,9 @@ export function makeSqliteEpochReceiver(input: {
       if (mode === 'create')
         db.transaction(() => {
           db.exec(`CREATE TABLE receive_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,recipient TEXT NOT NULL,head BLOB,count INTEGER);
-        CREATE TABLE receive_tasks(id TEXT PRIMARY KEY,body BLOB NOT NULL CHECK(length(body) BETWEEN 1 AND 256),frame BLOB CHECK(length(frame) BETWEEN 1 AND 512),publication BLOB CHECK(length(publication) BETWEEN 1 AND 8192),report BLOB CHECK(length(report) BETWEEN 1 AND 512),phase TEXT NOT NULL CHECK(phase IN ('Verify','Install','Report','Reported','Obsolete','Revoked')),consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)));
+        CREATE TABLE receive_tasks(id TEXT PRIMARY KEY,body BLOB NOT NULL CHECK(length(body) BETWEEN 1 AND 256),frame BLOB CHECK(length(frame) BETWEEN 1 AND 512),publication BLOB CHECK(length(publication) BETWEEN 1 AND 8192),report BLOB CHECK(length(report) BETWEEN 1 AND 512),phase TEXT NOT NULL CHECK(phase IN ('Install','Report','Reported','Obsolete','Revoked')),consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)));
         CREATE INDEX receive_pending ON receive_tasks(phase,id);
-        PRAGMA application_id=${APP};PRAGMA user_version=1;`);
+        PRAGMA application_id=${APP};PRAGMA user_version=2;`);
           db.prepare('INSERT INTO receive_meta(id,genesis,recipient) VALUES(1,?,?)').run(org, self);
         }).immediate();
     });
@@ -211,9 +211,7 @@ export function makeSqliteEpochReceiver(input: {
       if (
         !Reports.isHash(row.id) ||
         !bounded(row.body, 256) ||
-        !['Verify', 'Install', 'Report', 'Reported', 'Obsolete', 'Revoked'].includes(
-          String(row.phase)
-        )
+        !['Install', 'Report', 'Reported', 'Obsolete', 'Revoked'].includes(String(row.phase))
       )
         throw fail('corrupt');
       const body = new Uint8Array(row.body);
@@ -249,7 +247,7 @@ export function makeSqliteEpochReceiver(input: {
       )
         throw fail('corrupt');
       if ((row.phase === 'Report' || row.phase === 'Reported') && !signed) throw fail('corrupt');
-      if ((row.phase === 'Verify' || row.phase === 'Install') && signed) throw fail('corrupt');
+      if (row.phase === 'Install' && signed) throw fail('corrupt');
       return {
         id: row.id,
         body,
@@ -301,7 +299,7 @@ export function makeSqliteEpochReceiver(input: {
           guard();
           db.prepare(
             'INSERT INTO receive_tasks(id,body,frame,publication,phase) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING'
-          ).run(id, body, frame, publication, frame ? 'Verify' : 'Install');
+          ).run(id, body, frame, publication, 'Install');
         });
         const original = yield* load(id);
         if (
@@ -360,22 +358,10 @@ export function makeSqliteEpochReceiver(input: {
             sender,
             recipient: signer.publicKey,
           };
-          // Always open: a forged persisted phase or an existing key cannot replace checking this ciphertext.
+          // Install is pending work, not evidence that this ciphertext has been opened.
           yield* Effect.acquireUseRelease(
             openEpochEnvelope({ context, pair, frame: task.frame, ledger: current }),
-            (key) =>
-              Effect.gen(function* () {
-                yield* sql(() => {
-                  guard();
-                  const changed = db
-                    .prepare(
-                      "UPDATE receive_tasks SET phase='Install' WHERE id=? AND phase IN ('Verify','Install') AND report IS NULL"
-                    )
-                    .run(id);
-                  if (changed.changes !== 1) throw fail('corrupt');
-                });
-                yield* keys.saveAndReload(task.context.epoch, key);
-              }),
+            (key) => keys.saveAndReload(task.context.epoch, key),
             (key) => Effect.sync(() => disposeEpochKey(key))
           );
         } else if (task.publication)
@@ -481,7 +467,7 @@ export function makeSqliteEpochReceiver(input: {
           yield* sql(() => {
             guard();
             db.prepare(
-              "UPDATE receive_tasks SET phase=?,consumed=0 WHERE id=? AND phase IN ('Verify','Install','Report')"
+              "UPDATE receive_tasks SET phase=?,consumed=0 WHERE id=? AND phase IN ('Install','Report')"
             ).run(phase, id);
           });
         return phase;
@@ -492,7 +478,7 @@ export function makeSqliteEpochReceiver(input: {
         if (!pageLimit(limit) || (cursor !== null && !Reports.isHash(cursor)))
           throw fail('invalid-input');
         // Only ID metadata has a lookahead. No context/frame/report payload is loaded here.
-        const predicate = kind === 'install' ? "phase IN ('Verify','Install')" : "phase='Report'";
+        const predicate = kind === 'install' ? "phase='Install'" : "phase='Report'";
         const ids = db
           .prepare(`SELECT id FROM receive_tasks WHERE ${predicate} AND id>? ORDER BY id LIMIT ?`)
           .all(cursor ?? '', limit + 1) as { id: string }[];

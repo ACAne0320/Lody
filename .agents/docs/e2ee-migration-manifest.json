@@ -5916,7 +5916,7 @@
       "targetPath": "packages/e2ee-lab/src/pure/judge.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "All 18 typed pure verdict exports ported/repaired: unmeasured baseline/undefined facts and mixed unavailable never all-pass; count-only imports cannot prove history; measured unauthorized new content is violation, admitted historical content remains valid after revocation; explicit insider freshness assumptions separate. Four old pure failures/new same probe passes and owning6 tests retained. Actual honest/attacker measurement integration remains pending; pure pass is not protocol/whole fault acceptance.",
+      "reason": "Current measured verdict rules ported/repaired; the source-only defectiveAcceptInvalid boolean helper is retired: unmeasured baseline/undefined facts and mixed unavailable never all-pass; count-only imports cannot prove history; measured unauthorized new content is violation, admitted historical content remains valid after revocation; explicit insider freshness assumptions separate. Four old pure failures/new same probe passes and owning6 tests retained. Actual honest/attacker measurement integration remains pending; pure pass is not protocol/whole fault acceptance.",
       "sourceDeclaredExports": {
         "core": [
           "JudgeVerdict",
@@ -6918,13 +6918,13 @@
             "private": false,
             "sha256": "fc2c00833abb46bfbb89bf8911b573e54b78f050851b14bba097a8d1ce39e905",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/mailbox-http.ts",
               "packages/e2ee-lab/src/platform/key-mailbox.ts",
-              "packages/e2ee-lab/src/platform/key-round.ts"
+              "packages/e2ee-lab/src/platform/key-round.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-worker.ts"
             ],
             "status": "需迁并修复",
-            "reason": "Public HPKE/protected SQLite/distribution and real possession/bearer HTTP OS reopen pass. Honest session delivery/resume/report/repair orchestration still missing; observed ciphertext is not installed key. Finite public-owner scheduling primitive now exists and is consumed by actual Owner epoch0/1 and reopened R HTTP/HPKE/OS-child tests, including bad-frame/install failure. Full startup/reauth/independent current ledger bootstrap/class facade and automatic pagination still missing; no production backup claim."
+            "reason": "Existing-workspace session and process/CLI consumers expose finite public-owner rounds, independent phase continuation, explicit stable-ID repair and receive/repair/delivery result acknowledgement. Real HPKE/HTTP/SQLite, blocked-first-page, lost ACK/reopen, retained originals and capacity release are exercised. No automatic drain, candidate publisher, vault or production backup claim; complete original actor/attack coverage remains partial."
           },
           {
             "name": "recoverEpochHistory",
@@ -7441,7 +7441,7 @@
       "targetPath": "packages/e2ee-lab/src/pure/replay.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Pure recorded fixture comparator port exists; event semantic fields, inert recorded entropy and original request/response bytes compared without crypto generation. Frame actor/operation/phase/resource are now compared too, so wrong-resource transcripts do not compare equal. Exact execution replay/entropy factory/host integration remain undecided or incomplete. Existing typed event comparison now includes eventId/step and distinguishes missing parent from literal none; coarse eventSignature is not exact replay evidence. No captured executor/schema/entropy acceptance.",
+      "reason": "Pure recorded fixture comparator port exists; event semantic fields, inert recorded entropy and original request/response bytes compared without crypto generation. Frame actor/operation/phase/resource are now compared too, so wrong-resource transcripts do not compare equal. Exact execution replay/entropy factory/host integration remain undecided or incomplete. Existing typed event comparison now includes eventId/step and distinguishes missing parent from literal none; the unused coarse eventSignature helper is retired in favor of complete material comparison. No captured executor/schema/entropy acceptance.",
       "coveragePaths": [
         "packages/e2ee-lab/test/replay.test.ts"
       ],
@@ -9328,7 +9328,8 @@
         "protected content snapshot",
         "production native protector and product assembly",
         "unapproved A1/history scope, vault/backup, strict B and replay decisions"
-      ]
+      ],
+      "keyQueues": "Session/process/CLI forward explicit stable-ID repair, phase/result page hints and exact-ID receive/repair/delivery acknowledgement. No automatic consumption or new owner; originals retained."
     }
   }
 }

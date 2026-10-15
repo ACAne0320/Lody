@@ -163,7 +163,7 @@ describe('real recipient receive/repair/fetch composition', () => {
             frameDigest: mailboxDigest(bad),
           });
           expect(failed.failure).not.toHaveProperty('next');
-          expect(inspect(config.path)).toEqual([{ phase: 'Verify', report: null }]);
+          expect(inspect(config.path)).toEqual([{ phase: 'Install', report: null }]);
           const keys = new Database(config.keyStore.path);
           try {
             expect(keys.prepare('SELECT COUNT(*) AS n FROM protected_epoch_keys').get()).toEqual({
@@ -263,8 +263,8 @@ describe('real recipient receive/repair/fetch composition', () => {
             });
             expect(Result.isFailure(yield* Effect.result(client.fetchAndInstall()))).toBe(true);
             const retained = inspect(path.join(dir, 'receive.sqlite'));
-            expect(retained.filter((row) => row.phase === 'Verify')).toEqual([
-              { phase: 'Verify', report: null },
+            expect(retained.filter((row) => row.phase === 'Install')).toEqual([
+              { phase: 'Install', report: null },
             ]);
             expect(retained.filter((row) => row.phase === 'Report')).toHaveLength(
               goodFirst ? 1 : 0

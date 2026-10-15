@@ -1,5 +1,7 @@
 import { Deferred, Effect, Exit, Fiber, Result, Scope } from 'effect';
 import Database from 'better-sqlite3';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { driveLabPermits, LabDriverError } from '../src/platform/driver';
@@ -48,8 +50,8 @@ const sqlitePhases = (runtime: LabRuntime, db: Database.Database, actors: readon
 
 describe('strict finite permit driver', () => {
   it('records and replays real SQLite writes in recorded order despite reversed request order, including nested repeats', async () => {
-    const f = await fixture();
-    const db = new Database(join(f.dir, 'schedule.sqlite'));
+    const dir = mkdtempSync(join(tmpdir(), 'public-e2ee-lab-driver-'));
+    const db = new Database(join(dir, 'schedule.sqlite'));
     db.exec('CREATE TABLE effects (actor TEXT NOT NULL)');
     try {
       const recorded = await Effect.runPromise(
@@ -99,13 +101,13 @@ describe('strict finite permit driver', () => {
       ]);
     } finally {
       db.close();
-      await f.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it('does not pull later choices forward or skip missing identity, parent or occurrence; explicit stop leaves native rows unchanged', async () => {
-    const f = await fixture();
-    const db = new Database(join(f.dir, 'refused.sqlite'));
+    const dir = mkdtempSync(join(tmpdir(), 'public-e2ee-lab-driver-'));
+    const db = new Database(join(dir, 'refused.sqlite'));
     db.exec('CREATE TABLE effects (actor TEXT NOT NULL)');
     try {
       for (const schedule of [
@@ -153,13 +155,13 @@ describe('strict finite permit driver', () => {
         );
     } finally {
       db.close();
-      await f.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it('checks the exact permit budget before native work and refuses unused recorded entries on normal completion', async () => {
-    const f = await fixture();
-    const db = new Database(join(f.dir, 'budget.sqlite'));
+    const dir = mkdtempSync(join(tmpdir(), 'public-e2ee-lab-driver-'));
+    const db = new Database(join(dir, 'budget.sqlite'));
     db.exec('CREATE TABLE effects (actor TEXT NOT NULL)');
     try {
       await Effect.runPromise(
@@ -208,7 +210,7 @@ describe('strict finite permit driver', () => {
       );
     } finally {
       db.close();
-      await f.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

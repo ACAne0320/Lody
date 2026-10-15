@@ -68,3 +68,8 @@ SDK failure normalization must not erase provider defects; action consumers chec
 Use current-format APIs and explicit allow/deny/unmeasured reference predictions. No obsolete boolean aliases or source-era unauthorized-content classifications. Native SDK callback bridges are lifecycle adapters, not legacy-ledger readers.
 
 Native phase scheduling uses the Effect PhaseParent context only. Register each waiter before notifying synchronous consumers; retain the first typed failure before closing other gates. No unused pause/intercept/freeze/start-log or Promise-phase compatibility API.
+
+Key rounds are finite pages, with separate caller-supplied hints for each queue.
+Session/IPC results are returned intact; repair IDs and targeted rejection are
+caller choices. Acknowledge each consumed result explicitly, never automatically
+or by deleting original task/report/ciphertext rows.

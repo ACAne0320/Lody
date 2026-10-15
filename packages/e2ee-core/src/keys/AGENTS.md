@@ -27,6 +27,8 @@
   fixed own-signature verification before queuing original report bytes. A disk
   phase or old report cannot stand in for decrypting a new envelope or current
   protected-key possession. Retry queued bytes without signing again.
+  A single pending Install phase repeats these checks after reopen; local schema2
+  rejects unsupported former receiver files without conversion.
 - Discovery/repair revisions are remote hints, not ledger authority. Only a real
   current ledger may terminate an epoch/recipient task as obsolete/revoked. Finite
   keyset task pages allow blocked work without starving later tasks; no hidden loop.

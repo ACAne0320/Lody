@@ -238,14 +238,3 @@ export function composeDurability(input: {
   }
   return base;
 }
-
-/** Test-only defective importer: treats unverified bytes as authenticated. */
-export function defectiveAcceptInvalid(input: {
-  invalidRecord?: boolean;
-  accepted?: boolean;
-}): JudgeVerdict {
-  if (input.invalidRecord === undefined || input.accepted === undefined) return 'harness-error';
-  if (input.invalidRecord && input.accepted) return 'violation';
-  if (input.invalidRecord && !input.accepted) return 'pass';
-  return 'harness-error';
-}

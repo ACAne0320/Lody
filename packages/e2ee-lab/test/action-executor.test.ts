@@ -238,6 +238,7 @@ it('preflights every initial action before any effect, ignores caller map overri
         return { ok: true } as LabProcessReply;
       }),
     call: () => Effect.promise(() => Promise.resolve({ ok: true } as LabProcessReply)),
+    keyCommand: () => Effect.succeed({ ok: true } as LabProcessReply),
     crash: () => Effect.succeed({ code: null, signal: 'SIGKILL' as const }),
     shutdown: () => Effect.void,
     pid: () => undefined,
@@ -554,6 +555,7 @@ it('preserves ok/outcome failures and missing measurements instead of turning th
       start: () => Effect.succeed(reply as LabProcessReply),
       // This reply fixture has the same asynchronous IPC boundary as an actor.
       call: () => Effect.promise(() => Promise.resolve(reply as LabProcessReply)),
+      keyCommand: () => Effect.succeed(reply as LabProcessReply),
       crash: () => Effect.succeed({ code: null, signal: 'SIGKILL' as const }),
       shutdown: () => Effect.void,
       pid: () => undefined,
@@ -587,6 +589,7 @@ it('requires the exact refusal and never treats input, defect or unrelated trans
     const actor = {
       start: () => Effect.succeed({ ok: true }),
       call: () => Effect.succeed({ ok: false, error }),
+      keyCommand: () => Effect.succeed({ ok: false, error }),
       crash: () => Effect.succeed({ code: null, signal: 'SIGKILL' as const }),
       shutdown: () => Effect.void,
       pid: () => undefined,

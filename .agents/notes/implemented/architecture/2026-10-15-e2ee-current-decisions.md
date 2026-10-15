@@ -58,6 +58,15 @@ a disk phase or remote hint is not installation, possession or authority evidenc
 Acknowledgement retains originals and frees active distribution capacity; retained
 disk history can still grow. Indexed stores replace whole-JSON persistence.
 
+Lab sessions and process/CLI commands expose stable-ID repair, independent page
+continuation and all three result/ACK paths. Callers choose when a result has been
+consumed; key rounds never ACK or silently discard it. A blocked first page can be
+continued without changing IDs or creating another queue owner.
+Receive tasks use one pending Install phase: every retry opens the original
+ciphertext and performs protected save/reload before signing and queuing a report.
+The redundant pre-save phase UPDATE is removed. Local receiver schema2 rejects
+the unsupported former schema1 without migration; protocol domains do not change.
+
 One receiver owns installed-key storage; distribution and history consumers borrow
 it. Owners reject new work, abort/cancel what can stop, await actual native/SDK/body
 settlement, then release storage and native resources. Promise bridges exist only

@@ -19,10 +19,10 @@
     "Scope owns databases; callers cancel/await their borrowed ledger/signer/transport. Closure guards reject late mutation; no Runtime/background loop."
   ],
   "destinationFingerprints": {
-    "src/keys/receive-sqlite.ts": "500e27b141845dd3521de7e474564ddea52ff5f6ac0c2a5afcce54e4faa4f13c"
+    "src/keys/receive-sqlite.ts": "80f22ea7c605ee25767351e5097e56c0acc42d77cb77b2715a30b8e1e06878a5"
   },
   "extractionDestinationFingerprints": {
     "src/keys/receive-sqlite.ts": "fa94d8b826a82714a565c6aba9f660faac69f4bf2b759d7ba0b224ea0dd601b6"
   },
-  "destinationBasis": "4134109a76739d8b36ff5a8a1209e37e16518703; source implementation unchanged in this child layer"
+  "destinationBasis": "Current receiver schema2 has one pending Install phase; full ciphertext/open/save/reload/report checks preserved. Source and extraction identities unchanged."
 }

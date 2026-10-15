@@ -9,7 +9,7 @@ import { Bytes } from '@lody/e2ee-core';
 import { importDevice } from './device';
 import { openLabWorkspaceSession } from './full-session';
 import { labSyntheticProtector } from './synthetic-protection';
-import type { LabProcessConfiguration } from './process-contract';
+import { LabKeyCommand, type LabProcessConfiguration } from './process-contract';
 const ok = Result.getOrThrow;
 const FailureIdentity = Schema.Struct({ _tag: Schema.String, code: Schema.String });
 const StreamRefusal = Schema.Struct({
@@ -244,8 +244,30 @@ const program = Effect.scoped(
         return yield* Effect.fail(new Error('missing-document'));
       switch (command.operation) {
         case 'keys':
-          yield* session.keyRound();
-          return null;
+        case 'repair':
+        case 'key-results':
+        case 'acknowledge-key-result': {
+          const key = yield* Effect.fromResult(Schema.decodeUnknownResult(LabKeyCommand)(command));
+          switch (key.operation) {
+            case 'keys':
+              return yield* session.keyRound(key.limit, key.cursors);
+            case 'repair':
+              return yield* session.enqueueRepair(key.requestId, key.rejectedDigest);
+            case 'key-results':
+              return {
+                receive: yield* session.receiveResults(key.limit),
+                repair: yield* session.repairResults(key.limit, key.cursors?.repairResults),
+                delivery: yield* session.deliveryResults(key.limit, key.cursors?.deliveryResults),
+              };
+            case 'acknowledge-key-result':
+              yield* key.resultKind === 'repair'
+                ? session.acknowledgeRepair(key.resultId)
+                : key.resultKind === 'delivery'
+                  ? session.acknowledgeDelivery(key.resultId)
+                  : session.acknowledgeReceive(key.resultId);
+              return null;
+          }
+        }
         case 'refresh': {
           const value = yield* session.refresh();
           return {

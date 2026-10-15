@@ -1,5 +1,5 @@
 import { Worker } from 'node:worker_threads';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
@@ -12,6 +12,7 @@ import {
 import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
 import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { commitEpochKey } from '@lody/e2ee-core/keys';
+import * as Reports from '@lody/e2ee-core/keys/reports';
 import type { LedgerView } from '@lody/e2ee-core/ledger';
 import type { DeviceSigner } from '@lody/e2ee-core/signing';
 import { ContentError } from '../../src/errors';
@@ -169,7 +170,7 @@ describe('durable finite epoch receive and original-report queue', () => {
     );
     expect(native.plains.every((bytes) => bytes.every((value) => value === 0))).toBe(true);
   });
-  it('retains a verified install task on protection failure and reports only after a reopened real install succeeds', async () => {
+  it('retains the pending original on protection failure, rejects the old format unchanged, and reports only after a reopened real install succeeds', async () => {
     const f = envelopeFixture(),
       native = synthetic(),
       dir = directory(),
@@ -207,7 +208,8 @@ describe('durable finite epoch receive and original-report queue', () => {
                   mode: 'create',
                   protector: {
                     ...native.protector,
-                    protect: async () => {
+                    protect: async (plain) => {
+                      native.plains.push(plain);
                       throw Error('synthetic locked native store');
                     },
                   },
@@ -227,6 +229,39 @@ describe('durable finite epoch receive and original-report queue', () => {
               expect((yield* recipient.status(target(f))).status).toBe('EnvelopeStored');
             })
           );
+          const disk = new Database(journal);
+          const original = disk
+            .prepare('SELECT body,frame,publication FROM receive_tasks')
+            .get() as { body: Uint8Array; frame: Uint8Array; publication: null };
+          disk.close();
+          expect(new Uint8Array(original.frame)).toEqual(frame);
+          expect(original.publication).toBeNull();
+          expect(native.plains.every((bytes) => bytes.every((value) => value === 0))).toBe(true);
+
+          const oldJournal = path.join(dir, 'receive-v1.sqlite');
+          copyFileSync(journal, oldJournal);
+          const old = new Database(oldJournal);
+          old.exec(`ALTER TABLE receive_tasks RENAME TO receive_current;
+            CREATE TABLE receive_tasks(id TEXT PRIMARY KEY,body BLOB NOT NULL CHECK(length(body) BETWEEN 1 AND 256),frame BLOB CHECK(length(frame) BETWEEN 1 AND 512),publication BLOB CHECK(length(publication) BETWEEN 1 AND 8192),report BLOB CHECK(length(report) BETWEEN 1 AND 512),phase TEXT NOT NULL CHECK(phase IN ('Verify','Install','Report','Reported','Obsolete','Revoked')),consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)));
+            INSERT INTO receive_tasks SELECT id,body,frame,publication,report,'Verify',consumed FROM receive_current;
+            DROP TABLE receive_current;
+            CREATE INDEX receive_pending ON receive_tasks(phase,id);
+            PRAGMA user_version=1;`);
+          old.close();
+          const oldBytes = readFileSync(oldJournal);
+          const rejected = yield* Effect.result(
+            Effect.scoped(
+              makeSqliteEpochReceiver({
+                ...config,
+                path: oldJournal,
+                mode: 'open',
+                keyStore: { path: keyFile, mode: 'open', protector: native.protector },
+              })
+            )
+          );
+          expect(rejected).toMatchObject({ _tag: 'Failure', failure: { code: 'corrupt' } });
+          expect(readFileSync(oldJournal)).toEqual(oldBytes);
+
           yield* Effect.scoped(
             Effect.gen(function* () {
               const receiver = yield* makeSqliteEpochReceiver({
@@ -236,6 +271,26 @@ describe('durable finite epoch receive and original-report queue', () => {
               });
               expect(yield* receiver.resume()).toEqual({ processed: 1, blocked: [], next: null });
               expect(rows(journal)[0]!.phase).toBe('Report');
+              const saved = new Database(journal);
+              try {
+                const queued = saved
+                  .prepare('SELECT body,frame,publication,report FROM receive_tasks')
+                  .get() as typeof original & { report: Uint8Array };
+                expect({
+                  body: queued.body,
+                  frame: queued.frame,
+                  publication: queued.publication,
+                }).toEqual(original);
+                expect(
+                  ok(
+                    Reports.installationBody(
+                      ok(Reports.decodeInstallationReport(queued.report)).context
+                    )
+                  )
+                ).toEqual(new Uint8Array(original.body));
+              } finally {
+                saved.close();
+              }
               expect(yield* receiver.flushReports()).toEqual({
                 processed: 1,
                 blocked: [],
@@ -247,8 +302,9 @@ describe('durable finite epoch receive and original-report queue', () => {
         })
       )
     );
+    expect(native.plains.every((bytes) => bytes.every((value) => value === 0))).toBe(true);
   });
-  it('does not let a forged install phase or pre-existing valid key stand in for authenticating this ciphertext', async () => {
+  it('does not let a pending install or pre-existing valid key stand in for authenticating this ciphertext', async () => {
     const f = envelopeFixture(),
       native = synthetic(),
       dir = directory(),
@@ -297,10 +353,8 @@ describe('durable finite epoch receive and original-report queue', () => {
           expect(
             Result.isFailure(yield* Effect.result(receiver.receive(f.owner.publicKey, frame)))
           ).toBe(true);
-          const id = rows(journal)[0]!.id,
-            db = new Database(journal);
-          db.prepare("UPDATE receive_tasks SET phase='Install' WHERE id=?").run(id);
-          db.close();
+          const id = rows(journal)[0]!.id;
+          expect(rows(journal)[0]!.phase).toBe('Install');
           expect(yield* receiver.resume()).toEqual({ processed: 1, blocked: [id], next: null });
           expect(rows(journal)[0]!.report).toBeNull();
           expect(yield* receiver.flushReports()).toEqual({ processed: 0, blocked: [], next: null });
@@ -426,7 +480,6 @@ describe('durable finite epoch receive and original-report queue', () => {
   it.each([
     { phase: 'Revoked', suppress: null },
     { phase: 'Obsolete', suppress: null },
-    { phase: 'Verify', suppress: 'Install' },
     { phase: 'Install', suppress: 'Report' },
   ])(
     'rejects tampered $phase or suppressed $suppress transition after reopen without claiming an unqueued installation',
