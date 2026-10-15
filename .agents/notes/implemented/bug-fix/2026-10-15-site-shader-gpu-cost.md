@@ -49,8 +49,11 @@ comes from SwiftShader.
   the latency of a reference fence placed after a cheap present frame. Fence
   status reaches script frames after the GPU finishes, by a browser-dependent
   delay, so subtracting a fixed frame would throttle fast GPUs.
-- **Presentation.** Cap blends at 60fps (30fps once a sample costs 12ms or
-  more) and skip a present identical to the frame already shown.
+- **Presentation.** Cap blends at 60fps (30fps once a sample costs 25ms or
+  more) and skip a present identical to the frame already shown. The inherited
+  12ms floor had never fired, because no timer was readable. Once it could
+  fire, it dropped an M2 Max at dpr 2 to about 38fps, so the floor now targets
+  only GPUs the field saturates.
 - **Software rasterisers.** One still frame for both scenes, the reduced-motion
   path, instead of an animation that costs seconds of every core per sample.
 - **Landing.** Use the browser's default GPU, and request MSAA only below a 2×
@@ -82,4 +85,11 @@ comes from SwiftShader.
 - Landing at 2× with MSAA on and off: 2× zoomed crops of terrain, coral and
   jellyfish are indistinguishable. Per-frame CPU cost in SwiftShader fell about
   35–40%.
-- Not measured: real integrated or discrete GPUs, Safari, Firefox.
+- Real GPU (M2 Max, 5K Retina, Chrome on Metal, dpr 2, 30s per page,
+  whole-machine GPU reading with a 12–17% idle baseline): `/price` 36–40% →
+  ~22%, `/changelog` ~31% → ~16%, `/download` ~42% → ~25%, landing 17–18% →
+  ~15%. WebGL2, the split path and the GPU timer were active, and no visual
+  change was seen. That run used the 12ms floor (blends at ~38fps); the 25ms
+  floor was not re-measured.
+- Not measured: power (needs sudo), a 120Hz display, low-end integrated GPUs,
+  Safari, Firefox.

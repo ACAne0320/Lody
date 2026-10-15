@@ -42,7 +42,13 @@ const PRESENT_FPS = 60;
 const PRESENT_INTERVAL_MS = 1000 / PRESENT_FPS;
 const SLOW_PRESENT_FPS = 30;
 const SLOW_PRESENT_INTERVAL_MS = 1000 / SLOW_PRESENT_FPS;
-const SLOW_FIELD_GPU_MS = 12;
+/**
+ * Drop blends to 30fps only for a GPU the field genuinely saturates. Once timer
+ * queries worked, a 12ms floor fired on an M2 Max at dpr 2 (samples just over
+ * 12ms) and halved its blend rate although sample pacing already held the field
+ * near its GPU share.
+ */
+const SLOW_FIELD_GPU_MS = 25;
 const TARGET_FIELD_GPU_SHARE = 0.2;
 const DIRECT_FALLBACK_FPS = 30;
 const DIRECT_FALLBACK_FRAME_MS = 1000 / DIRECT_FALLBACK_FPS;

@@ -42,7 +42,9 @@ where the browser exposes one (`EXT_disjoint_timer_query_webgl2` on WebGL2, the
 WebGL1 extension otherwise). Without a timer, a WebGL2 fence measures the sample;
 because fence status reaches script frames after the GPU finishes, the sampler
 subtracts the latency of a reference fence placed after a cheap present frame.
-A sample that takes 12ms or more drops presentation to 30fps. Software
+A sample that takes 25ms or more drops presentation to 30fps. The floor was
+12ms while no browser exposed the timer the old code read; once timers worked,
+12ms fired on an M2 Max at dpr 2 and halved its blend rate (~38fps measured). Software
 rasterisers (SwiftShader, llvmpipe) get one still frame, as reduced motion does:
 an animated full-screen sample costs them seconds of every CPU core.
 
