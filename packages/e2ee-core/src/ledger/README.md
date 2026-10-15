@@ -129,7 +129,7 @@ and relabeled server notes are insufficient. This confirmation grants no permiss
 and upgrades no audit provenance. No new comparison wire/signature domain is added.
 
 [Snapshot trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
- · [Snapshot fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/ledger/snapshot-provenance.json).
+· [Snapshot fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/ledger/snapshot-provenance.json).
 
 ## Admission consent and ordinary intent
 
@@ -142,8 +142,13 @@ original v1 frames and atomically persist authenticated suffixes with opaque
 transport position. They reject repeated records and rollback pages, require a
 separately trusted exact endpoint, and retain/await borrowed SDK reads on close.
 No snapshot-prefix skipping, submission/CAS replacement or endpoint discovery is
-introduced. Local budgets retain history on failure.
-
+introduced. Local budgets retain history on failure. Shared SQLite setup verifies
+application/version and fixed genesis bindings. Opening verifies all stored signed
+records; later writes compare the current metadata point and newly written rows.
+They do not audit local schemas, triggers, external-write counters or old rows on
+every call. The client/OS threat model remains the whitepaper's trusted boundary;
+SQL rows still cannot select ledger authority. Rollback pins advance only with a
+new verified head/count.
 
 Current tag8 is `[8, membershipId, nextEpoch, commitment, previousEpochKey]`.
 It removes a non-Owner member and all its current devices while installing the

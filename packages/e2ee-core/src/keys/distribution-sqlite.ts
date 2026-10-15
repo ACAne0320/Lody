@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '../storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Context, Data, Effect, Layer, Result } from 'effect';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -42,24 +41,6 @@ export interface DistributionMailboxRemote extends RecipientMailboxRemote {
   readonly read: (id: string) => Effect.Effect<Uint8Array | null, unknown>;
 }
 const APP = 0x4c454453;
-const distributionSchema: ReadonlyMap<string, string | null> = new Map([
-  [
-    'distribution_meta',
-    'CREATE TABLE distribution_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,sender TEXT NOT NULL)',
-  ],
-  [
-    'distribution_tasks',
-    'CREATE TABLE distribution_tasks(id TEXT PRIMARY KEY,epoch INTEGER NOT NULL,recipient TEXT NOT NULL,revision INTEGER NOT NULL,phase TEXT NOT NULL,consumed INTEGER NOT NULL,UNIQUE(epoch,recipient,revision))',
-  ],
-  ['distribution_pending', 'CREATE INDEX distribution_pending ON distribution_tasks(phase,id)'],
-  [
-    'distribution_results',
-    'CREATE INDEX distribution_results ON distribution_tasks(consumed,phase,id)',
-  ],
-  ['sqlite_autoindex_distribution_tasks_1', null],
-  ['sqlite_autoindex_distribution_tasks_2', null],
-]);
-type StorageStamp = { schema: number; tempSchema: number; data: number };
 const taskId = (delivery: string, revision: number) =>
   keyId(
     sha256(new TextEncoder().encode(`lody-e2ee/local-distribution-task/v0:${delivery}:${revision}`))
@@ -156,11 +137,27 @@ export function makeSqliteKeyDistribution(
       });
     if (!isAbsolute(config.path) || (config.mode !== 'create' && config.mode !== 'open'))
       return yield* fail('invalid-input');
-    if (config.mode === 'create') yield* sql(() => closeSync(openSync(config.path, 'wx', 0o600)));
-    const db = yield* Effect.acquireRelease(
-      sql(() => new Database(config.path, { fileMustExist: true, timeout: 1000 })),
-      (handle) => sql(() => handle.close()).pipe(Effect.orDie)
-    );
+    const db = yield* openSqliteStore({
+      path: config.path,
+      mode: config.mode,
+      applicationId: APP,
+      version: 1,
+      initialize(connection) {
+        connection.exec(`CREATE TABLE distribution_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,sender TEXT NOT NULL);
+          CREATE TABLE distribution_tasks(id TEXT PRIMARY KEY,epoch INTEGER NOT NULL,recipient TEXT NOT NULL,revision INTEGER NOT NULL,phase TEXT NOT NULL,consumed INTEGER NOT NULL,UNIQUE(epoch,recipient,revision));
+          CREATE INDEX distribution_pending ON distribution_tasks(phase,id);
+          CREATE INDEX distribution_results ON distribution_tasks(consumed,phase,id);
+          `);
+        connection.prepare('INSERT INTO distribution_meta VALUES(1,?,?)').run(org, self);
+      },
+      validate(connection) {
+        const meta = connection
+          .prepare('SELECT genesis,sender FROM distribution_meta WHERE id=1')
+          .get() as { genesis?: unknown; recipient?: unknown; sender?: unknown } | undefined;
+        if (meta?.genesis !== org || meta?.sender !== self) throw fail('corrupt');
+      },
+      error: fail,
+    });
     let closed = false;
     const guard = () => {
       if (closed) throw fail('closed');
@@ -198,35 +195,7 @@ export function makeSqliteKeyDistribution(
       if (task.id !== taskId(expected, task.revision)) throw fail('corrupt');
       return { ...task };
     };
-    yield* sql(() => {
-      const app = db.pragma('application_id', { simple: true }),
-        version = db.pragma('user_version', { simple: true });
-      if (config.mode === 'open' && (app !== APP || version !== 1)) throw fail('corrupt');
-      if (
-        config.mode === 'create' &&
-        (app !== 0 ||
-          version !== 0 ||
-          db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length !== 0)
-      )
-        throw fail('corrupt');
-      if (config.mode === 'open') {
-        const meta = db.prepare('SELECT genesis,sender FROM distribution_meta WHERE id=1').get() as
-          | { genesis: unknown; sender: unknown }
-          | undefined;
-        if (meta?.genesis !== org || meta.sender !== self) throw fail('corrupt');
-      }
-      db.pragma('journal_mode=WAL');
-      db.pragma('synchronous=FULL');
-      if (config.mode === 'create')
-        db.transaction(() => {
-          db.exec(`CREATE TABLE distribution_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,sender TEXT NOT NULL);
-          CREATE TABLE distribution_tasks(id TEXT PRIMARY KEY,epoch INTEGER NOT NULL,recipient TEXT NOT NULL,revision INTEGER NOT NULL,phase TEXT NOT NULL,consumed INTEGER NOT NULL,UNIQUE(epoch,recipient,revision));
-          CREATE INDEX distribution_pending ON distribution_tasks(phase,id);
-          CREATE INDEX distribution_results ON distribution_tasks(consumed,phase,id);
-          PRAGMA application_id=${APP}; PRAGMA user_version=1;`);
-          db.prepare('INSERT INTO distribution_meta VALUES(1,?,?)').run(org, self);
-        }).immediate();
-    });
+
     const load = (id: string) =>
       parse(db.prepare(`SELECT ${columns} FROM distribution_tasks WHERE id=?`).get(id));
     const equal = (a: Task, b: Task) =>
@@ -236,106 +205,23 @@ export function makeSqliteKeyDistribution(
       a.revision === b.revision &&
       a.phase === b.phase &&
       a.consumed === b.consumed;
-    const stamp = (): StorageStamp => ({
-      schema: db.pragma('schema_version', { simple: true }) as number,
-      tempSchema: db.pragma('temp.schema_version', { simple: true }) as number,
-      data: db.pragma('data_version', { simple: true }) as number,
-    });
-    const cleanSchema = () => {
-      const rows = db.prepare('SELECT name,sql FROM sqlite_schema ORDER BY name LIMIT 7').all() as {
-        name: string;
-        sql: unknown;
-      }[];
-      return (
-        rows.length === distributionSchema.size &&
-        rows.every(
-          (row) => distributionSchema.has(row.name) && distributionSchema.get(row.name) === row.sql
-        ) &&
-        !db.prepare('SELECT 1 FROM sqlite_temp_schema LIMIT 1').get()
-      );
-    };
-    const totalChanges = db.prepare('SELECT total_changes()').safeIntegers().pluck();
-    let audited: { stamp: StorageStamp; unconsumed: number } | undefined;
-    // A full scalar-metadata audit establishes the baseline. Only the exact
-    // trigger-free schema with no intervening external write can use indexed
-    // readback instead; unusual schemas/fixtures keep the complete audit.
     const mutate = (id: string, expected: Task, write: () => number) =>
       sql(() =>
         db
           .transaction(() => {
             guard();
-            const before = stamp();
-            const baseline =
-              audited !== undefined &&
-              before.schema === audited.stamp.schema &&
-              before.tempSchema === audited.stamp.tempSchema &&
-              before.data === audited.stamp.data
-                ? audited
-                : undefined;
-            const retained = new Map<string, Task>();
-            let unconsumed = baseline?.unconsumed ?? 0;
-            if (!baseline) {
-              for (const row of db
-                .prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id`)
-                .iterate()) {
-                const task = parse(row);
-                retained.set(task.id, task);
-                unconsumed += Number(task.consumed === 0);
-              }
+            const prior = db
+              .prepare(`SELECT ${columns} FROM distribution_tasks WHERE id=?`)
+              .get(id) as Task | undefined;
+            if ((!prior || prior.consumed !== 0) && expected.consumed === 0) {
+              const { count } = db
+                .prepare('SELECT count(*) AS count FROM distribution_tasks WHERE consumed=0')
+                .get() as { count: number };
+              if (count >= maxTasks) throw fail('task-limit');
             }
-            const prior = baseline
-              ? db.prepare(`SELECT ${columns} FROM distribution_tasks WHERE id=?`).get(id)
-              : retained.get(id);
-            const previousTask = prior ? parse(prior) : undefined;
-            const nextUnconsumed =
-              unconsumed - Number(previousTask?.consumed === 0) + Number(expected.consumed === 0);
-            // Finishing/acknowledging existing work must remain possible at capacity.
-            // Acknowledgement frees this budget without deleting the original row.
-            if (nextUnconsumed > unconsumed && nextUnconsumed > maxTasks) throw fail('task-limit');
-            const changesBefore = totalChanges.get() as bigint;
-            if (write() !== 1) throw fail('corrupt');
-            if (baseline) {
-              // No REPLACE, foreign-key actions, views or triggers exist in this
-              // audited schema. Read back after the last DML and check all changes.
-              if (
-                (totalChanges.get() as bigint) - changesBefore !== 1n ||
-                !equal(load(id), expected)
-              )
-                throw fail('corrupt');
-            } else {
-              let count = 0,
-                matched = false;
-              for (const row of db
-                .prepare(`SELECT ${columns} FROM distribution_tasks ORDER BY id`)
-                .iterate()) {
-                const task = parse(row);
-                count++;
-                if (task.id === id) {
-                  if (!equal(task, expected)) throw fail('corrupt');
-                  matched = true;
-                } else {
-                  const original = retained.get(task.id);
-                  if (!original || !equal(original, task)) throw fail('corrupt');
-                }
-              }
-              if (!matched || count !== retained.size + (retained.has(id) ? 0 : 1))
-                throw fail('corrupt');
-            }
-            const meta = db
-              .prepare('SELECT genesis,sender FROM distribution_meta WHERE id=1')
-              .get() as { genesis: unknown; sender: unknown } | undefined;
-            if (meta?.genesis !== org || meta.sender !== self) throw fail('corrupt');
-            // Sample inside IMMEDIATE; publishing only after COMMIT avoids treating
-            // another connection's later commit as part of our verified baseline.
-            return baseline || cleanSchema()
-              ? { stamp: before, unconsumed: nextUnconsumed }
-              : undefined;
+            if (write() !== 1 || !equal(load(id), expected)) throw fail('corrupt');
           })
           .immediate()
-      ).pipe(
-        Effect.map((next) => {
-          audited = next;
-        })
       );
     const current = () =>
       Effect.gen(function* () {

@@ -18,7 +18,21 @@ const report = await Effect.runPromise(
       });
       const current = yield* store.current(),
         pending = yield* store.pending();
+      const archived =
+        typeof input.lookupOffset === 'string'
+          ? yield* store.lookup(input.lookupOffset)
+          : undefined;
       return {
+        ...(archived
+          ? {
+              archived: {
+                offset: archived.offset,
+                digest: archived.digest,
+                body: archived.body,
+                phase: archived.phase,
+              },
+            }
+          : {}),
         pid: process.pid,
         current: current?.offset,
         pending: pending?.offset,

@@ -10,7 +10,7 @@ import {
 } from '@loro-dev/streams-crdt';
 import type { makeStreamsUpdateBinding } from '@lody/e2ee-core/content/streams';
 import { makeLabUpdateProvider } from './content-provider';
-import { makeLabDocumentStore } from './document-sqlite';
+import { LabDocumentError, makeLabDocumentStore } from './document-sqlite';
 import { makeLabSdkOwner } from './sdk-owner';
 
 export interface LabNativeDocument<TVersion extends JsonObject> {
@@ -43,17 +43,19 @@ export class LabContentError extends Data.TaggedError('LabContentError')<{
     | 'storage'
     | 'native'
     | 'transport'
+    | 'unauthorized'
+    | 'corrupt'
     | 'snapshot-disabled'
+    | 'pending-write'
     | TransportError['code']
     | import('@loro-dev/streams-crdt').PayloadProtectionFailureReason;
   readonly cause?: unknown;
 }> {}
-const sdkError = (cause: TransportError) =>
-  error(cause.code === 'payload_protection_error' ? cause.reason : cause.code, cause);
 const error = (code: LabContentError['code'], cause?: unknown) =>
   new LabContentError({ code, cause });
 /** One synthetic Lab document, two real SDK modes, one durable state/cursor pair.
- * Failure stops this document only. Recovery explicitly reloads its durable native
+ * Integrity/corruption failures stop this document only. Transport and permission
+ * failures retain an active, retryable document. Recovery reloads its durable native
  * state and replays encrypted history from -1. Snapshot publication is explicit. */
 export function makeLabDocumentSession<TVersion extends JsonObject>(
   input: Parameters<typeof makeStreamsUpdateBinding>[0] & {
@@ -82,11 +84,6 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
     const guard = (): Effect.Effect<void, LabContentError> =>
       closed ? Effect.fail(error('closed')) : Effect.void;
     const lookup = input.ledger;
-    const provider = yield* makeLabUpdateProvider({
-      ...input,
-      model: input.model,
-      ledger: () => guard().pipe(Effect.flatMap(() => lookup())),
-    });
     const store = yield* makeLabDocumentStore<TVersion>({
       path,
       mode,
@@ -95,6 +92,28 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
       resource: input.resource,
       model: input.model,
     });
+    const provider = yield* makeLabUpdateProvider({
+      ...input,
+      sealedWrites: store.sealedWrites,
+      model: input.model,
+      ledger: () => guard().pipe(Effect.flatMap(() => lookup())),
+    });
+    let storageFailure: LabDocumentError | undefined;
+    const sdkError = (cause: TransportError) => {
+      if (storageFailure) return storageFailure;
+      const original = provider.takeFailure();
+      if (original instanceof LabDocumentError) return original;
+      if (!original && cause.code === 'internal_error' && cause.context?.stage === 'payload_decode')
+        return error('corrupt', cause);
+      return error(
+        original && (original.code === 'unauthorized' || original.code === 'pending-write')
+          ? original.code
+          : cause.code === 'payload_protection_error'
+            ? cause.reason
+            : cause.code,
+        original ?? cause
+      );
+    };
     const allocate = () =>
       Effect.acquireUseRelease(
         Scope.make(),
@@ -110,7 +129,7 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
                 (owned) =>
                   Effect.try({
                     try: () => doc.importSnapshot(owned),
-                    catch: () => error('storage'),
+                    catch: () => error('corrupt'),
                   }),
                 (owned) => Effect.sync(() => owned.fill(0))
               );
@@ -145,10 +164,13 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
     const useSdk = <A extends { readonly ok: boolean }>(
       replay: boolean,
       work: (sdk: StreamsCrdt<TVersion>) => Promise<A>,
-      before: Effect.Effect<void, unknown> = Effect.void
+      before: Effect.Effect<void, unknown> = Effect.void,
+      write = false
     ) =>
       Effect.scoped(
         Effect.gen(function* () {
+          storageFailure = undefined;
+          provider.takeFailure();
           const doc = current.doc;
           const adapter = doc.adapter();
           let recoveredCursor: RemoteCursor<TVersion> | undefined;
@@ -166,7 +188,24 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
                   recoveredCursor = structuredClone(cursor);
                 },
               }
-            : store.cursorStore;
+            : {
+                load: async (url) => {
+                  try {
+                    return await store.cursorStore.load(url);
+                  } catch (cause) {
+                    if (cause instanceof LabDocumentError) storageFailure = cause;
+                    throw cause;
+                  }
+                },
+                save: async (cursor) => {
+                  try {
+                    return await store.cursorStore.save(cursor);
+                  } catch (cause) {
+                    if (cause instanceof LabDocumentError) storageFailure = cause;
+                    throw cause;
+                  }
+                },
+              };
           const owner = yield* makeLabSdkOwner(
             ({ signal, assertOpen }) =>
               new StreamsCrdt<TVersion>({
@@ -178,7 +217,9 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
                   if (closed) throw error('closed');
                   const snapshot = doc.exportSnapshot();
                   try {
-                    Result.getOrThrow(store.stage(snapshot));
+                    const staged = store.stage(snapshot);
+                    if (Result.isFailure(staged)) storageFailure = staged.failure;
+                    Result.getOrThrow(staged);
                   } finally {
                     snapshot.fill(0);
                   }
@@ -209,9 +250,11 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
               })
           );
           yield* before;
+          provider.beginWrite();
           const result = yield* owner
             .invoke(work)
             .pipe(Effect.onExit(() => provider.checkFailure()));
+          if (write && result.ok) yield* provider.confirmWrite();
           if (replay && result.ok && recoveredCursor) {
             yield* guard();
             yield* Effect.tryPromise({
@@ -227,16 +270,31 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
     const execute = <A, E, R>(work: Effect.Effect<A, E, R>) =>
       operation(
         work.pipe(
-          Effect.onExit((exit) =>
-            Exit.isFailure(exit)
-              ? Effect.sync(() => {
-                  stopped = true;
-                })
-              : Effect.void
+          Effect.tapError((cause) =>
+            Effect.sync(() => {
+              // An expected refusal is not itself evidence of corrupt content. In
+              // particular a lost ACK, permission change or native harness defect
+              // must not require a full-history restore of an intact document.
+              if (
+                (cause instanceof LabDocumentError && cause.code === 'corrupt') ||
+                (cause instanceof LabContentError &&
+                  (cause.code === 'corrupt' ||
+                    cause.code === 'decrypt_failed' ||
+                    cause.code === 'invalid_envelope' ||
+                    cause.code === 'plaintext_forbidden' ||
+                    cause.code === 'wrong_payload_kind' ||
+                    (cause.code === 'protocol_error' &&
+                      cause.cause &&
+                      typeof cause.cause === 'object' &&
+                      !('status' in cause.cause))))
+              )
+                stopped = true;
+            })
           )
         )
       );
     const editLocal = Effect.fnUntraced(function* (text: string) {
+      if (provider.hasPendingWrite()) yield* error('pending-write');
       // Hook failures (including missing recorded input) retain their original
       // typed harness error instead of becoming an expected native rejection.
       yield* Effect.acquireUseRelease(
@@ -306,7 +364,7 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
         execute(
           Effect.gen(function* () {
             yield* live();
-            const result = yield* useSdk(false, (sdk) => sdk.sync());
+            const result = yield* useSdk(false, (sdk) => sdk.sync(), Effect.void, true);
             if (!result.ok) yield* sdkError(result.error);
           })
         ),
@@ -322,7 +380,16 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
         execute(
           Effect.gen(function* () {
             yield* live();
-            const result = yield* useSdk(false, (sdk) => sdk.appendWriteOnly(), editLocal(text));
+            if (provider.hasPendingWrite()) {
+              const pending = yield* useSdk(false, (sdk) => sdk.sync(), Effect.void, true);
+              if (!pending.ok) yield* sdkError(pending.error);
+            }
+            const result = yield* useSdk(
+              false,
+              (sdk) => sdk.appendWriteOnly(),
+              editLocal(text),
+              true
+            );
             if (!result.ok) yield* sdkError(result.error);
           })
         ),
@@ -361,8 +428,10 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
         execute(
           Effect.gen(function* () {
             yield* guard();
-            yield* Scope.close(current.child, Exit.void);
-            current = yield* allocate();
+            const restored = yield* allocate();
+            const previous = current;
+            current = restored;
+            yield* Scope.close(previous.child, Exit.void);
             const result = yield* useSdk(true, (sdk) => sdk.catchup());
             if (!result.ok) yield* sdkError(result.error);
             stopped = false;

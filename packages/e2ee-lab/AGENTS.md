@@ -12,8 +12,10 @@ Checkpoint selection is independent of hostile transport. A failed read or
 SQLite write retains both verified history and its read cursor. Every client
 has its own durable file; replay never silently skips already committed hashes.
 
-Content native state and exact SDK cursor commit atomically per document. Failed
-full-history recovery retains the previous durable pair and stops only that document.
+Content native state and exact SDK cursor commit atomically per document. Remote
+authentication/decryption/format failures and local corruption stop only that document.
+Network, timeout, 5xx, 409 and permission errors retain active state for retry; failed
+recovery preserves both its prior stopped/active status and the durable pair.
 SDK subscription precedes local edits; abort is not proof of stopped native work.
 Wait actual raw operations before closing SDK/storage or freeing Loro.
 Concurrent child-close callers share one completion including cleanup failures;
@@ -95,3 +97,5 @@ The HTTP boundary authenticates the original record signer for stage/delete,
 verifies record/envelope signatures and retains immutable whole groups. Other
 management devices cannot delete a publisher's group. Honest clients separately
 qualify same-epoch loss; malicious publishers may still withhold their own key.
+
+Owned SQLite files use the shared current-format helper for exclusive creation, application/version checks, WAL/FULL and opening bindings. Read-only foreign/attack observers use its connection constructor without claiming an application format. Local hostile-process database mutation audits are outside the threat model; verify signed history on open and retain transactions plus target-row readback.

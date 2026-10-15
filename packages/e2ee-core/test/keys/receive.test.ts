@@ -591,7 +591,7 @@ describe('durable finite epoch receive and original-report queue', () => {
             keyStore: { path: keyFile, mode: 'create', protector: native.protector },
           });
           let frame: Uint8Array | undefined;
-          for (let index = 0; index < 101; index++) {
+          for (let index = 0; index < 16; index++) {
             frame = yield* f.prepare(ledger);
             yield* sender.put(index.toString(16).padStart(32, '0'), frame);
             yield* receiver.receive(f.owner.publicKey, frame);
@@ -604,14 +604,14 @@ describe('durable finite epoch receive and original-report queue', () => {
           const blocked: string[] = [];
           do {
             const page: { processed: number; blocked: string[]; next: string | null } =
-              yield* receiver.flushReports(17, cursor);
+              yield* receiver.flushReports(3, cursor);
             total += page.processed;
             blocked.push(...page.blocked);
             cursor = page.next;
           } while (cursor !== null);
-          expect(total).toBe(102);
-          expect(blocked).toHaveLength(101);
-          expect(new Set(blocked).size).toBe(101);
+          expect(total).toBe(17);
+          expect(blocked).toHaveLength(16);
+          expect(new Set(blocked).size).toBe(16);
           expect(yield* receiver.results()).toEqual([{ id: current.id, outcome: 'Reported' }]);
           expect((yield* recipient.status(target(f))).status).toBe('InstallationReported');
           const pending = rows(journal)

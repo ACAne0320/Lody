@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { openSqliteConnection } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result, Schema } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
@@ -64,7 +64,7 @@ export const observeLabBackendBytes = Effect.fnUntraced(function* (input: {
   )
     return yield* fail('invalid-input');
   return yield* Effect.acquireUseRelease(
-    sql(() => new Database(path, { readonly: true, fileMustExist: true })),
+    sql(() => openSqliteConnection(path, { readonly: true, fileMustExist: true })),
     (db) =>
       sql(() =>
         db

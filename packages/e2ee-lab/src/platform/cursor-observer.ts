@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { openSqliteConnection } from '@lody/e2ee-core/storage/sqlite';
 import { Effect } from 'effect';
 import type { LabActionObservation } from './action-executor';
 import type { JudgeVerdict } from '../pure/judge';
@@ -12,7 +12,7 @@ export const measureLabCursors = Effect.fnUntraced(function* (input: {
 }) {
   return yield* Effect.acquireUseRelease(
     Effect.try({
-      try: () => new Database(input.path, { readonly: true, fileMustExist: true }),
+      try: () => openSqliteConnection(input.path, { readonly: true, fileMustExist: true }),
       catch: (cause) => cause,
     }),
     (db) =>

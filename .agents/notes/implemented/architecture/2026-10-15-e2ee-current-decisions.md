@@ -103,11 +103,16 @@ mathematical successes, never roles or freshness. Native backend failure is a
 harness/backend failure. Persistent internal collections share immutable structure;
 public inspection still returns detached data. Full feed reopening remains O(N).
 
-Only a complete baseline audit, exact trigger-free schema and unchanged external
-write stamp allow indexed final SQL readback. Changed schema, triggers or foreign
-writes retain full comparison; counters never create trust. The final checks run
-after the last DML; earlier duplicate readback is omitted. These conditions and
-caches remain subject to necessity review.
+The threat model trusts the local client and operating system. Shared SQLite
+ownership checks dedicated-file identity/bindings on open and fully verifies retained
+ledger bytes then. Hot operations read metadata and their target rows; no schema,
+trigger, external-write stamp or whole-table mutation audit remains. Rollback pins
+advance only with a genuinely newer ledger point. Transactions and first-original
+readback remain. An Accepted snapshot retains its identity/digest after its obsolete
+body is removed; only current/pending bodies consume publication capacity.
+Document transport and permission failures stay retryable without stopping the
+document; pending SDK writes retain original ciphertext until acknowledgement.
+Remote content authentication/format errors and local corruption stop that document.
 Core and Lab tests use a uniform 180s outer watchdog and 120s hook watchdog, not
 per-case arrival or performance budgets. The outer guard leaves cleanup time
 after the inner 120s child/scenario watchdog. Explicit events, actual operation termination and durable
@@ -223,7 +228,7 @@ attacker ports exclude honest private paths/keys; missing measurements remain ex
 The complete Lab host refreshes real control before authorization. Failed persistence keeps a
 monotonic observed floor in that object and blocks current/checkpoint and older prefixes until
 confirmation; reopen still needs an independent minimum. Offline edits persist native state/old
-cursor and the existing SDK publishes under the current epoch, without another outbox. Finite
+cursor. The existing SDK seals new work under the current epoch; the same document database retains sealed originals until confirmation so transport retries, including reopen, never reseal. Finite
 attack plans receive actual response controls, including allowed header-only mutation;
 plans can declare multiple roles and snapshot upload actions. Unrelated or harness failures never substitute
 for a measured refusal, and host observations never invent independent comparison confirmation.

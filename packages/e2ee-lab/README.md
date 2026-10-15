@@ -139,8 +139,14 @@ checked separately from lawful historical content authentication. Join receipt i
 inert. Snapshot cache reads reverify caller-pinned qualification; eligibility alone
 never admits a snapshot or establishes current authority.
 
-Each document commits native state and its exact SDK cursor atomically. Failed
-import/save/recovery stops only that document and retains its prior durable pair.
+Each document commits native state and its exact SDK cursor atomically. Remote
+authentication/decryption/format failure or local corruption stops only that
+document. Network/timeout/5xx/409 errors and permission refusals retain an active
+document and its durable pair; they can be retried without full-history recovery.
+SQLite stores share the current-format connection helper. Opening validates the
+file identity and bindings; local hostile-process mutation audits are outside the
+threat model. Signed history is still verified on reopen and transaction/target-row
+readback semantics remain in place.
 Explicit recovery rebuilds the native owner and uses the released SDK's available
 history or authenticated content snapshot plus suffix. An ordinary read from the
 beginning can return HTTP 410 after native snapshot retention while bootstrap still
@@ -286,7 +292,11 @@ before Riverrun and databases close.
 `session.editOffline(id, text)` persists native edits with the previous cursor without networking,
 key lookup or sealing. `flushOffline(id)` uses the released SDK to synchronize local deltas under
 current genuine epoch and permissions. Reopen, concurrent-member merge, SQL retry and removed-member
-refusal preserve local edits. There is no second content outbox.
+refusal preserve local edits. Once an update is sealed, the document's SQLite owner retains the
+original header/ciphertext, AAD and plaintext digest until SDK confirmation. Network
+retry, including close/open, reuses these originals; it does not reseal or duplicate
+local edits. Flush the pending write before making another local edit. No separate
+queue owner or new transport protocol is introduced.
 
 Finite plans use `makeLabAttackTransport` / `runLabAttackPlan` to drop, duplicate, truncate, replace,
 change allowed headers or explicitly delay actual responses, or temporarily retain and later release a member's verified

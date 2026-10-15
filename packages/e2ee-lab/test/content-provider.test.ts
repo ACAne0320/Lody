@@ -605,7 +605,7 @@ describe('public update provider with released CRDT SDK', () => {
               },
             });
             expect(Exit.isFailure(yield* Effect.exit(local.append('local A')))).toBe(true);
-            expect(yield* local.status()).toBe('document-stopped');
+            expect(yield* local.status()).toBe('active');
             expect(yield* local.cursor()).toBeNull();
             yield* local.recoverFromFullHistory();
             const preserved = yield* local.text();
@@ -669,7 +669,125 @@ it('a real SDK provider defect remains a harness failure instead of an expected 
           expect(Result.isFailure(result)).toBe(true);
           if (Result.isFailure(result))
             expect(result.failure).toMatchObject({ _tag: 'LabProviderError', code: 'harness' });
-          expect(yield* session.status()).toBe('document-stopped');
+          expect(yield* session.status()).toBe('active');
+        })
+      )
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+it('keeps transport and permission failures retryable while stopping authenticated remote corruption', async () => {
+  const f = await fixture();
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const material = new Uint8Array(32).fill(91);
+          const genesis = yield* signGenesisRecord({
+            userId: ok(Bytes.userId(new Uint8Array(32).fill(92))),
+            membershipId: f.membership,
+            encryptionPublicKey: ok(Bytes.encryptionPublicKey(new Uint8Array(32).fill(93))),
+            initialKey: ok(Bytes.epochKey(material)),
+            signer: f.owner,
+          });
+          const view = ok(
+            verifyLedger({
+              anchor: genesis.genesis,
+              records: [genesis.record],
+              checkpoint: { head: hashRecordBytes(genesis.record), length: 1 },
+            })
+          );
+          const url = `${f.server.baseUrl}/ds/synthetic/retryable-content`;
+          const common = {
+            genesis: genesis.genesis,
+            writeEpoch: 0,
+            signer: f.owner,
+            ledger: () => Effect.succeed(view),
+            readEpochKey: () => Effect.sync(() => ok(Bytes.epochKey(material))),
+            mode: 'create' as const,
+            resource: 'retryable-content',
+            streamUrl: url,
+          };
+          const writer = yield* makeLabLoroSession({
+            ...common,
+            fetch,
+            path: join(f.dir, 'retry-writer.sqlite'),
+          });
+          yield* writer.create();
+          yield* writer.append('retained authentic content');
+          let fault: 'network' | number | undefined;
+          const reader = yield* makeLabLoroSession({
+            ...common,
+            path: join(f.dir, 'retry-reader.sqlite'),
+            fetch: async (input, init) => {
+              if (fault === 'network') throw new TypeError('synthetic connection reset');
+              if (typeof fault === 'number')
+                return new Response('synthetic refusal', { status: fault });
+              return fetch(input, init);
+            },
+          });
+          for (const [injected, code] of [
+            ['network', 'network_error'],
+            [502, 'server_error'],
+            [409, 'protocol_error'],
+            [403, 'auth_failed'],
+          ] as const) {
+            fault = injected;
+            const failed = yield* Effect.result(reader.pull());
+            expect(Result.isFailure(failed)).toBe(true);
+            if (Result.isFailure(failed))
+              expect(failed.failure).toMatchObject({ _tag: 'LabContentError', code });
+            expect(yield* reader.status()).toBe('active');
+            expect(yield* reader.text()).toBe(
+              injected === 'network' ? '' : 'retained authentic content'
+            );
+            fault = undefined;
+            yield* reader.pull();
+            expect(yield* reader.status()).toBe('active');
+            expect(yield* reader.text()).toBe('retained authentic content');
+          }
+          const raw = new StreamsClient({ url, retry: { maxAttempts: 1 } });
+          const original = yield* Effect.promise(() => raw.read({ offset: '-1' }));
+          if (!original.ok) throw new Error('actual protected frame required');
+          const changed = new Uint8Array(original.result.payload.body);
+          changed[changed.length - 1] ^= 1;
+          expect(
+            (yield* Effect.promise(() =>
+              raw.append({ part: { contentType: 'application/octet-stream', body: changed } })
+            )).ok
+          ).toBe(true);
+          const tampered = yield* Effect.result(reader.pull());
+          expect(Result.isFailure(tampered)).toBe(true);
+          if (Result.isFailure(tampered))
+            expect(tampered.failure).toMatchObject({ code: 'decrypt_failed' });
+          expect(yield* reader.status()).toBe('document-stopped');
+          const malformedUrl = `${f.server.baseUrl}/ds/synthetic/malformed-content`;
+          const malformedRemote = new StreamsClient({
+            url: malformedUrl,
+            retry: { maxAttempts: 1 },
+          });
+          expect((yield* Effect.promise(() => malformedRemote.create())).ok).toBe(true);
+          expect(
+            (yield* Effect.promise(() =>
+              malformedRemote.append({
+                part: {
+                  contentType: 'application/octet-stream',
+                  body: new Uint8Array([1, 2, 3, 4]),
+                },
+              })
+            )).ok
+          ).toBe(true);
+          const malformedReader = yield* makeLabLoroSession({
+            ...common,
+            streamUrl: malformedUrl,
+            path: join(f.dir, 'malformed-reader.sqlite'),
+            fetch,
+          });
+          const malformedResult = yield* Effect.result(malformedReader.pull());
+          expect(Result.isFailure(malformedResult)).toBe(true);
+          expect(yield* malformedReader.status()).toBe('document-stopped');
         })
       )
     );

@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
@@ -29,11 +28,22 @@ export function makeLabWorkspaceRegistry(input: {
       });
     if (!isAbsolute(path) || (mode !== 'create' && mode !== 'open'))
       return yield* fail('invalid-input');
-    if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-    const db = yield* Effect.acquireRelease(
-      sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-      (value) => sql(() => value.close()).pipe(Effect.orDie)
-    );
+    const db = yield* openSqliteStore({
+      path,
+      mode,
+      applicationId: APP,
+      version: 1,
+      error: fail,
+      initialize: (connection) => {
+        connection
+          .transaction(() => {
+            connection.exec(
+              `CREATE TABLE workspaces(genesis_hash TEXT PRIMARY KEY,owner TEXT NOT NULL,record BLOB NOT NULL CHECK(length(record)>0 AND length(record)<=8192)) STRICT;`
+            );
+          })
+          .immediate();
+      },
+    });
     let closed = false;
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -43,20 +53,7 @@ export function makeLabWorkspaceRegistry(input: {
     const guard = () => {
       if (closed) throw fail('closed');
     };
-    yield* sql(() => {
-      if (mode === 'create')
-        db.transaction(() => {
-          db.exec(`PRAGMA application_id=${APP}; PRAGMA user_version=1;
-          CREATE TABLE workspaces(genesis_hash TEXT PRIMARY KEY,owner TEXT NOT NULL,record BLOB NOT NULL CHECK(length(record)>0 AND length(record)<=8192)) STRICT;`);
-        }).immediate();
-      else if (
-        db.pragma('application_id', { simple: true }) !== APP ||
-        db.pragma('user_version', { simple: true }) !== 1
-      )
-        throw fail('corrupt');
-      db.pragma('journal_mode=WAL');
-      db.pragma('synchronous=FULL');
-    });
+
     const parseGenesis = (value: Uint8Array) => {
       if (!(value instanceof Uint8Array) || !value.length || value.length > 8192)
         throw fail('invalid-input');

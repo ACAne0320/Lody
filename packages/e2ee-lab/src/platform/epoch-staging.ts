@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result, Schema } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
@@ -51,11 +50,21 @@ export const makeLabEpochStaging = Effect.fnUntraced(function* (input: {
     });
   if (typeof path !== 'string' || !isAbsolute(path) || (mode !== 'create' && mode !== 'open'))
     return yield* fail('invalid-input');
-  if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-  const db = yield* Effect.acquireRelease(
-    sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-    (value) => sql(() => value.close()).pipe(Effect.orDie)
-  );
+  const db = yield* openSqliteStore({
+    path,
+    mode,
+    applicationId: app,
+    version: 1,
+    error: fail,
+    initialize: (connection) => {
+      connection
+        .transaction(() =>
+          connection.exec(`CREATE TABLE staged_groups(genesis TEXT NOT NULL,epoch INTEGER NOT NULL,commitment TEXT NOT NULL,record_hash TEXT NOT NULL,record BLOB NOT NULL CHECK(length(record) BETWEEN 1 AND 8192),PRIMARY KEY(genesis,epoch,commitment,record_hash)) STRICT;
+      CREATE TABLE staged_envelopes(genesis TEXT NOT NULL,epoch INTEGER NOT NULL,commitment TEXT NOT NULL,record_hash TEXT NOT NULL,recipient TEXT NOT NULL,frame BLOB NOT NULL CHECK(length(frame) BETWEEN 1 AND 512),PRIMARY KEY(genesis,epoch,commitment,record_hash,recipient),FOREIGN KEY(genesis,epoch,commitment,record_hash) REFERENCES staged_groups ON DELETE CASCADE) STRICT;`)
+        )
+        .immediate();
+    },
+  });
   let closed = false;
   const guard = () => {
     if (closed) throw fail('closed');
@@ -65,22 +74,7 @@ export const makeLabEpochStaging = Effect.fnUntraced(function* (input: {
       closed = true;
     })
   );
-  yield* sql(() => {
-    if (mode === 'create')
-      db.transaction(() =>
-        db.exec(`PRAGMA application_id=${app};PRAGMA user_version=1;
-      CREATE TABLE staged_groups(genesis TEXT NOT NULL,epoch INTEGER NOT NULL,commitment TEXT NOT NULL,record_hash TEXT NOT NULL,record BLOB NOT NULL CHECK(length(record) BETWEEN 1 AND 8192),PRIMARY KEY(genesis,epoch,commitment,record_hash)) STRICT;
-      CREATE TABLE staged_envelopes(genesis TEXT NOT NULL,epoch INTEGER NOT NULL,commitment TEXT NOT NULL,record_hash TEXT NOT NULL,recipient TEXT NOT NULL,frame BLOB NOT NULL CHECK(length(frame) BETWEEN 1 AND 512),PRIMARY KEY(genesis,epoch,commitment,record_hash,recipient),FOREIGN KEY(genesis,epoch,commitment,record_hash) REFERENCES staged_groups ON DELETE CASCADE) STRICT;`)
-      ).immediate();
-    else if (
-      db.pragma('application_id', { simple: true }) !== app ||
-      db.pragma('user_version', { simple: true }) !== 1
-    )
-      throw fail('corrupt');
-    db.pragma('foreign_keys=ON');
-    db.pragma('journal_mode=WAL');
-    db.pragma('synchronous=FULL');
-  });
+  yield* sql(() => db.pragma('foreign_keys=ON'));
   const read = (key: EpochStagedGroupKey): EpochStagedGroup | null => {
     guard();
     const raw = db

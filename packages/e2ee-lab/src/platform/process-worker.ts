@@ -1,5 +1,5 @@
 import { appendFileSync } from 'node:fs';
-import Database from 'better-sqlite3';
+import { openSqliteConnection } from '@lody/e2ee-core/storage/sqlite';
 import { createHash } from 'node:crypto';
 // Application entrypoint: one Effect Scope owns the complete synthetic session.
 import { Cause, Effect, Exit, Queue, Result, Schema } from 'effect';
@@ -637,12 +637,11 @@ const program = Effect.scoped(
         case 'observe': {
           const status = yield* session.documentStatus(doc as string);
           const persisted = yield* Effect.acquireUseRelease(
-            Effect.sync(
-              () =>
-                new Database(join(directory, `${actor}-${doc}.sqlite`), {
-                  readonly: true,
-                  fileMustExist: true,
-                })
+            Effect.sync(() =>
+              openSqliteConnection(join(directory, `${actor}-${doc}.sqlite`), {
+                readonly: true,
+                fileMustExist: true,
+              })
             ),
             (db) =>
               Effect.sync(() => {
@@ -682,9 +681,10 @@ const program = Effect.scoped(
             case 'deny-loro-persist':
             case 'restore-loro-persist':
               yield* Effect.acquireUseRelease(
-                Effect.sync(
-                  () =>
-                    new Database(join(directory, `${actor}-loro.sqlite`), { fileMustExist: true })
+                Effect.sync(() =>
+                  openSqliteConnection(join(directory, `${actor}-loro.sqlite`), {
+                    fileMustExist: true,
+                  })
                 ),
                 (db) =>
                   Effect.sync(() =>

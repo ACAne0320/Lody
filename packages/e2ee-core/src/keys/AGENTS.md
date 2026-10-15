@@ -14,11 +14,11 @@
   success, failure and interruption. Application Scope closes admission, waits
   native leases and closes storage; a timeout does not prove native work stopped.
 - Record genuine fixed-Org/known-prefix observations before business rejection or
-  pin UPDATE. Failed writes retain memory; successful persistence requires one row
+  pin UPDATE. Unchanged head/count performs no write. Failed writes retain memory; advancing persistence requires one row
   and exact bounded context/head/count readback, without a failed-write reopen claim.
 - Save/reload/unprotect/commitment verification precedes any installation report
   queue. Signed reports remain claims. Failed uncertain writes retain originals;
-  no implicit delete/replace/legacy import. Durable public authority observations
+  valid originals remain first-wins; unreadable installed rows may be replaced only after the new blob opens and matches the same verified commitment. No legacy import. Durable public authority observations
   do not become document/transport cursors or trusted journal role certificates.
 - Host adapters and synthetic Lab protection are distinct. Never access real
   keys/keychains or claim a mock protector establishes native-platform acceptance.
@@ -73,7 +73,7 @@
   selects vault formats or grants current writing rights. Storage failures may
   leave safe originals; retries are explicit and idempotent, never deletion.
 
-- Distributor metadata audits use a captured task budget; reaching capacity never deletes originals. Existing terminal/ack transitions remain possible within budget; new tasks are blocked explicitly.
+- Distributor indexed metadata uses a captured task budget; reaching capacity never deletes originals. Existing terminal/ack transitions remain possible within budget; new tasks are blocked explicitly.
 
 - The receiver constructs the installed store once; host facades forward the same opaque read/save capability. Borrowers do not create/close another owner. No caller-supplied substitute or secret material export.
 

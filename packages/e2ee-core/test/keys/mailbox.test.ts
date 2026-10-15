@@ -79,7 +79,7 @@ describe('authenticated SQLite key mailbox', () => {
           const sender = ok(host.bind(f.owner.publicKey)),
             recipient = ok(host.bind(f.phone.publicKey));
           const expected: string[] = [];
-          for (let n = 0; n < 101; n++) {
+          for (let n = 0; n < 16; n++) {
             const frame = yield* f.prepare();
             expected.push(Reports.mailboxDigest(frame));
             yield* sender.put(n.toString(16).padStart(32, '0'), frame);
@@ -96,7 +96,7 @@ describe('authenticated SQLite key mailbox', () => {
                     file: dbPath,
                     signal,
                     target: target(f),
-                    digests: [expected[0], expected[100]],
+                    digests: [expected[0], expected[15]],
                   },
                 })
             ),
@@ -145,13 +145,13 @@ describe('authenticated SQLite key mailbox', () => {
                 return statement;
               },
             });
-            const page = yield* recipient.fetch(0, null, 100);
+            const page = yield* recipient.fetch(0, null, 15);
             expect(page.items.map((item) => Reports.mailboxDigest(item.frame))).toEqual(
-              expected.slice(0, 100)
+              expected.slice(0, 15)
             );
-            expect(page.next).toBe('100');
+            expect(page.next).toBe(`${hex(f.owner.raw)}:${expected[14]}`);
             // Both repairs committed concurrently; a later request sees the new projection.
-            const after = yield* recipient.fetch(0, null, 100);
+            const after = yield* recipient.fetch(0, null, 15);
             expect(after.items.map((item) => Reports.mailboxDigest(item.frame))).toEqual(
               expected.slice(1, -1)
             );
@@ -528,7 +528,7 @@ describe('authenticated SQLite key mailbox', () => {
     expect(Result.isFailure(result)).toBe(true);
     expect(readFileSync(dbPath)).toEqual(before);
   });
-  it('continues 101 real envelopes in 100/1 pages without loading a lookahead ciphertext', async () => {
+  it('continues 16 real envelopes in 15/1 keyset pages without loading a lookahead ciphertext', async () => {
     const f = envelopeFixture();
     await Effect.runPromise(
       Effect.scoped(
@@ -542,22 +542,25 @@ describe('authenticated SQLite key mailbox', () => {
           const sender = ok(host.bind(f.owner.publicKey)),
             recipient = ok(host.bind(f.phone.publicKey));
           const expected: Uint8Array[] = [];
-          for (let n = 0; n < 101; n++) {
+          for (let n = 0; n < 16; n++) {
             const frame = yield* f.prepare();
             expected.push(frame);
             yield* sender.put(n.toString(16).padStart(32, '0'), frame);
           }
-          const first = yield* recipient.fetch(0, null, 100);
-          expect(first.items).toHaveLength(100);
-          expect(first.next).toBe('100');
-          const second = yield* recipient.fetch(0, first.next, 100);
+          const first = yield* recipient.fetch(0, null, 15);
+          expect(first.items).toHaveLength(15);
+          expect(first.next).toMatch(/^[0-9a-f]{64}:[0-9a-f]{64}$/);
+          const second = yield* recipient.fetch(0, first.next, 15);
           expect(second.items).toHaveLength(1);
           expect(second.next).toBe(null);
           const observed = [...first.items, ...second.items]
             .map((row) => Reports.mailboxDigest(row.frame))
             .sort();
           expect(observed).toEqual(expected.map(Reports.mailboxDigest).sort());
-          expect(yield* recipient.fetch(0, '101', 100)).toEqual({ items: [], next: null });
+          expect(yield* recipient.fetch(0, 'ff'.repeat(32) + ':' + 'ff'.repeat(32), 100)).toEqual({
+            items: [],
+            next: null,
+          });
           expect(Result.isFailure(yield* Effect.result(recipient.fetch(0, '102', 100)))).toBe(true);
         })
       )
@@ -644,4 +647,54 @@ describe('verified mailbox observations across failed pin writes', () => {
       )
     );
   });
+});
+
+it('uses stable sender/digest cursors across rejection and insertion and caps each sender at 16 live envelopes', async () => {
+  const f = envelopeFixture(),
+    dbPath = file();
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const host = yield* makeSqliteKeyMailbox({
+          path: dbPath,
+          mode: 'create',
+          genesis: f.context.genesis,
+          ledger: f.ledger,
+        });
+        const sender = ok(host.bind(f.owner.publicKey)),
+          recipient = ok(host.bind(f.phone.publicKey));
+        const frames: Uint8Array[] = [];
+        for (let index = 0; index < 16; index++) {
+          const frame = yield* f.prepare();
+          frames.push(frame);
+          yield* sender.put(index.toString(16).padStart(32, '0'), frame);
+        }
+        const extra = yield* f.prepare();
+        expect(yield* Effect.result(sender.put('ff'.repeat(16), extra))).toMatchObject({
+          _tag: 'Failure',
+          failure: { code: 'replay' },
+        });
+        const first = yield* recipient.fetch(0, null, 5);
+        expect(first.items).toHaveLength(5);
+        expect(first.next).not.toBeNull();
+        const sorted = frames
+          .map((frame) => ({ frame, digest: Reports.mailboxDigest(frame) }))
+          .sort((a, b) => a.digest.localeCompare(b.digest));
+        yield* recipient.repair(target(f), 'reject-first', sorted[0]!.digest);
+        yield* sender.put('ff'.repeat(16), extra);
+        const second = yield* recipient.fetch(0, first.next, 100);
+        const cursor = first.next!.split(':')[1]!;
+        const expected = [...sorted.slice(1).map((row) => row.digest), Reports.mailboxDigest(extra)]
+          .filter((digest) => digest > cursor)
+          .sort();
+        expect(second.items.map((row) => Reports.mailboxDigest(row.frame))).toEqual(expected);
+        expect(
+          new Set([...first.items, ...second.items].map((row) => Reports.mailboxDigest(row.frame)))
+            .size
+        ).toBe(first.items.length + second.items.length);
+        // Re-inserting the first original is idempotent even at capacity.
+        yield* sender.put('ff'.repeat(16), extra);
+      })
+    )
+  );
 });

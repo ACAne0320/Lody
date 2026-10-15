@@ -1,12 +1,9 @@
-import Database from 'better-sqlite3';
-import { openSync, closeSync } from 'node:fs';
+import { openSqliteStore } from '../storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Effect, Layer } from 'effect';
 import { DeliveryOutbox, DeliveryError } from './delivery';
 
 const APP = 0x4c454f31;
-const sql = <A>(work: () => A) =>
-  Effect.try({ try: work, catch: () => new DeliveryError({ code: 'storage' }) });
 const validSlot = (slot: string) => /^[0-9a-f]{32}$/.test(slot);
 /** Dedicated ciphertext-only SQLite file, owned and closed by the application Scope. */
 export function sqliteDeliveryOutbox(input: {
@@ -19,37 +16,25 @@ export function sqliteDeliveryOutbox(input: {
     Effect.gen(function* () {
       if (typeof path !== 'string' || !isAbsolute(path) || (mode !== 'create' && mode !== 'open'))
         return yield* new DeliveryError({ code: 'storage' });
-      if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-      const db = yield* Effect.acquireRelease(
-        sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-        (handle) => sql(() => handle.close()).pipe(Effect.orDie)
-      );
+      const db = yield* openSqliteStore({
+        path,
+        mode,
+        applicationId: APP,
+        version: 1,
+        initialize(connection) {
+          connection.exec(
+            `CREATE TABLE epoch_delivery (slot TEXT PRIMARY KEY, frame BLOB NOT NULL CHECK(length(frame) BETWEEN 1 AND 512)); `
+          );
+        },
+        error: (code) => new DeliveryError({ code }),
+      });
       let closed = false;
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           closed = true;
         })
       );
-      yield* sql(() => {
-        const app = db.pragma('application_id', { simple: true }),
-          version = db.pragma('user_version', { simple: true });
-        if (mode === 'open' && (app !== APP || version !== 1)) throw new Error('foreign');
-        if (
-          mode === 'create' &&
-          (app !== 0 ||
-            version !== 0 ||
-            db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length !== 0)
-        )
-          throw new Error('foreign');
-        db.pragma('journal_mode=WAL');
-        db.pragma('synchronous=FULL');
-        if (mode === 'create')
-          db.transaction(() => {
-            db.exec(
-              `CREATE TABLE epoch_delivery (slot TEXT PRIMARY KEY, frame BLOB NOT NULL CHECK(length(frame) BETWEEN 1 AND 512)); PRAGMA application_id=${APP}; PRAGMA user_version=1;`
-            );
-          }).immediate();
-      });
+
       const checked = <A>(slot: string, work: () => A) =>
         Effect.suspend(() => {
           if (closed) return Effect.fail(new DeliveryError({ code: 'closed' }));

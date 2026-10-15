@@ -1,10 +1,10 @@
-import Database from 'better-sqlite3';
-import { openSync, closeSync } from 'node:fs';
+import { openSqliteStore, makeSqliteLedgerPin } from '../storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result } from 'effect';
 import * as Bytes from '../bytes';
 import { keyId } from '../identifiers';
-import { requireLedgerContinuation, hasVerifiedCheckpoint, type LedgerView } from '../ledger';
+import { bytesEqual } from '../cbor';
+import { type LedgerView } from '../ledger';
 import { authenticateEpochEnvelope } from './envelope';
 import {
   envelopeRouting,
@@ -53,6 +53,16 @@ const pageStart = (cursor: string | null, limit: number) => {
   const start = cursor === null ? 0 : Number(cursor);
   return Result.succeed(start);
 };
+const envelopePageStart = (cursor: string | null, limit: number) => {
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > 100 ||
+    (cursor !== null && !/^[0-9a-f]{64}:[0-9a-f]{64}$/.test(cursor))
+  )
+    return Result.fail(new MailboxError({ code: 'invalid-page' }));
+  return Result.succeed(cursor === null ? ['', ''] : cursor.split(':'));
+};
 const page = <A>(items: readonly A[], cursor: string | null, limit: number) => {
   const parsed = pageStart(cursor, limit);
   if (Result.isFailure(parsed)) return Result.fail(parsed.failure);
@@ -76,114 +86,54 @@ export function makeSqliteKeyMailbox<E, R>(input: {
       return yield* new MailboxError({ code: 'storage' });
     const anchor = yield* Effect.fromResult(Bytes.genesisHash(input.genesis.toBytes())),
       org = keyId(anchor.toBytes());
-    if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-    const db = yield* Effect.acquireRelease(
-      sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-      (handle) => sql(() => handle.close()).pipe(Effect.orDie)
-    );
-    let closed = false,
-      observed: LedgerView | undefined;
-    yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        closed = true;
-        observed = undefined;
-      })
-    );
-    const guard = () => {
-      if (closed) throw new MailboxError({ code: 'closed' });
-    };
-    yield* sql(() => {
-      const app = db.pragma('application_id', { simple: true }),
-        version = db.pragma('user_version', { simple: true });
-      if (mode === 'open' && (app !== APP || version !== 1))
-        throw new MailboxError({ code: 'corrupt' });
-      if (
-        mode === 'create' &&
-        (app !== 0 ||
-          version !== 0 ||
-          db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length !== 0)
-      )
-        throw new MailboxError({ code: 'corrupt' });
-      db.pragma('journal_mode=WAL');
-      db.pragma('synchronous=FULL');
-      if (mode === 'create')
-        db.transaction(() => {
-          db.exec(`
+    const db = yield* openSqliteStore({
+      path,
+      mode,
+      applicationId: APP,
+      version: 1,
+      initialize(connection) {
+        connection.exec(`
     CREATE TABLE mailbox_meta (id INTEGER PRIMARY KEY CHECK(id=1), genesis TEXT NOT NULL, head BLOB, count INTEGER);
     CREATE TABLE mailbox_slots(epoch INTEGER NOT NULL,recipient TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 0,reported_revision INTEGER,PRIMARY KEY(epoch,recipient));
     CREATE TABLE mailbox_envelopes(epoch INTEGER NOT NULL,recipient TEXT NOT NULL,sender TEXT NOT NULL,id TEXT NOT NULL,digest TEXT NOT NULL,frame BLOB NOT NULL CHECK(length(frame) BETWEEN 1 AND 512),PRIMARY KEY(epoch,recipient,sender,digest),UNIQUE(epoch,sender,id));
     CREATE TABLE mailbox_reports(epoch INTEGER NOT NULL,recipient TEXT NOT NULL,digest TEXT NOT NULL,report BLOB NOT NULL CHECK(length(report) BETWEEN 1 AND 512),PRIMARY KEY(epoch,recipient,digest));
     CREATE TABLE mailbox_rejected(epoch INTEGER NOT NULL,recipient TEXT NOT NULL,digest TEXT NOT NULL,PRIMARY KEY(epoch,recipient,digest));
     CREATE TABLE mailbox_repairs(epoch INTEGER NOT NULL,recipient TEXT NOT NULL,id TEXT NOT NULL,rejected TEXT,PRIMARY KEY(epoch,recipient,id));
-    PRAGMA application_id=${APP};PRAGMA user_version=1;
+
    `);
-          db.prepare('INSERT INTO mailbox_meta(id,genesis) VALUES(1,?)').run(org);
-        }).immediate();
-      const meta = db.prepare('SELECT genesis FROM mailbox_meta WHERE id=1').get() as
-        | { genesis: unknown }
-        | undefined;
-      if (meta?.genesis !== org) throw new MailboxError({ code: 'corrupt' });
+        connection.prepare('INSERT INTO mailbox_meta(id,genesis) VALUES(1,?)').run(org);
+      },
+      validate(connection) {
+        const meta = connection.prepare('SELECT genesis FROM mailbox_meta WHERE id=1').get() as
+          | { genesis?: unknown; recipient?: unknown; sender?: unknown }
+          | undefined;
+        if (meta?.genesis !== org) throw new MailboxError({ code: 'corrupt' });
+      },
+      error: (code) => new MailboxError({ code }),
+    });
+    let closed = false;
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        closed = true;
+      })
+    );
+    const guard = () => {
+      if (closed) throw new MailboxError({ code: 'closed' });
+    };
+
+    const observePin = makeSqliteLedgerPin({
+      db,
+      table: 'mailbox_meta',
+      genesis: org,
+      error: (code) => new MailboxError({ code }),
     });
     const current = () =>
       Effect.gen(function* () {
         yield* sql(guard);
         const view = yield* input.ledger();
-        yield* sql(guard);
-        yield* Effect.fromResult(requireLedgerContinuation(view, view));
-        if (!view.genesis.equals(anchor)) return yield* new MailboxError({ code: 'unauthorized' });
-        if (observed) yield* Effect.fromResult(requireLedgerContinuation(observed, view));
-        // This is a verified public authority observation, not a document/transport cursor.
         yield* sql(() => {
           guard();
-          db.transaction(() => {
-            const pin = db
-              .prepare(
-                "SELECT CASE WHEN length(genesis)=64 THEN genesis ELSE NULL END AS genesis,CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,count FROM mailbox_meta WHERE id=1"
-              )
-              .get() as { genesis: unknown; head: unknown; count: unknown } | undefined;
-            if (!pin || pin.genesis !== org) throw new MailboxError({ code: 'corrupt' });
-            if (pin.head !== null) {
-              if (
-                !(pin.head instanceof Uint8Array) ||
-                pin.head.length !== 32 ||
-                typeof pin.count !== 'number' ||
-                !Number.isSafeInteger(pin.count) ||
-                pin.count < 1
-              )
-                throw new MailboxError({ code: 'corrupt' });
-              const hash = Result.getOrThrow(Bytes.recordHash(pin.head));
-              const accepted = hasVerifiedCheckpoint(view, { head: hash, length: pin.count });
-              if (Result.isFailure(accepted) || !accepted.success)
-                throw new MailboxError({ code: 'rollback' });
-            } else if (pin.count !== null) throw new MailboxError({ code: 'corrupt' });
-            // Recheck shared memory at the synchronous transaction's actual write boundary.
-            if (observed && Result.isFailure(requireLedgerContinuation(observed, view)))
-              throw new MailboxError({ code: 'rollback' });
-            // Retain verified knowledge even when the following write fails.
-            observed = view;
-            if (
-              db
-                .prepare('UPDATE mailbox_meta SET head=?,count=? WHERE id=1')
-                .run(view.head.toBytes(), view.length).changes !== 1
-            )
-              throw new MailboxError({ code: 'corrupt' });
-            const saved = db
-              .prepare(
-                "SELECT CASE WHEN length(genesis)=64 THEN genesis ELSE NULL END AS genesis,CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,count FROM mailbox_meta WHERE id=1"
-              )
-              .get() as
-              | { genesis: unknown; recipient?: unknown; head: unknown; count: unknown }
-              | undefined;
-            if (
-              !saved ||
-              saved.genesis !== org ||
-              !(saved.head instanceof Uint8Array) ||
-              saved.head.length !== 32 ||
-              saved.count !== view.length ||
-              !view.head.equals(Result.getOrThrow(Bytes.recordHash(saved.head)))
-            )
-              throw new MailboxError({ code: 'corrupt' });
-          }).immediate();
+          observePin(view);
         });
         return view;
       });
@@ -281,9 +231,36 @@ export function makeSqliteKeyMailbox<E, R>(input: {
                       const digest = mailboxDigest(frame);
                       if (prior && prior.digest !== digest)
                         throw new MailboxError({ code: 'replay' });
-                      db.prepare(
-                        'INSERT INTO mailbox_envelopes(epoch,recipient,sender,id,digest,frame) VALUES(?,?,?,?,?,?) ON CONFLICT(epoch,recipient,sender,digest) DO NOTHING'
-                      ).run(routing.epoch, routing.recipient, self, id, digest, frame);
+                      const existing = db
+                        .prepare(
+                          'SELECT frame FROM mailbox_envelopes WHERE epoch=? AND recipient=? AND sender=? AND digest=?'
+                        )
+                        .get(routing.epoch, routing.recipient, self, digest) as
+                        | { frame: Uint8Array }
+                        | undefined;
+                      if (!existing) {
+                        const { count } = db
+                          .prepare(
+                            'SELECT count(*) AS count FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND sender=? AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest)'
+                          )
+                          .get(routing.epoch, routing.recipient, self) as { count: number };
+                        if (count >= 16) throw new MailboxError({ code: 'replay' });
+                        db.prepare(
+                          'INSERT INTO mailbox_envelopes(epoch,recipient,sender,id,digest,frame) VALUES(?,?,?,?,?,?) ON CONFLICT(epoch,recipient,sender,digest) DO NOTHING'
+                        ).run(routing.epoch, routing.recipient, self, id, digest, frame);
+                      }
+                      const stored = db
+                        .prepare(
+                          'SELECT frame FROM mailbox_envelopes WHERE epoch=? AND recipient=? AND sender=? AND digest=?'
+                        )
+                        .get(routing.epoch, routing.recipient, self, digest) as
+                        | { frame: unknown }
+                        | undefined;
+                      if (
+                        !(stored?.frame instanceof Uint8Array) ||
+                        !bytesEqual(stored.frame, frame)
+                      )
+                        throw new MailboxError({ code: 'corrupt' });
                     }).immediate();
                   });
                   return undefined;
@@ -311,7 +288,7 @@ export function makeSqliteKeyMailbox<E, R>(input: {
               }),
             fetch: (epoch: number, cursor: string | null, limit: number) =>
               Effect.gen(function* () {
-                const start = yield* Effect.fromResult(pageStart(cursor, limit));
+                const start = yield* Effect.fromResult(envelopePageStart(cursor, limit));
                 const view = yield* session();
                 if (epoch !== view.inspectState().epoch.number)
                   return yield* new MailboxError({ code: 'unauthorized' });
@@ -321,21 +298,13 @@ export function makeSqliteKeyMailbox<E, R>(input: {
                       guard();
                       const rows = db
                         .prepare(
-                          'SELECT sender,digest,CASE WHEN length(frame)<=512 THEN frame ELSE NULL END AS frame FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest) ORDER BY sender,digest LIMIT ? OFFSET ?'
+                          'SELECT sender,digest,CASE WHEN length(frame)<=512 THEN frame ELSE NULL END AS frame FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest) AND (sender,digest)>(?,?) ORDER BY sender,digest LIMIT ?'
                         )
-                        .all(epoch, self, limit, start) as {
+                        .all(epoch, self, start[0], start[1], limit) as {
                         sender: unknown;
                         digest: unknown;
                         frame: unknown;
                       }[];
-                      if (start > 0 && rows.length === 0) {
-                        const count = db
-                          .prepare(
-                            'SELECT count(*) AS n FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest)'
-                          )
-                          .get(epoch, self) as { n: number };
-                        if (start > count.n) throw new MailboxError({ code: 'invalid-page' });
-                      }
                       const parsed = rows.map((row) => {
                         if (
                           !isHash(row.sender) ||
@@ -355,7 +324,7 @@ export function makeSqliteKeyMailbox<E, R>(input: {
                             'SELECT 1 FROM mailbox_envelopes e WHERE epoch=? AND recipient=? AND (sender,digest)>(?,?) AND NOT EXISTS(SELECT 1 FROM mailbox_rejected r WHERE r.epoch=e.epoch AND r.recipient=e.recipient AND r.digest=e.digest) LIMIT 1'
                           )
                           .get(epoch, self, last.sender, last.digest);
-                      return { items: parsed, next: more ? String(start + rows.length) : null };
+                      return { items: parsed, next: more ? `${last.sender}:${last.digest}` : null };
                     })
                     .deferred()
                 );

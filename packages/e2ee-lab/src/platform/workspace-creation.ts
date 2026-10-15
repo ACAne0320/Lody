@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { StreamsClient } from '@loro-dev/streams-client';
 import { Data, Effect, Result, Semaphore } from 'effect';
@@ -118,11 +117,28 @@ export const makeLabWorkspaceCreation = Effect.fnUntraced(function* (input: {
     },
     catch: () => fail('invalid-input'),
   });
-  if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-  const db = yield* Effect.acquireRelease(
-    sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-    (value) => sql(() => value.close()).pipe(Effect.orDie)
-  );
+  const db = yield* openSqliteStore({
+    path,
+    mode,
+    applicationId: APP,
+    version: 1,
+    error: fail,
+    initialize: (connection) => {
+      connection
+        .transaction(() => {
+          connection.exec(`CREATE TABLE creation(id INTEGER PRIMARY KEY CHECK(id=1),original BLOB NOT NULL,phase TEXT NOT NULL CHECK(phase IN ('Pending','Published')),head BLOB NOT NULL,count INTEGER NOT NULL,offset TEXT NOT NULL) STRICT;
+        CREATE TABLE history(position INTEGER PRIMARY KEY,record BLOB NOT NULL) STRICT;`);
+          if (
+            connection
+              .prepare("INSERT INTO creation VALUES(1,?,'Pending',?,1,'-1')")
+              .run(original, initial.head.toBytes()).changes !== 1 ||
+            connection.prepare('INSERT INTO history VALUES(1,?)').run(original).changes !== 1
+          )
+            throw fail('storage');
+        })
+        .immediate();
+    },
+  });
   // Native owner is acquired after SQLite: abort and join before closing this file.
   const native = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
   const fetchNative: typeof fetch = (request, init) => {
@@ -151,28 +167,7 @@ export const makeLabWorkspaceCreation = Effect.fnUntraced(function* (input: {
   const guard = () => {
     if (closed || native.signal.aborted) throw fail('closed');
   };
-  yield* sql(() => {
-    if (mode === 'create')
-      db.transaction(() => {
-        db.exec(`PRAGMA application_id=${APP};PRAGMA user_version=1;
-        CREATE TABLE creation(id INTEGER PRIMARY KEY CHECK(id=1),original BLOB NOT NULL,phase TEXT NOT NULL CHECK(phase IN ('Pending','Published')),head BLOB NOT NULL,count INTEGER NOT NULL,offset TEXT NOT NULL) STRICT;
-        CREATE TABLE history(position INTEGER PRIMARY KEY,record BLOB NOT NULL) STRICT;`);
-        if (
-          db
-            .prepare("INSERT INTO creation VALUES(1,?,'Pending',?,1,'-1')")
-            .run(original, initial.head.toBytes()).changes !== 1 ||
-          db.prepare('INSERT INTO history VALUES(1,?)').run(original).changes !== 1
-        )
-          throw fail('storage');
-      }).immediate();
-    else if (
-      db.pragma('application_id', { simple: true }) !== APP ||
-      db.pragma('user_version', { simple: true }) !== 1
-    )
-      throw fail('corrupt');
-    db.pragma('journal_mode=WAL');
-    db.pragma('synchronous=FULL');
-  });
+
   const read = () => {
     guard();
     const meta = db
@@ -262,13 +257,10 @@ export const makeLabWorkspaceCreation = Effect.fnUntraced(function* (input: {
     actual.count === expected.count &&
     same(actual.head, expected.head) &&
     actual.records.every((record, index) => same(record, expected.records[index]!));
-  const audit = () => {
-    if (!matches(read(), saved)) throw fail('corrupt');
-  };
   const reader = yield* makeLedgerStreamReader({ read: (request) => sdk.read(request) });
   const serial = yield* Semaphore.make(1);
   const refresh = Effect.fnUntraced(function* () {
-    yield* sql(audit);
+    yield* sql(guard);
     const before = saved;
     const records: Uint8Array[] = [];
     let offset = '-1',
@@ -312,14 +304,12 @@ export const makeLabWorkspaceCreation = Effect.fnUntraced(function* (input: {
         offset,
       };
       if (matches(candidate, before)) {
-        yield* sql(audit);
         view = next;
         return { view, offset };
       }
       yield* sql(() =>
         db
           .transaction(() => {
-            audit();
             for (let index = before.count; index < records.length; index++)
               if (
                 db.prepare('INSERT INTO history VALUES(?,?)').run(index + 1, records[index]!)
@@ -332,7 +322,16 @@ export const makeLabWorkspaceCreation = Effect.fnUntraced(function* (input: {
                 .run(head.toBytes(), records.length, offset).changes !== 1
             )
               throw fail('storage');
-            if (!matches(read(), candidate)) throw fail('storage');
+            const retained = db
+              .prepare('SELECT head,count,offset FROM creation WHERE id=1')
+              .get() as { head: Uint8Array; count: number; offset: string } | undefined;
+            if (
+              !retained ||
+              !same(retained.head, head.toBytes()) ||
+              retained.count !== records.length ||
+              retained.offset !== offset
+            )
+              throw fail('storage');
           })
           .immediate()
       );
@@ -351,19 +350,19 @@ export const makeLabWorkspaceCreation = Effect.fnUntraced(function* (input: {
     record: () => new Uint8Array(original),
     status: () =>
       sql(() => {
-        audit();
+        guard();
         return { phase: saved.phase };
       }),
     current: () =>
       sql(() => {
-        audit();
+        guard();
         if (saved.phase !== 'Published') throw fail('unauthorized');
         requireConfirmedObservation();
         return { view, offset: saved.offset, phase: saved.phase };
       }),
     checkpoint: () =>
       sql(() => {
-        audit();
+        guard();
         if (saved.phase !== 'Published') throw fail('unauthorized');
         requireConfirmedObservation();
         return checkpoint();
@@ -382,7 +381,7 @@ export const makeLabWorkspaceCreation = Effect.fnUntraced(function* (input: {
         return yield* fail('unauthorized');
       return yield* serial.withPermit(
         Effect.gen(function* () {
-          yield* sql(audit);
+          yield* sql(guard);
           yield* registry.register(captured, original);
           if (saved.phase === 'Pending') {
             const bucket = yield* native.invoke(async () => {

@@ -93,3 +93,20 @@ Generic ASCII offsets use the u16 length bound; the released SDK's 4096-byte
 sealing-overhead limit imposes a smaller adapter bound. A snapshot plus subsequent
 updates bootstraps through actual Loro/Flock consumers. These design decisions do
 not mark this revised draft approved or enable product encryption.
+
+## Local SQLite persistence
+
+The client and operating system are trusted under the whitepaper threat model.
+Current-store creation/open checks application/version and fixed genesis/recipient
+bindings, uses WAL/FULL and transactions, and revalidates stored ledger records on
+open. SQL rows do not establish authority. Operations retain first-original
+readback and genuine-ledger rollback-pin comparisons; unchanged head/count pins
+produce no write. They do not scan old rows or audit schemas, triggers and local
+write counters to detect an unrelated local process changing the database.
+
+Snapshot publication keeps ciphertext bodies only for current and Pending.
+Accepting a new current clears the old Accepted body's bytes in the same
+transaction, retaining offset, signer, SHA-256 digest, original credential window
+and phase. Archived identities remain idempotent, reject different bytes at the
+same offset and can never become current again. Capacity budgets count retained
+bodies rather than archived identities.

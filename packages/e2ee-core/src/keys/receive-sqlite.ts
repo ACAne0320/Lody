@@ -1,12 +1,11 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore, makeSqliteLedgerPin } from '../storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result } from 'effect';
 import * as Bytes from '../bytes';
 import { bytesEqual, encodeCbor } from '../cbor';
 import { disposeEpochKey } from '../epoch-key';
 import { keyId } from '../identifiers';
-import { hasVerifiedCheckpoint, requireLedgerContinuation, type LedgerView } from '../ledger';
+import { type LedgerView } from '../ledger';
 import { signVerified, type DeviceSigner } from '../signing';
 import { verifySignature } from '../signature';
 import {
@@ -109,100 +108,48 @@ export function makeSqliteEpochReceiver(input: {
       path === keyConfig.path
     )
       return yield* fail('invalid-input');
-    if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-    const db = yield* Effect.acquireRelease(
-      sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-      (handle) => sql(() => handle.close()).pipe(Effect.orDie)
-    );
-    let closed = false,
-      observed: LedgerView | undefined;
+    const db = yield* openSqliteStore({
+      path,
+      mode,
+      applicationId: APP,
+      version: 2,
+      initialize(connection) {
+        connection.exec(`CREATE TABLE receive_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,recipient TEXT NOT NULL,head BLOB,count INTEGER);
+        CREATE TABLE receive_tasks(id TEXT PRIMARY KEY,body BLOB NOT NULL CHECK(length(body) BETWEEN 1 AND 256),frame BLOB CHECK(length(frame) BETWEEN 1 AND 512),publication BLOB CHECK(length(publication) BETWEEN 1 AND 8192),report BLOB CHECK(length(report) BETWEEN 1 AND 512),phase TEXT NOT NULL CHECK(phase IN ('Install','Report','Reported','Obsolete','Revoked')),consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)));
+        CREATE INDEX receive_pending ON receive_tasks(phase,id);
+        `);
+        connection
+          .prepare('INSERT INTO receive_meta(id,genesis,recipient) VALUES(1,?,?)')
+          .run(org, self);
+      },
+      validate(connection) {
+        const meta = connection
+          .prepare('SELECT genesis,recipient FROM receive_meta WHERE id=1')
+          .get() as { genesis?: unknown; recipient?: unknown; sender?: unknown } | undefined;
+        if (meta?.genesis !== org || meta?.recipient !== self) throw fail('corrupt');
+      },
+      error: fail,
+    });
+    let closed = false;
     const guard = () => {
       if (closed) throw fail('closed');
     };
-    yield* sql(() => {
-      const app = db.pragma('application_id', { simple: true }),
-        version = db.pragma('user_version', { simple: true });
-      if (mode === 'open' && (app !== APP || version !== 2)) throw fail('corrupt');
-      if (
-        mode === 'create' &&
-        (app !== 0 ||
-          version !== 0 ||
-          db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length !== 0)
-      )
-        throw fail('corrupt');
-      if (mode === 'open') {
-        const meta = db.prepare('SELECT genesis,recipient FROM receive_meta WHERE id=1').get() as
-          | { genesis: unknown; recipient: unknown }
-          | undefined;
-        if (meta?.genesis !== org || meta.recipient !== self) throw fail('corrupt');
-      }
-      db.pragma('journal_mode=WAL');
-      db.pragma('synchronous=FULL');
-      if (mode === 'create')
-        db.transaction(() => {
-          db.exec(`CREATE TABLE receive_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,recipient TEXT NOT NULL,head BLOB,count INTEGER);
-        CREATE TABLE receive_tasks(id TEXT PRIMARY KEY,body BLOB NOT NULL CHECK(length(body) BETWEEN 1 AND 256),frame BLOB CHECK(length(frame) BETWEEN 1 AND 512),publication BLOB CHECK(length(publication) BETWEEN 1 AND 8192),report BLOB CHECK(length(report) BETWEEN 1 AND 512),phase TEXT NOT NULL CHECK(phase IN ('Install','Report','Reported','Obsolete','Revoked')),consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)));
-        CREATE INDEX receive_pending ON receive_tasks(phase,id);
-        PRAGMA application_id=${APP};PRAGMA user_version=2;`);
-          db.prepare('INSERT INTO receive_meta(id,genesis,recipient) VALUES(1,?,?)').run(org, self);
-        }).immediate();
+
+    const observePin = makeSqliteLedgerPin({
+      db,
+      table: 'receive_meta',
+      genesis: org,
+      bindings: { recipient: self },
+      error: fail,
     });
     const current = () =>
       Effect.gen(function* () {
         yield* sql(guard);
         const view = yield* lookup();
-        yield* sql(guard);
-        yield* Effect.fromResult(requireLedgerContinuation(view, view));
-        if (!view.genesis.equals(anchor)) return yield* fail('context-changed');
-        if (observed) yield* Effect.fromResult(requireLedgerContinuation(observed, view));
-        observed = view;
-        yield* sql(() =>
-          db
-            .transaction(() => {
-              guard();
-              const pin = db
-                .prepare('SELECT genesis,recipient,head,count FROM receive_meta WHERE id=1')
-                .get() as
-                | { genesis: unknown; recipient: unknown; head: unknown; count: unknown }
-                | undefined;
-              if (!pin || pin.genesis !== org || pin.recipient !== self) throw fail('corrupt');
-              if (pin.head !== null) {
-                if (
-                  !(pin.head instanceof Uint8Array) ||
-                  pin.head.length !== 32 ||
-                  typeof pin.count !== 'number' ||
-                  !Number.isSafeInteger(pin.count) ||
-                  pin.count < 1
-                )
-                  throw fail('corrupt');
-                const known = hasVerifiedCheckpoint(view, {
-                  head: Result.getOrThrow(Bytes.recordHash(pin.head)),
-                  length: pin.count,
-                });
-                if (Result.isFailure(known) || !known.success) throw fail('rollback');
-              } else if (pin.count !== null) throw fail('corrupt');
-              if (
-                db
-                  .prepare('UPDATE receive_meta SET head=?,count=? WHERE id=1')
-                  .run(view.head.toBytes(), view.length).changes !== 1
-              )
-                throw fail('corrupt');
-              const saved = db
-                .prepare('SELECT genesis,recipient,head,count FROM receive_meta WHERE id=1')
-                .get() as
-                | { genesis: unknown; recipient: unknown; head: unknown; count: unknown }
-                | undefined;
-              if (
-                saved?.genesis !== org ||
-                saved.recipient !== self ||
-                !(saved.head instanceof Uint8Array) ||
-                saved.count !== view.length ||
-                !bytesEqual(saved.head, view.head.toBytes())
-              )
-                throw fail('corrupt');
-            })
-            .immediate()
-        );
+        yield* sql(() => {
+          guard();
+          observePin(view);
+        });
         return view;
       });
     const keys = yield* makeSqliteProtectedEpochKeys({
@@ -214,7 +161,6 @@ export function makeSqliteEpochReceiver(input: {
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closed = true;
-        observed = undefined;
       })
     );
     const parse = (row: Record<string, unknown>): Task => {

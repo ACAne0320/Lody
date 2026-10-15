@@ -92,10 +92,18 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
 - Host header3/update and position-bound header4/snapshot admission lives under
   `./content/streams`: genuine current writer, submitting signer, resource/model/epoch
   and complete original precede forwarding. Historical authentication grants no new
-  write right. Snapshot publication retains exact signer/offset/body and current
-  receipt; uncertain native outcomes remain Pending, old retries never republish.
+  write right. Snapshot publication retains exact signer/offset/digest identities;
+  only current/Pending retain bodies, and accepting a new current removes the old
+  current body atomically. Archived Accepted retries never republish or rewind current.
+  Uncertain native outcomes remain Pending.
   One resource/model owner serializes native writes through actual settlement.
 
 - Current formats: no legacy imports, dual decoders or schema upgrades. Reject unsupported input without rewriting; keep current reopen/history.
 
 - Receive/distribution/history share one receiver-owned protected store; borrowers settle before owner close.
+
+- SQLite adapters share current-file setup and bound metadata/pin checks. Verify
+  stored ledger records on open, retain transactional and first-original readback,
+  and advance rollback pins only when verified head/count advances. Do not audit
+  schemas/triggers/external-write counters or reread old rows on every operation
+  to defend against a compromised local client/OS.

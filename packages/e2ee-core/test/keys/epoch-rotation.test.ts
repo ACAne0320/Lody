@@ -1316,7 +1316,7 @@ describe('durable local epoch rotation', () => {
             failureCode(yield* Effect.exit(rotation.resume()), 'corrupt');
             expect(db.prepare('SELECT count FROM epoch_rotation_meta').get()).toEqual({ count: 4 });
             selected = before;
-            failureCode(yield* Effect.exit(rotation.resume()), 'checkpoint-mismatch');
+            failureCode(yield* Effect.exit(rotation.resume()), 'context-changed');
             db.exec('DROP TRIGGER ignore_pin');
             selected = f.view();
             expect(yield* rotation.resume()).toMatchObject({ outcome: 'Conflict' });

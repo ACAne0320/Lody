@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Effect, Result, Schema, Semaphore } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
@@ -52,11 +51,27 @@ export const makeLabWorkspaceCreationRequest = Effect.fnUntraced(function* (inpu
       try: work,
       catch: (error) => (error instanceof LabWorkspaceCreationError ? error : fail('storage')),
     });
-  if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-  const db = yield* Effect.acquireRelease(
-    sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-    (value) => sql(() => value.close()).pipe(Effect.orDie)
-  );
+  const db = yield* openSqliteStore({
+    path,
+    mode,
+    applicationId: APP,
+    version: 1,
+    error: fail,
+    initialize: (connection) => {
+      connection
+        .transaction(() => {
+          connection.exec(
+            `CREATE TABLE creation_request(id INTEGER PRIMARY KEY CHECK(id=1),original BLOB NOT NULL,receipt TEXT,consumed INTEGER NOT NULL CHECK(consumed IN (0,1))) STRICT;`
+          );
+          if (
+            connection.prepare('INSERT INTO creation_request VALUES(1,?,NULL,0)').run(original)
+              .changes !== 1
+          )
+            throw fail('storage');
+        })
+        .immediate();
+    },
+  });
   let closed = false;
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
@@ -77,24 +92,7 @@ export const makeLabWorkspaceCreationRequest = Effect.fnUntraced(function* (inpu
       throw fail('invalid-input');
     return Object.freeze(receipt);
   };
-  yield* sql(() => {
-    if (mode === 'create')
-      db.transaction(() => {
-        db.exec(`PRAGMA application_id=${APP};PRAGMA user_version=1;
-        CREATE TABLE creation_request(id INTEGER PRIMARY KEY CHECK(id=1),original BLOB NOT NULL,receipt TEXT,consumed INTEGER NOT NULL CHECK(consumed IN (0,1))) STRICT;`);
-        if (
-          db.prepare('INSERT INTO creation_request VALUES(1,?,NULL,0)').run(original).changes !== 1
-        )
-          throw fail('storage');
-      }).immediate();
-    else if (
-      db.pragma('application_id', { simple: true }) !== APP ||
-      db.pragma('user_version', { simple: true }) !== 1
-    )
-      throw fail('corrupt');
-    db.pragma('journal_mode=WAL');
-    db.pragma('synchronous=FULL');
-  });
+
   const read = () => {
     guard();
     const row = db

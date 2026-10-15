@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result } from 'effect';
 import { Bytes, verifySignature } from '@lody/e2ee-core';
@@ -35,25 +34,16 @@ export const openLabJoinSession = Effect.fn('Lab.openJoinSession')(function* (
     return yield* new LabJoinSessionError({ code: 'context' });
   const sql = <A>(work: () => A) =>
     Effect.try({ try: work, catch: () => new LabJoinSessionError({ code: 'storage' }) });
-  const db = yield* Effect.acquireRelease(
-    sql(() => {
-      if (config.mode === 'create') closeSync(openSync(config.path, 'wx', 0o600));
-      return new Database(config.path, { fileMustExist: true });
-    }),
-    (value) => Effect.sync(() => value.close())
-  );
-  yield* sql(() => {
-    db.pragma('journal_mode=WAL');
-    db.pragma('synchronous=FULL');
-    if (config.mode === 'create')
-      db.exec(
-        'PRAGMA application_id=1279609418; PRAGMA user_version=1; CREATE TABLE pending_join(id INTEGER PRIMARY KEY CHECK(id=1),org TEXT NOT NULL,device TEXT NOT NULL,original TEXT NOT NULL CHECK(length(original)<=8192));'
-      );
-    else if (
-      db.pragma('application_id', { simple: true }) !== 1279609418 ||
-      db.pragma('user_version', { simple: true }) !== 1
-    )
-      throw new Error('schema');
+  const db = yield* openSqliteStore({
+    path: config.path,
+    mode: config.mode,
+    applicationId: 1279609418,
+    version: 1,
+    error: () => new LabJoinSessionError({ code: 'storage' }),
+    initialize: (connection) =>
+      connection.exec(
+        'CREATE TABLE pending_join(id INTEGER PRIMARY KEY CHECK(id=1),org TEXT NOT NULL,device TEXT NOT NULL,original TEXT NOT NULL CHECK(length(original)<=8192));'
+      ),
   });
   const original =
     config.mode === 'create'

@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result, Schema } from 'effect';
 import {
@@ -59,11 +58,22 @@ export const makeLabSnapshotCache = Effect.fnUntraced(function* (input: {
     });
   if (!isAbsolute(path) || (mode !== 'create' && mode !== 'open'))
     return yield* fail('invalid-input');
-  if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-  const db = yield* Effect.acquireRelease(
-    sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-    (value) => sql(() => value.close()).pipe(Effect.orDie)
-  );
+  const db = yield* openSqliteStore({
+    path,
+    mode,
+    applicationId: app,
+    version: 1,
+    error: fail,
+    initialize: (connection) => {
+      connection
+        .transaction(() =>
+          connection.exec(
+            `CREATE TABLE snapshots(genesis BLOB NOT NULL CHECK(length(genesis)=32),head BLOB NOT NULL CHECK(length(head)=32),count INTEGER NOT NULL CHECK(count>0),endorser BLOB NOT NULL CHECK(length(endorser)=32),snapshot BLOB NOT NULL CHECK(length(snapshot)>0 AND length(snapshot)<=${maxBytes}),PRIMARY KEY(genesis,head,count,endorser)) STRICT;`
+          )
+        )
+        .immediate();
+    },
+  });
   let closed = false;
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
@@ -73,20 +83,7 @@ export const makeLabSnapshotCache = Effect.fnUntraced(function* (input: {
   const guard = () => {
     if (closed) throw fail('closed');
   };
-  yield* sql(() => {
-    if (mode === 'create')
-      db.transaction(() =>
-        db.exec(`PRAGMA application_id=${app}; PRAGMA user_version=1;
-      CREATE TABLE snapshots(genesis BLOB NOT NULL CHECK(length(genesis)=32),head BLOB NOT NULL CHECK(length(head)=32),count INTEGER NOT NULL CHECK(count>0),endorser BLOB NOT NULL CHECK(length(endorser)=32),snapshot BLOB NOT NULL CHECK(length(snapshot)>0 AND length(snapshot)<=${maxBytes}),PRIMARY KEY(genesis,head,count,endorser)) STRICT;`)
-      ).immediate();
-    else if (
-      db.pragma('application_id', { simple: true }) !== app ||
-      db.pragma('user_version', { simple: true }) !== 1
-    )
-      throw fail('corrupt');
-    db.pragma('journal_mode=WAL');
-    db.pragma('synchronous=FULL');
-  });
+
   const key = (trust: SnapshotTrust) =>
     [
       Buffer.from(trust.genesis.toBytes()),

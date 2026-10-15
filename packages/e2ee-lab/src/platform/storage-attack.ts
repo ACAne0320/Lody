@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { openSqliteConnection } from '@lody/e2ee-core/storage/sqlite';
 import { Data, Effect, Result, Schema } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 export const LabStorageMutation = Schema.Struct({
@@ -45,7 +45,7 @@ export const applyLabStorageMutation = Effect.fnUntraced(function* (
     return yield* fail('unsupported-stream-table');
   return yield* Effect.acquireUseRelease(
     Effect.try({
-      try: () => new Database(path, { fileMustExist: true }),
+      try: () => openSqliteConnection(path, { fileMustExist: true }),
       catch: storageError,
     }),
     (db) =>

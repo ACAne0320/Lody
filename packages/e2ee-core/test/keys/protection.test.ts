@@ -748,3 +748,111 @@ it.each([0, 2] as const)(
     ).toBe(true);
   }
 );
+
+describe('protected store repair and read-only authority pins', () => {
+  it('replaces only an unreadable blob with a newly protected and independently verified key', async () => {
+    const f = envelopeFixture(),
+      native = synthetic(),
+      dbPath = file();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* makeSqliteProtectedEpochKeys({
+            ...config(f, native.protector),
+            path: dbPath,
+            mode: 'create',
+          });
+          yield* store.saveAndReload(0, f.secret);
+        })
+      )
+    );
+    const disk = new Database(dbPath);
+    const unreadable = new Uint8Array([1, 2, 3]);
+    disk.prepare('UPDATE protected_epoch_keys SET blob=? WHERE epoch=0').run(unreadable);
+    disk.close();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bad = yield* makeSqliteProtectedEpochKeys({
+            ...config(f, { ...native.protector, protect: async () => new Uint8Array([4, 5, 6]) }),
+            path: dbPath,
+            mode: 'open',
+          });
+          expect(Result.isFailure(yield* Effect.result(bad.saveAndReload(0, f.secret)))).toBe(true);
+        })
+      )
+    );
+    const unchanged = new Database(dbPath);
+    expect(
+      new Uint8Array(
+        (
+          unchanged.prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0').get() as {
+            blob: Uint8Array;
+          }
+        ).blob
+      )
+    ).toEqual(unreadable);
+    unchanged.close();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* makeSqliteProtectedEpochKeys({
+            ...config(f, native.protector),
+            path: dbPath,
+            mode: 'open',
+          });
+          expect(Result.isSuccess(yield* Effect.result(store.saveAndReload(0, f.secret)))).toBe(
+            true
+          );
+          const restored = yield* store.read(0);
+          expect(ok(commitEpochKey(f.context.genesis, 0, restored))).toEqual(
+            ok(commitEpochKey(f.context.genesis, 0, f.secret))
+          );
+        })
+      )
+    );
+    const repaired = new Database(dbPath);
+    expect(
+      new Uint8Array(
+        (
+          repaired.prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0').get() as {
+            blob: Uint8Array;
+          }
+        ).blob
+      )
+    ).not.toEqual(unreadable);
+    repaired.close();
+  });
+  it('repeated key reads do not write an unchanged ledger pin', async () => {
+    const f = envelopeFixture(),
+      native = synthetic(),
+      dbPath = file();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* makeSqliteProtectedEpochKeys({
+            ...config(f, native.protector),
+            path: dbPath,
+            mode: 'create',
+          });
+          yield* store.saveAndReload(0, f.secret);
+          const observer = yield* Effect.acquireRelease(
+            Effect.sync(() => new Database(dbPath)),
+            (db) => Effect.sync(() => db.close())
+          );
+          observer.exec(
+            'CREATE TABLE observed_pin_writes(n INTEGER);INSERT INTO observed_pin_writes VALUES(0);CREATE TRIGGER count_pin_write AFTER UPDATE ON protected_key_meta BEGIN UPDATE observed_pin_writes SET n=n+1;END;'
+          );
+          const before = observer.prepare('SELECT n FROM observed_pin_writes').get();
+          for (let index = 0; index < 4; index++) {
+            const key = yield* store.read(0);
+            expect(ok(commitEpochKey(f.context.genesis, 0, key))).toEqual(
+              ok(commitEpochKey(f.context.genesis, 0, f.secret))
+            );
+          }
+          expect(observer.prepare('SELECT n FROM observed_pin_writes').get()).toEqual(before);
+        })
+      )
+    );
+  });
+});

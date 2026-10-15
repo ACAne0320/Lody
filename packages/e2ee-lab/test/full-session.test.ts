@@ -893,7 +893,7 @@ it('durably retries an unadmitted join original after a lost receipt, then start
           ).toBe(false);
           expect(yield* session.text('loro')).toBe('only admitted readers');
           expect(Result.isFailure(yield* Effect.result(session.pull('loro')))).toBe(true);
-          expect(yield* session.documentStatus('loro')).toBe('document-stopped');
+          expect(yield* session.documentStatus('loro')).toBe('active');
           expect(Result.isFailure(yield* Effect.result(session.keyRound()))).toBe(true);
           const stored = new Database(file('keys'), { readonly: true });
           try {

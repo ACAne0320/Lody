@@ -8,6 +8,7 @@
     "./ledger": "./src/ledger/index.ts",
     "./submission": "./src/submission/index.ts",
     "./submission/sqlite": "./src/submission/sqlite.ts",
+    "./storage/sqlite": "./src/storage/sqlite.ts",
     "./signing": "./src/signing.ts",
     "./content": "./src/content/index.ts",
     "./keys": "./src/keys/index.ts",

@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { openSqliteConnection } from '@lody/e2ee-core/storage/sqlite';
 import { appendFileSync, existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 export interface LabOriginalRequest {
@@ -31,7 +31,7 @@ export function capturePreparedInputs(directory: string, actor: string): LabPrep
   const outbox: { slot: string; frameHex: string }[] = [];
   let rotation: LabPreparedInputs['rotation'];
   if (existsSync(outboxPath)) {
-    const db = new Database(outboxPath, { readonly: true, fileMustExist: true });
+    const db = openSqliteConnection(outboxPath, { readonly: true, fileMustExist: true });
     try {
       for (const row of db.prepare('SELECT slot,frame FROM epoch_delivery').all() as {
         slot: string;
@@ -43,7 +43,7 @@ export function capturePreparedInputs(directory: string, actor: string): LabPrep
     }
   }
   if (existsSync(rotationPath)) {
-    const db = new Database(rotationPath, { readonly: true, fileMustExist: true });
+    const db = openSqliteConnection(rotationPath, { readonly: true, fileMustExist: true });
     try {
       const candidate = db
         .prepare('SELECT * FROM epoch_rotation_candidates WHERE outcome IS NULL AND consumed=0')
@@ -67,7 +67,9 @@ export function capturePreparedInputs(directory: string, actor: string): LabPrep
  * must match exactly; this never overwrites state or selects ledger authority. */
 export function seedPreparedInputs(directory: string, actor: string, prepared: LabPreparedInputs) {
   if (prepared.outbox.length) {
-    const db = new Database(join(directory, `${actor}-outbox.sqlite`), { fileMustExist: true });
+    const db = openSqliteConnection(join(directory, `${actor}-outbox.sqlite`), {
+      fileMustExist: true,
+    });
     try {
       db.transaction(() => {
         for (const row of prepared.outbox) {
@@ -109,7 +111,9 @@ export function seedPreparedInputs(directory: string, actor: string, prepared: L
     const values = names.map((name) =>
       blobNames.includes(name) ? Buffer.from(String(row[name]), 'hex') : row[name]
     );
-    const db = new Database(join(directory, `${actor}-rotation.sqlite`), { fileMustExist: true });
+    const db = openSqliteConnection(join(directory, `${actor}-rotation.sqlite`), {
+      fileMustExist: true,
+    });
     try {
       const prior = db
         .prepare('SELECT record FROM epoch_rotation_candidates WHERE id=?')

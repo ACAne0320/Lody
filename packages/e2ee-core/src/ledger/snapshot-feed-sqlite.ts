@@ -1,9 +1,8 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { Effect, Result, Schema } from 'effect';
 import * as Bytes from '../bytes';
 import { bytesEqual } from '../cbor';
+import { openSqliteStore } from '../storage/sqlite';
 import { extendLedgerEffect, type LedgerCheckpoint } from './index';
 import {
   verifyLedgerSnapshot,
@@ -136,11 +135,40 @@ export const makeSqliteSnapshotLedgerFeed = Effect.fnUntraced(function* (
       try: work,
       catch: (error) => (error instanceof LedgerFeedError ? error : fail('storage')),
     });
-  if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-  const db = yield* Effect.acquireRelease(
-    sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-    (handle) => sql(() => handle.close()).pipe(Effect.orDie)
-  );
+  const db = yield* openSqliteStore({
+    path,
+    mode,
+    applicationId: APP,
+    version: 1,
+    error: fail,
+    initialize: (connection) => {
+      connection.exec(`CREATE TABLE snapshot_feed_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis BLOB NOT NULL CHECK(length(genesis)=32),snapshot BLOB NOT NULL CHECK(length(snapshot) BETWEEN 1 AND ${MAX_SNAPSHOT_BYTES}),originHead BLOB NOT NULL CHECK(length(originHead)=32),originCount INTEGER NOT NULL CHECK(originCount>0),originOffset TEXT NOT NULL,head BLOB NOT NULL CHECK(length(head)=32),count INTEGER NOT NULL,offset TEXT NOT NULL,bytes INTEGER NOT NULL);
+        CREATE TABLE snapshot_feed_records(position INTEGER PRIMARY KEY,record BLOB NOT NULL CHECK(length(record) BETWEEN 1 AND 8192));`);
+      if (
+        connection
+          .prepare('INSERT INTO snapshot_feed_meta VALUES(1,?,?,?,?,?,?,?,?,?)')
+          .run(
+            genesis.toBytes(),
+            snapshot,
+            config.view.head.toBytes(),
+            config.view.length,
+            originOffset,
+            config.view.head.toBytes(),
+            config.view.length,
+            originOffset,
+            snapshot.length
+          ).changes !== 1
+      )
+        throw fail('corrupt');
+    },
+    validate: (connection) => {
+      const row = connection.prepare('SELECT genesis FROM snapshot_feed_meta WHERE id=1').get() as
+        | { genesis: unknown }
+        | undefined;
+      if (!(row?.genesis instanceof Uint8Array) || !bytesEqual(row.genesis, genesis.toBytes()))
+        throw fail('corrupt');
+    },
+  });
   let closed = false;
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
@@ -150,37 +178,6 @@ export const makeSqliteSnapshotLedgerFeed = Effect.fnUntraced(function* (
   const guard = () => {
     if (closed) throw fail('closed');
   };
-  yield* sql(() => {
-    if (mode === 'create') {
-      db.transaction(() => {
-        db.exec(`PRAGMA application_id=${APP}; PRAGMA user_version=1;
-CREATE TABLE snapshot_feed_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis BLOB NOT NULL CHECK(length(genesis)=32),snapshot BLOB NOT NULL CHECK(length(snapshot) BETWEEN 1 AND ${MAX_SNAPSHOT_BYTES}),originHead BLOB NOT NULL CHECK(length(originHead)=32),originCount INTEGER NOT NULL CHECK(originCount>0),originOffset TEXT NOT NULL,head BLOB NOT NULL CHECK(length(head)=32),count INTEGER NOT NULL,offset TEXT NOT NULL,bytes INTEGER NOT NULL);
-CREATE TABLE snapshot_feed_records(position INTEGER PRIMARY KEY,record BLOB NOT NULL CHECK(length(record) BETWEEN 1 AND 8192));`);
-        if (
-          db
-            .prepare('INSERT INTO snapshot_feed_meta VALUES(1,?,?,?,?,?,?,?,?,?)')
-            .run(
-              genesis.toBytes(),
-              snapshot,
-              config.view.head.toBytes(),
-              config.view.length,
-              originOffset,
-              config.view.head.toBytes(),
-              config.view.length,
-              originOffset,
-              snapshot.length
-            ).changes !== 1
-        )
-          throw fail('corrupt');
-      }).immediate();
-    } else if (
-      db.pragma('application_id', { simple: true }) !== APP ||
-      db.pragma('user_version', { simple: true }) !== 1
-    )
-      throw fail('corrupt');
-    db.pragma('journal_mode=WAL');
-    db.pragma('synchronous=FULL');
-  });
   const read = () => {
     guard();
     const parsed = Schema.decodeUnknownResult(Meta)(
@@ -256,29 +253,34 @@ CASE WHEN length(offset) BETWEEN 1 AND 1024 THEN offset ELSE NULL END AS offset,
     )
   );
   let state: LedgerFeedState = { view: verified, offset: initial.row.offset, bootstrap: false },
-    originals = initial.records,
     totalBytes = initial.row.bytes;
-  const matches = () => {
-    const actual = read();
+  const checkPoint = (expectedState = state, expectedBytes = totalBytes) => {
+    guard();
+    const row = db
+      .prepare('SELECT genesis,head,count,offset,bytes FROM snapshot_feed_meta WHERE id=1')
+      .get() as
+      | { genesis: Uint8Array; head: Uint8Array; count: number; offset: string; bytes: number }
+      | undefined;
     if (
-      !bytesEqual(actual.row.head, state.view.head.toBytes()) ||
-      actual.row.count !== state.view.length ||
-      actual.row.offset !== state.offset ||
-      actual.row.bytes !== totalBytes ||
-      actual.records.length !== originals.length
+      !row ||
+      !(row.genesis instanceof Uint8Array) ||
+      !bytesEqual(row.genesis, genesis.toBytes()) ||
+      !(row.head instanceof Uint8Array) ||
+      !bytesEqual(row.head, expectedState.view.head.toBytes()) ||
+      row.count !== expectedState.view.length ||
+      row.offset !== expectedState.offset ||
+      row.bytes !== expectedBytes
     )
       throw fail('conflict');
-    for (let index = 0; index < originals.length; index++)
-      if (!bytesEqual(actual.records[index]!, originals[index]!)) throw fail('conflict');
   };
-  // Native verification may yield. Re-read the captured originals after it settles.
-  yield* sql(() => db.transaction(matches).deferred());
+  // Verification can yield: reject a concurrent append at this metadata point.
+  yield* sql(() => checkPoint());
   return Object.freeze({
     current: () =>
       sql(() =>
         db
           .transaction(() => {
-            matches();
+            checkPoint();
             return { ...state };
           })
           .deferred()
@@ -286,7 +288,7 @@ CASE WHEN length(offset) BETWEEN 1 AND 1024 THEN offset ELSE NULL END AS offset,
     accept: Effect.fnUntraced(function* (page: LedgerReadPage, checkpoint: LedgerCheckpoint) {
       const observed = state;
       const copied = yield* sql(() => {
-        db.transaction(matches).deferred();
+        checkPoint();
         const incoming = page.records;
         if (!Array.isArray(incoming) || incoming.length > 4096) throw fail('read-too-large');
         const count = incoming.length,
@@ -309,15 +311,14 @@ CASE WHEN length(offset) BETWEEN 1 AND 1024 THEN offset ELSE NULL END AS offset,
         };
       });
       const next = yield* prepareLedgerPageEffect(observed, copied, checkpoint);
-      const retained = [...originals, ...copied.records],
-        bytes = retained.reduce((size, record) => size + record.length, snapshot.length);
+      const bytes = copied.records.reduce((size, record) => size + record.length, totalBytes);
       if (next.view.length > budget.maxRecords || bytes > budget.maxBytes)
         return yield* fail('read-too-large');
       yield* sql(() =>
         db
           .transaction(() => {
             if (state !== observed) throw fail('conflict');
-            matches();
+            checkPoint();
             const insert = db.prepare(
               'INSERT INTO snapshot_feed_records(position,record) VALUES(?,?)'
             );
@@ -332,24 +333,24 @@ CASE WHEN length(offset) BETWEEN 1 AND 1024 THEN offset ELSE NULL END AS offset,
                 .run(next.view.head.toBytes(), next.view.length, next.offset, bytes).changes !== 1
             )
               throw fail('corrupt');
-            // Last DML is above. Audit all origin bytes, metadata and originals now;
-            // later INSERT/meta triggers cannot mutate an already checked prefix.
-            const final = read();
-            if (
-              !bytesEqual(final.row.head, next.view.head.toBytes()) ||
-              final.row.count !== next.view.length ||
-              final.row.offset !== next.offset ||
-              final.row.bytes !== bytes ||
-              final.records.length !== retained.length
-            )
-              throw fail('corrupt');
-            for (let index = 0; index < retained.length; index++)
-              if (!bytesEqual(final.records[index]!, retained[index]!)) throw fail('corrupt');
+            checkPoint(next, bytes);
+            const readOriginal = db.prepare(
+              'SELECT record FROM snapshot_feed_records WHERE position=?'
+            );
+            for (let index = 0; index < copied.records.length; index++) {
+              const row = readOriginal.get(observed.view.length + index + 1) as
+                | { record: unknown }
+                | undefined;
+              if (
+                !(row?.record instanceof Uint8Array) ||
+                !bytesEqual(row.record, copied.records[index]!)
+              )
+                throw fail('corrupt');
+            }
           })
           .immediate()
       );
       state = next;
-      originals = retained;
       totalBytes = bytes;
       return { ...state };
     }),

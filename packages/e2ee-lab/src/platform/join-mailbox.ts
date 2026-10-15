@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result } from 'effect';
 import { Bytes, verifySignature } from '@lody/e2ee-core';
@@ -91,38 +90,39 @@ export function makeLabJoinMailbox(input: {
       });
     if (typeof path !== 'string' || !isAbsolute(path) || (mode !== 'create' && mode !== 'open'))
       return yield* fail('invalid-input');
-    if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-    const db = yield* Effect.acquireRelease(
-      sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-      (value) => sql(() => value.close()).pipe(Effect.orDie)
-    );
+    const db = yield* openSqliteStore({
+      path,
+      mode,
+      applicationId: APP,
+      version: 1,
+      error: fail,
+      validate: (connection) => {
+        if (
+          (
+            connection.prepare('SELECT genesis FROM join_meta WHERE id=1').get() as
+              | { genesis: string }
+              | undefined
+          )?.genesis !== org
+        )
+          throw fail('corrupt');
+      },
+      initialize: (connection) => {
+        connection
+          .transaction(() => {
+            connection.exec(`CREATE TABLE join_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL) STRICT;
+          CREATE TABLE join_users(user_id TEXT PRIMARY KEY,account TEXT NOT NULL) STRICT;
+          CREATE TABLE join_snapshots(request_id TEXT PRIMARY KEY,endorser TEXT NOT NULL,body TEXT NOT NULL) STRICT;
+          CREATE TABLE join_requests(request_id TEXT PRIMARY KEY,user_id TEXT NOT NULL,account TEXT NOT NULL,signer TEXT NOT NULL,body TEXT NOT NULL CHECK(length(body)<=2048)) STRICT;`);
+            connection.prepare('INSERT INTO join_meta(id,genesis) VALUES(1,?)').run(org);
+          })
+          .immediate();
+      },
+    });
     const operations = yield* makeLabOperations();
     const guard = () => {
       if (operations.signal.aborted) throw fail('closed');
     };
-    yield* sql(() => {
-      if (mode === 'create')
-        db.transaction(() => {
-          db.exec(`PRAGMA application_id=${APP}; PRAGMA user_version=1;
-          CREATE TABLE join_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL) STRICT;
-          CREATE TABLE join_users(user_id TEXT PRIMARY KEY,account TEXT NOT NULL) STRICT;
-          CREATE TABLE join_snapshots(request_id TEXT PRIMARY KEY,endorser TEXT NOT NULL,body TEXT NOT NULL) STRICT;
-          CREATE TABLE join_requests(request_id TEXT PRIMARY KEY,user_id TEXT NOT NULL,account TEXT NOT NULL,signer TEXT NOT NULL,body TEXT NOT NULL CHECK(length(body)<=2048)) STRICT;`);
-          db.prepare('INSERT INTO join_meta(id,genesis) VALUES(1,?)').run(org);
-        }).immediate();
-      if (
-        db.pragma('application_id', { simple: true }) !== APP ||
-        db.pragma('user_version', { simple: true }) !== 1 ||
-        (
-          db.prepare('SELECT genesis FROM join_meta WHERE id=1').get() as
-            | { genesis: string }
-            | undefined
-        )?.genesis !== org
-      )
-        throw fail('corrupt');
-      db.pragma('journal_mode=WAL');
-      db.pragma('synchronous=FULL');
-    });
+
     const capture = (credential: Pick<LabCredential, 'account' | 'device' | 'genesis'>) =>
       sql(() => {
         guard();

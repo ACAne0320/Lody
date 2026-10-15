@@ -29,8 +29,11 @@ Follow the package [boundary](../../AGENTS.md) and [record/replay contract](READ
 - Current format only: no legacy-ledger adapters, old-state import, schema conversion or version downgrade. Current-format historical replay and rollback protection remain mandatory.
 
 - I/O owners use cooperative fixed-native verification; the same pure replay owns
-  authority. Persisted bytes are fully reverified on open. SQL version counters
-  detect changes after a complete audit; they never establish ledger trust.
+  authority. Persisted bytes are fully reverified on open. SQL is not authority;
+  compare the verified head/count pin and current metadata point without scanning
+  old rows or SQLite schema/write counters on every operation. Local OS/database
+  tampering is outside the whitepaper threat model. Shared SQLite helpers own file
+  creation, application/version, WAL/FULL and binding checks; unchanged pins are read-only.
 
 - Explicit `./ledger/feed/snapshot/sqlite` begins only at independently qualified
   signed snapshot bytes and an explicit transport locator. Requalify on every open;

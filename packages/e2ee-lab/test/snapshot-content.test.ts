@@ -727,6 +727,12 @@ it('reopens an uncertain snapshot and confirms only its original bytes; older re
             (yield* reopened.gateway.snapshot({ ...request, credential: renewed })).status
           ).toBe(204);
           expect(puts).toBe(2);
+          expect(yield* reopened.store.lookup(offset)).toMatchObject({
+            body: null,
+            phase: 'Accepted',
+            digest: expect.stringMatching(/^[0-9a-f]{64}$/),
+          });
+          expect((yield* reopened.store.current())?.offset).toBe(next.result.nextOffset);
           expect((yield* reopened.store.current())?.body).toEqual(newer);
           const native = yield* Effect.promise(() => raw.readLatestSnapshot());
           expect(native.ok && native.result?.payload.body).toEqual(newer);

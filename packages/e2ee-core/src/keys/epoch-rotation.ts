@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore, makeSqliteLedgerPin } from '../storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Deferred, Effect, Result, Schema, Semaphore } from 'effect';
 import * as Bytes from '../bytes';
@@ -13,7 +12,6 @@ import {
   extendLedger,
   hashRecordBytes,
   hasVerifiedCheckpoint,
-  requireLedgerContinuation,
   type LedgerView,
   type Operation,
 } from '../ledger';
@@ -75,12 +73,6 @@ const Row = Schema.Struct({
   outcome: Schema.NullOr(Schema.Literals(['Committed', 'Conflict'])),
   binding: Schema.NullOr(Schema.Literals(['current', 'historical'])),
   consumed: Schema.Int,
-});
-const Meta = Schema.Struct({
-  genesis: Schema.String,
-  publisher: Schema.String,
-  head: Schema.NullOr(Schema.Uint8Array),
-  count: Schema.NullOr(Schema.Int),
 });
 type Candidate = typeof Row.Type;
 const fail = (code: EpochRotationError['code']) => new EpochRotationError({ code });
@@ -160,71 +152,33 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
     publisher = keyId(publicKey.toBytes());
   if (typeof path !== 'string' || !isAbsolute(path) || (mode !== 'create' && mode !== 'open'))
     return yield* fail('storage');
-  if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-  const db = yield* Effect.acquireRelease(
-    sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-    (handle) => sql(() => handle.close()).pipe(Effect.orDie)
-  );
-  let closed = false,
-    observed: LedgerView | undefined;
+  const db = yield* openSqliteStore({
+    path,
+    mode,
+    applicationId: APP,
+    version: 2,
+    error: fail,
+    initialize(connection) {
+      connection.exec(`CREATE TABLE epoch_rotation_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,publisher TEXT NOT NULL,head BLOB,count INTEGER);
+    CREATE TABLE epoch_rotation_candidates(id TEXT PRIMARY KEY,parent BLOB NOT NULL,parent_count INTEGER NOT NULL,epoch INTEGER NOT NULL,commitment BLOB NOT NULL,record BLOB NOT NULL,envelopes BLOB NOT NULL,blob BLOB NOT NULL,outcome TEXT,binding TEXT,consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)));
+    CREATE UNIQUE INDEX epoch_rotation_active ON epoch_rotation_candidates(consumed) WHERE consumed=0;`);
+      connection
+        .prepare('INSERT INTO epoch_rotation_meta(id,genesis,publisher) VALUES(1,?,?)')
+        .run(org, publisher);
+    },
+    validate(connection) {
+      const meta = connection
+        .prepare('SELECT genesis,publisher FROM epoch_rotation_meta WHERE id=1')
+        .get() as { genesis: unknown; publisher: unknown } | undefined;
+      if (meta?.genesis !== org || meta?.publisher !== publisher) throw fail('corrupt');
+    },
+  });
+  let closed = false;
   const active = new Set<Deferred.Deferred<void>>();
   const serial = yield* Semaphore.make(1);
   const guard = () => {
     if (closed) throw fail('closed');
   };
-  const metadata = () => {
-    let row: typeof Meta.Type;
-    try {
-      row = Schema.decodeUnknownSync(Meta)(
-        db
-          .prepare(`SELECT
-        CASE WHEN length(genesis)=64 THEN genesis END AS genesis,
-        CASE WHEN length(publisher)=64 THEN publisher END AS publisher,
-        CASE WHEN head IS NULL OR length(head)=32 THEN head ELSE x'' END AS head,
-        count FROM epoch_rotation_meta WHERE id=1`)
-          .get()
-      );
-    } catch {
-      throw fail('corrupt');
-    }
-    if (
-      row.genesis !== org ||
-      row.publisher !== publisher ||
-      (row.head === null) !== (row.count === null) ||
-      (row.head !== null &&
-        (row.head.length !== 32 || row.count === null || row.count < 1 || row.count > 0xffffffff))
-    )
-      throw fail('corrupt');
-    return row;
-  };
-  yield* sql(() => {
-    const app = db.pragma('application_id', { simple: true }),
-      version = db.pragma('user_version', { simple: true });
-    if (mode === 'open' && (app !== APP || version !== 2)) throw fail('corrupt');
-    if (
-      mode === 'create' &&
-      (app !== 0 ||
-        version !== 0 ||
-        db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length)
-    )
-      throw fail('corrupt');
-    if (mode === 'open') {
-      metadata();
-    }
-    db.pragma('journal_mode=WAL');
-    db.pragma('synchronous=FULL');
-    if (mode === 'create')
-      db.transaction(() => {
-        db.exec(`CREATE TABLE epoch_rotation_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL,publisher TEXT NOT NULL,head BLOB,count INTEGER);
-        CREATE TABLE epoch_rotation_candidates(id TEXT PRIMARY KEY,parent BLOB NOT NULL,parent_count INTEGER NOT NULL,epoch INTEGER NOT NULL,commitment BLOB NOT NULL,record BLOB NOT NULL,envelopes BLOB NOT NULL,blob BLOB NOT NULL,outcome TEXT,binding TEXT,consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)));
-        CREATE UNIQUE INDEX epoch_rotation_active ON epoch_rotation_candidates(consumed) WHERE consumed=0;
-        PRAGMA application_id=${APP};PRAGMA user_version=2;`);
-        db.prepare('INSERT INTO epoch_rotation_meta(id,genesis,publisher) VALUES(1,?,?)').run(
-          org,
-          publisher
-        );
-      }).immediate();
-  });
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       closed = true;
@@ -246,64 +200,23 @@ export const makeSqliteEpochRotation = Effect.fnUntraced(function* (input: {
           Deferred.doneUnsafe(done, Effect.void);
         })
     );
+  const observePin = makeSqliteLedgerPin({
+    db,
+    table: 'epoch_rotation_meta',
+    genesis: org,
+    bindings: { publisher },
+    error: (code) => fail(code === 'rollback' ? 'context-changed' : code),
+  });
   const current = Effect.fnUntraced(function* () {
     yield* sql(guard);
     const view = yield* lookup();
-    yield* sql(guard);
-    yield* Effect.fromResult(requireLedgerContinuation(view, view));
-    if (!view.genesis.equals(anchor) || view.length > 0xffffffff)
-      return yield* fail('context-changed');
-    if (observed) yield* Effect.fromResult(requireLedgerContinuation(observed, view));
-    // A failed pin write never forgets genuine knowledge in this owner.
-    observed = view;
-    yield* sql(() =>
-      db
-        .transaction(() => {
-          guard();
-          const meta = metadata();
-          if (meta.head !== null) {
-            if (
-              !(meta.head instanceof Uint8Array) ||
-              typeof meta.count !== 'number' ||
-              !Number.isSafeInteger(meta.count) ||
-              meta.count < 1
-            )
-              throw fail('corrupt');
-            const pin = {
-              head: Result.getOrThrow(Bytes.recordHash(meta.head)),
-              length: meta.count,
-            };
-            if (!Result.getOrThrow(hasVerifiedCheckpoint(view, pin))) throw fail('context-changed');
-          }
-          if (
-            db
-              .prepare('UPDATE epoch_rotation_meta SET head=?,count=? WHERE id=1')
-              .run(view.head.toBytes(), view.length).changes !== 1
-          )
-            throw fail('corrupt');
-          const saved = metadata();
-          if (
-            saved?.genesis !== org ||
-            saved.publisher !== publisher ||
-            saved.count !== view.length ||
-            !(saved.head instanceof Uint8Array) ||
-            !bytesEqual(saved.head, view.head.toBytes())
-          )
-            throw fail('corrupt');
-        })
-        .immediate()
-    );
+    yield* sql(() => {
+      guard();
+      observePin(view);
+    });
     return view;
   });
-  const checkPin = (view: LedgerView) => {
-    const meta = metadata();
-    if (
-      meta.count !== view.length ||
-      meta.head === null ||
-      !bytesEqual(meta.head, view.head.toBytes())
-    )
-      throw fail('corrupt');
-  };
+  const checkPin = observePin;
   const manager = (view: LedgerView, removing?: Bytes.MembershipId) => {
     const state = view.inspectState(),
       device = state.devices.get(publisher),

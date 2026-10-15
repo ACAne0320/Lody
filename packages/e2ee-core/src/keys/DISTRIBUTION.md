@@ -32,7 +32,9 @@ local exact-byte remote observation, never recipient installation or key possess
 The delivery ID stays the original immutable sender/recipient/epoch ID. Each retry
 revision has a distinct local task ID; new tasks retain earlier results and their
 explicit acknowledgement. The original outbox bytes win across repair revisions.
-If those bytes remain rejected, the task stays blocked for another sender; there
+The outbox slot does not include the repair revision. Once a recipient rejects
+this sender's original envelope, this sender continues retrying the same bytes;
+its task remains Pending, and the recipient must rely on another sender. There
 is no silent new ciphertext/ID strategy. A transport revision is never authority.
 
 Both methods are finite pages of1–100; blocked tasks do not prevent later selected
@@ -41,13 +43,11 @@ freshness. The caller carries the next hint across the finite round and explicit
 invokes later rounds. No record is skipped to make old Lab failures disappear.
 
 The dedicated version1 sender journal uses0600, WAL/FULL and explicit create/open.
-Every mutation reads back its final original fields and fixed Org/self binding.
-The first complete audit establishes an in-memory baseline. Normal mutations use
-indexed final-row readback and actual change counts while the exact trigger-free
-schema and external-write counters remain unchanged inside the writer transaction.
-Triggers, changed schemas or another connection's writes use the complete scalar
-metadata audit, including unrelated retained rows. Counters detect change; they
-never supply key or ledger authority.
+Each mutation keeps its transaction and reads back the touched task's original fields.
+Capacity uses the indexed unacknowledged count. Local database/schema tampering is
+outside the client/OS threat model: there are no external-write counters, schema
+fingerprints or full-table mutation audits. Ledger authority still comes from the
+genuine verified view, with retained rollback pins and original-byte retries.
 
 `maxTasks` bounds unacknowledged tasks/results (`consumed=0`), not lifetime rows.
 Explicit acknowledgement frees this capacity while retaining the original task,
@@ -58,6 +58,6 @@ borrowed Effects before destroying their owners. Actual protected native operati
 retain/await their own work and wipe owned temporary key copies.
 
 Only an already committed, already protected current key is used. Candidate-key
-creation, pre-commit recovery backup, D12 atomic removal, recovery-vault format and
-permanent publisher-device loss stay under their separate undecided contracts.
+creation, staged atomic removal and vault recovery use their own explicit owners
+and contracts; this distributor does not provide those workflows.
 This module does not enable product E2EE or replace a native OS protection adapter.

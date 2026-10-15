@@ -54,33 +54,27 @@ reopening the same database. This is not a deployed Streams/backend or original
 Lab2 acceptance result. The source Lab2 old failures remain open until its real
 session/SDK/SQLite path consumes these entries and is rerun.
 
-Accept also checks each actual insertion changes one row, reads back its exact original bytes and checks the retained record count/byte total in the same transaction. Ignored or trigger-altered record writes cannot stand in for durable history or advance the position.
-
-After all INSERT and metadata UPDATE statements, accept finally compares every
-retained position/record byte with the operation-owned originals from its verified
-initial history plus this suffix. This bounded full comparison runs inside the same
-transaction with no later DML. Later triggers cannot turn an earlier per-row
-readback or equal byte totals into false durable confirmation. The private original
-list and published view change only after transaction success.
+Accept checks each actual insertion and reads back only the newly written original
+rows, together with the final metadata. This preserves transaction failure and
+first-original semantics without rereading retained history on every mutation.
 
 Page copies read bounded array indices and construct fresh typed arrays without calling caller-provided array methods or iterators. The same owned copies are validated, written and retained; later caller mutation cannot alter expected history. An overridden input `.map` neither lends bytes to the journal nor suppresses validation.
 
 The SDK/CAS consuming layer also restores original transport-cycle screening: every partial-frame request tracks seen opaque offsets, and empty responses cannot change position. Complete assembled signed bytes do not validate a repeated intermediate position.
 
+Opening still verifies every retained signed original against the independently
+provided endpoint. Native verification may yield outside the SQL transaction, so
+metadata must still match the captured position before the view is published.
+Normal append validates its owned suffix before acquiring the writer lock, then
+checks the known local/SQL head, count and cursor to reject competing updates.
 
-Reopening still audits all retained signed originals against an independently
-provided endpoint. Fixed native verification yields cooperatively outside SQL
-transactions; a second complete transactional byte/metadata comparison precedes
-publication, so another connection cannot replace the captured history meanwhile.
-Normal append verifies its owned suffix before acquiring the writer lock, then
-checks that the observed local/SQL point still matches.
-
-A complete first audit permits indexed suffix readback for the exact known
-trigger-free schema with unchanged external-write counters. The transaction still
-checks actual changes and all final metadata, including genesis, after its last
-DML. Changed schemas, triggers or external writes retain full-history readback.
-This avoids a normal O(N) write scan without treating counters or SQL metadata as
-a trusted checkpoint. No snapshot bootstrap or skipped signature check is added.
+The client and operating system are trusted, as in the whitepaper threat model.
+These adapters do not repeatedly inspect SQLite schemas, triggers or external-write
+counters, or scan old rows to detect another local process altering the database.
+The shared SQLite helper owns exclusive creation, application/version checks,
+WAL/FULL setup and fixed meta bindings. SQL remains storage, never authority.
+Rollback pins are compared against genuine verified history and advance only when
+the verified head/count advances; reads at the same point do not rewrite them.
 
 ## Independently qualified snapshot origin
 
@@ -93,7 +87,7 @@ endorser, role, membership or current checkpoint.
 Create verifies the snapshot at its exact point. Accept uses the same genuine
 suffix/page verifier with bootstrap disabled: it cannot skip unknown prefixes or
 deduplicate old records. Original suffixes and position commit atomically, with
-final metadata and byte comparison after the last DML. Open requalifies the
+final metadata and the newly written row readback in that transaction. Open requalifies the
 caller-supplied snapshot and verifies all retained suffixes against the separately
 expected endpoint. Unsupported stores are refused without conversion.
 

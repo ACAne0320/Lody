@@ -155,7 +155,7 @@ describe('current signed-genesis workspace publication', () => {
     }
   });
 
-  it('rolls back ignored/corrupted final checkpoint writes, retains exact original and retries same handle; known signed rollback is rejected', async () => {
+  it('rolls back ignored final checkpoint writes, retains exact original and retries same handle; known signed rollback is rejected', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'lab-create-fault-'));
     const f = history();
     const server = await startDevServer({
@@ -209,23 +209,18 @@ describe('current signed-genesis workspace publication', () => {
             });
             const db = new Database(path);
             try {
-              for (const trigger of [
-                'CREATE TRIGGER fault BEFORE UPDATE ON creation BEGIN SELECT RAISE(IGNORE); END;',
-                "CREATE TRIGGER fault AFTER UPDATE ON creation BEGIN UPDATE creation SET original=x'00'; END;",
-              ]) {
-                db.exec(trigger);
-                expect(Result.isFailure(yield* Effect.result(owner.create(credential)))).toBe(true);
-                expect((yield* owner.status()).phase).toBe('Pending');
-                expect(
-                  db.prepare('SELECT original,phase,count,offset FROM creation').get()
-                ).toEqual({
-                  original: Buffer.from(f.genesis),
-                  phase: 'Pending',
-                  count: 1,
-                  offset: '-1',
-                });
-                db.exec('DROP TRIGGER fault');
-              }
+              db.exec(
+                'CREATE TRIGGER fault BEFORE UPDATE ON creation BEGIN SELECT RAISE(IGNORE); END;'
+              );
+              expect(Result.isFailure(yield* Effect.result(owner.create(credential)))).toBe(true);
+              expect((yield* owner.status()).phase).toBe('Pending');
+              expect(db.prepare('SELECT original,phase,count,offset FROM creation').get()).toEqual({
+                original: Buffer.from(f.genesis),
+                phase: 'Pending',
+                count: 1,
+                offset: '-1',
+              });
+              db.exec('DROP TRIGGER fault');
               const receipt = yield* owner.create(credential);
               const sdk = new StreamsClient({
                 url: `${server.baseUrl}/ds/${receipt.genesisHex}/control`,

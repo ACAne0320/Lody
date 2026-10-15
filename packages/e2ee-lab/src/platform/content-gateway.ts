@@ -12,7 +12,10 @@ import {
   admitStreamsUpdateBatch,
   admitStreamsUpdateBatchEffect,
 } from '@lody/e2ee-core/content/streams';
-import type { makeSqliteSnapshotPublication } from '@lody/e2ee-core/content/snapshot/sqlite';
+import {
+  snapshotPublicationDigest,
+  type makeSqliteSnapshotPublication,
+} from '@lody/e2ee-core/content/snapshot/sqlite';
 import type { LabCredential } from './credentials';
 import { makeLabOperations } from './operation-scope';
 import { makeLabSdkOwner } from './sdk-owner';
@@ -238,7 +241,7 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
             continuationOffset: offset,
           });
           let row = yield* store.lookup(offset);
-          if (row && (row.signer !== signer || !equal(row.body, body)))
+          if (row && (row.signer !== signer || row.digest !== snapshotPublicationDigest(body)))
             return yield* new LabContentGatewayError({ status: 409 });
           const view = yield* current();
           // Receipt bytes do not authenticate a retry; the original signer and exact
@@ -277,6 +280,7 @@ export const makeLabContentGateway = Effect.fnUntraced(function* (input: {
           yield* credentialsValid();
           yield* credentialsValid(row);
           yield* Effect.fromResult(admitStreamsSnapshot(admission(fresh)));
+          if (row.body === null) return yield* new LabContentGatewayError({ status: 409 });
           const reply = yield* invoke(
             `${url}/snapshot/${encodeURIComponent(offset)}`,
             'PUT',

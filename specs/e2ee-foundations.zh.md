@@ -76,3 +76,16 @@ SDK provider 头仅为 [4]，不再在 provider 头里编码 offset，无旧格�
 限制使适配器上限更小。真实 Loro/Flock 消费者用快照和后续增量 bootstrap。
 以上方向已确定，修订稿仍为 draft，待用户审批，不代表产品启用。发布者密钥
 可用性改用[先暂存后提交](e2ee/publisher-key-recoverability.zh.md)，不再保留旧 A/B 提案。
+
+## 本地 SQLite 持久化
+
+白皮书的威胁模型信任客户端及操作系统。当前格式的存储在创建或打开时检查
+application/version 和固定 genesis/recipient 绑定，使用 WAL/FULL 与事务；打开
+时重新验证已存账本记录。SQL 行不建立权威。每次操作保留第一份原件的目标行
+读回及真实账本回滚 pin 比较；head/count 不变时不写 pin。不为检测其他本机进程
+改库而逐次扫描旧行、触发器、schema 或本地写入计数。
+
+快照发布仅为 current 和 Pending 保留密文正文。新快照成为 current 时，在同一
+事务内清除旧 Accepted 正文，保留 offset、signer、SHA-256 摘要、原凭据时间窗口
+和 phase。归档身份的同字节重试仍然幂等，同 offset 的不同字节冲突，旧身份
+不能再次成为 current。容量预算只计算保留正文的行，不计算归档身份。

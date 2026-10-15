@@ -89,7 +89,7 @@ it('keeps a real append owned across plan phases and records both predictions af
             kind: 'join-call',
             actor: 'writer',
             id: 'held-append',
-            expect: { ok: false, refusal: { tag: 'LabContentError', code: 'encrypt_failed' } },
+            expect: { ok: false, refusal: { tag: 'LabContentError', code: 'unauthorized' } },
           },
           { kind: 'call', actor: 'owner', operation: 'pull', document: 'loro', expect: good },
           {

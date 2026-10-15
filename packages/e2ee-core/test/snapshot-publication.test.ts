@@ -52,7 +52,7 @@ describe('durable current snapshot publication identities', () => {
           expect(pending.phase).toBe('Pending');
           expect((yield* store.pending())?.body).toEqual(new Uint8Array([1, 2, 3, 4]));
           const exposed = yield* store.lookup(pending.offset);
-          exposed!.body.fill(0);
+          exposed!.body!.fill(0);
           expect((yield* store.lookup(pending.offset))?.body).toEqual(new Uint8Array([1, 2, 3, 4]));
           for (const conflicting of [
             { ...f.original(), body: new Uint8Array([4, 3, 2, 1]) },
@@ -98,68 +98,138 @@ describe('durable current snapshot publication identities', () => {
     }
   });
 
-  it('rolls back ignored and trigger-rewritten reserve or acceptance mutations, retaining current and exact old ciphertexts', async () => {
+  it('rolls back failed reserve and acceptance transactions and resumes the same original', async () => {
     const f = fixture();
-    const reserveFaults = [
-      'CREATE TRIGGER fault BEFORE INSERT ON snapshot_publications BEGIN SELECT RAISE(IGNORE); END',
-      'CREATE TRIGGER fault AFTER INSERT ON snapshot_publications BEGIN UPDATE snapshot_publications SET body=zeroblob(length(body)) WHERE offset=NEW.offset; END',
-      'CREATE TRIGGER fault BEFORE UPDATE ON snapshot_publication_meta BEGIN SELECT RAISE(IGNORE); END',
-      "CREATE TRIGGER fault AFTER UPDATE ON snapshot_publication_meta BEGIN UPDATE snapshot_publication_meta SET resource='other'; END",
-      "CREATE TRIGGER fault AFTER UPDATE ON snapshot_publication_meta BEGIN UPDATE snapshot_publications SET body=zeroblob(length(body)) WHERE offset='opaque/a'; END",
-      'CREATE TRIGGER fault AFTER INSERT ON snapshot_publications BEGIN UPDATE snapshot_publications SET expiresAt=expiresAt+1 WHERE offset=NEW.offset; END',
-      "CREATE TRIGGER fault AFTER UPDATE ON snapshot_publication_meta BEGIN UPDATE snapshot_publications SET issuedAt=issuedAt+1,expiresAt=expiresAt+1 WHERE offset='opaque/a'; END",
-    ];
-    const acceptFaults = [
-      'CREATE TRIGGER fault BEFORE UPDATE ON snapshot_publications BEGIN SELECT RAISE(IGNORE); END',
-      'CREATE TRIGGER fault AFTER UPDATE ON snapshot_publications BEGIN UPDATE snapshot_publications SET body=zeroblob(length(body)) WHERE offset=NEW.offset; END',
-      'CREATE TRIGGER fault BEFORE UPDATE ON snapshot_publication_meta BEGIN SELECT RAISE(IGNORE); END',
-      "CREATE TRIGGER fault AFTER UPDATE ON snapshot_publication_meta BEGIN UPDATE snapshot_publication_meta SET currentOffset='opaque/a'; END",
-      "CREATE TRIGGER fault AFTER UPDATE ON snapshot_publication_meta BEGIN UPDATE snapshot_publications SET signer='0000000000000000000000000000000000000000000000000000000000000000' WHERE offset='opaque/a'; END",
-      "CREATE TRIGGER fault AFTER UPDATE ON snapshot_publication_meta BEGIN UPDATE snapshot_publications SET body=zeroblob(length(body)) WHERE offset='opaque/a'; END",
-      "CREATE TRIGGER fault BEFORE UPDATE ON snapshot_publication_meta BEGIN SELECT RAISE(ABORT,'injected storage failure'); END",
-      'CREATE TRIGGER fault AFTER UPDATE ON snapshot_publications BEGIN UPDATE snapshot_publications SET expiresAt=expiresAt+1 WHERE offset=NEW.offset; END',
-      "CREATE TRIGGER fault AFTER UPDATE ON snapshot_publication_meta BEGIN UPDATE snapshot_publications SET issuedAt=issuedAt+1,expiresAt=expiresAt+1 WHERE offset='opaque/a'; END",
-    ];
     try {
-      for (const [kind, faults] of [
-        ['reserve', reserveFaults],
-        ['accept', acceptFaults],
-      ] as const) {
-        for (let index = 0; index < faults.length; index++) {
-          const config = f.config(join(f.dir, `${kind}-${index}.sqlite`));
-          await run(
-            Effect.gen(function* () {
-              const store = yield* makeSqliteSnapshotPublication(config);
-              yield* store.accept(yield* store.reserve(f.original()));
-              const pending =
-                kind === 'accept' ? yield* store.reserve(f.original('opaque/b')) : null;
-              const db = new Database(config.path);
-              try {
-                const before = stored(db);
-                db.exec(faults[index]!);
-                const rejected = yield* Effect.result(
-                  kind === 'accept' ? store.accept(pending!) : store.reserve(f.original('opaque/b'))
-                );
-                expect(Result.isFailure(rejected)).toBe(true);
-                expect(stored(db)).toEqual(before);
-                expect((yield* store.current())?.offset).toBe('opaque/a');
-                db.exec('DROP TRIGGER fault');
-                const resumed = pending ?? (yield* store.reserve(f.original('opaque/b')));
-                yield* store.accept(resumed);
-                expect((yield* store.current())?.offset).toBe('opaque/b');
-              } finally {
-                db.close();
-              }
-            })
-          );
-          await run(
-            Effect.gen(function* () {
-              const reopened = yield* makeSqliteSnapshotPublication({ ...config, mode: 'open' });
-              expect((yield* reopened.current())?.offset).toBe('opaque/b');
-            })
-          );
-        }
+      for (const kind of ['reserve', 'accept'] as const) {
+        const config = f.config(join(f.dir, `${kind}.sqlite`));
+        await run(
+          Effect.gen(function* () {
+            const store = yield* makeSqliteSnapshotPublication(config);
+            yield* store.accept(yield* store.reserve(f.original()));
+            const pending = kind === 'accept' ? yield* store.reserve(f.original('opaque/b')) : null;
+            const db = new Database(config.path);
+            try {
+              const before = stored(db);
+              db.exec(
+                "CREATE TRIGGER fault BEFORE UPDATE ON snapshot_publication_meta BEGIN SELECT RAISE(ABORT,'injected storage failure'); END"
+              );
+              expect(
+                Result.isFailure(
+                  yield* Effect.result(
+                    kind === 'accept'
+                      ? store.accept(pending!)
+                      : store.reserve(f.original('opaque/b'))
+                  )
+                )
+              ).toBe(true);
+              expect(stored(db)).toEqual(before);
+              expect((yield* store.current())?.offset).toBe('opaque/a');
+              db.exec('DROP TRIGGER fault');
+              yield* store.accept(pending ?? (yield* store.reserve(f.original('opaque/b'))));
+              expect((yield* store.current())?.offset).toBe('opaque/b');
+            } finally {
+              db.close();
+            }
+          })
+        );
       }
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reclaims superseded bodies so publication can continue beyond the retained-body budget', async () => {
+    const f = fixture(),
+      config = f.config();
+    try {
+      await run(
+        Effect.gen(function* () {
+          const store = yield* makeSqliteSnapshotPublication({
+            ...config,
+            budget: { maxSnapshots: 2, maxBytes: 8 },
+          });
+          const original = f.original();
+          for (let index = 0; index < 128; index++) {
+            const row = yield* store.reserve(
+              f.original(index === 0 ? original.offset : `opaque/${index}`)
+            );
+            yield* store.accept(row);
+          }
+          const old = yield* store.lookup(original.offset);
+          expect(old).toMatchObject({
+            offset: original.offset,
+            phase: 'Accepted',
+            body: null,
+            issuedAt: 10,
+            expiresAt: 20,
+          });
+          expect(old?.digest).toMatch(/^[0-9a-f]{64}$/);
+          expect((yield* store.reserve(original)).body).toBeNull();
+          const conflict = yield* Effect.result(
+            store.reserve({ ...original, body: new Uint8Array([9, 8, 7, 6]) })
+          );
+          expect(Result.isFailure(conflict) && conflict.failure.code).toBe('conflict');
+          yield* store.accept(old!);
+          expect((yield* store.current())?.offset).toBe('opaque/127');
+          const db = new Database(config.path);
+          try {
+            expect(db.prepare('SELECT count,bytes FROM snapshot_publication_meta').get()).toEqual({
+              count: 1,
+              bytes: 4,
+            });
+            expect(db.prepare('SELECT COUNT(*) AS count FROM snapshot_publications').get()).toEqual(
+              { count: 128 }
+            );
+            expect(
+              db
+                .prepare(
+                  'SELECT COUNT(*) AS count FROM snapshot_publications WHERE body IS NOT NULL'
+                )
+                .get()
+            ).toEqual({ count: 1 });
+          } finally {
+            db.close();
+          }
+        })
+      );
+      await run(
+        Effect.gen(function* () {
+          const reopened = yield* makeSqliteSnapshotPublication({
+            ...config,
+            mode: 'open',
+            budget: { maxSnapshots: 2, maxBytes: 8 },
+          });
+          expect((yield* reopened.current())?.offset).toBe('opaque/127');
+          expect((yield* reopened.lookup('opaque/a'))?.body).toBeNull();
+        })
+      );
+      const childInput = join(f.dir, 'retained-child.json');
+      writeFileSync(
+        childInput,
+        JSON.stringify({
+          ...config,
+          genesis: Buffer.from(config.genesis.toBytes()).toString('hex'),
+          lookupOffset: 'opaque/a',
+        })
+      );
+      const output = await execNativeChild(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          fileURLToPath(new URL('./snapshot-publication-reopen.mts', import.meta.url)),
+          childInput,
+        ],
+        { cwd: fileURLToPath(new URL('..', import.meta.url)) }
+      );
+      const observed = JSON.parse(output);
+      expect(observed.pid).not.toBe(process.pid);
+      expect(observed).toMatchObject({
+        current: 'opaque/127',
+        oldPhase: 'Accepted',
+        archived: { offset: 'opaque/a', body: null, digest: expect.any(String), phase: 'Accepted' },
+      });
     } finally {
       rmSync(f.dir, { recursive: true, force: true });
     }
@@ -266,7 +336,7 @@ describe('durable current snapshot publication identities', () => {
     }
   });
 
-  it('refuses fixed-context changes, corrupted reopen and stale handles; capacity does not block recovery or exact retry', async () => {
+  it('refuses fixed-context changes and corrupted reopen; capacity does not block recovery or exact retry', async () => {
     const f = fixture(),
       config = f.config();
     try {
@@ -278,7 +348,7 @@ describe('durable current snapshot publication identities', () => {
           });
           const stale = yield* makeSqliteSnapshotPublication({ ...config, mode: 'open' });
           const row = yield* store.reserve(f.original());
-          expect(Result.isFailure(yield* Effect.result(stale.pending()))).toBe(true);
+          expect((yield* stale.pending())?.offset).toBe(row.offset);
           yield* store.accept(row);
           expect((yield* store.reserve(f.original())).phase).toBe('Accepted');
           expect(

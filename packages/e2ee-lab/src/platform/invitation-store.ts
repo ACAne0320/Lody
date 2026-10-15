@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Effect, Result } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
@@ -34,13 +33,17 @@ export const makeLabInvitationOrigin = Effect.fnUntraced(function* (input: {
     Effect.try({ try: work, catch: () => new LedgerFeedError({ code: 'corrupt' }) });
   if (!isAbsolute(input.path) || !['create', 'open'].includes(input.mode))
     return yield* new LedgerFeedError({ code: 'invalid-frame' });
-  const db = yield* Effect.acquireRelease(
-    sql(() => {
-      if (input.mode === 'create') closeSync(openSync(input.path, 'wx', 0o600));
-      return new Database(input.path, { fileMustExist: true });
-    }),
-    (owner) => Effect.sync(() => owner.close())
-  );
+  const db = yield* openSqliteStore({
+    path: input.path,
+    mode: input.mode,
+    applicationId: 1279609417,
+    version: 1,
+    error: () => new LedgerFeedError({ code: 'corrupt' }),
+    initialize: (connection) =>
+      connection.exec(
+        'CREATE TABLE invitation(id INTEGER PRIMARY KEY CHECK(id=1),pin TEXT NOT NULL,body TEXT NOT NULL) STRICT;'
+      ),
+  });
   if (input.mode === 'create') {
     const receipt = yield* input.mailbox.read(input.requestId);
     if (!receipt) return yield* new LedgerFeedError({ code: 'invalid-frame' });
@@ -49,9 +52,6 @@ export const makeLabInvitationOrigin = Effect.fnUntraced(function* (input: {
     yield* sql(() =>
       db
         .transaction(() => {
-          db.exec(
-            'PRAGMA application_id=1279609417;PRAGMA user_version=1;CREATE TABLE invitation(id INTEGER PRIMARY KEY CHECK(id=1),pin TEXT NOT NULL,body TEXT NOT NULL) STRICT;'
-          );
           db.prepare('INSERT INTO invitation(id,pin,body) VALUES(1,?,?)').run(encodedPin, body);
           const saved = db.prepare('SELECT pin,body FROM invitation WHERE id=1').get() as
             | { pin: string; body: string }
@@ -62,11 +62,6 @@ export const makeLabInvitationOrigin = Effect.fnUntraced(function* (input: {
     );
   }
   const saved = yield* sql(() => {
-    if (
-      db.pragma('application_id', { simple: true }) !== 1279609417 ||
-      db.pragma('user_version', { simple: true }) !== 1
-    )
-      throw new Error('schema');
     return db.prepare('SELECT pin,body FROM invitation WHERE id=1').get() as
       | { pin: string; body: string }
       | undefined;

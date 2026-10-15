@@ -1,6 +1,5 @@
-import Database from 'better-sqlite3';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { randomBytes } from 'node:crypto';
-import { closeSync, openSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result } from 'effect';
 import { Bytes, verifySignature } from '@lody/e2ee-core';
@@ -67,11 +66,17 @@ export function makeLabCredentials(input: {
       });
     if (typeof path !== 'string' || !isAbsolute(path) || (mode !== 'create' && mode !== 'open'))
       return yield* fail('invalid-input');
-    if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-    const db = yield* Effect.acquireRelease(
-      sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-      (value) => sql(() => value.close()).pipe(Effect.orDie)
-    );
+    const db = yield* openSqliteStore({
+      path,
+      mode,
+      applicationId: APP,
+      version: 1,
+      error: fail,
+      initialize: (connection) => {
+        connection.exec(`CREATE TABLE credential_challenges(nonce TEXT PRIMARY KEY,account TEXT NOT NULL,device_hex TEXT NOT NULL,expires_at INTEGER NOT NULL) STRICT;
+          CREATE TABLE credentials(token TEXT PRIMARY KEY,account TEXT NOT NULL,device_hex TEXT NOT NULL,genesis_hex TEXT,issued_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,invalidated INTEGER NOT NULL DEFAULT 0) STRICT;`);
+      },
+    });
     let closed = false;
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -92,21 +97,7 @@ export function makeLabCredentials(input: {
         throw fail('invalid-input');
       return value;
     };
-    yield* sql(() => {
-      if (mode === 'open') {
-        if (
-          db.pragma('application_id', { simple: true }) !== APP ||
-          db.pragma('user_version', { simple: true }) !== 1
-        )
-          throw fail('corrupt');
-      } else {
-        db.exec(`PRAGMA application_id=${APP}; PRAGMA user_version=1;
-          CREATE TABLE credential_challenges(nonce TEXT PRIMARY KEY,account TEXT NOT NULL,device_hex TEXT NOT NULL,expires_at INTEGER NOT NULL) STRICT;
-          CREATE TABLE credentials(token TEXT PRIMARY KEY,account TEXT NOT NULL,device_hex TEXT NOT NULL,genesis_hex TEXT,issued_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,invalidated INTEGER NOT NULL DEFAULT 0) STRICT;`);
-      }
-      db.pragma('journal_mode=WAL');
-      db.pragma('synchronous=FULL');
-    });
+
     const parse = (row: unknown): LabCredential => {
       const value = row as {
         token: string;

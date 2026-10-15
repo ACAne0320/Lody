@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result, Schema } from 'effect';
 import {
@@ -37,11 +36,17 @@ export const makeLabRecoveryVaultStore = Effect.fnUntraced(function* (input: {
       try: work,
       catch: (cause) => (cause instanceof LabRecoveryVaultError ? cause : error('storage')),
     });
-  if (input.mode === 'create') yield* sql(() => closeSync(openSync(input.path, 'wx', 0o600)));
-  const db = yield* Effect.acquireRelease(
-    sql(() => new Database(input.path, { fileMustExist: true })),
-    (value) => sql(() => value.close()).pipe(Effect.orDie)
-  );
+  const db = yield* openSqliteStore({
+    path: input.path,
+    mode: input.mode,
+    applicationId: app,
+    version: 1,
+    error,
+    initialize: (connection) =>
+      connection.exec(
+        `CREATE TABLE vault_entries(vault TEXT NOT NULL,entryId TEXT NOT NULL,revision INTEGER NOT NULL,body BLOB NOT NULL,PRIMARY KEY(vault,entryId)) STRICT;CREATE TABLE vault_index(vault TEXT PRIMARY KEY,entryId TEXT NOT NULL,revision INTEGER NOT NULL,body BLOB NOT NULL) STRICT;CREATE TABLE vault_local(key TEXT PRIMARY KEY,body BLOB NOT NULL) STRICT;`
+      ),
+  });
   let closed = false;
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
@@ -51,22 +56,6 @@ export const makeLabRecoveryVaultStore = Effect.fnUntraced(function* (input: {
   const guard = () => {
     if (closed) throw error('closed');
   };
-  yield* sql(() => {
-    if (input.mode === 'create')
-      db.transaction(() =>
-        db.exec(`PRAGMA application_id=${app};PRAGMA user_version=1;
-      CREATE TABLE vault_entries(vault TEXT NOT NULL,entryId TEXT NOT NULL,revision INTEGER NOT NULL,body BLOB NOT NULL,PRIMARY KEY(vault,entryId)) STRICT;
-      CREATE TABLE vault_index(vault TEXT PRIMARY KEY,entryId TEXT NOT NULL,revision INTEGER NOT NULL,body BLOB NOT NULL) STRICT;
-      CREATE TABLE vault_local(key TEXT PRIMARY KEY,body BLOB NOT NULL) STRICT;`)
-      ).immediate();
-    else if (
-      db.pragma('application_id', { simple: true }) !== app ||
-      db.pragma('user_version', { simple: true }) !== 1
-    )
-      throw error('corrupt');
-    db.pragma('journal_mode=WAL');
-    db.pragma('synchronous=FULL');
-  });
   const parse = (raw: unknown): VaultCiphertext | null => {
     if (raw === undefined || raw === null) return null;
     const decoded = Schema.decodeUnknownResult(Row)(raw);

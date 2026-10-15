@@ -109,9 +109,13 @@ Both admission paths recheck after native work at the host.
 They do not decrypt or prove ciphertext usability; readers still verify AEAD.
 
 `./content/snapshot/sqlite` owns the single-host reference publication journal.
-It binds one Org/resource/model and retains immutable offset/signer/body originals,
-uncertain Pending attempts, Accepted receipts and a current pointer. Different
-bytes at an existing position conflict. Accepted original retries perform no PUT
+It binds one Org/resource/model and retains immutable offset/signer/SHA-256 identities,
+uncertain Pending attempts, Accepted receipts and a current pointer. Only current
+and Pending rows retain ciphertext bodies. Accepting a new current clears older
+Accepted bodies in the same transaction, retaining their first credential window
+and digest. Capacity counts retained bodies, not archived identities. Each lookup
+reads metadata and its selected row; there is no in-memory history or full-table
+audit on each operation. Different bytes at an existing position conflict. Accepted original retries perform no PUT
 or pointer write; native HEAD/tail selection is external, never opaque-offset
 arithmetic. The gateway reserves and reads the original before native PUT, then
 compares actual readback before accepting. Uncertain outcomes remain Pending and

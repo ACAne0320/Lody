@@ -1,10 +1,11 @@
-import Database from 'better-sqlite3';
-import { closeSync, openSync } from 'node:fs';
+import { sha256 } from '@noble/hashes/sha2.js';
+import type Database from 'better-sqlite3';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result, Schema } from 'effect';
 import * as Bytes from '../bytes';
 import { bytesEqual } from '../cbor';
 import { MAX_CONTENT_BYTES } from '../content-format';
+import { openSqliteStore } from '../storage/sqlite';
 
 export class SnapshotPublicationError extends Data.TaggedError('SnapshotPublicationError')<{
   readonly code:
@@ -16,17 +17,23 @@ export class SnapshotPublicationError extends Data.TaggedError('SnapshotPublicat
     | 'busy'
     | 'capacity';
 }> {}
-export interface SnapshotPublicationRow {
+interface SnapshotPublicationIdentity {
   readonly offset: string;
   readonly signer: string;
-  readonly body: Uint8Array;
+  readonly digest: string;
   readonly issuedAt: number;
   readonly expiresAt: number;
-  readonly phase: 'Pending' | 'Accepted';
 }
-type Original = Omit<SnapshotPublicationRow, 'phase'>;
+export type SnapshotPublicationRow = SnapshotPublicationIdentity &
+  (
+    | { readonly phase: 'Pending'; readonly body: Uint8Array }
+    | { readonly phase: 'Accepted'; readonly body: Uint8Array | null }
+  );
+type Original = Omit<SnapshotPublicationIdentity, 'digest'> & { readonly body: Uint8Array };
 const APP = 0x4c455350;
 const fail = (code: SnapshotPublicationError['code']) => new SnapshotPublicationError({ code });
+export const snapshotPublicationDigest = (body: Uint8Array) =>
+  Buffer.from(sha256(body)).toString('hex');
 const validOffset = (offset: unknown): offset is string =>
   typeof offset === 'string' &&
   offset.length > 0 &&
@@ -46,31 +53,24 @@ const Meta = Schema.Struct({
 const Row = Schema.Struct({
   offset: Schema.String,
   signer: Schema.String,
-  body: Schema.Uint8Array,
+  digest: Schema.String,
+  body: Schema.NullOr(Schema.Uint8Array),
   issuedAt: Schema.Int,
   expiresAt: Schema.Int,
   phase: Schema.Literals(['Pending', 'Accepted']),
 });
-const same = (a: SnapshotPublicationRow, b: SnapshotPublicationRow) =>
-  a.offset === b.offset &&
-  a.signer === b.signer &&
-  a.issuedAt === b.issuedAt &&
-  a.expiresAt === b.expiresAt &&
-  a.phase === b.phase &&
-  bytesEqual(a.body, b.body);
-const sameOriginal = (a: Original, b: Original) =>
-  a.offset === b.offset && a.signer === b.signer && bytesEqual(a.body, b.body);
+const sameOriginal = (a: SnapshotPublicationIdentity, b: SnapshotPublicationIdentity) =>
+  a.offset === b.offset && a.signer === b.signer && a.digest === b.digest;
 const own = (row: SnapshotPublicationRow): SnapshotPublicationRow =>
-  Object.freeze({ ...row, body: new Uint8Array(row.body) });
-
+  Object.freeze({
+    ...row,
+    body: row.body === null ? null : new Uint8Array(row.body),
+  }) as SnapshotPublicationRow;
 function captureOriginal(input: Original) {
   return Result.try({
     try: () => {
-      const offset = input.offset,
-        signer = input.signer,
-        source = input.body,
-        issuedAt = input.issuedAt,
-        expiresAt = input.expiresAt;
+      const { offset, signer, issuedAt, expiresAt } = input,
+        source = input.body;
       if (
         !validOffset(offset) ||
         typeof signer !== 'string' ||
@@ -85,17 +85,23 @@ function captureOriginal(input: Original) {
       )
         throw fail('invalid-input');
       Result.getOrThrow(Bytes.signingPublicKey(new Uint8Array(Buffer.from(signer, 'hex'))));
-      return Object.freeze({ offset, signer, body: new Uint8Array(source), issuedAt, expiresAt });
+      const body = new Uint8Array(source);
+      return Object.freeze({
+        offset,
+        signer,
+        body,
+        digest: snapshotPublicationDigest(body),
+        issuedAt,
+        expiresAt,
+      });
     },
     catch: () => fail('invalid-input'),
   });
 }
 
-/** Single-host durable publication identities. Stores exact ciphertext and an
- * uncertain Pending attempt before native PUT. It never validates permissions,
- * chooses a trusted view, orders opaque offsets, or infers native success.
- * Callers accept only after exact actual native readback and serialize their
- * admissions. Native I/O is never held inside these synchronous transactions. */
+/** Current and Pending retain exact native ciphertext. Superseded receipts retain
+ * only their immutable digest/identity; an old retry cannot republish or rewind current.
+ * This single-host journal supplies no permission, offset ordering or native receipt. */
 export const makeSqliteSnapshotPublication = Effect.fnUntraced(function* (input: {
   readonly path: string;
   readonly mode: 'create' | 'open';
@@ -104,10 +110,7 @@ export const makeSqliteSnapshotPublication = Effect.fnUntraced(function* (input:
   readonly model: 'loro' | 'flock';
   readonly budget?: { readonly maxSnapshots: number; readonly maxBytes: number };
 }) {
-  const path = input.path,
-    mode = input.mode,
-    resource = input.resource,
-    model = input.model;
+  const { path, mode, resource, model } = input;
   const genesis = yield* Effect.fromResult(Bytes.genesisHash(input.genesis.toBytes()));
   const maxSnapshots = input.budget?.maxSnapshots ?? 10000,
     maxBytes = input.budget?.maxBytes ?? 64 * 1024 * 1024;
@@ -133,11 +136,47 @@ export const makeSqliteSnapshotPublication = Effect.fnUntraced(function* (input:
       try: work,
       catch: (error) => (error instanceof SnapshotPublicationError ? error : fail('storage')),
     });
-  if (mode === 'create') yield* sql(() => closeSync(openSync(path, 'wx', 0o600)));
-  const db = yield* Effect.acquireRelease(
-    sql(() => new Database(path, { fileMustExist: true, timeout: 1000 })),
-    (value) => sql(() => value.close()).pipe(Effect.orDie)
-  );
+  const meta = (db: Database.Database) => {
+    const parsed = Schema.decodeUnknownResult(Meta)(
+      db
+        .prepare(
+          'SELECT genesis,resource,model,currentOffset,count,bytes FROM snapshot_publication_meta WHERE id=1'
+        )
+        .get()
+    );
+    if (Result.isFailure(parsed)) throw fail('corrupt');
+    const value = parsed.success;
+    if (
+      !bytesEqual(value.genesis, genesis.toBytes()) ||
+      value.resource !== resource ||
+      value.model !== model ||
+      (value.currentOffset !== null && !validOffset(value.currentOffset)) ||
+      value.count < 0 ||
+      value.count > maxSnapshots ||
+      value.bytes < 0 ||
+      value.bytes > maxBytes
+    )
+      throw fail('corrupt');
+    return value;
+  };
+  const db = yield* openSqliteStore({
+    path,
+    mode,
+    applicationId: APP,
+    version: 1,
+    error: fail,
+    initialize: (handle) => {
+      handle.exec(`CREATE TABLE snapshot_publication_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis BLOB NOT NULL CHECK(length(genesis)=32),resource TEXT NOT NULL,model TEXT NOT NULL CHECK(model IN ('loro','flock')),currentOffset TEXT,count INTEGER NOT NULL,bytes INTEGER NOT NULL) STRICT;
+CREATE TABLE snapshot_publications(offset TEXT PRIMARY KEY,signer TEXT NOT NULL CHECK(length(signer)=64),digest TEXT NOT NULL CHECK(length(digest)=64),body BLOB CHECK(body IS NULL OR length(body) BETWEEN 1 AND ${MAX_CONTENT_BYTES}),issuedAt INTEGER NOT NULL CHECK(issuedAt>=0),expiresAt INTEGER NOT NULL CHECK(expiresAt>issuedAt),phase TEXT NOT NULL CHECK(phase IN ('Pending','Accepted')),CHECK(phase='Accepted' OR body IS NOT NULL)) STRICT;
+CREATE UNIQUE INDEX snapshot_one_pending ON snapshot_publications(phase) WHERE phase='Pending';`);
+      handle
+        .prepare('INSERT INTO snapshot_publication_meta VALUES(1,?,?,?,NULL,0,0)')
+        .run(genesis.toBytes(), resource, model);
+    },
+    validate: (handle) => {
+      meta(handle);
+    },
+  });
   let closed = false;
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
@@ -147,122 +186,65 @@ export const makeSqliteSnapshotPublication = Effect.fnUntraced(function* (input:
   const guard = () => {
     if (closed) throw fail('closed');
   };
-  yield* sql(() => {
+  const parse = (raw: unknown): SnapshotPublicationRow => {
+    const parsed = Schema.decodeUnknownResult(Row)(raw);
+    if (Result.isFailure(parsed)) throw fail('corrupt');
+    const row = parsed.success;
     if (
-      mode === 'open' &&
-      (db.pragma('application_id', { simple: true }) !== APP ||
-        db.pragma('user_version', { simple: true }) !== 1)
+      !validOffset(row.offset) ||
+      !/^[0-9a-f]{64}$/.test(row.signer) ||
+      !/^[0-9a-f]{64}$/.test(row.digest) ||
+      row.issuedAt < 0 ||
+      row.expiresAt <= row.issuedAt ||
+      (row.phase === 'Pending' && row.body === null) ||
+      (row.body !== null &&
+        (row.body.length < 1 ||
+          row.body.length > MAX_CONTENT_BYTES ||
+          snapshotPublicationDigest(row.body) !== row.digest))
     )
       throw fail('corrupt');
-    db.pragma('journal_mode=WAL');
-    db.pragma('synchronous=FULL');
-    if (mode === 'create')
-      db.transaction(() => {
-        db.exec(`CREATE TABLE snapshot_publication_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis BLOB NOT NULL CHECK(length(genesis)=32),resource TEXT NOT NULL,model TEXT NOT NULL CHECK(model IN ('loro','flock')),currentOffset TEXT,count INTEGER NOT NULL,bytes INTEGER NOT NULL) STRICT;
-CREATE TABLE snapshot_publications(offset TEXT PRIMARY KEY,signer TEXT NOT NULL CHECK(length(signer)=64),body BLOB NOT NULL CHECK(length(body) BETWEEN 1 AND ${MAX_CONTENT_BYTES}),issuedAt INTEGER NOT NULL CHECK(issuedAt>=0),expiresAt INTEGER NOT NULL CHECK(expiresAt>issuedAt),phase TEXT NOT NULL CHECK(phase IN ('Pending','Accepted'))) STRICT;
-CREATE UNIQUE INDEX snapshot_one_pending ON snapshot_publications(phase) WHERE phase='Pending';
-PRAGMA application_id=${APP}; PRAGMA user_version=1;`);
-        if (
-          db
-            .prepare('INSERT INTO snapshot_publication_meta VALUES(1,?,?,?,NULL,0,0)')
-            .run(genesis.toBytes(), resource, model).changes !== 1
-        )
-          throw fail('corrupt');
-      }).immediate();
-  });
-  const read = () => {
-    guard();
-    const metaResult = Schema.decodeUnknownResult(Meta)(
-      db
-        .prepare(`SELECT
-CASE WHEN length(genesis)=32 THEN genesis ELSE NULL END AS genesis,
-CASE WHEN length(resource) BETWEEN 1 AND 1024 THEN resource ELSE NULL END AS resource,model,
-CASE WHEN currentOffset IS NULL OR length(currentOffset) BETWEEN 1 AND 1024 THEN currentOffset ELSE x'' END AS currentOffset,
-count,bytes FROM snapshot_publication_meta WHERE id=1`)
-        .get()
-    );
-    if (Result.isFailure(metaResult)) throw fail('corrupt');
-    const meta = metaResult.success;
-    if (
-      !bytesEqual(meta.genesis, genesis.toBytes()) ||
-      meta.resource !== resource ||
-      meta.model !== model ||
-      (meta.currentOffset !== null && !validOffset(meta.currentOffset)) ||
-      meta.count < 0 ||
-      meta.count > maxSnapshots ||
-      meta.bytes < 0 ||
-      meta.bytes > maxBytes ||
-      (db.prepare('SELECT COUNT(*) AS n FROM snapshot_publication_meta').get() as { n: number })
-        .n !== 1
-    )
-      throw fail('corrupt');
-    const sizes = db
+    return own(row as SnapshotPublicationRow);
+  };
+  const at = (offset: string) => {
+    const raw = db
       .prepare(
-        'SELECT COUNT(*) AS count,COALESCE(SUM(length(body)),0) AS bytes FROM snapshot_publications'
+        'SELECT offset,signer,digest,body,issuedAt,expiresAt,phase FROM snapshot_publications WHERE offset=?'
       )
-      .get() as { count: number; bytes: number };
-    if (sizes.count !== meta.count || sizes.bytes !== meta.bytes) throw fail('corrupt');
-    const rows = db
-      .prepare(`SELECT
-CASE WHEN length(offset) BETWEEN 1 AND 1024 THEN offset ELSE NULL END AS offset,
-CASE WHEN length(signer)=64 THEN signer ELSE NULL END AS signer,
-CASE WHEN length(body) BETWEEN 1 AND ${MAX_CONTENT_BYTES} THEN body ELSE NULL END AS body,issuedAt,expiresAt,phase
-FROM snapshot_publications ORDER BY offset LIMIT ?`)
-      .all(maxSnapshots);
-    if (rows.length !== meta.count) throw fail('corrupt');
-    const originals = new Map<string, SnapshotPublicationRow>();
-    let pending = 0,
-      accepted = 0;
-    for (const raw of rows) {
-      const parsed = Schema.decodeUnknownResult(Row)(raw);
-      if (Result.isFailure(parsed)) throw fail('corrupt');
-      const row = parsed.success;
-      const original = captureOriginal(row);
-      if (Result.isFailure(original) || originals.has(row.offset)) throw fail('corrupt');
-      originals.set(row.offset, own({ ...original.success, phase: row.phase }));
-      if (row.phase === 'Pending') pending++;
-      else accepted++;
-    }
-    if (
-      pending > 1 ||
-      (accepted === 0 ? meta.currentOffset !== null : meta.currentOffset === null) ||
-      (meta.currentOffset !== null && originals.get(meta.currentOffset)?.phase !== 'Accepted')
-    )
-      throw fail('corrupt');
-    return { originals, currentOffset: meta.currentOffset, bytes: meta.bytes };
+      .get(offset);
+    return raw === undefined ? null : parse(raw);
   };
-  let state = yield* sql(() => db.transaction(read).deferred());
-  const matches = () => {
-    const actual = read();
-    if (
-      actual.currentOffset !== state.currentOffset ||
-      actual.bytes !== state.bytes ||
-      actual.originals.size !== state.originals.size
-    )
-      throw fail('conflict');
-    for (const [offset, original] of state.originals) {
-      const row = actual.originals.get(offset);
-      if (!row || !same(row, original)) throw fail('conflict');
-    }
+  const pending = () => {
+    const raw = db
+      .prepare(
+        "SELECT offset,signer,digest,body,issuedAt,expiresAt,phase FROM snapshot_publications WHERE phase='Pending'"
+      )
+      .get();
+    if (raw === undefined) return null;
+    const row = parse(raw);
+    if (row.phase !== 'Pending') throw fail('corrupt');
+    return row;
   };
-  const audit = (next: typeof state) => {
-    const actual = read();
-    if (
-      actual.currentOffset !== next.currentOffset ||
-      actual.bytes !== next.bytes ||
-      actual.originals.size !== next.originals.size
-    )
-      throw fail('corrupt');
-    for (const [offset, expected] of next.originals) {
-      const stored = actual.originals.get(offset);
-      if (!stored || !same(stored, expected)) throw fail('corrupt');
-    }
+  const current = () => {
+    const position = meta(db).currentOffset;
+    if (position === null) return null;
+    const row = at(position);
+    if (!row || row.phase !== 'Accepted' || row.body === null) throw fail('corrupt');
+    return { ...row, body: row.body };
   };
+  // Startup validates the two retained originals, not all superseded ciphertexts.
+  yield* sql(() =>
+    db
+      .transaction(() => {
+        current();
+        pending();
+      })
+      .deferred()
+  );
   const checked = <A>(work: () => A) =>
     sql(() =>
       db
         .transaction(() => {
-          matches();
+          guard();
           return work();
         })
         .deferred()
@@ -271,75 +253,66 @@ FROM snapshot_publications ORDER BY offset LIMIT ?`)
     lookup: (offset: string) =>
       checked(() => {
         if (!validOffset(offset)) throw fail('invalid-input');
-        const row = state.originals.get(offset);
-        return row ? own(row) : null;
+        meta(db);
+        return at(offset);
       }),
     pending: () =>
       checked(() => {
-        for (const row of state.originals.values()) if (row.phase === 'Pending') return own(row);
-        return null;
+        meta(db);
+        return pending();
       }),
-    current: () =>
-      checked(() =>
-        state.currentOffset === null ? null : own(state.originals.get(state.currentOffset)!)
-      ),
+    current: () => checked(current),
     reserve: Effect.fnUntraced(function* (inputRow: Original) {
       const original = yield* Effect.fromResult(captureOriginal(inputRow));
-      const next = yield* sql(() =>
+      return yield* sql(() =>
         db
           .transaction(() => {
-            matches();
-            const prior = state.originals.get(original.offset);
+            guard();
+            const state = meta(db),
+              prior = at(original.offset);
             if (prior) {
               if (!sameOriginal(prior, original)) throw fail('conflict');
-              // A later credential may confirm the original, never renew its first deadline.
-              return { state, row: prior };
+              return prior; // First credential deadline wins, including archived receipts.
             }
-            for (const row of state.originals.values())
-              if (row.phase === 'Pending') throw fail('busy');
-            if (
-              state.originals.size >= maxSnapshots ||
-              state.bytes + original.body.length > maxBytes
-            )
+            if (pending()) throw fail('busy');
+            if (state.count >= maxSnapshots || state.bytes + original.body.length > maxBytes)
               throw fail('capacity');
-            const row: SnapshotPublicationRow = own({ ...original, phase: 'Pending' });
-            const originals = new Map(state.originals);
-            originals.set(row.offset, row);
-            const proposed = {
-              originals,
-              currentOffset: state.currentOffset,
-              bytes: state.bytes + row.body.length,
-            };
+            db.prepare(
+              'INSERT INTO snapshot_publications VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING'
+            ).run(
+              original.offset,
+              original.signer,
+              original.digest,
+              original.body,
+              original.issuedAt,
+              original.expiresAt,
+              'Pending'
+            );
+            const saved = at(original.offset);
+            if (!saved || !sameOriginal(saved, original)) throw fail('conflict');
             if (
               db
-                .prepare('INSERT INTO snapshot_publications VALUES(?,?,?,?,?,?)')
-                .run(row.offset, row.signer, row.body, row.issuedAt, row.expiresAt, row.phase)
-                .changes !== 1
+                .prepare(
+                  'UPDATE snapshot_publication_meta SET count=count+1,bytes=bytes+? WHERE id=1'
+                )
+                .run(original.body.length).changes !== 1
             )
               throw fail('corrupt');
-            if (
-              db
-                .prepare('UPDATE snapshot_publication_meta SET count=?,bytes=? WHERE id=1')
-                .run(originals.size, proposed.bytes).changes !== 1
-            )
-              throw fail('corrupt');
-            audit(proposed); // No DML follows the complete final original/meta check.
-            return { state: proposed, row };
+            return saved;
           })
           .immediate()
       );
-      state = next.state;
-      return own(next.row);
     }),
     accept: Effect.fnUntraced(function* (expected: SnapshotPublicationRow) {
-      const original = yield* Effect.fromResult(captureOriginal(expected));
-      const phase = expected.phase;
-      if (phase !== 'Pending' && phase !== 'Accepted') return yield* fail('invalid-input');
-      const next = yield* sql(() =>
+      const parsed = Schema.decodeUnknownResult(Row)(expected);
+      if (Result.isFailure(parsed)) return yield* fail('invalid-input');
+      const original = yield* sql(() => parse(parsed.success));
+      return yield* sql(() =>
         db
           .transaction(() => {
-            matches();
-            const prior = state.originals.get(original.offset);
+            guard();
+            const state = meta(db),
+              prior = at(original.offset);
             if (
               !prior ||
               !sameOriginal(prior, original) ||
@@ -347,11 +320,8 @@ FROM snapshot_publications ORDER BY offset LIMIT ?`)
               prior.expiresAt !== original.expiresAt
             )
               throw fail('conflict');
-            if (prior.phase === 'Accepted') return state; // Never republish or rewind current.
-            if (phase !== 'Pending') throw fail('conflict');
-            const originals = new Map(state.originals);
-            originals.set(prior.offset, own({ ...prior, phase: 'Accepted' }));
-            const proposed = { originals, currentOffset: prior.offset, bytes: state.bytes };
+            if (prior.phase === 'Accepted') return; // Old accepted offsets never become current again.
+            if (original.phase !== 'Pending') throw fail('conflict');
             if (
               db
                 .prepare(
@@ -360,19 +330,24 @@ FROM snapshot_publications ORDER BY offset LIMIT ?`)
                 .run(prior.offset).changes !== 1
             )
               throw fail('corrupt');
+            if (state.currentOffset !== null)
+              db.prepare(
+                "UPDATE snapshot_publications SET body=NULL WHERE offset=? AND phase='Accepted'"
+              ).run(state.currentOffset);
             if (
               db
-                .prepare('UPDATE snapshot_publication_meta SET currentOffset=? WHERE id=1')
-                .run(prior.offset).changes !== 1
+                .prepare(
+                  'UPDATE snapshot_publication_meta SET currentOffset=?,count=1,bytes=? WHERE id=1'
+                )
+                .run(prior.offset, prior.body.length).changes !== 1
             )
               throw fail('corrupt');
-            audit(proposed); // Last DML already completed, including all trigger effects.
-            return proposed;
+            const saved = at(prior.offset);
+            if (!saved || saved.phase !== 'Accepted' || !sameOriginal(saved, prior))
+              throw fail('corrupt');
           })
           .immediate()
       );
-      state = next;
-      return undefined;
     }),
   });
 });

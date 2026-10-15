@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { openSync, closeSync } from 'node:fs';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result } from 'effect';
 import type { RemoteCursor, RemoteCursorStore, JsonObject } from '@loro-dev/streams-crdt';
@@ -10,6 +9,14 @@ export class LabDocumentError extends Data.TaggedError('LabDocumentError')<{
 const failure = (code: LabDocumentError['code']) => new LabDocumentError({ code });
 const MAX_DOCUMENT = 64 * 1024 * 1024;
 const MAX_CURSOR = 64 * 1024;
+const MAX_PENDING_WRITES = 256;
+export interface LabSealedWrite {
+  readonly plaintextDigest: string;
+  readonly context: string;
+  readonly aad: Uint8Array;
+  readonly header: Uint8Array;
+  readonly sealed: Uint8Array;
+}
 const same = (a: Uint8Array, b: Uint8Array) => Buffer.from(a).equals(Buffer.from(b));
 /** Synthetic Lab state only, never production database migration or key/recovery-vault storage.
  * Every document owns a separate file. SDK save atomically persists actual staged CRDT state
@@ -35,16 +42,35 @@ export function makeLabDocumentStore<TVersion extends JsonObject = JsonObject>(i
       (mode !== 'create' && mode !== 'open')
     )
       return yield* failure('invalid-input');
-    const db = yield* Effect.acquireRelease(
-      Effect.try({
-        try: () => {
-          if (mode === 'create') closeSync(openSync(path, 'wx', 0o600));
-          return new Database(path, { fileMustExist: true });
-        },
-        catch: () => failure('sqlite'),
-      }),
-      (value) => Effect.sync(() => value.close())
-    );
+    const db = yield* openSqliteStore({
+      path,
+      mode,
+      applicationId: 0x4c45444f,
+      version: 2,
+      error: (code) => failure(code === 'corrupt' ? 'corrupt' : 'sqlite'),
+      initialize: (connection) => {
+        connection.exec(
+          'CREATE TABLE lab_document_owner(id INTEGER PRIMARY KEY CHECK(id=1),format INTEGER NOT NULL,genesis TEXT NOT NULL,resource TEXT NOT NULL,model TEXT NOT NULL,url TEXT NOT NULL); CREATE TABLE lab_document_state(id INTEGER PRIMARY KEY CHECK(id=1),document BLOB NOT NULL,cursor TEXT); CREATE TABLE lab_document_writes(digest TEXT NOT NULL,context TEXT NOT NULL,aad BLOB NOT NULL,header BLOB NOT NULL,sealed BLOB NOT NULL,PRIMARY KEY(digest,context,aad)) STRICT;'
+        );
+        connection
+          .prepare('INSERT INTO lab_document_owner VALUES(1,2,?,?,?,?)')
+          .run(genesis, resource, model, streamUrl);
+      },
+      validate: (connection) => {
+        const row = connection
+          .prepare('SELECT format,genesis,resource,model,url FROM lab_document_owner WHERE id=1')
+          .get() as Record<string, unknown> | undefined;
+        if (
+          !row ||
+          row.format !== 2 ||
+          row.genesis !== genesis ||
+          row.resource !== resource ||
+          row.model !== model ||
+          row.url !== streamUrl
+        )
+          throw failure('corrupt');
+      },
+    });
     let closed = false;
     let staged: Uint8Array | undefined;
     const protect = <A>(work: () => A) =>
@@ -62,43 +88,7 @@ export function makeLabDocumentStore<TVersion extends JsonObject = JsonObject>(i
         staged = undefined;
       })
     );
-    const meta = () => {
-      const row = db
-        .prepare('SELECT format,genesis,resource,model,url FROM lab_document_owner WHERE id=1')
-        .get() as Record<string, unknown> | undefined;
-      if (
-        !row ||
-        row.format !== 1 ||
-        row.genesis !== genesis ||
-        row.resource !== resource ||
-        row.model !== model ||
-        row.url !== streamUrl ||
-        (db.prepare('SELECT count(*) AS n FROM lab_document_owner').get() as { n: number }).n !== 1
-      )
-        throw failure('corrupt');
-    };
-    yield* Effect.fromResult(
-      protect(() => {
-        db.pragma('journal_mode = WAL');
-        db.pragma('synchronous = FULL');
-        if (mode === 'create')
-          db.transaction(() => {
-            db.exec(
-              'CREATE TABLE lab_document_owner(id INTEGER PRIMARY KEY CHECK(id=1),format INTEGER NOT NULL,genesis TEXT NOT NULL,resource TEXT NOT NULL,model TEXT NOT NULL,url TEXT NOT NULL); CREATE TABLE lab_document_state(id INTEGER PRIMARY KEY CHECK(id=1),document BLOB NOT NULL,cursor TEXT);'
-            );
-            db.prepare('INSERT INTO lab_document_owner VALUES(1,1,?,?,?,?)').run(
-              genesis,
-              resource,
-              model,
-              streamUrl
-            );
-            meta();
-          })();
-        else meta();
-      })
-    );
     const state = () => {
-      meta();
       const row = db
         .prepare(
           `SELECT CASE WHEN length(document) BETWEEN 1 AND ${MAX_DOCUMENT} THEN document ELSE NULL END AS document, CASE WHEN cursor IS NULL OR length(cursor)<=${MAX_CURSOR} THEN cursor ELSE 'invalid' END AS cursor FROM lab_document_state WHERE id=1`
@@ -133,17 +123,11 @@ export function makeLabDocumentStore<TVersion extends JsonObject = JsonObject>(i
     };
     const write = (document: Uint8Array, value: string | null) =>
       db.transaction(() => {
-        meta();
         db.prepare(
           'INSERT INTO lab_document_state(id,document,cursor) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET document=excluded.document,cursor=excluded.cursor'
         ).run(document, value);
         const after = state();
         if (!after || !same(after.document, document) || after.cursor !== value)
-          throw failure('corrupt');
-        if (
-          (db.prepare('SELECT count(*) AS n FROM lab_document_state').get() as { n: number }).n !==
-          1
-        )
           throw failure('corrupt');
       })();
     const own = (bytes: Uint8Array) => {
@@ -151,13 +135,105 @@ export function makeLabDocumentStore<TVersion extends JsonObject = JsonObject>(i
         throw failure('invalid-input');
       return new Uint8Array(bytes);
     };
+    const cursorText = () => {
+      const row = db.prepare('SELECT cursor FROM lab_document_state WHERE id=1').get() as
+        | { cursor: unknown }
+        | undefined;
+      if (!row || row.cursor === null) return null;
+      if (typeof row.cursor !== 'string' || row.cursor.length > MAX_CURSOR)
+        throw failure('corrupt');
+      return row.cursor;
+    };
+    const ownSealedWrite = (
+      value: LabSealedWrite,
+      code: 'invalid-input' | 'corrupt'
+    ): LabSealedWrite => {
+      if (
+        !value ||
+        !/^[0-9a-f]{64}$/.test(value.plaintextDigest) ||
+        typeof value.context !== 'string' ||
+        !value.context.length ||
+        value.context.length > 8192 ||
+        !(value.aad instanceof Uint8Array) ||
+        value.aad.length > MAX_CURSOR ||
+        !(value.header instanceof Uint8Array) ||
+        !value.header.length ||
+        value.header.length > 512 ||
+        !(value.sealed instanceof Uint8Array) ||
+        !value.sealed.length ||
+        value.sealed.length > MAX_DOCUMENT
+      )
+        throw failure(code);
+      return Object.freeze({
+        plaintextDigest: value.plaintextDigest,
+        context: value.context,
+        aad: new Uint8Array(value.aad),
+        header: new Uint8Array(value.header),
+        sealed: new Uint8Array(value.sealed),
+      });
+    };
+    const sealedWrites = Object.freeze({
+      load: (): Result.Result<readonly LabSealedWrite[], LabDocumentError> =>
+        protect(() => {
+          const rows = db
+            .prepare(
+              'SELECT digest AS plaintextDigest,context,aad,header,sealed FROM lab_document_writes ORDER BY rowid LIMIT ?'
+            )
+            .all(MAX_PENDING_WRITES + 1) as LabSealedWrite[];
+          if (rows.length > MAX_PENDING_WRITES) throw failure('corrupt');
+          return Object.freeze(rows.map((row) => ownSealedWrite(row, 'corrupt')));
+        }),
+      save: (source: LabSealedWrite): Result.Result<void, LabDocumentError> =>
+        protect(() => {
+          const row = ownSealedWrite(source, 'invalid-input');
+          db.transaction(() => {
+            const existing = db
+              .prepare('SELECT 1 FROM lab_document_writes WHERE digest=? AND context=? AND aad=?')
+              .get(row.plaintextDigest, row.context, row.aad);
+            if (!existing) {
+              const used = db
+                .prepare(
+                  'SELECT count(*) AS n,coalesce(sum(length(aad)+length(header)+length(sealed)),0) AS bytes FROM lab_document_writes'
+                )
+                .get() as { n: number; bytes: number };
+              if (
+                used.n >= MAX_PENDING_WRITES ||
+                used.bytes + row.aad.length + row.header.length + row.sealed.length > MAX_DOCUMENT
+              )
+                throw failure('invalid-input');
+            }
+            db.prepare(
+              'INSERT INTO lab_document_writes(digest,context,aad,header,sealed) VALUES(?,?,?,?,?) ON CONFLICT(digest,context,aad) DO NOTHING'
+            ).run(row.plaintextDigest, row.context, row.aad, row.header, row.sealed);
+            const retained = db
+              .prepare(
+                'SELECT header,sealed FROM lab_document_writes WHERE digest=? AND context=? AND aad=?'
+              )
+              .get(row.plaintextDigest, row.context, row.aad) as
+              | { header: Uint8Array; sealed: Uint8Array }
+              | undefined;
+            if (
+              !retained ||
+              !same(retained.header, row.header) ||
+              !same(retained.sealed, row.sealed)
+            )
+              throw failure('corrupt');
+          }).immediate();
+        }),
+      clear: (): Result.Result<void, LabDocumentError> =>
+        protect(() => {
+          db.transaction(() => {
+            db.prepare('DELETE FROM lab_document_writes').run();
+          }).immediate();
+        }),
+    });
     const cursorStore = Object.freeze({
       async load(url) {
         return Result.getOrThrow(
           protect(() => {
             if (url !== streamUrl) throw failure('invalid-input');
-            const row = state();
-            return row?.cursor ? cursor(row.cursor) : null;
+            const text = cursorText();
+            return text ? cursor(text) : null;
           })
         );
       },
@@ -177,6 +253,7 @@ export function makeLabDocumentStore<TVersion extends JsonObject = JsonObject>(i
     } satisfies RemoteCursorStore<TVersion>);
     return Object.freeze({
       cursorStore,
+      sealedWrites,
       discardStaged: () =>
         Effect.sync(() => {
           staged?.fill(0);
@@ -190,7 +267,7 @@ export function makeLabDocumentStore<TVersion extends JsonObject = JsonObject>(i
             protect(() => {
               const owned = own(bytes);
               try {
-                write(owned, state()?.cursor ?? null);
+                write(owned, cursorText());
               } finally {
                 owned.fill(0);
               }
@@ -208,8 +285,8 @@ export function makeLabDocumentStore<TVersion extends JsonObject = JsonObject>(i
         Effect.suspend(() =>
           Effect.fromResult(
             protect(() => {
-              const row = state();
-              return row?.cursor ? cursor(row.cursor) : null;
+              const text = cursorText();
+              return text ? cursor(text) : null;
             })
           )
         ),
