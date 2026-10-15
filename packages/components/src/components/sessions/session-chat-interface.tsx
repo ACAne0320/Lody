@@ -306,6 +306,11 @@ import { SessionPin } from './session-pin';
 import { SessionPinContext, type SessionPinContextValue } from './session-pin-context';
 import { SessionSyncingIndicator } from './session-syncing-indicator';
 import { ConversationSkeleton } from '@/components/ai-gui/conversation-sync-placeholders';
+import {
+  resolveHistoryLiveSync,
+  type LiveTurnActivity,
+} from '@/components/ai-gui/assistant-turn-timing';
+import { useHistoryLiveWindow } from '@/hooks/use-history-live-window';
 import { sessionUnsentNewConversationAtomFamily } from '@/atoms/session-send-status';
 import { useDisplayedContentSyncState } from '@/hooks/use-displayed-content-sync-state';
 import { resolveSessionContentSyncState } from '@/lib/session-content-sync-state';
@@ -4176,6 +4181,16 @@ export const SessionChatInterface = memo(
       isSessionActive && liveSessionStatus?.type === 'requestPermission' ? 'warning' : 'primary';
     // Waiting on the user is not work in progress: that status does not shimmer.
     const agentActivityShimmer = agentActivityTone !== 'warning';
+    // Presence, not the history's `finished` flag: a turn whose daemon died
+    // before finalizing stays unfinished forever but is not running.
+    const liveTurnActivity: LiveTurnActivity | null = isSessionActive
+      ? liveSessionStatus?.type === 'requestPermission'
+        ? 'awaitingUser'
+        : 'working'
+      : null;
+    const historyLive = useHistoryLiveWindow(
+      resolveHistoryLiveSync(sessionDocSyncState, browserOnline)
+    );
 
     /**
      * A direct send holds its message at the top of the viewport while the
@@ -6693,6 +6708,8 @@ export const SessionChatInterface = memo(
                                 agentActivityLabel={agentActivityLabel}
                                 agentActivityTone={agentActivityTone}
                                 agentActivityShimmer={agentActivityShimmer}
+                                liveTurnActivity={liveTurnActivity}
+                                historyLive={historyLive}
                                 onFileDiffClick={onFileDiffClick}
                                 onFilePathClick={onFilePathClick ? handleFilePathClick : undefined}
                                 onOpenHtmlFile={handleOpenHtmlAttachment}

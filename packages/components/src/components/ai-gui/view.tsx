@@ -296,8 +296,12 @@ import {
   buildAssistantTurnTimingRows,
   formatSilenceCompact,
   formatTurnClockTime,
+  resolveTurnLiveness,
   resolveTurnSilenceMs,
   type AssistantTurnTimingRow,
+  type HistoryLiveWindow,
+  type LiveTurnActivity,
+  type TurnLiveness,
 } from './assistant-turn-timing';
 import {
   SEARCH_HIGHLIGHT_CONTAINER_ACTIVE_CLASS_NAME,
@@ -628,6 +632,13 @@ export interface SessionChatStreamViewProps {
   agentActivityTone?: AgentActivityTone;
   /** The status is live work (not waiting on the user): shimmer it. */
   agentActivityShimmer?: boolean;
+  /**
+   * What presence says the session is doing. Only a running session's newest
+   * turn reports a running time and a last update; `null` when nothing runs.
+   */
+  liveTurnActivity?: LiveTurnActivity | null;
+  /** Whether, and since when, this client receives the session's history live. */
+  historyLive?: HistoryLiveWindow;
   conversationFontSize?: ConversationFontSize;
   /** Full-page overlay that keeps the conversation outline independent of composer height. */
   outlineOverlayRoot?: HTMLElement | null;
@@ -652,13 +663,33 @@ const SessionImagePreviewContext = createContext<{
 } | null>(null);
 
 /**
- * When this conversation last received a history update (in memory, never
- * persisted): the stream's `ConversationView`, whose identity is stable per
- * session. Liveness labels read `lastUpdateAt` on their own tick.
+ * Everything the liveness labels need to judge a running turn. `clock` is the
+ * stream's `ConversationView`, whose `lastUpdateAt` is an in-memory stamp read
+ * on each label's own tick; the rest changes only with presence or sync state.
  */
-const ConversationUpdateClockContext = createContext<Pick<ConversationView, 'lastUpdateAt'> | null>(
-  null
-);
+type LiveTurnContextValue = {
+  clock: Pick<ConversationView, 'lastUpdateAt'> | null;
+  activity: LiveTurnActivity | null;
+  live: HistoryLiveWindow;
+};
+
+const LiveTurnContext = createContext<LiveTurnContextValue | null>(null);
+
+/** Callers that do not track live sync report no live window. */
+const NOT_LIVE: HistoryLiveWindow = { sync: 'syncing', since: null };
+
+/** The running turn's liveness at `nowMs`, or `null` when presence says nothing runs. */
+const useRunningTurnLiveness = (nowMs: number): TurnLiveness | null => {
+  const live = useContext(LiveTurnContext);
+  if (!live?.activity) return null;
+  return resolveTurnLiveness({
+    activity: live.activity,
+    sync: live.live.sync,
+    liveSince: live.live.since,
+    lastUpdateAt: live.clock?.lastUpdateAt ?? null,
+    nowMs,
+  });
+};
 
 /** Live work reads in the process tone; waiting on the user in the warning tone. */
 export type AgentActivityTone = 'primary' | 'warning';
@@ -1707,6 +1738,8 @@ export const SessionChatStreamView = forwardRef<
       agentActivityTone = 'primary',
       // Waiting on the user (warning tone) is not work in progress.
       agentActivityShimmer = agentActivityTone !== 'warning',
+      liveTurnActivity = null,
+      historyLive = NOT_LIVE,
       conversationFontSize = DEFAULT_CONVERSATION_FONT_SIZE,
       suppressStickyAutoScrollRef,
       outlineOverlayRoot,
@@ -1745,6 +1778,16 @@ export const SessionChatStreamView = forwardRef<
             item.message.finished !== true
         )?.message ?? null,
       [items, lastAssistantMessageId]
+    );
+    // Keyed on the window's fields: callers rebuild its object every render.
+    const { sync: liveSync, since: liveSince } = historyLive;
+    const liveTurnContextValue = useMemo<LiveTurnContextValue>(
+      () => ({
+        clock: conversationView ?? null,
+        activity: liveTurnActivity,
+        live: { sync: liveSync, since: liveSince },
+      }),
+      [conversationView, liveSince, liveSync, liveTurnActivity]
     );
     const [assistantExpansionVersion, setAssistantExpansionVersion] = useState(0);
     const [hoveredAssistantMessageId, setHoveredAssistantMessageId] = useState<string | null>(null);
@@ -2516,7 +2559,7 @@ export const SessionChatStreamView = forwardRef<
     return (
       <SessionChatActionContext.Provider value={chatActionContextValue}>
         <SessionImagePreviewContext.Provider value={imagePreviewContextValue}>
-          <ConversationUpdateClockContext.Provider value={conversationView ?? null}>
+          <LiveTurnContext.Provider value={liveTurnContextValue}>
             <ContainerQueryProvider
               ref={scrollRootRef}
               className={cn('relative bg-background', className)}
@@ -2638,7 +2681,7 @@ export const SessionChatStreamView = forwardRef<
                 portalAnchorRef={scrollRootRef}
               />
             </ContainerQueryProvider>
-          </ConversationUpdateClockContext.Provider>
+          </LiveTurnContext.Provider>
         </SessionImagePreviewContext.Provider>
       </SessionChatActionContext.Provider>
     );
@@ -4350,17 +4393,70 @@ const AssistantTurnTimingRows = ({
   isLive: boolean;
 }) => {
   const { t, i18n } = useTranslation();
-  const updateClock = useContext(ConversationUpdateClockContext);
   const nowMs = useStableNow(TURN_TIMING_SAMPLE_MS).getTime();
+  const runningLiveness = useRunningTurnLiveness(nowMs);
   const rows = buildAssistantTurnTimingRows(message, {
-    isLive,
+    liveness: isLive ? runningLiveness : null,
     nowMs,
-    lastUpdateAt: updateClock?.lastUpdateAt ?? null,
   });
   if (rows.length === 0) return null;
   const locale = toIntlLocale(i18n.resolvedLanguage ?? i18n.language);
   const durationUnitLabels = getDurationUnitLabels(t);
   const formatDuration = (ms: number) => formatDurationCompact(ms, durationUnitLabels);
+  /* Only `updated` carries a time. Every other state says why there is none
+     instead of guessing, so a catch-up import or a permission wait never reads
+     as fresh output or as a stuck agent. */
+  const displayLiveness = (
+    liveness: TurnLiveness
+  ): { value: string; title?: string; warning?: boolean } => {
+    switch (liveness.kind) {
+      case 'offline':
+        return {
+          value: t('sessions.turnTiming.offline', 'Disconnected'),
+          title: t(
+            'sessions.turnTiming.offlineHint',
+            "This device isn't receiving updates, so it can't tell whether the agent is still working."
+          ),
+          warning: true,
+        };
+      case 'awaitingUser':
+        return {
+          value: t('sessions.turnTiming.awaitingUser', 'Waiting for you'),
+          title: t(
+            'sessions.turnTiming.awaitingUserHint',
+            'The agent is waiting for your decision, not stuck.'
+          ),
+        };
+      case 'syncing':
+        return {
+          value: '—',
+          title: t('sessions.turnTiming.syncingHint', 'Catching up with this conversation.'),
+        };
+      case 'noUpdateYet':
+        return {
+          value: '—',
+          title: t(
+            'sessions.turnTiming.noUpdateYet',
+            'No new output has arrived since live updates started on this device.'
+          ),
+        };
+      case 'updated':
+        break;
+    }
+    return {
+      value: t('sessions.turnTiming.ago', {
+        duration: formatDuration(liveness.sinceMs),
+        defaultValue: '{{duration}} ago',
+      }),
+      title: liveness.stale
+        ? t(
+            'sessions.turnTiming.staleHint',
+            'No update for a while. The agent may be running a long command, or it may be stuck.'
+          )
+        : undefined,
+      warning: liveness.stale,
+    };
+  };
   const display = (
     row: AssistantTurnTimingRow
   ): { label: string; value: string; title?: string; warning?: boolean } => {
@@ -4398,26 +4494,7 @@ const AssistantTurnTimingRows = ({
     }
     return {
       label: t('sessions.turnTiming.lastUpdate', 'Last update'),
-      value:
-        row.sinceMs === null
-          ? '—'
-          : t('sessions.turnTiming.ago', {
-              duration: formatDuration(row.sinceMs),
-              defaultValue: '{{duration}} ago',
-            }),
-      title:
-        row.sinceMs === null
-          ? t(
-              'sessions.turnTiming.noUpdateYet',
-              'No update received since this conversation was opened.'
-            )
-          : row.stale
-            ? t(
-                'sessions.turnTiming.staleHint',
-                'No update for a while. The agent may be running a long command, or it may be stuck.'
-              )
-            : undefined,
-      warning: row.stale,
+      ...displayLiveness(row.liveness),
     };
   };
   return (
@@ -5178,8 +5255,8 @@ type LiveActivityMessage = Pick<SessionHistoryParsed, 'timestamp' | 'permissionW
  */
 const LiveActivityLabel = ({ label, message }: { label: string; message: LiveActivityMessage }) => {
   const { t } = useTranslation();
-  const updateClock = useContext(ConversationUpdateClockContext);
   const now = useStableNow(LIVE_TURN_DURATION_SAMPLE_MS);
+  const liveness = useRunningTurnLiveness(now.getTime());
   const durationUnitLabels = getDurationUnitLabels(t);
   const durationMs = resolveLiveSessionHistoryDurationMs(message, now.getTime());
   const duration = durationMs === null ? '' : formatDurationCompact(durationMs, durationUnitLabels);
@@ -5187,7 +5264,7 @@ const LiveActivityLabel = ({ label, message }: { label: string; message: LiveAct
   /* A long quiet stretch is not proof of a stuck turn (a lint gate can run
      for minutes), so this only states the fact; the turn popover carries the
      detail and the warning tone. */
-  const silenceMs = resolveTurnSilenceMs(updateClock?.lastUpdateAt ?? null, now.getTime());
+  const silenceMs = liveness ? resolveTurnSilenceMs(liveness) : null;
   if (silenceMs !== null) {
     return (
       <>

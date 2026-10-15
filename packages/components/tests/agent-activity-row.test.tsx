@@ -9,6 +9,12 @@ import { buildChatStreamItems } from '../src/components/ai-gui/build-chat-stream
 import { SessionChatStreamView } from '../src/components/ai-gui/view';
 import { initI18n } from '../src/i18n';
 import { createConversationViewFromHistory } from '../src/lib/conversation-view';
+import type {
+  HistoryLiveSync,
+  HistoryLiveWindow,
+  LiveTurnActivity,
+} from '../src/components/ai-gui/assistant-turn-timing';
+import { useHistoryLiveWindow } from '../src/hooks/use-history-live-window';
 import { clearSavedScrollStates } from '../src/lib/conversation-scroll/saved-state';
 
 (
@@ -81,8 +87,8 @@ describe('live agent status', () => {
     options: {
       withTurnFooter?: boolean;
       scrollAway?: boolean;
-      /** Deliver one history update to the stream's view at this instant. */
-      lastUpdateAt?: number;
+      /** Presence and the live-sync window as the session page reports them. */
+      live?: { activity: LiveTurnActivity | null; window: HistoryLiveWindow };
     } = {}
   ) => {
     let current = history;
@@ -94,29 +100,35 @@ describe('live agent status', () => {
         notify = listener;
         return () => {};
       },
-      ...(options.lastUpdateAt === undefined ? {} : { now: () => options.lastUpdateAt! }),
     });
-    if (options.lastUpdateAt !== undefined) {
-      // The same turns arriving again from the backend: an update, not an edit.
-      current = history.slice();
-      notify();
-    }
     const { items } = buildChatStreamItems(view, sessionId);
-    await act(async () =>
-      root.render(
-        createElement(SessionChatStreamView, {
-          items,
-          sessionId,
-          conversationView: view,
-          renderMessageRow: () => null,
-          lastAssistantMessageId: 'assistant-turn',
-          agentActivityLabel: status.label,
-          agentActivityTone: status.tone ?? 'primary',
-          // Copy-context makes a live turn render its footer (copy/fork actions).
-          ...(options.withTurnFooter ? { onCopyContext: () => {} } : {}),
-        })
-      )
-    );
+    const renderWith = (window: HistoryLiveWindow | undefined) =>
+      act(async () =>
+        root.render(
+          createElement(SessionChatStreamView, {
+            items,
+            sessionId,
+            conversationView: view,
+            renderMessageRow: () => null,
+            lastAssistantMessageId: 'assistant-turn',
+            agentActivityLabel: status.label,
+            agentActivityTone: status.tone ?? 'primary',
+            liveTurnActivity: options.live?.activity ?? null,
+            ...(window ? { historyLive: window } : {}),
+            // Copy-context makes a live turn render its footer (copy/fork actions).
+            ...(options.withTurnFooter ? { onCopyContext: () => {} } : {}),
+          })
+        )
+      );
+    await renderWith(options.live?.window);
+    const controls = {
+      /** The same turns arriving again from the backend: an update, not an edit. */
+      deliverUpdate: async () => {
+        current = history.slice();
+        await act(async () => notify());
+      },
+      setLiveWindow: (window: HistoryLiveWindow) => renderWith(window),
+    };
 
     if (options.scrollAway) {
       const viewport = container.querySelector<HTMLElement>('[data-message-selection-scroll]');
@@ -131,13 +143,18 @@ describe('live agent status', () => {
         viewport!.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -20 }));
       });
     }
+    return controls;
   };
 
-  /** Unmount so the shared live-duration ticker samples the moved clock on remount. */
-  const remount = async () => {
-    await act(async () => root.unmount());
-    root = createRoot(container);
+  /** Moves the clock and every interval (the live tickers) together. */
+  const useTickingClock = (iso: string) => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date(iso));
   };
+  const advance = (ms: number) => act(async () => vi.advanceTimersByTime(ms));
+  /** A live window that opened at the current (fake) instant. */
+  const liveNow = (): HistoryLiveWindow => ({ sync: 'live', since: Date.now() });
 
   const statusRow = () => container.querySelector('[data-agent-activity-row]');
   const shimmering = () =>
@@ -160,15 +177,33 @@ describe('live agent status', () => {
   });
 
   it('says how long a working turn has gone without output once that passes two minutes', async () => {
-    const turn = liveTurn([toolCall('a'), { type: 'text', text: 'Running the lint gate.' }]);
-    await render(turn, { label: 'Working' }, { lastUpdateAt: Date.parse('2026-09-19T00:00:01Z') });
+    useTickingClock('2026-09-19T00:04:29Z');
+    const { deliverUpdate } = await render(
+      liveTurn([toolCall('a'), { type: 'text', text: 'Running the lint gate.' }]),
+      { label: 'Working' },
+      { live: { activity: 'working', window: liveNow() } }
+    );
+    // Advances stay on the label's 300ms sample grid, so each read is exact.
+    await advance(2_100);
+    await deliverUpdate();
     // 30s of silence is ordinary streaming: no notice yet.
-    expect(statusRow()?.textContent).toBe('Working (Worked for 30s)');
-
-    await remount();
-    vi.setSystemTime(new Date('2026-09-19T00:08:41Z'));
-    await render(turn, { label: 'Working' }, { lastUpdateAt: Date.parse('2026-09-19T00:04:31Z') });
+    await advance(30_000);
+    expect(statusRow()?.textContent).toBe('Working (Worked for 5m 00s)');
+    await advance(219_900);
     expect(statusRow()?.textContent).toBe('Working (Worked for 8m 40s · no output for 4m)');
+  });
+
+  it('never reports silence while the agent waits on the user', async () => {
+    useTickingClock('2026-09-19T00:04:29Z');
+    const { deliverUpdate } = await render(
+      liveTurn([{ type: 'text', text: 'May I run this?' }]),
+      { label: 'Waiting for permission', tone: 'warning' },
+      { live: { activity: 'awaitingUser', window: liveNow() } }
+    );
+    await advance(2_000);
+    await deliverUpdate();
+    await advance(250_000);
+    expect(statusRow()?.textContent).toBe('Waiting for permission (Worked for 8m 40s)');
   });
 
   it('keeps a still status row while waiting on the user', async () => {
@@ -321,42 +356,103 @@ describe('live agent status', () => {
     [...document.body.querySelectorAll('dt')].find((dt) => dt.textContent === label)
       ?.nextElementSibling;
 
-  it('times a live turn in its info popover and warns when updates stop', async () => {
-    const modelInfo = { modelId: 'claude-opus-5', name: 'Claude Opus 5' };
-    await render(
-      liveTurn([{ type: 'text', text: 'Partial answer' }], { modelInfo }),
+  const modelInfo = { modelId: 'claude-opus-5', name: 'Claude Opus 5' };
+  const streamingTurn = () => liveTurn([{ type: 'text', text: 'Partial answer' }], { modelInfo });
+
+  it('times a running turn in its info popover and warns when updates stop', async () => {
+    useTickingClock('2026-09-19T00:00:05Z');
+    const { deliverUpdate } = await render(
+      streamingTurn(),
       { label: 'Working' },
-      { lastUpdateAt: Date.parse('2026-09-19T00:00:19Z') }
+      { live: { activity: 'working', window: liveNow() } }
     );
+    await advance(2_000);
+    await deliverUpdate();
+    await advance(12_000);
     await openTurnInfo();
-    expect(popoverValue('Started')?.textContent).toMatch(/ · running 30s$/);
+    expect(popoverValue('Started')?.textContent).toMatch(/ · running 18s$/);
     expect(popoverValue('Last update')?.textContent).toBe('12s ago');
     expect(popoverValue('Last update')?.hasAttribute('data-stale')).toBe(false);
     expect(popoverValue('Ended')).toBeUndefined();
 
-    await remount();
-    vi.setSystemTime(new Date('2026-09-19T00:01:19Z'));
-    await render(
-      liveTurn([{ type: 'text', text: 'Partial answer' }], { modelInfo }),
-      { label: 'Working' },
-      { lastUpdateAt: Date.parse('2026-09-19T00:00:19Z') }
-    );
-    await openTurnInfo();
+    await advance(48_000);
     const stale = popoverValue('Last update');
     expect(stale?.textContent).toBe('1m 00s ago');
     expect(stale?.hasAttribute('data-stale')).toBe(true);
     expect(stale?.getAttribute('title')).toContain('may be stuck');
   });
 
-  it('shows a dash for the last update until one arrives after opening', async () => {
-    await render(
-      liveTurn([{ type: 'text', text: 'Partial answer' }], {
-        modelInfo: { modelId: 'claude-opus-5', name: 'Claude Opus 5' },
-      }),
-      { label: 'Working' }
+  it('does not read a catch-up import as fresh output', async () => {
+    useTickingClock('2026-09-19T00:00:05Z');
+    const { deliverUpdate, setLiveWindow } = await render(
+      streamingTurn(),
+      { label: 'Working' },
+      { live: { activity: 'working', window: { sync: 'syncing', since: null } } }
     );
     await openTurnInfo();
     expect(popoverValue('Last update')?.textContent).toBe('—');
+    expect(popoverValue('Last update')?.getAttribute('title')).toContain('Catching up');
+
+    // Joining imports what was missed, and the room reports synced around it.
+    await deliverUpdate();
+    await setLiveWindow(liveNow());
+    await deliverUpdate();
+    await advance(30_000);
+    expect(popoverValue('Last update')?.textContent).toBe('—');
+    expect(popoverValue('Last update')?.hasAttribute('data-stale')).toBe(false);
+
+    // Only output that arrives while live counts.
+    await deliverUpdate();
+    await advance(5_000);
+    expect(popoverValue('Last update')?.textContent).toBe('5s ago');
+  });
+
+  it('says the agent waits on the user, or that this device is offline, instead of a time', async () => {
+    useTickingClock('2026-09-19T00:00:05Z');
+    const { deliverUpdate, setLiveWindow } = await render(
+      streamingTurn(),
+      { label: 'Waiting for permission', tone: 'warning' },
+      { live: { activity: 'awaitingUser', window: liveNow() } }
+    );
+    await advance(2_000);
+    await deliverUpdate();
+    await advance(300_000);
+    await openTurnInfo();
+    expect(popoverValue('Last update')?.textContent).toBe('Waiting for you');
+    expect(popoverValue('Last update')?.hasAttribute('data-stale')).toBe(false);
+
+    await setLiveWindow({ sync: 'offline', since: null });
+    expect(popoverValue('Last update')?.textContent).toBe('Disconnected');
+    expect(popoverValue('Last update')?.hasAttribute('data-stale')).toBe(true);
+  });
+
+  it('shows an unfinished turn nothing is running as started, without running time or liveness', async () => {
+    // The daemon died before finalizing: history stays unfinished, presence is gone.
+    await render(
+      streamingTurn(),
+      { label: 'Working' },
+      { live: { activity: null, window: liveNow() } }
+    );
+    await openTurnInfo();
+    expect(popoverValue('Started')?.textContent).not.toContain('running');
+    expect(popoverValue('Last update')).toBeUndefined();
+  });
+
+  it('opens a new live window each time live sync resumes, and none while it is down', async () => {
+    useTickingClock('2026-09-19T00:00:05Z');
+    const seen: HistoryLiveWindow[] = [];
+    const Probe = ({ sync }: { sync: HistoryLiveSync }) => {
+      seen.push(useHistoryLiveWindow(sync));
+      return null;
+    };
+    await act(async () => root.render(createElement(Probe, { sync: 'live' })));
+    expect(seen.at(-1)).toEqual({ sync: 'live', since: Date.parse('2026-09-19T00:00:05Z') });
+    await advance(10_000);
+    await act(async () => root.render(createElement(Probe, { sync: 'offline' })));
+    expect(seen.at(-1)).toEqual({ sync: 'offline', since: null });
+    await advance(10_000);
+    await act(async () => root.render(createElement(Probe, { sync: 'live' })));
+    expect(seen.at(-1)).toEqual({ sync: 'live', since: Date.parse('2026-09-19T00:00:25Z') });
   });
 
   it('times a finished turn by its start, end and Worked-for duration', async () => {

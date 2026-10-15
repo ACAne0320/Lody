@@ -1,5 +1,6 @@
 import type { SessionHistoryParsed } from '@lody/shared';
 import type { DurationUnitLabels } from '@/lib/format-duration';
+import { isSyncingRoomSyncState, type RoomSyncState } from '@/lib/room-sync-state';
 import {
   resolveLiveSessionHistoryDurationMs,
   resolveSessionHistoryDurationMs,
@@ -16,6 +17,81 @@ export const TURN_LAST_UPDATE_STALE_MS = 60_000;
 /** Silence after which the live status line itself says "no output for …". */
 export const TURN_SILENCE_NOTICE_MS = 2 * 60_000;
 
+/**
+ * Changes stamped this soon after live sync (re)starts are treated as the
+ * catch-up batch, not live output: a reconnect imports what was missed, and
+ * its notifications can land just after the room reports `synced`.
+ */
+export const LIVE_SYNC_SETTLE_MS = 1_000;
+
+/**
+ * What the machine's presence says the session is doing — the same signal
+ * as the live status line. `null` when nothing is running, including a turn
+ * whose history was never finalized because its daemon went away.
+ */
+export type LiveTurnActivity = 'working' | 'awaitingUser';
+
+/** Whether this client is receiving the session's history as it happens. */
+export type HistoryLiveSync = 'live' | 'syncing' | 'offline';
+
+/**
+ * The live-sync state plus when it last became `live` (`null` while it is
+ * not). Only changes stamped inside the current window count as live output.
+ */
+export type HistoryLiveWindow = { sync: HistoryLiveSync; since: number | null };
+
+/**
+ * Both history backends deliver live changes through the session room (Loro
+ * directly; Roost through its `roostHistoryCursor`), so its sync state says
+ * whether an absence of updates means anything.
+ */
+export const resolveHistoryLiveSync = (
+  syncState: RoomSyncState,
+  browserOnline: boolean
+): HistoryLiveSync => {
+  if (!browserOnline) return 'offline';
+  if (syncState === 'synced') return 'live';
+  return isSyncingRoomSyncState(syncState) ? 'syncing' : 'offline';
+};
+
+/**
+ * What the popover can honestly say about a running turn's last update.
+ * Only `updated` carries a time: it is reported only for a change this client
+ * received while continuously in live sync, so a catch-up import after
+ * opening, switching back or reconnecting never reads as fresh output.
+ */
+export type TurnLiveness =
+  | { kind: 'offline' }
+  | { kind: 'awaitingUser' }
+  | { kind: 'syncing' }
+  | { kind: 'noUpdateYet' }
+  | { kind: 'updated'; sinceMs: number; stale: boolean };
+
+export const resolveTurnLiveness = ({
+  activity,
+  sync,
+  liveSince,
+  lastUpdateAt,
+  nowMs,
+}: {
+  activity: LiveTurnActivity;
+  sync: HistoryLiveSync;
+  /** When `sync` last became `live`; `null` while it is not. */
+  liveSince: number | null;
+  /** `ConversationView.lastUpdateAt`. */
+  lastUpdateAt: number | null;
+  nowMs: number;
+}): TurnLiveness => {
+  if (sync === 'offline') return { kind: 'offline' };
+  if (activity === 'awaitingUser') return { kind: 'awaitingUser' };
+  if (sync === 'syncing' || liveSince === null) return { kind: 'syncing' };
+  if (lastUpdateAt === null || lastUpdateAt < liveSince + LIVE_SYNC_SETTLE_MS) {
+    return { kind: 'noUpdateYet' };
+  }
+  const sinceMs = Math.max(0, nowMs - lastUpdateAt);
+  return { kind: 'updated', sinceMs, stale: sinceMs >= TURN_LAST_UPDATE_STALE_MS };
+};
+
 export type AssistantTurnTimingMessage = Pick<
   SessionHistoryParsed,
   'timestamp' | 'startedAt' | 'endedAt' | 'permissionWaitMs'
@@ -25,17 +101,16 @@ export type AssistantTurnTimingMessage = Pick<
  * Timing facts for the turn-configuration popover, in display order. Kept as
  * data so the clock and locale stay with the caller.
  *
- * - `started`: the turn's start; `runningMs` is set while the turn is live.
- * - `ended` / `duration`: a turn that is no longer live and recorded `endedAt`.
+ * - `started`: the turn's start; `runningMs` is set while the turn runs.
+ * - `ended` / `duration`: a turn that is not running and recorded `endedAt`.
  *   `duration` is the same quantity as the "Worked for" label.
- * - `lastUpdate`: live turns only; `sinceMs` is `null` until this view has
- *   received a history update since it opened.
+ * - `lastUpdate`: running turns only.
  */
 export type AssistantTurnTimingRow =
   | { kind: 'started'; atMs: number; runningMs: number | null }
   | { kind: 'ended'; atMs: number }
   | { kind: 'duration'; durationMs: number }
-  | { kind: 'lastUpdate'; sinceMs: number | null; stale: boolean };
+  | { kind: 'lastUpdate'; liveness: TurnLiveness };
 
 const finiteNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -51,15 +126,16 @@ export const resolveAssistantTurnStartMs = (message: AssistantTurnTimingMessage)
 export const buildAssistantTurnTimingRows = (
   message: AssistantTurnTimingMessage,
   {
-    isLive,
+    liveness,
     nowMs,
-    lastUpdateAt,
   }: {
-    /** The conversation's newest assistant turn, still unfinished. */
-    isLive: boolean;
+    /**
+     * Set only while this is the newest unfinished turn AND presence says the
+     * session is running. An unfinished turn nothing is running (its daemon
+     * died before finalizing) gets neither a running time nor a last update.
+     */
+    liveness: TurnLiveness | null;
     nowMs: number;
-    /** `ConversationView.lastUpdateAt`. */
-    lastUpdateAt: number | null;
   }
 ): AssistantTurnTimingRow[] => {
   const rows: AssistantTurnTimingRow[] = [];
@@ -68,16 +144,11 @@ export const buildAssistantTurnTimingRows = (
     rows.push({
       kind: 'started',
       atMs: startMs,
-      runningMs: isLive ? resolveLiveSessionHistoryDurationMs(message, nowMs) : null,
+      runningMs: liveness ? resolveLiveSessionHistoryDurationMs(message, nowMs) : null,
     });
   }
-  if (isLive) {
-    const sinceMs = lastUpdateAt === null ? null : Math.max(0, nowMs - lastUpdateAt);
-    rows.push({
-      kind: 'lastUpdate',
-      sinceMs,
-      stale: sinceMs !== null && sinceMs >= TURN_LAST_UPDATE_STALE_MS,
-    });
+  if (liveness) {
+    rows.push({ kind: 'lastUpdate', liveness });
     return rows;
   }
   const endedAt = finiteNumber(message.endedAt);
@@ -89,15 +160,14 @@ export const buildAssistantTurnTimingRows = (
 };
 
 /**
- * How long a live turn has gone without a history update, once that reaches
- * {@link TURN_SILENCE_NOTICE_MS}; otherwise `null`, including before the first
- * update since opening (no evidence either way).
+ * How long a working turn has gone without live output, once that reaches
+ * {@link TURN_SILENCE_NOTICE_MS}; otherwise `null` — including while waiting on
+ * the user, offline, or before any live update (no evidence either way).
  */
-export const resolveTurnSilenceMs = (lastUpdateAt: number | null, nowMs: number): number | null => {
-  if (lastUpdateAt === null || !Number.isFinite(nowMs)) return null;
-  const silence = nowMs - lastUpdateAt;
-  return silence >= TURN_SILENCE_NOTICE_MS ? silence : null;
-};
+export const resolveTurnSilenceMs = (liveness: TurnLiveness): number | null =>
+  liveness.kind === 'updated' && liveness.sinceMs >= TURN_SILENCE_NOTICE_MS
+    ? liveness.sinceMs
+    : null;
 
 /** Whole minutes ("4m", "1h 05m"): a silence notice that ticks every second reads as noise. */
 export const formatSilenceCompact = (durationMs: number, units: DurationUnitLabels): string => {

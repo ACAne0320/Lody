@@ -818,12 +818,16 @@ export const DesktopTurnTimingLive: Story = {
   globals: { theme: 'dark' },
   render: function Render() {
     const view = useSilentConversationView(silentLiveTurn, 250_000);
+    // Live sync opened well before the last update, so that update counts.
+    const [historyLive] = useState(() => ({ sync: 'live' as const, since: Date.now() - 600_000 }));
     return (
       <div className="h-[520px] w-full bg-background">
         <SessionChatStreamView
           items={[{ type: 'message', sessionId, message: silentLiveTurn, turnIndex: 0 }]}
           sessionId={sessionId}
           conversationView={view}
+          liveTurnActivity="working"
+          historyLive={historyLive}
           renderMessageRow={renderMessageRow}
           lastAssistantMessageId={silentLiveTurn.id}
           agentActivityLabel="Working"

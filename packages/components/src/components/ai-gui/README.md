@@ -60,12 +60,15 @@ the reasoning behind those rules.
   borrow the viewer's workspace.
 - `message-content-guards.ts` gates which shared `MessageContent` variants render.
 - `assistant-turn-timing.ts` builds the turn popover's timing rows (Started,
-  Ended, Duration, and, for the live turn only, Last update) and the live status
+  Ended, Duration, and Last update for a running turn) and the live status
   line's "no output for N m" suffix. Durations reuse the "Worked for" resolvers.
-  Liveness reads `ConversationView.lastUpdateAt`, provided through
-  `ConversationUpdateClockContext` in `view.tsx`. It is an in-memory stamp of
-  backend history notifications, never a history field and never `endedAt`.
-  Both thresholds are constants in that module.
+  "Running" means presence reports the session active (`liveTurnActivity`),
+  never an unfinished history entry. The age reads `ConversationView.lastUpdateAt`,
+  an in-memory stamp of backend history notifications. It counts only inside the
+  live window from `hooks/use-history-live-window.ts`, which the session page
+  opens each time room sync becomes live. Otherwise the row states a reason:
+  syncing, disconnected, or waiting on the user. `view.tsx` passes all of this
+  through `LiveTurnContext`. Thresholds are constants in the module.
   [Decision](../../../../../.agents/notes/implemented/feature/2026-10-15-turn-timing-liveness.md).
 - The stream and `SessionChatInterface` derive the last completed assistant id
   directly from the same `resolveLastAssistantTurnIds` index query. The parent
@@ -174,9 +177,10 @@ uses a synthetic upward wheel because a real scrollbar gesture is not reliable i
 the Storybook canvas.
 The [compact duration Spec](../../../../../specs/compact-duration-spacing.md)
 defines locale-specific spacing for these labels.
-Turn timing is covered by `tests/assistant-turn-timing.test.ts` (rows, thresholds,
-local-time formatting) and by `tests/agent-activity-row.test.tsx` (live and
-finished popovers, the stale warning, and the "no output" status).
+Turn timing is covered by `tests/assistant-turn-timing.test.ts` (rows, liveness
+states, thresholds, local-time formatting) and by `tests/agent-activity-row.test.tsx`
+(running and finished popovers, the stale warning, catch-up, waiting and offline
+states, and the "no output" status).
 `DesktopTurnTimingLive` and `DesktopTurnTimingFinished` in
 `AssistantTurnAlignment.stories.tsx` show both popover states.
 
