@@ -112,10 +112,9 @@
 
 - Never write per-session `sessionLaunchConfig`: the first `session/create` payload is transient,
   resume and dispatch resolve from agent config/project, and the legacy row is fallback only.
-- Dispatch access is local policy first, optional-cloud three-state second: owner-cached policy
-  may allow offline, `remote_missing` and a definitive `denied` fail the turn, `indeterminate`
-  leaves it pending behind `verifyMachineAccessWithRetry()`. Never collapse a thrown check into
-  denial.
-- Every owner-allowed dispatch fires `fireOwnerAccessRecheck` with `forceBackendVerification`; a
-  confirmed online allow is the ONLY writer of the access snapshot and `verifiedAt`, a deny clears
-  it, `indeterminate` writes nothing.
+- Dispatch access: local policy, then optional-cloud three-state. The owner cache or a member
+  allow confirmed <1h ago may allow offline; `remote_missing`/definitive `denied` fail the turn;
+  `indeterminate` stays pending behind `verifyMachineAccessWithRetry()`. A throw is never denial.
+- Only confirmed backend verdicts write caches (allow refreshes `verifiedAt`, deny clears,
+  `indeterminate` nothing). Owner hits recheck with `forceBackendVerification`; member
+  entries key on requester and local project.

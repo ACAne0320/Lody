@@ -1,14 +1,22 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Effect } from 'effect';
+import { Effect, ManagedRuntime } from 'effect';
 import {
   CatalogPermissionError,
+  MEMBER_ACCESS_SNAPSHOT_TTL_MS,
+  makeLocalWorkspaceCatalog,
   type LocalWorkspaceCatalogService,
   type LocalWorkspaceCatalogSnapshot,
 } from '../src/lib/local-workspace-catalog';
+import { fileLockLayer } from '../src/utils/file-lock';
 import {
   decideSessionAccessFromCatalog,
   makeSessionAccessPolicy,
 } from '../src/session/session-access-policy';
+
+const NOW_MS = Date.parse('2026-10-15T16:00:00.000Z');
 
 const snapshot = (
   workspace: LocalWorkspaceCatalogSnapshot['workspaces'][number]
@@ -46,7 +54,8 @@ describe('Session access policy (optimistic-allow cache)', () => {
           workspaceId: 'workspace-1',
           currentUserId: 'user-1',
           requesterUserId: 'user-1',
-        }
+        },
+        NOW_MS
       )
     ).toEqual({ outcome: 'allow', source: 'owner-cached' });
   });
@@ -64,7 +73,8 @@ describe('Session access policy (optimistic-allow cache)', () => {
           workspaceId: 'workspace-1',
           currentUserId: 'user-1',
           requesterUserId: 'user-2',
-        }
+        },
+        NOW_MS
       )
     ).toEqual({ outcome: 'remote' });
   });
@@ -79,11 +89,15 @@ describe('Session access policy (optimistic-allow cache)', () => {
     input.identity = { userId: 'user-old' };
 
     expect(
-      decideSessionAccessFromCatalog(input, {
-        workspaceId: 'workspace-1',
-        currentUserId: 'user-1',
-        requesterUserId: 'user-1',
-      })
+      decideSessionAccessFromCatalog(
+        input,
+        {
+          workspaceId: 'workspace-1',
+          currentUserId: 'user-1',
+          requesterUserId: 'user-1',
+        },
+        NOW_MS
+      )
     ).toEqual({ outcome: 'remote' });
   });
 
@@ -100,7 +114,8 @@ describe('Session access policy (optimistic-allow cache)', () => {
           workspaceId: 'workspace-1',
           currentUserId: 'user-1',
           requesterUserId: 'user-1',
-        }
+        },
+        NOW_MS
       )
     ).toEqual({ outcome: 'remote' });
   });
@@ -110,11 +125,15 @@ describe('Session access policy (optimistic-allow cache)', () => {
     // than caching a durable "denied", so the workspace goes back to a fresh
     // remote check instead of being permanently blocked.
     expect(
-      decideSessionAccessFromCatalog(snapshot(activeWorkspace()), {
-        workspaceId: 'workspace-1',
-        currentUserId: 'user-1',
-        requesterUserId: 'user-1',
-      })
+      decideSessionAccessFromCatalog(
+        snapshot(activeWorkspace()),
+        {
+          workspaceId: 'workspace-1',
+          currentUserId: 'user-1',
+          requesterUserId: 'user-1',
+        },
+        NOW_MS
+      )
     ).toEqual({ outcome: 'remote' });
   });
 
@@ -127,11 +146,15 @@ describe('Session access policy (optimistic-allow cache)', () => {
     input.identity = { userId: 'user-old' };
 
     expect(
-      decideSessionAccessFromCatalog(input, {
-        workspaceId: 'workspace-1',
-        currentUserId: 'user-1',
-        requesterUserId: 'user-1',
-      })
+      decideSessionAccessFromCatalog(
+        input,
+        {
+          workspaceId: 'workspace-1',
+          currentUserId: 'user-1',
+          requesterUserId: 'user-1',
+        },
+        NOW_MS
+      )
     ).toEqual({ outcome: 'remote' });
   });
 
@@ -147,7 +170,8 @@ describe('Session access policy (optimistic-allow cache)', () => {
           workspaceId: 'workspace-1',
           currentUserId: 'user-1',
           requesterUserId: 'user-1',
-        }
+        },
+        NOW_MS
       )
     ).toEqual({ outcome: 'deny', reason: 'not_visible', source: 'remote_missing' });
   });
@@ -165,6 +189,7 @@ describe('Session access policy (optimistic-allow cache)', () => {
       listActiveWorkspaces: () => Effect.die('not used'),
       cacheRemoteWorkspaces: () => Effect.die('not used'),
       recordWorkspaceAccessSnapshot: () => Effect.die('not used'),
+      recordMemberAccessSnapshot: () => Effect.die('not used'),
       upsertSession: () => Effect.die('not used'),
     };
     const policy = makeSessionAccessPolicy(catalog);
@@ -178,5 +203,117 @@ describe('Session access policy (optimistic-allow cache)', () => {
         })
       )
     ).resolves.toEqual({ outcome: 'remote' });
+  });
+
+  it('trusts a confirmed member allow for one hour, per requester and local project', async () => {
+    const runtime = ManagedRuntime.make(fileLockLayer);
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lody-member-access-'));
+    let now = NOW_MS;
+    try {
+      const catalog = makeLocalWorkspaceCatalog({
+        filePath: path.join(dir, 'workspace-catalog.json'),
+        lockName: `member-access-${path.basename(dir)}`,
+        now: () => now,
+      });
+      const policy = makeSessionAccessPolicy(catalog, () => now);
+      const decide = (requesterUserId: string, localProjectId?: string) =>
+        Effect.runPromise(
+          policy.decide({
+            workspaceId: 'workspace-1',
+            currentUserId: 'user-owner',
+            requesterUserId,
+            ...(localProjectId ? { localProjectId } : {}),
+          })
+        );
+      const remoteRefresh = () =>
+        runtime.runPromise(
+          catalog.cacheRemoteWorkspaces({
+            identity: { userId: 'user-owner' },
+            machine: { machineId: 'machine-1' },
+            workspaces: [{ id: 'workspace-1', name: 'Alpha', slug: 'alpha', role: 'member' }],
+          })
+        );
+      await remoteRefresh();
+      expect(await decide('user-member', 'project-a')).toEqual({ outcome: 'remote' });
+
+      await runtime.runPromise(
+        catalog.recordMemberAccessSnapshot({
+          workspaceId: 'workspace-1',
+          requesterUserId: 'user-member',
+          localProjectId: 'project-a',
+          verifiedAt: new Date(now).toISOString(),
+        })
+      );
+      // A workspace refresh must not drop the member cache.
+      await remoteRefresh();
+
+      expect(await decide('user-member', 'project-a')).toEqual({
+        outcome: 'allow',
+        source: 'member-cached',
+      });
+      // Project sharing is part of the verdict, and the entry is per requester.
+      expect(await decide('user-member', 'project-b')).toEqual({ outcome: 'remote' });
+      expect(await decide('user-member')).toEqual({ outcome: 'remote' });
+      expect(await decide('user-other', 'project-a')).toEqual({ outcome: 'remote' });
+
+      now = NOW_MS + MEMBER_ACCESS_SNAPSHOT_TTL_MS - 1;
+      expect(await decide('user-member', 'project-a')).toEqual({
+        outcome: 'allow',
+        source: 'member-cached',
+      });
+      now = NOW_MS + MEMBER_ACCESS_SNAPSHOT_TTL_MS;
+      expect(await decide('user-member', 'project-a')).toEqual({ outcome: 'remote' });
+      // A clock that moved backwards does not extend trust either.
+      now = NOW_MS - 1;
+      expect(await decide('user-member', 'project-a')).toEqual({ outcome: 'remote' });
+    } finally {
+      await runtime.dispose();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('clears a member allow on a definitive deny and prunes expired entries on write', async () => {
+    const runtime = ManagedRuntime.make(fileLockLayer);
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lody-member-access-'));
+    let now = NOW_MS;
+    try {
+      const catalog = makeLocalWorkspaceCatalog({
+        filePath: path.join(dir, 'workspace-catalog.json'),
+        lockName: `member-access-${path.basename(dir)}`,
+        now: () => now,
+      });
+      const record = (requesterUserId: string, verifiedAt: string | null) =>
+        runtime.runPromise(
+          catalog.recordMemberAccessSnapshot({
+            workspaceId: 'workspace-1',
+            requesterUserId,
+            verifiedAt,
+          })
+        );
+      const members = async () =>
+        (await runtime.runPromise(catalog.read())).workspaces[0]?.memberAccessSnapshots;
+      await runtime.runPromise(
+        catalog.cacheRemoteWorkspaces({
+          identity: { userId: 'user-owner' },
+          machine: { machineId: 'machine-1' },
+          workspaces: [{ id: 'workspace-1', name: 'Alpha', slug: 'alpha', role: 'member' }],
+        })
+      );
+
+      await record('user-a', new Date(now).toISOString());
+      await record('user-b', new Date(now).toISOString());
+      await record('user-a', null);
+      expect((await members())?.map((entry) => entry.requesterUserId)).toEqual(['user-b']);
+
+      now = NOW_MS + MEMBER_ACCESS_SNAPSHOT_TTL_MS;
+      await record('user-c', new Date(now).toISOString());
+      expect((await members())?.map((entry) => entry.requesterUserId)).toEqual(['user-c']);
+
+      await record('user-c', null);
+      expect(await members()).toBeUndefined();
+    } finally {
+      await runtime.dispose();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

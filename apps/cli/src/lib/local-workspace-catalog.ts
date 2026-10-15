@@ -34,6 +34,19 @@ const CatalogAccessSnapshotSchema = z.object({
   verifiedAt: z.string(),
 });
 
+// Bounded optimistic-allow cache for workspace members who are NOT the machine
+// owner. The owner snapshot above never expires; a member allow is trusted only
+// for MEMBER_ACCESS_SNAPSHOT_TTL_MS after the backend last confirmed it, and is
+// keyed by the local project because project sharing is part of the verdict.
+export const MEMBER_ACCESS_SNAPSHOT_TTL_MS = 60 * 60 * 1000;
+const MEMBER_ACCESS_SNAPSHOT_LIMIT = 64;
+
+const CatalogMemberAccessSnapshotSchema = z.object({
+  requesterUserId: z.string(),
+  localProjectId: z.string().optional(),
+  verifiedAt: z.string(),
+});
+
 const CatalogWorkspaceSchema = z.object({
   workspaceId: z.string(),
   name: z.string(),
@@ -46,6 +59,7 @@ const CatalogWorkspaceSchema = z.object({
     cachedAt: z.number(),
   }).optional(),
   accessSnapshot: CatalogAccessSnapshotSchema.optional(),
+  memberAccessSnapshots: z.array(CatalogMemberAccessSnapshotSchema).optional(),
 });
 
 const CatalogSessionSchema = z.object({
@@ -68,6 +82,7 @@ const CatalogSnapshotSchema = z.object({
 export type LocalCatalogIdentity = z.infer<typeof CatalogIdentitySchema>;
 export type LocalCatalogMachine = z.infer<typeof CatalogMachineSchema>;
 export type LocalCatalogAccessSnapshot = z.infer<typeof CatalogAccessSnapshotSchema>;
+export type LocalCatalogMemberAccessSnapshot = z.infer<typeof CatalogMemberAccessSnapshotSchema>;
 export type LocalCatalogWorkspace = z.infer<typeof CatalogWorkspaceSchema>;
 export type LocalCatalogSession = z.infer<typeof CatalogSessionSchema>;
 export type LocalWorkspaceCatalogSnapshot = z.infer<typeof CatalogSnapshotSchema>;
@@ -109,6 +124,23 @@ export type RecordWorkspaceAccessSnapshotInput = {
   accessSnapshot: LocalCatalogAccessSnapshot | null;
 };
 
+export type RecordMemberAccessSnapshotInput = {
+  workspaceId: string;
+  requesterUserId: string;
+  localProjectId?: string;
+  // Confirmed backend allow time; `null` clears the entry after a definitive deny.
+  verifiedAt: string | null;
+};
+
+export function isMemberAccessSnapshotFresh(
+  snapshot: Pick<LocalCatalogMemberAccessSnapshot, 'verifiedAt'>,
+  nowMs: number
+): boolean {
+  const ageMs = nowMs - Date.parse(snapshot.verifiedAt);
+  // A future timestamp (clock moved backwards) is not trusted either.
+  return ageMs >= 0 && ageMs < MEMBER_ACCESS_SNAPSHOT_TTL_MS;
+}
+
 export type LocalWorkspaceCatalogService = {
   read: () => Effect.Effect<LocalWorkspaceCatalogSnapshot, LocalWorkspaceCatalogError>;
   listActiveWorkspaces: () => Effect.Effect<LocalCatalogWorkspace[], LocalWorkspaceCatalogError>;
@@ -117,6 +149,9 @@ export type LocalWorkspaceCatalogService = {
   ) => Effect.Effect<void, LocalWorkspaceCatalogError, FileLocks>;
   recordWorkspaceAccessSnapshot: (
     input: RecordWorkspaceAccessSnapshotInput
+  ) => Effect.Effect<void, LocalWorkspaceCatalogError, FileLocks>;
+  recordMemberAccessSnapshot: (
+    input: RecordMemberAccessSnapshotInput
   ) => Effect.Effect<void, LocalWorkspaceCatalogError, FileLocks>;
   upsertSession: (
     session: Omit<LocalCatalogSession, 'cachedAt'>
@@ -326,6 +361,9 @@ export function makeLocalWorkspaceCatalog(
               cachedAt: now,
             },
             ...(previous?.accessSnapshot ? { accessSnapshot: previous.accessSnapshot } : {}),
+            ...(previous?.memberAccessSnapshots
+              ? { memberAccessSnapshots: previous.memberAccessSnapshots }
+              : {}),
           };
         });
         const remoteMissing = snapshot.workspaces
@@ -356,6 +394,37 @@ export function makeLocalWorkspaceCatalog(
           return { ...workspace, accessSnapshot: input.accessSnapshot };
         }),
       })),
+    recordMemberAccessSnapshot: (input) =>
+      mutate((snapshot) => {
+        const nowMs = clock();
+        return {
+          ...snapshot,
+          workspaces: snapshot.workspaces.map((workspace) => {
+            if (workspace.workspaceId !== input.workspaceId) {
+              return workspace;
+            }
+            const others = (workspace.memberAccessSnapshots ?? []).filter(
+              (entry) =>
+                (entry.requesterUserId !== input.requesterUserId ||
+                  entry.localProjectId !== input.localProjectId) &&
+                isMemberAccessSnapshotFresh(entry, nowMs)
+            );
+            const next =
+              input.verifiedAt === null
+                ? others
+                : [
+                    ...others,
+                    {
+                      requesterUserId: input.requesterUserId,
+                      ...(input.localProjectId ? { localProjectId: input.localProjectId } : {}),
+                      verifiedAt: input.verifiedAt,
+                    },
+                  ].slice(-MEMBER_ACCESS_SNAPSHOT_LIMIT);
+            const { memberAccessSnapshots: _previous, ...rest } = workspace;
+            return next.length > 0 ? { ...rest, memberAccessSnapshots: next } : rest;
+          }),
+        };
+      }),
     upsertSession: (session) =>
       mutate((snapshot) => {
         const now = getServerNow();
