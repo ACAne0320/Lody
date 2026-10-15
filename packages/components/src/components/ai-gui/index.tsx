@@ -10,6 +10,7 @@ import { DEFAULT_CONVERSATION_FONT_SIZE, type ConversationFontSize } from '@/ato
 import { getSavedAnchorTurnId } from '@/lib/conversation-scroll/saved-state';
 import { cloudOperations } from '@/lib/cloud-api-operations';
 import type { AgentActivityTone } from './view';
+import type { HistoryLiveWindow, LiveTurnActivity } from './assistant-turn-timing';
 import {
   MessageRowView,
   SessionChatStreamView,
@@ -75,6 +76,9 @@ export interface SessionChatStreamProps {
   agentActivityTone?: AgentActivityTone;
   /** The status is live work (not waiting on the user): shimmer it. */
   agentActivityShimmer?: boolean;
+  /** Presence-derived activity; gates the running turn's timing and liveness. */
+  liveTurnActivity?: LiveTurnActivity | null;
+  historyLive?: HistoryLiveWindow;
   onFileDiffClick?: (turnId: string, filePath: string) => void;
   onFilePathClick?: (filePath: string) => void;
   /** Routes HTML attachment clicks to a live file or Browser surface. */
@@ -175,6 +179,8 @@ const SessionChatStreamImpl = forwardRef<SessionChatStreamHandle, SessionChatStr
       agentActivityLabel = null,
       agentActivityTone = 'primary',
       agentActivityShimmer,
+      liveTurnActivity = null,
+      historyLive,
       onFileDiffClick,
       onFilePathClick,
       onOpenHtmlFile,
@@ -343,6 +349,8 @@ const SessionChatStreamImpl = forwardRef<SessionChatStreamHandle, SessionChatStr
         agentActivityLabel={agentActivityLabel}
         agentActivityTone={agentActivityTone}
         agentActivityShimmer={agentActivityShimmer}
+        liveTurnActivity={liveTurnActivity}
+        {...(historyLive ? { historyLive } : {})}
         conversationFontSize={conversationFontSize}
         suppressStickyAutoScrollRef={suppressStickyAutoScrollRef}
         outlineOverlayRoot={outlineOverlayRoot}
