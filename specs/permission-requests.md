@@ -40,6 +40,8 @@ their hands already are, and they must not answer by accident.
   trigger ("Decline", "Allow", or "Choose an answer"). Opening it does not
   answer the request; the menu shows the family's complete original option
   names in provider order, left-aligned and wrapping within the viewport.
+  A direct answer and its options chevron form one segmented control. Permission
+  menus prefer opening above the trigger, with viewport collision avoidance.
 - **Keyboard.** The arrows walk the answers, starting on the suggestion; Enter or
   Space activates the focused control: a direct answer submits, a family trigger
   opens its menu for selection. Escape on the prompt refuses once and never picks an "always"

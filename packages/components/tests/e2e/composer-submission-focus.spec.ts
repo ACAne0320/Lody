@@ -6,7 +6,9 @@ test.describe('permission option wrapping', () => {
       test(`${story} stays readable at ${width}px`, async ({ page }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`/iframe.html?id=sessions-permissionprompt--${story}&viewMode=story`);
-        const prompt = page.getByRole('group');
+        const prompt = page.getByRole('group').filter({
+          has: page.getByRole('button', { name: 'Decline', exact: true }),
+        });
         const refusal = prompt.getByRole('button', { name: 'Decline', exact: true });
         await expect(refusal).toBeVisible();
         await expect
@@ -82,6 +84,76 @@ test.describe('permission option wrapping', () => {
         );
       });
     }
+  }
+});
+
+test.describe('permission controls in the chat footer', () => {
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 844 },
+    { width: 390, height: 420 },
+  ]) {
+    test(`joins split buttons and opens above at ${viewport.width}x${viewport.height}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      const frame = viewport.width < 640 ? 'mobile' : 'desktop';
+      await page.goto(
+        `/iframe.html?id=sessions-sessionconversationpage--${frame}-permission-approval&viewMode=story`
+      );
+      const allow = page.getByRole('button', { name: 'Allow once', exact: true });
+      const more = page.getByRole('button', { name: 'More answers', exact: true });
+      await expect(allow).toBeVisible();
+      const segments = await allow.evaluate((button) => {
+        const arrow = button.parentElement!.querySelector('button[aria-haspopup="menu"]')!;
+        const mainBox = button.getBoundingClientRect();
+        const arrowBox = arrow.getBoundingClientRect();
+        return {
+          role: button.parentElement?.getAttribute('role'),
+          gap: arrowBox.left - mainBox.right,
+          mainInnerRadius: parseFloat(getComputedStyle(button).borderTopRightRadius),
+          arrowInnerRadius: parseFloat(getComputedStyle(arrow).borderTopLeftRadius),
+          bottom: mainBox.bottom,
+        };
+      });
+      expect(segments.role).toBe('group');
+      expect(segments.gap).toBeCloseTo(1, 0);
+      expect(segments.mainInnerRadius).toBe(0);
+      expect(segments.arrowInnerRadius).toBe(0);
+      expect(segments.bottom).toBeGreaterThan(viewport.height - 120);
+      for (const trigger of [more, page.getByRole('button', { name: 'Decline', exact: true })]) {
+        await trigger.click();
+        const menu = page.getByRole('menu');
+        await expect(menu).toBeVisible();
+        await expect(menu).toHaveAttribute('data-side', 'top');
+        await expect
+          .poll(() =>
+            more.evaluate((button) => parseFloat(getComputedStyle(button).borderTopRightRadius))
+          )
+          .toBeGreaterThan(0);
+        await expect
+          .poll(() =>
+            menu.evaluate((element) => {
+              const box = element.getBoundingClientRect();
+              const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+              return (
+                box.top >= 0 &&
+                box.bottom <= innerHeight &&
+                box.left >= 0 &&
+                box.right <= innerWidth &&
+                !!hit &&
+                element.contains(hit)
+              );
+            })
+          )
+          .toBe(true);
+        const anchor = await trigger.boundingBox();
+        const popup = await menu.boundingBox();
+        expect(popup!.y + popup!.height).toBeLessThanOrEqual(anchor!.y);
+        await page.keyboard.press('Escape');
+        await expect(menu).toBeHidden();
+      }
+    });
   }
 });
 

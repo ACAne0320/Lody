@@ -9,7 +9,7 @@ import {
 import * as stylex from '@stylexjs/stylex';
 import { ChevronDown, ChevronLeft, ChevronRight, CircleStop } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@lody/ui/button';
+import { Button, ButtonGroup } from '@lody/ui/button';
 import { Spinner } from '@lody/ui/spinner';
 import { colors, shadow } from '@lody/ui/tokens/colors.stylex';
 import { corner, radius, space, text } from '@lody/ui/tokens/scales.stylex';
@@ -227,9 +227,6 @@ const styles = stylex.create({
     paddingTop: space[1],
   },
   split: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '2px',
     minWidth: 0,
     maxWidth: '100%',
   },
@@ -415,7 +412,7 @@ export function PermissionPrompt({
       else answerRefs.current.delete(main.optionId);
     };
     const renderOptions = (options: PermissionOption[]) => (
-      <Menu.Content align="end">
+      <Menu.Content side="top" align="end">
         {options.map((option) => (
           <Menu.Item
             key={option.optionId}
@@ -452,7 +449,7 @@ export function PermissionPrompt({
       );
     }
     return (
-      <div key={main.optionId} {...stylex.props(styles.split)}>
+      <ButtonGroup key={main.optionId} {...stylex.props(styles.split)}>
         <Button
           ref={registerAnswer}
           variant={variant}
@@ -484,7 +481,7 @@ export function PermissionPrompt({
             {renderOptions(more)}
           </Menu.Root>
         ) : null}
-      </div>
+      </ButtonGroup>
     );
   };
 
