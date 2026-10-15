@@ -16,5 +16,9 @@ Root and shared package rules apply. `CLAUDE.md` symlinks here; edit `AGENTS.md`
   state or backend downtime.
 - Formatting and diagnostics must not mutate failures, influence retry behavior,
   add transports, or enable telemetry. Routine successful sync stays silent.
+  Explicit SDK snapshot phases use `getLoroSnapshotDiagnostic`: failed phases
+  warn; other phases debug. Keep opaque workflow/request identities, offsets,
+  encoded body lengths, monotonic elapsed times and budgets; never infer that an
+  auth failure sent a HEAD/PUT or that a timeout means the remote write failed.
 - Preserve non-Streams error formatting at callers. Technical details supplement
   existing localized action labels rather than introducing a separate UI flow.

@@ -1,24 +1,62 @@
 import type { RepoTransportError, RepoDiagnosticEvent } from 'loro-repo';
+import type { SnapshotDiagnosticEvent } from '@loro-dev/streams-crdt';
 
 type RepoErrorRuntime = Pick<typeof import('loro-repo'), 'RepoTransportError' | 'RepoSyncError'>;
+type SafeStreamsContext = Pick<
+  NonNullable<SnapshotDiagnosticEvent['error']>,
+  | 'source'
+  | 'operation'
+  | 'originalCode'
+  | 'retryable'
+  | 'phase'
+  | 'timeoutMs'
+  | 'elapsedMs'
+  | 'abortKind'
+  | 'status'
+  | 'requestId'
+  | 'networkCode'
+> &
+  Partial<Pick<NonNullable<RepoTransportError['streamsContext']>, 'stage' | 'requestOperation'>>;
+
+export type LoroSnapshotDiagnostic = Pick<
+  SnapshotDiagnosticEvent,
+  | 'snapshotId'
+  | 'stage'
+  | 'outcome'
+  | 'elapsedMs'
+  | 'snapshotElapsedMs'
+  | 'snapshotOffset'
+  | 'snapshotByteLength'
+  | 'requestId'
+  | 'requestOperation'
+  | 'timeoutMs'
+  | 'status'
+> & {
+  readonly level: 'debug' | 'warn';
+  readonly error?: SafeStreamsContext;
+};
 
 // Select approved fields; never serialize an exception or its legacy payload.
-const projectFailure = (error: RepoTransportError, transportId?: string) => {
-  const context = error.streamsContext;
-  const streamsContext: RepoTransportError['streamsContext'] = context && {
+const projectStreamsContext = (
+  context: RepoTransportError['streamsContext'] | SnapshotDiagnosticEvent['error']
+): SafeStreamsContext | undefined =>
+  context && {
     source: context.source,
     operation: context.operation,
-    stage: context.stage,
+    stage: 'stage' in context ? context.stage : undefined,
     originalCode: context.originalCode,
     retryable: context.retryable,
-    requestOperation: context.requestOperation,
+    requestOperation: 'requestOperation' in context ? context.requestOperation : undefined,
     phase: context.phase,
     timeoutMs: context.timeoutMs,
     elapsedMs: context.elapsedMs,
+    abortKind: context.abortKind,
     status: context.status,
     requestId: context.requestId,
     networkCode: context.networkCode,
   };
+
+const projectFailure = (error: RepoTransportError, transportId?: string) => {
   return {
     code: error.code,
     phase: error.phase,
@@ -28,9 +66,28 @@ const projectFailure = (error: RepoTransportError, transportId?: string) => {
     roomId: error.roomId,
     failureKind: error.failureKind ?? 'unknown',
     streamsCode: error.streamsCode,
-    streamsContext,
+    streamsContext: projectStreamsContext(error.streamsContext),
   };
 };
+
+/** Explicit snapshot phases are safe SDK records, separate from arbitrary errors. */
+export const getLoroSnapshotDiagnostic = (
+  event: SnapshotDiagnosticEvent
+): LoroSnapshotDiagnostic => ({
+  level: event.outcome === 'failed' ? 'warn' : 'debug',
+  snapshotId: event.snapshotId,
+  stage: event.stage,
+  outcome: event.outcome,
+  elapsedMs: event.elapsedMs,
+  snapshotElapsedMs: event.snapshotElapsedMs,
+  snapshotOffset: event.snapshotOffset,
+  snapshotByteLength: event.snapshotByteLength,
+  requestId: event.requestId,
+  requestOperation: event.requestOperation,
+  timeoutMs: event.timeoutMs,
+  status: event.status,
+  error: projectStreamsContext(event.error),
+});
 
 /** Bind to the caller's Repo instance: pnpm peers can produce distinct classes. */
 export const createLoroSyncErrorTools = (runtime: RepoErrorRuntime) => {

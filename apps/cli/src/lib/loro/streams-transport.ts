@@ -1,5 +1,5 @@
 import type { RemoteCursorStore } from '@loro-dev/streams-crdt';
-import { createLoroSyncErrorTools } from '@lody/shared/loro-sync-errors';
+import { createLoroSyncErrorTools, getLoroSnapshotDiagnostic } from '@lody/shared/loro-sync-errors';
 import { RepoSyncError, RepoTransportError } from 'loro-repo';
 import { registerLoroSyncErrorFormatter } from '../../utils/format-error';
 import {
@@ -77,9 +77,22 @@ export async function createCliStreamsTransport(args: {
       snapshotCodec: streamsSnapshotCodec,
       baseUrl: gatewayBaseUrl,
       shardUrls: getLoroStreamsShardUrls(gatewayBaseUrl, tokenProvider.getShardHostSuffix()),
+      reconnectConfig: {
+        authTimeoutMs: 10_000,
+        // Fetch covers sending the body and waiting for response headers. The
+        // control-request budget must not also cap a healthy durable upload.
+        uploadTimeoutMs: 60_000,
+      },
       snapshotUpload: {
         canUpload: async () => true,
         debounceMs: 5_000,
+        onDiagnostic: (event) => {
+          const diagnostic = getLoroSnapshotDiagnostic(event);
+          args.logger[diagnostic.level]('[loro-streams] snapshot phase', {
+            workspaceId: args.workspaceId,
+            ...diagnostic,
+          });
+        },
       },
     }),
   };
