@@ -87,7 +87,7 @@
 ## Sagas
 
 - Peek/claim are synchronous; publish before `start()`. Peek never transfers ownership.
-  Cold/replacement starts await same-session cleanup; failures block, including late creation.
+  Cold/replacement starts await same-session cleanup; failures block until a retry, including late creation.
   Before adoption: marked worktree and `newSession` only; no doc, setup, history or events.
 - Credentials are runtime leases: adopt retains, dispose releases that generation; local has none.
 - Dispatch/claim rescan `buildSessionLaunchConfig`; await incompatible cleanup.
