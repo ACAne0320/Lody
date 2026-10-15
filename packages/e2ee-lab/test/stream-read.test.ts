@@ -318,7 +318,7 @@ describe('actual authenticated finite SDK read routes, not snapshot authority', 
       }
     }
   });
-  it('withholds real SDK bytes after an actual signed device revocation during the body lease and retains the durable client cursor', async () => {
+  it('lets a historically known device read and persist its signed revocation while refusing protected content after the body lease', async () => {
     const f = await readFixture();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -440,11 +440,21 @@ describe('actual authenticated finite SDK read routes, not snapshot authority', 
               extendLedger(current, [revoked], { head: hashRecordBytes(revoked), length: 4 })
             );
             release();
-            expect(Result.isFailure(yield* Fiber.join(worker))).toBe(true);
-            const retained = yield* client.current();
-            expect(retained.offset).toBe(before.offset);
-            expect(retained.view.length).toBe(1);
-            expect(retained.view.head.equals(before.view.head)).toBe(true);
+            const prior = yield* Fiber.join(worker);
+            expect(Result.isSuccess(prior)).toBe(true);
+            if (Result.isSuccess(prior)) expect(prior.success.view.length).toBe(3);
+            const observed = yield* client.read({ head: current.head, length: 4 });
+            expect(observed.view.head.equals(current.head)).toBe(true);
+            expect(observed.view.length).toBe(4);
+            expect(
+              observed.view
+                .inspectState()
+                .devices.has(Buffer.from(machine.publicKey.toBytes()).toString('hex'))
+            ).toBe(false);
+            expect(observed.offset).not.toBe(before.offset);
+            const denied = yield* Effect.promise(() => auth.fetch(url.replace(/control$/, 'loro')));
+            expect(denied.status).toBe(403);
+            yield* Effect.promise(() => denied.body?.cancel() ?? Promise.resolve());
           })
         )
       );

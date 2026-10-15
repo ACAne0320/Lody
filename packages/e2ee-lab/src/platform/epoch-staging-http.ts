@@ -12,6 +12,7 @@ import {
 } from '@lody/e2ee-core/keys/staging';
 import type { EpochStagedGroupDto } from '@lody/cloud-api/e2ee-epoch-staging';
 import type { LabCredential } from './credentials';
+import type { LabEpochStagingStore } from './epoch-staging';
 import { makeLabSdkOwner } from './sdk-owner';
 import { readBoundedBody } from './bounded-body';
 
@@ -33,7 +34,7 @@ const Group = Schema.Struct({
 });
 export interface LabEpochStagingHost {
   readonly ledger: () => Effect.Effect<LedgerView, unknown>;
-  readonly port: EpochStagingPort;
+  readonly port: LabEpochStagingStore;
 }
 const Request = Schema.Union([
   Schema.Struct({ op: Schema.Literal('stage'), group: Group }),
@@ -77,7 +78,7 @@ export const dispatchLabEpochStaging = Effect.fnUntraced(function* (input: {
   readonly genesis: Bytes.GenesisHash;
   readonly credential: LabCredential;
   readonly ledger: () => Effect.Effect<LedgerView, unknown>;
-  readonly port: EpochStagingPort;
+  readonly port: LabEpochStagingStore;
 }) {
   const request = yield* Effect.try({
     try: () => Schema.decodeUnknownSync(Request)(input.value),
@@ -94,7 +95,7 @@ export const dispatchLabEpochStaging = Effect.fnUntraced(function* (input: {
   const port = Object.freeze({
     stageGroup: input.port.stageGroup.bind(input.port),
     readGroup: input.port.readGroup.bind(input.port),
-    deleteGroup: input.port.deleteGroup.bind(input.port),
+    deleteGroupFor: input.port.deleteGroupFor.bind(input.port),
   });
   const view = yield* ledger();
   const org = hex(genesis.toBytes()),
@@ -141,13 +142,11 @@ export const dispatchLabEpochStaging = Effect.fnUntraced(function* (input: {
     const group = yield* port.readGroup(key);
     return group === null ? null : encodeLabEpochGroup(group);
   }
-  const original = yield* port.readGroup(key);
-  if (original !== null) {
-    const record = yield* Effect.fromResult(decodeRecord(original.record));
-    if (record.body.type !== 'ordinary' || !record.body.signer.equals(principal))
-      return yield* fail('unauthorized');
-  }
-  yield* port.deleteGroup(key, request.occupied);
+  yield* port
+    .deleteGroupFor(principal, key, request.occupied)
+    .pipe(
+      Effect.mapError((error) => (error.code === 'unauthorized' ? fail('unauthorized') : error))
+    );
   return { ok: true } as const;
 });
 /** Authenticated local fixture transport. Its owner retains raw fetch AND body

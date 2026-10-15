@@ -237,3 +237,26 @@ These are work-plan labels, not wire versions or security guarantees.
 Migration source records are immutable archive evidence. Current entrypoints,
 contracts and explicit production gaps are maintained in these READMEs and Specs;
 archiving does not turn old per-file statuses into current acceptance.
+
+
+## Workspace and recovery composition
+
+`@lody/e2ee-core/workspace` exposes the Scope-owned `E2eeWorkspace` facade:
+create/open, ledger commands, staged rotation/removal, finite key rounds, documents
+and concrete recovery. All native resources arrive through `WorkspacePlatform.layer`.
+The [facade contract](src/workspace/README.md) describes resource ownership and outcomes.
+Products must use this facade; low-level exports remain library building blocks.
+No product E2EE switch is enabled.
+
+`@lody/e2ee-core/recovery` implements vault-v1 encryption, immutable entries,
+encrypted-index CAS, durable setup/restore and rollback pins. Its server/local
+storage ports have no hidden platform defaults. See the [draft vault specification](../../specs/e2ee/recovery-vault.md).
+The desktop main adapter lives in `apps/electron/src/main/e2ee-custody.mts`;
+Web/mobile/CLI custody remains unavailable. Recovery-device secrets are temporary.
+
+Inviter-pinned [snapshot joining](../../specs/e2ee/snapshot-join.md) persists the
+qualified snapshot and validates only subsequent records on normal reopen.
+`./content/record-boundary` defines the content-blind backend position port;
+consumers never parse or order opaque offset tokens.
+
+[Non-gating benchmarks](bench/README.md) emit environment-qualified JSON.

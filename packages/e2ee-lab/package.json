@@ -44,7 +44,9 @@
     "./repro": "./src/platform/repro-pack.ts",
     "./repro-runner": "./src/platform/repro-runner.ts",
     "./attacks": "./src/platform/attack-observer.ts",
-    "./attack-transport": "./src/platform/attack-transport.ts"
+    "./attack-transport": "./src/platform/attack-transport.ts",
+    "./model-explorer": "./src/platform/model-explorer.ts",
+    "./recovery-vault": "./src/platform/recovery-vault-sqlite.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

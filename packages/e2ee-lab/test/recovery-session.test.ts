@@ -275,10 +275,19 @@ it('uses an active Recovery device to durably enroll its own new personal device
             signer: another,
           });
           statuses.length = 0;
-          expect(Result.isFailure(yield* Effect.result(reopened.submit(afterRevocation)))).toBe(
-            true
-          );
-          expect(statuses).toContain(403);
+          const beforeAttempts = captured.length;
+          const refused = yield* Effect.result(reopened.submit(afterRevocation));
+          expect(Result.isFailure(refused)).toBe(true);
+          if (Result.isFailure(refused))
+            expect(refused.failure).toMatchObject({ _tag: 'LedgerError', code: 'unauthorized' });
+          expect(statuses).toEqual([200]);
+          expect(captured).toHaveLength(beforeAttempts);
+          expect(
+            (yield* reopened.current()).view
+              .inspectState()
+              .devices.has(Buffer.from(recovery.publicKey.toBytes()).toString('hex'))
+          ).toBe(false);
+          expect(Result.isFailure(yield* Effect.result(reopened.keyRound()))).toBe(true);
           expect(f.records).toEqual(retained);
           const remains = f.view().inspectState();
           expect(

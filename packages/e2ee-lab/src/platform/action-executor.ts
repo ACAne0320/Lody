@@ -130,6 +130,19 @@ const Action = Schema.Union([
   }),
 ]);
 export type LabAction = typeof Action.Type;
+export const LabActionPlanSchema = Schema.Array(Action).check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(256)
+);
+/** A model proposes actions, never verdicts. Its expected outcomes are discarded;
+ * the independent oracle and actual property observers decide violations. */
+export function captureModelActionPlan(input: unknown): readonly LabAction[] {
+  const actions = Schema.decodeUnknownSync(LabActionPlanSchema)(input).map(
+    ({ expect: _expect, ...row }) => row as LabAction
+  );
+  actions.forEach(assertLabActionSemantics);
+  return actions;
+}
 export type LabActionActor = Effect.Success<ReturnType<typeof makeLabProcessActor>>;
 export class LabActionError extends Data.TaggedError('LabActionError')<{
   readonly code: 'invalid-plan' | 'unknown-actor' | 'missing-observation';
@@ -201,9 +214,11 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
     action: Extract<LabAction, { kind: 'storage' }>
   ) => Effect.Effect<unknown, unknown>;
   readonly transport?: Effect.Success<ReturnType<typeof makeLabAttackTransport>>;
+  readonly beforeAction?: (action: LabAction, index: number) => Effect.Effect<void, unknown>;
   readonly onObservation?: (observation: LabActionObservation) => Effect.Effect<void, unknown>;
 }) {
   const onObservation = input.onObservation;
+  const beforeAction = input.beforeAction;
   const actions = yield* Effect.try({
     try: () => {
       const rows = input.actions,
@@ -348,6 +363,7 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
   const pending = new Map<string, Fiber.Fiber<LabProcessReply, unknown>>();
   const work = Effect.gen(function* () {
     for (const [index, action] of actions.entries()) {
+      if (beforeAction) yield* beforeAction(action, index);
       const materialIndex = input.sourceIndices?.[index] ?? index;
       const actor = actors.get(action.actor)!;
       const operation = action.kind === 'call' ? action.operation : action.kind;

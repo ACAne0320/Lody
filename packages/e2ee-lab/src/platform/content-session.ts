@@ -10,6 +10,7 @@ export {
 /** Real Loro native owner on the common protected document lifecycle. */
 export function makeLabLoroSession(
   input: Omit<Parameters<typeof makeStreamsUpdateBinding>[0], 'model'> & {
+    readonly binding?: import('effect').Effect.Success<ReturnType<typeof makeStreamsUpdateBinding>>;
     readonly path: string;
     readonly mode: 'create' | 'open';
     readonly streamUrl: string;

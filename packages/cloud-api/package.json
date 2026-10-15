@@ -13,6 +13,10 @@
     "./e2ee-epoch-staging": {
       "types": "./src/e2ee-epoch-staging.ts",
       "import": "./src/e2ee-epoch-staging.ts"
+    },
+    "./e2ee-recovery-vault": {
+      "types": "./src/e2ee-recovery-vault.ts",
+      "import": "./src/e2ee-recovery-vault.ts"
     }
   },
   "scripts": {

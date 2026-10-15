@@ -408,9 +408,8 @@ it('uses one genuine atomic removal publication and stages only its active posts
           });
           expect(installedEpochs(f, 'survivor')).toEqual([1]);
           const refused = yield* Effect.result(removed.receiveCommittedEpoch());
-          expectRefusal(refused, 'LedgerFeedError', 'transport');
-          if (Result.isFailure(refused))
-            expect(refused.failure).toMatchObject({ cause: { code: 'forbidden', status: 403 } });
+          expectRefusal(refused, 'LabEpochStagingHttpError', 'unauthorized');
+          expect(yield* owner.epochStaging.readGroup(key)).toEqual(group);
           expect(installedEpochs(f, 'witness')).toEqual([]);
         })
       )

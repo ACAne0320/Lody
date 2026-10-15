@@ -8,6 +8,8 @@ import type { SnapshotFeedOrigin } from '@lody/e2ee-core/ledger/feed/snapshot/sq
 import type { DeviceSigner } from '@lody/e2ee-core/signing';
 import { makeLabHttpIdentity } from './http-identity';
 import { makeLabLedgerActor } from './ledger-actor';
+import { makeLabInvitationOrigin } from './invitation-store';
+import type { WorkspaceInvitation } from '@lody/e2ee-core/workspace';
 
 /** Already-admitted synthetic workspace, existing signed full-prefix stream only.
  * Independently supplied checkpoint authority is never inferred from HTTP metadata,
@@ -27,6 +29,13 @@ export const openLabExistingWorkspace = Effect.fnUntraced(function* (input: {
   /** Independently qualified exact origin; offset is only a transport locator.
    * P09 writes still verify complete history independently. */
   readonly snapshot?: SnapshotFeedOrigin;
+  /** Imported QR/link pin is retained independently from the mailbox response. */
+  readonly invitation?: {
+    readonly pin: WorkspaceInvitation;
+    readonly requestId: Bytes.RequestId;
+    readonly path: string;
+    readonly mode: 'create' | 'open';
+  };
   readonly fetch?: typeof fetch;
 }) {
   // Capture every mutable caller binding before the first native operation.
@@ -87,6 +96,17 @@ export const openLabExistingWorkspace = Effect.fnUntraced(function* (input: {
       const identity = yield* makeLabHttpIdentity({ baseUrl, genesis, fetch: transport });
       const auth = yield* identity.authenticate(signer);
       const original = yield* auth.discoverGenesis();
+      if (input.invitation) {
+        if (snapshot) return yield* new LedgerFeedError({ code: 'invalid-frame' });
+        const invited = yield* makeLabInvitationOrigin({
+          ...input.invitation,
+          mailbox: auth.invitationMailbox,
+        });
+        if (!invited.view.genesis.equals(genesis))
+          return yield* new LedgerFeedError({ code: 'wrong-parent' });
+        snapshot = invited.snapshot;
+        snapshotPoint = { head: invited.view.head, length: invited.view.length };
+      }
       const origin = new URL(auth.url).origin;
       const sdk = new StreamsClient({
         url: `${origin}/ds/${Buffer.from(genesis.toBytes()).toString('hex')}/control`,

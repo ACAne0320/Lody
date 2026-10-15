@@ -1,5 +1,6 @@
 import { Data, Result } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
+import { historicalContentIdentity } from '@lody/e2ee-core/ledger/snapshot';
 import { contentPermissions, decodeRecord, type LedgerView } from '@lody/e2ee-core/ledger';
 
 export class LabGatewayError extends Data.TaggedError('LabGatewayError')<{
@@ -59,8 +60,24 @@ export function authorizeLabStream(input: {
           return yield* deny('unauthorized');
         const state = view.inspectState();
         const active = state.devices.get(hex(device));
-        if (!active || !state.members.has(hex(active.membershipId)))
+        if (!active || !state.members.has(hex(active.membershipId))) {
+          // A bound, genuinely historical device may learn its own revocation by
+          // reading public signed control bytes. This grants no mailbox, content,
+          // key, snapshot upload or write capability.
+          if (
+            bound !== null &&
+            stream === 'control' &&
+            (method === 'GET' || method === 'HEAD') &&
+            sub === undefined
+          ) {
+            yield* Result.mapError(
+              historicalContentIdentity(view, device),
+              () => new LabGatewayError({ status: 403, code: 'unauthorized' })
+            );
+            return undefined;
+          }
           return yield* deny('unauthorized');
+        }
         if (
           (method === 'GET' || method === 'HEAD') &&
           (sub === undefined || sub === 'snapshot' || sub === 'bootstrap')

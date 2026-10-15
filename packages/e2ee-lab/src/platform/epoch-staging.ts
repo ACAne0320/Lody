@@ -2,6 +2,8 @@ import Database from 'better-sqlite3';
 import { closeSync, openSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { Data, Effect, Result, Schema } from 'effect';
+import { Bytes } from '@lody/e2ee-core';
+import { decodeRecord } from '@lody/e2ee-core/ledger';
 import {
   ownEpochStagedGroup,
   ownEpochStagedGroupKey,
@@ -12,8 +14,23 @@ import {
 } from '@lody/e2ee-core/keys/staging';
 
 export class LabEpochStagingError extends Data.TaggedError('LabEpochStagingError')<{
-  readonly code: 'invalid-input' | 'storage' | 'corrupt' | 'conflict' | 'closed' | 'not-obsolete';
+  readonly code:
+    | 'invalid-input'
+    | 'storage'
+    | 'corrupt'
+    | 'conflict'
+    | 'closed'
+    | 'not-obsolete'
+    | 'unauthorized';
 }> {}
+export interface LabEpochStagingStore extends EpochStagingPort {
+  /** Authenticated server boundary. Read/check/delete is one native transaction. */
+  readonly deleteGroupFor: (
+    principal: Bytes.SigningPublicKey,
+    key: EpochStagedGroupKey,
+    occupied: { readonly epoch: number; readonly commitment: string }
+  ) => Effect.Effect<void, LabEpochStagingError>;
+}
 const fail = (code: LabEpochStagingError['code']) => new LabEpochStagingError({ code });
 const app = 0x4c455347;
 const Row = Schema.Struct({ record: Schema.Uint8Array });
@@ -89,6 +106,35 @@ export const makeLabEpochStaging = Effect.fnUntraced(function* (input: {
     if (Result.isFailure(group)) throw fail('corrupt');
     return group.success;
   };
+  const remove = (
+    key: EpochStagedGroupKey,
+    occupied: { readonly epoch: number; readonly commitment: string },
+    principal?: Bytes.SigningPublicKey
+  ) =>
+    sql(() =>
+      db
+        .transaction(() => {
+          guard();
+          const original = read(key);
+          if (original === null) return;
+          if (principal) {
+            const record = Result.getOrThrow(decodeRecord(original.record));
+            if (record.body.type !== 'ordinary' || !record.body.signer.equals(principal))
+              throw fail('unauthorized');
+          }
+          if (
+            occupied.epoch !== key.epoch ||
+            !/^[0-9a-f]{64}$/.test(occupied.commitment) ||
+            occupied.commitment === key.commitment
+          )
+            throw fail('not-obsolete');
+          db.prepare(
+            'DELETE FROM staged_groups WHERE genesis=? AND epoch=? AND commitment=? AND record_hash=?'
+          ).run(...args(key));
+          if (read(key) !== null) throw fail('storage');
+        })
+        .immediate()
+    );
   const port = {
     stageGroup: Effect.fnUntraced(function* (source: EpochStagedGroup) {
       const group = yield* Effect.fromResult(ownEpochStagedGroup(source));
@@ -118,26 +164,21 @@ export const makeLabEpochStaging = Effect.fnUntraced(function* (input: {
       occupied: { readonly epoch: number; readonly commitment: string }
     ) {
       const key = yield* Effect.fromResult(ownEpochStagedGroupKey(source));
-      // Only the client can qualify the occupied slot. HTTP authenticates the
-      // original signer separately; opaque storage never turns this claim into authority.
-      if (
-        occupied.epoch !== key.epoch ||
-        !/^[0-9a-f]{64}$/.test(occupied.commitment) ||
-        occupied.commitment === key.commitment
-      )
-        return yield* fail('not-obsolete');
-      return yield* sql(() =>
-        db
-          .transaction(() => {
-            guard();
-            db.prepare(
-              'DELETE FROM staged_groups WHERE genesis=? AND epoch=? AND commitment=? AND record_hash=?'
-            ).run(...args(key));
-            if (read(key) !== null) throw fail('storage');
-          })
-          .immediate()
-      );
+      return yield* remove(key, occupied);
     }),
-  } satisfies EpochStagingPort;
+    deleteGroupFor: Effect.fnUntraced(function* (
+      principal: Bytes.SigningPublicKey,
+      source: EpochStagedGroupKey,
+      occupied: { readonly epoch: number; readonly commitment: string }
+    ) {
+      const caller = yield* Effect.fromResult(Bytes.signingPublicKey(principal.toBytes())).pipe(
+        Effect.mapError(() => fail('invalid-input'))
+      );
+      const key = yield* Effect.fromResult(ownEpochStagedGroupKey(source)).pipe(
+        Effect.mapError(() => fail('invalid-input'))
+      );
+      return yield* remove(key, { epoch: occupied.epoch, commitment: occupied.commitment }, caller);
+    }),
+  } satisfies LabEpochStagingStore;
   return Object.freeze(port);
 });

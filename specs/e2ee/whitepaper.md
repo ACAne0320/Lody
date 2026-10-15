@@ -7,9 +7,9 @@ This public draft preserves the pinned proposed architecture. References to inde
 
 End-to-End Encryption, Device Trust, and Organization Collaboration
 
-Version 0.16 · 2026-10-10 · [中文](whitepaper.zh.md)
+Version 0.17 · 2026-10-15 · [中文](whitepaper.zh.md)
 
-> E2EE documentation · 22 accepted decisions. These choices are reflected here; details such as the recovery-vault encoding remain open. This paper describes a proposed security architecture, not current product guarantees or an independent security audit. The [permission-ledger draft (Chinese)](permission-ledger.zh.md) distinguishes confirmed roles and interactions from proposals and open choices. Implementation status remains in the checklist.
+> E2EE documentation · 22 accepted decisions. These choices are reflected here; the recovery-vault format and desktop custody decisions are now specified in their draft contracts. This paper describes a proposed security architecture, not current product guarantees or an independent security audit. The [permission-ledger draft (Chinese)](permission-ledger.zh.md) distinguishes confirmed roles and interactions from proposals and open choices. Implementation status remains in the checklist.
 
 ## Abstract
 
@@ -153,9 +153,9 @@ The current Owner unilaterally signs a transfer through an active management-cap
 
 **One recovery file opens a cloud-hosted encrypted recovery vault. Each user has a separate recovery device R in each workspace.** R has independent signing and encryption key pairs and is bound to the current membership in that workspace. Normally inactive, it receives epoch-key envelopes and can authorize that user's new personal devices. It cannot directly write content, execute commands, administer the workspace or forward keys to other devices. Recovery is a device kind, not the Guest role.
 
-The file contains a random 256-bit unlock key, locator and format version. The cloud stores only client-encrypted R private-key packages and encrypted envelopes addressed to R; it cannot read those private keys. The file is neither a seed for all future workspace keys nor a full offline content backup. The same file can open later vault entries, but recovery still depends on their ciphertext remaining available.
+The canonical CBOR recovery file is `["vault-v1", 1, vaultId, serviceLocator, U]`, with independent random 256-bit vaultId and unlock material U. A separate random vault master key V is wrapped using an HKDF-SHA256 key derived from U, bound to vaultId and purpose, and XChaCha20-Poly1305. Entries and the index use separate V-derived keys; each new encryption obtains a fresh secure 24-byte nonce. See the [recovery-vault draft](recovery-vault.md) for exact AAD, immutable entry upload, index CAS and rollback pins. The cloud stores only client-encrypted R private-key packages and encrypted envelopes addressed to R; it cannot read those private keys. The file is neither a seed for all future workspace keys nor a full offline content backup. The same file can open later vault entries, but recovery still depends on their ciphertext remaining available.
 
-First-time recovery setup for a workspace MUST satisfy the following completion conditions on the client. The list describes responsibilities in a suggested order; exact persistence ordering, interruption recovery and concurrency still need specification. Reconcile persisted results after interruptions instead of regenerating committed identities:
+First-time recovery setup for a workspace MUST satisfy the following completion conditions on the client. The following four steps persist their original entry ID, index-CAS intent, signed ledger bytes and completed phase. Upload/readback precedes index CAS; concurrent setup in the same workspace reuses the winner, while disjoint workspaces merge explicitly. Conflicting identities remain visible. Reconcile persisted results after interruptions instead of regenerating committed identities:
 
 1. Generate an independent R for this user and workspace, and unlock the vault using the file or a verified PRF recovery entry.
 2. Encrypt R's private-key package locally, upload it, and read back and decrypt it. Ordinary cloud-account credentials cannot decrypt it.
@@ -168,7 +168,7 @@ Ordinary epoch rotation uses **R's public key** to encrypt and upload a new enve
 
 Recovery opens the vault on the new device, decrypts the target workspace's R, verifies trusted ledger state and current eligibility, opens the current envelope and follows history packages. The new personal device generates independent keys C, is enrolled by R, then uses C and clears temporary R secrets. No administrator needs to be online only if R is active and the required ciphertext is stored. Missing new keys cannot be reconstructed. C inherits the user's current role; recovery never expands it.
 
-**Passkeys.** Only actual [WebAuthn PRF](https://www.w3.org/TR/webauthn-3/#prf-extension) support with a verified recovery path can provide another entry to the same vault. Ordinary passkey login is not decryption. Entry wrapping, cross-platform support and exact vault encoding remain open; this does not restore the former shared-R-across-workspaces design.
+**Passkeys.** Only actual [WebAuthn PRF](https://www.w3.org/TR/webauthn-3/#prf-extension) support with a verified recovery path can provide another entry to the same vault. Ordinary passkey login is not decryption. The vault-v1 wrapping format is specified above. Cross-platform PRF ceremony support remains platform work; this does not restore the former shared-R-across-workspaces design.
 
 **Phones and onboarding.** An authorized phone can approve a new device without keeping R private keys resident. Every platform and the Owner may skip recovery setup after acknowledging the risk. Remind users on joining and show per-workspace setup and verification progress. Pairing, envelope receipt and actual recoverability are distinct states.
 
@@ -207,7 +207,7 @@ The pure verification layer checks ledger records sequentially from explicit sta
 - **UX:** the first-use path contains essential steps, with persistent follow-up tasks for remaining setup. Login, device approval, key availability, document readiness and execution readiness have distinct states.
 - **Deletion:** distinguish logout, local cleanup, account deletion and workspace deletion; permanent deletion needs explicit confirmation and an opportunity to export first. Never silently discard the only draft.
 - **Compatibility and diagnostics:** reuse capability checks and request upgrades for unsupported encryption formats. Read-only access still requires an understood format and current reading permission. Default diagnostics contain minimal fixed fields; detailed reports are previewed locally and sent only at the user's request.
-- **Release:** every platform must complete the agreed Beta capabilities and checks before Beta, with more features added later. Vault encoding, platform private-key storage, independent new-key backup and its release gate, rotation after self-revocation, exact features and lifetime parameters remain open. Accepted direction does not mean protocol completion or product acceptance.
+- **Release:** every platform must complete the agreed Beta capabilities and checks before Beta, with more features added later. Vault-v1 and desktop safeStorage-wrapped KEK custody now have concrete draft contracts. Web/mobile/CLI custody and product enablement remain unavailable. Strict deadline B, remaining platform acceptance and release gates are separate. Accepted direction does not mean protocol completion or product acceptance.
 
 ## References and Document Scope
 

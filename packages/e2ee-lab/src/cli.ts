@@ -21,8 +21,33 @@ import { Cause, Effect, Exit } from 'effect';
 import { runLabScenario } from './platform/scenario-runner';
 import { inspectLabEvidence } from './platform/action-executor';
 import { replayLabActions, minimizeLabActions } from './platform/repro-runner';
+import { exploreLabAttacks, makeLabAttackPlanModel } from './platform/model-explorer';
 const [command, output, plan] = process.argv.slice(2);
 const main = Effect.gen(function* () {
+  if (command === 'explore' && output && plan) {
+    const directory = resolve(output);
+    const configuration = JSON.parse(readBounded(resolve(plan), 1024 * 1024)) as {
+      actors?: import('./pure/actor-config').LabActorConfiguration[];
+      goal: string;
+      maxPlans?: number;
+    };
+    const result = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const model = yield* makeLabAttackPlanModel({
+          key: process.env.OPENAI_API_KEY ?? '',
+          model: process.env.E2EE_LAB_MODEL ?? '',
+        });
+        yield* Effect.try({
+          try: () => mkdirSync(directory, { mode: 0o700 }),
+          catch: (cause) => cause,
+        });
+        return yield* exploreLabAttacks({ directory, model, ...configuration });
+      })
+    );
+    console.log(JSON.stringify(result));
+    process.exitCode = 0; // Diagnostic exploration never acts as a CI gate.
+    return;
+  }
   if ((command === 'replay' || command === 'minimize') && output && plan) {
     const pack = yield* Effect.try({
       try: () => JSON.parse(readBounded(resolve(output), 32 * 1024 * 1024)) as unknown,
@@ -68,7 +93,7 @@ const main = Effect.gen(function* () {
   }
   if (command !== 'run' || !output) {
     console.error(
-      'Usage: e2ee-lab run <new-output-directory> [actions.json] | inspect <evidence.json> | replay <evidence.json> <new-output-directory> | minimize <evidence.json> <new-output-directory>'
+      'Usage: e2ee-lab explore <new-output-directory> <goal-and-actors.json> | run <new-output-directory> [actions.json] | inspect <evidence.json> | replay <evidence.json> <new-output-directory> | minimize <evidence.json> <new-output-directory>'
     );
     process.exitCode = 64;
     return;

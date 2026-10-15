@@ -21,6 +21,11 @@ import type { ScheduleChoice } from '../pure/schedule';
 import { loadPrivateReplay, savePrivateReplay } from './private-replay';
 import { captureLabActors, type LabActorConfiguration } from '../pure/actor-config';
 import { refStateFromOrg, refWriteExpectation } from '../pure/reference-model';
+import {
+  refActionPrediction,
+  judgeRefAction,
+  type RefActionPrediction,
+} from '../pure/action-model';
 import { makeLabContentTrace } from './content-trace';
 import { makeLabAttackTransport } from './attack-transport';
 import { applyLabStorageMutation } from './storage-attack';
@@ -165,7 +170,7 @@ export const existingWorkspaceActions: readonly LabAction[] = [
     kind: 'call',
     actor: 'peer',
     operation: 'refresh',
-    expect: { ok: false, refusal: { tag: 'LedgerFeedError', code: 'forbidden' } },
+    expect: good,
   },
 ];
 /** Complete actor execution + bounded artifacts. Expected text and old durable
@@ -271,6 +276,15 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         if (row.behavior === 'insider') retainedInsiderViews.set(row.id, fixture.view());
       const explicitMeasurements: Effect.Success<ReturnType<typeof measureLabScenarioProbes>>[] =
         [];
+      const modelMeasurements: {
+        action: number;
+        prediction: RefActionPrediction;
+        verdict: ReturnType<typeof judgeRefAction>;
+      }[] = [];
+      const pendingPredictions = new Map<string, RefActionPrediction>();
+      let currentPrediction: RefActionPrediction;
+      let currentWrite: ReturnType<typeof refWriteExpectation> = 'unmeasured';
+      let currentEpoch = 0;
       let observedActions = 0;
       const run = yield* executeLabActions({
         actors,
@@ -311,6 +325,44 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         maxSteps,
         stop,
         schedule: input.schedule,
+        beforeAction: (action) =>
+          Effect.sync(() => {
+            const facts = refStateFromOrg(org, fixture.view().inspectState());
+            const deviceHex = Buffer.from(
+              fixture.devices.get(action.actor)!.publicKey.toBytes()
+            ).toString('hex');
+            const target =
+              'target' in action && action.target ? fixture.devices.get(action.target) : undefined;
+            const targetDevice = target
+              ? Buffer.from(target.publicKey.toBytes()).toString('hex')
+              : undefined;
+            currentPrediction = refActionPrediction({
+              state: facts,
+              actor: deviceHex,
+              action,
+              running: actors[action.actor]!.pid() !== undefined,
+              targetDevice,
+              targetUser: targetDevice ? facts.devices.get(targetDevice)?.user : undefined,
+            });
+            if (action.kind === 'begin-call')
+              pendingPredictions.set(
+                action.id,
+                refActionPrediction({
+                  state: facts,
+                  actor: deviceHex,
+                  action: { ...action, kind: 'call' },
+                  running: actors[action.actor]!.pid() !== undefined,
+                  targetDevice,
+                  targetUser: targetDevice ? facts.devices.get(targetDevice)?.user : undefined,
+                })
+              );
+            if (action.kind === 'join-call') {
+              currentPrediction = pendingPredictions.get(action.id) ?? currentPrediction;
+              pendingPredictions.delete(action.id);
+            }
+            currentWrite = refWriteExpectation(facts, deviceHex, org, facts.epoch);
+            currentEpoch = facts.epoch;
+          }),
         onObservation: (observation) =>
           Effect.gen(function* () {
             const action = observation.action;
@@ -326,13 +378,21 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
               )
                 retainedInsiderViews.set(row.id, observed);
             const index = observedActions++;
+            modelMeasurements.push({
+              action: index,
+              prediction: currentPrediction,
+              verdict: judgeRefAction(
+                currentPrediction,
+                observation.reply,
+                refStateFromOrg(org, observed.inspectState())
+              ),
+            });
             if (action.kind !== 'call' || action.operation !== 'append') return;
             const device = fixture.devices.get(action.actor)!.publicKey;
             const deviceHex = Buffer.from(device.toBytes()).toString('hex');
             // Facts come from independently witnessed original host records, not
             // from the child or the implementation's write-permission function.
-            const facts = refStateFromOrg(org, fixture.view().inspectState());
-            const expected = refWriteExpectation(facts, deviceHex, org, facts.epoch);
+            const expected = currentWrite;
             writerMeasurements.push({
               action: index,
               expected,
@@ -344,7 +404,7 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
                 genesisHex: org,
                 stream: action.document!,
                 deviceHex,
-                epoch: facts.epoch,
+                epoch: currentEpoch,
                 text: action.text!,
                 writerMayWrite: expected === 'unmeasured' ? undefined : expected === 'allow',
               });
@@ -441,6 +501,10 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         id: 'integrity.author-write-permission',
         verdict: writerVerdict,
       });
+      propertyMap.set('integrity.reference-model-agreement', {
+        id: 'integrity.reference-model-agreement',
+        verdict: worstVerdict(modelMeasurements.map((row) => row.verdict)),
+      });
       propertyMap.set('integrity.full-ledger-verification', {
         id: 'integrity.full-ledger-verification',
         verdict: propertyMap.get('integrity.forged-control')?.verdict ?? 'unavailable',
@@ -520,6 +584,7 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         },
         measurements: {
           writerMeasurements,
+          modelMeasurements,
           backend: { source: backend.source, metadata: backend.metadata },
           attacks: measured,
           explicitMeasurements,

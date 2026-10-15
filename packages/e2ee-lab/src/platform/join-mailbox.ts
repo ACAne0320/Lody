@@ -11,6 +11,11 @@ import {
 } from '@lody/e2ee-core/ledger';
 import type { LabCredential } from './credentials';
 import { makeLabOperations } from './operation-scope';
+import {
+  verifyWorkspaceInvitationSnapshot,
+  type WorkspaceInvitationSnapshot,
+} from '@lody/e2ee-core/workspace';
+import { invitationSnapshotWire, parseInvitationSnapshot } from './invitation-wire';
 import { authorizeLabStream } from './gateway';
 const APP = 0x4c454a31;
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
@@ -101,6 +106,7 @@ export function makeLabJoinMailbox(input: {
           db.exec(`PRAGMA application_id=${APP}; PRAGMA user_version=1;
           CREATE TABLE join_meta(id INTEGER PRIMARY KEY CHECK(id=1),genesis TEXT NOT NULL) STRICT;
           CREATE TABLE join_users(user_id TEXT PRIMARY KEY,account TEXT NOT NULL) STRICT;
+          CREATE TABLE join_snapshots(request_id TEXT PRIMARY KEY,endorser TEXT NOT NULL,body TEXT NOT NULL) STRICT;
           CREATE TABLE join_requests(request_id TEXT PRIMARY KEY,user_id TEXT NOT NULL,account TEXT NOT NULL,signer TEXT NOT NULL,body TEXT NOT NULL CHECK(length(body)<=2048)) STRICT;`);
           db.prepare('INSERT INTO join_meta(id,genesis) VALUES(1,?)').run(org);
         }).immediate();
@@ -184,6 +190,99 @@ export function makeLabJoinMailbox(input: {
       }
     };
     return Object.freeze({
+      putSnapshot: (
+        credential: Pick<LabCredential, 'account' | 'device' | 'genesis'>,
+        requestId: Bytes.RequestId,
+        source: WorkspaceInvitationSnapshot
+      ) =>
+        operations.run(
+          Effect.gen(function* () {
+            const identity = yield* capture(credential),
+              view = yield* current();
+            const state = view.inspectState(),
+              device = state.devices.get(hex(identity.device.toBytes())),
+              member = device && state.members.get(hex(device.membershipId.toBytes()));
+            if (
+              !identity.genesis ||
+              device?.kind !== 'personal' ||
+              (member?.role !== 'owner' && member?.role !== 'admin')
+            )
+              return yield* fail('unauthorized');
+            const receipt = yield* Effect.fromResult(
+              parseInvitationSnapshot(invitationSnapshotWire(source))
+            );
+            yield* Effect.fromResult(
+              verifyWorkspaceInvitationSnapshot(
+                { workspaceId: receipt.workspaceId, genesis: anchor, endorser: identity.device },
+                receipt
+              )
+            );
+            const body = JSON.stringify(invitationSnapshotWire(receipt)),
+              request = hex(requestId.toBytes()),
+              endorser = hex(identity.device.toBytes());
+            yield* sql(() => {
+              guard();
+              db.transaction(() => {
+                if (
+                  !db
+                    .prepare('SELECT request_id FROM join_requests WHERE request_id=?')
+                    .get(request)
+                )
+                  throw fail('invalid-input');
+                const old = db
+                  .prepare('SELECT endorser,body FROM join_snapshots WHERE request_id=?')
+                  .get(request) as { endorser: string; body: string } | undefined;
+                if (old && (old.endorser !== endorser || old.body !== body)) throw fail('conflict');
+                db.prepare(
+                  'INSERT INTO join_snapshots(request_id,endorser,body) VALUES(?,?,?) ON CONFLICT(request_id) DO NOTHING'
+                ).run(request, endorser, body);
+                const saved = db
+                  .prepare('SELECT endorser,body FROM join_snapshots WHERE request_id=?')
+                  .get(request) as { endorser: string; body: string } | undefined;
+                if (saved?.endorser !== endorser || saved.body !== body) throw fail('storage');
+              }).immediate();
+              return undefined;
+            });
+            return undefined;
+          })
+        ),
+      readSnapshot: (
+        credential: Pick<LabCredential, 'account' | 'device' | 'genesis'>,
+        requestId: Bytes.RequestId
+      ) =>
+        operations.run(
+          Effect.gen(function* () {
+            const identity = yield* capture(credential),
+              view = yield* current();
+            return yield* sql(() => {
+              guard();
+              return db
+                .transaction(() => {
+                  const request = hex(requestId.toBytes()),
+                    pending = db
+                      .prepare('SELECT signer,account FROM join_requests WHERE request_id=?')
+                      .get(request) as { signer: string; account: string } | undefined;
+                  if (!pending) throw fail('invalid-input');
+                  const device = view.inspectState().devices.get(hex(identity.device.toBytes()));
+                  if (
+                    !(
+                      pending.signer === hex(identity.device.toBytes()) &&
+                      pending.account === identity.account
+                    ) &&
+                    !device
+                  )
+                    throw fail('unauthorized');
+                  const saved = db
+                    .prepare('SELECT body FROM join_snapshots WHERE request_id=?')
+                    .get(request) as { body: string } | undefined;
+                  return saved
+                    ? Result.getOrThrow(parseInvitationSnapshot(JSON.parse(saved.body)))
+                    : null;
+                })
+                .deferred();
+            });
+          })
+        ),
       put: (
         credential: Pick<LabCredential, 'account' | 'device' | 'genesis'>,
         borrowed: JoinRequest

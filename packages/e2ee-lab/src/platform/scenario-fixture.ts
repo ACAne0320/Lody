@@ -303,7 +303,7 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
     model: 'loro',
     snapshotStore: loroSnapshots,
     snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
-      path: server.dbPath,
+      baseUrl: server.baseUrl,
       genesis: genesis.genesis,
       model: 'loro',
     }),
@@ -317,7 +317,7 @@ export const makeLabScenarioFixture = Effect.fn('Lab.prepareExistingFixture')(fu
     model: 'flock',
     snapshotStore: flockSnapshots,
     snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
-      path: server.dbPath,
+      baseUrl: server.baseUrl,
       genesis: genesis.genesis,
       model: 'flock',
     }),

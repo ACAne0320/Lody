@@ -538,7 +538,7 @@ it('joins an actual held native response before closing the complete host Riverr
   }
 }, 0);
 
-it('denies old member HTTP reads/content after a real revocation is witnessed but its durable host checkpoint write fails', async () => {
+it('denies output while a witnessed revocation checkpoint cannot persist, then permits only historical control reads after repair', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'lab-host-revocation-gap-'));
   try {
     await Effect.runPromise(
@@ -683,8 +683,30 @@ it('denies old member HTTP reads/content after a real revocation is witnessed bu
             repair.close();
           }
           yield* host.creation.refresh();
+          const learned = yield* Effect.promise(() =>
+            new StreamsClient({
+              url: `${host.baseUrl}/ds/${org}/control`,
+              fetch: peerAuth.fetch,
+              retry: { maxAttempts: 1 },
+            }).read({ offset: '-1' })
+          );
+          expect(learned.ok).toBe(true);
+          if (!learned.ok || !actual.ok) throw new Error('actual signed revocation bytes required');
+          expect(learned.result.payload.body).toEqual(actual.result.payload.body);
+          const removed = ok(
+            verifyLedger({
+              anchor: genesis.genesis,
+              records: [genesis.record, admitted, revoked],
+              checkpoint: { head: hashRecordBytes(revoked), length: 3 },
+            })
+          );
+          expect(
+            removed
+              .inspectState()
+              .devices.has(Buffer.from(peer.publicKey.toBytes()).toString('hex'))
+          ).toBe(false);
           const denied = yield* Effect.promise(() =>
-            peerAuth.fetch(`${host.baseUrl}/ds/${org}/control?offset=-1`)
+            peerAuth.fetch(`${host.baseUrl}/ds/${org}/loro`)
           );
           expect(denied.status).toBe(403);
           yield* Effect.promise(() => denied.body?.cancel() ?? Promise.resolve());

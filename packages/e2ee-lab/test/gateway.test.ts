@@ -342,11 +342,25 @@ describe('genuine ledger Lab gateway policy (HTTP authentication not implemented
             });
             expect(revoked.outcome).toBe('Committed');
             yield* actor.acknowledge(revoked);
-            expect(
-              Result.isFailure(
-                authorizeLabStream({ ...input, view: (yield* actor.current()).view })
-              )
-            ).toBe(true);
+            const removed = (yield* actor.current()).view;
+            expect(ok(authorizeLabStream({ ...input, view: removed }))).toBeUndefined();
+            for (const deniedStream of ['loro', 'flock'])
+              assertDenied(
+                authorizeLabStream({ ...input, view: removed, stream: deniedStream }),
+                'unauthorized'
+              );
+            assertDenied(
+              authorizeLabStream({ ...input, view: removed, method: 'POST', sub: 'append-cas' }),
+              'unauthorized'
+            );
+            assertDenied(
+              authorizeLabStream({
+                ...input,
+                view: removed,
+                authenticatedCredential: { ...input.authenticatedCredential, genesis: null },
+              }),
+              'unauthorized'
+            );
           })
         )
       );

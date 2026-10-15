@@ -1,19 +1,23 @@
-import { makeInstalledEpochHistory } from '@lody/e2ee-core/keys/host/history';
 import type { NativeEpochProtector } from '@lody/e2ee-core/keys/host';
-import type { EpochRotationResult } from '@lody/e2ee-core/keys/host/rotation/sqlite';
 import { Bytes } from '@lody/e2ee-core';
-import { Data, Effect, Exit, Result, Scope, Semaphore } from 'effect';
+import { Data, Effect, Exit, Layer } from 'effect';
+import {
+  E2eeWorkspace,
+  WorkspacePlatform,
+  type WorkspaceResources,
+} from '@lody/e2ee-core/workspace';
 import type { LedgerCheckpoint } from '@lody/e2ee-core/ledger';
-import { comparisonNote } from '@lody/e2ee-core/ledger/snapshot';
 import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
 import { openLabExistingWorkspace } from './workspace-session';
 import { makeLabMailboxRemote } from './key-mailbox';
+import { makeLabHttpIdentity } from './http-identity';
+import { makeLabWorkspaceCreationRequest } from './workspace-creation-request';
+import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
+import { verifyLedger, decodeRecord, hashRecordBytes } from '@lody/e2ee-core/ledger';
+import { verifyRetainedWorkspaceGenesis } from '@lody/e2ee-core/workspace';
 import { makeLabEpochStagingRemote } from './epoch-staging-http';
-import { getCommittedEpochStagingKey } from '@lody/e2ee-core/keys/staging';
-import { runLabKeyRound, type LabKeyRoundCursors } from './key-round';
 import { makeLabFlockSession } from './flock-session';
 import { makeLabLoroSession } from './content-session';
-import { makeLabOperations } from './operation-scope';
 
 export class LabWorkspaceSessionError extends Data.TaggedError('LabWorkspaceSessionError')<{
   readonly code: 'closed' | 'configuration' | 'unknown-document';
@@ -24,6 +28,11 @@ type KeyInput = Omit<
   'genesis' | 'signer' | 'ledger' | 'remote'
 >;
 export interface LabWorkspaceSessionInput extends ControlInput {
+  readonly creation?: {
+    readonly path: string;
+    readonly mode: 'create' | 'open';
+    readonly genesisRecord: Uint8Array;
+  };
   /** One receiver-owned installed-key store shared by all consumers. */
   readonly keys: KeyInput;
   /** Explicit local candidate recovery. This does not select independent backup
@@ -33,6 +42,19 @@ export interface LabWorkspaceSessionInput extends ControlInput {
     readonly mode: 'create' | 'open';
     readonly protector: NativeEpochProtector;
   };
+  readonly recoveryConfiguration?:
+    | import('@lody/e2ee-core/workspace').WorkspaceResources['recoveryConfiguration']
+    | ((context: {
+        readonly genesis: Bytes.GenesisHash;
+        readonly signer: import('@lody/e2ee-core/signing').DeviceSigner;
+        readonly ledger: () => Effect.Effect<import('@lody/e2ee-core/ledger').LedgerView, unknown>;
+        readonly control: Effect.Success<ReturnType<typeof openLabExistingWorkspace>>['control'];
+        readonly distribution: Effect.Success<ReturnType<typeof makeSqliteKeyDistribution>>;
+      }) => Effect.Effect<
+        NonNullable<WorkspaceResources['recoveryConfiguration']>,
+        unknown,
+        import('effect').Scope.Scope
+      >);
   readonly documents: readonly {
     readonly id: string;
     readonly model?: 'loro' | 'flock';
@@ -61,7 +83,7 @@ interface LabWorkspaceDocument {
  * public key receive/distribution and protected documents have one child owner.
  * No transport/SQLite row can choose authority. Content snapshots bind their exact
  * continuation offset; vault and independent publisher-backup policy remain separate. */
-export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(function* (
+export const makeLabWorkspacePlatform = Effect.fn('Lab.makeWorkspacePlatform')(function* (
   input: LabWorkspaceSessionInput
 ) {
   const source = input.documents,
@@ -141,201 +163,164 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
     )
   )
     return yield* new LabWorkspaceSessionError({ code: 'configuration' });
-  const child = yield* Scope.make();
-  let closed = false;
-  const close = yield* Effect.cached(
-    Effect.sync(() => {
-      closed = true;
-    }).pipe(Effect.andThen(Scope.close(child, Exit.void)))
-  );
-  yield* Effect.addFinalizer(() => close);
-  return yield* Scope.provide(
-    Effect.gen(function* () {
-      const control = yield* openLabExistingWorkspace(controlInput);
-      const ledger = () => control.control.refresh().pipe(Effect.map((current) => current.view));
-      const remote = yield* makeLabMailboxRemote({
-        url: control.identity.url,
-        fetch: control.identity.fetch,
-      });
-      const distribution = yield* makeSqliteKeyDistribution({
-        ...keys,
-        genesis,
-        signer,
-        ledger,
-        remote,
-      });
-      const stageRemote = yield* makeLabEpochStagingRemote({
-        url: `${control.identity.url.replace(/key-mailbox$/, 'epoch-staging')}`,
-        fetch: control.identity.fetch,
-      });
-      const history = yield* makeInstalledEpochHistory({
-        genesis,
-        ledger,
-        installed: distribution.installedEpochKeys,
-      });
-      const rotation = epochConfig
-        ? yield* control.control.makeEpochRotation({
-            ...epochConfig,
-            installed: distribution.installedEpochKeys,
-            staging: stageRemote,
-          })
-        : undefined;
-      const receiveCommittedEpoch = Effect.fnUntraced(function* () {
-        const view = yield* ledger();
-        const epoch = view.inspectState().epoch.number;
-        if (epoch === 0) return { staged: false, installed: false } as const;
-        const located = getCommittedEpochStagingKey(view, epoch);
-        // A qualified snapshot may not retain its original publication bytes.
-        // It cannot authorize a staged envelope; ordinary later-join mailbox
-        // and repair remain available without inventing a publication hash.
-        if (Result.isFailure(located) && view.verification === 'endorsed-snapshot')
-          return {
-            staged: false,
-            installed: false,
-            reason: 'publication-original-unavailable',
-          } as const;
-        const key = yield* Effect.fromResult(located);
-        const group = yield* stageRemote.readGroup(key);
-        if (!group) return { staged: false, installed: false } as const;
-        const self = Buffer.from(signer.publicKey.toBytes()).toString('hex');
-        if (!group.envelopes.some((row) => row.recipient === self))
-          return { staged: true, installed: false } as const;
-        yield* distribution.receiveStagedGroup(group);
-        return { staged: true, installed: true } as const;
-      });
-      const sessions = new Map<string, LabWorkspaceDocument>();
-      for (const doc of docs) {
-        const config = {
-          ...doc,
-          genesis,
-          signer,
-          writeEpoch: 'current' as const,
-          ledger,
-          readEpochKey: history.read,
-          fetch: control.identity.fetch,
-        };
-        const session = yield* doc.model === 'flock'
-          ? makeLabFlockSession({
-              ...config,
-              replica: Buffer.from(signer.publicKey.toBytes()).toString('hex'),
-              now: doc.now!,
+  let acquired: Awaited<Effect.Success<ReturnType<typeof openLabExistingWorkspace>>> | undefined;
+  const nativeDocuments = new Map<string, LabWorkspaceDocument>();
+  const acquire = Effect.fnUntraced(function* (_mode: 'create' | 'open') {
+    if (input.creation) {
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const original = new Uint8Array(input.creation!.genesisRecord),
+            parsed = yield* Effect.fromResult(decodeRecord(original));
+          if (parsed.body.type !== 'genesis' || !parsed.body.signer.equals(signer.publicKey))
+            return yield* new LabWorkspaceSessionError({ code: 'configuration' });
+          const view = yield* Effect.fromResult(
+            verifyLedger({
+              anchor: genesis,
+              records: [original],
+              checkpoint: { head: hashRecordBytes(original), length: 1 },
             })
-          : makeLabLoroSession(config);
-        sessions.set(doc.id, session);
-      }
-      const operations = yield* makeLabOperations();
-      // Stop HTTP/CAS admission before interrupt/join, then native/SQLite owners release.
-      yield* Effect.addFinalizer(() => control.stop());
-      const serial = yield* Semaphore.make(1);
-      const run = <A, E, R>(work: Effect.Effect<A, E, R | Scope.Scope>) =>
-        operations.run(
-          Effect.suspend<A, E | LabWorkspaceSessionError, R | Scope.Scope>(() =>
-            closed ? Effect.fail(new LabWorkspaceSessionError({ code: 'closed' })) : work
-          )
-        );
+          );
+          const installed = yield* makeSqliteProtectedEpochKeys({
+            ...keys.keyStore,
+            mode: 'open',
+            genesis,
+            recipient: signer.publicKey,
+            ledger: () => Effect.succeed(view),
+          });
+          yield* verifyRetainedWorkspaceGenesis({
+            genesis,
+            record: original,
+            signer: signer.publicKey,
+            installed,
+          });
+          const identity = yield* makeLabHttpIdentity({
+            baseUrl: input.baseUrl,
+            genesis,
+            fetch: input.fetch,
+          });
+          const auth = yield* identity.authenticate(signer, 'unbound');
+          const request = yield* makeLabWorkspaceCreationRequest({
+            ...input.creation!,
+            send: auth.createWorkspace,
+          });
+          const result = yield* request.resume();
+          yield* request.acknowledge(result);
+          return undefined;
+        })
+      );
+    }
+    const control = yield* openLabExistingWorkspace(controlInput);
+    acquired = control;
+    const ledger = () => control.control.refresh().pipe(Effect.map((current) => current.view));
+    const remote = yield* makeLabMailboxRemote({
+      url: control.identity.url,
+      fetch: control.identity.fetch,
+    });
+    const distribution = yield* makeSqliteKeyDistribution({
+      ...keys,
+      genesis,
+      signer,
+      ledger,
+      remote,
+    });
+    const stageRemote = yield* makeLabEpochStagingRemote({
+      url: `${control.identity.url.replace(/key-mailbox$/, 'epoch-staging')}`,
+      fetch: control.identity.fetch,
+    });
+    const rotation = epochConfig
+      ? yield* control.control.makeEpochRotation({
+          ...epochConfig,
+          installed: distribution.installedEpochKeys,
+          staging: stageRemote,
+        })
+      : undefined;
+    return {
+      genesis,
+      signer,
+      control: control.control,
+      distribution,
+      staging: stageRemote,
+      rotation,
+      recoveryConfiguration:
+        typeof input.recoveryConfiguration === 'function'
+          ? yield* input.recoveryConfiguration({
+              genesis,
+              signer,
+              ledger,
+              control: control.control,
+              distribution,
+            })
+          : input.recoveryConfiguration,
+      stop: () => control.stop(),
+      documentState: (resource, model, binding) =>
+        Effect.gen(function* () {
+          const doc = docs.find(
+            (row) => row.resource === resource && (row.model ?? 'loro') === model
+          );
+          if (!doc) return yield* new LabWorkspaceSessionError({ code: 'unknown-document' });
+          const config = {
+            ...doc,
+            genesis,
+            signer,
+            binding,
+            writeEpoch: 'current' as const,
+            ledger,
+            readEpochKey: distribution.installedEpochKeys.read,
+            fetch: control.identity.fetch,
+          };
+          const native = yield* model === 'flock'
+            ? makeLabFlockSession({
+                ...config,
+                replica: Buffer.from(signer.publicKey.toBytes()).toString('hex'),
+                now: doc.now!,
+              })
+            : makeLabLoroSession(config);
+          nativeDocuments.set(doc.id, native);
+          return native;
+        }),
+    } satisfies WorkspaceResources;
+  });
+  const platform = Layer.succeed(WorkspacePlatform, {
+    acquire,
+    prepareRecovery: () => Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' })),
+  });
+  return Object.freeze({
+    layer: platform,
+    adapt: Effect.fnUntraced(function* (
+      workspace: import('@lody/e2ee-core/workspace').E2eeWorkspaceHandle
+    ) {
+      // Eagerly open configured documents to retain the original acquisition/close
+      // contract. The facade owns their cryptographic binding and resource scope.
+      yield* Effect.forEach(docs, (doc) =>
+        workspace.document(doc.resource, doc.model ?? 'loro')
+      ).pipe(Effect.onExit((exit) => (Exit.isFailure(exit) ? workspace.close() : Effect.void)));
       const document = <A, E, R>(
         id: string,
         use: (doc: LabWorkspaceDocument) => Effect.Effect<A, E, R>
       ) =>
-        run(
-          Effect.suspend<A, E | LabWorkspaceSessionError, R>(() => {
-            const doc = sessions.get(id);
-            return doc
-              ? use(doc)
-              : Effect.fail(new LabWorkspaceSessionError({ code: 'unknown-document' }));
-          })
-        );
+        Effect.suspend<A, unknown, R>(() => {
+          const native = nativeDocuments.get(id);
+          return native
+            ? workspace.current().pipe(Effect.andThen(use(native)))
+            : Effect.fail(new LabWorkspaceSessionError({ code: 'unknown-document' }));
+        });
       return Object.freeze({
-        close: () => close,
-        current: () => run(control.control.current()),
-        refresh: () => run(serial.withPermit(control.control.refresh())),
+        ...workspace,
+        current: workspace.current,
+        refresh: workspace.refresh,
         approveJoin: (
           request: import('@lody/e2ee-core/ledger').JoinRequest,
           membershipId: Bytes.MembershipId
-        ) =>
-          run(
-            serial.withPermit(
-              control.control.execute({ _tag: 'AdmitMember', request, membershipId })
-            )
-          ),
-        submit: (command: Parameters<typeof control.control.execute>[0]) =>
-          run(serial.withPermit(control.control.execute(command))),
-        submitOriginal: (record: Uint8Array) =>
-          run(serial.withPermit(control.control.executeOriginal(record))),
-        resume: () => run(serial.withPermit(control.control.resume())),
-        acknowledge: (result: Parameters<typeof control.control.acknowledge>[0]) =>
-          run(serial.withPermit(control.control.acknowledge(result))),
-        receiveCommittedEpoch: () => run(receiveCommittedEpoch()),
-        epochStaging: stageRemote,
-        cleanupStagedEpoch: () =>
-          run(
-            rotation
-              ? rotation.cleanupStaged()
-              : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
-          ),
-        rotateEpoch: () =>
-          run(
-            serial.withPermit(
-              rotation
-                ? rotation.publish()
-                : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
-            )
-          ),
-        removeMemberAndRotate: (membershipId: Bytes.MembershipId) =>
-          run(
-            serial.withPermit(
-              rotation
-                ? rotation.publishRemoving(membershipId)
-                : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
-            )
-          ),
-        resumeEpochRotation: () =>
-          run(
-            serial.withPermit(
-              rotation
-                ? rotation.resume()
-                : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
-            )
-          ),
-        acknowledgeEpochRotation: (result: EpochRotationResult) =>
-          run(
-            serial.withPermit(
-              rotation
-                ? rotation.acknowledge(result)
-                : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
-            )
-          ),
-        /** A refreshed personal-device observation. Channel authentication and exact
-         * independent confirmation remain explicit caller responsibilities. */
-        comparisonNote: () =>
-          run(
-            serial.withPermit(
-              control.control
-                .refresh()
-                .pipe(
-                  Effect.flatMap(({ view }) =>
-                    Effect.fromResult(comparisonNote(view, signer.publicKey))
-                  )
-                )
-            )
-          ),
-        listJoins: () => run(control.identity.listJoins()),
-        keyRound: (limit = 100, cursors: LabKeyRoundCursors = {}) =>
-          run(
-            serial.withPermit(runLabKeyRound(distribution, limit, cursors, receiveCommittedEpoch()))
-          ),
-        enqueueRepair: (requestId: string, rejectedDigest?: string) =>
-          run(serial.withPermit(distribution.enqueueRepair(requestId, rejectedDigest))),
-        receiveResults: (limit = 100) => run(serial.withPermit(distribution.results(limit))),
-        repairResults: (limit = 100, cursor: string | null = null) =>
-          run(serial.withPermit(distribution.repairResults(limit, cursor))),
-        deliveryResults: (limit = 100, cursor: string | null = null) =>
-          run(serial.withPermit(distribution.deliveryResults(limit, cursor))),
-        acknowledgeReceive: (id: string) => run(serial.withPermit(distribution.acknowledge(id))),
-        acknowledgeRepair: (id: string) =>
-          run(serial.withPermit(distribution.acknowledgeRepair(id))),
-        acknowledgeDelivery: (id: string) =>
-          run(serial.withPermit(distribution.acknowledgeDelivery(id))),
+        ) => workspace.execute({ _tag: 'AdmitMember', request, membershipId }),
+        submit: workspace.execute,
+        submitOriginal: workspace.executeOriginal,
+        epochStaging: workspace.staging,
+        cleanupStagedEpoch: workspace.cleanupStaged,
+        rotateEpoch: workspace.rotate,
+        removeMemberAndRotate: workspace.removeMember,
+        resumeEpochRotation: workspace.resumeRotation,
+        acknowledgeEpochRotation: workspace.acknowledgeRotation,
+        listJoins: () => acquired!.identity.listJoins(),
         createDocument: (id: string) => document(id, (doc) => doc.create()),
         append: (id: string, text: string) => document(id, (doc) => doc.append(text)),
         editOffline: (id: string, text: string) => document(id, (doc) => doc.editOffline(text)),
@@ -349,8 +334,17 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
         documentStatus: (id: string) => document(id, (doc) => doc.status()),
       });
     }),
-    child
-  ).pipe(Effect.onExit((exit) => (Exit.isFailure(exit) ? close : Effect.void)));
+  });
+});
+
+export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(function* (
+  input: LabWorkspaceSessionInput
+) {
+  const adapter = yield* makeLabWorkspacePlatform(input);
+  const workspace = yield* (
+    input.mode === 'create' ? E2eeWorkspace.create() : E2eeWorkspace.open()
+  ).pipe(Effect.provide(adapter.layer));
+  return yield* adapter.adapt(workspace);
 });
 
 /** Reauthentication is a new owner, never an in-place unverified repin. */

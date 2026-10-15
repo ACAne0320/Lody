@@ -167,7 +167,7 @@ export const makeLabHostSession = Effect.fn('Lab.makeHostSession')(function* (in
           ledger,
           snapshotStore: stores.loro,
           snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
-            path: join(directory, 'riverrun.sqlite'),
+            baseUrl: native.baseUrl,
             genesis: creation.genesis,
             model: 'loro',
           }),
@@ -182,7 +182,7 @@ export const makeLabHostSession = Effect.fn('Lab.makeHostSession')(function* (in
           ledger,
           snapshotStore: stores.flock,
           snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
-            path: join(directory, 'riverrun.sqlite'),
+            baseUrl: native.baseUrl,
             genesis: creation.genesis,
             model: 'flock',
           }),

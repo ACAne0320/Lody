@@ -20,6 +20,8 @@ import {
 
 type Credentials = Effect.Success<ReturnType<typeof makeLabCredentials>>;
 type Control = Effect.Success<ReturnType<typeof makeLabControlGateway>>;
+import { invitationSnapshotWire, parseInvitationSnapshot } from './invitation-wire';
+
 type Joins = Effect.Success<ReturnType<typeof makeLabJoinMailbox>>;
 class LabHttpError extends Data.TaggedError('LabHttpError')<{ readonly status: number }> {}
 const reject = (status: number) => new LabHttpError({ status });
@@ -221,6 +223,30 @@ export function makeLabHttpHost(input: {
           // Original authenticated discovery permits unbound joiners. This returns
           // only reverified genesis bytes, never a current trusted endpoint/view.
           return { genesis: Buffer.from(saved.record).toString('hex') };
+        }
+        const invitationMatch =
+          /^\/v1\/spaces\/([0-9a-f]{64})\/joins\/([0-9a-f]{32})\/snapshot$/.exec(path);
+        if (invitationMatch && (request.method === 'GET' || request.method === 'PUT')) {
+          const authorization = request.headers.authorization;
+          if (typeof authorization !== 'string' || !/^Bearer [0-9a-f]{64}$/.test(authorization))
+            return yield* reject(401);
+          const credential = yield* credentials.authenticate(authorization.slice(7)),
+            anchor = yield* Effect.fromResult(Bytes.genesisHash(hex(invitationMatch[1], 32))),
+            requestId = yield* Effect.fromResult(Bytes.requestId(hex(invitationMatch[2], 16))),
+            owner = joins?.(anchor);
+          if (!owner) return yield* reject(404);
+          if (request.method === 'GET') {
+            const receipt = yield* owner.readSnapshot(credential, requestId);
+            return { snapshot: receipt ? invitationSnapshotWire(receipt) : null };
+          }
+          yield* owner.putSnapshot(
+            credential,
+            requestId,
+            yield* Effect.fromResult(
+              parseInvitationSnapshot(yield* json(request, 4 * 1024 * 1024 + 4096))
+            )
+          );
+          return { ok: true };
         }
         const joinsMatch = /^\/v1\/spaces\/([0-9a-f]{64})\/joins$/.exec(path);
         if (joinsMatch && (request.method === 'GET' || request.method === 'POST')) {

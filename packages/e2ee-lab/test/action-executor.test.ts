@@ -80,10 +80,16 @@ it('executes all finite kinds on real OS/HPKE/SQLite/SDK actors; bad cipher/stor
       tag: 'LabContentError',
       code: 'decrypt_failed',
     });
-    expect(artifact.run.observations[38]!.reply.error).toEqual({
-      tag: 'LedgerFeedError',
-      code: 'forbidden',
-    });
+    expect(artifact.run.observations[38]!.reply.ok).toBe(true);
+    expect(artifact.measurements.modelMeasurements).toHaveLength(39);
+    expect(
+      artifact.measurements.modelMeasurements.every(
+        (row) => row.prediction.rule !== 'unknown-action'
+      )
+    ).toBe(true);
+    expect(artifact.measurements.modelMeasurements.some((row) => row.verdict === 'violation')).toBe(
+      false
+    );
     expect(artifact.run.observations[18]!.reply.trace!.cipherChanged).toBeGreaterThan(0);
     expect(artifact.run.observations[32]!.reply.trace!.ackDropped).toBe(1);
     expect(artifact.run.observations[19]!.durability).toBe('pass');

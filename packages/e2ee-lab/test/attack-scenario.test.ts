@@ -921,7 +921,12 @@ it('measures three actual members, tag8 exclusion, independent comparison and re
                 );
                 yield* owner.keyRound();
                 yield* owner.append('loro', ' / synthetic after exclusion');
-                expect(Result.isFailure(yield* Effect.result(bobSession.refresh()))).toBe(true);
+                const excluded = yield* bobSession.refresh();
+                expect(excluded.view.inspectState().devices.has(hex(bob.publicKey.toBytes()))).toBe(
+                  false
+                );
+                expect(Result.isFailure(yield* Effect.result(bobSession.keyRound()))).toBe(true);
+                expect(Result.isFailure(yield* Effect.result(bobSession.pull('loro')))).toBe(true);
                 const db = new Database(bobInput.keys.keyStore.path, { readonly: true });
                 try {
                   expect(

@@ -66,3 +66,7 @@ active candidate for another operation/target under a new intent; use explicit
 inclusion and exclude all removed personal/machine/Recovery devices. History, retired identities
 and replay-prevention facts remain authenticated. This encoding is under review;
 it does not select an independent backup or emergency-loss exception.
+
+## Desktop adapter
+
+The explicit main-process implementation is `apps/electron/src/main/e2ee-custody.mts`, with its Electron binding in `e2ee-custody-electron.ts`. It wraps a random KEK with asynchronous safeStorage and authenticates protected data with XChaCha20-Poly1305. It rejects unavailable/basic_text storage and never uses the auth-cookie development fallback. See the [desktop custody draft](../../../../specs/e2ee/desktop-custody.md). The module is not called from product startup; synthetic-boundary tests do not establish actual OS-keychain acceptance.

@@ -1,34 +1,116 @@
-# Recovery vault: entry, concurrency and retention proposal
+# Recovery vault
 
 Status: draft
 Translation: current
 
 [中文](recovery-vault.zh.md)
 
-## Settled intent and recommended format
+## Recovery material and ciphertext
 
-Keep one recovery file and independent Recovery identities per user/workspace. Later configured workspaces join the same vault. Recovery only receives/repairs keys and admits its own new personal devices. Setup may be skipped; add no encryption password. Ordinary epoch delivery uses already registered Recovery public keys without unlocking the file again.
+One canonical CBOR `vault-v1` recovery file opens an encrypted vault. Its fixed tuple is
+`["vault-v1", 1, vaultId, serviceLocator, U]`: `vaultId` and U are independent random
+32-byte values. Generate a separate random 32-byte vault master key V. Derive a
+32-byte wrapping key with HKDF-SHA256, salt `vaultId` and the domain
+`lody-e2ee/vault-v1/<purpose>\0`; wrap V with XChaCha20-Poly1305. The file is a
+vault unlock capability, not a seed from which future workspace identities can be
+regenerated. Missing cloud ciphertext cannot be recreated from this file.
 
-Recommend a separate canonical CBOR vault-v1, not the synthetic device JSON. The file contains version, random vaultId, service locator and random 256-bit unlock material U. Generate independent vault master key V. Derive a wrapping key from U using HKDF-SHA256 with vaultId/entry purpose and wrap V with existing XChaCha20-Poly1305. A verified available Passkey PRF can derive another entry wrapping the same V; login alone is insufficient. Entry AAD binds version/vaultId/type/id; each new encryption uses a random 24B nonce. Entry replacement rewraps V without rewriting the vault; deletion cannot invalidate copied secrets.
+A second wrapping entry may wrap the same V only after an authenticated WebAuthn
+ceremony actually reports PRF `enabled: true` and a 32-byte `results.first` value.
+The portable core validates and owns that result; platform adapters authenticate
+the ceremony and credential. Ordinary passkey login and a structural object
+claiming to be a verified capability cannot unlock the vault. No PRF fallback is
+permitted. No hardware ceremony runs automatically while product E2EE is disabled.
 
-Encrypt Recovery entries and the index separately using purpose-separated keys derived from V. External headers need only opaque entryId/revision. AAD binds vaultId, entryId, revision, predecessor ciphertext digest and purpose. Private entries bind genesis, current membership instance, Recovery public/private key pairs, generation and the source of trusted genesis/ledger material. The index binds the same identity tuple and entry digest. Decryption grants no current membership: independently verify the ledger and active Recovery identity; directory Owner claims cannot establish trust.
+Workspace entries and the index use distinct V-derived purpose keys. Every new
+encryption requires a fresh host-secure 24-byte nonce; random-source failure stops
+it. Each AEAD AAD binds `vault-v1`, vaultId, opaque entryId, revision, predecessor
+ciphertext digest and purpose. The outer service header carries only opaque entryId and revision. A separately
+authenticated encrypted header hides purpose and predecessor while the inner
+AEAD binds the full AAD tuple; both layers use fresh random nonces and separate
+HKDF purpose keys. The service never receives workspace identity, roles or keys. Ciphertext
+is immutable under its entryId. A recovery package binds genesis, current
+membership instance, independent R signing/encryption key pairs, generation and
+the origin of trusted genesis/ledger material. The encrypted index binds the same
+workspace/member identity and exact package digest. Import verifies both actual
+public/private key pairs. A decrypted claim does not establish ledger authority.
 
-## Concurrent saving and resumption
+## Concurrency and durable setup
 
-Upload an immutable candidate and read back/decrypt it before CAS of the encrypted index with expected revision/digest. Concurrent first setup for the same Org/member uses the winning index reservation's Recovery identity; the loser rereads and reuses it rather than admitting another. Explicitly merge disjoint workspace updates after conflict. Same-identity conflicts remain visible; no last-write-wins. This is a vault concurrency contract, not new ledger authority.
+Upload an immutable candidate, read it back exactly and decrypt it before CAS of
+the encrypted index. CAS includes the expected revision and ciphertext digest,
+plus the opaque entry IDs referenced by the proposed index. The same storage
+transaction must verify that every referenced immutable entry exists before it
+publishes the index; a missing entry returns Conflict. This prevents a concurrent
+delete between the client readback and index CAS from publishing a dangling reference;
+the successor binds its predecessor. A client pins its highest observed revision
+and digest durably and rejects rollback or same-revision equivocation. Valid
+AEAD does not prove freshness: a fresh device still depends on the authenticated
+service's fresh read plus independently qualified ledger material.
 
-Persist candidate entryId, original index/CAS intent, ledger bytes and stage. Only the selected, read-back private package proceeds to registration. Reconcile unknown ledger outcomes by original bytes. If registration succeeds but delivery fails, resume that identity. Mark a workspace verified only after actual current-key decryption/commitment checks and current ledger qualification. One workspace's failure does not block others. Index, ledger and delivery are separate recoverable steps, not a cross-store transaction.
+Concurrent first setup for the same workspace/membership uses the winning
+index entry's R. A loser rereads and decrypts the winner; it never registers its
+own losing candidate. A disjoint-workspace conflict is an explicit merge/retry,
+not last-writer-wins. A different generation of the same identity is a visible
+replacement, never a silent overwrite.
 
-Recommend no automatic expiry for active entries. For ordinary replacement, verify the new entry/Recovery identity before revoking the old one; retire old entries. Do not GC unresolved progress or ciphertext referenced by the index/pending operations. Retain retired secrets until explicit user cleanup explaining possible recovery-path loss. Confirmed compromise prioritizes revocation. Deleting cloud files does not revoke copied keys. Unreferenced failed candidates may be collected only after checking all pending references; no fixed duration is invented.
+Setup consists of four resumable steps, not a cross-store transaction:
 
-## User cost and approval delta
+1. Generate an independent workspace R and unlock V through the file or verified PRF.
+2. Encrypt/upload/read back/decrypt its private package; select it through index CAS.
+3. The current active personal device signs the public Recovery admission. Persist
+   the original signed record and intended position before P09 dispatch; reconcile
+   unknown outcomes using these exact bytes. Verify genuine committed membership.
+4. Open R's current mailbox or committed staged envelope, check commitment and
+   recover the complete signed key-history chain. Save/read back protected keys.
 
-Approve the new wrapped master-key format, index CAS/reservations and default retired-ciphertext retention together. Losing the file without another valid entry prevents unlock. Missing cloud entries cannot be recreated from the file. Conflicts/offline saves show resumable workspace-specific pending state, not backup success. Retention costs storage and increases exposure of old secrets; cleanup removes recovery options.
+The durable journal retains candidate entryId, encrypted index-CAS intent,
+selected entry, original ledger bytes, position and stage. A crash resumes that
+identity. Failed candidates cannot be cleaned while any pending intent or current
+index still references them. One workspace's progress does not advance another.
 
-AEAD binds bytes, not freshness. Existing clients pin the highest revision/digest to reject rollback. Fresh recovery depends on the existing trusted service's fresh read and independently qualified ledger, and cannot infer latest recovery from a valid old vault. Confirm this limit with the concurrency contract. Native custody/temporary-secret cleanup is settled direction; concrete protectors, cross-platform PRF support and complete offline content export are not approved here.
+Expose paired, current envelope available and recoverable as separate states.
+Recoverable requires active ledger R, an actually decryptable R package, trusted
+genesis material and a current key whose commitment was checked. Keep last test
+time and tested epoch separately; a successful old test does not cover a later
+epoch. The user may explicitly skip setup after acknowledging recovery-path loss.
 
-## Evidence
+## New-device recovery and retention
 
-[Permission draft](permission-ledger.zh.md), [whitepaper](whitepaper.md), [protection boundary](../../packages/e2ee-core/src/keys/HOST-PROTECTION.md). Format/workflow proposal only; no vault implementation, concurrency acceptance or full-platform guarantee.
+A new device decrypts the selected R package, independently verifies the current
+ledger and active R, opens the current key envelope and verifies every historical
+packet. It generates its own independent personal device C. R signs C's
+same-membership personal admission with real proof of possession; persist/retry
+that original record through P09 and verify actual committed C. Continue as C and
+drop temporary R handles and wipe owned secret byte buffers. WebCrypto exposes no
+native-handle zeroization API; adapters must not retain those handles or export
+R into a persistent ordinary device store. C inherits the user's current role.
+Revoked R cannot admit another device. Historical sender revocation is not
+silently relaxed for ordinary mailbox envelopes.
 
-[HKDF RFC5869](https://www.rfc-editor.org/rfc/rfc5869), [WebAuthn PRF](https://www.w3.org/TR/webauthn-3/#prf-extension), [XChaCha20-Poly1305](https://doc.libsodium.org/secret-key_cryptography/aead/chacha20-poly1305/xchacha20-poly1305_construction).
+Active packages never expire automatically. Routine replacement verifies the
+new package and R before retiring/revoking the old R. Known compromise prioritizes
+revocation, even if recovery becomes temporarily unavailable. Retired ciphertext
+remains until explicit user cleanup warns that recovery options may be lost.
+Deleting cloud ciphertext does not revoke already copied secrets. Cleanup requires
+an up-to-date index CAS and confirmation that no durable pending operation refers
+to the candidate; arbitrary age alone never permits garbage collection. A local
+journal alone cannot prove that other sessions have no pending reference. Until a
+global authenticated reservation/reconciliation contract is available, automatic
+failed-candidate cleanup refuses with pending and retains its ciphertext. Explicit
+risk-confirmed cleanup of retired indexed entries remains separate.
+
+## Boundaries and validation
+
+Core defines platform-neutral encrypted storage and local-journal ports and owns
+cryptography, index selection, setup and recovery. DTOs live in
+`packages/cloud-api`; the private adapter owns authenticated cloud access, not
+ledger authority. Lab SQLite implements immutable entries, index CAS and exact
+transactional readback. Desktop custody is injected; synthetic Lab protection is
+not a production keychain. Cloud login controls retrieval and the file controls
+decryption, rather than providing cryptographic two-factor protection.
+
+The [whitepaper](whitepaper.md), [permission ledger](permission-ledger.zh.md) and
+[host protection](../../packages/e2ee-core/src/keys/HOST-PROTECTION.md) define the
+surrounding boundaries. This revision remains draft for human review; tests and
+translation do not approve it or enable product E2EE.

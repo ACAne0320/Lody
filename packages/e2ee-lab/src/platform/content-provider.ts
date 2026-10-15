@@ -11,9 +11,13 @@ export class LabProviderError extends Data.TaggedError('LabProviderError')<{
 /** Lab-only Promise/SDK callback boundary. No injected runner, verifier or alternate core.
  * The surrounding Scope owns this adapter before its SDK transports/Wasm owners are released.
  * Header4 marks snapshots; the core authenticates their content-header positions. */
-export function makeLabUpdateProvider(input: Parameters<typeof makeStreamsUpdateBinding>[0]) {
+export function makeLabUpdateProvider(
+  input: Parameters<typeof makeStreamsUpdateBinding>[0] & {
+    readonly binding?: Effect.Success<ReturnType<typeof makeStreamsUpdateBinding>>;
+  }
+) {
   return Effect.gen(function* () {
-    const binding = yield* makeStreamsUpdateBinding(input);
+    const binding = input.binding ?? (yield* makeStreamsUpdateBinding(input));
     let closed = false,
       harnessFailure = false;
     // Registered after binding: reject callbacks and interrupt/await owned fibers first.

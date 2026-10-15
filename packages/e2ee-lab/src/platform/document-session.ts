@@ -57,6 +57,7 @@ const error = (code: LabContentError['code'], cause?: unknown) =>
  * state and replays encrypted history from -1. Snapshot publication is explicit. */
 export function makeLabDocumentSession<TVersion extends JsonObject>(
   input: Parameters<typeof makeStreamsUpdateBinding>[0] & {
+    readonly binding?: import('effect').Effect.Success<ReturnType<typeof makeStreamsUpdateBinding>>;
     readonly path: string;
     readonly mode: 'create' | 'open';
     readonly streamUrl: string;

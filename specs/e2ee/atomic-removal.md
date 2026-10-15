@@ -53,7 +53,8 @@ credentials identify only an account, stage/delete requests need a device-signed
 proof bound to the operation, workspace and complete group/request fields.
 
 Only R's original signing device may delete its own group, including every page
-of a physical cleanup. Other members and other management devices are denied,
+of a physical cleanup. The Convex mutation checks the original signer and deletes
+its rows in the same transaction. Missing groups return success without deletion. Other members and other management devices are denied,
 even if they supply a genuine occupied tuple. The server enforces this device
 binding; it does not read Streams or accept `occupied` as ledger authority.
 The honest client additionally requires a genuine committed *different commitment

@@ -4,7 +4,16 @@ import { exportDevice } from '../src/platform/device';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Effect, Result } from 'effect';
+import { Deferred, Effect, Exit, Fiber, Result } from 'effect';
+import { Bytes } from '@lody/e2ee-core';
+import { issueWorkspaceInvitation } from '@lody/e2ee-core/workspace';
+import { makeLabHostSession } from '../src/platform/host-session';
+import { generateDevice } from '../src/platform/device';
+import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
+import { signGenesisRecord } from '@lody/e2ee-core/ledger/admission';
+import { hashRecordBytes, verifyLedger } from '@lody/e2ee-core/ledger';
+import { prepareJoinRequest } from '@lody/e2ee-core/ledger/admission';
+import { makeLabHttpIdentity } from '../src/platform/http-identity';
 import { decodeRecord } from '@lody/e2ee-core/ledger';
 import {
   signLedgerSnapshot,
@@ -20,6 +29,320 @@ import {
   openLabWorkspaceSession,
   reauthenticateLabWorkspaceSession,
 } from '../src/platform/full-session';
+it('closes native admission and joins an abort-ignoring control read before closing the actual workspace SQLite owner', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-facade-active-close-'));
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const f = yield* makeLabScenarioFixture(join(root, 'fixture')),
+            entered = yield* Deferred.make<void>(),
+            release = yield* Deferred.make<void>(),
+            stopped = yield* Deferred.make<void>();
+          let armed = false,
+            feedClosed = false,
+            closeDone = false;
+          const config = { ...f.input('owner', 'create'), documents: [] };
+          const actualClose = Database.prototype.close;
+          Database.prototype.close = function () {
+            if (this.name === config.path) feedClosed = true;
+            return actualClose.call(this);
+          };
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              Database.prototype.close = actualClose;
+            })
+          );
+          const transport: typeof fetch = async (value, init) => {
+            const outgoing = new Request(value, init),
+              response = await fetch(outgoing);
+            if (
+              armed &&
+              outgoing.method === 'GET' &&
+              new URL(outgoing.url).pathname.endsWith('/control')
+            ) {
+              const bytes = await response.arrayBuffer();
+              outgoing.signal.addEventListener(
+                'abort',
+                () => Deferred.doneUnsafe(stopped, Exit.void),
+                { once: true }
+              );
+              Deferred.doneUnsafe(entered, Exit.void);
+              await Effect.runPromise(Deferred.await(release));
+              return new Response(bytes, { status: response.status, headers: response.headers });
+            }
+            return response;
+          };
+          const workspace = yield* openLabWorkspaceSession({ ...config, fetch: transport });
+          yield* Effect.gen(function* () {
+            armed = true;
+            const reading = yield* Effect.result(workspace.refresh()).pipe(Effect.forkChild);
+            yield* Deferred.await(entered);
+            const closing = yield* workspace.close().pipe(Effect.forkChild);
+            yield* Deferred.await(stopped);
+            expect(feedClosed).toBe(false);
+            expect(closeDone).toBe(false);
+            const cancelled = yield* Fiber.interrupt(closing).pipe(Effect.forkChild),
+              secondStarted = yield* Deferred.make<void>();
+            const second = yield* Deferred.succeed(secondStarted, undefined).pipe(
+              Effect.andThen(workspace.close()),
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  closeDone = true;
+                })
+              ),
+              Effect.forkChild
+            );
+            yield* Deferred.await(secondStarted);
+            expect(feedClosed).toBe(false);
+            expect(closeDone).toBe(false);
+            yield* Deferred.succeed(release, undefined);
+            yield* Fiber.join(second);
+            yield* Fiber.join(cancelled);
+            const result = yield* Fiber.await(reading);
+            if (Exit.isSuccess(result)) expect(Result.isFailure(result.value)).toBe(true);
+            expect(feedClosed).toBe(true);
+            expect(closeDone).toBe(true);
+          }).pipe(Effect.ensuring(Deferred.succeed(release, undefined)));
+        })
+      )
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 0);
+it('creates through the public facade only after protected initial-key readback, publishes one original genesis and reopens the retained create intent', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-facade-create-'));
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const device = yield* generateDevice(),
+            key = Result.getOrThrow(Bytes.epochKey(crypto.getRandomValues(new Uint8Array(32))));
+          const generated = yield* signGenesisRecord({
+            signer: device,
+            encryptionPublicKey: device.enc,
+            initialKey: key,
+            membershipId: Result.getOrThrow(Bytes.membershipId(new Uint8Array(16).fill(215))),
+            userId: Result.getOrThrow(Bytes.userId(new Uint8Array(32).fill(216))),
+          });
+          const point = { head: hashRecordBytes(generated.record), length: 1 },
+            view = Result.getOrThrow(
+              verifyLedger({
+                anchor: generated.genesis,
+                records: [generated.record],
+                checkpoint: point,
+              })
+            );
+          const host = yield* makeLabHostSession({
+            directory: join(root, 'host'),
+            mode: 'create',
+            genesisRecord: generated.record,
+            now: () => 0,
+            resources: { loro: 'document-A', flock: 'document-B' },
+            budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
+          });
+          const file = (name: string) => join(root, `${name}.sqlite`),
+            keysPath = file('protected');
+          const keys = {
+            path: file('receive'),
+            mode: 'create' as const,
+            pair: device.encryption,
+            keyStore: { path: keysPath, mode: 'open' as const, protector: labSyntheticProtector },
+            repairStore: { path: file('repair'), mode: 'create' as const },
+            sendStore: { path: file('send'), mode: 'create' as const },
+            outboxStore: { path: file('outbox'), mode: 'create' as const },
+            currentPublication: () => Effect.succeed(new Uint8Array(generated.record)),
+          };
+          const config = {
+            baseUrl: host.baseUrl,
+            genesis: generated.genesis,
+            signer: device,
+            path: file('feed'),
+            journalPath: file('journal'),
+            mode: 'create' as const,
+            checkpoint: () => Effect.succeed(point),
+            budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
+            documents: [],
+            keys,
+            creation: {
+              path: file('creation-request'),
+              mode: 'create' as const,
+              genesisRecord: generated.record,
+            },
+          };
+          expect(Result.isFailure(yield* Effect.result(openLabWorkspaceSession(config)))).toBe(
+            true
+          );
+          const absent = yield* Effect.promise(() =>
+            fetch(
+              `${host.nativeBaseUrl}/ds/${Buffer.from(generated.genesis.toBytes()).toString('hex')}/control`,
+              { method: 'HEAD' }
+            )
+          );
+          expect(absent.status).toBe(404);
+          yield* Effect.promise(() => absent.body?.cancel() ?? Promise.resolve());
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const protectedKeys = yield* makeSqliteProtectedEpochKeys({
+                path: keysPath,
+                mode: 'create',
+                genesis: generated.genesis,
+                recipient: device.publicKey,
+                ledger: () => Effect.succeed(view),
+                protector: labSyntheticProtector,
+              });
+              yield* protectedKeys.saveAndReload(0, key);
+            })
+          );
+          const workspace = yield* openLabWorkspaceSession(config);
+          expect((yield* workspace.current()).view.head.equals(point.head)).toBe(true);
+          yield* workspace.close();
+          const reopened = yield* openLabWorkspaceSession({
+            ...config,
+            mode: 'open',
+            expected: point,
+            creation: { ...config.creation, mode: 'open' },
+            keys: {
+              ...keys,
+              mode: 'open',
+              repairStore: { ...keys.repairStore, mode: 'open' },
+              sendStore: { ...keys.sendStore, mode: 'open' },
+              outboxStore: { ...keys.outboxStore, mode: 'open' },
+            },
+          });
+          expect((yield* reopened.current()).view.length).toBe(1);
+          const stored = new Database(config.creation.path, { readonly: true });
+          try {
+            expect(stored.prepare('SELECT original,consumed FROM creation_request').get()).toEqual({
+              original: Buffer.from(generated.record),
+              consumed: 1,
+            });
+          } finally {
+            stored.close();
+          }
+        })
+      )
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+it('receives an inviter-pinned snapshot through the join mailbox, reopens its local origin and sees its own revocation without old-prefix replay', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-invitation-first-'));
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const f = yield* makeLabScenarioFixture(join(root, 'fixture'), [
+            { id: 'owner', role: 'owner' },
+            { id: 'peer', role: 'owner', memberOf: 'owner' },
+          ]);
+          const ownerIdentity = yield* makeLabHttpIdentity({
+            baseUrl: f.host.baseUrl,
+            genesis: f.genesis,
+          });
+          const owner = yield* ownerIdentity.authenticate(f.owner);
+          const peerIdentity = yield* makeLabHttpIdentity({
+            baseUrl: f.host.baseUrl,
+            genesis: f.genesis,
+          });
+          const peer = yield* peerIdentity.authenticate(f.peer, 'unbound');
+          const request = yield* prepareJoinRequest({
+            genesis: f.genesis,
+            signer: f.peer,
+            encryptionPublicKey: f.peer.enc,
+            userId: Result.getOrThrow(Bytes.userId(new Uint8Array(32).fill(211))),
+            requestId: Result.getOrThrow(Bytes.requestId(new Uint8Array(16).fill(212))),
+            expiresAt: null,
+          });
+          yield* peer.submitJoin(request);
+          const selected = yield* Effect.promise(() =>
+            owner.fetch(
+              `${f.host.baseUrl}/ds/${Buffer.from(f.genesis.toBytes()).toString('hex')}/control`,
+              { method: 'HEAD' }
+            )
+          );
+          const offset = selected.headers.get('stream-next-offset');
+          yield* Effect.promise(() => selected.body?.cancel() ?? Promise.resolve());
+          if (!selected.ok || !offset) throw new Error('native-origin');
+          const issued = yield* issueWorkspaceInvitation({
+            workspaceId: 'workspace-fixture',
+            signer: f.owner,
+            ledger: f.ledger,
+            offset: () => Effect.succeed(offset),
+            requestId: request.requestId,
+            mailbox: owner.invitationMailbox,
+          });
+          const reads: string[] = [];
+          const transport: typeof fetch = (value, init) => {
+            const url = new URL(value instanceof Request ? value.url : String(value));
+            if (url.pathname.endsWith('/control') && (init?.method ?? 'GET') === 'GET') {
+              reads.push(url.searchParams.get('offset') ?? '');
+              if (url.searchParams.get('offset') === '-1')
+                return Promise.reject(new Error('old-prefix-not-used'));
+            }
+            return fetch(value, init);
+          };
+          const config = {
+            ...f.input('peer', 'create'),
+            fetch: transport,
+            documents: [],
+            invitation: {
+              pin: issued.pin,
+              requestId: request.requestId,
+              path: join(root, 'invitation.sqlite'),
+              mode: 'create' as const,
+            },
+          };
+          const joined = yield* openLabWorkspaceSession(config);
+          expect((yield* joined.current()).view.verification).toBe('endorsed-snapshot');
+          yield* joined.close();
+          const reopened = yield* openLabWorkspaceSession({
+            ...config,
+            mode: 'open',
+            expected: f.point(),
+            invitation: { ...config.invitation, mode: 'open' },
+            keys: {
+              ...config.keys,
+              mode: 'open',
+              keyStore: { ...config.keys.keyStore, mode: 'open' },
+              repairStore: { ...config.keys.repairStore, mode: 'open' },
+              sendStore: { ...config.keys.sendStore, mode: 'open' },
+              outboxStore: { ...config.keys.outboxStore, mode: 'open' },
+            },
+          });
+          expect((yield* reopened.current()).view.head.equals(f.point().head)).toBe(true);
+          expect(reads).toEqual([offset, offset]);
+          const honest = yield* openLabWorkspaceSession({
+            ...f.input('owner', 'create'),
+            documents: [],
+          });
+          const revoked = yield* honest.submit({ _tag: 'RevokeDevice', target: f.peer.publicKey });
+          if (revoked.outcome !== 'Committed') throw new Error('revocation');
+          yield* honest.acknowledge(revoked);
+          const observed = yield* reopened.refresh();
+          expect(
+            observed.view
+              .inspectState()
+              .devices.has(Buffer.from(f.peer.publicKey.toBytes()).toString('hex'))
+          ).toBe(false);
+          expect(Result.isFailure(yield* Effect.result(reopened.keyRound()))).toBe(true);
+          const disk = new Database(config.path, { readonly: true });
+          try {
+            expect(disk.prepare('SELECT COUNT(*) AS n FROM snapshot_feed_records').get()).toEqual({
+              n: 1,
+            });
+          } finally {
+            disk.close();
+          }
+        })
+      )
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 it('starts and reopens an authenticated workspace from an independently qualified snapshot without reading its old control prefix', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-workspace-snapshot-origin-'));
   try {
@@ -374,8 +697,6 @@ it('durably retries an unadmitted join original after a lost receipt, then start
           const { openLabJoinSession } = yield* Effect.promise(
             () => import('../src/platform/join-session')
           );
-          const { generateDevice } = yield* Effect.promise(() => import('../src/platform/device'));
-          const { Bytes } = yield* Effect.promise(() => import('@lody/e2ee-core'));
           const f = yield* makeLabScenarioFixture(join(root, 'fixture')),
             device = yield* generateDevice();
           let drop = true;
@@ -482,8 +803,16 @@ it('durably retries an unadmitted join original after a lost receipt, then start
           yield* owner.acknowledgeEpochRotation(removal);
           yield* owner.keyRound();
           yield* owner.append('loro', ' / after removal');
-          expect(Result.isFailure(yield* Effect.result(session.refresh()))).toBe(true);
+          const removedView = yield* session.refresh();
+          expect(
+            removedView.view
+              .inspectState()
+              .devices.has(Buffer.from(device.publicKey.toBytes()).toString('hex'))
+          ).toBe(false);
           expect(yield* session.text('loro')).toBe('only admitted readers');
+          expect(Result.isFailure(yield* Effect.result(session.pull('loro')))).toBe(true);
+          expect(yield* session.documentStatus('loro')).toBe('document-stopped');
+          expect(Result.isFailure(yield* Effect.result(session.keyRound()))).toBe(true);
           const stored = new Database(file('keys'), { readonly: true });
           try {
             expect(

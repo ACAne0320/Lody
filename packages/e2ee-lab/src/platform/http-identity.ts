@@ -11,6 +11,12 @@ import { signVerified, type DeviceSigner } from '@lody/e2ee-core/signing';
 import { labPossessionMessage } from './credentials';
 import { labJoinWire, parseLabJoin } from './join-mailbox';
 import { makeLabSdkOwner } from './sdk-owner';
+import {
+  invitationSnapshotWire,
+  parseInvitationSnapshot,
+  InvitationSnapshotWire,
+} from './invitation-wire';
+import type { WorkspaceInvitationSnapshot } from '@lody/e2ee-core/workspace';
 import { readBoundedBody } from './bounded-body';
 
 export class LabHttpIdentityError extends Data.TaggedError('LabHttpIdentityError')<{
@@ -253,6 +259,48 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
         // A signed candidate is not current eligibility or admission authority.
         return Object.freeze(requests);
       });
+      const invitationMailbox = Object.freeze({
+        put: Effect.fnUntraced(function* (
+          requestId: Bytes.RequestId,
+          receipt: WorkspaceInvitationSnapshot
+        ) {
+          const original = invitationSnapshotWire(receipt);
+          yield* Effect.fromResult(
+            Schema.decodeUnknownResult(JoinReceipt)(
+              yield* readJson(
+                () =>
+                  authenticatedFetch(
+                    `${origin}/v1/spaces/${genesisHex}/joins/${hex(requestId.toBytes())}/snapshot`,
+                    {
+                      method: 'PUT',
+                      headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify(original),
+                    }
+                  ),
+                16 * 1024
+              )
+            )
+          );
+        }),
+        read: Effect.fnUntraced(function* (requestId: Bytes.RequestId) {
+          const reply = yield* Effect.fromResult(
+            Schema.decodeUnknownResult(
+              Schema.Struct({ snapshot: Schema.NullOr(InvitationSnapshotWire) })
+            )(
+              yield* readJson(
+                () =>
+                  authenticatedFetch(
+                    `${origin}/v1/spaces/${genesisHex}/joins/${hex(requestId.toBytes())}/snapshot`
+                  ),
+                4 * 1024 * 1024 + 4096
+              )
+            )
+          );
+          return reply.snapshot
+            ? yield* Effect.fromResult(parseInvitationSnapshot(reply.snapshot))
+            : null;
+        }),
+      });
       const discoverGenesis = Effect.fnUntraced(function* () {
         if (owner.signal.aborted) return yield* fail('closed');
         const reply = yield* Effect.fromResult(
@@ -336,6 +384,7 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
         discoverGenesis,
         submitJoin,
         listJoins,
+        invitationMailbox,
         createWorkspace,
       });
     }),

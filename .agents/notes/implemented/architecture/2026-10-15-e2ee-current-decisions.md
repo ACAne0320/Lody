@@ -223,3 +223,7 @@ is insufficient; host crypto provider choices must not split ledger acceptance.
 The fixed edge vectors run on Node22.x, the supported Node23.6 floor and Node24.x in CI.
 The production content gateway still needs a real stream-boundary query capability;
 the Lab's native SQLite boundary implementation is not that production API.
+
+## Workspace, vault and desktop round
+
+The user selected vault-v1, per-workspace encrypted R entries plus index CAS, inviter-pinned snapshot joining and desktop-only safeStorage-wrapped KEK custody. Corresponding Specs remain draft for revision approval; product E2EE remains disabled. Web/mobile/CLI custody and strict deadline B are not enabled. The public workspace facade owns common workflows and Lab is its first consumer. Staging deletion checks its original signer and deletes in one transaction; absence succeeds. Streams boundary queries are content blind. Manual model exploration counts replay-confirmed measured violations; benchmarks have no CI thresholds.

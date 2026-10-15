@@ -6,6 +6,7 @@ import { makeLabDocumentSession } from './document-session';
  * settlement. Inject a logical clock; reopens must retain its monotonic semantics. */
 export function makeLabFlockSession(
   input: Omit<Parameters<typeof makeStreamsUpdateBinding>[0], 'model'> & {
+    readonly binding?: import('effect').Effect.Success<ReturnType<typeof makeStreamsUpdateBinding>>;
     readonly path: string;
     readonly mode: 'create' | 'open';
     readonly streamUrl: string;

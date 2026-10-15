@@ -245,3 +245,11 @@ occupied 元组，也不能删除别人的组。
 原生保管获批。无暂存直接 CAS 仍是可测量的管理者扣钥／可用性限制。
 
 [P07–P14、D12、strict B、RestrictedA 术语](../e2ee-core/README.md#terms)。
+
+## 本轮组合
+
+`full-session` 消费公开 `E2eeWorkspace`。邀请人钉住的权限快照经认证加入信箱下发，保存后按快照与已验后缀重开。历史设备只能读取控制账本以看见自身撤销，不因此获得正文、钥匙、信箱或写入权限。SQLite vault 使用不透明不可变条目／索引 CAS 端口；合成保护器不算桌面保管验收。
+
+每个动作执行前记录独立预测，执行后比较真实结果；网络或存储失败不能证明权限拒绝，缺测保持 unavailable。`explore <目录> <目标和actors.json>` 为手动工具，使用 `OPENAI_API_KEY`、`E2EE_LAB_MODEL`，仅发送显式合成目标、角色配置和动作 schema，不进 CI。模型自报期望被丢弃；真实性质违规须经新进程确定性重放才计入发现。测试使用录制回复，不调用模型网络，接口见 [Responses JSON mode](https://developers.openai.com/api/docs/guides/structured-outputs)。
+
+快照准入使用后端 `record-boundary` HTTP 扩展，不再读内部表；SQLite 0.3.0 精确依赖补丁承载相同的上游改动，不称已发布包原本具备此能力。

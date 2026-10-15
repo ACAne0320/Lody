@@ -303,3 +303,11 @@ Staging deletion is limited to the original record's authenticated device. The
 SQLite port is opaque: it does not verify a client's occupied claim against the
 ledger. The honest publisher checks that condition separately; another manager
 cannot delete its group even when providing a genuine occupied tuple.
+
+## Current integration round
+
+`full-session` consumes public `E2eeWorkspace`. Inviter-pinned snapshots travel through the authenticated join mailbox and reopen from the retained origin plus verified suffix. Historical devices may read only the control ledger to observe their own revocation; this grants no content, key, mailbox or write access. The SQLite vault adapter implements the opaque immutable-entry/index-CAS port. Synthetic protection is not desktop custody evidence.
+
+Every action records an independent pre-action prediction and measured comparison. Transport/storage failures are not permission-refusal proofs; missing observations remain unavailable. `explore <directory> <goal-and-actors.json>` is optional and manual, using `OPENAI_API_KEY` and `E2EE_LAB_MODEL`. It sends only the explicit synthetic goal, actor configuration and action schema, and never runs in CI. Model expectations are discarded; actual property violations count only after fresh deterministic replay. Tests use recorded replies and no model network. See [Responses JSON mode](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+Snapshot admission uses the backend `record-boundary` HTTP extension rather than internal tables. The exact SQLite 0.3.0 dependency patch carries the matching upstream change; this is not claimed as an unmodified published capability.

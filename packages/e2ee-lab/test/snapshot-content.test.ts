@@ -180,7 +180,7 @@ describe('current content-v0 protected snapshots with the released SDK', () => {
                 ledger,
                 snapshotStore,
                 snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
-                  path: f.server.dbPath,
+                  baseUrl: f.server.baseUrl,
                   genesis: genesis.genesis,
                   model,
                 }),
@@ -346,7 +346,7 @@ it('refuses a snapshot when the genuine epoch changes during actual native signa
             ledger: () => Effect.succeed(view),
             snapshotStore,
             snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
-              path: f.server.dbPath,
+              baseUrl: f.server.baseUrl,
               genesis: genesis.genesis,
               model: 'loro',
             }),
@@ -531,7 +531,7 @@ it('reopens an uncertain snapshot and confirms only its original bytes; older re
               ledger,
               snapshotStore: store,
               snapshotBoundary: yield* makeLabRiverrunSnapshotBoundary({
-                path: f.server.dbPath,
+                baseUrl: f.server.baseUrl,
                 genesis: genesis.genesis,
                 model: 'loro',
               }),

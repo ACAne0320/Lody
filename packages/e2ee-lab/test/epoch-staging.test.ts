@@ -305,6 +305,25 @@ describe('transactional complete epoch staging', () => {
           });
           expect(ownResult).toEqual({ ok: true });
           expect(yield* store.readGroup(loser!)).toBeNull();
+          // Absence is terminal success: do not evaluate a new cleanup claim or
+          // issue another DELETE after discovering that the original is gone.
+          const db = new Database(f.path);
+          try {
+            db.exec(
+              "CREATE TRIGGER unexpected_delete BEFORE DELETE ON staged_groups BEGIN SELECT RAISE(ABORT,'unexpected second delete'); END"
+            );
+            expect(
+              yield* dispatchLabEpochStaging({
+                value: { ...request, occupied: { epoch: 2, commitment: loser!.commitment } },
+                genesis: f.before.genesis,
+                credential: { ...credential, device: f.owner.publicKey },
+                ledger: () => Effect.succeed(f.views[0]!),
+                port: store,
+              })
+            ).toEqual({ ok: true });
+          } finally {
+            db.close();
+          }
           expect(yield* store.readGroup(winner!)).toEqual(winner);
         })
       )
