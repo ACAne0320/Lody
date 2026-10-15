@@ -104,8 +104,9 @@ owner is added.
 
 ## Authority, persistence and shutdown
 
-Existing sessions require an already published full signed control prefix,
-including original genesis, and independent local/network checkpoint pins.
+Existing sessions require independent local/network checkpoint pins. Read startup
+may use an explicitly qualified snapshot origin; P09 writes still require the
+already published full signed control prefix, including original genesis.
 Discovery, SQL rows, offsets and IPC observations cannot select authority.
 Private IPC points are checked against independently witnessed signed originals.
 Failed ledger reads or SQLite writes retain verified history and cursor together;

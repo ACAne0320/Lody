@@ -190,7 +190,7 @@ Full feed reopening remains an O(N) cryptographic audit; cooperative native work
 reduces CPU cost and event-loop blocking, not the amount of trusted history needed.
 This change does not connect snapshot-first joining or make SQL a trust authority.
 Production still needs independently qualified snapshot/checkpoint acquisition,
-resumable genesis creation, the gated epoch/removal producer, protected content
+resumable genesis creation, atomic member removal and independent publisher backup, protected content
 snapshots, vault/backup decisions, strict deadline B and actual platform custody.
 The explicit local candidate publisher now generates, durably retains and
 submits an E7 through P09, then installs the verified committed key. This permits
