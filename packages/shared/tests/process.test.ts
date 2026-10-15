@@ -156,6 +156,47 @@ describe('process tree termination (POSIX groups)', () => {
     }).pipe(Effect.provide(processLayer({ nodeProcess: table.api })));
   });
 
+  // An orphan reparented to a reaper that never waits (a daemon running as a
+  // container's PID 1) keeps its group signalable while holding nothing.
+  it.effect('treats a group holding only unreaped orphans as gone after SIGKILL', () => {
+    const table = new FakeProcessTable('linux');
+    return Effect.gen(function* () {
+      const managed = yield* spawnProcess(agentSpec);
+      const leader = managed.child.pid ?? -1;
+      table.exitUnreaped(table.addDescendant(leader));
+      const termination = yield* Effect.forkChild(managed.terminate(FORCED));
+
+      yield* TestClock.adjust('5 seconds');
+
+      expect(Exit.isSuccess(yield* Fiber.await(termination))).toBe(true);
+      expect(table.isAlive(leader)).toBe(false);
+    }).pipe(Effect.provide(processLayer({ nodeProcess: table.api })));
+  });
+
+  it.effect('keeps failing a zombie-only group when its members cannot be listed', () => {
+    const table = new FakeProcessTable('linux');
+    table.processGroupsListable = false;
+    return Effect.gen(function* () {
+      const exit = yield* Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const managed = yield* spawnProcess(agentSpec);
+            table.exitUnreaped(table.addDescendant(managed.child.pid ?? -1));
+            const termination = yield* Effect.forkChild(managed.terminate(FORCED));
+
+            yield* TestClock.adjust('5 seconds');
+            const failure = failureOf(yield* Fiber.await(termination));
+
+            expect(failure).toBeInstanceOf(TerminationFailed);
+            expect(failure?.reason).toBe('still-alive');
+          })
+        )
+      );
+      // The scope cannot prove the group gone either and keeps its recovery lease.
+      expect(Exit.isFailure(exit)).toBe(true);
+    }).pipe(Effect.provide(processLayer({ nodeProcess: table.api })));
+  });
+
   it.effect('terminates a scoped process when its scope closes', () => {
     const table = new FakeProcessTable('linux');
     return Effect.gen(function* () {
@@ -198,12 +239,49 @@ describe('process tree termination (Windows)', () => {
       table.taskkillHangs = true;
       const termination = yield* Effect.forkChild(managed.terminate(FORCED));
 
-      yield* TestClock.adjust('10 seconds');
+      // The taskkill deadline, then the bounded wait for the root to exit anyway.
+      yield* TestClock.adjust('15 seconds');
       const failure = failureOf(yield* Fiber.await(termination));
 
       expect(failure).toBeInstanceOf(TerminationFailed);
       expect(failure?.reason).toBe('signal-failed');
       table.taskkillHangs = false;
+    }).pipe(Effect.provide(processLayer({ nodeProcess: table.api })));
+  });
+
+  it.effect('succeeds when a forced taskkill ends the root but fails on a descendant', () => {
+    const table = new FakeProcessTable('win32');
+    return Effect.gen(function* () {
+      const managed = yield* spawnProcess(agentSpec);
+      const root = managed.child.pid ?? -1;
+      table.addDescendant(root, { ignores: ['SIGKILL'] });
+
+      yield* managed.terminate(FORCED);
+
+      expect(table.isAlive(root)).toBe(false);
+    }).pipe(Effect.provide(processLayer({ nodeProcess: table.api })));
+  });
+
+  it.effect('reports the failed taskkill when the root outlives the wait', () => {
+    const table = new FakeProcessTable('win32');
+    table.queueSpawn({ ignores: ['SIGKILL'] });
+    return Effect.gen(function* () {
+      const exit = yield* Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const managed = yield* spawnProcess(agentSpec);
+            const termination = yield* Effect.forkChild(managed.terminate(FORCED));
+
+            yield* TestClock.adjust('5 seconds');
+            const failure = failureOf(yield* Fiber.await(termination));
+
+            expect(failure).toBeInstanceOf(TerminationFailed);
+            expect(failure?.reason).toBe('signal-failed');
+            expect(failure?.message).toContain('taskkill exited with status 1');
+          })
+        )
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
     }).pipe(Effect.provide(processLayer({ nodeProcess: table.api })));
   });
 

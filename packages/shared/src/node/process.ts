@@ -14,7 +14,7 @@ import {
   type SpawnSyncOptions,
   type SpawnSyncReturns,
 } from 'node:child_process';
-import { statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -70,6 +70,18 @@ export interface NodeProcessApi {
   ) => SpawnSyncReturns<Buffer>;
   /** `process.kill` semantics: throws `ESRCH` when no process matches. */
   readonly kill: (pid: number, signal: NodeJS.Signals | 0) => void;
+  /**
+   * Every member of POSIX process group `pgid`, or `null` when the host cannot
+   * enumerate them. Scans the whole process table, so it is for the rare
+   * check after a bounded wait, never for a polling loop.
+   */
+  readonly listProcessGroup?: (pgid: number) => readonly ProcessGroupMember[] | null;
+}
+
+export interface ProcessGroupMember {
+  readonly pid: number;
+  /** Exited and waiting to be reaped: it holds no resources and no signal ends it. */
+  readonly zombie: boolean;
 }
 
 export class NodeProcess extends Context.Service<NodeProcess, NodeProcessApi>()(
@@ -141,6 +153,48 @@ const windowsSpawnTarget = (
   return resolveWindowsCommand(command, { cwd, env: options.env ?? process.env }, isFile);
 };
 
+/** Linux: `/proc/<pid>/stat` is `pid (comm) state ppid pgrp ...`; comm may contain spaces. */
+const listLinuxProcessGroup = (pgid: number): readonly ProcessGroupMember[] | null => {
+  let entries: string[];
+  try {
+    entries = readdirSync('/proc');
+  } catch {
+    return null;
+  }
+  const members: ProcessGroupMember[] = [];
+  for (const entry of entries) {
+    if (!/^\d+$/u.test(entry)) continue;
+    let stat: string;
+    try {
+      stat = readFileSync(`/proc/${entry}/stat`, 'utf8');
+    } catch {
+      // Exited and reaped since the directory was listed.
+      continue;
+    }
+    const [state, , group] = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    if (Number(group) !== pgid) continue;
+    members.push({ pid: Number(entry), zombie: state === 'Z' || state === 'X' });
+  }
+  return members;
+};
+
+/** Other POSIX hosts (macOS): one bounded `ps` over every process. */
+const listPsProcessGroup = (pgid: number): readonly ProcessGroupMember[] | null => {
+  const result = spawn.sync('ps', ['-axo', 'pid=,pgid=,stat='], {
+    encoding: 'buffer',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 2_000,
+  });
+  if (result.error || result.status !== 0) return null;
+  const members: ProcessGroupMember[] = [];
+  for (const line of result.stdout.toString('utf8').split('\n')) {
+    const [pid, group, state] = line.trim().split(/\s+/u);
+    if (!pid || !state || Number(group) !== pgid) continue;
+    members.push({ pid: Number(pid), zombie: state.startsWith('Z') });
+  }
+  return members;
+};
+
 export const nodeProcessLive: NodeProcessApi = {
   platform: process.platform,
   spawn: (command, args, options) => {
@@ -162,6 +216,10 @@ export const nodeProcessLive: NodeProcessApi = {
   },
   kill: (pid, signal) => {
     process.kill(pid, signal);
+  },
+  listProcessGroup: (pgid) => {
+    if (process.platform === 'win32') return null;
+    return process.platform === 'linux' ? listLinuxProcessGroup(pgid) : listPsProcessGroup(pgid);
   },
 };
 
@@ -217,6 +275,13 @@ export interface ProcessTree {
   readonly description: string;
   readonly isAlive: Effect.Effect<boolean, TerminationFailed>;
   readonly signal: (signal: TreeSignal) => Effect.Effect<SignalOutcome, TerminationFailed>;
+  /**
+   * An exact, slow membership check consulted once the bounded wait after
+   * SIGKILL has run out. `false` proves only zombies remain: an orphan nobody
+   * reaps (a daemon running as a container's PID 1) keeps the group signalable
+   * forever while holding nothing. Absent: `isAlive` alone decides.
+   */
+  readonly hasRunningMembers?: Effect.Effect<boolean, TerminationFailed>;
 }
 
 /**
@@ -262,18 +327,33 @@ export const posixGroupTree = (np: NodeProcessApi, pgid: number): ProcessTree =>
       try: () => np.kill(-pgid, signal),
       catch: (cause) => cause,
     });
+  const isAlive = kill(0).pipe(
+    Effect.as(true),
+    Effect.catch((cause) => {
+      const code = errnoCode(cause);
+      if (code === 'ESRCH') return Effect.succeed(false);
+      // EPERM: the group exists but is not ours to signal; it is still alive.
+      if (code === 'EPERM') return Effect.succeed(true);
+      return Effect.fail(signalFailed(description, 0, cause));
+    })
+  );
+  const listMembers = np.listProcessGroup;
   return {
     description,
-    isAlive: kill(0).pipe(
-      Effect.as(true),
-      Effect.catch((cause) => {
-        const code = errnoCode(cause);
-        if (code === 'ESRCH') return Effect.succeed(false);
-        // EPERM: the group exists but is not ours to signal; it is still alive.
-        if (code === 'EPERM') return Effect.succeed(true);
-        return Effect.fail(signalFailed(description, 0, cause));
-      })
-    ),
+    isAlive,
+    ...(listMembers
+      ? {
+          hasRunningMembers: Effect.suspend(() => {
+            const members = listMembers(pgid);
+            if (members === null || members.some((member) => !member.zombie)) {
+              return Effect.succeed(true);
+            }
+            // Nothing visible: the group emptied after the wait, or a member is
+            // hidden from this user (`hidepid`). Only the kernel can tell.
+            return members.length > 0 ? Effect.succeed(false) : isAlive;
+          }),
+        }
+      : {}),
     signal: (signal) =>
       kill(signal).pipe(
         Effect.as<SignalOutcome>('delivered'),
@@ -475,14 +555,23 @@ export const terminateTree = Effect.fnUntraced(function* (
     }
   }
 
-  if ((yield* tree.signal('SIGKILL')) === 'gone') return;
+  // A failed delivery is not proof of survival: `taskkill /T /F` reports a
+  // failure when one descendant refuses, after it already ended the root.
+  const killed = yield* Effect.result(tree.signal('SIGKILL'));
+  if (Result.isSuccess(killed) && killed.success === 'gone') return;
   if (yield* waitUntilGone(tree, Duration.millis(policy.killWaitMs))) return;
+  if (tree.hasRunningMembers && !(yield* tree.hasRunningMembers)) {
+    yield* Effect.logDebug(`${tree.description} retains only zombies after SIGKILL; it is gone`);
+    return;
+  }
   yield* Effect.fail(
-    new TerminationFailed({
-      target: tree.description,
-      reason: 'still-alive',
-      message: `${tree.description} was still running ${policy.killWaitMs}ms after SIGKILL`,
-    })
+    Result.isFailure(killed)
+      ? killed.failure
+      : new TerminationFailed({
+          target: tree.description,
+          reason: 'still-alive',
+          message: `${tree.description} was still running ${policy.killWaitMs}ms after SIGKILL`,
+        })
   );
 });
 
@@ -570,6 +659,7 @@ export class ProcessReleaseFailed extends Data.TaggedError('ProcessReleaseFailed
   retryTermination(
     policy: TerminationPolicy = this.#policy
   ): Effect.Effect<void, TerminationFailed> {
+    const hasRunningMembers = this.#resource.tree.hasRunningMembers;
     const tree: ProcessTree = {
       description: this.#resource.tree.description,
       isAlive: this.isAlive,
@@ -579,6 +669,7 @@ export class ProcessReleaseFailed extends Data.TaggedError('ProcessReleaseFailed
             released ? Effect.succeed<SignalOutcome>('gone') : this.#resource.tree.signal(signal)
           )
         ),
+      ...(hasRunningMembers ? { hasRunningMembers } : {}),
     };
     return Effect.uninterruptibleMask((restore) =>
       Ref.get(this.#released).pipe(
