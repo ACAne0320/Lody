@@ -296,6 +296,12 @@ export interface TerminationPolicy {
 }
 
 export const TREE_POLL_INTERVAL = Duration.millis(20);
+/**
+ * How long a signalled tree may linger before its members are scanned. A
+ * healthy tree is gone well before this, so the scan only costs the rare
+ * survivor, while a group holding only zombies no longer waits out the policy.
+ */
+export const MEMBER_SCAN_DELAY = Duration.millis(250);
 export const TASKKILL_DEADLINE = Duration.seconds(10);
 const TREE_POLL_INTERVAL_MS = Duration.toMillis(TREE_POLL_INTERVAL);
 /** taskkill exit status when no process matched the pid. */
@@ -529,6 +535,33 @@ export const waitUntilGone = (
   ).pipe(Effect.map(Option.isSome));
 
 /**
+ * Wait up to `within` for a signalled tree to go. A tree that can tell zombies
+ * from running members is scanned once after `MEMBER_SCAN_DELAY` and once at
+ * the end: zombies are already dead, and nothing but their parent removes them.
+ */
+const settleWithin = Effect.fnUntraced(function* (
+  tree: ProcessTree,
+  within: Duration.Duration,
+  after: string
+): Effect.fn.Return<boolean, TerminationFailed> {
+  const hasRunningMembers = tree.hasRunningMembers;
+  if (!hasRunningMembers) return yield* waitUntilGone(tree, within);
+  const early = Duration.min(within, MEMBER_SCAN_DELAY);
+  if (yield* waitUntilGone(tree, early)) return true;
+  const onlyZombies = Effect.gen(function* () {
+    if (yield* hasRunningMembers) return false;
+    yield* Effect.logDebug(`${tree.description} retains only zombies after ${after}; it is gone`);
+    return true;
+  });
+  if (yield* onlyZombies) return true;
+  const rest = Duration.subtract(within, early);
+  if (Duration.isGreaterThan(rest, Duration.zero) && (yield* waitUntilGone(tree, rest))) {
+    return true;
+  }
+  return yield* onlyZombies;
+});
+
+/**
  * SIGTERM, bounded grace, SIGKILL, bounded wait. Succeeds only once the whole
  * tree is proven gone; otherwise fails with `TerminationFailed`.
  */
@@ -542,7 +575,7 @@ export const terminateTree = Effect.fnUntraced(function* (
     const graceful = yield* Effect.result(tree.signal(policy.gracefulSignal ?? 'SIGTERM'));
     if (Result.isSuccess(graceful)) {
       if (graceful.success === 'gone') return;
-      if (yield* waitUntilGone(tree, Duration.millis(policy.graceMs))) return;
+      if (yield* settleWithin(tree, Duration.millis(policy.graceMs), 'SIGTERM')) return;
       yield* Effect.logDebug(
         `${tree.description} still running ${policy.graceMs}ms after SIGTERM; escalating to SIGKILL`
       );
@@ -559,11 +592,7 @@ export const terminateTree = Effect.fnUntraced(function* (
   // failure when one descendant refuses, after it already ended the root.
   const killed = yield* Effect.result(tree.signal('SIGKILL'));
   if (Result.isSuccess(killed) && killed.success === 'gone') return;
-  if (yield* waitUntilGone(tree, Duration.millis(policy.killWaitMs))) return;
-  if (tree.hasRunningMembers && !(yield* tree.hasRunningMembers)) {
-    yield* Effect.logDebug(`${tree.description} retains only zombies after SIGKILL; it is gone`);
-    return;
-  }
+  if (yield* settleWithin(tree, Duration.millis(policy.killWaitMs), 'SIGKILL')) return;
   yield* Effect.fail(
     Result.isFailure(killed)
       ? killed.failure

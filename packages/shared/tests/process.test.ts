@@ -23,6 +23,7 @@ import { signalChildTreeNowLegacy, SpawnFailed, TerminationFailed } from '../src
 import { spawnProcess as acquireProcess, type SpawnSpec } from '../src/node/process';
 import { processLayer, isPidAliveSyncLegacy } from '../src/node/process';
 import {
+  MEMBER_SCAN_DELAY,
   READ_ONLY_ABANDON_POLICY,
   resolveWindowsCommand,
   TREE_POLL_INTERVAL,
@@ -166,10 +167,27 @@ describe('process tree termination (POSIX groups)', () => {
       table.exitUnreaped(table.addDescendant(leader));
       const termination = yield* Effect.forkChild(managed.terminate(FORCED));
 
-      yield* TestClock.adjust('5 seconds');
+      // The member scan runs well before the 5s SIGKILL wait would run out.
+      yield* TestClock.adjust(MEMBER_SCAN_DELAY);
 
       expect(Exit.isSuccess(yield* Fiber.await(termination))).toBe(true);
       expect(table.isAlive(leader)).toBe(false);
+    }).pipe(Effect.provide(processLayer({ nodeProcess: table.api })));
+  });
+
+  it.effect('ends a zombie-only group within the grace period, without SIGKILL', () => {
+    const table = new FakeProcessTable('linux');
+    return Effect.gen(function* () {
+      const managed = yield* spawnProcess(agentSpec);
+      const leader = managed.child.pid ?? -1;
+      table.exitUnreaped(table.addDescendant(leader));
+      table.exitOnItsOwn(leader);
+      const termination = yield* Effect.forkChild(managed.terminate(GRACEFUL));
+
+      yield* TestClock.adjust(MEMBER_SCAN_DELAY);
+
+      expect(Exit.isSuccess(yield* Fiber.await(termination))).toBe(true);
+      expect(table.delivered.map((signal) => signal.signal)).not.toContain('SIGKILL');
     }).pipe(Effect.provide(processLayer({ nodeProcess: table.api })));
   });
 

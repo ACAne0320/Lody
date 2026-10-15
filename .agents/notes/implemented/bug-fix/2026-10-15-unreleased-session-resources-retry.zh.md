@@ -48,11 +48,15 @@ claim 未命中、discard 或替换预备，拿到的都是同一个 rejection�
   会携带这个重试方法。第一次尝试仍然报告原始失败。
 - `terminateTree` 把失败的 SIGKILL 投递视为“未经证明”而不是致命错误：它会等待有界的
   `killWaitMs`，只有进程树仍然存活时才失败，失败中保留原始的投递错误。
-- `ProcessTree.hasRunningMembers` 是精确但较慢的成员扫描，只在 SIGKILL 等待超时后
-  运行一次。POSIX 进程组通过 `NodeProcessApi.listProcessGroup` 实现：Linux 读取
-  `/proc/<pid>/stat`，其他平台执行一次有超时的 `ps -axo pid=,pgid=,stat=`。只有当
-  进程组中可见的成员全部是僵尸进程时，才判定为已消失。扫描不可用、存在运行中的成员，
-  或者扫描结果为空但内核仍然报告该进程组存在，都会保持失败。
+- `ProcessTree.hasRunningMembers` 是精确但较慢的成员扫描。只有发出信号
+  `MEMBER_SCAN_DELAY`（250 ms）后进程树仍然存活时才运行，并在宽限期或 SIGKILL 等待
+  超时时再运行一次；正常的进程树在这之前就已经消失。POSIX 进程组通过
+  `NodeProcessApi.listProcessGroup` 实现：Linux 读取 `/proc/<pid>/stat`，其他平台
+  执行一次有超时的 `ps -axo pid=,pgid=,stat=`。只有当进程组中可见的成员全部是僵尸
+  进程时，才判定为已消失。扫描不可用、存在运行中的成员，或者扫描结果为空但内核仍然
+  报告该进程组存在，都会保持失败。
+- `Session.terminateOnce` 并行结束各进程树和 sandbox。sandbox 跟踪的是同样的进程组，
+  依次结束会让每次对残留进程的有界等待翻倍：报告的日志里每次失败前都等了十秒。
 
 ## 备选方案
 
@@ -67,7 +71,9 @@ claim 未命中、discard 或替换预备，拿到的都是同一个 rejection�
 
 如果某个 Session 的进程树真的无法杀死，每个 turn 会在一次有界重试后失败。每个 turn
 因此多花大约五秒，而不是立即返回过期的 rejection；好处是进程树一旦消失就能恢复。
-判定只剩僵尸的进程组需要等待一次 `killWaitMs`，之后注册表就会遗忘这棵树。在启用
+判定只剩僵尸的进程组大约只需 `MEMBER_SCAN_DELAY` 加一次扫描，之后注册表就会遗忘
+这棵树。在 macOS 上这次扫描是一次最长两秒的同步 `ps`，只有存活超过该延迟的进程树才会
+付出这个代价。在启用
 `hidepid` 时，其他用户的进程不可见。因此，如果一个进程组中可见的成员只有僵尸进程，
 即使还剩下外部用户的进程，也会被判定为已消失；不过这样的进程我们本来也无法发送信号。
 常驻 Session 表的行为不变：非预备 Session 的终止失败仍然走原有的恢复路径。
@@ -75,8 +81,11 @@ claim 未命中、discard 或替换预备，拿到的都是同一个 rejection�
 ## 验证
 
 - `packages/shared/tests/process.test.ts` 使用 fake process table 和 TestClock，
-  覆盖以下场景：只剩僵尸的进程组在 SIGKILL 后判定成功；无法枚举成员的进程组仍然失败；
-  Windows 根进程在 `taskkill` 部分失败后实际已结束；Windows 根进程仍然存活。
+  覆盖以下场景：只剩僵尸的进程组在 SIGKILL 后 `MEMBER_SCAN_DELAY` 时判定成功，在
+  宽限期内也无需 SIGKILL 即判定成功；无法枚举成员的进程组仍然失败；Windows 根进程在
+  `taskkill` 部分失败后实际已结束；Windows 根进程仍然存活。
+- `session-terminate-cleanup.test.ts` 证明等待 agent 进程树时 sandbox 已经在终止；
+  该测试在原来的串行顺序下会失败。
 - `session-preparation-service.test.ts` 覆盖回滚失败和释放失败的重试，以及失败期间
   持续阻止替换、直到重试成功。
 - `session-manager.test.ts` 先触发一次预备释放失败，再验证之后的冷启动创建成功；
