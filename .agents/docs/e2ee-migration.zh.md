@@ -4,9 +4,11 @@
 
 本栈增加不自动运行的公开 core 和合成环境 Lab。E2EE 尚未上线，不兼容旧账本／数据／API；不会启用产品 E2EE 或迁移生产数据。
 
+> 以下来源记录已归档为固定版本。当前行为及平台／产品边界归模块 README 与修订后的 draft Spec；本页不再要求持续更新 SHA 或逐项状态。
+
 ## 来源与归属
 
-[manifest](e2ee-migration-manifest.json)保留全部380项固定来源、core/candidate SHA 与源导出清单。淘汰原实现不等于取消当前必要行为。原 source/design/candidate 只读。当前依赖以 package/lock 为准，不以旧检查点进度为准。
+[manifest](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/.agents/docs/e2ee-migration-manifest.json)保留全部380项固定来源、core/candidate SHA 与源导出清单。淘汰原实现不等于取消当前必要行为。原 source/design/candidate 只读。当前依赖以 package/lock 为准，不以旧检查点进度为准。
 
 | 当前 owner                                                      | 职责                                                                        |
 | --------------------------------------------------------------- | --------------------------------------------------------------------------- |

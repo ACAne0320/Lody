@@ -39,7 +39,7 @@ Owner. Recovery devices only admit their own personal devices. Revocation affect
 only its target, records never create an approval ancestry tree, and Owner retains
 a personal/recovery path. Retired signing/encryption keys, member IDs, closed join
 requests and epoch commitments remain replay facts. Legacy tag 2 removal is rejected:
-it violates the already adopted atomic removal/rotation rule; P12 owns replacement.
+it violates the already adopted atomic removal/rotation rule; [P12](../../README.md#terms) owns the current tag8 transition.
 No new tag or protocol policy is defined here.
 
 Join `expiresAt` remains a signed nullable field; pure historical replay does not
@@ -63,7 +63,7 @@ view, not an inspection object. Snapshot endorsement/import uses the separate en
 explicit keys/delivery entry. Product integration remains separate.
 
 [Extraction and reproduced defects](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-ledger-records.md)
-and [source fingerprints](provenance.json). Run package `typecheck` and `test`;
+and [source fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/ledger/provenance.json). Run package `typecheck` and `test`;
 `test/ledger/replay.test.ts` signs fixed synthetic seeds with native Node Ed25519,
 independent of the production verifier, and exercises the public ledger subentry.
 
@@ -90,7 +90,7 @@ does not create genesis, discover freshness, generate/store private keys, or own
 transport. Legacy removal remains rejected.
 
 [Signing durability decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#durability-and-lifecycle)
-and [source/destination fingerprints](signing-provenance.json).
+and [source/destination fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/ledger/signing-provenance.json).
 
 ## Authenticated permission snapshots
 
@@ -129,7 +129,7 @@ and relabeled server notes are insufficient. This confirmation grants no permiss
 and upgrades no audit provenance. No new comparison wire/signature domain is added.
 
 [Snapshot trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
- · [Snapshot fingerprints](snapshot-provenance.json).
+ · [Snapshot fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/ledger/snapshot-provenance.json).
 
 ## Admission consent and ordinary intent
 

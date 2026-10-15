@@ -101,7 +101,7 @@ plans cannot become passing evidence through a different inspection path.
 [Core](../../../../packages/e2ee-core/README.md) owns protocol primitives and
 [Lab](../../../../packages/e2ee-lab/README.md) composes them with released SDKs,
 synthetic protection, real SQLite/HTTP and process faults. Lab is not product
-assembly or native-keychain acceptance. The [manifest](../../../docs/e2ee-migration-manifest.json)
+assembly or native-keychain acceptance. The [manifest](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/.agents/docs/e2ee-migration-manifest.json)
 retains source hashes, dispositions and unfinished work. Author tests, independent
 review, exact-head CI and production acceptance remain distinct.
 

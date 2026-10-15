@@ -13,7 +13,7 @@ PR: [#1433](https://github.com/LodyAI/Lody/pull/1433)
 
 ## 边界与证据
 
-固定输入是公共 main `f1ba33a61244e2da07aaea93a30f06227311c4b6`，包含 P07-b 与 P08。[输入指纹](../../../../packages/components/tests/workspace-streams-crypto-provenance.json) 标明实际已合入源码，没有迁入候选模块或 Lab 宿主。唯一依赖新增是 components 对现有 core 的 **devDependency**。Effect 保持 4.0.2、Repo 0.22.0、Streams CRDT 0.16.2、Loro 1.16.3。P07-c 密码学与 P09 journal 目录不在本次范围。
+固定输入是公共 main `f1ba33a61244e2da07aaea93a30f06227311c4b6`，包含 P07-b 与 P08。[输入指纹](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/components/tests/workspace-streams-crypto-provenance.json) 标明实际已合入源码，没有迁入候选模块或 Lab 宿主。唯一依赖新增是 components 对现有 core 的 **devDependency**。Effect 保持 4.0.2、Repo 0.22.0、Streams CRDT 0.16.2、Loro 1.16.3。P07-c 密码学与 P09 journal 目录不在本次范围。
 
 ```text
 合成原生签名端 -> 公开 v0 AEAD 与签名字节 -> 真实 SDK batch/快照

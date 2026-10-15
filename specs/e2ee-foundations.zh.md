@@ -38,7 +38,7 @@ E2EE 尚未上线，没有需要维护或迁移的线上旧账本、日志数据
 
 [模块入口](../packages/e2ee-core/README.md)、
 [固定向量与负例](../packages/e2ee-core/test/foundation.test.ts)、
-[来源指纹](../packages/e2ee-core/provenance.json)。
+[来源指纹](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/provenance.json)。
 
 ## 本地 epoch 保护边界
 

@@ -51,7 +51,7 @@ bytes, finite delivery rounds, durable reports, publisher-loss backup and recove
 remain separate migration owners.
 
 [Current-format decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#current-format-only)
- · [Fingerprints](provenance.json).
+ · [Fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/keys/provenance.json).
 
 EpochKey values use a private registry and null prototype; reflected symbols or
 structural objects cannot export/substitute material. The prior public slice
@@ -83,7 +83,7 @@ provide bounded shutdown. Successful returned keys live while reachable; JavaScr
 cleanup does not guarantee erasure of native/runtime internal copies.
 
 [Envelope trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
- · [Envelope fingerprints](envelope-provenance.json).
+ · [Envelope fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/keys/envelope-provenance.json).
 
 ## Finite durable ciphertext delivery
 
@@ -108,7 +108,7 @@ This layer has no mailbox discovery/report/repair, scheduler, actual device cust
 new epoch publication or backup strategy. Local outbox contents are untrusted until
 verified; authenticated principal binding and host admission remain adapter work.
 [Durability decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#durability-and-lifecycle)
- · [Delivery fingerprints](delivery-provenance.json).
+ · [Delivery fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/keys/delivery-provenance.json).
 
 Host-only initialization and durable recipient key retention now live under [`./keys/host` and `./keys/host/sqlite`](HOST-PROTECTION.md). Ordinary entries keep opaque keys. This does not choose an OS protector or complete installation reports/recovery backup.
 

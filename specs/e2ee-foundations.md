@@ -68,7 +68,7 @@ and executed synthetic tests do not approve this entire revision or native custo
 
 [Module and entrypoints](../packages/e2ee-core/README.md),
 [fixed vectors and negative cases](../packages/e2ee-core/test/foundation.test.ts),
-[source fingerprints](../packages/e2ee-core/provenance.json).
+[source fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/provenance.json).
 
 ## Settled content v0 and snapshot continuation
 

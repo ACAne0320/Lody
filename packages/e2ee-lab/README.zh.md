@@ -146,9 +146,9 @@ Control 复用具体 SDK adapter 同次验证的 genuine view，不再重放同�
 受限 A 仅覆盖可信初始化时保护已安装密钥。已知密钥 AES protector 和可导出设备
 都是合成 fixture，不代表 OS 存钥、候选备份或 B 历史发送者信封恢复。
 测试、远端 CI、独立审查和产品验收分别成立，不能互相替代。
-参见[清单](../../.agents/docs/e2ee-migration-manifest.json)、
+参见[清单](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/.agents/docs/e2ee-migration-manifest.json)、
 [组合 Note](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.zh.md#模块与验证边界)
-及[来源记录](migration-provenance.json)。完整旧 checkpoint 流水保留于
+及[来源记录](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-lab/migration-provenance.json)。完整旧 checkpoint 流水保留于
 [Git 5ab9394](https://github.com/LodyAI/Lody/blob/5ab9394392a3577a76b14ab0552c33f755b3ce48/packages/e2ee-lab/README.zh.md)。
 
 ## 本地换代与显式快照启动

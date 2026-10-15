@@ -34,7 +34,7 @@ possession. Do not use it as one. The root foundation has no signer or key expor
 Full signed HPKE delivery, generic non-document content and SDK workflows remain
 subsequent slices; no SDK or repo dependency is needed by the foundation.
 
-Source files and exact input SHA-256 values are in [provenance.json](provenance.json).
+Historical migration source files and input SHA-256 values are archived at a fixed commit in [provenance.json](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/provenance.json).
 Extraction omits ledger/snapshot schemas, trust caches, injected executors,
 full signed content workflows and host adapters. The HKDF salt is returned as a
 fresh copy instead of shared mutable bytes. Protocol bytes remain unchanged.
@@ -97,7 +97,7 @@ provides strict records, signature/chain verification and deterministic permissi
 replay from caller-pinned trust. Snapshot qualification and local submission use
 explicit separate subentries; there is no production consumer. Root crypto exports
 remain independent. Ledger extraction
-fingerprints are [separate](src/ledger/provenance.json).
+fingerprints are [separate](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/ledger/provenance.json).
 
 The [submission subentry](src/submission/README.md) adds finite persistent recovery
 for existing-ledger ordinary records, with an explicit Scope-owned SQLite Layer.
@@ -194,7 +194,7 @@ header4 binds protected content snapshots to their continuation positions.
 Production still needs independent qualification acquisition, vault policy, strict
 B and actual platform custody. The current publisher protects and durably retains
 the candidate, signed record and all post-transition HPKE frames, stages the entire
-group and checks exact readback before P09 CAS. A conflict discards the candidate;
+group and checks exact readback before [P09](#terms) CAS. A conflict discards the candidate;
 unknown outcomes resume the same originals. Committed staged recipients can recover
 without the publisher's disk. A manager bypassing staging remains a measured key-
 withholding limitation. Current tag8 shares that path and excludes all removed
@@ -227,3 +227,7 @@ These are work-plan labels, not wire versions or security guarantees.
 
 [Atomic removal](../../specs/e2ee/atomic-removal.md) and
 [content formats](../../specs/e2ee-foundations.md) remain revised drafts for review.
+
+Migration source records are immutable archive evidence. Current entrypoints,
+contracts and explicit production gaps are maintained in these READMEs and Specs;
+archiving does not turn old per-file statuses into current acceptance.

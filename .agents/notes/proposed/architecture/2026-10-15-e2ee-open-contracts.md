@@ -25,7 +25,7 @@ does not approve any item below.
 
 ## Integration still unfinished
 
-The [manifest](../../../docs/e2ee-migration-manifest.json) owns detailed disposition.
+The [manifest](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/.agents/docs/e2ee-migration-manifest.json) owns detailed disposition.
 Remaining work is production freshness/qualification sourcing, authorized retained-history access, machine execution and other product consumers, real native protectors and product assembly. Current creation/host recovery, staged publication, model-driven finite action plans and original-input replay are implemented, with missing measurements explicitly unavailable.
 The tutorial has a Spec but no migrated application source. These gaps are not all
 new protocol decisions; implement settled work without inventing the unresolved parts.

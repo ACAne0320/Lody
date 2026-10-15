@@ -4,9 +4,11 @@
 
 The stack adds an inert public core and a synthetic runnable Lab. E2EE has not shipped; old ledger/data/API compatibility is out of scope. It does not enable product E2EE or migrate production data.
 
+> Source records below are an immutable migration archive. Current behavior and remaining platform/product boundaries belong to the module READMEs and revised draft Specs; this page does not require ongoing SHA/status updates.
+
 ## Source and ownership
 
-The [manifest](e2ee-migration-manifest.json) retains all380 pinned source items, core/candidate hashes and source export inventories. Retired source implementations do not imply retirement of current required behavior. The original source/design/candidate remain read-only. Current dependency pins come from package manifests/lock, not old checkpoint prose.
+The [manifest](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/.agents/docs/e2ee-migration-manifest.json) retains all380 pinned source items, core/candidate hashes and source export inventories. Retired source implementations do not imply retirement of current required behavior. The original source/design/candidate remain read-only. Current dependency pins come from package manifests/lock, not old checkpoint prose.
 
 | Current owner                                                   | Responsibility                                                                                                     |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |

@@ -63,7 +63,7 @@ interruption signals. Crypto completion gating is a stated test boundary; no
 sleeps, real keys or physical-device claims are involved.
 
 [Trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
- · [Source fingerprints](provenance.json).
+ · [Source fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/content/provenance.json).
 
 `./content/streams` adds `makeStreamsUpdateBinding`, an Effect-native header3 update
 and header4 snapshot codec, consumed by released streams-crdt0.17 in the Lab. Its initialization Scope closes

@@ -168,9 +168,9 @@ Restricted A covers trusted initialization-time protection of installed keys onl
 The known-key AES protector and exportable devices are synthetic fixtures, not OS
 custody, candidate backup or historical-sender-envelope restoration B. Tests,
 remote CI, independent review and product acceptance remain separate evidence.
-See the [manifest](../../.agents/docs/e2ee-migration-manifest.json),
+See the [manifest](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/.agents/docs/e2ee-migration-manifest.json),
 [composition note](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#module-and-validation-boundaries)
-and [provenance](migration-provenance.json). Full earlier checkpoints remain in
+and [provenance](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-lab/migration-provenance.json). Full earlier checkpoints remain in
 [Git at 5ab9394](https://github.com/LodyAI/Lody/blob/5ab9394392a3577a76b14ab0552c33f755b3ce48/packages/e2ee-lab/README.md).
 
 ## Local publication and explicit snapshot startup

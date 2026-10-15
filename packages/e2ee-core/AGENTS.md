@@ -20,7 +20,8 @@ Contract: [foundation Spec](../../specs/e2ee-foundations.md). Entry map: [README
   native private-key custody belongs to platform adapters, not this module. The explicit
   host-only epoch protection boundary is governed by [keys rules](src/keys/AGENTS.md).
 - Tests use fixed synthetic vectors and negative cases. Record extraction changes
-  and source SHA-256 fingerprints in provenance.json; never copy private designs,
+  with fixed input evidence; migration provenance is archived, not a live registry.
+  Never copy private designs,
   captured transcripts, Lab hosts or unrelated candidate modules.
 
 - Content crypto lives in `src/crypto`; ledger work uses its own directory/entry.
