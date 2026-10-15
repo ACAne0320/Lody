@@ -274,3 +274,27 @@ export function judgeRefAction(
       : 'unavailable';
   return permissionRefusal ? 'violation' : 'unavailable'; // A remote 401/403 is availability, never a policy mismatch.
 }
+
+/** No action linearization point is inferred from its RPC start or join. Retain
+ * both independently witnessed predictions; a permission change is uncertainty,
+ * while unchanged predictions and independent property checks remain measured. */
+export function judgeConcurrentRefAction(
+  before: RefActionPrediction,
+  atJoin: RefActionPrediction,
+  reply: Parameters<typeof judgeRefAction>[1],
+  post: RefState
+): JudgeVerdict {
+  const prior = judgeRefAction(before, reply, post);
+  const current = judgeRefAction(atJoin, reply, post);
+  const permission = (value: RefActionPrediction) =>
+    JSON.stringify({
+      expected: value.expected,
+      domain: value.domain,
+      nextEpoch: value.nextEpoch,
+      noKeySend: value.noKeySend,
+      transition: value.transition,
+    });
+  if (permission(before) === permission(atJoin)) return prior;
+  if (prior === 'harness-error' || current === 'harness-error') return 'harness-error';
+  return 'unavailable';
+}

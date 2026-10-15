@@ -24,6 +24,7 @@ import { refStateFromOrg, refWriteExpectation } from '../pure/reference-model';
 import {
   refActionPrediction,
   judgeRefAction,
+  judgeConcurrentRefAction,
   type RefActionPrediction,
 } from '../pure/action-model';
 import { makeLabContentTrace } from './content-trace';
@@ -280,8 +281,23 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         action: number;
         prediction: RefActionPrediction;
         verdict: ReturnType<typeof judgeRefAction>;
+        concurrent?: {
+          action: LabAction;
+          before: RefActionPrediction;
+          atJoin: RefActionPrediction;
+          beforePoint: { head: string; length: number };
+          joinPoint: { head: string; length: number };
+        };
       }[] = [];
-      const pendingPredictions = new Map<string, RefActionPrediction>();
+      const pendingPredictions = new Map<
+        string,
+        {
+          action: Extract<LabAction, { kind: 'call' }>;
+          prediction: RefActionPrediction;
+          point: { head: string; length: number };
+        }
+      >();
+      let currentConcurrent: (typeof modelMeasurements)[number]['concurrent'];
       let currentPrediction: RefActionPrediction;
       let currentWrite: ReturnType<typeof refWriteExpectation> = 'unmeasured';
       let currentEpoch = 0;
@@ -327,7 +343,9 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         schedule: input.schedule,
         beforeAction: (action) =>
           Effect.sync(() => {
-            const facts = refStateFromOrg(org, fixture.view().inspectState());
+            currentConcurrent = undefined;
+            const beforeView = fixture.view();
+            const facts = refStateFromOrg(org, beforeView.inspectState());
             const deviceHex = Buffer.from(
               fixture.devices.get(action.actor)!.publicKey.toBytes()
             ).toString('hex');
@@ -344,20 +362,59 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
               targetDevice,
               targetUser: targetDevice ? facts.devices.get(targetDevice)?.user : undefined,
             });
-            if (action.kind === 'begin-call')
-              pendingPredictions.set(
-                action.id,
-                refActionPrediction({
+            if (action.kind === 'begin-call') {
+              const original = { ...action, kind: 'call' as const };
+              pendingPredictions.set(action.id, {
+                action: original,
+                prediction: refActionPrediction({
                   state: facts,
                   actor: deviceHex,
-                  action: { ...action, kind: 'call' },
+                  action: original,
                   running: actors[action.actor]!.pid() !== undefined,
                   targetDevice,
                   targetUser: targetDevice ? facts.devices.get(targetDevice)?.user : undefined,
-                })
-              );
+                }),
+                point: {
+                  head: Buffer.from(beforeView.head.toBytes()).toString('hex'),
+                  length: beforeView.length,
+                },
+              });
+            }
             if (action.kind === 'join-call') {
-              currentPrediction = pendingPredictions.get(action.id) ?? currentPrediction;
+              const pending = pendingPredictions.get(action.id);
+              if (pending) {
+                const originalActor = pending.action.actor;
+                const originalDevice = Buffer.from(
+                  fixture.devices.get(originalActor)!.publicKey.toBytes()
+                ).toString('hex');
+                const originalTarget = pending.action.target
+                  ? fixture.devices.get(pending.action.target)
+                  : undefined;
+                const originalTargetHex = originalTarget
+                  ? Buffer.from(originalTarget.publicKey.toBytes()).toString('hex')
+                  : undefined;
+                const atJoin = refActionPrediction({
+                  state: facts,
+                  actor: originalDevice,
+                  action: pending.action,
+                  running: actors[originalActor]!.pid() !== undefined,
+                  targetDevice: originalTargetHex,
+                  targetUser: originalTargetHex
+                    ? facts.devices.get(originalTargetHex)?.user
+                    : undefined,
+                });
+                currentPrediction = pending.prediction;
+                currentConcurrent = {
+                  action: pending.action,
+                  before: pending.prediction,
+                  atJoin,
+                  beforePoint: pending.point,
+                  joinPoint: {
+                    head: Buffer.from(beforeView.head.toBytes()).toString('hex'),
+                    length: beforeView.length,
+                  },
+                };
+              }
               pendingPredictions.delete(action.id);
             }
             currentWrite = refWriteExpectation(facts, deviceHex, org, facts.epoch);
@@ -381,11 +438,19 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
             modelMeasurements.push({
               action: index,
               prediction: currentPrediction,
-              verdict: judgeRefAction(
-                currentPrediction,
-                observation.reply,
-                refStateFromOrg(org, observed.inspectState())
-              ),
+              ...(currentConcurrent ? { concurrent: currentConcurrent } : {}),
+              verdict: currentConcurrent
+                ? judgeConcurrentRefAction(
+                    currentConcurrent.before,
+                    currentConcurrent.atJoin,
+                    observation.reply,
+                    refStateFromOrg(org, observed.inspectState())
+                  )
+                : judgeRefAction(
+                    currentPrediction,
+                    observation.reply,
+                    refStateFromOrg(org, observed.inspectState())
+                  ),
             });
             if (action.kind !== 'call' || action.operation !== 'append') return;
             const device = fixture.devices.get(action.actor)!.publicKey;

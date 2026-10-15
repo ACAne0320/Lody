@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest';
-import { refActionPrediction, judgeRefAction } from '../src/pure/action-model';
+import {
+  refActionPrediction,
+  judgeRefAction,
+  judgeConcurrentRefAction,
+} from '../src/pure/action-model';
 import type { RefState } from '../src/pure/reference-model';
 const state: RefState = {
   org: 'o',
@@ -117,4 +121,44 @@ it('checks independently witnessed poststate instead of trusting a committed out
       error: { tag: 'LedgerFeedError', code: 'forbidden' },
     })
   ).toBe('unavailable');
+});
+
+it('retains concurrent permission uncertainty without converting a legitimate refusal or earlier acceptance into a violation', () => {
+  const active = { ...state, rotationRequired: false };
+  const before = refActionPrediction({
+    state: active,
+    actor: 'member',
+    running: true,
+    action: { kind: 'call', operation: 'append' },
+  });
+  const changed = {
+    ...active,
+    devices: new Map(active.devices).set('member', {
+      id: 'member',
+      user: 'v',
+      role: 'guest',
+      kind: 'personal',
+    }),
+  };
+  const after = refActionPrediction({
+    state: changed,
+    actor: 'member',
+    running: true,
+    action: { kind: 'call', operation: 'append' },
+  });
+  const refusal = { ok: false, error: { tag: 'ContentError', code: 'unauthorized' } };
+  expect(judgeRefAction(before, refusal, changed)).toBe('violation');
+  expect(judgeConcurrentRefAction(before, after, refusal, changed)).toBe('unavailable');
+  expect(judgeConcurrentRefAction(before, after, { ok: true }, changed)).toBe('unavailable');
+  expect(judgeConcurrentRefAction(after, before, { ok: true }, active)).toBe('unavailable');
+  expect(judgeConcurrentRefAction(after, after, { ok: true }, changed)).toBe('violation');
+  expect(judgeConcurrentRefAction(before, before, refusal, active)).toBe('violation');
+  expect(
+    judgeConcurrentRefAction(
+      before,
+      after,
+      { ok: false, error: { tag: 'LabActionError', code: 'invalid-plan' } },
+      changed
+    )
+  ).toBe('harness-error');
 });

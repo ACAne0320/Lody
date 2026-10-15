@@ -1,4 +1,4 @@
-import { Data, Effect, Fiber, Schema } from 'effect';
+import { Data, Effect, Fiber, Schema, Scope } from 'effect';
 import { makeLabRuntime } from './runtime';
 import { driveLabPermits } from './driver';
 import type { makeLabProcessActor, LabProcessReply } from './process-actor';
@@ -361,6 +361,10 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
   const runtime = yield* makeLabRuntime({ mode: 'manual', time: 0, fetch });
   const observations: LabActionObservation[] = [];
   const pending = new Map<string, Fiber.Fiber<LabProcessReply, unknown>>();
+  // Calls outlive one scheduler phase, while the plan still owns and joins them.
+  const callsScope = yield* Effect.acquireRelease(Scope.make(), (scope, exit) =>
+    Scope.close(scope, exit)
+  );
   const work = Effect.gen(function* () {
     for (const [index, action] of actions.entries()) {
       if (beforeAction) yield* beforeAction(action, index);
@@ -387,11 +391,12 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
                 return yield* new LabActionError({ code: 'invalid-plan' });
               pending.set(
                 action.id,
-                yield* Effect.forkChild(
+                yield* Effect.forkIn(
                   actor.call(action.operation, action.document, action.text, {
                     materialIndex,
                     target: action.target,
-                  })
+                  }),
+                  callsScope
                 )
               );
               return { ok: true };
@@ -436,7 +441,7 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
   yield* driveLabPermits(runtime, input.schedule ?? 'record', work, {
     maxSteps: input.maxSteps,
     stop: input.stop,
-  });
+  }).pipe(Effect.onExit((exit) => Scope.close(callsScope, exit)));
   return {
     observations,
     schedule: runtime.permitLog.map((choice) => ({ ...choice, identity: { ...choice.identity } })),
