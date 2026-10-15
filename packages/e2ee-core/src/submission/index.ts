@@ -4,8 +4,9 @@ import { bytesEqual } from '../cbor';
 import {
   decodeRecord,
   extendLedger,
+  extendLedgerEffect,
   hashRecordBytes,
-  verifyLedger,
+  verifyLedgerEffect,
   type LedgerCheckpoint,
   type LedgerError,
 } from '../ledger';
@@ -86,29 +87,29 @@ const inspect = Effect.fnUntraced(function* (
   const records: Uint8Array[] = [];
   for (const bytes of incoming.records)
     records.push((yield* Effect.fromResult(decodeRecord(bytes))).recordBytes);
-  const view = yield* Effect.fromResult(
-    verifyLedger({ anchor, records, checkpoint: incoming.checkpoint })
-  );
-  if (
-    pin &&
-    (records.length < pin.length || !hashRecordBytes(records[pin.length - 1]!).equals(pin.head))
-  )
-    return yield* new SubmissionError({ code: 'rollback' });
   const decoded = yield* Effect.fromResult(decodeRecord(record));
   if (decoded.body.type !== 'ordinary')
     return yield* new SubmissionError({ code: 'ordinary-only' });
   const parent = decoded.body.previousHash;
   const parentIndex = records.findIndex((bytes) => hashRecordBytes(bytes).equals(parent));
   if (parentIndex < 0) return yield* new SubmissionError({ code: 'missing-parent' });
-  // Revalidate the exact pending operation against its authenticated predecessor,
-  // including after a signer was revoked or a terminal row was tampered with.
-  const predecessor = yield* Effect.fromResult(
-    verifyLedger({
-      anchor,
-      records: records.slice(0, parentIndex + 1),
-      checkpoint: { head: parent, length: parentIndex + 1 },
-    })
+  // Authenticate the predecessor once, then verify only the remote suffix.
+  // The pending operation must still be valid at its original parent.
+  const predecessor = yield* verifyLedgerEffect({
+    anchor,
+    records: records.slice(0, parentIndex + 1),
+    checkpoint: { head: parent, length: parentIndex + 1 },
+  });
+  const view = yield* extendLedgerEffect(
+    predecessor,
+    records.slice(parentIndex + 1),
+    incoming.checkpoint
   );
+  if (
+    pin &&
+    (records.length < pin.length || !hashRecordBytes(records[pin.length - 1]!).equals(pin.head))
+  )
+    return yield* new SubmissionError({ code: 'rollback' });
   yield* Effect.fromResult(
     extendLedger(predecessor, [record], { head: hashRecordBytes(record), length: parentIndex + 2 })
   );

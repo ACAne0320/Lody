@@ -1,5 +1,5 @@
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { runNativeChild } from '../native-child';
+import { mkdtempSync, rmSync, openSync, closeSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
@@ -15,6 +15,7 @@ import {
   acknowledgeSubmission,
 } from '@lody/e2ee-core/submission';
 import { sqliteSubmissionJournal } from '@lody/e2ee-core/submission/sqlite';
+import { openSqliteStore } from '@lody/e2ee-core/storage/sqlite';
 import { anchor, checkpoint, filled, genesis, host, keys, owner, rotate, signed } from './fixture';
 import { hashRecordBytes } from '../../src/ledger';
 const fixture = () => {
@@ -44,6 +45,81 @@ const using = <A, E, R>(
   );
 
 describe('durable submission', () => {
+  it.each(['empty-file', 'rolled-back-initialization'] as const)(
+    'initializes an existing %s without treating it as a legacy journal',
+    async (kind) => {
+      const f = fixture();
+      try {
+        closeSync(openSync(f.journal, 'wx', 0o600));
+        if (kind === 'rolled-back-initialization') {
+          const interrupted = new Database(f.journal);
+          try {
+            interrupted.exec('BEGIN IMMEDIATE;CREATE TABLE interrupted(value TEXT);ROLLBACK;');
+          } finally {
+            interrupted.close();
+          }
+        }
+        const before = readFileSync(f.journal);
+        const explicit = await Effect.runPromise(
+          Effect.result(
+            Effect.scoped(
+              openSqliteStore({
+                path: f.journal,
+                mode: 'open',
+                applicationId: 0x4c455031,
+                version: 1,
+                error: (code) => ({ code }),
+                initialize: () => {
+                  throw new Error('explicit open must not initialize');
+                },
+              })
+            )
+          )
+        );
+        expect(explicit).toMatchObject({ _tag: 'Failure', failure: { code: 'corrupt' } });
+        expect(readFileSync(f.journal)).toEqual(before);
+        const record = rotate();
+        expect(await Effect.runPromise(using(f, submitRecord(anchor, record)))).toEqual({
+          outcome: 'Committed',
+          record,
+        });
+        const disk = new Database(f.journal, { readonly: true });
+        try {
+          expect(disk.pragma('application_id', { simple: true })).toBe(0x4c455031);
+          expect(disk.pragma('user_version', { simple: true })).toBe(1);
+        } finally {
+          disk.close();
+        }
+      } finally {
+        f.close();
+      }
+    }
+  );
+  it.each(['unrelated-schema', 'wrong-version'] as const)(
+    'rejects %s before changing a foreign file',
+    async (kind) => {
+      const f = fixture();
+      try {
+        const foreign = new Database(f.journal);
+        try {
+          if (kind === 'unrelated-schema')
+            foreign.exec(
+              "CREATE TABLE unrelated(value TEXT);INSERT INTO unrelated VALUES('retained');"
+            );
+          else foreign.exec('PRAGMA application_id=1279610929;PRAGMA user_version=2;');
+        } finally {
+          foreign.close();
+        }
+        const before = readFileSync(f.journal);
+        const refused = await Effect.runPromise(Effect.result(using(f, resumeSubmission(anchor))));
+        expect(refused).toMatchObject({ _tag: 'Failure', failure: { code: 'corrupt-journal' } });
+        expect(readFileSync(f.journal)).toEqual(before);
+      } finally {
+        f.close();
+      }
+    }
+  );
+
   it('persists before CAS; lost response reads back the original, result survives close', async () => {
     const f = fixture();
     const record = rotate();
@@ -99,12 +175,12 @@ describe('durable submission', () => {
 
   it.each(['before-cas', 'lost-response'])(
     'independent process crash at %s recovers exact bytes',
-    (mode) => {
+    async (mode) => {
       const f = fixture();
       try {
         const require = createRequire(import.meta.url);
         const run = (processMode: string) =>
-          spawnSync(
+          runNativeChild(
             process.execPath,
             [
               '--import',
@@ -114,14 +190,12 @@ describe('durable submission', () => {
               f.journal,
               path.join(f.dir, 'host.sqlite'),
             ],
-            { encoding: 'utf8', timeout: 30000, env: { ...process.env, NODE_OPTIONS: '' } }
+            { env: { ...process.env, NODE_OPTIONS: '' } }
           );
-        const crashed = run(mode);
-        expect(crashed.error).toBeUndefined();
+        const crashed = await run(mode);
         expect(crashed.signal).toBeNull();
         expect(crashed.status).toBe(mode === 'before-cas' ? 71 : 72);
-        const reopened = run('reopen');
-        expect(reopened.error, reopened.stderr).toBeUndefined();
+        const reopened = await run('reopen');
         expect(reopened.signal).toBeNull();
         expect(reopened.status, reopened.stderr).toBe(0);
         expect(JSON.parse(reopened.stdout)).toEqual({

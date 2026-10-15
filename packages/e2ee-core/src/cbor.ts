@@ -6,6 +6,8 @@ import type { ValidationErrorCode } from './errors';
 export const MAX_RECORD_BYTES = 8192;
 export const MAX_DEPTH = 8;
 export const MAX_ARRAY_LENGTH = 32;
+export const MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024;
+export const MAX_SNAPSHOT_ARRAY_LENGTH = 16_384;
 export const MAX_BSTR_BYTES = 256;
 export type CborValue = null | boolean | number | Uint8Array | readonly CborValue[];
 type Result<A> = Result.Result<A, ValidationError>;
@@ -97,7 +99,11 @@ function headerSize(value: number): number {
 // Charge each occurrence before copying it. A shared subtree costs its expanded
 // wire size, not its object count; every visited item consumes at least one byte.
 // Encode the bounded snapshot so input accessors cannot change it after checking.
-function prepareEncoding(value: CborValue, maxBytes: number): Result<CborValue> {
+function prepareEncoding(
+  value: CborValue,
+  maxBytes: number,
+  maxArray = MAX_ARRAY_LENGTH
+): Result<CborValue> {
   let remaining = maxBytes;
   const ancestors = new Set<readonly CborValue[]>();
   const charge = (size: number): boolean => {
@@ -121,7 +127,7 @@ function prepareEncoding(value: CborValue, maxBytes: number): Result<CborValue> 
     }
     if (Array.isArray(item)) {
       const length = item.length;
-      if (length > MAX_ARRAY_LENGTH || !charge(headerSize(length) - 1)) {
+      if (length > maxArray || !charge(headerSize(length) - 1)) {
         return invalid('oversize');
       }
       if (ancestors.has(item)) return invalid('canonical');
@@ -140,10 +146,14 @@ function prepareEncoding(value: CborValue, maxBytes: number): Result<CborValue> 
   return visit(value, 0);
 }
 
-function encodeBounded(value: CborValue, maxBytes: number): Result<Uint8Array<ArrayBuffer>> {
+function encodeBounded(
+  value: CborValue,
+  maxBytes: number,
+  maxArray = MAX_ARRAY_LENGTH
+): Result<Uint8Array<ArrayBuffer>> {
   return Result.gen(function* () {
     const prepared = yield* Result.try({
-      try: () => prepareEncoding(value, maxBytes),
+      try: () => prepareEncoding(value, maxBytes, maxArray),
       catch: () => new ValidationError({ code: 'canonical' }),
     });
     const stable = yield* prepared;
@@ -161,5 +171,15 @@ export const encodeCbor = (value: CborValue): Result<Uint8Array<ArrayBuffer>> =>
   Result.gen(function* () {
     const bytes = yield* encodeCanonical(value);
     yield* decodeCbor(bytes);
+    return bytes;
+  });
+
+/** Separate fixed snapshot budget; ordinary record limits remain unchanged. */
+export const decodeSnapshotCbor = (input: unknown): Result<CborValue> =>
+  decodeBounded(input, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_ARRAY_LENGTH);
+export const encodeSnapshotCbor = (value: CborValue): Result<Uint8Array<ArrayBuffer>> =>
+  Result.gen(function* () {
+    const bytes = yield* encodeBounded(value, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_ARRAY_LENGTH);
+    yield* decodeSnapshotCbor(bytes);
     return bytes;
   });

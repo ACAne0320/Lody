@@ -12,5 +12,23 @@ export {
   type Role,
   type DeviceKind,
 } from './records';
-export { verifyLedger, extendLedger, type LedgerView, type LedgerCheckpoint } from './replay';
-export type { LedgerState, Member, Device } from './policy';
+export {
+  verifyLedger,
+  verifyLedgerEffect,
+  extendLedgerEffect,
+  extendLedger,
+  contentPermissions,
+  epochHistoryPacket,
+  epochPublicationRecord,
+  type ContentPermissions,
+  type LedgerView,
+  type LedgerCheckpoint,
+} from './replay';
+export type {
+  LedgerState,
+  Member,
+  Device,
+  HistoricalContentAuthor,
+  EpochHistoryPacket,
+} from './policy';
+export { requireLedgerContinuation, hasVerifiedRecordHash, hasVerifiedCheckpoint } from './replay';

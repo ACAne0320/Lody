@@ -9,6 +9,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./e2ee-epoch-staging": {
+      "types": "./src/e2ee-epoch-staging.ts",
+      "import": "./src/e2ee-epoch-staging.ts"
     }
   },
   "scripts": {

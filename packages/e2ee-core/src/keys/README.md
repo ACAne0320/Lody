@@ -1,0 +1,149 @@
+# Canonical epoch history and installed keys
+
+`@lody/e2ee-core/keys` uses the current CBOR ledger's fixed v1 commitment and
+72-byte history packet, not the retired JSON experiment's digest/signed frame.
+No rotation, delivery, backup, vault/file format or product feature is activated.
+
+- `commitEpochKey(genesis, epoch, key)` preserves SHA-256 over
+  `lody-e2ee/epoch-key/v1\0 || genesis32 || uint32be(epoch) || K32` for epoch >= 1.
+  Epoch zero deliberately uses only the domain and K32. This exception is retained,
+  not silently changed. Commitment validity alone grants no membership/permission.
+- `sealHistoryPacket` uses host secure random nonce24 and raw current K32 for
+  XChaCha20-Poly1305. AAD is `lody-e2ee/epoch-history/v1\0 || genesis32 || uint32be(n)`;
+  plaintext is K(n-1)32, result nonce24 + ciphertext32 + tag16. No nonce override.
+- `openHistoryPacket` checks AEAD only. It does not authenticate publication or the
+  previous commitment. Returned opaque EpochKey owns a copy; no public byte export.
+- `recoverLedgerHistory(view, latestKey)` requires a genuine verified ledger
+  view (full audit or independently qualified endorsed state). It verifies the latest commitment and every reverse link/old commitment,
+  returning all epochs or a typed failure without partial keys. Raw maps or journal
+  bytes cannot supply authority. Temporary owned material is wiped with ordinary
+  try/finally on success and every failure, including a correctly decrypted but
+  wrong previous key. Structural raw collection is replaced by the existing
+  unverified record decoder plus authoritative verified-view packet queries.
+
+Current host workflows use the single receiver-owned protected store under
+`./keys/host/sqlite`. Recipient, distributor and installed-history consumers share
+its opaque read/save capabilities instead of opening the same database repeatedly.
+The unused volatile cache and its synchronous install/read/clear API are retired.
+Current protected-store checks retain genuine-view membership, commitment and
+known-prefix rollback/fork protection. No new secret export is exposed.
+
+Callers still obtain current independently expected ledger endpoints and handle
+persistence. An endorsed snapshot authenticates its state/history facts; it does not independently audit each past publication. The explicit ledger/snapshot entry documents its separate qualification.
+
+Tests extend the owning crypto suite: independently generated Python SHA-256 /
+PyNaCl 1.6.2 libsodium vectors, real native-signed ledger histories, corrupt links,
+wrong commitments, copy cleanup, false views, rollback/fork rejection, active R,
+and Scope close. The original candidate's wrong-old-key cleanup failure is
+reproduced in an isolated copy; no source/candidate worktree is modified.
+
+Regenerate only synthetic fixtures in an isolated Python environment:
+
+```sh
+uv run --cache-dir /private/tmp/e2ee-vector-cache --no-project --with PyNaCl==1.6.2 python packages/e2ee-core/test/generate-epoch-history-vector.py
+pnpm --filter @lody/e2ee-core typecheck
+pnpm --filter @lody/e2ee-core test
+```
+
+The fixture generator is optional; runtime tests consume committed bytes and need
+no Python/network. Node custody/persistence, exact pending/outbox
+bytes, finite delivery rounds, durable reports, publisher-loss backup and recovery
+remain separate migration owners.
+
+[Current-format decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#current-format-only)
+ · [Fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/keys/provenance.json).
+
+EpochKey values use a private registry and null prototype; reflected symbols or
+structural objects cannot export/substitute material. The prior public slice
+accepted a forged symbol accessor, reproduced separately before this fix.
+
+## Signed current-epoch envelopes
+
+The explicit `@lody/e2ee-core/keys/envelope` entry preserves canonical
+`AAD || enc32 || ct48 || signature64` and `lody-e2ee/epoch-env/v1\0`.
+Expected genesis/epoch/sender/recipient come from the caller; the frame cannot
+choose them. `authenticateEpochEnvelope` checks real verified current eligibility,
+exact framing and the fixed signature verifier, without decrypting or proving the
+key preimage. A host must bind the sender to its authenticated request principal.
+
+`prepareEpochEnvelope` checks the source commitment before real HPKE and borrowed
+signing, then checks the verified prefix, current epoch and device/key eligibility
+again. Active personal/machine devices may forward keys; Recovery cannot send.
+All active recipient kinds can receive, including Recovery and Guest membership.
+Execute preparation once and retain the exact bytes for later durable delivery.
+This API performs no transport, outbox persistence or retry.
+
+`openEpochEnvelope` fixes caller context/frame/key handles before asynchronous
+work, checks outer signature before decryption, checks the plaintext commitment,
+then rechecks current authority. It returns a caller-owned opaque key, not a
+durable installation receipt. Compose it with the actual protected-store receiver for durable installation and durable report queue. A failed/cancelled
+post-decrypt check wipes and invalidates this operation's newly created EpochKey.
+Native primitive settlement is awaited; a native call that never settles cannot
+provide bounded shutdown. Successful returned keys live while reachable; JavaScript
+cleanup does not guarantee erasure of native/runtime internal copies.
+
+[Envelope trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
+ · [Envelope fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/keys/envelope-provenance.json).
+
+## Finite durable ciphertext delivery
+
+`@lody/e2ee-core/keys/delivery` derives the existing local epoch delivery ID and
+performs one authenticated put/readback round. Saved bytes take precedence; new
+preparation occurs only if none exist. Real current views/fixed verification are
+mandatory on every send/resume, and observations within the round reject known
+rollback/forks. Cross-round persistent pins and global freshness belong to the caller.
+Transport uncertainty returns Pending with unchanged original bytes; cancellation,
+validation and defects propagate. Stored is exact ciphertext readback, not recipient
+installation or proof that a malicious host is honest.
+
+Provide caller-owned DeliveryRemote and the explicit Node
+`@lody/e2ee-core/keys/delivery/sqlite` Layer. It accepts `{path, mode:'create'|'open'}`,
+with an absolute local path; Scope owns closure. Create is exclusive, open fails
+on missing/foreign files, and pending survives process exit/close. Indexed rows
+retain the first ciphertext atomically with a 512-byte bound per row. The whole
+history has no 4096-entry lifetime limit and is never globally decoded. No automatic
+pruning or old JSON-file import is added; retained disk rows grow over time.
+
+This layer has no mailbox discovery/report/repair, scheduler, actual device custody,
+new epoch publication or backup strategy. Local outbox contents are untrusted until
+verified; authenticated principal binding and host admission remain adapter work.
+[Durability decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#durability-and-lifecycle)
+ · [Delivery fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/keys/delivery-provenance.json).
+
+Host-only initialization and durable recipient key retention now live under [`./keys/host` and `./keys/host/sqlite`](HOST-PROTECTION.md). Ordinary entries keep opaque keys. This does not choose an OS protector or complete installation reports/recovery backup.
+
+[Finite recipient installation and original-report queue](RECEIVE.md) uses explicit `./keys/host/receive/sqlite`. It composes the protected store with real HPKE/commitment and retains exact queued reports; sender/repair/SDK/Lab owners remain separate.
+
+The explicit [durable repair queue](REPAIR.md) binds stable source request IDs before dispatch and retains local ACK history without claiming key installation. Sender discovery and receive-fetch composition remain separate.
+
+
+`./keys/host/history` provides `makeInstalledEpochHistory` at trusted composition.
+It validates the entire signed history against the already installed latest key,
+then saves/reloads recovered older keys through the unchanged protected store.
+Owned latest/recovered copies are disposed on every exit. `read(epoch)` recovers
+only a genuine missing old key; corrupt/native/permission failures remain errors.
+Partial storage success remains failure and is reconciled idempotently. This is
+installed-key history restoration, not an epoch publisher, vault or historical
+sender-envelope restoration, and it creates no delivery report.
+
+## Explicit local epoch publication
+
+`./keys/host/rotation/sqlite` migrates local candidate generation, durable original
+publication, exact retry and installation. It borrows the existing [P09](../../README.md#terms) journal and
+remote, the actual installed-key store and an independently verified ledger
+supplier. Its candidate protector is a separate initialization-time host boundary;
+restricted installed-key approval A cannot protect an unpublished candidate.
+See [publisher contract](HOST-PROTECTION.md#local-publisher-candidates).
+
+## Staged publication port
+
+`./keys/staging` owns the bounded immutable public group shape and genuine-ledger
+checks; storage implements only `stageGroup`, `readGroup` and conditional
+`deleteGroup`. Every post-transition active device, including Guest and Recovery,
+gets a signed HPKE frame before CAS. Exact staged readback gates submission.
+The ledger is the single activation point; an uncommitted group is inert.
+A later publisher revocation does not change the historical signer of the committed
+publication. Current recipient eligibility and key commitment are still checked.
+A different commitment occupying that same epoch is the sole cleanup condition.
+The private cloud adapter stores opaque rows; the Lab adapter uses one SQLite
+transaction. Ordinary later-join mailbox and repair remain separate.

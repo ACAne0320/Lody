@@ -8,7 +8,7 @@ The root foundation and synchronous ledger exports remain separate.
 The application Scope owns the journal Layer and provides `SubmissionRemote`.
 That trusted host port must return complete history and an independently expected
 head/count for the caller-pinned genesis, and perform conditional append with
-exact-body idempotency. It must enforce the same P08 signature/permission rules;
+exact-body idempotency. It must enforce the same [P08](../../README.md#terms) signature/permission rules;
 a packet's endpoint or document credential is insufficient. No production
 Convex/Streams adapter, background runtime or retry scheduler is supplied.
 
@@ -40,7 +40,7 @@ terminal rows are revalidated. Imported legacy journals and foreign databases
 are refused. Do not repin genesis, erase evidence, or replace a bad chain with
 a new snapshot. This slice requires full retained history; authenticated
 checkpoint restore, bounded-page persistence, genesis creation, vault/key custody,
-P12 atomic removal, and durable downstream key distribution remain separate work.
+[P12](../../README.md#terms) atomic removal and durable downstream key distribution are composed by the explicit key workflows, outside this submission kernel.
 
 Use a dedicated application-owned filesystem path with a persistent parent
 directory. The adapter rejects `:memory:`, uses WAL/FULL, bounds lock waits, and
@@ -58,4 +58,6 @@ Scope interruption. Vitest remains 3.2.4: @effect/vitest 4.0.2 requires Vitest 5
 so these tests use Vitest with `Effect.scoped` and explicit Deferred signals.
 
 [Decision and limits](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-pending-recovery.md)
- · [Main source fingerprints](provenance.json).
+ · [Main source fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/submission/provenance.json).
+
+The explicit [`./submission/streams` adapter](STREAMS.md) supplies full-history released-SDK read/CAS with caller-selected checkpoints and verified offset mappings. It does not change P09 or fall back to ordinary append.

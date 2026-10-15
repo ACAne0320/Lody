@@ -11,7 +11,8 @@ export type LedgerErrorCode =
   | 'wrong-parent'
   | 'wrong-anchor'
   | 'genesis-mismatch'
-  | 'checkpoint-mismatch';
+  | 'checkpoint-mismatch'
+  | 'native-unavailable';
 export class LedgerError extends Data.TaggedError('LedgerError')<{
   readonly code: LedgerErrorCode;
   readonly position?: number;

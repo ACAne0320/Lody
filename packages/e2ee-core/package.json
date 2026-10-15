@@ -7,11 +7,35 @@
     ".": "./src/index.ts",
     "./ledger": "./src/ledger/index.ts",
     "./submission": "./src/submission/index.ts",
-    "./submission/sqlite": "./src/submission/sqlite.ts"
+    "./submission/sqlite": "./src/submission/sqlite.ts",
+    "./storage/sqlite": "./src/storage/sqlite.ts",
+    "./signing": "./src/signing.ts",
+    "./keys": "./src/keys/index.ts",
+    "./ledger/signing": "./src/ledger/signing.ts",
+    "./keys/envelope": "./src/keys/envelope.ts",
+    "./keys/staging": "./src/keys/staging.ts",
+    "./keys/delivery": "./src/keys/delivery.ts",
+    "./keys/delivery/sqlite": "./src/keys/delivery-sqlite.ts",
+    "./ledger/snapshot": "./src/ledger/snapshot.ts",
+    "./keys/reports": "./src/keys/reports.ts",
+    "./keys/mailbox/sqlite": "./src/keys/mailbox-sqlite.ts",
+    "./ledger/admission": "./src/ledger/admission.ts",
+    "./keys/host": "./src/keys/host-protection.ts",
+    "./keys/host/sqlite": "./src/keys/protected-sqlite.ts",
+    "./keys/host/receive/sqlite": "./src/keys/receive-sqlite.ts",
+    "./ledger/feed": "./src/ledger/feed.ts",
+    "./ledger/feed/sqlite": "./src/ledger/feed-sqlite.ts",
+    "./keys/mailbox/repair/sqlite": "./src/keys/repair-sqlite.ts",
+    "./keys/host/mailbox/sqlite": "./src/keys/mailbox-client.ts",
+    "./submission/streams": "./src/submission/streams.ts",
+    "./keys/host/distribution/sqlite": "./src/keys/distribution-sqlite.ts",
+    "./keys/host/history": "./src/keys/installed-history.ts",
+    "./keys/host/rotation/sqlite": "./src/keys/epoch-rotation.ts",
+    "./ledger/feed/snapshot/sqlite": "./src/ledger/snapshot-feed-sqlite.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "format": "oxfmt 'src/**/*.ts' 'test/**/*.ts'",
     "format:check": "oxfmt --check 'src/**/*.ts' 'test/**/*.ts'"
   },
@@ -31,6 +55,8 @@
     "vitest": "3.2.4",
     "oxfmt": "^0.65.0",
     "@types/better-sqlite3": "catalog:",
-    "tsx": "4.23.7"
+    "tsx": "4.23.7",
+    "@loro-dev/streams-client": "catalog:",
+    "@loro-dev/streams-crdt": "0.17.0"
   }
 }

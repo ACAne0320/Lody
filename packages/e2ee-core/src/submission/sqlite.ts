@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3';
+import { resolve } from 'node:path';
+import { openSqliteStore } from '../storage/sqlite';
 import { Effect, Layer, Schema } from 'effect';
 import { recordHash, type GenesisHash } from '../bytes';
 import { bytesEqual } from '../cbor';
@@ -39,26 +40,15 @@ export const sqliteSubmissionJournal = (path: string) =>
     Effect.gen(function* () {
       if (path === ':memory:' || path.length === 0)
         return yield* new SubmissionError({ code: 'storage' });
-      const db = yield* Effect.acquireRelease(
-        sqlEffect(() => new Database(path, { timeout: 1000 })),
-        (handle) => sqlEffect(() => handle.close()).pipe(Effect.orDie)
-      );
-      yield* sqlEffect(() => {
-        const appId = db.pragma('application_id', { simple: true });
-        const version = db.pragma('user_version', { simple: true });
-        if (
-          appId !== APPLICATION_ID &&
-          (appId !== 0 ||
-            version !== 0 ||
-            db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().length > 0)
-        )
-          throw corrupt();
-        if (appId === APPLICATION_ID && version !== 1) throw corrupt();
-        db.pragma('journal_mode = WAL');
-        db.pragma('synchronous = FULL');
-        if (appId === 0)
-          db.transaction(() => {
-            db.exec(`CREATE TABLE submission_journal (
+      const db = yield* openSqliteStore({
+        path: resolve(path),
+        mode: 'create-or-open',
+        applicationId: APPLICATION_ID,
+        version: 1,
+        error: (code) =>
+          new SubmissionError({ code: code === 'corrupt' ? 'corrupt-journal' : 'storage' }),
+        initialize: (connection) => {
+          connection.exec(`CREATE TABLE submission_journal (
         anchor TEXT PRIMARY KEY,
         pending BLOB,
         result_record BLOB,
@@ -70,8 +60,8 @@ export const sqliteSubmissionJournal = (path: string) =>
         CHECK((head IS NULL AND length = 0) OR (length(head) = 32 AND length > 0)),
         CHECK((result_record IS NULL AND outcome IS NULL)
           OR (pending IS NULL AND result_record IS NOT NULL AND outcome IS NOT NULL))
-      ); PRAGMA application_id = ${APPLICATION_ID}; PRAGMA user_version = 1;`);
-          }).immediate();
+      );`);
+        },
       });
       const load = (anchor: GenesisHash): JournalEntry => {
         const raw = db
