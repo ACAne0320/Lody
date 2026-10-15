@@ -5,6 +5,8 @@ Translation: current
 
 English | [中文](2026-10-15-docs-async-git.zh.md)
 
+PR: [LodyAI/Lody #1582](https://github.com/LodyAI/Lody/pull/1582) (draft).
+
 ## Abstract
 
 Document status and checks failed in a restricted execution environment even when
@@ -21,7 +23,7 @@ This is a subprocess implementation fix to the
 [document maintenance tooling](../../proposed/process/2026-09-05-human-reviewed-spec-maintenance.md),
 not a change to Spec approval or SHA review policy.
 
-In the same restricted workspace, `spawnSync('git', ['rev-parse', 'HEAD'])` with
+In the same restricted Linux workspace on Node 24.22.0, `spawnSync('git', ['rev-parse', 'HEAD'])` with
 pipe capture returned the correct HEAD, status 0, signal null, empty stderr, and
 an error with code EPERM. `execFileSync` threw on that error. Synchronous runs with
 ignored stdio or regular output files returned status 0 without an error, while
@@ -66,7 +68,7 @@ default test-runner child output is affected by that limitation.
 Real `pnpm run docs status` succeeds under the original restrictions. `docs check`
 runs and retains the baseline 82 broken links to absent submodule content and 68
 warnings, with no registered SHA topics; these are not subprocess failures.
-The error/warning lists are compared before and after this task's documentation edits.
+The error/warning lists before and after this task's documentation edits are identical.
 Root `pnpm check` and `pnpm format` were attempted but stop at missing `tsgo` and
 `oxfmt`. The scoped suite and formatting reuse the already available lock-matched
 TypeScript 5.9.3 and Oxfmt 0.65.0 without installing or changing dependencies.
