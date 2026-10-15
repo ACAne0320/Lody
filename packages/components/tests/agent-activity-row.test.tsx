@@ -78,20 +78,36 @@ describe('live agent status', () => {
   const render = async (
     history: unknown[],
     status: { label: string; tone?: 'primary' | 'warning' },
-    options: { withTurnFooter?: boolean; scrollAway?: boolean } = {}
+    options: {
+      withTurnFooter?: boolean;
+      scrollAway?: boolean;
+      /** Deliver one history update to the stream's view at this instant. */
+      lastUpdateAt?: number;
+    } = {}
   ) => {
+    let current = history;
+    let notify: () => void = () => {};
     const view = createConversationViewFromHistory({
       sessionId,
-      getHistory: () => history as never,
-      subscribe: () => () => {},
+      getHistory: () => current as never,
+      subscribe: (listener) => {
+        notify = listener;
+        return () => {};
+      },
+      ...(options.lastUpdateAt === undefined ? {} : { now: () => options.lastUpdateAt! }),
     });
+    if (options.lastUpdateAt !== undefined) {
+      // The same turns arriving again from the backend: an update, not an edit.
+      current = history.slice();
+      notify();
+    }
     const { items } = buildChatStreamItems(view, sessionId);
-    view.dispose();
     await act(async () =>
       root.render(
         createElement(SessionChatStreamView, {
           items,
           sessionId,
+          conversationView: view,
           renderMessageRow: () => null,
           lastAssistantMessageId: 'assistant-turn',
           agentActivityLabel: status.label,
@@ -117,6 +133,12 @@ describe('live agent status', () => {
     }
   };
 
+  /** Unmount so the shared live-duration ticker samples the moved clock on remount. */
+  const remount = async () => {
+    await act(async () => root.unmount());
+    root = createRoot(container);
+  };
+
   const statusRow = () => container.querySelector('[data-agent-activity-row]');
   const shimmering = () =>
     Array.from(container.querySelectorAll('.agent-shimmer')).map((el) => el.textContent);
@@ -135,6 +157,18 @@ describe('live agent status', () => {
     });
     expect(statusRow()?.textContent).toBe('Working (Worked for 30s)');
     expect(shimmering()).toEqual(['Working (Worked for 30s)']);
+  });
+
+  it('says how long a working turn has gone without output once that passes two minutes', async () => {
+    const turn = liveTurn([toolCall('a'), { type: 'text', text: 'Running the lint gate.' }]);
+    await render(turn, { label: 'Working' }, { lastUpdateAt: Date.parse('2026-09-19T00:00:01Z') });
+    // 30s of silence is ordinary streaming: no notice yet.
+    expect(statusRow()?.textContent).toBe('Working (Worked for 30s)');
+
+    await remount();
+    vi.setSystemTime(new Date('2026-09-19T00:08:41Z'));
+    await render(turn, { label: 'Working' }, { lastUpdateAt: Date.parse('2026-09-19T00:04:31Z') });
+    expect(statusRow()?.textContent).toBe('Working (Worked for 8m 40s · no output for 4m)');
   });
 
   it('keeps a still status row while waiting on the user', async () => {
@@ -269,6 +303,78 @@ describe('live agent status', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Turn configuration"]')!.click()
     );
     expect(document.body.textContent).toContain('Claude Opus 5');
+  });
+
+  const openTurnInfo = async () => {
+    const info = container.querySelector<HTMLButtonElement>('[aria-label="Turn configuration"]');
+    // Row overlays mount once their row is armed by a pointer entry.
+    await act(async () => {
+      info!
+        .closest('[data-virtual-index]')!
+        .dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+    });
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Turn configuration"]')!.click()
+    );
+  };
+  const popoverValue = (label: string) =>
+    [...document.body.querySelectorAll('dt')].find((dt) => dt.textContent === label)
+      ?.nextElementSibling;
+
+  it('times a live turn in its info popover and warns when updates stop', async () => {
+    const modelInfo = { modelId: 'claude-opus-5', name: 'Claude Opus 5' };
+    await render(
+      liveTurn([{ type: 'text', text: 'Partial answer' }], { modelInfo }),
+      { label: 'Working' },
+      { lastUpdateAt: Date.parse('2026-09-19T00:00:19Z') }
+    );
+    await openTurnInfo();
+    expect(popoverValue('Started')?.textContent).toMatch(/ · running 30s$/);
+    expect(popoverValue('Last update')?.textContent).toBe('12s ago');
+    expect(popoverValue('Last update')?.hasAttribute('data-stale')).toBe(false);
+    expect(popoverValue('Ended')).toBeUndefined();
+
+    await remount();
+    vi.setSystemTime(new Date('2026-09-19T00:01:19Z'));
+    await render(
+      liveTurn([{ type: 'text', text: 'Partial answer' }], { modelInfo }),
+      { label: 'Working' },
+      { lastUpdateAt: Date.parse('2026-09-19T00:00:19Z') }
+    );
+    await openTurnInfo();
+    const stale = popoverValue('Last update');
+    expect(stale?.textContent).toBe('1m 00s ago');
+    expect(stale?.hasAttribute('data-stale')).toBe(true);
+    expect(stale?.getAttribute('title')).toContain('may be stuck');
+  });
+
+  it('shows a dash for the last update until one arrives after opening', async () => {
+    await render(
+      liveTurn([{ type: 'text', text: 'Partial answer' }], {
+        modelInfo: { modelId: 'claude-opus-5', name: 'Claude Opus 5' },
+      }),
+      { label: 'Working' }
+    );
+    await openTurnInfo();
+    expect(popoverValue('Last update')?.textContent).toBe('—');
+  });
+
+  it('times a finished turn by its start, end and Worked-for duration', async () => {
+    await render(
+      liveTurn([{ type: 'text', text: 'Done.' }], {
+        finished: true,
+        endedAt: Date.parse('2026-09-19T00:00:25Z'),
+        modelInfo: { modelId: 'claude-opus-5', name: 'Claude Opus 5' },
+      }),
+      { label: 'Working' },
+      { withTurnFooter: true }
+    );
+    await openTurnInfo();
+    expect(popoverValue('Started')?.textContent).not.toContain('running');
+    expect(popoverValue('Started')?.getAttribute('title')).toBeTruthy();
+    expect(popoverValue('Ended')?.textContent).toBeTruthy();
+    expect(popoverValue('Duration')?.textContent).toBe('24s');
+    expect(popoverValue('Last update')).toBeUndefined();
   });
 
   it('labels command steps with the Run verb in the expanded group', async () => {

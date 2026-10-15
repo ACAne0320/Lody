@@ -293,6 +293,13 @@ import { useSessionPin } from '@/components/sessions/session-pin-context';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useStableNow } from '@/hooks/use-stable-now';
 import {
+  buildAssistantTurnTimingRows,
+  formatSilenceCompact,
+  formatTurnClockTime,
+  resolveTurnSilenceMs,
+  type AssistantTurnTimingRow,
+} from './assistant-turn-timing';
+import {
   SEARCH_HIGHLIGHT_CONTAINER_ACTIVE_CLASS_NAME,
   SEARCH_HIGHLIGHT_CONTAINER_MATCHED_CLASS_NAME,
   SearchHighlightedText,
@@ -643,6 +650,15 @@ export const SessionChatActionContext = createContext<{
 const SessionImagePreviewContext = createContext<{
   openImagePreview: (imageKey: string) => void;
 } | null>(null);
+
+/**
+ * When this conversation last received a history update (in memory, never
+ * persisted): the stream's `ConversationView`, whose identity is stable per
+ * session. Liveness labels read `lastUpdateAt` on their own tick.
+ */
+const ConversationUpdateClockContext = createContext<Pick<ConversationView, 'lastUpdateAt'> | null>(
+  null
+);
 
 /** Live work reads in the process tone; waiting on the user in the warning tone. */
 export type AgentActivityTone = 'primary' | 'warning';
@@ -2500,125 +2516,129 @@ export const SessionChatStreamView = forwardRef<
     return (
       <SessionChatActionContext.Provider value={chatActionContextValue}>
         <SessionImagePreviewContext.Provider value={imagePreviewContextValue}>
-          <ContainerQueryProvider
-            ref={scrollRootRef}
-            className={cn('relative bg-background', className)}
-          >
-            <NativeSelectionRowsContext.Provider value={nativeSelectionRows}>
-              <EngineConversationScroller
-                sessionId={sessionId}
-                rows={listRows}
-                rowMeta={engineRowMeta}
-                item={ConversationVirtualRow}
-                keepMounted={nativeTextSelection.keepMounted}
-                initialWindowReady={initialWindowReady}
-                hidden={!isVisible}
-                suppressAutoScrollRef={autoScrollSuppressedRef}
-                onAtBottomChange={onAtBottomChange}
-                onScroll={handleStreamScroll}
-                onStateChange={handleListStateChange}
-                layoutKey={String(conversationFontSize)}
-                // Keep x overflow explicit: overflow-y:auto otherwise computes
-                // the untouched x axis to auto too, letting any wide row pan the
-                // entire conversation instead of its own nested scroller.
-                // Mobile session page floats a frosted header over the list;
-                // `--conversation-top-inset` (set by session-detail's mobile
-                // branch) pads the scroll content so the first message clears the
-                // header at rest while later content scrolls under it and blurs.
-                // Unset elsewhere → falls back to py-6's 1.5rem, a no-op.
-                viewportClassName="chat-scrollbar relative h-full overflow-x-hidden py-5 sm:py-6"
-                viewportStyle={CONVERSATION_VIEWPORT_STYLE}
-                trailing={<MessageSelectionOverlay />}
-                // Pre-render extra items outside the viewport to reduce blank areas
-                // during fast scrolling (especially on mobile). This is 4x Virtua's
-                // default (200px) — generous, but deliberately not the previous 2000px:
-                // an oversized buffer keeps a huge set of still-resizing rows mounted,
-                // which widens the window where Virtua's offsets are mid-recompute and
-                // rows can transiently overlap. 800 keeps ~2 viewports of headroom.
-                bufferSize={CONVERSATION_OVERSCAN}
-                handleRef={listRef}
-              />
-            </NativeSelectionRowsContext.Provider>
-            {/* Top fade into the bg-background canvas above (desktop only),
+          <ConversationUpdateClockContext.Provider value={conversationView ?? null}>
+            <ContainerQueryProvider
+              ref={scrollRootRef}
+              className={cn('relative bg-background', className)}
+            >
+              <NativeSelectionRowsContext.Provider value={nativeSelectionRows}>
+                <EngineConversationScroller
+                  sessionId={sessionId}
+                  rows={listRows}
+                  rowMeta={engineRowMeta}
+                  item={ConversationVirtualRow}
+                  keepMounted={nativeTextSelection.keepMounted}
+                  initialWindowReady={initialWindowReady}
+                  hidden={!isVisible}
+                  suppressAutoScrollRef={autoScrollSuppressedRef}
+                  onAtBottomChange={onAtBottomChange}
+                  onScroll={handleStreamScroll}
+                  onStateChange={handleListStateChange}
+                  layoutKey={String(conversationFontSize)}
+                  // Keep x overflow explicit: overflow-y:auto otherwise computes
+                  // the untouched x axis to auto too, letting any wide row pan the
+                  // entire conversation instead of its own nested scroller.
+                  // Mobile session page floats a frosted header over the list;
+                  // `--conversation-top-inset` (set by session-detail's mobile
+                  // branch) pads the scroll content so the first message clears the
+                  // header at rest while later content scrolls under it and blurs.
+                  // Unset elsewhere → falls back to py-6's 1.5rem, a no-op.
+                  viewportClassName="chat-scrollbar relative h-full overflow-x-hidden py-5 sm:py-6"
+                  viewportStyle={CONVERSATION_VIEWPORT_STYLE}
+                  trailing={<MessageSelectionOverlay />}
+                  // Pre-render extra items outside the viewport to reduce blank areas
+                  // during fast scrolling (especially on mobile). This is 4x Virtua's
+                  // default (200px) — generous, but deliberately not the previous 2000px:
+                  // an oversized buffer keeps a huge set of still-resizing rows mounted,
+                  // which widens the window where Virtua's offsets are mid-recompute and
+                  // rows can transiently overlap. 800 keeps ~2 viewports of headroom.
+                  bufferSize={CONVERSATION_OVERSCAN}
+                  handleRef={listRef}
+                />
+              </NativeSelectionRowsContext.Provider>
+              {/* Top fade into the bg-background canvas above (desktop only),
                 hinting that the conversation continues past the top edge. */}
-            {!isMobile && isScrolledFromTop ? (
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-background to-transparent" />
-            ) : null}
-            {/* Bottom fade into the same canvas over the last 40px above the
+              {!isMobile && isScrolledFromTop ? (
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-background to-transparent" />
+              ) : null}
+              {/* Bottom fade into the same canvas over the last 40px above the
                 info bar (desktop only): more conversation below. */}
-            {!isMobile && hasContentBelow ? (
-              <div
-                data-conversation-bottom-fade=""
-                className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background to-transparent"
-              />
-            ) : null}
-            {/* Round outline. Its visual layer portals to the full-page overlay
+              {!isMobile && hasContentBelow ? (
+                <div
+                  data-conversation-bottom-fade=""
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background to-transparent"
+                />
+              ) : null}
+              {/* Round outline. Its visual layer portals to the full-page overlay
                 when supplied, so composer growth cannot move its centre. It is
                 never a Virtua row or a child of the viewport: sticky scroll
                 takes the content element from that div's `firstElementChild`.
                 Touch has no hover, so mobile is excluded rather than shipped
                 without its preview card. */}
-            {isMobile || !showOutlineRail ? null : (
-              <ConversationOutlineRail
-                entries={outlineEntries}
-                activeIndex={activeOutlineIndex}
-                onJumpToRound={handleOutlineJump}
-                onPreviewRound={handleOutlinePreview}
-                overlayRoot={outlineOverlayRoot}
-                enableArrivalIntent
-              />
-            )}
-            {showScrollToLatest && !isSticky && (
-              /* Full-bleed overlay; ConversationColumn carries the shared
+              {isMobile || !showOutlineRail ? null : (
+                <ConversationOutlineRail
+                  entries={outlineEntries}
+                  activeIndex={activeOutlineIndex}
+                  onJumpToRound={handleOutlineJump}
+                  onPreviewRound={handleOutlinePreview}
+                  overlayRoot={outlineOverlayRoot}
+                  enableArrivalIntent
+                />
+              )}
+              {showScrollToLatest && !isSticky && (
+                /* Full-bleed overlay; ConversationColumn carries the shared
                  horizontal gutter so the button lines up with the composer. */
-              <div className="pointer-events-none absolute inset-x-0 bottom-4">
-                <ConversationColumn className="flex justify-end">
-                  <Button
-                    variant="secondary"
-                    icon
-                    data-scroll-to-latest=""
-                    className={cn(
-                      stylex.props(stylex.defaultMarker()).className,
-                      'pointer-events-auto rounded-full border-[0.5px] border-border bg-white text-foreground shadow-[0_0.5px_1px_1px_rgba(0,0,0,0.04)] hover:bg-white dark:bg-secondary dark:text-secondary-foreground dark:shadow-none'
-                    )}
-                    onClick={scrollToBottom}
-                    aria-label={t('sessions.scrollToLatest')}
-                  >
-                    {agentActivityLabel && agentActivityShimmer ? (
-                      <Spinner
+                <div className="pointer-events-none absolute inset-x-0 bottom-4">
+                  <ConversationColumn className="flex justify-end">
+                    <Button
+                      variant="secondary"
+                      icon
+                      data-scroll-to-latest=""
+                      className={cn(
+                        stylex.props(stylex.defaultMarker()).className,
+                        'pointer-events-auto rounded-full border-[0.5px] border-border bg-white text-foreground shadow-[0_0.5px_1px_1px_rgba(0,0,0,0.04)] hover:bg-white dark:bg-secondary dark:text-secondary-foreground dark:shadow-none'
+                      )}
+                      onClick={scrollToBottom}
+                      aria-label={t('sessions.scrollToLatest')}
+                    >
+                      {agentActivityLabel && agentActivityShimmer ? (
+                        <Spinner
+                          {...stylex.props(
+                            scrollToLatestStyles.icon,
+                            scrollToLatestStyles.workingSpinner
+                          )}
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <ArrowDown
                         {...stylex.props(
                           scrollToLatestStyles.icon,
-                          scrollToLatestStyles.workingSpinner
+                          !!agentActivityLabel &&
+                            agentActivityShimmer &&
+                            scrollToLatestStyles.workingArrow
                         )}
                         aria-hidden="true"
                       />
-                    ) : null}
-                    <ArrowDown
-                      {...stylex.props(
-                        scrollToLatestStyles.icon,
-                        !!agentActivityLabel &&
-                          agentActivityShimmer &&
-                          scrollToLatestStyles.workingArrow
-                      )}
-                      aria-hidden="true"
-                    />
-                  </Button>
-                </ConversationColumn>
-              </div>
-            )}
-            <ImagePreviewDialog
-              open={findSessionImageGalleryEntryIndex(activeGalleryEntries, activeImageKey) !== -1}
-              onOpenChange={(open) => {
-                if (!open) {
-                  setActiveImageKey(null);
+                    </Button>
+                  </ConversationColumn>
+                </div>
+              )}
+              <ImagePreviewDialog
+                open={
+                  findSessionImageGalleryEntryIndex(activeGalleryEntries, activeImageKey) !== -1
                 }
-              }}
-              activeImageKey={activeImageKey}
-              onActiveImageKeyChange={setActiveImageKey}
-              entries={activeGalleryEntries}
-              portalAnchorRef={scrollRootRef}
-            />
-          </ContainerQueryProvider>
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setActiveImageKey(null);
+                  }
+                }}
+                activeImageKey={activeImageKey}
+                onActiveImageKeyChange={setActiveImageKey}
+                entries={activeGalleryEntries}
+                portalAnchorRef={scrollRootRef}
+              />
+            </ContainerQueryProvider>
+          </ConversationUpdateClockContext.Provider>
         </SessionImagePreviewContext.Provider>
       </SessionChatActionContext.Provider>
     );
@@ -4314,15 +4334,144 @@ const AssistantTurnTokenUsageRows = ({ usage }: { usage: SessionTurnTokenUsage }
   );
 };
 
+/** Ticks once a second while the popover is open; a closed popover mounts none of this. */
+const TURN_TIMING_SAMPLE_MS = 1_000;
+
+/**
+ * When the turn started, how long it has run or took, and — while it is live —
+ * how long since the conversation last received an update, so a user can tell
+ * a busy turn from a stuck one.
+ */
+const AssistantTurnTimingRows = ({
+  message,
+  isLive,
+}: {
+  message: SessionHistoryParsed;
+  isLive: boolean;
+}) => {
+  const { t, i18n } = useTranslation();
+  const updateClock = useContext(ConversationUpdateClockContext);
+  const nowMs = useStableNow(TURN_TIMING_SAMPLE_MS).getTime();
+  const rows = buildAssistantTurnTimingRows(message, {
+    isLive,
+    nowMs,
+    lastUpdateAt: updateClock?.lastUpdateAt ?? null,
+  });
+  if (rows.length === 0) return null;
+  const locale = toIntlLocale(i18n.resolvedLanguage ?? i18n.language);
+  const durationUnitLabels = getDurationUnitLabels(t);
+  const formatDuration = (ms: number) => formatDurationCompact(ms, durationUnitLabels);
+  const display = (
+    row: AssistantTurnTimingRow
+  ): { label: string; value: string; title?: string; warning?: boolean } => {
+    switch (row.kind) {
+      case 'started': {
+        const clock = formatTurnClockTime(row.atMs, { locale, nowMs });
+        const running = row.runningMs === null ? '' : formatDuration(row.runningMs);
+        return {
+          label: t('sessions.turnTiming.started', 'Started'),
+          value: running
+            ? t('sessions.turnTiming.startedRunning', {
+                time: clock.short,
+                duration: running,
+                defaultValue: '{{time}} · running {{duration}}',
+              })
+            : clock.short,
+          title: clock.full,
+        };
+      }
+      case 'ended': {
+        const clock = formatTurnClockTime(row.atMs, { locale, nowMs });
+        return {
+          label: t('sessions.turnTiming.ended', 'Ended'),
+          value: clock.short,
+          title: clock.full,
+        };
+      }
+      case 'duration':
+        return {
+          label: t('sessions.turnTiming.duration', 'Duration'),
+          value: formatDuration(row.durationMs),
+        };
+      case 'lastUpdate':
+        break;
+    }
+    return {
+      label: t('sessions.turnTiming.lastUpdate', 'Last update'),
+      value:
+        row.sinceMs === null
+          ? '—'
+          : t('sessions.turnTiming.ago', {
+              duration: formatDuration(row.sinceMs),
+              defaultValue: '{{duration}} ago',
+            }),
+      title:
+        row.sinceMs === null
+          ? t(
+              'sessions.turnTiming.noUpdateYet',
+              'No update received since this conversation was opened.'
+            )
+          : row.stale
+            ? t(
+                'sessions.turnTiming.staleHint',
+                'No update for a while. The agent may be running a long command, or it may be stuck.'
+              )
+            : undefined,
+      warning: row.stale,
+    };
+  };
+  return (
+    <div className="border-t border-border/60 px-3 py-2.5" data-turn-timing="">
+      <div
+        className={cn(
+          stylex.props(activityTypography.caption).className,
+          'mb-1.5 font-medium text-foreground'
+        )}
+      >
+        {t('sessions.turnTiming.title', 'Timing')}
+      </div>
+      <dl className="space-y-1.5">
+        {rows.map((row) => {
+          const { label, value, title, warning } = display(row);
+          return (
+            <div
+              key={row.kind}
+              className={cn(
+                stylex.props(activityTypography.caption).className,
+                'flex items-start justify-between gap-3'
+              )}
+            >
+              <dt className="shrink-0 text-muted-foreground">{label}</dt>
+              <dd
+                className={cn(
+                  'min-w-0 text-right font-medium tabular-nums',
+                  warning ? 'text-status-warning' : 'text-foreground'
+                )}
+                title={title}
+                data-stale={warning ? '' : undefined}
+              >
+                {value}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </div>
+  );
+};
+
 /** Hover tooltip + click popover for turn model / run-config. */
 const AssistantTurnConfigInfoButton = ({
   message,
   sessionId,
+  isLive = false,
   className,
   iconClassName,
 }: {
   message: SessionHistoryParsed;
   sessionId: SessionId;
+  /** The newest, unfinished turn: its timing counts up and reports liveness. */
+  isLive?: boolean;
   className?: string;
   iconClassName?: string;
 }) => {
@@ -4448,6 +4597,7 @@ const AssistantTurnConfigInfoButton = ({
             </p>
           ) : null}
         </dl>
+        <AssistantTurnTimingRows message={message} isLive={isLive} />
         {tokenUsage ? <AssistantTurnTokenUsageRows usage={tokenUsage} /> : null}
       </Popover.Content>
     </Popover.Root>
@@ -5028,11 +5178,28 @@ type LiveActivityMessage = Pick<SessionHistoryParsed, 'timestamp' | 'permissionW
  */
 const LiveActivityLabel = ({ label, message }: { label: string; message: LiveActivityMessage }) => {
   const { t } = useTranslation();
+  const updateClock = useContext(ConversationUpdateClockContext);
   const now = useStableNow(LIVE_TURN_DURATION_SAMPLE_MS);
+  const durationUnitLabels = getDurationUnitLabels(t);
   const durationMs = resolveLiveSessionHistoryDurationMs(message, now.getTime());
-  const duration =
-    durationMs === null ? '' : formatDurationCompact(durationMs, getDurationUnitLabels(t));
+  const duration = durationMs === null ? '' : formatDurationCompact(durationMs, durationUnitLabels);
   if (!duration) return <>{label}</>;
+  /* A long quiet stretch is not proof of a stuck turn (a lint gate can run
+     for minutes), so this only states the fact; the turn popover carries the
+     detail and the warning tone. */
+  const silenceMs = resolveTurnSilenceMs(updateClock?.lastUpdateAt ?? null, now.getTime());
+  if (silenceMs !== null) {
+    return (
+      <>
+        {t('sessions.activityWithDurationSilent', {
+          label,
+          duration,
+          silence: formatSilenceCompact(silenceMs, durationUnitLabels),
+          defaultValue: '{{label}} (Worked for {{duration}} · no output for {{silence}})',
+        })}
+      </>
+    );
+  }
   return (
     <>
       {t('sessions.activityWithDuration', {
@@ -5316,6 +5483,7 @@ export const AssistantTurnFooter = ({
                 <AssistantTurnConfigInfoButton
                   message={message}
                   sessionId={sessionId}
+                  isLive={isLive}
                   className="h-7 w-7"
                 />
               ) : null}
