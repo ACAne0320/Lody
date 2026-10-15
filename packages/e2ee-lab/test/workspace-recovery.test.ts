@@ -105,9 +105,21 @@ it('uses the public facade to set up/test a real R via HTTP, then restores into 
             envelopeAvailable: false,
             recoverable: false,
           });
+          expect(
+            yield* Effect.result(owner.recovery.skip({ confirmedRecoveryLoss: false }))
+          ).toMatchObject({ _tag: 'Failure', failure: { code: 'invalid-input' } });
+          expect(yield* owner.recovery.status()).toMatchObject({ skipped: false });
+          expect(yield* owner.recovery.skip({ confirmedRecoveryLoss: true })).toMatchObject({
+            skipped: true,
+            paired: false,
+            recoverable: false,
+          });
+          expect(
+            yield* Effect.result(owner.recovery.replace({ requestId: '', compromised: false }))
+          ).toMatchObject({ _tag: 'Failure', failure: { code: 'invalid-input' } });
           expect(yield* owner.recovery.setup()).toMatchObject({
             outcome: 'Committed',
-            status: { paired: true, envelopeAvailable: true, recoverable: true },
+            status: { paired: true, envelopeAvailable: true, recoverable: true, skipped: false },
           });
           expect(yield* owner.recovery.test()).toMatchObject({
             paired: true,

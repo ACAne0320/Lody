@@ -22,6 +22,9 @@ staged publisher; an unconfigured publisher fails explicitly. `document` returns
 seal/open/position-bound snapshot plus the platform's native document owner.
 
 `recovery.setup/test/status` use the explicitly configured recovery workflow.
+`recovery.skip` requires explicit recovery-loss confirmation, while
+`recovery.replace` resumes the same durable replacement workflow. Product callers
+can reach these choices through the facade without opening a second recovery owner.
 Without it setup/test fail and status reports paired/envelope/recoverable false;
 that is not an installed vault. The Lab's full session consumes this same facade,
 with concrete native HTTP, SQLite, Loro and Flock adapters.

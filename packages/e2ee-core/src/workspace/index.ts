@@ -105,6 +105,10 @@ export class WorkspacePlatform extends Context.Service<
 }
 export const unavailableWorkspaceRecovery = Object.freeze({
   setup: () => Effect.fail(new WorkspaceError({ code: 'recovery-unavailable' })),
+  skip: (_confirmation: Parameters<RecoveryOwner['skip']>[0]) =>
+    Effect.fail(new WorkspaceError({ code: 'recovery-unavailable' })),
+  replace: (_request: Parameters<RecoveryOwner['replace']>[0]) =>
+    Effect.fail(new WorkspaceError({ code: 'recovery-unavailable' })),
   test: () => Effect.fail(new WorkspaceError({ code: 'recovery-unavailable' })),
   status: (): Effect.Effect<Effect.Success<ReturnType<RecoveryOwner['status']>>> =>
     Effect.succeed(
@@ -333,6 +337,10 @@ export const makeE2eeWorkspace = Effect.fn('E2eeWorkspace.acquire')(function* (
         document: (resource: string, model: WorkspaceModel) => ordered(document(resource, model)),
         recovery: Object.freeze({
           setup: () => ordered(recovery.setup()),
+          skip: (confirmation: Parameters<RecoveryOwner['skip']>[0]) =>
+            ordered(recovery.skip(confirmation)),
+          replace: (request: Parameters<RecoveryOwner['replace']>[0]) =>
+            ordered(recovery.replace(request)),
           test: () => ordered(recovery.test()),
           status: () => run(recovery.status()),
         }),
