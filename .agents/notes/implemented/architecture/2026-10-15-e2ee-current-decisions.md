@@ -108,3 +108,22 @@ review, exact-head CI and production acceptance remain distinct.
 Per-slice progress Notes are removed rather than copied into another archive.
 Their fixed history remains at [15d35f75](https://github.com/LodyAI/Lody/tree/15d35f75cd702f9d8846a73f03636ce4afce1d80/.agents/notes).
 This consolidation changes no protocol approval or runtime behavior by itself.
+
+## Restored local publication and explicit snapshot consumers
+
+The old local rotation workflow is migrated through a distinct initialized
+candidate protector, not an extension of restricted installed-key A. A protected
+candidate and original signature are durable and read back before P09 submission.
+Lost ACKs and restarts reuse that original; verified commitment and installed
+save/reload precede Committed. Explicit ACK retains original history. Publisher
+operations do not hold the control actor permit while borrowing installed-key
+reads, because those reads refresh the same actor. Full-session operations own
+closure, and current-epoch document binding rechecks after asynchronous signing.
+Independent backup/permanent-device-loss policy remains proposed.
+
+Snapshot consumers now accept an explicitly independently qualified signed origin
+and persist only its bytes, genuine suffix and cursor. Every reopen supplies trust
+again. The authenticated workspace captures qualification before native auth and
+can start reading without the genesis prefix. Offsets and SQL do not select
+permission; P09 still verifies full history for writes. This changes no snapshot
+wire or qualification rule and does not complete production trust acquisition.

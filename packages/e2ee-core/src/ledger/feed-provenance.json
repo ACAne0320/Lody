@@ -20,5 +20,10 @@
     "packages/e2ee-core/src/ledger/feed-reader.ts": "4a37e04c2997518a41b9f8018d74c21c119f7e135add39af49bd8d3d8345237d",
     "packages/e2ee-core/src/ledger/feed.ts": "74810f727cf8a121a8c6caca235507094f3bbc739076f9480dba79207504a3e9",
     "packages/e2ee-core/src/ledger/feed-sqlite.ts": "a98934003400d468573848a9b19020c5da121033a0803f324c537de20d5d7321"
+  },
+  "qualifiedSnapshotConsumer": {
+    "target": "packages/e2ee-core/src/ledger/snapshot-feed-sqlite.ts",
+    "sha256": "96dd2e481fc887984313fdf25a9493723fc538bc304f5e038d95628d6b07bfb7",
+    "scope": "Existing signed snapshot/trust verification, exact retained suffix and position persistence; external qualification each open. No unknown-prefix skip, new wire or snapshot-only CAS."
   }
 }

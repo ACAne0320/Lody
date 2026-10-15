@@ -1,4 +1,6 @@
 import { makeInstalledEpochHistory } from '@lody/e2ee-core/keys/host/history';
+import type { NativeEpochProtector } from '@lody/e2ee-core/keys/host';
+import type { EpochRotationResult } from '@lody/e2ee-core/keys/host/rotation/sqlite';
 import { Bytes } from '@lody/e2ee-core';
 import { Data, Effect, Exit, Scope, Semaphore } from 'effect';
 import type { LedgerCheckpoint } from '@lody/e2ee-core/ledger';
@@ -19,8 +21,15 @@ type KeyInput = Omit<
   'genesis' | 'signer' | 'ledger' | 'remote'
 >;
 export interface LabWorkspaceSessionInput extends ControlInput {
-  /** Already installed keys / published epochs only; this is not a candidate publisher. */
+  /** One receiver-owned installed-key store shared by all consumers. */
   readonly keys: KeyInput;
+  /** Explicit local candidate recovery. This does not select independent backup
+   * policy, a vault, or production platform custody. */
+  readonly epochRotation?: {
+    readonly path: string;
+    readonly mode: 'create' | 'open';
+    readonly protector: NativeEpochProtector;
+  };
   readonly documents: readonly {
     readonly id: string;
     readonly model?: 'loro' | 'flock';
@@ -43,7 +52,8 @@ interface LabWorkspaceDocument {
 }
 /** Existing full-prefix workspace, externally selected checkpoint. Identity/control,
  * public key receive/distribution and protected documents have one child owner.
- * No transport/SQLite row can choose authority; no snapshot/rotation/vault decision. */
+ * No transport/SQLite row can choose authority; no snapshot/vault or independent
+ * publisher-backup policy is selected. */
 export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(function* (
   input: LabWorkspaceSessionInput
 ) {
@@ -100,6 +110,17 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
     sendStore: { ...input.keys.sendStore },
     outboxStore: { ...input.keys.outboxStore },
   };
+  const candidate = input.epochRotation;
+  const epochConfig = candidate
+    ? {
+        path: candidate.path,
+        mode: candidate.mode,
+        protector: Object.freeze({
+          protect: candidate.protector.protect.bind(candidate.protector),
+          unprotect: candidate.protector.unprotect.bind(candidate.protector),
+        }),
+      }
+    : undefined;
   if (
     new Set(docs.map((doc) => doc.id)).size !== docs.length ||
     docs.some(
@@ -140,14 +161,19 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
         ledger,
         installed: distribution.installedEpochKeys,
       });
+      const rotation = epochConfig
+        ? yield* control.control.makeEpochRotation({
+            ...epochConfig,
+            installed: distribution.installedEpochKeys,
+          })
+        : undefined;
       const sessions = new Map<string, LabWorkspaceDocument>();
-      const initial = yield* control.control.current();
       for (const doc of docs) {
         const config = {
           ...doc,
           genesis,
           signer,
-          writeEpoch: initial.view.inspectState().epoch.number,
+          writeEpoch: 'current' as const,
           ledger,
           readEpochKey: history.read,
           fetch: control.identity.fetch,
@@ -201,6 +227,30 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
         resume: () => run(serial.withPermit(control.control.resume())),
         acknowledge: (result: Parameters<typeof control.control.acknowledge>[0]) =>
           run(serial.withPermit(control.control.acknowledge(result))),
+        rotateEpoch: () =>
+          run(
+            serial.withPermit(
+              rotation
+                ? rotation.publish()
+                : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
+            )
+          ),
+        resumeEpochRotation: () =>
+          run(
+            serial.withPermit(
+              rotation
+                ? rotation.resume()
+                : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
+            )
+          ),
+        acknowledgeEpochRotation: (result: EpochRotationResult) =>
+          run(
+            serial.withPermit(
+              rotation
+                ? rotation.acknowledge(result)
+                : Effect.fail(new LabWorkspaceSessionError({ code: 'configuration' }))
+            )
+          ),
         listJoins: () => run(control.identity.listJoins()),
         keyRound: (limit = 100, cursors: LabKeyRoundCursors = {}) =>
           run(serial.withPermit(runLabKeyRound(distribution, limit, cursors))),
@@ -243,6 +293,7 @@ export const reauthenticateLabWorkspaceSession = Effect.fn('Lab.reauthenticateWo
       ...input,
       mode: 'open',
       expected: ownedExpected,
+      epochRotation: input.epochRotation ? { ...input.epochRotation, mode: 'open' } : undefined,
       keys: {
         ...input.keys,
         mode: 'open',

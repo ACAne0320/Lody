@@ -767,7 +767,7 @@
       "targetPath": "packages/e2ee-core/src/keys/history.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "Canonical history/commitment and actual installed-key lifecycle only. Retire unused volatile store and source JSON digest/frame; durable new-epoch candidates/backup remain separately gated.",
+      "reason": "Canonical history/commitment and actual installed-key lifecycle only. Retire unused volatile store and source JSON digest/frame; local durable new-epoch candidate publication is separately implemented; independent backup remains gated.",
       "coverage": {
         "L4a": "Current canonical commitment/72B history; installed read/save/Scope ownership covered by the receiver-owned protected store. Unused volatile API retired, not a second migration obligation."
       },
@@ -1443,7 +1443,7 @@
       "targetPath": "packages/e2ee-core/src/keys/host-protection.ts",
       "status": "需迁并修复",
       "layer": "L4",
-      "reason": "One-time trusted host capability and protected round-trip behavior adapted. Obsolete wire/JSON journal is retired. Publisher candidate/submission coupling and permanently lost publisher backup remain separate unfinished owners; no whole-module completion claim.",
+      "reason": "One-time trusted host capability and protected round-trip behavior adapted. Obsolete wire/JSON journal is retired. Local protected candidate/submission coupling is implemented in epoch-rotation.ts; permanently lost publisher backup remains unfinished; no whole-module completion claim.",
       "coverage": [
         {
           "layer": "L4e",
@@ -2193,15 +2193,20 @@
         "core": "3daf93950a8824d29c22320c31317c63e0b8c9c77deefa9f4659764861753573",
         "candidate": "3daf93950a8824d29c22320c31317c63e0b8c9c77deefa9f4659764861753573"
       },
-      "targetPath": "packages/e2ee-core/src/ports/epoch-rotation.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/keys/epoch-rotation.ts",
+      "status": "已迁",
       "layer": "L4",
-      "reason": "Installed recipient key retention portion adapted to explicit host protection and indexed SQLite. Candidate rotation/backups, task/report/repair coordination and native-platform implementations remain unfinished or decision-gated as owned by this source.",
+      "reason": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy.",
       "coverage": [
         {
           "layer": "L4e",
           "target": "packages/e2ee-core/src/keys/host-protection.ts + protected-sqlite.ts",
           "scope": "Approved host-only initialization-time protection direction and append-only installed recipient key retention. Real verified current recipient/prefix, complete protected context including Org at epoch0, save/reload/unprotect/commitment recheck, Scope/native cleanup. No native adapter, publisher candidate backup, recovery vault or queued reports; old plaintext/JSON/wire schemes not imported."
+        },
+        {
+          "layer": "local-epoch-publication",
+          "target": "packages/e2ee-core/src/keys/epoch-rotation.ts",
+          "scope": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy."
         }
       ],
       "sourceDeclaredExports": {
@@ -2216,7 +2221,11 @@
           "EpochKeyring"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-core/src/keys/epoch-rotation.ts",
+        "packages/e2ee-lab/src/platform/full-session.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/ports/epoch-stream.ts",
@@ -2748,10 +2757,10 @@
         "core": "0a59b3815b4ee23183b4bb79836489a126f547b9f98c03c8f40a114fcf563f7e",
         "candidate": "0a59b3815b4ee23183b4bb79836489a126f547b9f98c03c8f40a114fcf563f7e"
       },
-      "targetPath": "packages/e2ee-core/src/pure/epoch-candidate.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/keys/epoch-rotation.ts",
+      "status": "已迁",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "reason": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy.",
       "sourceDeclaredExports": {
         "core": [
           "EpochCandidate",
@@ -2768,7 +2777,18 @@
           "classifyEpochCandidate"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coverage": [
+        {
+          "layer": "local-epoch-publication",
+          "target": "packages/e2ee-core/src/keys/epoch-rotation.ts",
+          "scope": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy."
+        }
+      ],
+      "coveragePaths": [
+        "packages/e2ee-core/src/keys/epoch-rotation.ts",
+        "packages/e2ee-lab/src/platform/full-session.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/pure/epoch-envelope-stream.ts",
@@ -4330,10 +4350,10 @@
         "core": "b6f661aa27eebca4bcd26244884314cb41c3b213bf6e5d8d62be8d2f59c7f6e9",
         "candidate": "b6f661aa27eebca4bcd26244884314cb41c3b213bf6e5d8d62be8d2f59c7f6e9"
       },
-      "targetPath": "packages/e2ee-core/src/workflows/epoch-rotation.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/keys/epoch-rotation.ts",
+      "status": "已迁",
       "layer": "L4",
-      "reason": "Port epoch envelope/history, exact-key installation, finite distribution and durable reports; fix read truncation/outbox lifetime. Atomic removal is gated separately.",
+      "reason": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy.",
       "sourceDeclaredExports": {
         "core": [
           "EpochRotationOutcome",
@@ -4346,7 +4366,18 @@
           "rotateEpoch"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coverage": [
+        {
+          "layer": "local-epoch-publication",
+          "target": "packages/e2ee-core/src/keys/epoch-rotation.ts",
+          "scope": "Local candidate generation/protection/save/readback before existing E7/P09, exact original resume after crash/lost ACK, current/historical installed save/reload, Conflict retention and explicit ACK. Old JSON candidate format retired; this restores local durability, not independent backup, emergency exception or vault policy."
+        }
+      ],
+      "coveragePaths": [
+        "packages/e2ee-core/src/keys/epoch-rotation.ts",
+        "packages/e2ee-lab/src/platform/full-session.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-core/src/workflows/epoch-stream.ts",
@@ -4496,6 +4527,11 @@
           "layer": "L1c",
           "target": "packages/e2ee-core/src/ledger/admission.ts",
           "scope": "Public joining/device consent and five settled ordinary intent kinds use existing genuine-view/fixed-signature gates; v1 genesis producer computes real initial epoch-zero commitment and verifies full creation. No storage/remote publication/engine or backup claim; RemoveMember/new rotation format remain D12-gated."
+        },
+        {
+          "layer": "qualified-snapshot-origin",
+          "target": "packages/e2ee-core/src/ledger/snapshot-feed-sqlite.ts",
+          "scope": "Explicit externally qualified signed origin plus exact suffix/cursor, requalification and cryptographic suffix verification on reopen. Authenticated Lab startup consumes it. Full-history P09 remains unchanged; production trust acquisition and snapshot-only CAS not complete."
         }
       ],
       "sourceDeclaredExports": {
@@ -4515,7 +4551,9 @@
       "coveragePaths": [
         "packages/e2ee-lab/src/platform/snapshot-cache.ts",
         "packages/e2ee-lab/test/ledger-client.test.ts",
-        "packages/e2ee-lab/test/snapshot-cache-reopen.mts"
+        "packages/e2ee-lab/test/snapshot-cache-reopen.mts",
+        "packages/e2ee-core/src/ledger/snapshot-feed-sqlite.ts",
+        "packages/e2ee-lab/src/platform/workspace-session.ts"
       ]
     },
     {
@@ -6873,11 +6911,12 @@
             "private": false,
             "sha256": "70d8a9ad97bef80002484454db3b75c82304c3fb2b02c71fd6f89762e0073829",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-core/src/keys/distribution-sqlite.ts"
+              "packages/e2ee-core/src/keys/epoch-rotation.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Signed synthetic epoch1 public fixtures validate consumers; actual durable candidate/publisher/lost-ACK/crash workflow pending. No permanent publisher-loss/new-key backup strategy inferred."
+            "status": "已迁",
+            "reason": "Real local protected candidate generation/save/readback, existing E7/P09 exact retry and installed round trip; full session consumes publication/resume/explicit ACK. Independent backup/permanent-device-loss policy remains separate."
           },
           {
             "name": "deliverEpochKey",
@@ -9124,15 +9163,15 @@
     "currentLabPR": 1557,
     "remaining": [
       "G resumable workspace creation/checkpoint durability; current full signed control history only",
-      "S protected snapshot format/admission/trust qualification and unavailable-history API",
-      "K/V durable new-epoch candidate/backup/emergency exception and vault/recovery format",
+      "S protected content snapshot format/admission, production qualification acquisition and unavailable-history API; explicit qualified ledger snapshot-origin reading/reopen implemented",
+      "K/V independent candidate backup/emergency exception and vault/recovery format; local durable publisher/retry implemented",
       "D final atomic operation/snapshot encoding approval; no legacy compatibility",
       "R exact-original replay entropy decision",
       "N additional comparison-note signing authority",
       "B strict freshness approval",
       "Native platform protector and private product wiring; synthetic not equivalent"
     ],
-    "currentScope": "Complete unblocked existing-workspace consumers and finite actors/actions/CLI; original full migration remains incomplete. Earlier fields/file status are historical registration, never completion percentages.",
+    "currentScope": "Existing-workspace/join consumers, finite actors/actions/CLI, local durable E7 publisher and explicit independently qualified ledger-snapshot reading/reopen. Original full migration remains incomplete; no new protocol/product approvals inferred.",
     "capabilities": [
       {
         "old": "DemoSession start/reauth/read/write/submit/resume/receive",
@@ -9169,6 +9208,37 @@
           "packages/e2ee-lab/test/runtime.test.ts"
         ],
         "status": "implemented-author-verification; original full replay/insider scenarios remain gated"
+      },
+      {
+        "old": "rotateEpoch/resumeEpochRotation local candidate workflow",
+        "new": [
+          "packages/e2ee-core/src/keys/epoch-rotation.ts",
+          "packages/e2ee-lab/src/platform/ledger-actor.ts",
+          "packages/e2ee-lab/src/platform/full-session.ts"
+        ],
+        "behavior": "Separate initialized candidate protection; actual durable open before P09, exact record retries, genuine committed installation, original retention/explicit ACK, secure host randomness and actual native settlement. Existing E7 wire only; independent backup policy not selected.",
+        "tests": [
+          "packages/e2ee-core/test/keys/epoch-rotation.test.ts",
+          "packages/e2ee-core/test/keys/rotation-reopen.mts",
+          "packages/e2ee-lab/test/full-session.test.ts"
+        ],
+        "status": "implemented; fixed-scope author and separate reviewer evidence, final PR CI separately owned"
+      },
+      {
+        "old": "qualified ledger snapshot bootstrap/read/reopen",
+        "new": [
+          "packages/e2ee-core/src/ledger/snapshot-feed-sqlite.ts",
+          "packages/e2ee-lab/src/platform/ledger-client.ts",
+          "packages/e2ee-lab/src/platform/workspace-session.ts"
+        ],
+        "behavior": "Current signed snapshot and independent qualification on every construction; exact origin/suffix/cursor atomic persistence. Startup reads from explicit transport origin without genesis-prefix replay. SQL never chooses trust; writes still use full-history P09.",
+        "tests": [
+          "packages/e2ee-core/test/snapshot-feed.test.ts",
+          "packages/e2ee-core/test/snapshot-feed-reopen.mts",
+          "packages/e2ee-lab/test/ledger-client.test.ts",
+          "packages/e2ee-lab/test/full-session.test.ts"
+        ],
+        "status": "implemented read/reopen consumer; production qualification acquisition and snapshot-only writes remain incomplete"
       }
     ],
     "legacyFailureDisposition": [
@@ -9199,7 +9269,7 @@
       {
         "id": "core7-C-rotation",
         "old": "review2-c-rotation.test.ts:111 rotator lost before K1 delivery",
-        "replacement": "No complete publisher replacement yet; installed A and postcommit distribution do not solve independent candidate backup",
+        "replacement": "Local publisher/candidate crash recovery now implemented and consumed. Installed A, local candidate persistence and postcommit distribution still do not guarantee recovery after permanent device loss before independent delivery.",
         "decision": [
           "K",
           "V"
@@ -9253,7 +9323,7 @@
       "/private/tmp/e2ee-migration-evidence"
     ],
     "unimplementedNotRetired": [
-      "new-epoch publisher/rotation/resumption independent backup",
+      "independent publisher backup/permanent-device-loss policy; local publisher/rotation/resumption implemented",
       "protected content snapshot/admission/bootstrap",
       "vault/per-workspace recovery registration",
       "all original entropy/insider/model-driven scenarios and native custody"
@@ -9322,14 +9392,16 @@
       "capacity": "Distribution maxTasks counts unacknowledged rows; explicit ack retains originals and frees active capacity. No physical archival.",
       "lab": "120s owner-scoped watchdog; real child kill/await and earlier owner cleanup precede final evidence.",
       "notCompleted": [
-        "snapshot-first join/bootstrap trust acquisition",
+        "production snapshot qualification acquisition and snapshot-only write/bootstrap continuation",
         "O(N) full cryptographic reopen remains",
-        "durable epoch/removal publisher and independent backup contract",
+        "atomic member-removal publisher and independent candidate backup contract",
         "protected content snapshot",
         "production native protector and product assembly",
         "unapproved A1/history scope, vault/backup, strict B and replay decisions"
       ],
-      "keyQueues": "Session/process/CLI forward explicit stable-ID repair, phase/result page hints and exact-ID receive/repair/delivery acknowledgement. No automatic consumption or new owner; originals retained."
+      "keyQueues": "Session/process/CLI forward explicit stable-ID repair, phase/result page hints and exact-ID receive/repair/delivery acknowledgement. No automatic consumption or new owner; originals retained.",
+      "epochPublication": "One initialized protected local candidate owner; existing E7 and P09, actual installed save/reload and fixed original ACK, no automatic independent-backup policy.",
+      "snapshotReading": "Explicit independently qualified signed origin plus exact retained suffix/cursor, full requalification and suffix audit on reopen. P09 writes still full-history."
     }
   }
 }

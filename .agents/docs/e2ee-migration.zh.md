@@ -27,7 +27,7 @@
 
 - 可续做workspace创建、独立可信checkpoint取得和host崩溃／丢ACK耐久性收口。
 - 受保护内容快照位置／格式及实际有权限的全历史保留／读取API。
-- 原子成员移除／换代producer编码、candidate可恢复性／备份例外与恢复vault决定。
+- 原子成员移除编码、独立candidate备份门槛／永久设备丢失例外与恢复vault决定。本地候选持久化、原件提交与崩溃恢复已迁入。
 - 原字节replay熵及剩余原actor／attack场景；纯比较不等于执行覆盖。
 - comparison-note权限、严格期限B、真实native protector与私有产品接线。
 
@@ -36,3 +36,5 @@
 ## 交付
 
 沿用原生stack #1490及已有PR范围，上限24；未获用户明确修改前保持Draft。本清理留在 [#1557](https://github.com/LodyAI/Lody/pull/1557)，旧head保留为祖先，不启用产品或发布。准确head/base与检查结果由各PR及固定交付报告负责，本页不再复制实时pin表。
+
+显式合资格快照起点的读取／启动和重开已接入公共验证器及独立原字节／suffix 存储。资格取得仍来自外部，P09 写入仍全历史审计。

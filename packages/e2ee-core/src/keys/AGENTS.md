@@ -76,3 +76,10 @@
 - Distributor metadata audits use a captured task budget; reaching capacity never deletes originals. Existing terminal/ack transitions remain possible within budget; new tasks are blocked explicitly.
 
 - The receiver constructs the installed store once; host facades forward the same opaque read/save capability. Borrowers do not create/close another owner. No caller-supplied substitute or secret material export.
+
+- Local `./keys/host/rotation/sqlite` candidates use a separate initialized host
+  protector and authenticated purpose/context/original record. Never call installed
+  protection on an unpublished key. Persist and actually open the candidate before
+  P09; retry exact records, install only genuine committed epochs, retain Conflict
+  and original results through explicit ACK. Local crash recovery is not independent
+  backup or approval of a production publication policy.

@@ -5,12 +5,169 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Effect, Result } from 'effect';
+import { decodeRecord } from '@lody/e2ee-core/ledger';
+import { signLedgerSnapshot, type SnapshotTrust } from '@lody/e2ee-core/ledger/snapshot';
+import { labSyntheticProtector } from '../src/platform/synthetic-protection';
+import { openLabExistingWorkspace } from '../src/platform/workspace-session';
 import { expect, it } from 'vitest';
 import { makeLabScenarioFixture } from '../src/platform/scenario-fixture';
 import {
   openLabWorkspaceSession,
   reauthenticateLabWorkspaceSession,
 } from '../src/platform/full-session';
+it('starts and reopens an authenticated workspace from an independently qualified snapshot without reading its old control prefix', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-workspace-snapshot-origin-'));
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const f = yield* makeLabScenarioFixture(join(root, 'fixture'));
+          const signed = yield* signLedgerSnapshot({ signer: f.owner, ledger: f.ledger });
+          const original = Result.getOrThrow(decodeRecord(f.records[0]!));
+          if (original.body.type !== 'genesis') throw new Error('genuine genesis required');
+          const trust: SnapshotTrust = {
+            source: 'external-confirmation',
+            genesis: f.genesis,
+            head: f.point().head,
+            length: f.point().length,
+            endorser: f.owner.publicKey,
+            membershipId: original.body.membershipId,
+            role: 'owner',
+            kind: 'personal',
+            headSignature: signed.headSignature,
+          };
+          const selected = yield* Effect.tryPromise({
+            try: () =>
+              fetch(
+                `${f.server.baseUrl}/ds/${Buffer.from(f.genesis.toBytes()).toString('hex')}/control`,
+                { method: 'HEAD' }
+              ),
+            catch: (cause) => cause,
+          });
+          const offset = selected.headers.get('stream-next-offset');
+          yield* Effect.promise(() => selected.body?.cancel() ?? Promise.resolve());
+          if (!selected.ok || !offset) throw new Error('actual transport origin required');
+          const requested: string[] = [];
+          const transport: typeof fetch = (value, init) => {
+            const url = new URL(value instanceof Request ? value.url : String(value));
+            if (url.pathname.endsWith('/control') && (init?.method ?? 'GET') === 'GET') {
+              requested.push(url.searchParams.get('offset') ?? '');
+              if (url.searchParams.get('offset') === '-1')
+                return Promise.reject(new Error('snapshot startup must not replay the old prefix'));
+            }
+            return fetch(value, init);
+          };
+          const config = {
+            ...f.input('owner', 'create'),
+            fetch: transport,
+            snapshot: { bytes: signed.snapshot, trust, offset },
+          };
+          const first = yield* openLabExistingWorkspace(config);
+          expect((yield* first.control.current()).view.head.equals(trust.head)).toBe(true);
+          expect(requested).toEqual([offset]);
+          yield* first.close();
+          const reopened = yield* openLabExistingWorkspace({
+            ...config,
+            mode: 'open',
+            expected: f.point(),
+          });
+          expect((yield* reopened.control.current()).offset).toBe(offset);
+          expect(requested).toEqual([offset, offset]);
+          const disk = new Database(config.path, { readonly: true });
+          try {
+            expect(disk.prepare('SELECT COUNT(*) AS n FROM snapshot_feed_records').get()).toEqual({
+              n: 0,
+            });
+          } finally {
+            disk.close();
+          }
+        })
+      )
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 15000);
+it('publishes and installs real new epochs, distributes them, resumes current-epoch document writes and reopens retained candidates', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-real-epoch-publisher-'));
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const f = yield* makeLabScenarioFixture(join(root, 'fixture'));
+          const original = f.input('owner', 'create');
+          const input = {
+            ...original,
+            epochRotation: {
+              path: join(root, 'owner-candidates.sqlite'),
+              mode: 'create' as const,
+              protector: labSyntheticProtector,
+            },
+          };
+          const owner = yield* openLabWorkspaceSession(input);
+          const peer = yield* openLabWorkspaceSession(f.input('peer', 'create'));
+          yield* owner.keyRound();
+          yield* peer.keyRound();
+          yield* owner.createDocument('loro');
+          yield* owner.append('loro', 'epoch zero');
+          yield* peer.pull('loro');
+
+          const first = yield* owner.rotateEpoch();
+          expect(first.outcome).toBe('Committed');
+          expect(first.epoch).toBe(1);
+          expect(first.binding).toBe('current');
+          const publication = Result.getOrThrow(decodeRecord(first.record));
+          expect(publication.body.type).toBe('ordinary');
+          if (publication.body.type !== 'ordinary') throw new Error('ordinary publication');
+          expect(publication.body.operation.type).toBe('publishEpoch');
+          expect((yield* owner.resumeEpochRotation())?.record).toEqual(first.record);
+          yield* owner.acknowledgeEpochRotation(first);
+          yield* owner.keyRound();
+          yield* peer.keyRound();
+          yield* owner.append('loro', ' / epoch one');
+          yield* peer.pull('loro');
+          expect(yield* peer.text('loro')).toBe('epoch zero / epoch one');
+
+          // A real device revocation requires a further publication before new
+          // writes. The publisher clears that state through the existing E7.
+          const revoked = yield* owner.submit({ _tag: 'RevokeDevice', target: f.peer.publicKey });
+          yield* owner.acknowledge(revoked);
+          expect((yield* owner.current()).view.inspectState().epoch.rotationRequired).toBe(true);
+          const second = yield* owner.rotateEpoch();
+          expect(second.epoch).toBe(2);
+          expect(second.outcome).toBe('Committed');
+          expect((yield* owner.current()).view.inspectState().epoch.rotationRequired).toBe(false);
+          yield* owner.acknowledgeEpochRotation(second);
+          yield* owner.append('loro', ' / epoch two');
+          yield* owner.pull('loro');
+
+          const reopened = yield* reauthenticateLabWorkspaceSession(owner, input, f.point());
+          expect(yield* reopened.resumeEpochRotation()).toBeNull();
+          expect(yield* reopened.text('loro')).toBe('epoch zero / epoch one / epoch two');
+          expect(yield* reopened.cursor('loro')).not.toBeNull();
+          const disk = new Database(input.epochRotation.path, { readonly: true });
+          try {
+            const rows = disk
+              .prepare(
+                'SELECT epoch,record,outcome,consumed FROM epoch_rotation_candidates ORDER BY epoch'
+              )
+              .all() as { epoch: number; record: Uint8Array; outcome: string; consumed: number }[];
+            expect(rows.map((row) => [row.epoch, row.outcome, row.consumed])).toEqual([
+              [1, 'Committed', 1],
+              [2, 'Committed', 1],
+            ]);
+            expect(new Uint8Array(rows[0]!.record)).toEqual(first.record);
+            expect(new Uint8Array(rows[1]!.record)).toEqual(second.record);
+          } finally {
+            disk.close();
+          }
+        })
+      )
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 15000);
 it('starts real admitted peers, installs HPKE keys/reports, syncs both SDK models and reauthenticates one common owner', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-full-session-'));
   try {

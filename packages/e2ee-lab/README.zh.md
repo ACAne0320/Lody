@@ -135,3 +135,14 @@ Control 复用具体 SDK adapter 同次验证的 genuine view，不再重放同�
 [组合 Note](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.zh.md#模块与验证边界)
 及[来源记录](migration-provenance.json)。完整旧 checkpoint 流水保留于
 [Git 5ab9394](https://github.com/LodyAI/Lody/blob/5ab9394392a3577a76b14ab0552c33f755b3ce48/packages/e2ee-lab/README.zh.md)。
+
+## 本地换代与显式快照启动
+
+完整会话可选 `epochRotation: { path, mode, protector }`，初始化独立的本地候选 owner。
+`rotateEpoch`、`resumeEpochRotation`、`acknowledgeEpochRotation` 共用 control actor 的
+P09 日志及接收器唯一 installed 存储；文档每次从真实账本选择当前代再固定本次加密。
+实际流程覆盖发布、安装、分发与重开，不承诺独立备份或发布设备永久丢失恢复。
+
+现有工作区启动可选 `snapshot: { bytes, trust, offset }`。认证前先捕获并验证独立资格；
+metadata 不能选择权限。重开仍需相同显式起点和独立预期终点。读取启动无需重放旧前缀；
+P09 写入仍独立验证全历史。生产资格取得、受保护内容快照和 snapshot-only 写入尚未完成。

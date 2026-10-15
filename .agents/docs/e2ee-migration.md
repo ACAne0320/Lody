@@ -27,7 +27,7 @@ No legacy JSON journal import, schema upgrade, dual decoder or metadata-prefix g
 
 - Resumable workspace creation, independent trusted-checkpoint acquisition and durable host crash/lost-ACK closure.
 - Final authenticated content-snapshot position/format and actual authorized history-retention/read APIs.
-- Atomic member-removal/new-epoch producer encoding, candidate recoverability/backup exception and recovery vault decisions.
+- Atomic member-removal encoding, independent candidate backup/permanent-device-loss policy and recovery vault decisions. Local candidate persistence, original-byte publication and crash recovery are implemented.
 - Exact-original replay entropy and remaining original actor/attack scenarios; pure comparison is not execution coverage.
 - Comparison-note authority, strict deadlineB, real native protector and private product wiring.
 
@@ -36,3 +36,5 @@ RestrictedA approves initialization-time protection of verified installed keys o
 ## Delivery
 
 Use the existing native stack #1490 and PR scope. Maximum24 migration PRs; all remain Draft until explicitly changed by the user. This cleanup stays in [#1557](https://github.com/LodyAI/Lody/pull/1557), preserves earlier heads as ancestors and changes no product activation or release. Accurate head/base and checks live in each PR and fixed delivery report; this page does not duplicate a live pin table.
+
+Explicit qualified snapshot-origin read/startup and reopen now use the public snapshot verifier and a separate byte/suffix feed. Qualification acquisition remains external; P09 still audits full history for writes.

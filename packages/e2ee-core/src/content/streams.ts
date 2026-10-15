@@ -30,7 +30,8 @@ export function makeStreamsUpdateBinding(input: {
   readonly genesis: Bytes.GenesisHash;
   readonly resource: string;
   readonly model: 'loro' | 'flock';
-  readonly writeEpoch: number;
+  /** A number pins writes to that epoch; current selects from each genuine ledger read. */
+  readonly writeEpoch: number | 'current';
   readonly signer: DeviceSigner;
   readonly ledger: () => Effect.Effect<LedgerView, unknown>;
   /** Each successful read transfers a fresh owned opaque epoch key; never return a store's borrowed key. */
@@ -38,7 +39,10 @@ export function makeStreamsUpdateBinding(input: {
 }) {
   return Effect.gen(function* () {
     const anchor = yield* Effect.fromResult(Bytes.genesisHash(input.genesis.toBytes()));
-    const epoch = yield* Effect.fromResult(Bytes.epochNumber(input.writeEpoch));
+    const writeEpoch =
+      input.writeEpoch === 'current'
+        ? 'current'
+        : yield* Effect.fromResult(Bytes.epochNumber(input.writeEpoch));
     const resource = input.resource;
     const model = input.model;
     if (model !== 'loro' && model !== 'flock') return yield* error('invalid-streams-model');
@@ -79,7 +83,9 @@ export function makeStreamsUpdateBinding(input: {
         const view = yield* lookup().pipe(Effect.mapError(() => error('unauthorized')));
         yield* guard();
         // Authenticate provenance before inspecting any view field.
-        yield* Effect.fromResult(epochHistoryPacket(view, epoch));
+        yield* Effect.fromResult(requireLedgerContinuation(view, view));
+        if (writeEpoch !== 'current')
+          yield* Effect.fromResult(epochHistoryPacket(view, writeEpoch));
         if (!anchor.equals(view.genesis)) return yield* error('content-context-mismatch');
         if (observed) yield* Effect.fromResult(requireLedgerContinuation(observed, view));
         observed = view;
@@ -142,6 +148,8 @@ export function makeStreamsUpdateBinding(input: {
               (plaintext) =>
                 Effect.gen(function* () {
                   const view = yield* ledger();
+                  const epoch =
+                    writeEpoch === 'current' ? view.inspectState().epoch.number : writeEpoch;
                   const sealed = yield* withKey(view, epoch, (key) =>
                     sealDocument({
                       scope: scope(epoch),

@@ -192,8 +192,15 @@ This change does not connect snapshot-first joining or make SQL a trust authorit
 Production still needs independently qualified snapshot/checkpoint acquisition,
 resumable genesis creation, the gated epoch/removal producer, protected content
 snapshots, vault/backup decisions, strict deadline B and actual platform custody.
-A required rotation currently blocks new seals until the separately unfinished
-publisher supplies a valid next epoch; this is a production blocker, not a
-claim of completed revocation recovery. There is no product consumer or activation
+The explicit local candidate publisher now generates, durably retains and
+submits an E7 through P09, then installs the verified committed key. This permits
+Lab revocation recovery and current-epoch writes. Independent backup policy and
+atomic member removal remain unresolved production gates. There is no product consumer or activation
 change. See the
 [verification decision](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#verification-work).
+
+Local publisher recovery is explicit under
+[`./keys/host/rotation/sqlite`](src/keys/HOST-PROTECTION.md#local-publisher-candidates).
+The independent snapshot-origin reader is documented under
+[`./ledger/feed/snapshot/sqlite`](src/ledger/FEED.md#independently-qualified-snapshot-origin).
+Neither creates a production consumer or changes the portable root exports.

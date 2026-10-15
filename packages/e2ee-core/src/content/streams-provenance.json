@@ -26,11 +26,12 @@
     "Genuine historical author and current seal/rotation checks use public content workflows; exact epoch commitment checked before leaf derivation.",
     "Each key read transfers a fresh owned opaque epoch capability; leaf/epoch cleanup bracket all exits. Scope closes admission, awaits active leases and rejects late plaintext/ciphertext.",
     "Retain secure host randomness and existing header3/v0 algorithms; no nonce override or snapshot format invented.",
-    "2026-10-14 concentrated consumers: fixed current-writer host admission; exact released SDK0.17 header3 batches only; no snapshot format/algorithm/domain change. Original source fingerprints retained."
+    "2026-10-14 concentrated consumers: fixed current-writer host admission; exact released SDK0.17 header3 batches only; no snapshot format/algorithm/domain change. Original source fingerprints retained.",
+    "Explicit current-epoch seal selection from a genuine view; each seal fixes that epoch through final authority check. Numeric fixed mode and historical reads remain."
   ],
   "destinationFingerprints": {
-    "src/content/streams.ts": "a93af6df29f961ced96c773a3257af1d17f80f33a8be7b06037845819f949060",
-    "test/crypto.test.ts": "b9bf55078c8820bf179a09d2cfe97b1f45b871c4d3db078fbf981fcf27fffd87"
+    "src/content/streams.ts": "ccfe3728df56bd6eb9e6721be51541b13fd781f230dcbb8fe2fb56205892d17f",
+    "test/crypto.test.ts": "511b51799d3cb184d79e816e71ef287b7d07caf168add7c795630fe60b036076"
   },
   "sourceState": "Original and candidate sources are read-only; exact source-specific fingerprints from the complete manifest. Frozen working copy fingerprints below.",
   "workingCopyFingerprints": {

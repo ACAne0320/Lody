@@ -142,7 +142,7 @@ genuine read result rather than replaying the same history twice.
 
 - Resumable workspace creation and independently acquired durable host checkpoints.
 - Protected content-snapshot position/format, qualification and retained-history API.
-- Durable new-epoch/removal producers, candidate backup policy and recovery vault.
+- Atomic member-removal producer, independent candidate backup policy and recovery vault. Local E7 publication/retry is implemented.
 - Exact entropy/ciphertext regeneration, remaining original actors/attacks and confidentiality measurements.
 - Comparison-note authority, strict freshness B, native key custody and product wiring.
 
@@ -154,3 +154,19 @@ See the [manifest](../../.agents/docs/e2ee-migration-manifest.json),
 [composition note](../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#module-and-validation-boundaries)
 and [provenance](migration-provenance.json). Full earlier checkpoints remain in
 [Git at 5ab9394](https://github.com/LodyAI/Lody/blob/5ab9394392a3577a76b14ab0552c33f755b3ce48/packages/e2ee-lab/README.md).
+
+## Local publication and explicit snapshot startup
+
+An optional `epochRotation: { path, mode, protector }` initializes a separate local
+candidate owner in the full workspace session. `rotateEpoch`, `resumeEpochRotation`
+and `acknowledgeEpochRotation` reuse the control actor's P09 journal and the one
+receiver-owned installed-key store. Document seals select the current genuine
+epoch. This covers real publication, installation, distribution and restart, not
+independent candidate backup or permanent device loss.
+
+An optional `snapshot: { bytes, trust, offset }` selects an independently qualified
+origin in existing-workspace startup. Capture/verify precedes authentication;
+metadata cannot choose authority. Reopening requires the same explicit origin and
+an independent expected endpoint. Read startup avoids the old control prefix;
+P09 writes still require full-history verification. Production trust acquisition,
+protected content snapshots and snapshot-only writes remain incomplete.

@@ -46,3 +46,17 @@ Lab 会话及进程/CLI 命令接通稳定 ID repair、各阶段独立分页和�
 [Core](../../../../packages/e2ee-core/README.md) 拥有协议基础，[Lab](../../../../packages/e2ee-lab/README.zh.md) 用发布 SDK、合成保护、真实 SQLite/HTTP 和进程故障消费这些入口；它不是产品组装或真实 Keychain 验收。[Manifest](../../../docs/e2ee-migration-manifest.json) 保留来源 SHA、去向及未完成项。作者测试、独立审查、准确 head CI 与生产验收分别归属。
 
 按切片累计的进度 Note 直接移除，不再复制一份仓库内归档。原文固定保存在 [15d35f75 历史](https://github.com/LodyAI/Lody/tree/15d35f75cd702f9d8846a73f03636ce4afce1d80/.agents/notes)。本次合并本身不改变协议批准或运行行为。
+
+## 补齐本地发布与显式快照消费者
+
+旧库的本地换代流程通过独立初始化的 candidate protector 迁入，不扩张受限 installed-key A。
+受保护候选和原签名先落盘、实际读回，再调用 P09；丢回执或重开继续原件。
+真实承诺和 installed 保存/重读完成后才返回 Committed；显式确认仍保留历史原件。
+Publisher 借用 installed 读钥时不持有 control actor 的许可，因为读钥会刷新同一 actor。
+完整会话拥有关闭流程；文档按当前代加密并在异步签名后重新核对。
+独立备份与发布设备永久丢失政策继续保留为提案。
+
+快照消费者现在接收显式独立合资格的签名起点，只保存其原字节、真实 suffix 和游标。
+每次重开重新提供资格。认证工作区在原生认证前捕获资格，可不读 genesis 前缀而启动读取。
+Offset 和 SQL 不选择权限，P09 写入仍验证全历史。这不改变 snapshot wire 或资格规则，
+也不代表生产信任取得已完成。

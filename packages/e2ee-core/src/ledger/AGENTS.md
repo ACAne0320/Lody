@@ -30,3 +30,8 @@ Follow the package [boundary](../../AGENTS.md) and [record/replay contract](READ
 - I/O owners use cooperative fixed-native verification; the same pure replay owns
   authority. Persisted bytes are fully reverified on open. SQL version counters
   detect changes after a complete audit; they never establish ledger trust.
+
+- Explicit `./ledger/feed/snapshot/sqlite` begins only at independently qualified
+  signed snapshot bytes and an explicit transport locator. Requalify on every open;
+  persist exact snapshot/suffix/position together. No SQL-chosen endorser, unknown
+  prefix skipping or implied snapshot-only P09/CAS authorization.

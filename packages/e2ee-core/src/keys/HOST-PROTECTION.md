@@ -15,3 +15,39 @@ Validation uses synthetic authenticated encryption, real SQLite, independent-pro
 Restricted A was user-approved on 2026-10-12; [scope and platform gaps](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#installed-key-protection) remain explicit. Successful open transfers the opaque key; scratch/native-return copies are cleared, not adapter-retained copies. Cold restore of an installed key never requires its sender to remain active. Historical-envelope restore B and production composition are not authorized.
 
 Observe genuine fixed-Org/known-prefix authority before epoch/recipient rejection. Verified observations survive failed pin writes in the same owner. Durable success requires exactly one updated metadata row and exact bounded Org/recipient/head/count readback; rollback never claims cross-process memory. Installed old-key reads after sender revocation remain distinct from fresh envelope acceptance.
+
+## Local publisher candidates
+
+`./keys/host/rotation/sqlite` initializes `makeSqliteEpochRotation` once with fixed
+Org, publisher/signer, genuine ledger lookup, borrowed installed store and a
+separate trusted native protector. The local candidate payload authenticates its
+own purpose, Org, publisher, parent/count, epoch, commitment, record hash, exact
+signed record and key. It is not the installed-key payload, a mailbox wire change,
+a vault or an independent backup. No real platform backend is selected.
+
+`publish` first resumes an existing candidate. Otherwise a current Owner/Admin
+personal device reads its actual previous installed key, generates secure host
+randomness, seals the established history packet and signs the existing E7 record.
+The protected candidate is inserted and actually opened from SQLite before P09 may
+submit it. Concurrent first attempts can generate separate transient candidates;
+only the one stored active original may be submitted. No cross-process promise
+of a single random generation is made. A retained candidate never regenerates or
+re-signs on retry.
+
+`resume` needs no signing operation: it reconciles the exact original through P09.
+Committed bytes must be present at the genuine exact position and match the epoch
+packet before actual installed save/reload/read verification. Conflict never
+installs the candidate. `binding` records the first confirmed local attempt;
+later genuine epoch advancement is revalidated without falsifying that history.
+`result` is local attempt history, not fresh authorization or current possession.
+
+Explicit `acknowledge` reconciles that same terminal result, acknowledges P09 and
+marks the candidate consumed with transactional readback. If the second write
+fails, retry the same result; acknowledged originals and protected blobs remain.
+The Lab actor persists its real feed before exposing that result for ACK. Close
+rejects new operations, waits native settlement and owned-key cleanup, then closes
+SQLite. No database transaction spans crypto or network I/O.
+
+This restores process-crash and lost-ACK behavior from the old workflow, not
+recovery after permanent loss of the publishing device. Independent backup gates,
+vault policy, emergency exceptions and member removal remain separate decisions.

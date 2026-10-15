@@ -125,3 +125,12 @@ only a genuine missing old key; corrupt/native/permission failures remain errors
 Partial storage success remains failure and is reconciled idempotently. This is
 installed-key history restoration, not an epoch publisher, vault or historical
 sender-envelope restoration, and it creates no delivery report.
+
+## Explicit local epoch publication
+
+`./keys/host/rotation/sqlite` migrates local candidate generation, durable original
+publication, exact retry and installation. It borrows the existing P09 journal and
+remote, the actual installed-key store and an independently verified ledger
+supplier. Its candidate protector is a separate initialization-time host boundary;
+restricted installed-key approval A cannot protect an unpublished candidate.
+See [publisher contract](HOST-PROTECTION.md#local-publisher-candidates).

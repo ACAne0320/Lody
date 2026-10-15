@@ -4,11 +4,11 @@
   "sourceManifest": "../../.agents/docs/e2ee-migration-manifest.json",
   "sourceScope": "Manifest items and sourceSpecific exports retain every pinned core/candidate source SHA. This file does not duplicate those registries.",
   "currentIdentity": "src/platform/evidence.ts computes actual Lab source/release hashes for each evidence pack; exact implementation is also identified by its Git tree.",
-  "implementation": "Public core and released SDK consumers only; one native Effect phase path, one owned Node/SDK callback bridge, one receiver-owned protected store. No copied core or prototype volatile cache.",
+  "implementation": "Public core/released SDK consumers; native Effect phase and owned callback bridge, one receiver-owned installed store. Local E7 candidate publisher and explicit independently qualified snapshot-origin read/reopen reuse those owners; no copied core.",
   "boundaries": [
     "Synthetic Lab identity and known-key protection, not production custody",
-    "Existing full signed control prefixes and independently pinned checkpoints",
-    "Header3 updates only; snapshot/vault/epoch publisher decisions remain unimplemented",
+    "Existing control with independently pinned full history or explicitly qualified snapshot origin for reads; P09 writes still independently verify complete history",
+    "Header3 updates with current-epoch sealing; local candidate publication implemented, independent backup/vault and protected content snapshot decisions remain unimplemented",
     "Finite real process/action/CLI observations, not exact entropy replay or whole security proof"
   ],
   "historicalExtraction": "Full source/target registry and earlier stage evidence remain at Git commit5ab9394392a3577a76b14ab0552c33f755b3ce48; old failures are not rewritten."

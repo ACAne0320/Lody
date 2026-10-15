@@ -68,7 +68,10 @@ sleeps, real keys or physical-device claims are involved.
 `./content/streams` adds `makeStreamsUpdateBinding`, an Effect-native header3 update
 codec typed against published streams-crdt 0.16.2. Its initialization Scope closes
 admission, awaits active operations and rejects late output. The independently
-selected Org/resource/model/write epoch and fixed signer are captured once. Each
+selected Org/resource/model and fixed signer are captured once. A numeric
+`writeEpoch` remains fixed; explicit `writeEpoch: 'current'` selects the genuine
+current epoch for each seal, then binds that operation through its final authority
+check. A change during signing fails instead of silently re-encrypting. Each
 key read must transfer a fresh owned opaque epoch key; the codec verifies its real
 ledger commitment before deriving a scoped leaf and clears both after use.
 Historical signatures are checked before untrusted frame epochs can request keys.

@@ -81,3 +81,24 @@ checks actual changes and all final metadata, including genesis, after its last
 DML. Changed schemas, triggers or external writes retain full-history readback.
 This avoids a normal O(N) write scan without treating counters or SQL metadata as
 a trusted checkpoint. No snapshot bootstrap or skipped signature check is added.
+
+## Independently qualified snapshot origin
+
+`./ledger/feed/snapshot/sqlite` adds `makeSqliteSnapshotLedgerFeed`. Create/open
+requires an explicit genesis, signed snapshot bytes, existing full `SnapshotTrust`
+or a genuine same-point token, an opaque origin offset, and an independently
+expected endpoint. The offset locates bytes only. No database row selects an
+endorser, role, membership or current checkpoint.
+
+Create verifies the snapshot at its exact point. Accept uses the same genuine
+suffix/page verifier with bootstrap disabled: it cannot skip unknown prefixes or
+deduplicate old records. Original suffixes and position commit atomically, with
+final metadata and byte comparison after the last DML. Open requalifies the
+caller-supplied snapshot and verifies all retained suffixes against the separately
+expected endpoint. Unsupported stores are refused without conversion.
+
+The Lab ledger client and authenticated existing-workspace session can explicitly
+select this origin. Startup and read-only refresh need no genesis-prefix replay;
+P09 writes still independently verify full history through their unchanged remote.
+This does not acquire production trust, authenticate an offset inside a new wire
+format, enable protected content snapshots, or implement snapshot-only CAS.

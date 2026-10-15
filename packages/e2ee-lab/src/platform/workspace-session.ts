@@ -2,7 +2,9 @@ import { StreamsClient } from '@loro-dev/streams-client';
 import { Effect, Exit, Scope } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 import { hashRecordBytes, type LedgerCheckpoint } from '@lody/e2ee-core/ledger';
-import { LedgerFeedError } from '@lody/e2ee-core/ledger/feed';
+import { LedgerFeedError, validLedgerOffset } from '@lody/e2ee-core/ledger/feed';
+import { verifyLedgerSnapshot, snapshotTrustFromView } from '@lody/e2ee-core/ledger/snapshot';
+import type { SnapshotFeedOrigin } from '@lody/e2ee-core/ledger/feed/snapshot/sqlite';
 import type { DeviceSigner } from '@lody/e2ee-core/signing';
 import { makeLabHttpIdentity } from './http-identity';
 import { makeLabLedgerActor } from './ledger-actor';
@@ -22,6 +24,9 @@ export const openLabExistingWorkspace = Effect.fnUntraced(function* (input: {
   readonly expected?: LedgerCheckpoint;
   readonly checkpoint: () => Effect.Effect<LedgerCheckpoint, LedgerFeedError>;
   readonly budget: { readonly maxRecords: number; readonly maxBytes: number };
+  /** Independently qualified exact origin; offset is only a transport locator.
+   * P09 writes still verify complete history independently. */
+  readonly snapshot?: SnapshotFeedOrigin;
   readonly fetch?: typeof fetch;
 }) {
   // Capture every mutable caller binding before the first native operation.
@@ -42,6 +47,36 @@ export const openLabExistingWorkspace = Effect.fnUntraced(function* (input: {
   if (mode !== 'create' && mode !== 'open')
     return yield* new LedgerFeedError({ code: 'invalid-frame' });
   if (mode === 'open' && !expected) return yield* new LedgerFeedError({ code: 'wrong-parent' });
+  const snapshotOrigin = input.snapshot;
+  let snapshot: SnapshotFeedOrigin | undefined;
+  let snapshotPoint: LedgerCheckpoint | undefined;
+  if (snapshotOrigin) {
+    const candidate = snapshotOrigin.bytes,
+      offset = snapshotOrigin.offset,
+      suppliedTrust = snapshotOrigin.trust;
+    if (
+      !(candidate instanceof Uint8Array) ||
+      !candidate.length ||
+      candidate.length > 2 * 1024 * 1024 ||
+      !validLedgerOffset(offset)
+    )
+      return yield* new LedgerFeedError({ code: 'invalid-frame' });
+    const bytes = new Uint8Array(candidate);
+    const view = yield* Effect.fromResult(
+      verifyLedgerSnapshot({ snapshot: bytes, trust: suppliedTrust })
+    );
+    if (!view.genesis.equals(genesis)) return yield* new LedgerFeedError({ code: 'wrong-parent' });
+    // Capture external qualification as a private genuine-view token before HTTP
+    // awaits; caller mutation cannot switch endorsers or positions during auth.
+    const trust =
+      suppliedTrust.source === 'verified-view'
+        ? suppliedTrust
+        : yield* Effect.fromResult(
+            snapshotTrustFromView(view, suppliedTrust.endorser, suppliedTrust.headSignature)
+          );
+    snapshot = Object.freeze({ bytes, offset, trust });
+    snapshotPoint = { head: view.head, length: view.length };
+  }
   const scope = yield* Scope.make();
   // Parent release, failed acquisition and explicit close share the same completion.
   // A second Scope.close alone would not wait for the first close's finalizers.
@@ -66,7 +101,10 @@ export const openLabExistingWorkspace = Effect.fnUntraced(function* (input: {
         mode,
         budget,
         expected:
-          mode === 'create' ? { head: hashRecordBytes(original.record), length: 1 } : expected!,
+          mode === 'create'
+            ? (snapshotPoint ?? { head: hashRecordBytes(original.record), length: 1 })
+            : expected!,
+        snapshot,
         checkpoint,
         signer,
         stream: { read: sdk.read.bind(sdk), appendCas: sdk.appendCas.bind(sdk) },

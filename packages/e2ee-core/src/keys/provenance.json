@@ -34,5 +34,27 @@
     "file": "src/keys/installed-history.ts",
     "sha256": "235e960d8c928213d243742810bcc421d8806754d2ba59f47e48390032d1d952",
     "scope": "New composition of public recoverLedgerHistory and unchanged installed protected store; all crypto preflight before durable saves; owned opaque cleanup, known-prefix memory; no candidate/vault/B or new wire."
+  },
+  "localEpochPublisher": {
+    "sourceFiles": {
+      "packages/e2ee-core/src/ports/epoch-rotation.ts": {
+        "core": "3daf93950a8824d29c22320c31317c63e0b8c9c77deefa9f4659764861753573",
+        "candidate": "3daf93950a8824d29c22320c31317c63e0b8c9c77deefa9f4659764861753573"
+      },
+      "packages/e2ee-core/src/pure/epoch-candidate.ts": {
+        "core": "0a59b3815b4ee23183b4bb79836489a126f547b9f98c03c8f40a114fcf563f7e",
+        "candidate": "0a59b3815b4ee23183b4bb79836489a126f547b9f98c03c8f40a114fcf563f7e"
+      },
+      "packages/e2ee-core/src/workflows/epoch-rotation.ts": {
+        "core": "b6f661aa27eebca4bcd26244884314cb41c3b213bf6e5d8d62be8d2f59c7f6e9",
+        "candidate": "b6f661aa27eebca4bcd26244884314cb41c3b213bf6e5d8d62be8d2f59c7f6e9"
+      }
+    },
+    "targets": {
+      "src/keys/epoch-rotation.ts": "c31b2cf8ff8f6749934ae46ca6b597575b7fb8fef30e7442bce90f0b2d434d4b",
+      "test/keys/epoch-rotation.test.ts": "4852dca58a2377538ee5f0539b93557c855d14f9682c2186680fc75b9006b6e5",
+      "test/keys/rotation-reopen.mts": "c2ab2408d45046a62e93f0ba0ac4a5dc6ef7e2f34ea5f0a2966e7cd49774d47b"
+    },
+    "scope": "Current-format local candidate protection, original E7/P09 persistence/retry and installation; new local payload purpose only, no ordinary secret export, legacy import, independent backup, vault, emergency policy or production adapter."
   }
 }

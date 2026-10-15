@@ -4,6 +4,7 @@ import { prepareLedgerCommand, type LedgerCommand } from '@lody/e2ee-core/ledger
 import { signLedgerRecord } from '@lody/e2ee-core/ledger/signing';
 import { hasVerifiedCheckpoint, type LedgerCheckpoint } from '@lody/e2ee-core/ledger';
 import type { DeviceSigner } from '@lody/e2ee-core/signing';
+import { makeSqliteEpochRotation } from '@lody/e2ee-core/keys/host/rotation/sqlite';
 import {
   SubmissionJournal,
   SubmissionRemote,
@@ -106,7 +107,9 @@ export function makeLabLedgerActor(
     );
     const guard = () =>
       closed ? Effect.fail(new LabLedgerActorError({ code: 'closed' })) : Effect.void;
-    const provide = <A, E>(work: Effect.Effect<A, E, SubmissionJournal | SubmissionRemote>) =>
+    const provide = <A, E, R>(
+      work: Effect.Effect<A, E, R | SubmissionJournal | SubmissionRemote>
+    ) =>
       work.pipe(
         Effect.provideService(SubmissionJournal, journal),
         Effect.provideService(SubmissionRemote, remote)
@@ -120,6 +123,35 @@ export function makeLabLedgerActor(
     return Object.freeze({
       current: client.current,
       refresh: () => serial.withPermit(refresh()),
+      /** Shares this actor's P09 journal and persisted genuine feed. Candidate
+       * protection is a separate explicit host capability, never installed-key A. */
+      makeEpochRotation: (
+        config: Pick<
+          Parameters<typeof makeSqliteEpochRotation>[0],
+          'path' | 'mode' | 'installed' | 'protector'
+        >
+      ) =>
+        Effect.gen(function* () {
+          yield* guard();
+          const publisher = yield* provide(
+            makeSqliteEpochRotation({
+              ...config,
+              genesis: anchor,
+              signer,
+              ledger: () => refresh().pipe(Effect.map((current) => current.view)),
+            })
+          );
+          // The publisher serializes itself. Do not hold the actor permit while
+          // it borrows installed-key reads: their genuine lookup refreshes this
+          // same actor. P09 still rejects any competing original atomically.
+          return Object.freeze({
+            publish: () => guard().pipe(Effect.andThen(publisher.publish())),
+            resume: () => guard().pipe(Effect.andThen(publisher.resume())),
+            result: () => guard().pipe(Effect.andThen(publisher.result())),
+            acknowledge: (result: Parameters<typeof publisher.acknowledge>[0]) =>
+              guard().pipe(Effect.andThen(publisher.acknowledge(result))),
+          });
+        }),
       execute: (command: LedgerCommand) =>
         Effect.gen(function* () {
           const owned = yield* Effect.fromResult(captureCommand(command));

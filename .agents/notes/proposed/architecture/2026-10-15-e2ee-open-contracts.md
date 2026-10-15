@@ -20,14 +20,14 @@ does not approve any item below.
 | [Atomic removal](../../../../specs/e2ee/atomic-removal.md) | One removal+epoch record and one CAS are settled; final operation/snapshot encoding and authenticated position are not. No old-client capability or downgrade mechanism is required. |
 | [Recovery vault](../../../../specs/e2ee/recovery-vault.md) | Derivation/wrapping, concurrent CAS/reservation, retention and fresh recovery remain draft. Valid old ciphertext does not prove latest state. |
 | [Publisher recoverability](../../../../specs/e2ee/publisher-key-recoverability.md) | Independent pre-publication key backup versus accepting the first-delivery loss window remains undecided. Restricted installed-key protection does not approve candidate backup or recover management identity. |
-| Snapshot and checkpoint trust | Content continuation position needs authentication; production permission-snapshot qualification/current checkpoint sourcing and snapshot-first consumers are unfinished. Existing update binding or SQL caches do not supply those guarantees. |
+| Snapshot and checkpoint trust | Content continuation position needs authentication; production permission-snapshot qualification/current checkpoint sourcing remain unfinished; explicit qualified read/startup consumers now exist. Existing update binding or SQL caches do not supply those guarantees. |
 | Other product/protocol scope | Installed-history product scope, signed comparison notes, strict deadline B and entropy-based exact replay are separate decisions. Secure first sealing and existing ordinary tolerance remain unchanged. |
 
 ## Integration still unfinished
 
 The [manifest](../../../docs/e2ee-migration-manifest.json) owns detailed disposition.
 Remaining work includes resumable workspace creation/checkpoint durability, a durable
-epoch publisher under its backup contract, protected content snapshots, upstream
+independent publisher backup contract (local durable publication is implemented), protected content snapshots, upstream
 history retention/recovery, original model-driven attack/replay coverage, machine
 execution and other content consumers, real native protectors and product assembly.
 The tutorial has a Spec but no migrated application source. These gaps are not all

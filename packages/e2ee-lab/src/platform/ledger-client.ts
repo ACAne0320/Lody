@@ -7,14 +7,24 @@ import {
   type LedgerStreamReader,
 } from '@lody/e2ee-core/ledger/feed';
 import { makeSqliteLedgerFeed } from '@lody/e2ee-core/ledger/feed/sqlite';
+import {
+  makeSqliteSnapshotLedgerFeed,
+  type SnapshotFeedOrigin,
+} from '@lody/e2ee-core/ledger/feed/snapshot/sqlite';
+
+type FullHistoryInput = Parameters<typeof makeSqliteLedgerFeed>[0];
+type LabLedgerClientInput = { readonly stream: LedgerStreamReader } & (
+  | (FullHistoryInput & { readonly snapshot?: undefined })
+  | (Omit<FullHistoryInput, 'genesisRecord'> & { readonly snapshot: SnapshotFeedOrigin })
+);
 
 /** A scoped Lab client of public modules. Transport is borrowed; checkpoint
  * authority is supplied independently for each read. No private core or runtime. */
-export function makeLabLedgerClient(
-  input: Parameters<typeof makeSqliteLedgerFeed>[0] & { readonly stream: LedgerStreamReader }
-) {
+export function makeLabLedgerClient(input: LabLedgerClientInput) {
   return Effect.gen(function* () {
-    const feed = yield* makeSqliteLedgerFeed(input);
+    const feed = yield* input.snapshot
+      ? makeSqliteSnapshotLedgerFeed(input)
+      : makeSqliteLedgerFeed(input);
     const sourceRead = input.stream.read.bind(input.stream);
     let pageCalls = 0;
     const reader = yield* makeLedgerStreamReader({

@@ -585,3 +585,100 @@ describe('v1 snapshot byte cache with separate independent trust', () => {
     }
   });
 });
+
+describe('explicit snapshot-origin ledger consumer', () => {
+  it('uses released SDK suffix reads with independent qualification, atomically retries SQL failure and reopens without a genesis replay', async () => {
+    const f = await fixture(),
+      device = history(183),
+      path = join(f.dir, 'snapshot-origin.sqlite');
+    try {
+      const produced = await Effect.runPromise(
+        signLedgerSnapshot({ signer: f.owner, ledger: () => Effect.succeed(f.view) })
+      );
+      const origin = await f.sdk.read({ offset: '-1' });
+      if (!origin.ok) throw new Error('real Riverrun origin unavailable');
+      const snapshot = {
+        bytes: produced.snapshot,
+        trust: independentTrust(f, produced.headSignature),
+        offset: origin.result.nextOffset,
+      };
+      const config = {
+        path,
+        mode: 'create' as const,
+        genesis: f.anchor,
+        snapshot,
+        expected: f.checkpoint,
+        budget: { maxRecords: 100, maxBytes: 1024 * 1024 },
+        stream: f.sdk,
+      };
+      const record = await Effect.runPromise(
+        Effect.gen(function* () {
+          const command = yield* prepareDeviceAdmission({
+            genesis: f.anchor,
+            membershipId: f.membership,
+            kind: 'personal',
+            signer: device.owner,
+            encryptionPublicKey: ok(Bytes.encryptionPublicKey(new Uint8Array(32).fill(184))),
+          });
+          return yield* signLedgerRecord(
+            ok(prepareLedgerCommand(f.view, f.owner.publicKey, command)),
+            f.owner
+          );
+        })
+      );
+      expect(
+        (
+          await f.sdk.append({
+            part: { contentType: 'application/octet-stream', body: ok(frameLedgerRecord(record)) },
+          })
+        ).ok
+      ).toBe(true);
+      const expected = { head: hashRecordBytes(record), length: 3 };
+      let savedOffset = '';
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const client = yield* makeLabLedgerClient(config);
+            const initial = yield* client.current();
+            expect(initial.view.verification).toBe('endorsed-snapshot');
+            expect(initial.offset).toBe(snapshot.offset);
+            const db = new Database(path);
+            try {
+              db.exec(
+                'CREATE TRIGGER blocked BEFORE UPDATE ON snapshot_feed_meta BEGIN SELECT RAISE(IGNORE); END;'
+              );
+              expect(Result.isFailure(yield* Effect.result(client.read(expected)))).toBe(true);
+              expect(db.prepare('SELECT COUNT(*) AS n FROM snapshot_feed_records').get()).toEqual({
+                n: 0,
+              });
+              expect((yield* client.current()).offset).toBe(initial.offset);
+              db.exec('DROP TRIGGER blocked;');
+              const accepted = yield* client.read(expected);
+              savedOffset = accepted.offset;
+              expect(accepted.view.head.equals(expected.head)).toBe(true);
+              expect(accepted.view.inspectState().devices.size).toBe(2);
+              expect(db.prepare('SELECT record FROM snapshot_feed_records').all()).toEqual([
+                { record: Buffer.from(record) },
+              ]);
+            } finally {
+              db.close();
+            }
+          })
+        )
+      );
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const client = yield* makeLabLedgerClient({ ...config, mode: 'open', expected });
+            const reopened = yield* client.current();
+            expect(reopened.offset).toBe(savedOffset);
+            expect(reopened.view.head.equals(expected.head)).toBe(true);
+            expect((yield* client.read(expected)).offset).toBe(savedOffset);
+          })
+        )
+      );
+    } finally {
+      await f.close();
+    }
+  });
+});

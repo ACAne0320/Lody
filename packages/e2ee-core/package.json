@@ -29,7 +29,9 @@
     "./submission/streams": "./src/submission/streams.ts",
     "./keys/host/distribution/sqlite": "./src/keys/distribution-sqlite.ts",
     "./content/streams": "./src/content/streams.ts",
-    "./keys/host/history": "./src/keys/installed-history.ts"
+    "./keys/host/history": "./src/keys/installed-history.ts",
+    "./keys/host/rotation/sqlite": "./src/keys/epoch-rotation.ts",
+    "./ledger/feed/snapshot/sqlite": "./src/ledger/snapshot-feed-sqlite.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
