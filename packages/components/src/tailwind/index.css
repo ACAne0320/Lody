@@ -2129,6 +2129,70 @@ pre,
   }
 }
 
+/* A long desktop sidebar title only travels while its row is hovered or
+   keyboard-focused. The distance and duration come from the measured overflow,
+   so short labels keep their ordinary ellipsis and the full row layout stays put. */
+@keyframes sidebar-session-title-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--sidebar-title-distance));
+  }
+}
+
+[data-sidebar-session-row][data-sidebar-title-overflow='true']:hover [data-sidebar-session-title],
+[data-sidebar-session-row][data-sidebar-title-overflow='true']:focus-within
+  [data-sidebar-session-title] {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  animation: sidebar-session-title-marquee var(--sidebar-title-duration, 5s) ease-in-out 600ms
+    infinite alternate;
+  will-change: transform;
+}
+
+[data-sidebar-session-row][data-sidebar-title-overflow='true']:hover [data-sidebar-title-clip],
+[data-sidebar-session-row][data-sidebar-title-overflow='true']:focus-within
+  [data-sidebar-title-clip] {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sidebar-session-row][data-sidebar-title-overflow='true']:hover [data-sidebar-session-title],
+  [data-sidebar-session-row][data-sidebar-title-overflow='true']:focus-within
+    [data-sidebar-session-title] {
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    mask-image: none;
+    animation: none;
+    transform: none;
+    will-change: auto;
+  }
+}
+
+[data-sidebar-session-row][data-sidebar-title-overflow='true'][data-sidebar-title-swiping='true']
+  [data-sidebar-session-title] {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  animation: none;
+  transform: translateX(var(--sidebar-title-swipe-offset, 0px));
+  will-change: transform;
+  user-select: none;
+}
+
+[data-sidebar-session-row][data-sidebar-title-swiping='true'] [data-sidebar-title-clip] {
+  overflow: hidden;
+}
+
 /* Focus rings are for keyboard navigation. `installFocusModality` (@lody/ui)
    marks the document `pointer` until Tab or an arrow key moves focus, and zeroes
    `focus.ringWidth` for every StyleX ring; this does the same for the legacy
