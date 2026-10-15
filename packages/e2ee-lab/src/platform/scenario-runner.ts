@@ -10,6 +10,11 @@ import { executeLabActions, summarizeLabActions, type LabAction } from './action
 import { fingerprintOf } from '../pure/fingerprint';
 import { makeLabSdkOwner } from './sdk-owner';
 import { readBoundedBody } from './bounded-body';
+import type { ScheduleChoice } from '../pure/schedule';
+import { refStateFromOrg, refWriteExpectation } from '../pure/reference-model';
+import { makeLabContentTrace } from './content-trace';
+import { makeLabAttackObserver } from './attack-observer';
+import { judgeWriteObservation, worstVerdict } from '../pure/judge';
 export class LabScenarioError extends Data.TaggedError('LabScenarioError')<{
   readonly code: 'watchdog';
 }> {}
@@ -155,6 +160,7 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
   readonly directory: string;
   readonly actions?: readonly unknown[];
   readonly maxSteps?: number;
+  readonly schedule?: readonly ScheduleChoice[];
   readonly stop?: Effect.Effect<void>;
 }) {
   const directory = input.directory,
@@ -189,10 +195,60 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
         try: labImplementationIdentity,
         catch: (cause) => cause,
       });
-      const run = yield* executeLabActions({ actors, actions, maxSteps, stop });
-      const evidenceTransport = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
-      const ciphertext = [];
       const org = Buffer.from(fixture.genesis.toBytes()).toString('hex');
+      const trace = yield* makeLabContentTrace({ maxFacts: 256, maxTextBytes: 1024 * 1024 });
+      const writerMeasurements: {
+        action: number;
+        expected: 'allow' | 'deny' | 'unmeasured';
+        accepted: boolean;
+        refusal?: { readonly tag: string; readonly code: string };
+      }[] = [];
+      let observedActions = 0;
+      const run = yield* executeLabActions({
+        actors,
+        actions,
+        maxSteps,
+        stop,
+        schedule: input.schedule,
+        onObservation: (observation) =>
+          Effect.gen(function* () {
+            const action = observation.action;
+            const index = observedActions++;
+            if (action.kind !== 'call' || action.operation !== 'append') return;
+            const device =
+              action.actor === 'owner' ? fixture.owner.publicKey : fixture.peer.publicKey;
+            const deviceHex = Buffer.from(device.toBytes()).toString('hex');
+            // Facts come from independently witnessed original host records, not
+            // from the child or the implementation's write-permission function.
+            const facts = refStateFromOrg(org, fixture.view().inspectState());
+            const expected = refWriteExpectation(facts, deviceHex, org, facts.epoch);
+            writerMeasurements.push({
+              action: index,
+              expected,
+              accepted: observation.reply.ok,
+              refusal: observation.reply.error,
+            });
+            if (observation.reply.ok)
+              yield* trace.recordContentWrite({
+                genesisHex: org,
+                stream: action.document!,
+                deviceHex,
+                epoch: facts.epoch,
+                text: action.text!,
+                writerMayWrite: expected === 'unmeasured' ? undefined : expected === 'allow',
+              });
+          }),
+      });
+      const evidenceTransport = yield* makeLabSdkOwner(() => ({ close: async () => undefined }));
+      const ciphertext: {
+        stream: string;
+        status: number;
+        bodyHex: string;
+        sha256: string;
+        contentType: string | null;
+        nextOffset: string | null;
+        upToDate: boolean;
+      }[] = [];
       for (const stream of ['loro', 'flock']) {
         const saved = yield* evidenceTransport.invoke(async () => {
           const response = await fetch(`${fixture.server.baseUrl}/ds/${org}/${stream}?offset=-1`, {
@@ -209,15 +265,34 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
             sha256: createHash('sha256').update(bytes).digest('hex'),
             contentType: response.headers.get('content-type'),
             nextOffset: response.headers.get('stream-next-offset'),
+            upToDate: response.headers.get('stream-up-to-date') === 'true',
           };
         });
         ciphertext.push(saved);
       }
+      const attackObserver = yield* makeLabAttackObserver({
+        genesis: fixture.genesis,
+        backend: {
+          read: () =>
+            Effect.try({
+              try: () => {
+                if (ciphertext.some((row) => row.status !== 200 || !row.upToDate))
+                  throw new Error('Incomplete backend byte observations');
+                return ciphertext.map((row) => new Uint8Array(Buffer.from(row.bodyHex, 'hex')));
+              },
+              catch: (cause) => cause,
+            }),
+        },
+        ledger: fixture.ledger,
+        trace,
+      });
+      const measured = yield* attackObserver.observe();
       const { integrity, durability } = summarizeLabActions(run.observations);
+      const writers = worstVerdict(writerMeasurements.map(judgeWriteObservation));
       const report = {
-        integrity,
+        integrity: worstVerdict([integrity, writers]),
         durability,
-        confidentiality: 'unavailable' as const,
+        confidentiality: measured.report.confidentiality,
       };
       const artifacts = {
         version: 1,
@@ -235,6 +310,7 @@ export const runLabScenario = Effect.fn('Lab.runScenario')(function* (input: {
           sha256: createHash('sha256').update(record).digest('hex'),
         })),
         run,
+        measurements: { writerMeasurements, attacks: measured },
         report,
         fingerprint: fingerprintOf(report),
         limits: [

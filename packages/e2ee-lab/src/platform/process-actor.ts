@@ -245,6 +245,8 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
         | 'resume'
         | 'create'
         | 'append'
+        | 'edit-offline'
+        | 'flush-offline'
         | 'pull'
         | 'recover'
         | 'observe'

@@ -8,6 +8,7 @@ import {
   permitEvent,
   requestEvent,
   recordEvent,
+  exploreSubmitInterleavings,
 } from '../src/pure/scheduler';
 const ok = Result.getOrThrow;
 describe('explicit logical scheduler, without expected throws', () => {
@@ -77,5 +78,20 @@ describe('explicit logical scheduler, without expected throws', () => {
       parent: 'unknown',
     });
     expect(Result.isFailure(permitEvent(missing.state, missing.event.eventId))).toBe(true);
+  });
+  it('explores both actor phase orders with single-use permits and distinguishes exhaustive coverage from exhausted budgets', () => {
+    const complete = ok(exploreSubmitInterleavings());
+    expect(complete.verdict).toBe('pass');
+    expect(complete.coverage).toBe('complete');
+    expect(complete.terminalStates).toBeGreaterThan(1);
+    expect(complete.states).toBeGreaterThan(complete.terminalStates);
+    for (const budget of [{ maxStates: 0 }, { maxStates: 1 }, { maxEvents: 0 }, { maxEvents: 3 }]) {
+      const partial = ok(exploreSubmitInterleavings(budget));
+      expect(partial.verdict).toBe('unmeasured');
+      expect(partial.coverage).toBe('incomplete');
+    }
+    expect(ok(exploreSubmitInterleavings({ maxStates: 1 })).states).toBeLessThanOrEqual(1);
+    expect(Result.isFailure(exploreSubmitInterleavings({ maxStates: -1 }))).toBe(true);
+    expect(Result.isFailure(exploreSubmitInterleavings({ maxEvents: 7 }))).toBe(true);
   });
 });

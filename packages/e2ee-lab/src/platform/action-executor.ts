@@ -39,6 +39,8 @@ const Action = Schema.Union([
       'observe',
       'revoke-peer',
       'acknowledge',
+      'edit-offline',
+      'flush-offline',
     ]),
     document: Schema.optional(Schema.Literals(['loro', 'flock'])),
     text: Schema.optional(Text),
@@ -86,9 +88,13 @@ function assertLabActionSemantics(row: LabAction, index: number) {
       (row.expect.outcome !== undefined || row.expect.refusal === undefined)) ||
     (row.expect?.ok === true && row.expect.refusal !== undefined) ||
     (row.kind === 'call' &&
-      ['create', 'append', 'pull', 'recover', 'observe'].includes(row.operation) &&
+      ['create', 'append', 'pull', 'recover', 'observe', 'edit-offline', 'flush-offline'].includes(
+        row.operation
+      ) &&
       row.document === undefined) ||
-    (row.kind === 'call' && row.operation === 'append' && row.text === undefined)
+    (row.kind === 'call' &&
+      ['append', 'edit-offline'].includes(row.operation) &&
+      row.text === undefined)
   )
     throw new LabActionError({ code: 'invalid-plan' });
 }
@@ -117,7 +123,11 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
   readonly maxSteps: number;
   readonly schedule?: readonly ScheduleChoice[];
   readonly stop?: Effect.Effect<void>;
+  /** Run-private factual instrumentation, never an authorization decision or a
+   * replacement for the actor. Called after the actual operation settles. */
+  readonly onObservation?: (observation: LabActionObservation) => Effect.Effect<void, unknown>;
 }) {
+  const onObservation = input.onObservation;
   const actions = yield* Effect.try({
     try: () => {
       const rows = input.actions,
@@ -238,7 +248,9 @@ export const executeLabActions = Effect.fn('Lab.executeActions')(function* (inpu
         try: () => assessLabAction(action, reply, observations),
         catch: () => new LabActionError({ code: 'missing-observation' }),
       });
-      observations.push({ action, reply, integrity, durability, checks });
+      const observation = { action, reply, integrity, durability, checks };
+      if (onObservation) yield* onObservation(observation);
+      observations.push(observation);
     }
     return observations;
   });

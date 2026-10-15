@@ -4735,7 +4735,7 @@
         "core": "7ffe564e6d30854170dd4baf329b2c00ee95abce896634081b3432370f30a2c2",
         "candidate": "7ffe564e6d30854170dd4baf329b2c00ee95abce896634081b3432370f30a2c2"
       },
-      "targetPath": "packages/e2ee-core/test/ledger/",
+      "targetPath": "packages/e2ee-core/test/ledger",
       "status": "旧方案淘汰",
       "layer": "L1",
       "reason": "Replace obsolete JSON/hex/Team protocol fixtures with equivalent canonical-ledger behavior; do not restore old protocol.",
@@ -4759,7 +4759,7 @@
         "core": "2240e5212fad06a0a884593b53bfedde73314479c690da514039dfd9cdf84739",
         "candidate": "2240e5212fad06a0a884593b53bfedde73314479c690da514039dfd9cdf84739"
       },
-      "targetPath": "packages/e2ee-core/test/ledger/",
+      "targetPath": "packages/e2ee-core/test/ledger",
       "status": "旧方案淘汰",
       "layer": "L1",
       "reason": "Replace obsolete JSON/hex/Team protocol fixtures with equivalent canonical-ledger behavior; do not restore old protocol.",
@@ -5452,7 +5452,7 @@
         "core": "a5539e9381779b0f454b2f30fa5cc2ba30c169238755b86811c52707221b00ba",
         "candidate": "a5539e9381779b0f454b2f30fa5cc2ba30c169238755b86811c52707221b00ba"
       },
-      "targetPath": "packages/e2ee-core/test/ledger/",
+      "targetPath": "packages/e2ee-core/test/ledger",
       "status": "旧方案淘汰",
       "layer": "L1",
       "reason": "Replace obsolete JSON/hex/Team protocol fixtures with equivalent canonical-ledger behavior; do not restore old protocol.",
@@ -5488,11 +5488,14 @@
         "core": "23ad373c1116a04e6510773beaaa9f6d279507cc39f72d25648c97a039c12b43",
         "candidate": "23ad373c1116a04e6510773beaaa9f6d279507cc39f72d25648c97a039c12b43"
       },
-      "targetPath": "packages/e2ee-lab/.gitignore",
-      "status": "需迁并修复",
+      "targetPath": ".gitignore",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Exclude generated SQLite/WAL, local repro secrets and runtime outputs; no captured user transcripts.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Root ignore policy covers generated SQLite/WAL, local outputs and private synthetic fixtures; no redundant package-level compatibility file.",
+      "targetPathState": "created",
+      "coveragePaths": [
+        ".gitignore"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/AGENTS.md",
@@ -5501,10 +5504,13 @@
         "candidate": "66d79c766d95312ae17a4a9d2b07cb902b20e5fa06b0e5a9c067289165d63731"
       },
       "targetPath": "packages/e2ee-lab/AGENTS.md",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Public-module-only, synthetic fixtures, independent checkpoint and resource ownership rules; current scope exists, full harness rules pending.",
-      "targetPathState": "existing"
+      "reason": "Current public-owner, synthetic boundary, exact authority, native settlement and measured coverage rules.",
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/AGENTS.md"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/CLAUDE.md",
@@ -5513,14 +5519,17 @@
         "candidate": "a54ff182c7e8acf56acfd6e4b9c3ff41e2c41a31c9b211b2deb9df75d9a478f9"
       },
       "targetPath": "packages/e2ee-lab/CLAUDE.md",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Symlink to the Lab AGENTS owner; current target symlink exists.",
+      "reason": "Existing symlink to the one Lab AGENTS owner.",
       "symlinkTargets": {
         "core": "AGENTS.md",
         "candidate": "AGENTS.md"
       },
-      "targetPathState": "existing"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/CLAUDE.md"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/README.md",
@@ -5529,10 +5538,13 @@
         "candidate": "08f657accf2cafa59d537463971d2dc230f11ec48f7b31b5324f3210aeb077ca"
       },
       "targetPath": "packages/e2ee-lab/README.md",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "English startup, actual SDK versions, reproducible commands and explicit fault/coverage limits; full CLI startup pending.",
-      "targetPathState": "existing"
+      "reason": "Current actual commands, owner contracts and explicit incomplete product/platform boundaries; no per-checkpoint progress log.",
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/README.md"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/README.zh.md",
@@ -5541,10 +5553,13 @@
         "candidate": "5dbfae0ab23530af4424cc4468e14ce1bd36ddb376e6639bbc08210c2132f280"
       },
       "targetPath": "packages/e2ee-lab/README.zh.md",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Chinese equivalent startup and acceptance limits; keep translation coupled to English source.",
-      "targetPathState": "existing"
+      "reason": "Chinese current command/owner/coverage guide paired with English.",
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/README.zh.md"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/package.json",
@@ -5553,10 +5568,13 @@
         "candidate": "ee3d590fe8738e2b715561d92856d6618ae74c38df0928cceeb6961efeca99ec"
       },
       "targetPath": "packages/e2ee-lab/package.json",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Private runnable Lab workspace, released SDK/Riverrun and locked Effect; current importer exists, original CLI/replay scripts await actual implementations.",
-      "targetPathState": "existing"
+      "reason": "Current private runnable public-core/released-SDK workspace and actual run/inspect/replay/minimize executable.",
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/package.json"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/actors.ts",
@@ -5564,15 +5582,18 @@
         "core": "2c7a3c4d9938691526674e3e34444ab229a5bd8cc33f14996de479099b00e27d",
         "candidate": "2c7a3c4d9938691526674e3e34444ab229a5bd8cc33f14996de479099b00e27d"
       },
-      "targetPath": "packages/e2ee-lab/src/actors.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/full-session.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Honest-client facade over the full host/session lifecycle; consolidate with scoped session, preserve actor behavior rather than old class API.",
+      "reason": "Current honest-session behavior is composed by full-session/workspace-session and actual OS process actors. No source-era DemoSession alias or raw private field compatibility. Full live/model exploration is tracked separately.",
       "sourceDeclaredExports": {
         "core": [],
         "candidate": []
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/full-session.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/attack-lab.ts",
@@ -5580,10 +5601,10 @@
         "core": "1b8f2bf90b35c8bc13716b20678b6d7a67a43b2a5aaac8769f1b3e92613e0f0e",
         "candidate": "1b8f2bf90b35c8bc13716b20678b6d7a67a43b2a5aaac8769f1b3e92613e0f0e"
       },
-      "targetPath": "packages/e2ee-lab/src/attack-lab.ts",
+      "targetPath": "packages/e2ee-lab/src/platform/attack-observer.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Restricted attacker view, capabilities, measured property reports and replay actions; preserve isolation from honest keys/client directories and distinguish unavailable/unmeasured from pass.",
+      "reason": "Current bounded attacker capabilities and real response plans measure backend plaintext, forged control, exact context/current-author refusal and retained old-key reads. Per-actor finite response interception, explicit delays, prefix freeze/release, fresh plan replay and actual baseline-confirmed shrink use the real host/SDK. No access to credentials, device secrets or private client files. Arbitrary external model exploration remains an optional integration, not a second security kernel.",
       "sourceDeclaredExports": {
         "core": [
           "PublicView",
@@ -5640,7 +5661,13 @@
           "firstReportDivergence"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/attack-observer.ts",
+        "packages/e2ee-lab/src/platform/attack-transport.ts",
+        "packages/e2ee-lab/test/attack-observer.test.ts",
+        "packages/e2ee-lab/test/attack-scenario.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/attacks.ts",
@@ -5648,10 +5675,10 @@
         "core": "506cde49c72dda9952456720117850e60ec774bd7e8b68d9e6a7dfa20c0fc095",
         "candidate": "506cde49c72dda9952456720117850e60ec774bd7e8b68d9e6a7dfa20c0fc095"
       },
-      "targetPath": "packages/e2ee-lab/src/attacks.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/attack-observer.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Synthetic control CAS injection, real storage ciphertext mutation and backend observations; consume public codecs and explicit scoped filesystem/HTTP capabilities.",
+      "reason": "Actual synthetic control injection, response corruption, lost ACK and SQL faults run through bounded current owner capabilities/action worker; backend observations use real public bytes. Unsafe raw file needle surgery/global Promise wrappers are retired, not compatibility requirements.",
       "sourceDeclaredExports": {
         "core": [
           "countFramedRecords",
@@ -5682,7 +5709,10 @@
           "mutateSqliteBytes"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/attack-observer.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/backend.ts",
@@ -5690,15 +5720,18 @@
         "core": "9235bc58bb148d39f0c16f2ad674056da6b9c2712f5bef020076df5dfb1bb631",
         "candidate": "9235bc58bb148d39f0c16f2ad674056da6b9c2712f5bef020076df5dfb1bb631"
       },
-      "targetPath": "packages/e2ee-lab/src/backend.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/host.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Local-host facade; consolidate with the new scoped synthetic host once its gateway/admission behavior exists.",
+      "reason": "Current scoped HTTP host composes credential, registry/create, joins, public pinned CAS, bounded content/key routes and finite SDK reads. No second backend facade or production auth.",
       "sourceDeclaredExports": {
         "core": [],
         "candidate": []
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/host.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/cli.ts",
@@ -5707,14 +5740,17 @@
         "candidate": "56bd8911a8dd6176aabde986bb69d2b1327945edf6d12149d46d16f39937be1f"
       },
       "targetPath": "packages/e2ee-lab/src/cli.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Local Lab command entry and host startup; no global tools, production storage or deployment; full runnable command pending.",
+      "reason": "Native Effect executable run/inspect/replay/minimize uses finite plans and actual OS/HTTP/SQLite owners. Inspect recomputes untrusted observations; replay/shrink execute fresh owners.",
       "sourceDeclaredExports": {
         "core": [],
         "candidate": []
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/cli.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/content-trace.ts",
@@ -5723,9 +5759,9 @@
         "candidate": "edf7216dc561dc9b615f9804205c001fe0764fc040ba49f06903e57838aa69e0"
       },
       "targetPath": "packages/e2ee-lab/src/platform/content-trace.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Run-owned bounded private synthetic write facts replace process-global plaintext array. Original recordContentWrite/contentWritesFor/clearContentWrites survive as scoped owner methods; caller fields captured once before budget/validation, immutable snapshots, closed admission/read/clear refuses, separate runs unaffected. Old original alias failure and owning3 tests retained; actual actor/attack record integration remains pending. No new writer eligibility decision, undefined reference decision stays unmeasured, not attacker authority.",
+      "reason": "Bounded run-private write facts feed actual action measurements and the independent reference/attack observer; no global plaintext trace or attacker access.",
       "sourceDeclaredExports": {
         "core": [
           "ContentWriteFact",
@@ -5740,11 +5776,14 @@
           "clearContentWrites"
         ]
       },
-      "targetPathState": "created-functional-integration-pending",
+      "targetPathState": "created",
       "targetDeclaredExports": [
         "ContentWriteFact",
         "LabTraceError",
         "makeLabContentTrace"
+      ],
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/content-trace.ts"
       ]
     },
     {
@@ -5753,10 +5792,10 @@
         "core": "990adf6feec5b6e7a860991fc2ae4c7968789781b806e57383ab502975380807",
         "candidate": "990adf6feec5b6e7a860991fc2ae4c7968789781b806e57383ab502975380807"
       },
-      "targetPath": "packages/e2ee-lab/src/defects.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/process-worker.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Known bad importer, cursor-before-document and wrong-context fault injection with measured fingerprints; retain controls without exposing weakened public crypto entry points.",
+      "reason": "Actual native SQL-loss/SIGKILL and explicit bad cipher/storage/drop-ACK controls are measured through current actor. Source boolean defective importer and unsafe cursor-before-pair implementation are retired.",
       "sourceDeclaredExports": {
         "core": [
           "KnownDefect",
@@ -5779,7 +5818,10 @@
           "measureClient"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/process-worker.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/driver.ts",
@@ -5788,9 +5830,9 @@
         "candidate": "1e8cedca5dfece6fdc37d70b2eb91969829e48e2b10b807329c741e10e7a0bbd"
       },
       "targetPath": "packages/e2ee-lab/src/platform/driver.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Partial finite Effect permit driver owns scoped manual-runtime record/replay, exact identity/parent/occurrence and pre-permit budget, explicit stop/interruption/raw native settlement. Original ScheduleDriver Promise facade replaced by driveLabPermits; leftoverRequested retained, divergence is typed failure and permit count is the actual runtime log. Source pull-later/skip-missing heuristics rejected. No implicit watchdog/deadline; parent wire unchanged, delimiter labels explicitly refused for ambiguity. Full start/attack/persist/crash action executor, captured ancestry/entropy compatibility and whole-host replay remain pending, so this item is not migration-complete.",
+      "reason": "Native Effect permits own start/call/attack/persist/crash action execution and replay exact identities/occurrences with finite budget/stop. No pull-later/skip-missing heuristics or fake success.",
       "sourceDeclaredExports": {
         "core": [
           "DriverOptions",
@@ -5803,12 +5845,15 @@
           "leftoverRequested"
         ]
       },
-      "targetPathState": "created-partial",
+      "targetPathState": "created",
       "targetDeclaredExports": [
         "LabDriverError",
         "DriverOptions",
         "leftoverRequested",
         "driveLabPermits"
+      ],
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/driver.ts"
       ]
     },
     {
@@ -5856,9 +5901,9 @@
         "candidate": "2af8f33fbb702c7407a829d952f56e7dd825dbacb6e989bd5c8208df35b19d32"
       },
       "targetPath": "packages/e2ee-lab/src/pure/fingerprint.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "All five original pure exports retained; exact every-field replay comparison, explicit missing/JSON compatibility gaps, measured violation retained beside unrelated harness failure, owned facts. Separate conservative security shrink predicate refuses unknown original triggers; old four comparison/classification/alias failures reproduced. Obsolete unauthorized-content model classification and unused report fields removed. Full actual attack observer/repropack integration pending, no new wire or entropy/reseal contract.",
+      "reason": "Full inert known-field comparison and separate measured-failure preservation; actual action shrink first reexecutes baseline and retains the original concrete failed measurement. Fresh crypto differences are explicit.",
       "sourceDeclaredExports": {
         "core": [
           "FailureFingerprint",
@@ -5875,7 +5920,10 @@
           "isSecurityFingerprint"
         ]
       },
-      "targetPathState": "created-partial-functional-integration-pending"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/pure/fingerprint.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/fixtures.ts",
@@ -5883,10 +5931,10 @@
         "core": "c8369176ae34876ffa454617be7f8f19bfb9bdccbfd756aae48c01e7c9f0b97a",
         "candidate": "c8369176ae34876ffa454617be7f8f19bfb9bdccbfd756aae48c01e7c9f0b97a"
       },
-      "targetPath": "packages/e2ee-lab/src/fixtures.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/scenario-fixture.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Synthetic temp directories, actual local host/clients, explicit failpoint/time and permit draining; replace process-global cleanup with scoped owners.",
+      "reason": "Real temporary native SQLite/Riverrun/HTTP and two actual device/process owners; independent witnessed signed history. Test fixtures do not create authority from SQL/offsets.",
       "sourceDeclaredExports": {
         "core": [
           "trackDir",
@@ -5915,7 +5963,10 @@
           "drainUntil"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/scenario-fixture.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/identity.ts",
@@ -5923,10 +5974,10 @@
         "core": "fe4585d1fd0d165b5cbae33b24088d986d6a3aca38a7dca9bf4437ad69d446aa",
         "candidate": "566e6215ca9943f953af8264a81b4f2f0859fb8d558eb37690479988d7f8516b"
       },
-      "targetPath": "packages/e2ee-lab/src/identity.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/evidence.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Repro format/scenario identifiers and exact implementation/package/environment fingerprints; replace unpublished vendor artifact identity with resolved registry/package fingerprints.",
+      "reason": "Actual loaded source/release/Node fingerprints in bounded current evidence; no unpublished vendor-path identity or fake base SHA on WIP.",
       "sourceDeclaredExports": {
         "core": [
           "REPRO_FORMAT",
@@ -5947,7 +5998,10 @@
           "assertReplayEnvironment"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/evidence.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/index.ts",
@@ -5955,15 +6009,18 @@
         "core": "194a24aefd092b8e760a8ca95c8bb3520223c9c1ea5ad5cf7350c3d791506eb7",
         "candidate": "194a24aefd092b8e760a8ca95c8bb3520223c9c1ea5ad5cf7350c3d791506eb7"
       },
-      "targetPath": "packages/e2ee-lab/src/index.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/package.json",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Package surface for migrated host/actors, scheduler, judge and replay; export implemented public consumers only while tracking every unfinished capability.",
+      "reason": "Only explicit current package subentries; no omnibus source-compatible index, obsolete alias, hidden platform initialization or duplicate kernel.",
       "sourceDeclaredExports": {
         "core": [],
         "candidate": []
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/package.json"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/insider.ts",
@@ -5971,10 +6028,10 @@
         "core": "0a4ccd0703b6d3395826a06cf469c67cdfe1f347174fe324a7e6b98103aa4298",
         "candidate": "47d743e0f8aaf2dedf69f98bcfc5d9341a3e86d8d57ea766411888731c964367"
       },
-      "targetPath": "packages/e2ee-lab/src/insider.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/attack-observer.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Excluded-insider decryption attempts using explicitly captured synthetic key material; consume public content codec without providing bypasses to honest clients.",
+      "reason": "Explicit excluded-insider retained old key attempts real authenticated AEAD opens. Successful old-frame positive control and newer-frame samples are mandatory; unrelated failures are harness errors. No honest current-key lookup is provided.",
       "sourceDeclaredExports": {
         "core": [
           "InsiderMaterial",
@@ -5989,7 +6046,10 @@
           "insiderDecrypt"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/attack-observer.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/judge.ts",
@@ -5998,9 +6058,9 @@
         "candidate": "5d0c6b6c152e2aeb87c9e604c5d02ec8f9158563dc5f79a5b1cc9561b0949c18"
       },
       "targetPath": "packages/e2ee-lab/src/pure/judge.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Current measured verdict rules ported/repaired; the source-only defectiveAcceptInvalid boolean helper is retired: unmeasured baseline/undefined facts and mixed unavailable never all-pass; count-only imports cannot prove history; measured unauthorized new content is violation, admitted historical content remains valid after revocation; explicit insider freshness assumptions separate. Four old pure failures/new same probe passes and owning6 tests retained. Actual honest/attacker measurement integration remains pending; pure pass is not protocol/whole fault acceptance.",
+      "reason": "Independent measured judgments are wired to actual action results/reference write observations and attack measurements. Exact refusal is required for negative evidence; missing facts remain unavailable.",
       "sourceDeclaredExports": {
         "core": [
           "JudgeVerdict",
@@ -6043,7 +6103,10 @@
           "defectiveAcceptInvalid"
         ]
       },
-      "targetPathState": "created-functional-integration-pending"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/pure/judge.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/minimize.ts",
@@ -6052,9 +6115,9 @@
         "candidate": "a1c9f3f2e84d5badf9e38dce165cd7ba8d95dfe57d1b478fda66a4dc2fb6277a"
       },
       "targetPath": "packages/e2ee-lab/src/pure/minimize.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Both original exports retained as sequential typed Effect API with finite budget, independent original fingerprint ownership, required-item constraints, precise trigger preservation, partial coverage and candidate error propagation. Generic items require independent immutable ownership. No action executor/global shortest proof/serialized repro format. Full real attack/repropack integration pending.",
+      "reason": "Typed finite shrink is called by real action runner/CLI. It reexecutes baseline and each candidate with fresh owners, preserves exact concrete known failure and rejects dependency/harness changes. No global minimality or reseal equality claim.",
       "sourceDeclaredExports": {
         "core": [
           "MinimizeResult",
@@ -6065,7 +6128,10 @@
           "minimizeCounterexample"
         ]
       },
-      "targetPathState": "created-partial-functional-integration-pending"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/pure/minimize.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/model.ts",
@@ -6073,10 +6139,10 @@
         "core": "540e0d1aaa764b318423d6e6127ab8d929ca6bb3b5da6b8a1b92451773644f09",
         "candidate": "540e0d1aaa764b318423d6e6127ab8d929ca6bb3b5da6b8a1b92451773644f09"
       },
-      "targetPath": "packages/e2ee-lab/src/model.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/pure/scheduler.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Bounded two-actor submit interleavings and unknown-CAS model; unchanged P09 remains implementation owner, model must match terminal recovery behavior.",
+      "reason": "Finite two-actor pending/cas/ack interleaving reuses current pure scheduler and reports exhausted state/event budgets as unmeasured instead of success. This only checks single-use permit/order invariants; actual unknown-CAS/P09 recovery is measured by real host/process tests, not claimed as proven by this model.",
       "sourceDeclaredExports": {
         "core": [
           "ModelAction",
@@ -6089,7 +6155,12 @@
           "exploreSubmitInterleavings"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/pure/scheduler.ts",
+        "packages/e2ee-lab/test/scheduler.test.ts",
+        "packages/e2ee-lab/test/host-restart.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/multipart.ts",
@@ -6098,10 +6169,11 @@
         "candidate": "5a42eeb030382990708a52dadbb2296ed6b6f450234fe442655a58ed873d0d91"
       },
       "targetPath": "packages/e2ee-lab/src/pure/multipart.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Pure transport delimiter normalization port exists in current WIP. Original malformed incomplete messages were rewritten and many short boundaries raised RangeError; old control4pass/2fail retained, fixed6pass. Complete delimiter/header framing and exact-size allocation preserve protected body bytes. Full real replay integration pending.",
+      "reason": "Current bounded conservative framing normalization; six owning cases include incomplete frames and multiple short boundaries. No protocol content mutation to manufacture replay agreement.",
       "coveragePaths": [
+        "packages/e2ee-lab/src/pure/multipart.ts",
         "packages/e2ee-lab/test/multipart.test.ts"
       ],
       "sourceDeclaredExports": {
@@ -6114,7 +6186,7 @@
           "normalizeFrameHex"
         ]
       },
-      "targetPathState": "existing"
+      "targetPathState": "created"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/backup.ts",
@@ -6150,10 +6222,10 @@
         "core": "cced7aca56a74f25e17ee9500d4ddafa626fe39d7f1f04fd6d40a01ffdde254d",
         "candidate": "cced7aca56a74f25e17ee9500d4ddafa626fe39d7f1f04fd6d40a01ffdde254d"
       },
-      "targetPath": "packages/e2ee-lab/src/platform/bytes.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-core/src/bytes.ts",
+      "status": "旧方案淘汰",
       "layer": "L6",
-      "reason": "Lab hex/base64/ArrayBuffer helpers; public opaque validation remains the core owner and randomness must stay at approved boundaries.",
+      "reason": "Source-era generic hex/base64/random helper API is not a migration requirement. Current protocol codecs/opaque validation remain public core-owned; bounded synthetic DTOs use native Buffer/TextEncoder locally. No second validator or entropy compatibility wrapper.",
       "sourceDeclaredExports": {
         "core": [
           "toHex",
@@ -6172,7 +6244,7 @@
           "asArrayBuffer"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/content-session.ts",
@@ -6181,12 +6253,12 @@
         "candidate": "f150c6f0aaf5ef2ec4c12b235aa9cbd5b4e970715b93d4881a2449aedde4ce3e"
       },
       "targetPath": "packages/e2ee-lab/src/platform/content-session.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Actual released Loro/Flock SDK consumers use public content binding. Current scoped Loro session isolates failures, atomically pairs native state/cursor, retains local edits and replays readable history. Nonzero Riverrun snapshots make old history inaccessible: recovery then stays failed; full Flock session/live actors and snapshot contract remain open.",
+      "reason": "Actual released SDK Loro/Flock, current header3/4 binding, atomic native state/cursor, per-document recovery, process reopen and full session composition. Retained-history availability is external.",
       "coveragePaths": [
-        "packages/e2ee-lab/src/platform/content-provider.ts",
         "packages/e2ee-lab/src/platform/content-session.ts",
+        "packages/e2ee-lab/src/platform/content-provider.ts",
         "packages/e2ee-lab/src/platform/sdk-owner.ts",
         "packages/e2ee-lab/test/content-provider.test.ts",
         "packages/e2ee-lab/test/content-reopen.mts"
@@ -6237,7 +6309,7 @@
           "bootstrapLoroFromSnapshot"
         ]
       },
-      "targetPathState": "existing"
+      "targetPathState": "created"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/device.ts",
@@ -6278,9 +6350,9 @@
         "candidate": "cf54fd5f0825e67959f57399f195660446ce38c4e4defc02ef562e344e849007"
       },
       "targetPath": "packages/e2ee-lab/src/platform/gateway.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Genuine public current member/role/Org stream policy; actual host now separately composes credential/bearer, signed inert joins, public control CAS, indexed key mailbox and finite authenticated reads. Structural views/outsiders/R send denied. Full content write/snapshot authority/live/create-space/notes host remains incomplete. Settled R→own personal admission now routed through full public submission; actual HTTP/SDK/native tail+bytes rejection evidence, no vault/backup acceptance.",
+      "reason": "Current genuine member/Org policy plus actual dedicated content/key/control routes; R only receives/repairs and admits own new personal through public P09 validation.",
       "sourceDeclaredExports": {
         "core": [
           "KnownStream",
@@ -6305,13 +6377,16 @@
           "authorizeStreamRequest"
         ]
       },
-      "targetPathState": "existing",
+      "targetPathState": "created",
       "coverage": [
         {
           "layer": "L6",
           "target": "packages/e2ee-lab/src/platform/gateway.ts",
           "scope": "Policy only: current public ledger provenance, bound/request Org, current roles and R no-send; 2 owning groups pass. Does not authenticate a credential or accept records/snapshots. Narrow R personal candidate screen is not admission: public core enforces same actor membership and bound PoP; actual HTTP tested."
         }
+      ],
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/gateway.ts"
       ]
     },
     {
@@ -6320,10 +6395,10 @@
         "core": "8f40941246e5745b441aaaf0bdc93f5e8b994656b24eea7f58b1229d63ee28c3",
         "candidate": "8f40941246e5745b441aaaf0bdc93f5e8b994656b24eea7f58b1229d63ee28c3"
       },
-      "targetPath": "packages/e2ee-lab/src/platform/credentials.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/workspace-creation.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Partial credentials and joins migrated to public APIs: real device proofs, SQLite mint/consume/invalidate and two-row join/first-label binding readback. Original credential/nonce and join/account SQL failures reproduced. Same-ID signer, revalidated stored signatures/bindings and real reopen. No product identity/JWT/new deadline. Workspace/genesis/checkpoint persistence, notes/harness metadata remain incomplete. Original genesis registry/signatures/readback/actual OS-child reopen and authenticated discovery now partial; full create-space publication/current checkpoint/binding still incomplete. Original bind-once token API now migrated with no renewal and real ignored-update refusal; host create-space composition still incomplete.",
+      "reason": "Separate scoped credential/joins/genesis registry and current creation/history owners replace the old broad metadata object. Exact transactional readbacks, real original retries and independent reopen minimum; no metadata authority.",
       "sourceDeclaredExports": {
         "core": [
           "HostMeta",
@@ -6334,11 +6409,14 @@
           "credentialExpired"
         ]
       },
-      "targetPathState": "existing",
+      "targetPathState": "created",
       "targetSupplementalPaths": [
         "packages/e2ee-lab/src/platform/join-mailbox.ts",
         "packages/e2ee-lab/src/platform/operation-scope.ts",
         "packages/e2ee-lab/src/platform/workspace-registry.ts"
+      ],
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/workspace-creation.ts"
       ]
     },
     {
@@ -6348,9 +6426,9 @@
         "candidate": "7d5d559f3c635ba797c4d6140d8240e48628be1a720340b209174bbc2398231a"
       },
       "targetPath": "packages/e2ee-lab/src/platform/host.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Partial actual loopback host implements stored-bearer credentials/control CAS/mailbox7/signed inert joins/genesis discovery and finite SDK GET/HEAD control/loro/flock/bootstrap/snapshot reads. Public verification owns authority, caller headers never select upstream, bounded native body is retained and post-read genuine permission rechecked. Real signed revocation retains durable client cursor. Full create-space publication/current checkpoint/crash-gap, content writes/live, notes, startup/actors/original fault scenarios remain incomplete. Unprotected transport snapshot fixture does not decide protected snapshot wire/offset.",
+      "reason": "Real stored-bearer routes, signed-genesis current-layout creation, native pinned CAS with durable signed floor before ACK, protected content/snapshot/key routes and bounded reads. No production deployment/identity or client freshness oracle.",
       "sourceDeclaredExports": {
         "core": [
           "DemoHostOptions",
@@ -6367,12 +6445,15 @@
           "resolveDataDir"
         ]
       },
-      "targetPathState": "existing",
+      "targetPathState": "created",
       "targetSupplementalPaths": [
         "packages/e2ee-lab/src/platform/control-gateway.ts",
         "packages/e2ee-lab/src/platform/mailbox-http.ts",
         "packages/e2ee-lab/src/platform/operation-scope.ts",
         "packages/e2ee-lab/src/platform/stream-read.ts"
+      ],
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/host.ts"
       ]
     },
     {
@@ -6381,10 +6462,10 @@
         "core": "e6ec86ab2c11ca2006de79d1c3dc350b558d10fce58d677f22cca735d78a2938",
         "candidate": "e6ec86ab2c11ca2006de79d1c3dc350b558d10fce58d677f22cca735d78a2938"
       },
-      "targetPath": "packages/e2ee-lab/src/platform/key-delivery-layer.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/full-session.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Lab synthetic file/entropy capabilities composed with public send/receive workflows and protected epoch host; no copied HPKE, verifier or private key persistence algorithm.",
+      "reason": "Full session borrows one public receiver-owned protected store, initialized mailbox/distributor/repair/outbox and finite rounds/results/ACK. No copied crypto or plaintext epoch JSON.",
       "sourceDeclaredExports": {
         "core": [
           "testFiles",
@@ -6399,7 +6480,10 @@
           "receiveKeyLayer"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/full-session.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/key-mailbox.ts",
@@ -6408,9 +6492,9 @@
         "candidate": "3641a20e393d9882c0bcb0cdd1972b7713d7e021f2f7e9ad8cc206c7a5c1769b"
       },
       "targetPath": "packages/e2ee-lab/src/platform/key-mailbox.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Scoped HTTP remote now consumes public receiver/distributor APIs with bounded JSON/hex/pages and actual fetch/body abort/wait. Real HPKE delivery/install/readback/report over loopback HTTP, tamper refusal and same-process reopened R no-send pass; synthetic pre-authenticated session is explicit. Full credential host, repair/rotation/actor and process-reopen composition still pending; obsolete Effect service layers not copied.",
+      "reason": "Current authenticated finite HTTP7 operations, actual HPKE/save-readback/report, real OS child pending install/epoch history recovery and R constraints. No old global key stream.",
       "sourceDeclaredExports": {
         "core": [
           "centralMailboxHttpLayer"
@@ -6419,13 +6503,16 @@
           "centralMailboxHttpLayer"
         ]
       },
-      "targetPathState": "existing",
+      "targetPathState": "created",
       "coverage": [
         {
           "layer": "L6",
           "target": "packages/e2ee-lab/src/platform/key-mailbox.ts",
           "scope": "All seven old HTTP operations have explicit public remote mappings; 3 adapter groups plus one real HPKE/SQLite round pass. Actual production authentication and full original central delivery fixtures remain incomplete."
         }
+      ],
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/key-mailbox.ts"
       ]
     },
     {
@@ -6434,10 +6521,10 @@
         "core": "2edf88cb550a20e96e2239a19d8340113aa5bd2974da98d0df6dcd27fae9e31d",
         "candidate": "2edf88cb550a20e96e2239a19d8340113aa5bd2974da98d0df6dcd27fae9e31d"
       },
-      "targetPath": "packages/e2ee-lab/src/platform/persist.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/document-sqlite.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Current actual native CRDT state and exact cursor commit atomically per document with readback. Real SQL IGNORE failure/retry and Loro child-process reopen pass; Flock process restart/crash windows and full original persistence scenarios pending. Not vault/production storage.",
+      "reason": "Actual CRDT state and exact SDK cursor in one read-back transaction with real IGNORE/ABORT/reopen controls. Old separate file/cursor crash windows are not restored.",
       "coveragePaths": [
         "packages/e2ee-lab/src/platform/document-sqlite.ts",
         "packages/e2ee-lab/test/content-provider.test.ts",
@@ -6467,7 +6554,7 @@
           "FileRemoteCursorStore"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/protocol.ts",
@@ -6475,10 +6562,10 @@
         "core": "7bf933204d1570e44e150010c680d7f8a8bb7410513ebfff835c06179eb12675",
         "candidate": "7bf933204d1570e44e150010c680d7f8a8bb7410513ebfff835c06179eb12675"
       },
-      "targetPath": "packages/e2ee-lab/src/platform/protocol.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/process-contract.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Synthetic Lab stream names, DTOs and failpoints; distinguish harness clock/account/device headers from production claims and never introduce unapproved deadline B.",
+      "reason": "Current synthetic DTOs, explicit errors and finite operations; no old stream/header aliases, bearer-forwarding parameters or protocol EOF disposal.",
       "sourceDeclaredExports": {
         "core": [
           "CONTROL_STREAM",
@@ -6515,7 +6602,10 @@
           "ComparisonWire"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/process-contract.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/rotation-layer.ts",
@@ -6523,10 +6613,10 @@
         "core": "295d074516fc66fd0c32d8e25846fdca2aea52403da05f58863020f8bc56c7e7",
         "candidate": "295d074516fc66fd0c32d8e25846fdca2aea52403da05f58863020f8bc56c7e7"
       },
-      "targetPath": "packages/e2ee-lab/src/platform/rotation-layer.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/full-session.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Compose settled public epoch candidate/send/CAS/install workflow with actual durable host and mailbox; preserve unknown-result original bytes and post-commit readback. D12 new atomic removal format remains undecided.",
+      "reason": "Existing current E7/tag8 local candidate/P09/install/distribution and resume/ACK consumers; only local crash durability. Independent off-device backup and permanent loss policy remain unapproved.",
       "sourceDeclaredExports": {
         "core": [
           "rotationLayer"
@@ -6535,7 +6625,10 @@
           "rotationLayer"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/full-session.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/platform/session.ts",
@@ -6543,18 +6636,25 @@
         "core": "0dd6c102cd8a608bf7a31baa05549cc5b7320b7e51277e98bcf6ffcde120c60f",
         "candidate": "0dd6c102cd8a608bf7a31baa05549cc5b7320b7e51277e98bcf6ffcde120c60f"
       },
-      "targetPath": "packages/e2ee-lab/src/platform/session.ts",
+      "targetPath": "packages/e2ee-lab/src/platform/full-session.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Current public ledger client/actor consumes admission/signing, unchanged P09 and released SDK. Genuine feed save precedes terminal consumption; child-process resume needs no signer. Full account/join/keys/content honest lifecycle pending.",
+      "reason": "Current honest behavior is composed through full-session, original durable creation, complete host-session restart, admitted startup/join, P09 retries, local epoch/tag8 publication, header3/4 content, persistent offline edits/reconnect, repair/results/ACK, installed history and comparison. Old class/raw-field API is retired. Only production trust/custody, independent backup/vault and optional external exploration remain separately scoped.",
       "coveragePaths": [
+        "packages/e2ee-lab/src/platform/full-session.ts",
         "packages/e2ee-lab/src/platform/ledger-client.ts",
         "packages/e2ee-lab/src/platform/ledger-actor.ts",
         "packages/e2ee-lab/test/ledger-actor.test.ts",
         "packages/e2ee-lab/test/ledger-actor-reopen.mts",
         "packages/e2ee-lab/src/platform/key-round.ts",
         "packages/e2ee-lab/src/platform/http-identity.ts",
-        "packages/e2ee-lab/src/platform/workspace-session.ts"
+        "packages/e2ee-lab/src/platform/workspace-session.ts",
+        "packages/e2ee-lab/src/platform/host-session.ts",
+        "packages/e2ee-lab/src/platform/workspace-creation.ts",
+        "packages/e2ee-lab/src/platform/workspace-creation-request.ts",
+        "packages/e2ee-lab/src/platform/document-session.ts",
+        "packages/e2ee-lab/test/offline-session.test.ts",
+        "packages/e2ee-lab/test/host-restart.test.ts"
       ],
       "sourceDeclaredExports": {
         "core": [
@@ -6566,7 +6666,7 @@
           "DemoSession"
         ]
       },
-      "targetPathState": "proposed-path-not-created",
+      "targetPathState": "created",
       "sourceMethodInventory": {
         "sourceHead": "f1bc0c52649c21d2e9b620fe3558874c40545e38",
         "sourceFileSha256": "0dd6c102cd8a608bf7a31baa05549cc5b7320b7e51277e98bcf6ffcde120c60f",
@@ -6579,57 +6679,57 @@
             "private": false,
             "sha256": "3f18d3d14e73c48b2b1578931c82121b063c879e3cbc5a717766725984f17490",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/run.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts",
-              "packages/e2ee-lab/src/platform/workspace-session.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, resumable new-space creation and complete facade remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "headers",
             "private": true,
             "sha256": "f9469b000a2e98bdb4dc190a6e58dd1b293119e5e76ef18c14c514580ff4b062",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts",
-              "packages/e2ee-lab/src/platform/host.ts",
-              "packages/e2ee-lab/src/platform/http-identity.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts",
+              "packages/e2ee-lab/src/platform/join-session.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "random",
             "private": false,
             "sha256": "a9b7a67760f7c7fc31321c4ad5422688b6db45d3228f4d07dc4ab9d99c9f2af8",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts"
+              "packages/e2ee-lab/src/platform/device.ts",
+              "packages/e2ee-lab/src/platform/key-mailbox.ts",
+              "packages/e2ee-lab/src/platform/repro-pack.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Native entropy only for crypto. Synthetic ID/label injection may be independent; captured crypto entropy replay/init-only nonce scope remains a human decision."
+            "status": "旧方案淘汰",
+            "reason": "No source-era deterministic crypto RNG or global key-stream API. Secure host crypto and bounded recipient mailbox/current read-replay owners preserve required behavior without compatibility aliases."
           },
           {
             "name": "fetch",
             "private": false,
             "sha256": "2b4c8f1f5c36c0378ce8e23250645fd1e65811b6c536c14c6f0a0fa721dce778",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts",
-              "packages/e2ee-lab/src/platform/host.ts",
-              "packages/e2ee-lab/src/platform/http-identity.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts",
+              "packages/e2ee-lab/src/platform/join-session.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "persistEpochs",
             "private": true,
             "sha256": "c4a4d7cd1bf098c3c4ee48a3a5fb963e2c9f68ba3b8035414959e180f0b15abb",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-core/src/keys/protected-sqlite.ts"
             ],
             "status": "旧方案淘汰",
@@ -6640,7 +6740,7 @@
             "private": true,
             "sha256": "a6a76da2e999f419058a06a254f9c0b37fcba75a29b8325a7692073fa38b4b05",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-core/src/keys/protected-sqlite.ts"
             ],
             "status": "旧方案淘汰",
@@ -6651,7 +6751,7 @@
             "private": true,
             "sha256": "0e938fbb9fd12a18aeefe98e395a91d24dc1e23156ef587eb70d7c21162a2068",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-core/src/keys/protected-sqlite.ts"
             ],
             "status": "旧方案淘汰",
@@ -6662,7 +6762,7 @@
             "private": true,
             "sha256": "9dfbaf0a3eccfd32fafdeac7c5ebc3859612f546156a3709146a73b7d9cd0dc3",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-core/src/keys/protected-sqlite.ts"
             ],
             "status": "旧方案淘汰",
@@ -6673,429 +6773,422 @@
             "private": false,
             "sha256": "a2b09d2eb315b5b7a41c2b2fbd227dc247722dbd6724357bfcc7ef7e44128a6b",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/run.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts",
               "packages/e2ee-lab/src/platform/operation-scope.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "start",
             "private": false,
             "sha256": "053df800cdc2a2d7333ff604b3901f272c98044e92f4b15e3d6cf166e5dafc34",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/run.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts",
-              "packages/e2ee-lab/src/platform/http-identity.ts",
-              "packages/e2ee-lab/src/platform/workspace-session.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Native synthetic device and scoped owners exist; full honest session startup, failure cleanup and process reopen composition still absent. Never dispose StreamsClient by protocol EOF. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, resumable new-space creation and complete facade remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "requestCredential",
             "private": true,
             "sha256": "d4bbe3659ae8e7fd5b416074c457ea5b23b4146b75eac57f852aac9e0fd7facb",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts",
-              "packages/e2ee-lab/src/platform/host.ts",
-              "packages/e2ee-lab/src/platform/http-identity.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts",
+              "packages/e2ee-lab/src/platform/join-session.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "reauth",
             "private": false,
             "sha256": "42b23b2827eef0a6a424b66aa8143387d214e07a304395a9ae23efd2cb52e167",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts",
-              "packages/e2ee-lab/src/platform/host.ts",
-              "packages/e2ee-lab/src/platform/http-identity.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts",
+              "packages/e2ee-lab/src/platform/join-session.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual possession/current Org bearer host implemented, client session workflow absent. Caller headers/device JSON cannot authorize; own native requests and await before close. Actual scoped HTTP credential client now extracted, signer capture/response identity validation/local origin bound/closed bearer guard, real HTTP and OS-child consumers. Full session lifecycle/startup/re-auth orchestration still absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "streamUrl",
             "private": true,
             "sha256": "39d29e450842d948b9706308cf12671fd46349871cd469bbb3d8639610eb8462",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-client.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "openLedgerEffect",
             "private": true,
             "sha256": "c42888eca474d0dc6eaa2710cfea34ad627ebbef9819cb0898c1ed79ed8e98cd",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-lab/src/platform/ledger-actor.ts",
               "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, resumable new-space creation and complete facade remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "ledgerLayer",
             "private": true,
             "sha256": "249eee103f91dbb29a6944b4863f2e734e40628ffcf4f2f1d2b16d3db6ea7e27",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-lab/src/platform/ledger-actor.ts",
               "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, resumable new-space creation and complete facade remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "openLedger",
             "private": true,
             "sha256": "a933ec1425f3ad519b011197743a24502ede25411da21e1e89adbbbf41d923e6",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-lab/src/platform/ledger-actor.ts",
               "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, resumable new-space creation and complete facade remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "prepareWrite",
             "private": false,
             "sha256": "acc71e146759eb3cf1d548d8bc3dffe87f587650811aa82e4aba0d96654cd4b9",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/content-provider.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Use genuine public ledger/current rotation and committed epoch key; no structural state or copied historical-author authorization. Public provider exists, honest session wiring remains absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "prepareRead",
             "private": false,
             "sha256": "ad62913488ebb57a205ba1a7a565d6adcacf4692b010988cbee38a4b494068f4",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-client.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "contentAuthority",
             "private": false,
             "sha256": "785f93e2b5934c717d6981e252e53470a86146467132cd1f14da430aac9b8bc7",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/content-provider.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/content-provider.ts",
+              "packages/e2ee-lab/src/platform/operation-scope.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Use genuine public ledger/current rotation and committed epoch key; no structural state or copied historical-author authorization. Public provider exists, honest session wiring remains absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "readLedger",
             "private": false,
             "sha256": "8a8698f41f1cc968a8a61de77bfb6ab97ebf60d20f2dc14889d4197f1506f5a4",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-client.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-lab/src/platform/ledger-actor.ts",
               "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public genuine feed and released SDK, durable cursor/head failure retention and OS reopen are tested; honest facade and independently trusted host checkpoint retrieval remain absent. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, resumable new-space creation and complete facade remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "createSpace",
             "private": false,
             "sha256": "1525fa45305b698bc2a09c73e4438be1dc4181d6a4c36f95592c081b064d8044",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/workspace-registry.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/workspace-creation.ts",
+              "packages/e2ee-lab/src/platform/workspace-creation-request.ts",
+              "packages/e2ee-lab/test/workspace-creation.test.ts"
             ],
-            "status": "待明确决定",
-            "reason": "Legacy metadata-prefix transport retired by user current-only decision; use public submission complete original signed control history. Resumable creation remains unfinished. No fake successful genesisTransport or new P09 implementation."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "adoptGenesis",
             "private": false,
             "sha256": "60de0db846233ff8f91673c4739fce6c639542eef43e8a9d990c5acab446a212",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/workspace-registry.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-lab/src/platform/http-identity.ts",
+              "packages/e2ee-lab/src/platform/join-session.ts",
               "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Verified original signer/hash/metadata persistence module exists. Actual host adoption plus client ledger bootstrap requires current complete signed control history; hash alone is not membership/current trust. Public authenticated discovery now verifies original signature as well as hash/type with bounded body and owned record. Metadata is not current authorization; keyring/session/ledger initialization still pending implementation of the current full-prefix bootstrap. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, resumable new-space creation and complete facade remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "submit",
             "private": false,
             "sha256": "f0756b5c0098d604d1b48222fe5a90592e921523cdabbef792c075aff18b4f38",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public admission/signing and unchanged merged P09 own operations. Actual durable terminal-result resume without signer is tested; facade must preserve unknown/conflict, not count response as committed."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "resume",
             "private": false,
             "sha256": "fb8ff69f788da07f1c1e7cc79ba9e1f1ddcdf6d0cdc3607ab415a186bd573253",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-lab/src/platform/ledger-actor.ts",
               "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public admission/signing and unchanged merged P09 own operations. Actual durable terminal-result resume without signer is tested; facade must preserve unknown/conflict, not count response as committed. Existing admitted workspace now composes identity/metadata/public SDK/ledger actor with child-scope failure cleanup and shared close receipt, separate checkpoint authority and real OS-child reopen. Key/content/startup identity custody, resumable new-space creation and complete facade remain absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "requestJoin",
             "private": false,
             "sha256": "004b40b942d7c8dcf6bbef534a550a09754bf5edc8ec13c772265932b20170e1",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/join-mailbox.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts",
-              "packages/e2ee-lab/src/platform/http-identity.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts",
+              "packages/e2ee-lab/src/platform/join-session.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual signed inert join metadata and current membership checks exist. Honest approval/retry/role followup workflow pending; admitted and roleConfigured must remain separate after unknown/conflict. Public authenticated submit/list now validates bounded copied signed candidate metadata, sender and true receipt; full caller ID generation/adoption/approval/session remains unfinished."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "listJoins",
             "private": false,
             "sha256": "dc261887ab46b865c887a6047d1015a175edbdf179630e275643a70a6e5a8d87",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/join-mailbox.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts",
-              "packages/e2ee-lab/src/platform/http-identity.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/http-identity.ts",
+              "packages/e2ee-lab/src/platform/join-session.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual signed inert join metadata and current membership checks exist. Honest approval/retry/role followup workflow pending; admitted and roleConfigured must remain separate after unknown/conflict. Public authenticated submit/list now validates bounded copied signed candidate metadata, sender and true receipt; full caller ID generation/adoption/approval/session remains unfinished."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "approveJoin",
             "private": false,
             "sha256": "43d3ca0cb576742d327d91b6e179e057afe64612e503487cab2c6fd480318b94",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/join-mailbox.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual signed inert join metadata and current membership checks exist. Honest approval/retry/role followup workflow pending; admitted and roleConfigured must remain separate after unknown/conflict."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "configureJoinRole",
             "private": true,
             "sha256": "0407bb79960d9a0f673493bf6a064d21dd8ee0ef2dfbac47f60e15b97dce6fea",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/join-mailbox.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/ledger-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual signed inert join metadata and current membership checks exist. Honest approval/retry/role followup workflow pending; admitted and roleConfigured must remain separate after unknown/conflict."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "admitDevice",
             "private": false,
             "sha256": "af59a494920166cb798e9a0857dea591b79fc84e070d02c6c8feaea3018da3ea",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-lab/src/platform/ledger-actor.ts",
-              "packages/e2ee-lab/src/platform/control-gateway.ts"
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Use public prepareDeviceAdmission current actor membership + new-device PoP. Actual R→own personal HTTP/SDK path repaired and revoked R refused; full honest facade still absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "revokeDevice",
             "private": false,
             "sha256": "7b4bfd07e6078b8138bbf99df5a4aa1239e8f7f691e4027823c8ea02b8fbcb0c",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/full-session.ts",
               "packages/e2ee-lab/src/platform/ledger-actor.ts",
-              "packages/e2ee-lab/src/platform/control-gateway.ts"
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Use public prepareDeviceAdmission current actor membership + new-device PoP. Actual R→own personal HTTP/SDK path repaired and revoked R refused; full honest facade still absent."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "removeMember",
             "private": false,
             "sha256": "088ce8022e451c9c93a05aa2cec4a1e798bcc69d7f74672c4df3eefe4b9d770f",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-core/src/keys/epoch-rotation.ts"
             ],
-            "status": "待明确决定",
-            "reason": "Old tag2/two-step removal is obsolete and must not return. D12 atomic replacement wire needs human clarification in owning protocol layer."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "publishEpoch",
             "private": false,
             "sha256": "70d8a9ad97bef80002484454db3b75c82304c3fb2b02c71fd6f89762e0073829",
             "targetPaths": [
-              "packages/e2ee-core/src/keys/epoch-rotation.ts",
               "packages/e2ee-lab/src/platform/full-session.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-core/src/keys/epoch-rotation.ts"
             ],
             "status": "已迁",
-            "reason": "Real local protected candidate generation/save/readback, existing E7/P09 exact retry and installed round trip; full session consumes publication/resume/explicit ACK. Independent backup/permanent-device-loss policy remains separate."
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "deliverEpochKey",
             "private": false,
             "sha256": "e5aa1ec8d227af8ee697ea42a299d194364ca472497c9270f3838d2d3e08e6b7",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/mailbox-http.ts",
-              "packages/e2ee-lab/src/platform/key-mailbox.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/key-round.ts",
+              "packages/e2ee-core/src/keys/installed-history.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public HPKE/protected SQLite/distribution and real possession/bearer HTTP OS reopen pass. Honest session delivery/resume/report/repair orchestration still missing; observed ciphertext is not installed key."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "currentEpoch",
             "private": false,
             "sha256": "86650f4f78f0f62d1bd4839f5daed4fd6c5843050a54e3d42b3357324fd5a57e",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/key-round.ts",
+              "packages/e2ee-core/src/keys/installed-history.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Return authenticated ledger epoch, never max local keys; pure projection absent with honest facade."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "receiveEpochKey",
             "private": false,
             "sha256": "e081d47719e85ac3e7cc577e9a6232fa269e6404d87ebb387265e6eab819dc8f",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/mailbox-http.ts",
-              "packages/e2ee-lab/src/platform/key-mailbox.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/key-round.ts",
+              "packages/e2ee-core/src/keys/installed-history.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public HPKE/protected SQLite/distribution and real possession/bearer HTTP OS reopen pass. Honest session delivery/resume/report/repair orchestration still missing; observed ciphertext is not installed key."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "centralKeyRound",
             "private": false,
             "sha256": "fc2c00833abb46bfbb89bf8911b573e54b78f050851b14bba097a8d1ce39e905",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/key-mailbox.ts",
-              "packages/e2ee-lab/src/platform/key-round.ts",
               "packages/e2ee-lab/src/platform/full-session.ts",
-              "packages/e2ee-lab/src/platform/process-worker.ts"
+              "packages/e2ee-lab/src/platform/key-round.ts",
+              "packages/e2ee-core/src/keys/installed-history.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Existing-workspace session and process/CLI consumers expose finite public-owner rounds, independent phase continuation, explicit stable-ID repair and receive/repair/delivery result acknowledgement. Real HPKE/HTTP/SQLite, blocked-first-page, lost ACK/reopen, retained originals and capacity release are exercised. No automatic drain, candidate publisher, vault or production backup claim; complete original actor/attack coverage remains partial."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "recoverEpochHistory",
             "private": false,
             "sha256": "b0112165c106a5fbfb40f6a27efc9b0ba4a583482168b136f3ff0a8c6c32ee18",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-core/src/keys/history.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/key-round.ts",
+              "packages/e2ee-core/src/keys/installed-history.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public verified history recovery + native protected install/readback validated in OS child from key1 only. Honest facade absent; no vault format/backup atomic receipt claim."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "exportNote",
             "private": false,
             "sha256": "9b80b35295f3f2545ea05deed4a9f6100cf63bdefc3a45955d65b7aafb17926d",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-core/src/ledger/snapshot.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts"
             ],
-            "status": "待明确决定",
-            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "publishNote",
             "private": false,
             "sha256": "bc629d80c2614d067a7c728cbec7f02ee6d4edb561397b5da51994bcdc0cf754",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-core/src/ledger/snapshot.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts"
             ],
             "status": "待明确决定",
-            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+            "reason": "Extra host-stored signed-note authority is not selected; current refreshed personal observation and caller-provided independent exact tuple exist."
           },
           {
             "name": "compareRemote",
             "private": false,
             "sha256": "b2175be034c2148b20bca13132b68224fb1f8cd4c3bb0a5c6bf10a3f16f26413",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-core/src/ledger/snapshot.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts"
             ],
-            "status": "待明确决定",
-            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "compareIndependent",
             "private": false,
             "sha256": "088cf9d21670a3193ebbc13317235e5e0d49cb8f7bd944cb639d752c06fae30f",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-core/src/ledger/snapshot.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts"
             ],
-            "status": "待明确决定",
-            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "finishCompare",
             "private": true,
             "sha256": "38f80b756e37c2723259b5ac2b7d8981cf0ae13170a0ab5d8b630fe0181e3de8",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-core/src/ledger/snapshot.ts",
-              "packages/e2ee-lab/src/platform/host.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-core/src/ledger/snapshot.ts"
             ],
-            "status": "待明确决定",
-            "reason": "Use public comparison tuple/confirmed external signer contracts. Host note signer eligibility source R/machine vs public personal-only unresolved. Server response never establishes independent confirmation."
+            "status": "已迁",
+            "reason": "Current observable behavior is composed by the listed public/scoped owners and owning consumers; old class signature/fields are not compatibility requirements. Product custody/backup/freshness qualification remains external."
           },
           {
             "name": "readKeyFrames",
             "private": false,
             "sha256": "6c72f285ce78a2eb2d7de283d0836725aa3ce2f69c397837466aa0d5077c8eb9",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
+              "packages/e2ee-lab/src/platform/device.ts",
               "packages/e2ee-lab/src/platform/key-mailbox.ts",
-              "packages/e2ee-lab/src/platform/stream-read.ts"
+              "packages/e2ee-lab/src/platform/repro-pack.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Finite authenticated SDK readers exist; original raw legacy keys-stream reader must surface transport failures and preserve cursor. Legacy frame delivery versus indexed current mailbox orchestration must be explicit."
+            "status": "旧方案淘汰",
+            "reason": "No source-era deterministic crypto RNG or global key-stream API. Secure host crypto and bounded recipient mailbox/current read-replay owners preserve required behavior without compatibility aliases."
           }
         ],
-        "acceptance": "Method destinations are inventory, not implemented facade or production acceptance. Shared owning modules remain single implementations; pending targets not created."
+        "acceptance": "Current behavior mapped to scoped owners; raw source class API is not retained. Exact whole original live/model/entropy scenarios and external product decisions remain separately tracked, not inferred from these mappings."
       },
       "sourceFieldInventory": {
         "sourceHead": "f1bc0c52649c21d2e9b620fe3558874c40545e38",
@@ -7108,70 +7201,72 @@
             "private": false,
             "sha256": "524d739865a2cf060c02e99347b46c075963dbbf42dbdefcfa26f6d98fd7f5e4",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "clientDir",
             "private": false,
             "sha256": "df14ecf3133c3021c763c5b55526cdf8721768c94c24920be5f719eb66706a8e",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "device",
             "private": false,
             "sha256": "1c45946c4eb7f31f8d9653190f449ded3353543257eb9e127ecb8debdf689b08",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "credential",
             "private": false,
             "sha256": "11792b5da22b25032ded5e87b47e417c14f8c4eef2608f086a39c11f9f678f05",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "genesis",
             "private": false,
             "sha256": "5eead668fe2bd88eb0bf1777b4606693ad9deaaaece6cec681a6c06a6064de3e",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/workspace-registry.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Keep original signed genesis record distinct from verified anchor/hash. Metadata registry exists; full adoption/create/bootstrap requires current full signed control history; no metadata-prefix compatibility, resumable creation still unfinished."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "genesisHex",
             "private": false,
             "sha256": "ee58ad6d4547e6d3a6efbdeff5443d21b2f10d8d57230a9fc54c8b0d3d629228",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/workspace-registry.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Keep original signed genesis record distinct from verified anchor/hash. Metadata registry exists; full adoption/create/bootstrap requires current full signed control history; no metadata-prefix compatibility, resumable creation still unfinished."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "epochKeys",
@@ -7189,187 +7284,192 @@
             "private": false,
             "sha256": "f2183b50d13ad727ffff53422d39065d9a1767dfe7028cdd68792a3ee6b597bd",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "verifiedLedger",
             "private": true,
             "sha256": "08ca6f4f3dff96ca2520098c10c100c38889437ed48082b5aeba52879e061974",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-client.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Use genuine public verified views/feed and unchanged merged submission; cache/context ownership and durable process reopen primitives exist, class lifecycle still absent. Structural state or count never authority."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "membershipId",
             "private": false,
             "sha256": "3f5cc67e7218d52823ccf12ec628ba8c78d5d15e1329d838e34b7cc73e06afa1",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "baseUrl",
             "private": false,
             "sha256": "88309e08745b3a84136164532aa023feb5d01f3fe507bcdfcf6b79cdb27fd41d",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "now",
             "private": false,
             "sha256": "d409549ba3ccd34739206296805dd8e1e14352291b5d878d1a1b4246fb391ae7",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "testMode",
             "private": false,
             "sha256": "8156e9f916d1f944c899fc8a27de8c4665b848c38d57924e1e0ec7ed68172240",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/device.ts",
-              "packages/e2ee-lab/src/platform/credentials.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Public synthetic identity/possession/bearer primitives exist; complete honest session state, start/re-auth and durable reopen composition remain absent. No real keys or production custody copied."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "canWriteDocument",
             "private": false,
             "sha256": "4240bfa278ead3ee537a79cb867e51f4bba3898c920a1fd89bdfee8fdffb5ea4",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/content-provider.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Derive actual new-seal permission/epoch from genuine current ledger, including rotationRequired; do not use max keys or a caller boolean as authority. Full facade pending."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "authenticatedWriterMayWrite",
             "private": false,
             "sha256": "cfd9a52861791cc6ab689c4a45ea1c8b3fd7301decd76bc4160b09f5c1cdf209",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/pure/reference-model.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Independent owned reference expectations now exist, with explicit unmeasured. Honest actor correspondence must use expectation status; two false/undefined projections cannot prove agreement."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "ledgerEpoch",
             "private": false,
             "sha256": "441aea09adf47892390b2c2cb844d09bf846106770143f6a35bf6929b0afbe27",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/content-provider.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Derive actual new-seal permission/epoch from genuine current ledger, including rotationRequired; do not use max keys or a caller boolean as authority. Full facade pending."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "loroDoc",
             "private": false,
             "sha256": "10216ddc3cf40eefce33cfe7145dd6dfe4cdc3d7196017302a463a9ab2223b2e",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/content-session.ts",
-              "packages/e2ee-lab/src/platform/content-provider.ts",
-              "packages/e2ee-lab/src/platform/document-sqlite.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual public Loro/Flock protected provider and native durable paired persistence probes exist. Full session holders/actor mutations pending; stop borrowed SDK before dropping references, no nonexistent Flock deterministic free claim."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "flockDoc",
             "private": false,
             "sha256": "11e66c84bc9ef393980cd28b297b6ad4ecbbe13f7a63ebc3e580b31d1b633bf6",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/content-session.ts",
-              "packages/e2ee-lab/src/platform/content-provider.ts",
-              "packages/e2ee-lab/src/platform/document-sqlite.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Actual public Loro/Flock protected provider and native durable paired persistence probes exist. Full session holders/actor mutations pending; stop borrowed SDK before dropping references, no nonexistent Flock deterministic free claim."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "crashAt",
             "private": false,
             "sha256": "3088278cd3d83ca9a27df431d837308295d2deace0dee97750124d1e300d84cc",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/document-sqlite.ts"
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/document-sqlite.ts",
+              "packages/e2ee-lab/test/action-executor.test.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Original four phase-specific crash controls/marker must retain distinct destinations in actual native persistence and OS-child harness. Existing narrower failure probes do not close original whole actor scenarios."
+            "status": "旧方案淘汰",
+            "reason": "Old separate-document/cursor-file phase flags are not restored. Current one-transaction native pair, real SQL faults and actual SIGKILL/reopen are measured; a three/four-phase source API is not maintained. Full original scenario equivalence is not inferred."
           },
           {
             "name": "crashMarker",
             "private": false,
             "sha256": "d75aaf60b03f231f3cdb9a024f60c37839369165a1f4184308359318bda5e6f6",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/document-sqlite.ts"
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/document-sqlite.ts",
+              "packages/e2ee-lab/test/action-executor.test.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Original four phase-specific crash controls/marker must retain distinct destinations in actual native persistence and OS-child harness. Existing narrower failure probes do not close original whole actor scenarios."
+            "status": "旧方案淘汰",
+            "reason": "Old separate-document/cursor-file phase flags are not restored. Current one-transaction native pair, real SQL faults and actual SIGKILL/reopen are measured; a three/four-phase source API is not maintained. Full original scenario equivalence is not inferred."
           },
           {
             "name": "runtime",
             "private": false,
             "sha256": "425b7bed2dcb035808fad11780ea9009f3327e7b6b38d107e03105e87f4140e7",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/runtime.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Borrow typed scoped native/filesystem/HTTP operations with captured bindings and explicit cancellation/settle/close. No source Result.gen-finally cleanup assumption, no globals or protocol EOF disposal. Full facade not wired."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "fs",
             "private": false,
             "sha256": "e85d69919382b67f1dd015c203345b6f64e88a2fd99d2ba05c8a98f011c68618",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/runtime.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Borrow typed scoped native/filesystem/HTTP operations with captured bindings and explicit cancellation/settle/close. No source Result.gen-finally cleanup assumption, no globals or protocol EOF disposal. Full facade not wired."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "ledgerClient",
             "private": true,
             "sha256": "465099cd9c4af62bae8e7a5a95ff8c7e5a8e4d42f26a974ed53776d2d4dd726e",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/ledger-client.ts",
-              "packages/e2ee-lab/src/platform/ledger-actor.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Use genuine public verified views/feed and unchanged merged submission; cache/context ownership and durable process reopen primitives exist, class lifecycle still absent. Structural state or count never authority."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "pointCache",
@@ -7387,60 +7487,60 @@
             "private": true,
             "sha256": "65e094ba52933d0b0761f9ced4d8456f995daabdc249e1a368141ef49ddfbf10",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/run.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Scoped owner primitives and real cancellation/drain/close probes exist; full session cleanup/cached disposal/error ownership still pending. Forever nonsettling native bounded shutdown is not established."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "run",
             "private": true,
             "sha256": "4d0678afaf725740b071a188ba2f549c3b15771da0aa179bfc2b2305e3ae4880",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/run.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Scoped owner primitives and real cancellation/drain/close probes exist; full session cleanup/cached disposal/error ownership still pending. Forever nonsettling native bounded shutdown is not established."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "disposal",
             "private": true,
             "sha256": "c1f74931a27d58621462a8f4a20182f543c9c7c8f60fe9794c4597ec8ff57fd6",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/run.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Scoped owner primitives and real cancellation/drain/close probes exist; full session cleanup/cached disposal/error ownership still pending. Forever nonsettling native bounded shutdown is not established."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "disk",
             "private": true,
             "sha256": "a0985f4f28d55cab8e8246a4ba0a14dc2196e6b55f7898b4ed8ce4086fc6dd5c",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/runtime.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Borrow typed scoped native/filesystem/HTTP operations with captured bindings and explicit cancellation/settle/close. No source Result.gen-finally cleanup assumption, no globals or protocol EOF disposal. Full facade not wired."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           },
           {
             "name": "fetchImpl",
             "private": true,
             "sha256": "ab992523dca624b9a04a022b42519471d1e4d74ddfe52dff015326a2014ea88c",
             "targetPaths": [
-              "packages/e2ee-lab/src/platform/session.ts",
-              "packages/e2ee-lab/src/platform/runtime.ts",
-              "packages/e2ee-lab/src/platform/operation-scope.ts"
+              "packages/e2ee-lab/src/platform/full-session.ts",
+              "packages/e2ee-lab/src/platform/process-actor.ts",
+              "packages/e2ee-lab/src/platform/workspace-session.ts"
             ],
-            "status": "需迁并修复",
-            "reason": "Borrow typed scoped native/filesystem/HTTP operations with captured bindings and explicit cancellation/settle/close. No source Result.gen-finally cleanup assumption, no globals or protocol EOF disposal. Full facade not wired."
+            "status": "已迁",
+            "reason": "Current owned session methods/facts and scoped dependencies replace raw class fields; no compatibility alias or broad filesystem/private key access is required."
           }
         ],
         "constructorParameterProperty": "options is private and included in the already fingerprinted constructor; copy caller options and bindings before asynchronous operations, no production entropy replay inferred",
@@ -7453,10 +7553,10 @@
         "core": "74fec05a393ff72ac48baadb562bf7302bfeb63d5b427a6b742e4d5a332156e7",
         "candidate": "74fec05a393ff72ac48baadb562bf7302bfeb63d5b427a6b742e4d5a332156e7"
       },
-      "targetPath": "packages/e2ee-lab/src/pure/ledger-command.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/ledger-actor.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Original operation-to-command adapter; public admission already owns validated settled commands. Reuse that API, do not copy old proposal/genesis codec or tag2.",
+      "reason": "Consume already public admission/signing and merged P09 directly; no source-era command/genesis codec copy.",
       "sourceDeclaredExports": {
         "core": [
           "ledgerCommand"
@@ -7465,7 +7565,10 @@
           "ledgerCommand"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/ledger-actor.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/reference-model.ts",
@@ -7524,10 +7627,11 @@
         "candidate": "6dc9f560a0f230799222e885e258728959cfe0017a7122815ef0841ac4c833fa"
       },
       "targetPath": "packages/e2ee-lab/src/pure/replay.ts",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Pure recorded fixture comparator port exists; event semantic fields, inert recorded entropy and original request/response bytes compared without crypto generation. Frame actor/operation/phase/resource are now compared too, so wrong-resource transcripts do not compare equal. Exact execution replay/entropy factory/host integration remain undecided or incomplete. Existing typed event comparison now includes eventId/step and distinguishes missing parent from literal none; the unused coarse eventSignature helper is retired in favor of complete material comparison. No captured executor/schema/entropy acceptance.",
+      "reason": "Exact inert event/material comparison remains separate from real original-byte reads and fresh action-outcome execution replay. Known fault counts remain exact; no implicit entropy resealing.",
       "coveragePaths": [
+        "packages/e2ee-lab/src/pure/replay.ts",
         "packages/e2ee-lab/test/replay.test.ts"
       ],
       "sourceDeclaredExports": {
@@ -7546,7 +7650,7 @@
           "eventSignature"
         ]
       },
-      "targetPathState": "existing"
+      "targetPathState": "created"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/repro-cli.ts",
@@ -7554,15 +7658,18 @@
         "core": "87b34ef778db1c82fa0282cab3b5649416ad33a99699c076ddb8351d87090d72",
         "candidate": "87b34ef778db1c82fa0282cab3b5649416ad33a99699c076ddb8351d87090d72"
       },
-      "targetPath": "packages/e2ee-lab/src/repro-cli.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/cli.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "New-process repro pack replay CLI with no live model or production keys; full execution waits real host/driver and selected entropy contract.",
+      "reason": "Actual current replay/minimize CLI starts new native actors/directories and reports measured differences or missing material. It never imports old private-key/entropy packs or obtains secrets automatically.",
       "sourceDeclaredExports": {
         "core": [],
         "candidate": []
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/cli.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/repro-pack.ts",
@@ -7570,10 +7677,10 @@
         "core": "22bf8baa9076980339ded24afa324213a3606516410ec189cd701a4812922ea1",
         "candidate": "22bf8baa9076980339ded24afa324213a3606516410ec189cd701a4812922ea1"
       },
-      "targetPath": "packages/e2ee-lab/src/repro-pack.ts",
+      "targetPath": "packages/e2ee-lab/src/platform/repro-pack.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Versioned synthetic private/public repro material, exact environment identity, defect/collaboration replay and missing-material failure; no user transcripts or real secrets.",
+      "reason": "Single bounded owned JSON current read/action material. Original reads use external checkpoint/key capability and actual public signature/AEAD checks; fresh execution/shrink compares measured outcomes. Old private-key pack layout and deterministic entropy regeneration are not silently restored.",
       "sourceDeclaredExports": {
         "core": [
           "ReproScope",
@@ -7600,7 +7707,12 @@
           "replayReproPack"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/repro-pack.ts",
+        "packages/e2ee-lab/src/platform/repro-runner.ts",
+        "packages/e2ee-lab/test/repro.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/restricted-agent.ts",
@@ -7648,10 +7760,10 @@
         "core": "51e26c9eaf96b10a875f5f951eaf6fa200748d6221d7fcf52f8975ddd5351e63",
         "candidate": "51e26c9eaf96b10a875f5f951eaf6fa200748d6221d7fcf52f8975ddd5351e63"
       },
-      "targetPath": "packages/e2ee-lab/src/runtime.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/runtime.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "One native Effect phase/fetch/permit path. Unused pause/resume/freeze/intercept/start-log and Promise phase APIs removed; actual action/HTTP fault owners remain separate.",
+      "reason": "One native Effect phase/permit/fetch owner and actual action fault paths; unused Promise-phase/intercept/pause/start APIs retired. Owner closure awaits actual work.",
       "coveragePaths": [
         "packages/e2ee-lab/src/platform/runtime.ts"
       ],
@@ -7669,7 +7781,7 @@
           "LabRuntime"
         ]
       },
-      "targetPathState": "proposed-path-not-created",
+      "targetPathState": "created",
       "retiredSourceExports": [
         "FetchIntercept",
         "ViewFreeze"
@@ -7681,10 +7793,10 @@
         "core": "b0fd0141bfa17afa373dd7957ecae0f4a01162472fd6e0b5b37f53a7290e47c1",
         "candidate": "b0fd0141bfa17afa373dd7957ecae0f4a01162472fd6e0b5b37f53a7290e47c1"
       },
-      "targetPath": "packages/e2ee-lab/src/scenario.ts",
+      "targetPath": "packages/e2ee-lab/src/platform/scenario-runner.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Persistent multi-member collaboration and scripted/optional agent turns with measured client convergence; full honest host/actor paths pending.",
+      "reason": "Finite real three-member collaboration, native-file offline edits/reopen/current-epoch reconnect and full local host restart; response plans actually freeze/release excluded-member prefixes and retain precise observations. New fresh action replay compares known outcomes, not newly random bytes. Open-ended external-agent exploration is optional and separate.",
       "sourceDeclaredExports": {
         "core": [
           "COLLAB_SCENARIO",
@@ -7725,7 +7837,14 @@
           "firstCollabDivergence"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "existing",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/scenario-runner.ts",
+        "packages/e2ee-lab/src/platform/attack-transport.ts",
+        "packages/e2ee-lab/test/offline-session.test.ts",
+        "packages/e2ee-lab/test/host-restart.test.ts",
+        "packages/e2ee-lab/test/attack-scenario.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/schedule.ts",
@@ -7733,10 +7852,10 @@
         "core": "760cc54684912e06f582bb015a2efe7ddd2d37c51e8c4043e593c70f54bf7a4f",
         "candidate": "760cc54684912e06f582bb015a2efe7ddd2d37c51e8c4043e593c70f54bf7a4f"
       },
-      "targetPath": "packages/e2ee-lab/src/schedule.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/pure/schedule.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Current pure stable event identity/choice helpers; integrate into actual driver/replay, preserve actor/phase/parent identity.",
+      "reason": "Exact current JSON tuple identity/parent/occurrence used by real record/replay driver; missing is distinct from literal strings.",
       "coveragePaths": [
         "packages/e2ee-lab/src/pure/schedule.ts"
       ],
@@ -7760,7 +7879,7 @@
           "choiceKey"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/scheduler.ts",
@@ -7768,10 +7887,10 @@
         "core": "1b8012063c0281ca30e913840a8471e4e6c17e41aaf93272070c695989b73aaf",
         "candidate": "1b8012063c0281ca30e913840a8471e4e6c17e41aaf93272070c695989b73aaf"
       },
-      "targetPath": "packages/e2ee-lab/src/scheduler.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/pure/scheduler.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Current pure logical request/permit/complete/time state with typed Result failures; integrate actual runtime/driver without wall-clock sleeps.",
+      "reason": "Current pure single-use request/permit/complete state used by native runtime and driver; finite budgets and typed failures.",
       "coveragePaths": [
         "packages/e2ee-lab/src/pure/scheduler.ts"
       ],
@@ -7803,7 +7922,7 @@
           "isRunnable"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created"
     },
     {
       "sourcePath": "packages/e2ee-lab/src/services/clock.ts",
@@ -7811,10 +7930,10 @@
         "core": "53d3bae48e6ec979293d02293c61cdc21f9f2de0cc2d9a94df2db8b89efe67f8",
         "candidate": "53d3bae48e6ec979293d02293c61cdc21f9f2de0cc2d9a94df2db8b89efe67f8"
       },
-      "targetPath": "packages/e2ee-lab/src/services/clock.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/runtime.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Explicit logical Lab clock service and deterministic test clock; remove module-load wall time/default global clock from workflow creation.",
+      "reason": "Explicit synthetic logical time/Effect TestClock and Flock monotonic time; no old global Live clock service API.",
       "sourceDeclaredExports": {
         "core": [
           "LabClockShape",
@@ -7833,7 +7952,10 @@
           "TestLabClock"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/runtime.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/services/fs.ts",
@@ -7841,10 +7963,10 @@
         "core": "a11e3e0b77ef33da660594cd4684e74265ec0766a7d1fc202c1909015fa4aabe",
         "candidate": "a11e3e0b77ef33da660594cd4684e74265ec0766a7d1fc202c1909015fa4aabe"
       },
-      "targetPath": "packages/e2ee-lab/src/services/fs.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/document-sqlite.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Scoped actual/local or explicit synthetic-memory filesystem capability; real durability acceptance must use actual files, not memory mocks.",
+      "reason": "Actual scoped file/SQLite owners and child bracket rather than broad injected pseudo-filesystem. No old Layer/global cleanup API; real durable tests use real files.",
       "sourceDeclaredExports": {
         "core": [
           "LabFsShape",
@@ -7863,7 +7985,10 @@
           "MemoryLabFs"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/document-sqlite.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/services/http.ts",
@@ -7871,10 +7996,10 @@
         "core": "4dc26371f465d91552d734b658202f14d9a62135cbf1ff6751fc6a49f5e26a00",
         "candidate": "4dc26371f465d91552d734b658202f14d9a62135cbf1ff6751fc6a49f5e26a00"
       },
-      "targetPath": "packages/e2ee-lab/src/services/http.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/sdk-owner.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Explicit native HTTP capability for scoped Lab execution; require injected fetch at construction, retain abort and actual settlement.",
+      "reason": "Captured current native fetch/SDK raw leases, abort plus actual settlement before owner closure; no duplicate generic global HTTP layer.",
       "sourceDeclaredExports": {
         "core": [
           "LabFetch",
@@ -7893,7 +8018,10 @@
           "TestLabHttp"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/sdk-owner.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/services/index.ts",
@@ -7901,15 +8029,18 @@
         "core": "e613452a67f42a8eecae4762571b547b893a53f23c489b2172218c057ed3de55",
         "candidate": "e613452a67f42a8eecae4762571b547b893a53f23c489b2172218c057ed3de55"
       },
-      "targetPath": "packages/e2ee-lab/src/services/index.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/package.json",
+      "status": "旧方案淘汰",
       "layer": "L6",
-      "reason": "Owned service exports; consolidate new scope/runtime capabilities, retire implicit global Live entry points.",
+      "reason": "Old service-barrel/Live layers are retired; current explicit package owner subentries already supply required scoped capabilities.",
       "sourceDeclaredExports": {
         "core": [],
         "candidate": []
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/package.json"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/services/live.ts",
@@ -7939,10 +8070,10 @@
         "core": "d05a7592b08dda18ae5f2a0be9602d6554a978fb16b6fd1d65ea8fbc782294f7",
         "candidate": "d05a7592b08dda18ae5f2a0be9602d6554a978fb16b6fd1d65ea8fbc782294f7"
       },
-      "targetPath": "packages/e2ee-lab/src/services/run.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/run.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "One fixed-scope LabCallbackRunner at actual Node/SDK Promise callbacks. No unused generic Layer/context/sync method or duplicate workflow runner.",
+      "reason": "One fixed-scope registered Node/SDK Promise callback runner, never a second workflow execution or synchronous platform bypass.",
       "coveragePaths": [
         "packages/e2ee-lab/src/platform/run.ts"
       ],
@@ -7960,7 +8091,7 @@
           "runLiveLabPromise"
         ]
       },
-      "targetPathState": "proposed-path-not-created",
+      "targetPathState": "created",
       "retiredSourceExports": [
         "LabRun",
         "runLabPromise",
@@ -7973,10 +8104,10 @@
         "core": "0c5c92123e79ae7133976b9cfbec88d01fdff942f9c9024b362062ad247e2e93",
         "candidate": "0c5c92123e79ae7133976b9cfbec88d01fdff942f9c9024b362062ad247e2e93"
       },
-      "targetPath": "packages/e2ee-lab/src/trace.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/runtime.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Public run-owned event trace projection; do not expose captured honest secrets or mutable global accumulation.",
+      "reason": "Run-owned event projection and actual bounded protected-wire evidence; honest plaintext/device secrets stay out of attacker-facing trace.",
       "sourceDeclaredExports": {
         "core": [
           "PublicTrace",
@@ -7987,7 +8118,10 @@
           "publicTrace"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/src/platform/runtime.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/src/workflows/session-ledger.ts",
@@ -7995,10 +8129,10 @@
         "core": "c7a0278b6f9e4e8a416e23529a3f0d003ba07e61df453ab2dbfea71fa7017315",
         "candidate": "c7a0278b6f9e4e8a416e23529a3f0d003ba07e61df453ab2dbfea71fa7017315"
       },
-      "targetPath": "packages/e2ee-lab/src/workflows/session-ledger.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/src/platform/ledger-actor.ts",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Settled commands/genesis already owned by public admission/signing; new Lab actor consumes those real public gates and unchanged P09 with durable-feed-before-consumption. No duplicate proposal/genesis codec, no D12/tag2 restoration. Original full session workflow remains to integrate.",
+      "reason": "Existing public command/admission/signing plus P09 and durable-feed ACK are actual full-session/create/join/process consumers; no duplicate kernel.",
       "coveragePaths": [
         "packages/e2ee-lab/src/platform/ledger-actor.ts",
         "packages/e2ee-lab/test/ledger-actor.test.ts"
@@ -8017,7 +8151,7 @@
           "executeSessionOperation"
         ]
       },
-      "targetPathState": "proposed-path-not-created"
+      "targetPathState": "created"
     },
     {
       "sourcePath": "packages/e2ee-lab/test/attack-lab.test.ts",
@@ -8028,8 +8162,12 @@
       "targetPath": "packages/e2ee-lab/test/attack-lab.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Port observable coverage for attacker capability isolation, measured observations, stopped-host/unavailable and restricted interception budgets. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable coverage for attacker capability isolation, measured observations, stopped-host/unavailable and restricted interception budgets. Consolidate into the owning suite only after each behavior has an evidence-backed destination. Current concrete consumers additionally cover actual whole-host restart, bounded original/action replay or per-member response controls as listed; original entropy/private pack/class signatures are not compatibility requirements. No count-based whole-suite equivalence claim.",
+      "targetPathState": "proposed-path-not-created",
+      "coveragePaths": [
+        "packages/e2ee-lab/test/attack-observer.test.ts",
+        "packages/e2ee-lab/test/attack-scenario.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/test/attacks.test.ts",
@@ -8067,8 +8205,12 @@
       "targetPath": "packages/e2ee-lab/test/collab-baseline.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Port observable coverage for three persistent clients, invites, offline edits/reconnect and host restart. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable coverage for three persistent clients, invites, offline edits/reconnect and host restart. Consolidate into the owning suite only after each behavior has an evidence-backed destination. Current concrete consumers additionally cover actual whole-host restart, bounded original/action replay or per-member response controls as listed; original entropy/private pack/class signatures are not compatibility requirements. No count-based whole-suite equivalence claim.",
+      "targetPathState": "proposed-path-not-created",
+      "coveragePaths": [
+        "packages/e2ee-lab/test/offline-session.test.ts",
+        "packages/e2ee-lab/test/host-restart.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/test/collab-scenario.test.ts",
@@ -8079,8 +8221,13 @@
       "targetPath": "packages/e2ee-lab/test/collab-scenario.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Port observable coverage for ongoing convergence, removed-insider split view, response-drop hit evidence and fresh-directory replay divergence. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable coverage for ongoing convergence, removed-insider split view, response-drop hit evidence and fresh-directory replay divergence. Consolidate into the owning suite only after each behavior has an evidence-backed destination. Current concrete consumers additionally cover actual whole-host restart, bounded original/action replay or per-member response controls as listed; original entropy/private pack/class signatures are not compatibility requirements. No count-based whole-suite equivalence claim.",
+      "targetPathState": "proposed-path-not-created",
+      "coveragePaths": [
+        "packages/e2ee-lab/test/attack-scenario.test.ts",
+        "packages/e2ee-lab/test/offline-session.test.ts",
+        "packages/e2ee-lab/test/repro.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/test/content-authority.test.ts",
@@ -8209,8 +8356,12 @@
       "targetPath": "packages/e2ee-lab/test/host-lifecycle.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Port observable coverage for partial-startup cleanup, native cancellation, true crash/reopen, epoch candidates before CAS, exact unknown resumes and bad snapshot recovery. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable coverage for partial-startup cleanup, native cancellation, true crash/reopen, epoch candidates before CAS, exact unknown resumes and bad snapshot recovery. Consolidate into the owning suite only after each behavior has an evidence-backed destination. Current concrete consumers additionally cover actual whole-host restart, bounded original/action replay or per-member response controls as listed; original entropy/private pack/class signatures are not compatibility requirements. No count-based whole-suite equivalence claim.",
+      "targetPathState": "proposed-path-not-created",
+      "coveragePaths": [
+        "packages/e2ee-lab/test/host-restart.test.ts",
+        "packages/e2ee-lab/test/workspace-creation.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/test/matrix.test.ts",
@@ -8257,8 +8408,12 @@
       "targetPath": "packages/e2ee-lab/test/replay-bytes.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Port observable coverage for three fresh-directory original CAS/lost-ACK/ciphertext replays and locatable mutated schedule/needle divergence. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable coverage for three fresh-directory original CAS/lost-ACK/ciphertext replays and locatable mutated schedule/needle divergence. Consolidate into the owning suite only after each behavior has an evidence-backed destination. Current concrete consumers additionally cover actual whole-host restart, bounded original/action replay or per-member response controls as listed; original entropy/private pack/class signatures are not compatibility requirements. No count-based whole-suite equivalence claim.",
+      "targetPathState": "proposed-path-not-created",
+      "coveragePaths": [
+        "packages/e2ee-lab/test/repro.test.ts",
+        "packages/e2ee-lab/test/attack-scenario.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/test/replay-cas.test.ts",
@@ -8269,8 +8424,12 @@
       "targetPath": "packages/e2ee-lab/test/replay-cas.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Port observable coverage for fresh-directory recorded CAS event shapes and mutated schedule refusal. Consolidate into the owning suite only after each behavior has an evidence-backed destination.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Port observable coverage for fresh-directory recorded CAS event shapes and mutated schedule refusal. Consolidate into the owning suite only after each behavior has an evidence-backed destination. Current concrete consumers additionally cover actual whole-host restart, bounded original/action replay or per-member response controls as listed; original entropy/private pack/class signatures are not compatibility requirements. No count-based whole-suite equivalence claim.",
+      "targetPathState": "proposed-path-not-created",
+      "coveragePaths": [
+        "packages/e2ee-lab/test/repro.test.ts",
+        "packages/e2ee-lab/test/host-restart.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/test/repro-pack.test.ts",
@@ -8281,8 +8440,11 @@
       "targetPath": "packages/e2ee-lab/test/replay.test.ts",
       "status": "需迁并修复",
       "layer": "L6",
-      "reason": "Pure exact fingerprint comparison, missing serialized measurements, finite scalar minimization and original expected-fact alias coverage consolidated into owning replay suite. Four original direct failures/new same probe pass. Full original known defects, OS-child actual execution replay, hostile pack admission, crypto entropy/reseal and complete format remain pending; not declared full source test closed.",
-      "targetPathState": "created-partial-functional-integration-pending"
+      "reason": "Pure exact fingerprint comparison, missing serialized measurements, finite scalar minimization and original expected-fact alias coverage consolidated into owning replay suite. Four original direct failures/new same probe pass. Full original known defects, OS-child actual execution replay, hostile pack admission, crypto entropy/reseal and complete format remain pending; not declared full source test closed. Current concrete consumers additionally cover actual whole-host restart, bounded original/action replay or per-member response controls as listed; original entropy/private pack/class signatures are not compatibility requirements. No count-based whole-suite equivalence claim.",
+      "targetPathState": "created-partial-functional-integration-pending",
+      "coveragePaths": [
+        "packages/e2ee-lab/test/repro.test.ts"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/test/restricted-agent.test.ts",
@@ -8384,10 +8546,13 @@
         "candidate": "43008fa78e62980b13206c52a219d815137944c615f8f2981ab90847c8115983"
       },
       "targetPath": "packages/e2ee-lab/tsconfig.json",
-      "status": "需迁并修复",
+      "status": "已迁",
       "layer": "L6",
-      "reason": "Lab typechecking with root locked compiler and package public exports; current configuration exists.",
-      "targetPathState": "existing"
+      "reason": "Current strict root-compatible compiler and public package exports.",
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/tsconfig.json"
+      ]
     },
     {
       "sourcePath": "packages/e2ee-lab/vendor/README.md",
@@ -8427,11 +8592,14 @@
         "core": "6ed47ca0a9f437d2e75985514e9de6795f16e6e5756b4c760df1b5d2336dcbd0",
         "candidate": "6ed47ca0a9f437d2e75985514e9de6795f16e6e5756b4c760df1b5d2336dcbd0"
       },
-      "targetPath": "packages/e2ee-lab/vitest.config.ts",
-      "status": "需迁并修复",
+      "targetPath": "packages/e2ee-lab/package.json",
+      "status": "旧方案淘汰",
       "layer": "L6",
-      "reason": "Deterministic Lab test selection/configuration; current root-compatible Vitest command runs, old full host suite pending.",
-      "targetPathState": "proposed-path-not-created"
+      "reason": "Source-era standalone Vitest config is replaced by the current root-compatible explicit test script; no old config alias needed.",
+      "targetPathState": "created",
+      "coveragePaths": [
+        "packages/e2ee-lab/package.json"
+      ]
     },
     {
       "sourcePath": "specs/e2ee-adversarial-lab.md",
@@ -9213,15 +9381,13 @@
     "classificationRule": "Retired implementation does not retire required behavior. File status and path existence are not completion percentages.",
     "currentLabPR": 1557,
     "remaining": [
-      "G resumable workspace creation and independently acquired durable checkpoints; existing-workspace startup is implemented",
-      "S production qualification acquisition, authorized retained-history availability and snapshot-only P09 writes; explicit qualified ledger-origin and protected position-bound content snapshots implemented for review",
-      "K/V independent candidate backup/emergency loss exception and recovery vault/file/concurrency/retention product decisions; local candidate durability is implemented",
-      "D current tag8 and unchanged complete snapshot-state consistency implemented; final format independently reviewed before acceptance, Spec remains draft",
-      "R exact-original replay mode versus entropy regeneration product decision and remaining model-driven actor/attack execution",
-      "N additional signed comparison-note authority; personal-only observation and explicit exact-tuple confirmation are implemented consumers",
-      "B strict freshness approval; native platform protector and private product wiring remain separate"
+      "S external production snapshot/checkpoint qualification acquisition, authorized retained-history availability and snapshot-only P09 writes; explicit qualified origin/content snapshots are implemented",
+      "K/V independent off-device candidate backup/permanent-loss exception and per-workspace R vault/file/wrapping/CAS/retention choices; existing installed A and local candidate durability are not substitutes",
+      "R same-byte fresh-seal entropy regeneration and optional open-ended external-model exploration; real per-actor response plans, three-member frozen-prefix/release, original reads, action replay/minimize and measured observer are implemented separately",
+      "N additional host-stored signed-note authority; refreshed personal observation and independent exact-tuple confirmation remain actual consumers",
+      "B strict freshness choice, actual native platform protector/custody and private product wiring"
     ],
-    "currentScope": "Current-format core plus actual synthetic consumers: local E7/tag8 original publication, independent qualified ledger-snapshot origin, protected header4 snapshot publication/read, R-to-own-personal original recovery and personal comparison notes. Not full product/custody/vault acceptance.",
+    "currentScope": "Current public core and actual synthetic consumers: signed-genesis original creation, complete HTTP/Riverrun/SQLite host restart with independent minima and monotonic observed authorization, local E7/tag8 publication, qualified header3/4 snapshots, R enrollment/history/notes, offline native edits/reconnect, finite OS actors, original read replay/action replay/shrink, actual per-actor response attack plans and measured reference/observer. Not production custody/vault or open-ended model exploration.",
     "capabilities": [
       {
         "old": "DemoSession start/reauth/read/write/submit/resume/receive",
@@ -9232,7 +9398,7 @@
           "packages/e2ee-lab/src/platform/join-session.ts",
           "packages/e2ee-core/src/keys/installed-history.ts"
         ],
-        "behavior": "One scoped existing-workspace owner, externally pinned full-prefix, admitted control/P09, installed-key distributor, per-document Loro/Flock and common close/reopen. No genesis/candidate/vault choice. Signed join originals persist before POST and repeat after lost receipts; no pre-admission keys. Installed latest-key history fully validates then saves/reloads older originals; no sender-envelope restore/candidate/vault.",
+        "behavior": "One scoped existing-workspace owner, externally pinned full-prefix, admitted control/P09, installed-key distributor, per-document Loro/Flock and common close/reopen. No genesis/candidate/vault choice. Signed join originals persist before POST and repeat after lost receipts; no pre-admission keys. Installed latest-key history fully validates then saves/reloads older originals; no sender-envelope restore/candidate/vault. Explicit offline native edits persist with the old cursor, then the existing released SDK synchronizes deltas using current permissions/epoch; whole host restart audits actual remote control before admission and preserves exact pending originals.",
         "tests": [
           "packages/e2ee-lab/test/full-session.test.ts",
           "packages/e2ee-lab/test/process-actor.test.ts",
@@ -9289,6 +9455,31 @@
           "packages/e2ee-lab/test/full-session.test.ts"
         ],
         "status": "implemented read/reopen consumer; production qualification acquisition and snapshot-only writes remain incomplete"
+      },
+      {
+        "old": "createSpace + original reproducible/attacker execution consumers",
+        "new": [
+          "packages/e2ee-lab/src/platform/workspace-creation.ts",
+          "packages/e2ee-lab/src/platform/workspace-creation-request.ts",
+          "packages/e2ee-lab/src/platform/repro-pack.ts",
+          "packages/e2ee-lab/src/platform/repro-runner.ts",
+          "packages/e2ee-lab/src/platform/attack-observer.ts",
+          "packages/e2ee-lab/src/platform/scenario-runner.ts",
+          "packages/e2ee-lab/src/platform/host-session.ts",
+          "packages/e2ee-lab/src/platform/attack-transport.ts"
+        ],
+        "behavior": "Durable signed-genesis first-frame publication and original HTTP retries, independent-minimum host reopen and post-CAS durable-floor confirmation; exact captured byte reads under external qualification, fresh actual action replay and baseline-confirmed shrink; actual bounded backend/control/content/retained-key measurements with mandatory positive controls and exact refusal classification.",
+        "tests": [
+          "packages/e2ee-lab/test/workspace-creation.test.ts",
+          "packages/e2ee-lab/test/repro.test.ts",
+          "packages/e2ee-lab/test/attack-observer.test.ts",
+          "packages/e2ee-lab/test/action-executor.test.ts",
+          "packages/e2ee-lab/test/judge.test.ts",
+          "packages/e2ee-lab/test/host-restart.test.ts",
+          "packages/e2ee-lab/test/offline-session.test.ts",
+          "packages/e2ee-lab/test/attack-scenario.test.ts"
+        ],
+        "status": "implemented; author validation and narrow independent intersection are separately recorded in fixed delivery report"
       }
     ],
     "legacyFailureDisposition": [
@@ -9373,10 +9564,10 @@
       "/private/tmp/e2ee-migration-evidence"
     ],
     "unimplementedNotRetired": [
-      "independent publisher backup/permanent-device-loss policy; local publisher/rotation/resumption implemented",
-      "protected content snapshot/admission/bootstrap",
-      "vault/per-workspace recovery registration",
-      "all original entropy/insider/model-driven scenarios and native custody"
+      "independent publisher backup/permanent-device-loss decision; local candidate publication/resume is implemented",
+      "per-workspace recovery vault/file/wrapping, independent-service freshness and retention/concurrency product choices",
+      "optional external-model/unbounded live exploration and same-byte fresh encryption entropy regeneration; bounded real attack plans/offline collaboration are implemented",
+      "production snapshot/checkpoint qualification and actual retained-history service APIs, native custody/private product wiring"
     ]
   },
   "externalReviewFixes": {
@@ -9442,16 +9633,22 @@
       "capacity": "Distribution maxTasks counts unacknowledged rows; explicit ack retains originals and frees active capacity. No physical archival.",
       "lab": "120s owner-scoped watchdog; real child kill/await and earlier owner cleanup precede final evidence.",
       "notCompleted": [
-        "production snapshot qualification acquisition and snapshot-only write/bootstrap continuation",
+        "production independent snapshot/checkpoint qualification and snapshot-only P09",
         "O(N) full cryptographic reopen remains",
-        "atomic member-removal publisher and independent candidate backup contract",
-        "protected content snapshot",
-        "production native protector and product assembly",
-        "unapproved A1/history scope, vault/backup, strict B and replay decisions"
+        "independent candidate backup/permanent-loss and per-workspace recovery vault/file choices",
+        "production native protector/private product assembly",
+        "unapproved complete installed-history product scope, strict B and fresh reseal entropy decisions",
+        "optional open-ended external-agent exploration and fresh-seal entropy equivalence"
       ],
       "keyQueues": "Session/process/CLI forward explicit stable-ID repair, phase/result page hints and exact-ID receive/repair/delivery acknowledgement. No automatic consumption or new owner; originals retained.",
       "epochPublication": "One initialized protected local candidate owner; existing E7 and P09, actual installed save/reload and fixed original ACK, no automatic independent-backup policy.",
-      "snapshotReading": "Explicit independently qualified signed origin plus exact retained suffix/cursor, full requalification and suffix audit on reopen. P09 writes still full-history."
+      "snapshotReading": "Explicit independently qualified signed origin plus exact retained suffix/cursor, full requalification and suffix audit on reopen. P09 writes still full-history.",
+      "workspaceCreation": "One current signed genesis as first native control frame, client original before HTTP, host complete signed readback+transactional floor before ACK, independently pinned reopen and original P09 gap recovery. Metadata/receipt never selects client authority.",
+      "reproduction": "Original header3/4 bytes are verified/opened with external pins/key capability; new native execution compares precise known outcomes, recomputes state relationships and bounds shrink. Full random-seal equality unsupported.",
+      "hostRestart": "One complete synthetic local host owner. Independent minimum and real remote audit before exposure; actual control refresh before authority. Verified but unpersisted observations block authority in-process and reject rollback until exact confirmation; unpersisted facts do not survive process loss without external pins.",
+      "offline": "Native edit+atomic state/old-cursor persistence without transport/key lookup. Existing SDK sync publishes local deltas under current genuine epoch/permission; no parallel content outbox.",
+      "attackPlan": "Finite initialized native response controls, bounded observed events, explicit gates and per-member prefix freeze/release; real replay and baseline-confirmed shrink. Missing observations and unrelated refusals are never successful security evidence.",
+      "boundedModel": "The current pure scheduler explores finite two-actor permit interleavings. Exhaustion is unmeasured; no cryptographic/P09 proof or second mutation kernel."
     },
     "architectureAssessment": {
       "decision": "assessment-only; no files moved",

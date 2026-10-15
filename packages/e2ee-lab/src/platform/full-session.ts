@@ -45,6 +45,8 @@ export interface LabWorkspaceSessionInput extends ControlInput {
 interface LabWorkspaceDocument {
   create(): Effect.Effect<void, unknown>;
   append(text: string): Effect.Effect<void, unknown>;
+  editOffline(text: string): Effect.Effect<void, unknown>;
+  flushOffline(): Effect.Effect<void, unknown>;
   persist(): Effect.Effect<void, unknown>;
   uploadSnapshot(): Effect.Effect<void, unknown>;
   pull(): Effect.Effect<void, unknown>;
@@ -294,6 +296,8 @@ export const openLabWorkspaceSession = Effect.fn('Lab.openWorkspaceSession')(fun
           run(serial.withPermit(distribution.acknowledgeDelivery(id))),
         createDocument: (id: string) => document(id, (doc) => doc.create()),
         append: (id: string, text: string) => document(id, (doc) => doc.append(text)),
+        editOffline: (id: string, text: string) => document(id, (doc) => doc.editOffline(text)),
+        flushOffline: (id: string) => document(id, (doc) => doc.flushOffline()),
         persist: (id: string) => document(id, (doc) => doc.persist()),
         uploadSnapshot: (id: string) => document(id, (doc) => doc.uploadSnapshot()),
         pull: (id: string) => document(id, (doc) => doc.pull()),

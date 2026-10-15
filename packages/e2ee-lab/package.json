@@ -36,7 +36,14 @@
     "./scenarios": "./src/platform/scenario-runner.ts",
     "./process-actor": "./src/platform/process-actor.ts",
     "./content-gateway": "./src/platform/content-gateway.ts",
-    "./join-session": "./src/platform/join-session.ts"
+    "./join-session": "./src/platform/join-session.ts",
+    "./workspace-creation": "./src/platform/workspace-creation.ts",
+    "./workspace-creation-request": "./src/platform/workspace-creation-request.ts",
+    "./host-session": "./src/platform/host-session.ts",
+    "./repro": "./src/platform/repro-pack.ts",
+    "./repro-runner": "./src/platform/repro-runner.ts",
+    "./attacks": "./src/platform/attack-observer.ts",
+    "./attack-transport": "./src/platform/attack-transport.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

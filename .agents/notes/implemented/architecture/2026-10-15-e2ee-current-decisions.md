@@ -153,3 +153,26 @@ an explicit independently obtained exact tuple; a server observation cannot upgr
 itself. A structure assessment recommends keeping domain directories and splitting
 only large mixed rotation/receive/distribution owners into pure/workflow/platform.
 No files were moved or architecture refactor performed in this migration increment.
+
+
+## Current creation and reproduction consumers
+
+Client creation persists the one signed genesis before HTTP dispatch. The host
+creates that actual first control frame and confirms full signed readback before
+publishing its durable floor; it resumes remote-write/local-checkpoint gaps without
+re-signing. Reopen still needs an independent minimum. Host observations are not
+a client freshness oracle. The registry and P09 retain their existing owners.
+
+Recorded action replay compares fresh measured outcomes, exact refusal/fault facts
+and within-run durability relationships. Original read packs authenticate/decrypt
+captured bytes with caller-qualified history/keys. No global entropy replacement
+or regenerated-ciphertext equality is promised. Shrink first reproduces the same
+concrete failure, then gives each candidate fresh real owners. Bounded attack ports
+exclude honest private paths/keys; missing measurements remain explicit.
+
+The complete Lab host refreshes real control before authorization. Failed persistence keeps a
+monotonic observed floor in that object and blocks current/checkpoint and older prefixes until
+confirmation; reopen still needs an independent minimum. Offline edits persist native state/old
+cursor and the existing SDK publishes under the current epoch, without another outbox. Finite
+attack plans receive actual response controls only; unrelated or harness failures never substitute
+for a measured refusal, and host observations never invent independent comparison confirmation.

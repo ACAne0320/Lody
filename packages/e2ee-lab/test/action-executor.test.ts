@@ -12,6 +12,64 @@ import { makeLabScenarioFixture } from '../src/platform/scenario-fixture';
 import { LabProcessSpawn, makeLabProcessActor } from '../src/platform/process-actor';
 import { exportDevice } from '../src/platform/device';
 import type { LabProcessReply } from '../src/platform/process-actor';
+it('keeps real offline edits across SIGKILL and flushes them through the finite process action interface', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lab-offline-actions-'));
+  try {
+    const artifact = await Effect.runPromise(
+      runLabScenario({
+        directory: root,
+        actions: [
+          { kind: 'start', actor: 'owner', mode: 'create', expect: { ok: true } },
+          { kind: 'call', actor: 'owner', operation: 'keys', expect: { ok: true } },
+          {
+            kind: 'call',
+            actor: 'owner',
+            operation: 'create',
+            document: 'loro',
+            expect: { ok: true },
+          },
+          {
+            kind: 'call',
+            actor: 'owner',
+            operation: 'edit-offline',
+            document: 'loro',
+            text: 'durable offline action',
+            expect: { ok: true },
+          },
+          { kind: 'crash', actor: 'owner', expect: { ok: true } },
+          { kind: 'start', actor: 'owner', mode: 'open', expect: { ok: true } },
+          {
+            kind: 'call',
+            actor: 'owner',
+            operation: 'flush-offline',
+            document: 'loro',
+            expect: { ok: true },
+          },
+          {
+            kind: 'call',
+            actor: 'owner',
+            operation: 'pull',
+            document: 'loro',
+            expect: { ok: true },
+          },
+          {
+            kind: 'call',
+            actor: 'owner',
+            operation: 'observe',
+            document: 'loro',
+            expect: { ok: true, text: 'durable offline action' },
+          },
+        ],
+      })
+    );
+    expect(artifact.run.verdict).toBe('pass');
+    expect(artifact.run.observations.at(-1)!.reply.value).toMatchObject({
+      text: 'durable offline action',
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 0);
 it('executes all finite kinds on real OS/HPKE/SQLite/SDK actors; bad cipher/storage retain the measured durable pair and lost ACK retries original bytes', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-action-complete-'));
   try {
@@ -41,6 +99,21 @@ it('executes all finite kinds on real OS/HPKE/SQLite/SDK actors; bad cipher/stor
     ).toBe(true);
     expect(artifact.implementation.releases.effect).toBe('4.0.2');
     expect(artifact.run.coverage.exactCiphertextReplay).toBe('unavailable');
+    expect(artifact.measurements.writerMeasurements).toHaveLength(3);
+    expect(
+      artifact.measurements.writerMeasurements.every(
+        (row) => row.expected === 'allow' && row.accepted
+      )
+    ).toBe(true);
+    expect(artifact.measurements.attacks.properties).toContainEqual({
+      id: 'confidentiality.backend-plaintext',
+      verdict: 'pass',
+    });
+    expect(artifact.measurements.attacks.properties).toContainEqual({
+      id: 'confidentiality.insider-post-exclusion',
+      verdict: 'unavailable',
+    });
+    expect(artifact.report.confidentiality).toBe('unavailable');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

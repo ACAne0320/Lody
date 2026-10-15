@@ -20,6 +20,8 @@ pnpm --filter @lody/e2ee-lab test
 pnpm --filter @lody/e2ee-lab lab run /absolute/new-output-directory
 pnpm --filter @lody/e2ee-lab lab run /absolute/another-new-directory actions.json
 pnpm --filter @lody/e2ee-lab lab inspect /absolute/new-output-directory/evidence.json
+pnpm --filter @lody/e2ee-lab lab replay /absolute/new-output-directory/evidence.json /absolute/new-replay-directory
+pnpm --filter @lody/e2ee-lab lab minimize /absolute/failing-run/evidence.json /absolute/new-shrink-directory
 ```
 
 `run` requires a new output directory. The default plan executes 39 actions;
@@ -61,6 +63,8 @@ this watchdog is not a performance pass threshold or strict freshness B.
 | Entry | Responsibility |
 | --- | --- |
 | `./workspace-session`, `./full-session` | Existing admitted control/P09, identity, keys and per-document owners; reauthentication closes the previous owner |
+| `./workspace-creation`, `./workspace-creation-request`, `./host-session` | Durable genesis-first creation and complete HTTP/Riverrun/SQLite restart with independent minima |
+| `./repro`, `./repro-runner`, `./attacks`, `./attack-transport` | Captured reads, fresh replay/shrink, actual response controls and bounded attack measurements |
 | `./join-session` | Durable original signed join intent; retry after lost receipt, then ordinary startup after genuine admission |
 | `./key-round` | One finite repair/receive/report/distribution pass; blocked tasks and page cursors remain explicit |
 | `./content-session`, `src/platform/flock-session.ts` | Loro/Flock adapters sharing one document lifecycle and atomic native-state/cursor storage |
@@ -141,10 +145,10 @@ genuine read result rather than replaying the same history twice.
 
 ## Remaining boundaries
 
-- Resumable workspace creation and independently acquired durable host checkpoints.
+- Production checkpoint qualification acquisition; the current synthetic host now persists verified originals/checkpoints and resumes creation or lost-ACK gaps.
 - Production qualification and retained-history APIs for content snapshots; experimental header4 authenticates the exact continuation position.
 - Independent candidate backup policy and recovery vault. Local E7 and atomic tag8 publication/retry are implemented.
-- Exact entropy/ciphertext regeneration, remaining original actors/attacks and confidentiality measurements.
+- Exact fresh-ciphertext regeneration and full adversarial/live collaboration exploration. Captured original reads, action replay/shrink and measured backend/insider probes are implemented; their coverage stays explicit.
 - Comparison-note authority, strict freshness B, native key custody and product wiring.
 
 Restricted A covers trusted initialization-time protection of installed keys only.
@@ -201,3 +205,58 @@ work settles; multi-host fencing and crash-atomic Riverrun+SQLite writes are not
 provided. An expired unconfirmed first attempt remains blocked rather than being
 silently reauthorized by a new token. This fail-closed state is explicit evidence,
 not proof of complete host availability recovery.
+
+
+## Resumable creation and measured reproduction
+
+Creation consumes a public signed genesis and a separately saved initial installed
+key. The client stores the original before POST; the host publishes it as the first
+control record, verifies the complete readback and saves its observed history and
+opaque cursor before replying. A crash or lost ACK retries those bytes. Reopening
+the host still requires an independent minimum pin; a receipt or SQL row cannot
+choose client freshness. Binding a token neither renews it nor creates membership.
+This is the one current experimental Lab layout, with no metadata-prefix reader.
+
+`replay` runs recorded actions/permits on fresh real processes and compares exact
+known outcomes, typed refusals, text and fault-hit counts. It recomputes each run's
+durable-state relationships; random identities and ciphertext are not declared
+equal. `minimize` first reproduces the original measured failure, then uses fresh
+files/owners per finite candidate and retains the same concrete failed observation.
+Missing dependencies and unrelated harness errors do not preserve a failure.
+
+For exact original wire reads, `replayLabCapturedReads` takes public signed history,
+header3/header4 ciphertext and expected plaintext hashes. The caller independently
+supplies the checkpoint and key capability; the pack contains no key or self-chosen
+trust. It verifies and decrypts original bytes without replacing secure randomness.
+
+The scenario wires private write facts to the independent reference model and
+scans actual backend bytes for known synthetic plaintext. The attack observer also
+measures forged control, context/current-author refusal and excluded-insider old-key
+reads. Its attacker ports carry backend bytes, never honest keys or client paths.
+Each property remains pass/violation/unavailable/harness-error independently; a
+backend scan alone does not establish full confidentiality or whole-Lab acceptance.
+
+## Whole-host and offline continuation
+
+`makeLabHostSession` owns real Riverrun, HTTP and all local stores for one Org. Open requires an
+independent minimum checkpoint and verifies actual remote history before exposing HTTP. Authorization
+also refreshes that history. A verified observation that fails SQL persistence blocks authority and
+checkpoint export in that object, including attempts to roll back to an older prefix. Successful
+persistence restores service. Unpersisted knowledge is not promised across processes; reopen still
+requires the external minimum.
+
+Actual restart covers original P09 pending records, GET-only confirmation of an unknown snapshot PUT,
+and fresh authentication followed by keys, joins, Loro and Flock work. HTTP and raw bodies finish
+before Riverrun and databases close.
+
+`session.editOffline(id, text)` persists native edits with the previous cursor without networking,
+key lookup or sealing. `flushOffline(id)` uses the released SDK to synchronize local deltas under
+current genuine epoch and permissions. Reopen, concurrent-member merge, SQL retry and removed-member
+refusal preserve local edits. There is no second content outbox.
+
+Finite plans use `makeLabAttackTransport` / `runLabAttackPlan` to drop, duplicate, truncate, replace
+or explicitly delay actual responses, or temporarily retain and later release a member's verified
+old prefix. Plans receive no credentials or device secrets; actual response events report hits. A
+withheld prefix is pending synchronization, not automatic proof of a signed fork. Confirmation still
+requires an exact tuple obtained over an independent channel. Three-member rotation/exclusion, offline
+continuation and original-byte reads have separate measurements, not a blanket attack-coverage claim.

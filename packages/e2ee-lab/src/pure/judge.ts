@@ -144,6 +144,23 @@ export function judgeUnauthorizedContent(input: {
   return 'pass';
 }
 
+/** Independent new-write prediction versus an actual operation. A failure for an
+ * unrelated reason is not evidence that authorization rejected the write. */
+export function judgeWriteObservation(input: {
+  readonly expected: 'allow' | 'deny' | 'unmeasured';
+  readonly accepted: boolean;
+  readonly refusal?: { readonly tag: string; readonly code: string };
+}): JudgeVerdict {
+  if (input.expected === 'unmeasured') return 'unavailable';
+  if (input.accepted) return input.expected === 'deny' ? 'violation' : 'pass';
+  if (input.expected === 'allow') return 'harness-error';
+  const refusal = input.refusal;
+  return (refusal?.tag === 'ContentError' && refusal.code === 'unauthorized') ||
+    (refusal?.tag === 'LedgerFeedError' && refusal.code === 'forbidden')
+    ? 'pass'
+    : 'harness-error';
+}
+
 /**
  * Wire attack claims to measured facts. Unsupported kinds without matching
  * facts do not invent a violation (Agent claims are not verdicts).

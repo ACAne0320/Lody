@@ -25,10 +25,10 @@
 
 ## 剩余事项
 
-- 可续做workspace创建、独立可信checkpoint取得和host崩溃／丢ACK耐久性收口。
+- 生产独立可信 checkpoint 的取得；合成创建／原请求和宿主丢 ACK 耐久性恢复已有实际消费者。
 - 内容快照的生产资格来源及实际有权限的全历史保留／读取 API；当前 header4 已认证续读位置。
 - 独立 candidate 备份门槛／永久设备丢失例外与恢复 vault 决定。当前原子 tag8 复用本地候选持久化、原件提交与崩溃恢复；编码仍待审。
-- 原字节replay熵及剩余原actor／attack场景；纯比较不等于执行覆盖。
+- fresh seal 熵重放和完整持续／模型探索。原密文读取、真实动作 replay／缩减及攻击测量已接通，部分覆盖单列。
 - comparison-note 额外签名权限、严格期限 B、真实 native protector 与私有产品接线；个人 note 和显式 exact-tuple 确认已有真实消费者。
 
 受限A仅批准初始化保护已验证installed钥，不批准完整恢复／vault／publisher范围。无完整修订批准的Specs仍draft。教程有Spec，但固定来源没有应用源码。作者验证、CI、独立审查、生产验收分别归属；测试数与文件状态不是完成百分比。

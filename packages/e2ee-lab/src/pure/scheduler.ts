@@ -144,3 +144,102 @@ export function advanceTime(
 export function isRunnable(state: SchedulerState, eventId: string): boolean {
   return state.events.some((event) => event.eventId === eventId && event.status === 'permitted');
 }
+
+export class SubmitModelError extends Data.TaggedError('SubmitModelError')<{
+  readonly code: 'invalid-budget';
+}> {}
+/** Finite two-actor pending/CAS/ACK scheduling oracle only. It does not model
+ * network outcomes or prove P09 unknown-CAS/cryptographic safety. Truncation is
+ * explicitly unmeasured, never a successful exhaustive search. */
+export function exploreSubmitInterleavings(
+  input: { readonly maxStates?: number; readonly maxEvents?: number } = {}
+) {
+  if (typeof input !== 'object' || input === null || Array.isArray(input))
+    return Result.fail(new SubmitModelError({ code: 'invalid-budget' }));
+  const maxStates = input.maxStates ?? 50_000,
+    maxEvents = input.maxEvents ?? 6;
+  if (
+    !Number.isSafeInteger(maxStates) ||
+    maxStates < 0 ||
+    maxStates > 50_000 ||
+    !Number.isSafeInteger(maxEvents) ||
+    maxEvents < 0 ||
+    maxEvents > 6
+  )
+    return Result.fail(new SubmitModelError({ code: 'invalid-budget' }));
+  const queue: SchedulerState[] = [],
+    discovered = new Set<string>();
+  let states = 0,
+    terminalStates = 0,
+    truncated = false;
+  const enqueue = (state: SchedulerState) => {
+    const key = JSON.stringify(state);
+    if (discovered.has(key)) return;
+    if (discovered.size >= maxStates) {
+      truncated = true;
+      return;
+    }
+    discovered.add(key);
+    queue.push(state);
+  };
+  const finish = (violation?: string) =>
+    Result.succeed({
+      verdict: violation
+        ? ('violation' as const)
+        : truncated
+          ? ('unmeasured' as const)
+          : ('pass' as const),
+      coverage: violation || truncated ? ('incomplete' as const) : ('complete' as const),
+      states,
+      terminalStates,
+      ...(violation ? { reason: violation } : {}),
+    });
+  enqueue(emptyScheduler());
+  while (queue.length) {
+    const state = queue.pop()!;
+    states++;
+    if (state.events.filter((row) => row.status === 'permitted').length > 1)
+      return finish('two-permits');
+    for (const event of state.events) {
+      if (event.status === 'completed') {
+        if (
+          Result.isSuccess(completeEvent(state, event.eventId)) ||
+          Result.isSuccess(permitEvent(state, event.eventId))
+        )
+          return finish('reused-event');
+      } else if (event.status === 'requested') {
+        if (Result.isSuccess(completeEvent(state, event.eventId)))
+          return finish('run-without-permit');
+        const permitted = permitEvent(state, event.eventId);
+        const active = state.events.some((row) => row.status === 'permitted');
+        if (Result.isSuccess(permitted) && active) return finish('two-permits');
+        if (Result.isFailure(permitted) && !active) return finish('invalid-permit');
+        if (Result.isSuccess(permitted)) enqueue(permitted.success.state);
+      } else {
+        if (Result.isSuccess(permitEvent(state, event.eventId))) return finish('reused-permit');
+        const completed = completeEvent(state, event.eventId);
+        if (Result.isFailure(completed)) return finish('invalid-completion');
+        enqueue(completed.success);
+      }
+    }
+    let terminal = true;
+    for (const actor of ['A', 'B']) {
+      const last = state.events.filter((event) => event.actor === actor).at(-1);
+      if (last?.phase === 'ack' && last.status === 'completed') continue;
+      terminal = false;
+      if (last && last.status !== 'completed') continue;
+      const phase = !last
+        ? 'pending'
+        : last.phase === 'pending'
+          ? 'cas'
+          : last.phase === 'cas'
+            ? 'ack'
+            : undefined;
+      if (!phase) return finish('invalid-phase');
+      if (state.events.length >= maxEvents) truncated = true;
+      else enqueue(requestEvent(state, { actor, operation: 'submit', phase }).state);
+    }
+    if (terminal) terminalStates++;
+  }
+  return finish();
+}

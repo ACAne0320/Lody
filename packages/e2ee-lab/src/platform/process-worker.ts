@@ -236,9 +236,16 @@ const program = Effect.scoped(
       }
       const doc = command.document;
       if (
-        ['create', 'append', 'pull', 'recover', 'persist', 'observe'].includes(
-          String(command.operation)
-        ) &&
+        [
+          'create',
+          'append',
+          'pull',
+          'recover',
+          'persist',
+          'observe',
+          'edit-offline',
+          'flush-offline',
+        ].includes(String(command.operation)) &&
         typeof doc !== 'string'
       )
         return yield* Effect.fail(new Error('missing-document'));
@@ -308,6 +315,14 @@ const program = Effect.scoped(
           return null;
         case 'pull':
           yield* session.pull(doc as string);
+          return null;
+        case 'edit-offline':
+          if (typeof command.text !== 'string' || command.text.length > 4096)
+            return yield* Effect.fail(new Error('invalid-text'));
+          yield* session.editOffline(doc as string, command.text);
+          return null;
+        case 'flush-offline':
+          yield* session.flushOffline(doc as string);
           return null;
         case 'recover':
           yield* session.recoverDocument(doc as string);

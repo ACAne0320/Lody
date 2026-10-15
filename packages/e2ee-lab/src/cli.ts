@@ -20,8 +20,30 @@ import { resolve } from 'node:path';
 import { Cause, Effect, Exit } from 'effect';
 import { runLabScenario } from './platform/scenario-runner';
 import { inspectLabEvidence } from './platform/action-executor';
+import { replayLabActions, minimizeLabActions } from './platform/repro-runner';
 const [command, output, plan] = process.argv.slice(2);
 const main = Effect.gen(function* () {
+  if ((command === 'replay' || command === 'minimize') && output && plan) {
+    const pack = yield* Effect.try({
+      try: () => JSON.parse(readBounded(resolve(output), 32 * 1024 * 1024)) as unknown,
+      catch: (cause) => cause,
+    });
+    const directory = resolve(plan);
+    if (command === 'replay') {
+      yield* Effect.try({
+        try: () => mkdirSync(directory, { mode: 0o700 }),
+        catch: (cause) => cause,
+      });
+      const result = yield* replayLabActions({ pack, directory });
+      console.log(JSON.stringify(result));
+      process.exitCode = result.reproduced ? 0 : 2;
+    } else {
+      const result = yield* minimizeLabActions({ pack, directory });
+      console.log(JSON.stringify(result));
+      process.exitCode = 0;
+    }
+    return;
+  }
   if (command === 'inspect' && output) {
     const parsed = yield* Effect.try({
       try: () => JSON.parse(readBounded(resolve(output), 64 * 1024 * 1024)) as unknown,
@@ -38,7 +60,7 @@ const main = Effect.gen(function* () {
   }
   if (command !== 'run' || !output) {
     console.error(
-      'Usage: e2ee-lab run <new-output-directory> [actions.json] | inspect <evidence.json>'
+      'Usage: e2ee-lab run <new-output-directory> [actions.json] | inspect <evidence.json> | replay <evidence.json> <new-output-directory> | minimize <evidence.json> <new-output-directory>'
     );
     process.exitCode = 64;
     return;

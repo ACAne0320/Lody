@@ -18,6 +18,8 @@ pnpm --filter @lody/e2ee-lab test
 pnpm --filter @lody/e2ee-lab lab run /absolute/new-output-directory
 pnpm --filter @lody/e2ee-lab lab run /absolute/another-new-directory actions.json
 pnpm --filter @lody/e2ee-lab lab inspect /absolute/new-output-directory/evidence.json
+pnpm --filter @lody/e2ee-lab lab replay /absolute/new-output-directory/evidence.json /absolute/new-replay-directory
+pnpm --filter @lody/e2ee-lab lab minimize /absolute/failing-run/evidence.json /absolute/new-shrink-directory
 ```
 
 `run` 要求输出目录尚不存在。默认计划执行 39 个动作；自定义计划是最多 256 个
@@ -55,6 +57,8 @@ SIGINT/TERM 先停止接收新工作，再等待真实子进程终止。
 | 入口 | 职责 |
 | --- | --- |
 | `./workspace-session`、`./full-session` | 已获准的现有 control/P09、身份、密钥和逐文档资源；重新认证先关闭旧 owner |
+| `./workspace-creation`、`./workspace-creation-request`、`./host-session` | 原 genesis 先落盘、创建重试及完整 HTTP／Riverrun／SQLite 宿主关闭重开 |
+| `./repro`、`./repro-runner`、`./attacks`、`./attack-transport` | 原密文读取、动作结果重跑／缩减、真实响应拦截和有界攻击测量 |
 | `./join-session` | 持久化原签名加入申请，丢回执后重试；真实获准后再普通启动 |
 | `./key-round` | 一轮有限修复/接收/报告/分发；明确保留阻塞任务和各页游标 |
 | `./content-session`、`src/platform/flock-session.ts` | Loro/Flock 适配，共用文档生命周期及原生状态/游标原子存储 |
@@ -123,10 +127,10 @@ Control 复用具体 SDK adapter 同次验证的 genuine view，不再重放同�
 
 ## 尚未完成的边界
 
-- 可恢复工作区创建，以及独立取得并持久保存的宿主 checkpoint。
+- 生产 checkpoint 资格的取得；当前合成宿主已持久保存验证原件／checkpoint，并能续做创建与丢 ACK 间隙。
 - 内容快照的生产资格来源及保留历史读取 API；实验 header4 已认证精确续读位置。
 - 独立候选备份策略及恢复库；本地 tag7 与原子 tag8 发布、原件重试已实现。
-- 精确熵/密文字节重建、其余原始 actor/攻击场景及保密性测量。
+- 重新加密得到相同密文，以及完整对抗／持续协作探索。原密文读取、动作 replay／缩减和后端／旧钥攻击测量已实现，各项覆盖仍分别报告。
 - 比较 note 的权威、严格 freshness B、原生存钥和产品接线。
 
 受限 A 仅覆盖可信初始化时保护已安装密钥。已知密钥 AES protector 和可导出设备
@@ -168,3 +172,46 @@ Riverrun 缺少恢复历史时继续 fail closed，不重置 earliest offset 掩
 同一 resource/model 必须只有一个 gateway，等待原生工作真正结束后再重开；不提供多宿主
 fencing 或 Riverrun+SQLite 跨库事务。原始未确认尝试过期后明确 blocked，不能靠新 token
 悄悄续期；这属于 fail-closed 保留状态，不是完整宿主可用性恢复的证明。
+
+
+## 可恢复创建与实际重现
+
+创建消费公共 producer 生成的签名 genesis 和另行保护保存的初始已安装钥。客户端在 POST 前
+保存原请求；宿主把 genesis 作为 control 首记录发布，完整读回验证并保存已观察历史／原样
+cursor 后才返回。崩溃或丢 ACK 均重试原字节。宿主重开仍需独立最小 pin；回执或 SQL 行不能
+决定客户端新鲜度。token 绑定不续期，也不授予成员身份。Lab 只采用这一种当前实验布局，
+不添加 metadata 补前缀 reader。
+
+`replay` 在新的真实进程执行原动作／放行顺序，比较已知结果、精确拒绝、文本和故障命中次数，
+并重算每轮持久状态关系；不声称随机身份或新密文相等。`minimize` 先实际重现原违规，再为
+每个有限候选创建独立文件／资源，保留同一具体失败观察。缺少依赖和无关的测试设施错误
+不能当作保留成功。
+
+精确原字节读取由 `replayLabCapturedReads` 消费签名历史、header3／header4 密文与预期明文
+哈希。调用方另给独立 checkpoint 和取钥能力；pack 不含私钥，也不自己选择信任。实际验签、
+解密原字节，不替换安全随机数。
+
+场景把私有写入事实接到独立参考模型，并扫描真实后端字节中的已知合成明文。攻击观察器还
+实际测量伪造 control、错误上下文／当前作者拒绝和被排除者旧钥读取。攻击能力仅接触后端
+字节，不拿正常设备密钥或客户端路径。每项分别报告通过／违规／未测／设施错误；单个后端
+扫描通过不能代表完整保密性或整个 Lab 验收。
+
+## 完整宿主与离线续做
+
+`makeLabHostSession` 拥有一个 Org 的实际 Riverrun、HTTP 和全部本地存储。重开必须另给独立
+最小 checkpoint，启动时先验证真实远端全历史；每次授权也刷新实际账本。已验证的新观察
+若因 SQL 故障未保存，当前对象会拒绝授权和导出 checkpoint，并拒绝回退旧前缀；确认落盘
+后才能继续。未保存的知识不承诺跨进程保留，重开仍依赖外部最小 pin。
+
+实际重开覆盖原 P09 待确认记录、未知快照 PUT 的 GET-only 确认，以及重新认证后继续
+密钥／加入／Loro／Flock。HTTP 和原始响应体先结束，再关闭 Riverrun 和数据库。
+
+`session.editOffline(id, text)` 只编辑并保存原生文档和旧 cursor，不取钥、不加密、不发网络；
+`flushOffline(id)` 用已发布 SDK 同步本地差量，按当前真实 epoch／权限封装。关闭重开、
+并行成员合并、SQL 故障重试及已移除成员拒绝均保留本地编辑；不另建一套内容 outbox。
+
+有限攻击计划通过 `makeLabAttackTransport`／`runLabAttackPlan` 控制真实响应的丢弃、重复、
+截断、替换和显式延迟，也可对特定成员暂留已验证旧前缀后释放。计划不接触凭据和设备秘密；
+命中以实际响应事件报告。旧前缀仅说明尚未同步，不自动证明恶意分叉；独立渠道获得的
+exact tuple 才可用于比较确认。三成员真实换代／排除、离线恢复和原字节读取都有独立
+测量，不能由一次通过推成所有攻击已覆盖。

@@ -14,9 +14,38 @@ import {
   judgeFork,
   composeIntegrity,
   composeDurability,
+  judgeWriteObservation,
 } from '../src/pure/judge';
 
 describe('measured Lab verdict contracts, not an attack-executor acceptance', () => {
+  it('requires an authorization refusal to confirm an independent deny prediction', () => {
+    expect(judgeWriteObservation({ expected: 'deny', accepted: true })).toBe('violation');
+    for (const refusal of [
+      undefined,
+      { tag: 'LabContentError', code: 'transport' },
+      { tag: 'LabContentError', code: 'missing_read_key' },
+      { tag: 'LabHarnessError', code: 'missing-document' },
+    ])
+      expect(judgeWriteObservation({ expected: 'deny', accepted: false, refusal })).toBe(
+        'harness-error'
+      );
+    expect(
+      judgeWriteObservation({
+        expected: 'deny',
+        accepted: false,
+        refusal: { tag: 'ContentError', code: 'unauthorized' },
+      })
+    ).toBe('pass');
+    expect(
+      judgeWriteObservation({
+        expected: 'deny',
+        accepted: false,
+        refusal: { tag: 'LedgerFeedError', code: 'forbidden' },
+      })
+    ).toBe('pass');
+    expect(judgeWriteObservation({ expected: 'unmeasured', accepted: true })).toBe('unavailable');
+    expect(judgeWriteObservation({ expected: 'allow', accepted: false })).toBe('harness-error');
+  });
   it('keeps unmeasured baseline, partial coverage and missing plaintext measurements distinct from pass', () => {
     expect(honestBaselineReport()).toEqual({
       confidentiality: 'unavailable',

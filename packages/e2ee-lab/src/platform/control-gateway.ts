@@ -20,12 +20,16 @@ export function makeLabControlGateway(input: {
   readonly genesis: Bytes.GenesisHash;
   readonly stream: LedgerSubmissionStream;
   readonly checkpoint: () => Effect.Effect<LedgerCheckpoint, unknown>;
+  /** Persist the host's newly observed signed suffix before replying. A failed
+   * confirmation leaves the caller's original P09 operation recoverable. */
+  readonly afterAppend?: () => Effect.Effect<void, unknown>;
   readonly now: () => number;
   readonly budget: Parameters<typeof makeStreamsSubmissionRemote>[0]['budget'];
 }) {
   return Effect.gen(function* () {
     const anchor = yield* Effect.fromResult(Bytes.genesisHash(input.genesis.toBytes()));
     const checkpoint = input.checkpoint,
+      afterAppend = input.afterAppend,
       now = input.now,
       budget = { ...input.budget };
     const operations = yield* makeLabOperations();
@@ -107,7 +111,11 @@ export function makeLabControlGateway(input: {
               if (!Number.isSafeInteger(time) || time < 0 || time >= operation.request.expiresAt)
                 return yield* new LabControlGatewayError({ code: 'join-expired' });
             }
-            yield* remote.appendCas(anchor, history.checkpoint, record);
+            const attempted = yield* Effect.result(
+              remote.appendCas(anchor, history.checkpoint, record)
+            );
+            if (afterAppend) yield* afterAppend();
+            yield* Effect.fromResult(attempted);
             yield* guard();
             const result = outcome;
             if (!result?.ok || result.result.kind !== 'ok')

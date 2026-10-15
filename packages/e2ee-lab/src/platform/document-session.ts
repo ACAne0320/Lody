@@ -219,7 +219,35 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
           )
         )
       );
+    const editLocal = Effect.fnUntraced(function* (text: string) {
+      yield* Effect.try({ try: () => current.doc.append(text), catch: () => error('native') });
+      yield* Effect.acquireUseRelease(
+        Effect.sync(() => current.doc.exportSnapshot()),
+        (bytes) => store.persistLocal(bytes),
+        (bytes) => Effect.sync(() => bytes.fill(0))
+      );
+    });
     return Object.freeze({
+      /** Local CRDT edit plus durable native state only; no remote cursor, key lookup
+       * or network is touched. Permission is checked when these changes are sealed. */
+      editOffline: (text: string) =>
+        execute(
+          Effect.gen(function* () {
+            yield* live();
+            yield* editLocal(text);
+          })
+        ),
+      /** The released SDK exports existing local changes relative to its durable
+       * remote version. It does not rely on a subscription seeing the old commit.
+       * Fresh provider authorization/current epoch is selected at actual sealing. */
+      flushOffline: () =>
+        execute(
+          Effect.gen(function* () {
+            yield* live();
+            const result = yield* useSdk(false, (sdk) => sdk.sync());
+            if (!result.ok) yield* sdkError(result.error);
+          })
+        ),
       create: () =>
         execute(
           Effect.gen(function* () {
@@ -232,24 +260,7 @@ export function makeLabDocumentSession<TVersion extends JsonObject>(
         execute(
           Effect.gen(function* () {
             yield* live();
-            const result = yield* useSdk(
-              false,
-              (sdk) => sdk.appendWriteOnly(),
-              Effect.gen(function* () {
-                yield* Effect.try({
-                  try: () => {
-                    const doc = current.doc;
-                    doc.append(text);
-                  },
-                  catch: () => error('native'),
-                });
-                yield* Effect.acquireUseRelease(
-                  Effect.sync(() => current.doc.exportSnapshot()),
-                  (bytes) => store.persistLocal(bytes),
-                  (bytes) => Effect.sync(() => bytes.fill(0))
-                );
-              })
-            );
+            const result = yield* useSdk(false, (sdk) => sdk.appendWriteOnly(), editLocal(text));
             if (!result.ok) yield* sdkError(result.error);
           })
         ),

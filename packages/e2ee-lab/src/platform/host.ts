@@ -1,6 +1,6 @@
 import { LabContentGatewayError, type makeLabContentGateway } from './content-gateway';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { Data, Effect, Result, Semaphore } from 'effect';
+import { Data, Effect, Result, Schema, Semaphore } from 'effect';
 import { Bytes } from '@lody/e2ee-core';
 import type { makeLabCredentials } from './credentials';
 import type { makeLabControlGateway } from './control-gateway';
@@ -10,6 +10,7 @@ import { dispatchLabMailbox, type LabMailboxHost } from './mailbox-http';
 import { LabJoinError, parseLabJoin, type makeLabJoinMailbox } from './join-mailbox';
 import { LabWorkspaceError, type makeLabWorkspaceRegistry } from './workspace-registry';
 import { LabStreamReply, LabStreamReadError, type makeLabStreamReader } from './stream-read';
+import { LabWorkspaceCreationError, type makeLabWorkspaceCreation } from './workspace-creation';
 
 type Credentials = Effect.Success<ReturnType<typeof makeLabCredentials>>;
 type Control = Effect.Success<ReturnType<typeof makeLabControlGateway>>;
@@ -41,11 +42,16 @@ const respond = (response: ServerResponse, status: number, value: unknown) => {
   response.writeHead(status, { 'content-type': 'application/json' });
   response.end(JSON.stringify(value));
 };
-/** Local HTTP composition, currently credential, control, mailbox, joins, genesis discovery and finite SDK reads only. Workspace
- * registration/checkpoint selection is an independent harness capability. HTTP JSON,
+const WorkspaceCreationRequest = Schema.Struct({
+  genesis: Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{2}){1,8192}$/)),
+});
+/** Local HTTP composition of credential, control, mailbox, joins, current workspace
+ * creation, genesis discovery and finite SDK reads. Checkpoint qualification remains
+ * an independent host capability. HTTP JSON,
  * headers and offsets cannot select it. No generic proxy or production account auth.
  * Caller creates credentials/control owners in the same enclosing Scope first. */
 export function makeLabHttpHost(input: {
+  readonly port?: number;
   readonly credentials: Credentials;
   readonly contents?: (
     genesis: Bytes.GenesisHash,
@@ -55,15 +61,19 @@ export function makeLabHttpHost(input: {
     genesis: Bytes.GenesisHash
   ) => Effect.Success<ReturnType<typeof makeLabStreamReader>> | undefined;
   readonly workspaces?: Effect.Success<ReturnType<typeof makeLabWorkspaceRegistry>>;
+  readonly creation?: Effect.Success<ReturnType<typeof makeLabWorkspaceCreation>>;
   readonly control: (genesis: Bytes.GenesisHash) => Control | undefined;
   readonly mailbox?: (genesis: Bytes.GenesisHash) => LabMailboxHost | undefined;
   readonly joins?: (genesis: Bytes.GenesisHash) => Joins | undefined;
 }) {
   return Effect.gen(function* () {
+    const port = input.port ?? 0;
+    if (!Number.isSafeInteger(port) || port < 0 || port > 65535) return yield* reject(400);
     const credentials = input.credentials,
       contents = input.contents,
       streams = input.streams,
       workspaces = input.workspaces,
+      creation = input.creation,
       control = input.control,
       mailbox = input.mailbox,
       joins = input.joins;
@@ -102,7 +112,7 @@ export function makeLabHttpHost(input: {
             new Promise<void>((resolve, refuse) => {
               const failed = (error: Error) => refuse(error);
               server.once('error', failed);
-              server.listen(0, '127.0.0.1', () => {
+              server.listen(port, '127.0.0.1', () => {
                 server.removeListener('error', failed);
                 resolve();
               });
@@ -271,6 +281,26 @@ export function makeLabHttpHost(input: {
           );
         }
         if (request.method !== 'POST') return yield* reject(404);
+        if (path === '/v1/spaces') {
+          const authorization = request.headers.authorization;
+          if (typeof authorization !== 'string' || !/^Bearer [0-9a-f]{64}$/.test(authorization))
+            return yield* reject(401);
+          const token = authorization.slice(7);
+          const credential = yield* credentials.authenticate(token);
+          if (!creation) return yield* reject(404);
+          const value = yield* Effect.fromResult(
+            Schema.decodeUnknownResult(WorkspaceCreationRequest)(yield* json(request, 20 * 1024))
+          ).pipe(Effect.mapError(() => reject(400)));
+          const original = new Uint8Array(Buffer.from(value.genesis, 'hex'));
+          const created = yield* creation.create(credential, original);
+          // Binding has its own atomic readback. If it fails after publication,
+          // the creation journal retains the original and retry performs no re-sign.
+          yield* credentials.bind(
+            token,
+            yield* Effect.fromResult(Bytes.genesisHash(hex(created.genesisHex, 32)))
+          );
+          return created;
+        }
         if (path === '/v1/credentials/challenge') {
           const value = yield* json(request);
           const device = yield* Effect.try({
@@ -376,16 +406,19 @@ export function makeLabHttpHost(input: {
                   result.failure instanceof LabContentGatewayError
                   ? result.failure.status
                   : result.failure instanceof LabJoinError ||
-                      result.failure instanceof LabWorkspaceError
+                      result.failure instanceof LabWorkspaceError ||
+                      result.failure instanceof LabWorkspaceCreationError
                     ? result.failure.code === 'conflict'
                       ? 409
                       : result.failure.code === 'invalid-input'
                         ? 400
-                        : ['storage', 'corrupt'].includes(result.failure.code)
-                          ? 500
-                          : result.failure.code === 'closed'
-                            ? 503
-                            : 403
+                        : result.failure.code === 'transport'
+                          ? 502
+                          : ['storage', 'corrupt'].includes(result.failure.code)
+                            ? 500
+                            : result.failure.code === 'closed'
+                              ? 503
+                              : 403
                     : 403,
                 { error: 'refused' }
               );

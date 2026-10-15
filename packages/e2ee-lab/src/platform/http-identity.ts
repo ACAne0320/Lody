@@ -45,6 +45,12 @@ const JoinWire = Schema.Struct({
 });
 const JoinList = Schema.Struct({ requests: Schema.Array(JoinWire) });
 const JoinReceipt = Schema.Struct({ ok: Schema.Literal(true) });
+const CreationReceipt = Schema.Struct({
+  genesisHex: HashHex,
+  headHex: HashHex,
+  count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(4096)),
+  offset: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)),
+});
 const maxReplyBytes = 20 * 1024;
 
 /** Synthetic local possession/bearer client, not product identity or key custody.
@@ -277,12 +283,60 @@ export const makeLabHttpIdentity = Effect.fnUntraced(function* (input: {
         // as current membership, endpoint, cursor, custody or control bootstrap.
         return Object.freeze({ anchor: genesis, record });
       });
+      const createWorkspace = Effect.fnUntraced(function* (record: Uint8Array) {
+        if (owner.signal.aborted) return yield* fail('closed');
+        const original = yield* Effect.try({
+          try: () => new Uint8Array(record),
+          catch: () => fail('invalid-response'),
+        });
+        const decoded = yield* Effect.fromResult(decodeRecord(original));
+        const head = hashRecordBytes(original);
+        if (
+          original.byteLength > 8192 ||
+          decoded.body.type !== 'genesis' ||
+          !decoded.body.signer.equals(captured.publicKey) ||
+          !Buffer.from(head.toBytes()).equals(Buffer.from(genesis.toBytes()))
+        )
+          return yield* fail('invalid-response');
+        yield* Effect.fromResult(
+          verifyLedger({
+            anchor: genesis,
+            records: [original],
+            checkpoint: { head, length: 1 },
+          })
+        );
+        const receipt = yield* Effect.fromResult(
+          Result.mapError(
+            Schema.decodeUnknownResult(CreationReceipt)(
+              yield* readJson(
+                () =>
+                  authenticatedFetch(`${origin}/v1/spaces`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ genesis: hex(original) }),
+                  }),
+                maxReplyBytes
+              )
+            ),
+            () => fail('invalid-response')
+          )
+        );
+        if (
+          receipt.genesisHex !== genesisHex ||
+          (receipt.count === 1 && receipt.headHex !== hex(head.toBytes()))
+        )
+          return yield* fail('invalid-response');
+        // An authenticated publication receipt is not independent current-history
+        // qualification. Callers keep their own witnessed pins for later startup.
+        return Object.freeze({ ...receipt });
+      });
       return Object.freeze({
         url,
         fetch: authenticatedFetch,
         discoverGenesis,
         submitJoin,
         listJoins,
+        createWorkspace,
       });
     }),
   });

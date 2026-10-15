@@ -73,3 +73,13 @@ Key rounds are finite pages, with separate caller-supplied hints for each queue.
 Session/IPC results are returned intact; repair IDs and targeted rejection are
 caller choices. Acknowledge each consumed result explicitly, never automatically
 or by deleting original task/report/ciphertext rows.
+
+Current host composition refreshes actual signed control before authorization. A
+verified observation that fails persistence remains an in-process lower bound:
+block authority/checkpoint export and old-prefix rollback until confirmation.
+Reopen still needs an independently retained minimum; SQL cannot supply it.
+Offline edits persist native state with the old cursor without networking or
+sealing; the existing SDK synchronizes deltas under current epoch/permission.
+Attack plans receive bounded public response controls, never credentials or
+honest-device secrets. A retained old prefix is pending sync, not automatically
+a detected fork; compare only externally qualified exact observations.
