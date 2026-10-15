@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execNativeChild } from './native-child';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -110,7 +110,7 @@ describe('independently qualified snapshot origin with durable exact suffix', ()
           length: f.next.length,
         })
       );
-      const output = execFileSync(
+      const output = await execNativeChild(
         process.execPath,
         [
           '--import',
@@ -118,7 +118,7 @@ describe('independently qualified snapshot origin with durable exact suffix', ()
           fileURLToPath(new URL('./snapshot-feed-reopen.mts', import.meta.url)),
           childConfig,
         ],
-        { cwd: fileURLToPath(new URL('..', import.meta.url)), encoding: 'utf8' }
+        { cwd: fileURLToPath(new URL('..', import.meta.url)) }
       );
       const report = JSON.parse(output);
       expect(report).toEqual({

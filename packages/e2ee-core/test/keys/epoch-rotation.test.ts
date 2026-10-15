@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { runNativeChild } from '../native-child';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -667,10 +667,10 @@ describe('durable local epoch rotation', () => {
       }),
       { mode: 0o600 }
     );
-    const child = spawnSync(
+    const child = await runNativeChild(
       process.execPath,
       ['--import', 'tsx', fileURLToPath(new URL('./rotation-reopen.mts', import.meta.url)), config],
-      { cwd: fileURLToPath(new URL('../..', import.meta.url)), encoding: 'utf8' }
+      { cwd: fileURLToPath(new URL('../..', import.meta.url)) }
     );
     expect(child.status, child.stderr).toBe(0);
     expect(JSON.parse(child.stdout.trim())).toMatchObject({
@@ -878,10 +878,10 @@ describe('durable local epoch rotation', () => {
       }),
       { mode: 0o600 }
     );
-    const child = spawnSync(
+    const child = await runNativeChild(
       process.execPath,
       ['--import', 'tsx', fileURLToPath(new URL('./rotation-reopen.mts', import.meta.url)), config],
-      { cwd: fileURLToPath(new URL('../..', import.meta.url)), encoding: 'utf8' }
+      { cwd: fileURLToPath(new URL('../..', import.meta.url)) }
     );
     expect(child.status, child.stderr).toBe(0);
     const output = JSON.parse(child.stdout.trim());

@@ -56,7 +56,9 @@ encrypted on disk and imported as nonextractable native handles; Recovery secret
 Caller-owned recipient handles must remain within the custody owner's Scope:
 WebCrypto provides no deterministic handle destruction or JS-string erasure.
 Stop admission before shutdown, await actual native work, then clear owned KEK
-bytes. Failed opens preserve originals; no key deletion, migration or repair.
+bytes. Failed opens preserve originals; no key deletion or migration. Interrupted
+KEK rewrap recovers only a validated same-key wrapper under the native OS mutex;
+never infer lock ownership from PID/age or generate a replacement KEK on failure.
 
 The owning test uses synthetic authenticated safeStorage plus real crypto,
 filesystem and another OS process. It does not prove an OS keychain or all-platform

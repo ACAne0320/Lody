@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execNativeChild } from '../native-child';
 import { createServer, type ServerResponse, type IncomingMessage } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -281,44 +281,23 @@ describe('released SDK CAS bound to independently verified ledger endpoint', () 
           outcome: 'Committed',
           record,
         });
-        const child = await new Promise<{ pid: number; outcome: string; record: string }>(
-          (resolve, reject) => {
-            const proc = spawn(
-              process.execPath,
-              [
-                '--import',
-                'tsx',
-                new URL('./streams-reopen.mts', import.meta.url).pathname,
-                JSON.stringify({
-                  url: f.url,
-                  path: path.join(f.dir, 'journal.sqlite'),
-                  genesis: Buffer.from(anchor.toBytes()).toString('hex'),
-                  head: Buffer.from(checkpoint(f.store.read()).head.toBytes()).toString('hex'),
-                  count: 2,
-                }),
-              ],
-              { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] }
-            );
-            let output = '',
-              errors = '';
-            proc.stdout.on('data', (data) => {
-              output += data.toString();
-            });
-            proc.stderr.on('data', (data) => {
-              errors += data.toString();
-            });
-            proc.once('error', reject);
-            proc.once('close', (code) => {
-              if (code !== 0) reject(new Error(errors));
-              else {
-                try {
-                  resolve(JSON.parse(output));
-                } catch (error) {
-                  reject(error);
-                }
-              }
-            });
-          }
+        const child = JSON.parse(
+          await execNativeChild(
+            process.execPath,
+            [
+              '--import',
+              'tsx',
+              new URL('./streams-reopen.mts', import.meta.url).pathname,
+              JSON.stringify({
+                url: f.url,
+                path: path.join(f.dir, 'journal.sqlite'),
+                genesis: Buffer.from(anchor.toBytes()).toString('hex'),
+                head: Buffer.from(checkpoint(f.store.read()).head.toBytes()).toString('hex'),
+                count: 2,
+              }),
+            ],
+            { cwd: process.cwd() }
+          )
         );
         expect(child.pid).not.toBe(process.pid);
         expect(child.outcome).toBe('Committed');

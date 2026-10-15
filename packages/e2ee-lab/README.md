@@ -61,6 +61,13 @@ A fixed120s harness watchdog interrupts stalled scenarios, kills/awaits owned
 children and releases resources before returning `LabScenarioError/watchdog`
 (CLI exit1). Final evidence is written only after successful owner cleanup;
 this watchdog is not a performance pass threshold or strict freshness B.
+The test suite uses a 180-second outer watchdog (120 seconds for hooks) instead of per-case
+5/10/15/20-second arrival budgets. Tests wait for explicit events or actual
+operation completion; an operation ending before its required event is a harness
+failure. The outer bound leaves cleanup time after the inner 120-second scenario
+watchdog. Slow execution alone is not evidence for a protocol refusal. After
+SIGKILL or shutdown acknowledgement, the process owner waits for actual `close`;
+it does not release resources merely because five seconds passed.
 
 ## Entry points and owners
 

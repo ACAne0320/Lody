@@ -20,14 +20,7 @@ export const LabProcessSpawn = Context.Reference<() => ChildProcess>('Lab/Proces
     ),
 });
 export class LabProcessError extends Data.TaggedError('LabProcessError')<{
-  readonly code:
-    | 'closed'
-    | 'not-started'
-    | 'already-started'
-    | 'native'
-    | 'reply'
-    | 'child-exited'
-    | 'release-failed';
+  readonly code: 'closed' | 'not-started' | 'already-started' | 'native' | 'reply' | 'child-exited';
   readonly pid?: number;
 }> {}
 export interface LabProcessReply {
@@ -69,13 +62,9 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
     Effect.uninterruptible(
       Effect.gen(function* () {
         if (!lease.done) lease.child.kill('SIGKILL');
-        const result = yield* Deferred.await(lease.closed).pipe(
-          Effect.timeoutOrElse({
-            duration: '5 seconds',
-            orElse: () =>
-              Effect.fail(new LabProcessError({ code: 'release-failed', pid: lease.child.pid })),
-          })
-        );
+        // SIGKILL requests termination; only the native close event releases this
+        // owner. Machine load is not evidence that the child failed to settle.
+        const result = yield* Deferred.await(lease.closed);
         if (current === lease) current = undefined;
         return result;
       })
@@ -324,9 +313,9 @@ export const makeLabProcessActor = Effect.fnUntraced(function* (
         if (!current) return;
         const lease = current;
         yield* call({ operation: 'close' });
-        yield* Deferred.await(lease.closed).pipe(
-          Effect.timeoutOrElse({ duration: '5 seconds', orElse: () => stop(lease) })
-        );
+        // The enclosing scenario/test watchdog owns a stuck harness. Graceful
+        // completion itself is observed from native close, never a short deadline.
+        yield* Deferred.await(lease.closed);
         if (current === lease) current = undefined;
       }),
     pid: () => current?.child.pid,

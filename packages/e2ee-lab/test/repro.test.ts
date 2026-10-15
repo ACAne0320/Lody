@@ -303,7 +303,7 @@ it('reexecutes finite captured action outcomes on fresh actual processes and det
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});
 
 it('compares exact measured fault hit counts rather than coarsening every nonzero count to true', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'lab-repro-fault-count-'));
@@ -343,7 +343,7 @@ it('compares exact measured fault hit counts rather than coarsening every nonzer
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});
 
 it('minimizes measured action violations with fresh real trials and refuses an all-pass pack', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'lab-repro-minimize-'));
@@ -418,4 +418,4 @@ it('minimizes measured action violations with fresh real trials and refuses an a
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});

@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { runNativeChild } from '../native-child';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -99,12 +99,12 @@ describe('durable submission', () => {
 
   it.each(['before-cas', 'lost-response'])(
     'independent process crash at %s recovers exact bytes',
-    (mode) => {
+    async (mode) => {
       const f = fixture();
       try {
         const require = createRequire(import.meta.url);
         const run = (processMode: string) =>
-          spawnSync(
+          runNativeChild(
             process.execPath,
             [
               '--import',
@@ -114,14 +114,12 @@ describe('durable submission', () => {
               f.journal,
               path.join(f.dir, 'host.sqlite'),
             ],
-            { encoding: 'utf8', timeout: 30000, env: { ...process.env, NODE_OPTIONS: '' } }
+            { env: { ...process.env, NODE_OPTIONS: '' } }
           );
-        const crashed = run(mode);
-        expect(crashed.error).toBeUndefined();
+        const crashed = await run(mode);
         expect(crashed.signal).toBeNull();
         expect(crashed.status).toBe(mode === 'before-cas' ? 71 : 72);
-        const reopened = run('reopen');
-        expect(reopened.error, reopened.stderr).toBeUndefined();
+        const reopened = await run('reopen');
         expect(reopened.signal).toBeNull();
         expect(reopened.status, reopened.stderr).toBe(0);
         expect(JSON.parse(reopened.stdout)).toEqual({

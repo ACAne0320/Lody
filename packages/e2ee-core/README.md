@@ -40,7 +40,13 @@ full signed content workflows and host adapters. The HKDF salt is returned as a
 fresh copy instead of shared mutable bytes. Protocol bytes remain unchanged.
 
 Run `pnpm --filter @lody/e2ee-core typecheck` and
-`pnpm --filter @lody/e2ee-core test`. Tests include the
+`pnpm --filter @lody/e2ee-core test`. Correctness uses explicit signals, actual
+child completion and durable state, never an elapsed-time assertion. The package
+has a 180-second test watchdog and 120-second hook watchdog to report a stuck harness; it is not a
+performance target or an expected protocol refusal. Child owners kill and await
+actual close on cancellation. Runtime measurements belong in `bench`, outside
+these pass/fail assertions. Native child watchdogs fire at 120 seconds so the outer
+test guard leaves time to kill and await actual close. Tests include the
 [RFC 8032 §7.1 vector](https://www.rfc-editor.org/rfc/rfc8032#section-7.1).
 `test/content-vector.json` is a synthetic v0 frame signed independently with
 Node's native Ed25519 and the RFC test seed: genesis `11` repeated 32 times,

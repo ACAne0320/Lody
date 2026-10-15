@@ -539,4 +539,4 @@ it('opens an admitted workspace through actual HTTP/public SDK, cleans failed ac
   } finally {
     await f.close();
   }
-}, 10_000);
+});

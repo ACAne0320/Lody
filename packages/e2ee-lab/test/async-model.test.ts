@@ -128,7 +128,7 @@ it('keeps a real append owned across plan phases and records both predictions af
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 0);
+});
 
 it.each(['stop', 'interrupt'] as const)(
   'joins the actual child close and native HTTP/SQLite owners when %s occurs during a held call',

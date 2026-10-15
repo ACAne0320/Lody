@@ -263,7 +263,7 @@ it('merges three independent members after durable offline edits/reopen, seals q
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 15000);
+});
 
 class MissingLocalEditInput extends Data.TaggedError('MissingLocalEditInput')<{
   readonly code: 'missing-original-input';

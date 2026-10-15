@@ -101,7 +101,7 @@ it('runs configurable Owner/Admin/Member/Guest and R devices, merges four partie
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});
 
 it('measures a genuine manager CAS without staging as a concrete stuck-group property and replays/shrinks original wire material', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-unstaged-manager-')),
@@ -153,4 +153,4 @@ it('measures a genuine manager CAS without staging as a concrete stuck-group pro
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 0);
+});

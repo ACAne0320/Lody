@@ -302,4 +302,4 @@ it('uses an active Recovery device to durably enroll its own new personal device
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 15000);
+});

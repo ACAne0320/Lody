@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Exit, Fiber } from 'effect';
 import { execFile } from 'node:child_process';
 import { basename } from 'node:path';
 /** Test process ownership: cancellation kills, and finalization awaits actual close. */
@@ -41,8 +41,30 @@ export function runOwnedChild(args: string[]) {
     (lease) => Effect.tryPromise({ try: () => lease.output, catch: (cause) => cause }),
     (lease) =>
       Effect.promise(async () => {
-        if (lease.child.exitCode === null && lease.child.signalCode === null) lease.child.kill();
+        if (lease.child.exitCode === null && lease.child.signalCode === null)
+          lease.child.kill('SIGKILL');
         await lease.closed;
       })
+  );
+}
+
+/** Await an explicit transport observation while its producer is still alive.
+ * Missing observations fail when the actual producer ends, not after a guessed
+ * number of seconds. Interrupting this waiter never cancels the producer. */
+export function awaitProducedEvent<A, E, R>(
+  event: Effect.Effect<A, E, R>,
+  producer: Fiber.Fiber<unknown, unknown>
+) {
+  return Effect.raceFirst(
+    event,
+    Fiber.await(producer).pipe(
+      Effect.flatMap((exit) =>
+        Effect.die(
+          new Error('Lab test producer ended before its required event', {
+            cause: Exit.isFailure(exit) ? exit.cause : exit.value,
+          })
+        )
+      )
+    )
   );
 }

@@ -1105,7 +1105,7 @@ it('measures three actual members, tag8 exclusion, independent comparison and re
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 0);
+});
 
 it('shrinks an actually reproduced native backend plaintext violation using the existing finite minimizer', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-attack-confidentiality-shrink-'));
@@ -1236,4 +1236,4 @@ it('shrinks an actually reproduced native backend plaintext violation using the 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 0);
+});

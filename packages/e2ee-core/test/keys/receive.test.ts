@@ -626,7 +626,7 @@ describe('durable finite epoch receive and original-report queue', () => {
         })
       )
     );
-  }, 30_000);
+  });
   it('retries an already queued original after sender revocation but refuses a new envelope from that revoked sender', async () => {
     const f = envelopeFixture(),
       native = synthetic(),
@@ -945,5 +945,5 @@ describe('durable finite epoch receive and original-report queue', () => {
         })
       )
     );
-  }, 30_000);
+  });
 });

@@ -96,7 +96,7 @@ it('runs a recorded attack through actual native actors and only confirms its me
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});
 const yieldFreeResult = <A, E>(effect: Effect.Effect<A, E>) =>
   Effect.runPromise(Effect.result(effect));
 
@@ -134,4 +134,4 @@ it('does not turn a hostile host 403 into a confirmed policy violation', async (
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});

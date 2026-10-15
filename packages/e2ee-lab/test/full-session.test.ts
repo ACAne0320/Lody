@@ -110,7 +110,7 @@ it('closes native admission and joins an abort-ignoring control read before clos
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 0);
+});
 it('creates through the public facade only after protected initial-key readback, publishes one original genesis and reopens the retained create intent', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-facade-create-'));
   try {
@@ -415,7 +415,7 @@ it('starts and reopens an authenticated workspace from an independently qualifie
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 15000);
+});
 it('exposes verified rotation state and drives a permitted required rotation through the facade', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-rotation-status-'));
   try {
@@ -497,7 +497,7 @@ it('exposes verified rotation state and drives a permitted required rotation thr
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 0);
+});
 it('publishes and installs real new epochs, distributes them, resumes current-epoch document writes and reopens retained candidates', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-real-epoch-publisher-'));
   try {
@@ -586,7 +586,7 @@ it('publishes and installs real new epochs, distributes them, resumes current-ep
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 15000);
+});
 it('starts real admitted peers, installs HPKE keys/reports, syncs both SDK models and reauthenticates one common owner', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-full-session-'));
   try {
@@ -656,7 +656,7 @@ it('starts real admitted peers, installs HPKE keys/reports, syncs both SDK model
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 15000);
+});
 it('closes the two original Lab2 behaviors through the complete session: genuine records at wrong offsets cannot duplicate history or rewind the durable feed', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab2-full-consumer-'));
   try {
@@ -769,7 +769,7 @@ it('closes the two original Lab2 behaviors through the complete session: genuine
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 10000);
+});
 it('durably retries an unadmitted join original after a lost receipt, then starts key/content only after genuine admission', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-join-complete-'));
   try {
@@ -909,7 +909,7 @@ it('durably retries an unadmitted join original after a lost receipt, then start
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 15000);
+});
 
 it('revalidates changed signed fixture originals before reusing synthetic authority', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-fixture-originals-'));
@@ -931,7 +931,7 @@ it('revalidates changed signed fixture originals before reusing synthetic author
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 10000);
+});
 
 it('continues blocked repair pages, retries a lost HTTP ACK after reopen and explicitly frees sender capacity without deleting originals', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-key-results-'));
@@ -1057,4 +1057,4 @@ it('continues blocked repair pages, retries a lost HTTP ACK after reopen and exp
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 0);
+});

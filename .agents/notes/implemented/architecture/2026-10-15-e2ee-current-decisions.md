@@ -87,6 +87,14 @@ not make the abort owner wait behind its own unfinished body.
 Bounded response collection is one internal helper inside these existing leases:
 EOF releases the reader; incomplete work awaits cancel and always releases the lock.
 
+Desktop KEK initialization holds a native SQLite exclusive mutex through actual
+safeStorage settlement. Process death releases the OS lock; a private journal
+retains only encrypted wrappers and the same random KEK's digest. Reopen validates
+that same key before completing or restoring an interrupted replacement. A live
+initializer is never displaced using PID, age or timeout. Invalid recovery data
+fails closed. Tests exercise actual child termination around journal publication
+and wrapper replacement; synthetic safeStorage is not OS-keychain acceptance.
+
 ## Verification work
 
 Cooperative native Ed25519 work uses the same pure authority kernel and retains
@@ -100,7 +108,13 @@ write stamp allow indexed final SQL readback. Changed schema, triggers or foreig
 writes retain full comparison; counters never create trust. The final checks run
 after the last DML; earlier duplicate readback is omitted. These conditions and
 caches remain subject to necessity review.
-A 120s Lab watchdog is a harness bound, not a performance pass line or strict B;
+Core and Lab tests use a uniform 180s outer watchdog and 120s hook watchdog, not
+per-case arrival or performance budgets. The outer guard leaves cleanup time
+after the inner 120s child/scenario watchdog. Explicit events, actual operation termination and durable
+state decide correctness. Missing events fail when their producer ends; slow
+execution cannot count as an expected refusal. Process release waits native close
+after kill/acknowledgement, including cancellation. The scenario's separate 120s
+watchdog reports a harness failure, not strict B or a measured security violation;
 final evidence is written only after successful resource cleanup.
 Execute and inspect share action semantics and observation summaries, so malformed
 plans cannot become passing evidence through a different inspection path.

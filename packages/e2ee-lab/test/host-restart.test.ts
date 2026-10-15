@@ -391,7 +391,7 @@ it('closes and reopens the actual whole host, reconciles committed CAS/Pending s
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});
 
 it('joins an actual held native response before closing the complete host Riverrun owner', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'lab-host-held-body-'));
@@ -536,7 +536,7 @@ it('joins an actual held native response before closing the complete host Riverr
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});
 
 it('denies output while a witnessed revocation checkpoint cannot persist, then permits only historical control reads after repair', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'lab-host-revocation-gap-'));
@@ -717,7 +717,7 @@ it('denies output while a witnessed revocation checkpoint cannot persist, then p
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});
 
 it('rereads native control before authorizing a new content stream and refuses malformed backend additions', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'lab-host-native-authority-'));
@@ -783,4 +783,4 @@ it('rereads native control before authorizing a new content stream and refuses m
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 0);
+});

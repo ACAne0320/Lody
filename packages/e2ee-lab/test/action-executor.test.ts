@@ -69,7 +69,7 @@ it('keeps real offline edits across SIGKILL and flushes them through the finite 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 0);
+});
 it('executes all finite kinds on real OS/HPKE/SQLite/SDK actors; bad cipher/storage retain the measured durable pair and lost ACK retries original bytes', async () => {
   const root = mkdtempSync(join(tmpdir(), 'lab-action-complete-'));
   try {
@@ -123,7 +123,7 @@ it('executes all finite kinds on real OS/HPKE/SQLite/SDK actors; bad cipher/stor
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 0);
+});
 it.each(['open', 'close'] as const)(
   'the 120s scenario watchdog awaits every real child and host before a typed harness failure when %s never replies',
   async (stalled) => {
@@ -316,7 +316,7 @@ it('a known durable-loss defect is measured after actual SIGKILL/reopen, not tim
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 10000);
+});
 it('preflights every initial action before any effect, ignores caller map override, and refuses unknown actors/kinds and forward observations', async () => {
   let started = false;
   const actor = {

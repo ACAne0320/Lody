@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execNativeChild } from './native-child';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -184,7 +184,7 @@ describe('durable current snapshot publication identities', () => {
           genesis: Buffer.from(config.genesis.toBytes()).toString('hex'),
         })
       );
-      const output = execFileSync(
+      const output = await execNativeChild(
         process.execPath,
         [
           '--import',
@@ -192,7 +192,7 @@ describe('durable current snapshot publication identities', () => {
           fileURLToPath(new URL('./snapshot-publication-reopen.mts', import.meta.url)),
           input,
         ],
-        { cwd: fileURLToPath(new URL('..', import.meta.url)), encoding: 'utf8' }
+        { cwd: fileURLToPath(new URL('..', import.meta.url)) }
       );
       const observed = JSON.parse(output);
       expect(observed).toEqual({

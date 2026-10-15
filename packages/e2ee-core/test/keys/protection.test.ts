@@ -6,7 +6,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
 import { synthetic } from './protection-fixture';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execNativeChild, runNativeChild } from '../native-child';
 import { fileURLToPath } from 'node:url';
 import { makeHostEpochProtection, type NativeEpochProtector } from '@lody/e2ee-core/keys/host';
 import { makeInstalledEpochHistory } from '@lody/e2ee-core/keys/host/history';
@@ -267,16 +267,12 @@ describe('host-only epoch protection', () => {
         })
       )
     );
-    const child = execFileSync(
-      process.execPath,
-      [
-        '--import',
-        'tsx',
-        fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
-        dbPath,
-      ],
-      { encoding: 'utf8', timeout: 20_000 }
-    );
+    const child = await execNativeChild(process.execPath, [
+      '--import',
+      'tsx',
+      fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
+      dbPath,
+    ]);
     expect(child.trim()).toBe(
       Buffer.from(ok(commitEpochKey(f.context.genesis, 0, f.secret)).toBytes()).toString('hex')
     );
@@ -286,17 +282,13 @@ describe('host-only epoch protection', () => {
       maySealNewContent: false,
     });
     expect(Result.isFailure(await Effect.runPromise(Effect.result(f.prepare())))).toBe(true);
-    const revokedChild = execFileSync(
-      process.execPath,
-      [
-        '--import',
-        'tsx',
-        fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
-        dbPath,
-        'sender-revoked',
-      ],
-      { encoding: 'utf8', timeout: 20_000 }
-    );
+    const revokedChild = await execNativeChild(process.execPath, [
+      '--import',
+      'tsx',
+      fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
+      dbPath,
+      'sender-revoked',
+    ]);
     expect(revokedChild.trim()).toBe(
       Buffer.from(ok(commitEpochKey(f.context.genesis, 0, f.secret)).toBytes()).toString('hex')
     );
@@ -513,31 +505,22 @@ describe('verified host observations and durable authority readback', () => {
         )
       );
       // Success, including retry after a failed write, must reject old authority in another OS process.
-      const child = spawnSync(
-        process.execPath,
-        [
-          '--import',
-          'tsx',
-          fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
-          dbPath,
-        ],
-        { encoding: 'utf8', timeout: 20_000 }
-      );
-      expect(child.error).toBeUndefined();
+      const child = await runNativeChild(process.execPath, [
+        '--import',
+        'tsx',
+        fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
+        dbPath,
+      ]);
       expect(child.status).not.toBeNull();
       expect(child.status).not.toBe(0);
       expect(child.stderr).toContain('unauthorized');
-      const allowed = execFileSync(
-        process.execPath,
-        [
-          '--import',
-          'tsx',
-          fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
-          dbPath,
-          'sender-revoked',
-        ],
-        { encoding: 'utf8', timeout: 20_000 }
-      );
+      const allowed = await execNativeChild(process.execPath, [
+        '--import',
+        'tsx',
+        fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
+        dbPath,
+        'sender-revoked',
+      ]);
       expect(allowed.trim()).toBe(
         Buffer.from(ok(commitEpochKey(f.context.genesis, 0, f.secret)).toBytes()).toString('hex')
       );

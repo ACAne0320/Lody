@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { execFileSync } from 'node:child_process';
+import { execNativeChild } from '../native-child';
 import { fileURLToPath } from 'node:url';
 import { Effect, Result, Scope, Exit, Deferred, Fiber } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -79,10 +79,10 @@ describe('durable stable-ID mailbox repair episodes', () => {
       )
     );
     const child = JSON.parse(
-      execFileSync(
+      await execNativeChild(
         process.execPath,
         ['--import', 'tsx', fileURLToPath(new URL('./repair-reopen.mts', import.meta.url)), dir],
-        { encoding: 'utf8' }
+        {}
       )
     );
     expect(child.pid).not.toBe(process.pid);

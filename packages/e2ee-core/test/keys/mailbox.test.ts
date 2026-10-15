@@ -103,7 +103,16 @@ describe('authenticated SQLite key mailbox', () => {
             (ownedWorker) => Effect.promise(() => ownedWorker.terminate())
           );
           const wait = (index: number) => {
-            if (Atomics.load(state, index) === 0) Atomics.wait(state, index, 0, 20_000);
+            // A real synchronous SQLite SELECT is paused here. The worker's
+            // explicit signal, never elapsed time, releases it. The bound is
+            // only a harness watchdog; failure cannot count as a repair refusal.
+            if (Atomics.load(state, index) === 0) {
+              const result = Atomics.wait(state, index, 0, 120_000);
+              if (result === 'timed-out')
+                throw new Error('Mailbox worker harness failure: watchdog expired');
+            }
+            if (Atomics.load(state, index) === -1)
+              throw new Error('Mailbox worker harness failure: native repair failed');
             expect(Atomics.load(state, index)).toBe(1);
           };
           const native = Database.prototype.prepare;
@@ -153,7 +162,7 @@ describe('authenticated SQLite key mailbox', () => {
         })
       )
     );
-  }, 30_000);
+  });
 
   it('persists ciphertext and signed claims, reopens, and repairs without deleting history', async () => {
     const f = envelopeFixture(),
@@ -260,7 +269,7 @@ describe('authenticated SQLite key mailbox', () => {
     } finally {
       db.close();
     }
-  }, 30_000);
+  });
   it('binds sender and reporting recipient to authenticated principals and fixes signature verification', async () => {
     const f = envelopeFixture(),
       frame = await Effect.runPromise(f.prepare());
@@ -553,7 +562,7 @@ describe('authenticated SQLite key mailbox', () => {
         })
       )
     );
-  }, 30_000);
+  });
 });
 
 describe('verified mailbox observations across failed pin writes', () => {

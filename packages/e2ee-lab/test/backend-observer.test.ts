@@ -173,7 +173,7 @@ it('observes actual retained entries and snapshots despite ordinary 410, with ex
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 10000);
+});
 
 it('fails closed on row/byte budgets, malformed storage and missing databases without returning partial observations', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'lab-backend-byte-budgets-'));
@@ -272,4 +272,4 @@ it('fails closed on row/byte budgets, malformed storage and missing databases wi
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}, 10000);
+});

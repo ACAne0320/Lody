@@ -213,7 +213,7 @@ void test('native key rotation rewraps the same KEK and retained protected data 
       )
     })
   )
-  assert.deepEqual(await readdir(directory), ['kek.safe-storage'])
+  assert.deepEqual(await readdir(directory), ['kek.safe-storage', 'kek.safe-storage.rewrap-lock'])
 })
 void test('failed KEK rewrap preserves the complete previous wrapper and protected keys', async (t) => {
   for (const fault of ['wrap', 'candidate', 'replace', 'readback']) {
@@ -269,7 +269,11 @@ void test('failed KEK rewrap preserves the complete previous wrapper and protect
     }
     assert.equal(result.failure?.code, 'rewrap-failed', fault)
     assert.deepEqual(await readFile(file), original, fault)
-    assert.deepEqual(await readdir(directory), ['kek.safe-storage'], fault)
+    assert.deepEqual(
+      await readdir(directory),
+      ['kek.safe-storage', 'kek.safe-storage.rewrap-lock'],
+      fault
+    )
     await execute(
       Effect.gen(function* () {
         const owner = yield* makeDesktopE2eeCustody({
@@ -286,10 +290,20 @@ void test('failed KEK rewrap preserves the complete previous wrapper and protect
     )
   }
 })
-void test('a failed rollback retains the encrypted original and refuses automatic recovery', async (t) => {
+void test('a failed rollback leaves an encrypted journal and the next owner recovers automatically', async (t) => {
   const directory = await fixture(t)
   const file = join(directory, 'kek.safe-storage')
-  await execute(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() }))
+  let protectedKey
+  await execute(
+    Effect.gen(function* () {
+      const owner = yield* makeDesktopE2eeCustody({
+        directory,
+        platform: 'linux',
+        safeStorage: backend()
+      })
+      protectedKey = yield* Effect.promise(() => owner.installed.protect(installedBody()))
+    })
+  )
   const original = await readFile(file)
   const storage = backend(),
     decrypt = storage.decryptStringAsync
@@ -301,8 +315,9 @@ void test('a failed rollback retains the encrypted original and refuses automati
     return { ...opened, shouldReEncrypt: isOriginal }
   }
   const rename = fileSystem.rename
+  let replacements = 0
   fileSystem.rename = async (from, to) => {
-    if (from.endsWith('.original')) throw new Error('rollback storage unavailable')
+    if (to === file && ++replacements === 2) throw new Error('rollback storage unavailable')
     return rename(from, to)
   }
   syncBuiltinESMExports()
@@ -316,21 +331,158 @@ void test('a failed rollback retains the encrypted original and refuses automati
     syncBuiltinESMExports()
   }
   assert.equal(result.failure?.code, 'rewrap-failed')
-  const files = await readdir(directory)
-  const backup = files.find((name) => name.endsWith('.original'))
-  assert.ok(backup, 'the original encrypted wrapper must survive failed rollback')
-  assert.deepEqual(await readFile(join(directory, backup)), original)
-  assert.ok(files.includes('kek.safe-storage.rewrap-lock'))
-  const reopening = await execute(
-    Effect.result(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() }))
+  const journal = JSON.parse(await readFile(`${file}.rewrap-journal`, 'utf8'))
+  assert.deepEqual(Buffer.from(journal.original, 'hex'), original)
+  const replacement = await readFile(file)
+  assert.notDeepEqual(replacement, original)
+  await execute(
+    Effect.gen(function* () {
+      const owner = yield* makeDesktopE2eeCustody({
+        directory,
+        platform: 'linux',
+        safeStorage: backend({
+          decryptStringAsync: async (value) => {
+            if (Buffer.from(value).equals(original))
+              throw new Error('old native wrapping key retired')
+            return backend().decryptStringAsync(value)
+          }
+        })
+      })
+      assert.deepEqual(
+        Buffer.from(yield* Effect.promise(() => owner.installed.unprotect(protectedKey))),
+        installedBody()
+      )
+    })
   )
-  assert.equal(reopening.failure?.code, 'rewrap-failed')
-  assert.deepEqual(await readFile(join(directory, backup)), original)
-  // Explicit fixture recovery, never an automatic production backup choice.
-  await rename(join(directory, backup), file)
-  await fileSystem.unlink(join(directory, 'kek.safe-storage.rewrap-lock'))
-  await execute(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() }))
-  assert.deepEqual(await readFile(file), original)
+  assert.deepEqual(
+    await readFile(file),
+    replacement,
+    'a valid published replacement must not be rolled back'
+  )
+  assert.deepEqual(await readdir(directory), ['kek.safe-storage', 'kek.safe-storage.rewrap-lock'])
+})
+void test('hard process exit releases the OS mutex and preserves the same KEK before and after replacement', async (t) => {
+  const { runCommand, ProcessSpawnerLive, NodeProcessLive } =
+    await import('@lody/shared/node/process')
+  for (const stage of ['native-wrap', 'journal-published', 'replacement-published']) {
+    const directory = await fixture(t)
+    const file = join(directory, 'kek.safe-storage')
+    let protectedKey
+    await execute(
+      Effect.gen(function* () {
+        const owner = yield* makeDesktopE2eeCustody({
+          directory,
+          platform: 'linux',
+          safeStorage: backend()
+        })
+        protectedKey = yield* Effect.promise(() => owner.installed.protect(installedBody()))
+      })
+    )
+    const original = await readFile(file)
+    const entry = new URL('./e2ee-custody.mts', import.meta.url).href
+    const child = `
+      import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+      import fileSystem, { readFile } from 'node:fs/promises';
+      import { syncBuiltinESMExports } from 'node:module';
+      import { Effect } from 'effect';
+      import { makeDesktopE2eeCustody } from ${JSON.stringify(entry)};
+      const wrapping = Buffer.alloc(32, 72);
+      const backend = ${backend.toString()};
+      const file = process.argv[1]+'/kek.safe-storage', stage=process.argv[2];
+      const original = await readFile(file), storage = backend();
+      const wrap=storage.encryptStringAsync, unwrap=storage.decryptStringAsync;
+      let replacementReads=0;
+      storage.encryptStringAsync = async value => {
+        const result = await wrap(value);
+        if(stage==='native-wrap') process.exit(73);
+        return result;
+      };
+      storage.decryptStringAsync = async value => {
+        const opened=await unwrap(value), isOriginal=Buffer.from(value).equals(original);
+        if(!isOriginal && ++replacementReads===2 && stage==='replacement-published') process.kill(process.pid,'SIGKILL');
+        return {...opened,shouldReEncrypt:isOriginal};
+      };
+      const rename=fileSystem.rename;
+      fileSystem.rename=async(from,to)=>{
+        const result=await rename(from,to);
+        if(to===file+'.rewrap-journal' && stage==='journal-published') process.exit(73);
+        return result;
+      };
+      syncBuiltinESMExports();
+      await Effect.runPromise(Effect.scoped(makeDesktopE2eeCustody({directory:process.argv[1],platform:'linux',safeStorage:storage})));
+      throw Error('crash point was not reached');
+    `
+    const result = await Effect.runPromise(
+      runCommand({
+        command: process.execPath,
+        args: [
+          '--import',
+          import.meta.resolve('tsx'),
+          '--input-type=module',
+          '-e',
+          child,
+          directory,
+          stage
+        ],
+        cwd: new URL('../../', import.meta.url).pathname,
+        env: { ...process.env },
+        maxOutputBytes: 65536
+      }).pipe(Effect.provide(ProcessSpawnerLive), Effect.provide(NodeProcessLive))
+    )
+    if (stage === 'replacement-published')
+      assert.equal(result.signal, 'SIGKILL', result.stderr.toString())
+    else assert.equal(result.code, 73, `${stage}: ${result.stderr.toString()}`)
+    const crashedWrapper = await readFile(file)
+    assert.equal(crashedWrapper.equals(original), stage !== 'replacement-published', stage)
+    const reopening = await execute(
+      Effect.result(
+        Effect.gen(function* () {
+          const owner = yield* makeDesktopE2eeCustody({
+            directory,
+            platform: 'linux',
+            safeStorage: backend()
+          })
+          assert.deepEqual(
+            Buffer.from(yield* Effect.promise(() => owner.installed.unprotect(protectedKey))),
+            installedBody(),
+            stage
+          )
+        })
+      )
+    )
+    assert.equal(
+      reopening._tag,
+      'Success',
+      `${stage}: initialization refused with ${reopening.failure?.code}`
+    )
+    assert.deepEqual(await readFile(file), crashedWrapper, stage)
+    assert.deepEqual(
+      await readdir(directory),
+      ['kek.safe-storage', 'kek.safe-storage.rewrap-lock'],
+      stage
+    )
+  }
+})
+void test('a corrupt recovery journal refuses without replacing the retained KEK', async (t) => {
+  for (const journal of [
+    '{',
+    JSON.stringify({ original: '00', replacement: '00' }),
+    JSON.stringify({ original: '00', replacement: '00', digest: '0'.repeat(64) })
+  ]) {
+    const directory = await fixture(t)
+    const file = join(directory, 'kek.safe-storage')
+    await execute(makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() }))
+    const original = await readFile(file)
+    await writeFile(`${file}.rewrap-journal`, journal, { mode: 0o600 })
+    const result = await execute(
+      Effect.result(
+        makeDesktopE2eeCustody({ directory, platform: 'linux', safeStorage: backend() })
+      )
+    )
+    assert.equal(result.failure?.code, 'rewrap-failed')
+    assert.deepEqual(await readFile(file), original)
+    assert.equal(await readFile(`${file}.rewrap-journal`, 'utf8'), journal)
+  }
 })
 void test('a competing KEK rewrap refuses safely while the first native replacement is pending', async (t) => {
   const directory = await fixture(t)
@@ -372,7 +524,7 @@ void test('a competing KEK rewrap refuses safely while the first native replacem
     await first
   }
   assert.notDeepEqual(await readFile(file), original)
-  assert.deepEqual(await readdir(directory), ['kek.safe-storage'])
+  assert.deepEqual(await readdir(directory), ['kek.safe-storage', 'kek.safe-storage.rewrap-lock'])
 })
 void test('Scope close retains native KEK rewrap until it settles and then refuses new work', async (t) => {
   const directory = await fixture(t)
@@ -455,7 +607,7 @@ void test('Scope close retains native KEK rewrap until it settles and then refus
     })
   )
   assert.notDeepEqual(await readFile(file), original)
-  assert.deepEqual(await readdir(directory), ['kek.safe-storage'])
+  assert.deepEqual(await readdir(directory), ['kek.safe-storage', 'kek.safe-storage.rewrap-lock'])
 })
 void test('opaque personal/machine identity persists; native keys are nonextractable; recovery cannot persist', async (t) => {
   const directory = await fixture(t)
@@ -725,4 +877,85 @@ void test('another OS process reopens encrypted identity and epoch data without 
     assert.equal(value.includes(body.subarray(-32)), false)
     for (const privateKey of exported) assert.equal(value.includes(privateKey), false)
   }
+})
+
+void test('recovers a journaled replacement after a crash when only the old native wrapper retired', async (t) => {
+  const directory = await fixture(t)
+  const file = join(directory, 'kek.safe-storage')
+  let protectedKey
+  await execute(
+    Effect.gen(function* () {
+      const owner = yield* makeDesktopE2eeCustody({
+        directory,
+        platform: 'linux',
+        safeStorage: backend()
+      })
+      protectedKey = yield* Effect.promise(() => owner.installed.protect(installedBody()))
+    })
+  )
+  const original = await readFile(file)
+  const { runCommand, ProcessSpawnerLive, NodeProcessLive } =
+    await import('@lody/shared/node/process')
+  const entry = new URL('./e2ee-custody.mts', import.meta.url).href
+  const child = `
+    import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+    import fileSystem, { readFile } from 'node:fs/promises';
+    import { syncBuiltinESMExports } from 'node:module';
+    import { Effect } from 'effect';
+    import { makeDesktopE2eeCustody } from ${JSON.stringify(entry)};
+    const wrapping = Buffer.alloc(32,72), backend = ${backend.toString()};
+    const file=process.argv[1]+'/kek.safe-storage', original=await readFile(file), storage=backend();
+    const unwrap=storage.decryptStringAsync;
+    storage.decryptStringAsync=async value=>({...await unwrap(value),shouldReEncrypt:Buffer.from(value).equals(original)});
+    const rename=fileSystem.rename;
+    fileSystem.rename=async(from,to)=>{
+      const result=await rename(from,to);
+      if(to===file+'.rewrap-journal') process.exit(73);
+      return result;
+    };
+    syncBuiltinESMExports();
+    await Effect.runPromise(Effect.scoped(makeDesktopE2eeCustody({directory:process.argv[1],platform:'linux',safeStorage:storage})));
+    throw Error('crash point was not reached');
+  `
+  const ended = await Effect.runPromise(
+    runCommand({
+      command: process.execPath,
+      args: ['--import', import.meta.resolve('tsx'), '--input-type=module', '-e', child, directory],
+      cwd: new URL('../../', import.meta.url).pathname,
+      env: { ...process.env },
+      maxOutputBytes: 65536
+    }).pipe(Effect.provide(ProcessSpawnerLive), Effect.provide(NodeProcessLive))
+  )
+  assert.equal(ended.code, 73, ended.stderr.toString())
+  assert.deepEqual(await readFile(file), original)
+  const journal = JSON.parse(await readFile(file + '.rewrap-journal', 'utf8'))
+  assert.notDeepEqual(Buffer.from(journal.replacement, 'hex'), original)
+  const native = backend(),
+    unwrap = native.decryptStringAsync
+  native.decryptStringAsync = async (value) => {
+    if (Buffer.from(value).equals(original)) throw Error('old wrapping key permanently retired')
+    return unwrap(value)
+  }
+  const recovery = await execute(
+    Effect.result(
+      Effect.gen(function* () {
+        const owner = yield* makeDesktopE2eeCustody({
+          directory,
+          platform: 'linux',
+          safeStorage: native
+        })
+        assert.deepEqual(
+          Buffer.from(yield* Effect.promise(() => owner.installed.unprotect(protectedKey))),
+          installedBody()
+        )
+      })
+    )
+  )
+  assert.equal(
+    recovery._tag,
+    'Success',
+    `must recover valid journal replacement: ${recovery.failure?.code}`
+  )
+  assert.deepEqual(await readFile(file), Buffer.from(journal.replacement, 'hex'))
+  assert.deepEqual(await readdir(directory), ['kek.safe-storage', 'kek.safe-storage.rewrap-lock'])
 })

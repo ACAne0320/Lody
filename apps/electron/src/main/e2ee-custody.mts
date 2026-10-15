@@ -1,7 +1,8 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { constants } from 'node:fs'
 import { link, lstat, mkdir, open, rename, unlink } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { Data, Effect, Result } from 'effect'
 import { Bytes, ContentError } from '@lody/e2ee-core'
@@ -99,7 +100,115 @@ async function publish(path: string, value: Uint8Array) {
     })
   }
 }
-/** Only the initialization rewrap owns this lock; never steal a stale lock. */
+const remove = (file: string) =>
+  unlink(file).catch((cause: NodeJS.ErrnoException) => {
+    if (cause.code !== 'ENOENT') throw cause
+  })
+const kekDigest = (plaintext: string) => {
+  const key = Buffer.from(plaintext, 'hex')
+  try {
+    return createHash('sha256').update(key).digest('hex')
+  } finally {
+    key.fill(0)
+  }
+}
+const wrapper = (value: unknown): Uint8Array => {
+  if (typeof value !== 'string' || !/^(?:[0-9a-f]{2}){1,8192}$/.test(value))
+    throw fail('rewrap-failed')
+  return new Uint8Array(Buffer.from(value, 'hex'))
+}
+/** SQLite's OS lock dies with its process; the persistent file is not a lease. */
+async function lockInitialization(path: string) {
+  const lockPath = `${path}.rewrap-lock`
+  try {
+    const handle = await open(lockPath, 'wx', 0o600)
+    await handle.close()
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause
+  }
+  const info = await lstat(lockPath)
+  if (
+    !info.isFile() ||
+    info.isSymbolicLink() ||
+    (process.platform !== 'win32' && (info.mode & 0o077) !== 0)
+  )
+    throw fail('rewrap-failed')
+  const mutex = new DatabaseSync(lockPath)
+  try {
+    // No busy retry or time-based takeover, including another owner in this process.
+    mutex.exec('PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE')
+    return mutex
+  } catch {
+    mutex.close()
+    throw fail('rewrap-failed')
+  }
+}
+async function replaceWrapped(path: string, value: Uint8Array) {
+  const pending = `${path}.rewrap-pending`
+  await remove(pending)
+  const handle = await open(pending, 'wx', 0o600)
+  try {
+    await handle.writeFile(value)
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
+  await rename(pending, path)
+}
+/** Only encrypted wrappers and a one-way random-KEK digest enter the journal. */
+async function recoverRewrap(path: string, unwrap: DesktopSafeStorage['decryptStringAsync']) {
+  const journalPath = `${path}.rewrap-journal`
+  let journal: Uint8Array
+  try {
+    journal = await readOwned(journalPath, 34000)
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw fail('rewrap-failed')
+    await remove(`${path}.rewrap-pending`)
+    await remove(`${journalPath}.rewrap-pending`)
+    return
+  }
+  const value: unknown = JSON.parse(Buffer.from(journal).toString('utf8'))
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('original' in value) ||
+    !('replacement' in value) ||
+    !('digest' in value) ||
+    typeof value.digest !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(value.digest)
+  )
+    throw fail('rewrap-failed')
+  const original = wrapper(value.original),
+    replacement = wrapper(value.replacement)
+  const validate = async (encoded: Uint8Array) => {
+    const opened = await unwrap(Buffer.from(encoded))
+    if (!/^[0-9a-f]{64}$/.test(opened.result) || kekDigest(opened.result) !== value.digest)
+      throw fail('rewrap-failed')
+  }
+  let current: Uint8Array | undefined
+  try {
+    current = await readOwned(path, 8192)
+    if (!equal(current, original) && !equal(current, replacement)) throw fail('rewrap-failed')
+    await validate(current)
+  } catch {
+    // A failed final native readback may leave the replacement, or a failed rollback
+    // may leave the original. A retired OS wrapping key can also make only the
+    // journaled replacement usable. Publish only a validated same-key copy.
+    let retained = original
+    try {
+      await validate(original)
+    } catch {
+      await validate(replacement)
+      retained = replacement
+    }
+    await replaceWrapped(path, retained)
+    await validate(await readOwned(path, 8192))
+  }
+  await remove(`${path}.rewrap-pending`)
+  await remove(`${journalPath}.rewrap-pending`)
+  await remove(journalPath)
+}
+/** Caller holds the initialization OS mutex until native readback and rollback settle. */
 async function rewrapKek(
   path: string,
   original: Uint8Array,
@@ -107,73 +216,51 @@ async function rewrapKek(
   wrap: DesktopSafeStorage['encryptStringAsync'],
   unwrap: DesktopSafeStorage['decryptStringAsync']
 ) {
-  const lockPath = `${path}.rewrap-lock`
-  const token = randomBytes(16).toString('hex')
-  const candidate = `${path}.${token}.pending`
-  const backup = `${path}.${token}.original`
-  let lock: Awaited<ReturnType<typeof open>> | undefined
-  let retained = false,
-    replaced = false,
-    recoveryRequired = false,
-    failed = false
-  const remove = (file: string) =>
-    unlink(file).catch((cause: NodeJS.ErrnoException) => {
-      if (cause.code !== 'ENOENT') throw cause
-    })
+  const journalPath = `${path}.rewrap-journal`
+  let journaled = false
   try {
-    lock = await open(lockPath, 'wx', 0o600)
     if (!equal(await readOwned(path, 8192), original)) throw fail('rewrap-failed')
     const encrypted = await wrap(plaintext)
     if (!(encrypted instanceof Uint8Array) || encrypted.length < 1 || encrypted.length > 8192)
       throw fail('rewrap-failed')
     const replacement = new Uint8Array(encrypted)
-    const validate = async (file: string) => {
-      const actual = await readOwned(file, 8192)
+    const validate = async (actual: Uint8Array) => {
       if (!equal(actual, replacement)) throw fail('rewrap-failed')
       const result = await unwrap(Buffer.from(actual))
       if (result.result !== plaintext || result.shouldReEncrypt) throw fail('rewrap-failed')
     }
-    if (!(await publish(candidate, replacement))) throw fail('rewrap-failed')
-    // Validate before changing the retained path, and once again after publishing.
-    await validate(candidate)
-    await link(path, backup)
-    retained = true
-    await rename(candidate, path)
-    replaced = true
-    await validate(path)
-    await remove(backup)
-    retained = false
+    await validate(replacement)
+    const journal = Buffer.from(
+      JSON.stringify({
+        original: Buffer.from(original).toString('hex'),
+        replacement: Buffer.from(replacement).toString('hex'),
+        digest: kekDigest(plaintext)
+      })
+    )
+    // The journal reaches disk before the retained wrapper can change.
+    await replaceWrapped(journalPath, journal)
+    journaled = true
+    await replaceWrapped(path, replacement)
+    await validate(await readOwned(path, 8192))
+    await remove(journalPath)
   } catch {
-    failed = true
-    if (lock) {
+    if (journaled) {
       try {
-        // The exclusive lock prevents another rewrap from publishing while this
-        // original is restored. A failed rollback retains the encrypted backup
-        // and lock for explicit recovery instead of guessing which file is newer.
-        if (replaced) await rename(backup, path)
-        else if (retained) await remove(backup)
-        retained = false
+        if (!equal(await readOwned(path, 8192), original)) await replaceWrapped(path, original)
+        const restored = await readOwned(path, 8192)
+        const opened = await unwrap(Buffer.from(restored))
+        if (!equal(restored, original) || opened.result !== plaintext) throw fail('rewrap-failed')
+        await remove(journalPath)
       } catch {
-        recoveryRequired = true
+        // Leave the encrypted journal, not a permanent lock. Next initialization
+        // owns recovery after SQLite proves that no live initializer holds it.
       }
     }
+    throw fail('rewrap-failed')
   } finally {
-    if (lock) {
-      try {
-        await remove(candidate)
-      } catch {
-        recoveryRequired = true
-        failed = true
-      }
-      try {
-        await lock.close()
-        if (!recoveryRequired) await remove(lockPath)
-      } catch {
-        failed = true
-      }
-    }
+    await remove(`${path}.rewrap-pending`)
+    await remove(`${journalPath}.rewrap-pending`)
   }
-  if (failed) throw fail('rewrap-failed')
 }
 export interface PreparedDesktopE2eeDevice extends DeviceSigner {
   readonly enc: Bytes.EncryptionPublicKey
@@ -267,34 +354,37 @@ export const makeDesktopE2eeCustody = Effect.fnUntraced(function* (input: {
       )
         throw fail('storage')
       const file = join(directory, 'kek.safe-storage')
+      const mutex = await lockInitialization(file)
       try {
-        await lstat(`${file}.rewrap-lock`)
-        throw fail('rewrap-failed')
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
-      }
-      let wrapped: Uint8Array
-      try {
-        wrapped = await readOwned(file, 8192)
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
-        const candidate = random(new Uint8Array(32))
+        await recoverRewrap(file, unwrap).catch(() => {
+          throw fail('rewrap-failed')
+        })
+        let wrapped: Uint8Array
         try {
-          const encoded = await wrap(Buffer.from(candidate).toString('hex'))
-          if (!(encoded instanceof Uint8Array) || encoded.length < 1 || encoded.length > 8192)
-            throw fail('corrupt')
-          await publish(file, encoded)
-        } finally {
-          candidate.fill(0)
+          wrapped = await readOwned(file, 8192)
+        } catch (cause) {
+          if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
+          const candidate = random(new Uint8Array(32))
+          try {
+            const encoded = await wrap(Buffer.from(candidate).toString('hex'))
+            if (!(encoded instanceof Uint8Array) || encoded.length < 1 || encoded.length > 8192)
+              throw fail('corrupt')
+            await publish(file, encoded)
+          } finally {
+            candidate.fill(0)
+          }
+          wrapped = await readOwned(file, 8192)
         }
-        wrapped = await readOwned(file, 8192)
+        const recovered = await unwrap(Buffer.from(wrapped))
+        if (!/^[0-9a-f]{64}$/.test(recovered.result)) throw fail('corrupt')
+        if (recovered.shouldReEncrypt)
+          await rewrapKek(file, wrapped, recovered.result, wrap, unwrap)
+        kek = new Uint8Array(Buffer.from(recovered.result, 'hex'))
+        // Native strings/handles cannot be deterministically erased. Never log or
+        // persist this decrypted string; owned byte copies are cleared on close.
+      } finally {
+        mutex.close()
       }
-      const recovered = await unwrap(Buffer.from(wrapped))
-      if (!/^[0-9a-f]{64}$/.test(recovered.result)) throw fail('corrupt')
-      if (recovered.shouldReEncrypt) await rewrapKek(file, wrapped, recovered.result, wrap, unwrap)
-      kek = new Uint8Array(Buffer.from(recovered.result, 'hex'))
-      // Native strings/handles cannot be deterministically erased. Never log or
-      // persist this decrypted string; owned byte copies are cleared on close.
     })
   )
   const seal = (body: Uint8Array, aad: Uint8Array) => {

@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { runNativeChild } from '../native-child';
 import { createRequire } from 'node:module';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -110,7 +110,7 @@ describe('durable exact-byte epoch delivery', () => {
         hostPath = file + '.host',
         moduleRequire = createRequire(import.meta.url);
       const execute = (mode: string) =>
-        spawnSync(
+        runNativeChild(
           process.execPath,
           [
             '--import',
@@ -120,18 +120,16 @@ describe('durable exact-byte epoch delivery', () => {
             file,
             hostPath,
           ],
-          { encoding: 'utf8', timeout: 30000, env: { ...process.env, NODE_OPTIONS: '' } }
+          { env: { ...process.env, NODE_OPTIONS: '' } }
         );
-      const crashed = execute(phase);
-      expect(crashed.error).toBeUndefined();
+      const crashed = await execute(phase);
       expect(crashed.signal).toBeNull();
       expect(crashed.status).toBe(phase === 'before-send' ? 81 : 82);
       const original = new Uint8Array(Buffer.from(crashed.stdout, 'hex'));
       expect(
         Result.isSuccess(Envelopes.authenticateEpochEnvelope(f.view(), f.context, original))
       ).toBe(true);
-      const resumed = execute('resume');
-      expect(resumed.error).toBeUndefined();
+      const resumed = await execute('resume');
       expect(resumed.signal).toBeNull();
       expect(resumed.status).toBe(0);
       expect(resumed.stdout).toBe(crashed.stdout);
