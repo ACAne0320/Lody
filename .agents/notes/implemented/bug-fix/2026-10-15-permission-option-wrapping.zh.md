@@ -3,6 +3,8 @@
 Status: implemented
 Translation: current
 
+PR: https://github.com/LodyAI/Lody/pull/1584
+
 [English](2026-10-15-permission-option-wrapping.md)
 
 ## 摘要
