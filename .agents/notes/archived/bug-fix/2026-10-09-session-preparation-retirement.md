@@ -1,6 +1,7 @@
 # Session preparation retirement barrier
 
 Status: implemented
+Archived: 2026-10-16
 Translation: current
 
 [中文](2026-10-09-session-preparation-retirement.zh.md)
@@ -38,12 +39,12 @@ cancel / expiry / failure
   -> cold creation or replacement may use the workspace
 ```
 
-This implements the [preparation handoff contract](../../../../specs/session-worktree-lifecycle.md#preparation-handoff)
+This implements the [preparation handoff contract](../../implemented/simplification/2026-10-16-remove-draft-session-preparation.md)
 and does not change archive/restore retention, cross-process marker ownership,
 or repair already broken resident Sessions in an installed app.
 
 A failed release first kept its rejection forever; it is now retried by the next caller
-([retryable unreleased resources](2026-10-15-unreleased-session-resources-retry.md)).
+([retryable unreleased resources](../../implemented/bug-fix/2026-10-15-unreleased-session-resources-retry.md)).
 
 ## Verification and limits
 
