@@ -73,3 +73,44 @@ export {
 export type { LedgerView, LedgerCheckpoint, LedgerState } from './internal/ledger';
 export type { DeviceSigner } from './internal/foundation/signing';
 export type { EpochStagedGroup } from './internal/keys/staging';
+
+// Recovery
+export { RecoveryVaults } from './internal/recovery/vaults';
+export {
+  makeWorkspaceRecovery,
+  RecoveryVaultError,
+  type RecoveryVault,
+  type RecoveryEntryReference,
+  type RecoveryPrivatePackage,
+  type WorkspaceRecoveryInput,
+  type RecoverySubmitResult,
+  type RecoveryEnvelope,
+} from './internal/recovery';
+
+// Workspace facade
+export {
+  E2eeWorkspace,
+  makeE2eeWorkspace,
+  WorkspacePlatform,
+  WorkspaceError,
+  unavailableWorkspaceRecovery,
+  WorkspaceControl,
+  WorkspaceControlError,
+  runWorkspaceKeyRound,
+  WorkspaceKeyRoundCursors,
+  WorkspaceKeyRoundError,
+  issueWorkspaceInvitation,
+  verifyWorkspaceInvitationSnapshot,
+  verifyRetainedWorkspaceGenesis,
+  type E2eeWorkspaceHandle,
+  type WorkspaceDocumentState,
+  type WorkspaceInvitation,
+  type WorkspaceInvitationMailbox,
+  type WorkspaceInvitationSnapshot,
+  type WorkspaceModel,
+  type WorkspacePorts,
+  type WorkspaceResources,
+  type WorkspaceRestorePlan,
+  type WorkspaceRestoreRequest,
+  type WorkspaceRotationStatus,
+} from './internal/workspace';

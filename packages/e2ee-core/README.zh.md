@@ -11,7 +11,7 @@
 | 你想要… | 阅读 |
 | --- | --- |
 | 理解协议及其保证 | [白皮书](../../specs/e2ee/whitepaper.zh.md)（[English](../../specs/e2ee/whitepaper.md)） |
-| 在应用中接入 E2EE | [服务](docs/services.zh.md) → [流程](docs/workflows.zh.md) → [公开接口](docs/surface.zh.md) |
+| 在应用中接入 E2EE | [服务](docs/services.zh.md) → [流程](docs/workflows.zh.md)（从 `E2eeWorkspace` 开始）→ [公开接口](docs/surface.zh.md) |
 | 实现后端（邮箱、暂存、账本日志） | [后端指南](docs/backend-guide.zh.md) 与 `@lody/e2ee-core/host` |
 | 在某个平台上实现密钥托管 | [`DeviceIdentity`、`KeyProtector`、`CandidateProtector`](docs/services.zh.md#平台端口) |
 | 不用 SQLite，换别的存储 | [本地存储端口](docs/services.zh.md#本地存储端口) |
@@ -112,7 +112,7 @@ docs/                      架构、服务、流程、公开接口、后端指�
 
 **密钥存放在哪里？** 只有 `InstalledEpochKeys` 接触密钥材料。密钥块由你的 `KeyProtector` 保护、由 `InstalledKeyStore` 存储；调用方拿到的是必须释放的不透明密钥。
 
-**所有设备都丢失了怎么办？** 恢复（vault）与恢复设备在白皮书中规定，并在本 PR 栈的后续层实现。
+**所有设备都丢失了怎么办？** 密钥保存在加密 vault（恢复文件或 passkey）中的恢复设备可以接纳新的个人设备：`E2eeWorkspace.restoreFromRecovery`。见[流程](docs/workflows.zh.md#恢复)。
 
 **有后台循环吗？** 没有。每个操作只处理有限的一页并返回 `next` 提示，何时调用由应用安排。
 

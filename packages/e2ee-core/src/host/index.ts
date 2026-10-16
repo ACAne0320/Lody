@@ -22,6 +22,9 @@
  *   `@loro-dev/streams-crdt` batches and snapshots (with a
  *   {@link StreamsRecordBoundaryPort} proving snapshot offsets).
  *
+ * - Recovery vaults ({@link RecoveryVaultStore}): DTO schemas and
+ *   `encode…`/`decode…` helpers in `recovery-vault.ts`.
+ *
  * @module
  */
 export * from './staging';
@@ -61,3 +64,5 @@ export type {
   StreamsRecordBoundary,
   StreamsRecordBoundaryPort,
 } from '../internal/content/record-boundary';
+export * from './recovery-vault';
+export type { RecoveryVaultStore } from '../services/recovery';

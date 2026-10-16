@@ -28,9 +28,12 @@ an older ledger.
 | [`DeviceIdentity`](#deviceidentity) | Platform | your device key custody (`nativeDeviceSigner` helps) | all key workflows |
 | [`KeyProtector`](#keyprotector--candidateprotector) | Platform | OS key protection; `KeyProtector.fromPromises` wraps native calls | `InstalledEpochKeys` |
 | [`CandidateProtector`](#keyprotector--candidateprotector) | Platform | protection for unpublished rotation keys | `EpochPublisher` |
+| [`RecoveryVaultStore`](#recoveryvaultstore) | Backend | your vault storage client | `RecoveryVaults` |
 | [`WorkspaceScope`](#workspacescope) | Application | `Layer.succeed(WorkspaceScope, { genesis })` | everything |
 | [`LedgerViewSource`](#ledgerviewsource) | Application | `LedgerFeed.viewSource`, or your own verified view | `VerifiedLedger` |
 | [`EpochPublicationSource`](#epochpublicationsource) | Application | lookup of the current epoch's publication record | `KeyDistributor` |
+| [`LedgerSync`](#ledgersync) | Application | your feed sync (`LedgerFeedSource` pages → `LedgerFeed.accept`, checkpoint chosen independently) | `WorkspaceControl`, `E2eeWorkspace` |
+| `RecoveryVaultLocalStore` | Local storage | a local key/value store with compare-and-swap | `RecoveryVaults` |
 | `LedgerPinStore` | Local storage | `sqliteLedgerPinStore` | `VerifiedLedger` |
 | `LedgerFeedStore` | Local storage | `sqliteLedgerFeedStore` | `LedgerFeed` |
 | `InstalledKeyStore` | Local storage | `sqliteInstalledKeyStore` | `InstalledEpochKeys` |
@@ -96,6 +99,13 @@ right after committing. Groups are immutable at their key, only the record's
 signer may stage or delete them, and they are inert until the ledger contains
 their exact record.
 
+### RecoveryVaultStore
+
+Stores encrypted recovery vaults: immutable entries plus an index replaced by
+compare-and-swap. It never receives the unlock secret, the vault master key or
+a private recovery key. Wire schemas are in `@lody/e2ee-core/host`; see the
+[backend guide](backend-guide.md#5-recovery-vault).
+
 ## Platform ports
 
 ### DeviceIdentity
@@ -143,6 +153,12 @@ before, and contains the durable pin.
 current epoch (genesis at epoch 0), or `null`. The distributor uses it only to
 record this device's own publication, and verifies it first. Typically a
 backwards scan of your local feed.
+
+### LedgerSync
+
+`refresh()` selects the target checkpoint independently and reads the local
+feed up to it; `current()` returns the stored state. `WorkspaceControl` and
+`E2eeWorkspace` use it, and the workspace derives `LedgerViewSource` from it.
 
 ## Local storage ports
 

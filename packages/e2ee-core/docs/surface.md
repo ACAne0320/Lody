@@ -23,6 +23,8 @@ repository's tests and the Lab, with no compatibility promise.
 | Publication | `EpochPublisher`, `EpochPublishError`, `EpochPublishFailure`, `EpochPublishResult` |
 | Value types | `Bytes` (namespace), `LedgerView`, `LedgerCheckpoint`, `LedgerState`, `LedgerFeedState`, `LedgerReadPage`, `DeviceSigner`, `EpochStagedGroup` |
 | Protocol errors | `LedgerError`, `LedgerFeedError`, `ContentError`, `ValidationError`, `EpochKeyError` |
+| Recovery | `RecoveryVaults`, `makeWorkspaceRecovery`, `RecoveryVaultError`, `RecoveryVault`, `RecoveryEntryReference`, `RecoveryPrivatePackage`, `WorkspaceRecoveryInput`, `RecoverySubmitResult`, `RecoveryEnvelope` |
+| Workspace facade | `E2eeWorkspace`, `makeE2eeWorkspace`, `E2eeWorkspaceHandle`, `WorkspacePlatform`, `WorkspacePorts`, `WorkspaceResources`, `WorkspaceDocumentState`, `WorkspaceModel`, `WorkspaceRotationStatus`, `WorkspaceRestoreRequest`, `WorkspaceRestorePlan`, `WorkspaceError`, `unavailableWorkspaceRecovery`, `WorkspaceControl`, `WorkspaceControlError`, `runWorkspaceKeyRound`, `WorkspaceKeyRoundCursors`, `WorkspaceKeyRoundError`, `issueWorkspaceInvitation`, `verifyWorkspaceInvitationSnapshot`, `verifyRetainedWorkspaceGenesis`, `WorkspaceInvitation`, `WorkspaceInvitationMailbox`, `WorkspaceInvitationSnapshot` |
 
 ## `@lody/e2ee-core/services` — ports
 
@@ -30,10 +32,11 @@ repository's tests and the Lab, with no compatibility promise.
 | --- | --- |
 | Backend | `LedgerLog`, `LedgerFeedSource`, `KeyMailbox`, `KeyMailboxStatus`, `EpochStagingStore` |
 | Platform | `DeviceIdentity`, `KeyProtector`, `CandidateProtector`, `nativeDeviceSigner`, `DeviceSigner` |
-| Application | `WorkspaceScope`, `LedgerViewSource`, `EpochPublicationSource` |
+| Application | `WorkspaceScope`, `LedgerViewSource`, `LedgerSync`, `EpochPublicationSource` |
 | Local storage | `LedgerPinStore`, `LedgerFeedStore`, `LedgerFeedContents`, `LedgerFeedTail`, `InstalledKeyStore`, `ReceiveJournal`, `ReceiveTaskRow`, `ReceiveTaskPhase`, `RepairJournal`, `RepairTaskRow`, `RepairTaskPhase`, `DistributionJournal`, `DistributionTaskRow`, `DistributionTaskPhase`, `DeliveryOutbox`, `EpochCandidateStore`, `EpochCandidateRow`, `SubmissionJournal`, `SubmissionEntry`, `SubmissionOutcome`, `SubmissionResult` |
 | Port errors | `BackendError`, `LedgerLogError`, `LocalStoreError`, `KeyProtectorError`, `LedgerFeedError` |
-| Value types | `GenesisHash`, `SigningPublicKey`, `LedgerView`, `LedgerCheckpoint`, `LedgerReadPage`, `MailboxSlot`, `EpochStagedGroup`, `EpochStagedGroupKey` |
+| Value types | `GenesisHash`, `SigningPublicKey`, `LedgerView`, `LedgerCheckpoint`, `LedgerReadPage`, `LedgerFeedState`, `MailboxSlot`, `EpochStagedGroup`, `EpochStagedGroupKey` |
+| Recovery | `RecoveryVaultStore`, `RecoveryVaultLocalStore`, `VaultCiphertext` |
 
 ## `@lody/e2ee-core/protocol` — pure protocol
 
@@ -55,6 +58,7 @@ repository's tests and the Lab, with no compatibility promise.
 | Envelopes | `prepareEpochEnvelope`, `openEpochEnvelope`, `authenticateEpochEnvelope`, `authenticateEpochEnvelopeSignature`, `epochDeliveryId`, `EpochEnvelopeContext` |
 | Staged groups | `ownEpochStagedGroup`, `ownEpochStagedGroupKey`, `sameEpochStagedGroup`, `authenticateEpochStagedGroup`, `obsoleteEpochStagedGroup`, `getCommittedEpochStagingKey`, `EpochStagingError`, `EpochStagedGroup`, `EpochStagedGroupKey` |
 | Reports | `installationBody`, `installationSigningBytes`, `encodeInstallationReport`, `decodeInstallationReport`, `authenticateInstallationReport`, `checkInstallationContext`, `checkLocalPublication`, `envelopeRouting`, `mailboxDigest`, `slotId`, `MailboxSlot`, `InstallationSource`, `InstallationContext` |
+| Recovery | `generateRecoveryPackage`, `importRecoveryIdentity`, `parseRecoveryFile`, `wipeRecoveryPackage`, `verifiedPasskeyPrf`, `disposePrf`, `ownVaultCiphertext`, `vaultCiphertextDigest`, `sameVaultCiphertext`, `RecoveryVaultError`, `RecoveryIdentity`, `RecoveryPrivatePackage`, `VerifiedPasskeyPrf`, `VaultCiphertext` |
 
 ## `@lody/e2ee-core/host` — backend contract
 
@@ -65,6 +69,7 @@ repository's tests and the Lab, with no compatibility promise.
 | Mailbox rules | `envelopeRouting`, `authenticateEpochEnvelope`, `authenticateInstallationReport`, `checkLocalPublication`, `decodeInstallationReport`, `mailboxDigest`, `slotId`, `validSlot`, `MailboxSlot`, `InstallationContext` |
 | Document admission | `admitDocument`, `admitStreamsUpdateBatch`, `admitStreamsUpdateBatchEffect`, `admitStreamsSnapshot`, `admitStreamsSnapshotEffect`, `authenticateStreamsSnapshotEffect`, `StreamsRecordBoundary`, `StreamsRecordBoundaryPort` |
 | Port types | `KeyMailbox`, `KeyMailboxStatus`, `EpochStagingStore` |
+| Recovery vault wire contract | `RecoveryVaultCiphertextDto`, `RecoveryVaultPutRequest`, `RecoveryVaultReadRequest`, `RecoveryVaultIndexReadRequest`, `RecoveryVaultIndexCasRequest`, `RecoveryVaultIndexCasReply`, `RecoveryVaultDeleteRequest`, `encodeRecoveryVaultCiphertext`, `decodeRecoveryVaultCiphertext`, `RecoveryVaultStore` |
 
 ## `@lody/e2ee-core/adapters/node-sqlite`
 

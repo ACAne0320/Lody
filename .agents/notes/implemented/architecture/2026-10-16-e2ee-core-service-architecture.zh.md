@@ -34,6 +34,13 @@ Translation: current
 - **统一的 feed 存储。** 全历史与快照 feed 共用一个 `LedgerFeedStore`（起点加后续原始记录），验证逻辑在 `LedgerFeed` 中。由于尚未部署，各存储文件格式都重新定版本。
 - **考虑过的替代方案。** 保留工厂函数只补文档：被否决，因为后端和存储仍不可替换。每个模块一个入口：被否决，因为看不出每个导出面向谁。
 
+## 工作区与恢复（栈第 3 层）
+
+- `E2eeWorkspace` 门面不再接收预先构建好的工厂对象：`WorkspacePlatform` 返回一个端口 Layer，门面在工作区 Scope 中构建 `E2eeWorkflows` 与 `WorkspaceControl`。句柄的方法保持不变，平台只需改变提供资源的方式。
+- `LedgerSync`（应用端口）取代原先的账本客户端加检查点回调。工作区由 `LedgerSync.refresh` 派生 `LedgerViewSource`，保留“每次流程读取都刷新 feed”的旧行为。
+- 恢复 vault 存储改为两个端口（`RecoveryVaultStore`、`RecoveryVaultLocalStore`）加一个 `RecoveryVaults` 流程；vault 线上 DTO 以 Schema 形式移入 `./host`，`@lody/cloud-api` 重新导出（与暂存一致）。
+- 工作区错误改用带 `reason` 的 `Schema.TaggedError`，与其他公开错误一致。
+
 ## 验证
 
 核心：20 个测试文件（共 353 个测试，含组合测试与公开文档测试），使用真实 SQLite、Ed25519、HPKE 与子进程；类型检查、类型感知 lint 和仓库边界检查。`test/composition.test.ts` 通过 `E2eeWorkflows` 在两台设备之间完成一次密钥分发。`test/public-docs.test.ts` 要求每个公开导出都有 JSDoc，并要求 `docs/surface*.md` 与实际导出一致。

@@ -20,9 +20,12 @@
 | [`DeviceIdentity`](#deviceidentity) | 平台 | 你的设备密钥托管（可用 `nativeDeviceSigner`） | 所有密钥流程 |
 | [`KeyProtector`](#keyprotector--candidateprotector) | 平台 | 系统级密钥保护；`KeyProtector.fromPromises` 封装原生调用 | `InstalledEpochKeys` |
 | [`CandidateProtector`](#keyprotector--candidateprotector) | 平台 | 未发布换代密钥的保护 | `EpochPublisher` |
+| [`RecoveryVaultStore`](#recoveryvaultstore) | 后端 | 你的 vault 存储客户端 | `RecoveryVaults` |
 | [`WorkspaceScope`](#workspacescope) | 应用 | `Layer.succeed(WorkspaceScope, { genesis })` | 全部 |
 | [`LedgerViewSource`](#ledgerviewsource) | 应用 | `LedgerFeed.viewSource`，或你自己的已验证视图 | `VerifiedLedger` |
 | [`EpochPublicationSource`](#epochpublicationsource) | 应用 | 查找当前纪元的发布记录 | `KeyDistributor` |
+| [`LedgerSync`](#ledgersync) | 应用 | 你的 feed 同步（`LedgerFeedSource` 分页 → `LedgerFeed.accept`，检查点独立选择） | `WorkspaceControl`、`E2eeWorkspace` |
+| `RecoveryVaultLocalStore` | 本地存储 | 支持比较并交换的本地键值存储 | `RecoveryVaults` |
 | `LedgerPinStore` | 本地存储 | `sqliteLedgerPinStore` | `VerifiedLedger` |
 | `LedgerFeedStore` | 本地存储 | `sqliteLedgerFeedStore` | `LedgerFeed` |
 | `InstalledKeyStore` | 本地存储 | `sqliteInstalledKeyStore` | `InstalledEpochKeys` |
@@ -69,6 +72,10 @@
 
 在追加换代记录**之前**保存该次换代的完整信封组，这样即使发布者在提交后立刻消失，新密钥仍可获取。组在其键下不可变，只有记录的签名者可以暂存或删除；在账本包含其确切记录之前，组没有任何效力。
 
+### RecoveryVaultStore
+
+保存加密的恢复 vault：不可变条目，加上通过比较并交换替换的索引。它从不接收解锁秘密、vault 主密钥或恢复私钥。线上格式在 `@lody/e2ee-core/host`；见[后端指南](backend-guide.zh.md#5-恢复-vault)。
+
 ## 平台端口
 
 ### DeviceIdentity
@@ -96,6 +103,10 @@
 ### EpochPublicationSource
 
 `current(view)` 返回发布当前纪元的那条记录的原始字节（纪元 0 为创世记录），或 `null`。分发器只用它记录本设备自己的发布，并会先验证。通常是对本地 feed 的逆向扫描。
+
+### LedgerSync
+
+`refresh()` 独立选择目标检查点，并把本地 feed 读到该检查点；`current()` 返回已存状态。`WorkspaceControl` 与 `E2eeWorkspace` 使用它，工作区由它派生 `LedgerViewSource`。
 
 ## 本地存储端口
 

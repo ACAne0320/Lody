@@ -167,6 +167,44 @@ admin personal devices may rotate. A manager who bypasses staging and appends
 directly can withhold the key. That is a known availability limitation, not a
 confidentiality break.
 
+## WorkspaceControl and the key round
+
+`WorkspaceControl` (*requires `DeviceIdentity`, `LedgerSubmission`,
+`LedgerSync`*) signs ordinary commands (admit member or device, set role,
+revoke, transfer owner) against a freshly refreshed view and submits each once.
+A pending or unacknowledged submission blocks new signing. A result is
+acknowledged only after the local feed contains the checkpoint it observed.
+
+`runWorkspaceKeyRound(limit, cursors)` (*requires `KeyRepair`, `KeyReceiver`,
+`KeyDistributor`*) is one finite maintenance round: flush repairs, resume
+installs, fetch one mailbox page, send reports, reconcile and send deliveries,
+send reports again, list results. Each queue keeps its own cursor hint.
+
+## E2eeWorkspace
+
+The application facade over everything above. A `WorkspacePlatform` supplies,
+per workspace, a Layer of ports (`WorkspacePorts`), the native document state
+for each resource, and an optional recovery configuration. `E2eeWorkspace.open()`
+builds `E2eeWorkflows` and `WorkspaceControl` in the workspace Scope and
+returns one handle: ledger commands, rotation and removal, the key round,
+documents (`document(resource, model)` returns the Streams binding plus
+native state), results and acknowledgements, recovery.
+
+Calls on the handle are serialized where they change state. `close()` stops
+platform work, waits active operations, then releases workflows and stores.
+`E2eeWorkspace.restoreFromRecovery` runs the recovery device's restore, then
+opens the new personal device's workspace with the recovered keys installed.
+
+## Recovery
+
+`RecoveryVaults` (*requires `RecoveryVaultStore`, `RecoveryVaultLocalStore`*)
+creates and unlocks vault-v1 vaults: a recovery file kept offline, or a
+passkey PRF. `makeWorkspaceRecovery` keeps one workspace's recovery entry
+current (setup, test, replace, skip) and performs a restore. A recovery device
+admits a new personal device, then that device installs every epoch key. The
+scheme is specified in the whitepaper's backup and recovery section and
+[recovery vault](../../../specs/e2ee/recovery-vault.md).
+
 ## Documents
 
 Document content uses content v0: a signed header, XChaCha20-Poly1305 under a

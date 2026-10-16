@@ -58,6 +58,8 @@ src/
                         KeyDistributor, EpochPublisher
     submission/       LedgerSubmission
     content/          document keys, sealed documents, Streams content codec
+    recovery/         recovery identity, vault-v1, workspace recovery + RecoveryVaults
+    workspace/        E2eeWorkspace facade, WorkspaceControl, key round, invitations
     lifecycle.ts      admission gate, close guard, own()
 ```
 

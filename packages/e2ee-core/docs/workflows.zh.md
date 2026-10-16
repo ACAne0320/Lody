@@ -116,6 +116,22 @@ results() / acknowledge()   已完成任务保留到确认为止
 
 `resume` 在崩溃后完成同一个候选，不再签名。`cleanupStaged` 在该纪元被不同承诺占用后删除本设备的暂存组。`acknowledge` 释放已完成的结果。只有 owner 或 admin 的个人设备可以换代。绕过暂存直接追加的管理者可以扣留密钥：这是已知的可用性限制，不破坏机密性。
 
+## WorkspaceControl 与密钥轮次
+
+`WorkspaceControl`（*需要 `DeviceIdentity`、`LedgerSubmission`、`LedgerSync`*）在刚刷新的视图上签名普通命令（接纳成员或设备、设置角色、吊销、转移 owner），每条只提交一次。存在待处理或未确认的提交时禁止新的签名；只有本地 feed 已包含提交时观察到的检查点，结果才会被确认。
+
+`runWorkspaceKeyRound(limit, cursors)`（*需要 `KeyRepair`、`KeyReceiver`、`KeyDistributor`*）是一轮有限的维护：发送修复、恢复安装、获取一页邮箱、发送报告、协调并投递、再次发送报告、列出结果。每个队列各自保留游标提示。
+
+## E2eeWorkspace
+
+以上一切之上的应用门面。`WorkspacePlatform` 为每个工作区提供端口 Layer（`WorkspacePorts`）、每个资源的原生文档状态，以及可选的恢复配置。`E2eeWorkspace.open()` 在工作区 Scope 中构建 `E2eeWorkflows` 与 `WorkspaceControl`，返回一个句柄：账本命令、换代与移除、密钥轮次、文档（`document(resource, model)` 返回 Streams 绑定和原生状态）、结果与确认、恢复。
+
+句柄上会改变状态的调用是串行的。`close()` 停止平台工作、等待进行中的操作，然后释放流程与存储。`E2eeWorkspace.restoreFromRecovery` 先执行恢复设备的恢复流程，再打开新个人设备的工作区并安装恢复出的密钥。
+
+## 恢复
+
+`RecoveryVaults`（*需要 `RecoveryVaultStore`、`RecoveryVaultLocalStore`*）创建并解锁 vault-v1：离线保存的恢复文件，或 passkey PRF。`makeWorkspaceRecovery` 维护某个工作区的恢复条目（设置、测试、替换、跳过）并执行恢复：恢复设备接纳新的个人设备，再由该设备安装所有纪元密钥。方案见白皮书的备份与恢复一节及[恢复 vault](../../../specs/e2ee/recovery-vault.zh.md)。
+
 ## 文档
 
 文档内容使用 content v0：签名头部，以由纪元密钥派生的文档密钥做 XChaCha20-Poly1305 加密，AAD 绑定用途。

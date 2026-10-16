@@ -44,13 +44,23 @@ whitepaper, Specs, decisions and this package's docs. Contract:
 - Trusted genesis, resource, epoch, purpose and signer come from independently
   verified context; frame metadata is unverified. A valid signature establishes
   neither permission nor AEAD validity.
-- Ed25519 requires canonical prime-subgroup A and R with `zip215: false`.
+- Ed25519 requires canonical nonzero prime-subgroup A and R and S<L
+  (`zip215: false`); fixed native Effects and private exact caches keep these checks.
 - Byte wrappers own copies. Epoch keys have no public byte export; private keys
   stay with the platform. Every key copy and plaintext buffer is disposed with
   `acquireUseRelease`; native calls are uninterruptible.
 - Ledger authority starts only at caller-pinned genesis plus expected head/count,
   or a module-created view. `VerifiedLedger` is the only source of ledger state
   for workflows; it remembers genuine views even when the pin write fails.
+- Historical attribution and epoch packets come only from verified views.
+  Revocation keeps old author identity but grants no current write permission;
+  Recovery and Guest never write; a required rotation blocks new seals.
+- Documents: current write/rotation checks precede encryption and repeat after
+  signing; historical signature evidence is neither permission nor AEAD validity.
+  Host admission (header 3 batches, position-bound header 4 snapshots) checks the
+  genuine current writer, submitting signer, resource/model/epoch and the complete
+  original before forwarding. Snapshot publication keeps exact signer/offset/digest
+  identities; uncertain native outcomes stay Pending; one owner serializes writes.
 - Durable workflows persist exact originals before any network step, retry
   those bytes, never re-sign, and keep results until explicit acknowledgement.
   Remote hints never end a task; only genuine ledger changes do.

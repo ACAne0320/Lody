@@ -9,4 +9,4 @@ These drafts describe intended architecture and retain explicit unresolved decis
 They do not enable product E2EE or approve unfinished protocol formats.
 
 Unapproved interoperability/recovery proposals: [atomic removal](atomic-removal.md),
-[recovery vault](https://github.com/LodyAI/Lody/blob/358f06b764566241345ff041294540be0e3fea08/specs/e2ee/recovery-vault.md), [publisher key recoverability](publisher-key-recoverability.md).
+[recovery vault](recovery-vault.md), [publisher key recoverability](publisher-key-recoverability.md).

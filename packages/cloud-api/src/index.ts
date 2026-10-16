@@ -1,5 +1,23 @@
 import { anyApi, type FunctionReference } from 'convex/server';
 import type {
+  RecoveryVaultPutRequest,
+  RecoveryVaultReadRequest,
+  RecoveryVaultIndexReadRequest,
+  RecoveryVaultIndexCasRequest,
+  RecoveryVaultIndexCasReply,
+  RecoveryVaultDeleteRequest,
+  RecoveryVaultCiphertextDto,
+} from './e2ee-recovery-vault';
+export type {
+  RecoveryVaultPutRequest,
+  RecoveryVaultReadRequest,
+  RecoveryVaultIndexReadRequest,
+  RecoveryVaultIndexCasRequest,
+  RecoveryVaultIndexCasReply,
+  RecoveryVaultDeleteRequest,
+  RecoveryVaultCiphertextDto,
+} from './e2ee-recovery-vault';
+import type {
   StageEpochGroupRequest,
   ReadEpochGroupRequest,
   DeleteEpochGroupRequest,
@@ -346,6 +364,13 @@ type SeatInvitePreview =
 
 export type CloudApi = {
   /** Optional E2EE ciphertext staging. No ordinary/local product constructs it. */
+  e2eeRecoveryVault: {
+    putImmutable: Mutation<RecoveryVaultPutRequest, { ok: true }>;
+    readEntry: Query<RecoveryVaultReadRequest, RecoveryVaultCiphertextDto | null>;
+    readIndex: Query<RecoveryVaultIndexReadRequest, RecoveryVaultCiphertextDto | null>;
+    compareAndSwapIndex: Mutation<RecoveryVaultIndexCasRequest, RecoveryVaultIndexCasReply>;
+    deleteUnreferenced: Mutation<RecoveryVaultDeleteRequest, { ok: true }>;
+  };
   e2eeEpochStaging: {
     stageGroup: Mutation<StageEpochGroupRequest, { ok: true }>;
     readGroup: Query<ReadEpochGroupRequest, EpochStagedGroupDto | null>;

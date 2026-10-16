@@ -19,6 +19,8 @@
 | 发布 | `EpochPublisher`, `EpochPublishError`, `EpochPublishFailure`, `EpochPublishResult` |
 | 值类型 | `Bytes`（命名空间）, `LedgerView`, `LedgerCheckpoint`, `LedgerState`, `LedgerFeedState`, `LedgerReadPage`, `DeviceSigner`, `EpochStagedGroup` |
 | 协议错误 | `LedgerError`, `LedgerFeedError`, `ContentError`, `ValidationError`, `EpochKeyError` |
+| 恢复 | `RecoveryVaults`, `makeWorkspaceRecovery`, `RecoveryVaultError`, `RecoveryVault`, `RecoveryEntryReference`, `RecoveryPrivatePackage`, `WorkspaceRecoveryInput`, `RecoverySubmitResult`, `RecoveryEnvelope` |
+| 工作区门面 | `E2eeWorkspace`, `makeE2eeWorkspace`, `E2eeWorkspaceHandle`, `WorkspacePlatform`, `WorkspacePorts`, `WorkspaceResources`, `WorkspaceDocumentState`, `WorkspaceModel`, `WorkspaceRotationStatus`, `WorkspaceRestoreRequest`, `WorkspaceRestorePlan`, `WorkspaceError`, `unavailableWorkspaceRecovery`, `WorkspaceControl`, `WorkspaceControlError`, `runWorkspaceKeyRound`, `WorkspaceKeyRoundCursors`, `WorkspaceKeyRoundError`, `issueWorkspaceInvitation`, `verifyWorkspaceInvitationSnapshot`, `verifyRetainedWorkspaceGenesis`, `WorkspaceInvitation`, `WorkspaceInvitationMailbox`, `WorkspaceInvitationSnapshot` |
 
 ## `@lody/e2ee-core/services` — 端口
 
@@ -26,10 +28,11 @@
 | --- | --- |
 | 后端 | `LedgerLog`, `LedgerFeedSource`, `KeyMailbox`, `KeyMailboxStatus`, `EpochStagingStore` |
 | 平台 | `DeviceIdentity`, `KeyProtector`, `CandidateProtector`, `nativeDeviceSigner`, `DeviceSigner` |
-| 应用 | `WorkspaceScope`, `LedgerViewSource`, `EpochPublicationSource` |
+| 应用 | `WorkspaceScope`, `LedgerViewSource`, `LedgerSync`, `EpochPublicationSource` |
 | 本地存储 | `LedgerPinStore`, `LedgerFeedStore`, `LedgerFeedContents`, `LedgerFeedTail`, `InstalledKeyStore`, `ReceiveJournal`, `ReceiveTaskRow`, `ReceiveTaskPhase`, `RepairJournal`, `RepairTaskRow`, `RepairTaskPhase`, `DistributionJournal`, `DistributionTaskRow`, `DistributionTaskPhase`, `DeliveryOutbox`, `EpochCandidateStore`, `EpochCandidateRow`, `SubmissionJournal`, `SubmissionEntry`, `SubmissionOutcome`, `SubmissionResult` |
 | 端口错误 | `BackendError`, `LedgerLogError`, `LocalStoreError`, `KeyProtectorError`, `LedgerFeedError` |
-| 值类型 | `GenesisHash`, `SigningPublicKey`, `LedgerView`, `LedgerCheckpoint`, `LedgerReadPage`, `MailboxSlot`, `EpochStagedGroup`, `EpochStagedGroupKey` |
+| 值类型 | `GenesisHash`, `SigningPublicKey`, `LedgerView`, `LedgerCheckpoint`, `LedgerReadPage`, `LedgerFeedState`, `MailboxSlot`, `EpochStagedGroup`, `EpochStagedGroupKey` |
+| 恢复 | `RecoveryVaultStore`, `RecoveryVaultLocalStore`, `VaultCiphertext` |
 
 ## `@lody/e2ee-core/protocol` — 纯协议
 
@@ -51,6 +54,7 @@
 | 信封 | `prepareEpochEnvelope`, `openEpochEnvelope`, `authenticateEpochEnvelope`, `authenticateEpochEnvelopeSignature`, `epochDeliveryId`, `EpochEnvelopeContext` |
 | 暂存组 | `ownEpochStagedGroup`, `ownEpochStagedGroupKey`, `sameEpochStagedGroup`, `authenticateEpochStagedGroup`, `obsoleteEpochStagedGroup`, `getCommittedEpochStagingKey`, `EpochStagingError`, `EpochStagedGroup`, `EpochStagedGroupKey` |
 | 报告 | `installationBody`, `installationSigningBytes`, `encodeInstallationReport`, `decodeInstallationReport`, `authenticateInstallationReport`, `checkInstallationContext`, `checkLocalPublication`, `envelopeRouting`, `mailboxDigest`, `slotId`, `MailboxSlot`, `InstallationSource`, `InstallationContext` |
+| 恢复 | `generateRecoveryPackage`, `importRecoveryIdentity`, `parseRecoveryFile`, `wipeRecoveryPackage`, `verifiedPasskeyPrf`, `disposePrf`, `ownVaultCiphertext`, `vaultCiphertextDigest`, `sameVaultCiphertext`, `RecoveryVaultError`, `RecoveryIdentity`, `RecoveryPrivatePackage`, `VerifiedPasskeyPrf`, `VaultCiphertext` |
 
 ## `@lody/e2ee-core/host` — 后端合同
 
@@ -61,6 +65,7 @@
 | 邮箱规则 | `envelopeRouting`, `authenticateEpochEnvelope`, `authenticateInstallationReport`, `checkLocalPublication`, `decodeInstallationReport`, `mailboxDigest`, `slotId`, `validSlot`, `MailboxSlot`, `InstallationContext` |
 | 文档准入 | `admitDocument`, `admitStreamsUpdateBatch`, `admitStreamsUpdateBatchEffect`, `admitStreamsSnapshot`, `admitStreamsSnapshotEffect`, `authenticateStreamsSnapshotEffect`, `StreamsRecordBoundary`, `StreamsRecordBoundaryPort` |
 | 端口类型 | `KeyMailbox`, `KeyMailboxStatus`, `EpochStagingStore` |
+| 恢复 vault 线上合同 | `RecoveryVaultCiphertextDto`, `RecoveryVaultPutRequest`, `RecoveryVaultReadRequest`, `RecoveryVaultIndexReadRequest`, `RecoveryVaultIndexCasRequest`, `RecoveryVaultIndexCasReply`, `RecoveryVaultDeleteRequest`, `encodeRecoveryVaultCiphertext`, `decodeRecoveryVaultCiphertext`, `RecoveryVaultStore` |
 
 ## `@lody/e2ee-core/adapters/node-sqlite`
 
