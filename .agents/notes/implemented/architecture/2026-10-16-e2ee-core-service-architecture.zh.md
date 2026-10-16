@@ -43,8 +43,17 @@ Translation: current
 - 恢复 vault 存储改为两个端口（`RecoveryVaultStore`、`RecoveryVaultLocalStore`）加一个 `RecoveryVaults` 流程；vault 线上 DTO 以 Schema 形式移入 `./host`，`@lody/cloud-api` 重新导出（与暂存一致）。
 - 工作区错误改用带 `reason` 的 `Schema.TaggedError`，与其他公开错误一致。
 
+## Lab 基于服务运行（栈第 5 层）
+
+- Lab 的 `WorkspacePlatform` 像外部集成方一样提供端口：其账本 actor 暴露 `LedgerSync`、`SubmissionJournal` 与 `LedgerLog`，HTTP 邮箱与暂存客户端分别成为 `KeyMailbox` 与 `EpochStagingStore`。账本钉与候选文件按 actor 区分，因为多个 actor 共用一个目录，共享钉会让它们的回滚知识相互耦合。
+- 单组件故障测试使用 `./internal` 的测试辅助：它们以真实 Layer 打开单个流程（接收方、分发方、发布者等），并带各存储的选项，不存在第二份实现。
+- 平台回调 `documentState` 与 `recoveryConfiguration` 会收到工作区已构建的服务，因为平台在组装原生状态或恢复输入时可能需要流程（读取密钥、投递）。
+- Lab 对服务错误按 `reason`、对协议错误按 `code` 投影；暂存适配器保留后端拒绝的原因。
+
 ## 验证
 
 核心：20 个测试文件（共 356 个测试，含组合测试与公开文档测试），使用真实 SQLite、Ed25519、HPKE 与子进程。`test/composition.test.ts` 通过 `E2eeWorkflows` 在两台设备之间完成一次密钥分发。`test/public-docs.test.ts` 要求每个公开导出、命名空间导出与 service 成员都有 JSDoc，并要求 `docs/surface*.md` 与实际导出一致。收尾测试还覆盖类型化源失败不推进检查点，以及查询/确认 span 正常结束。本次收尾通过核心类型检查、类型感知 lint（有既存警告）、Effect lint（有建议性警告）和根目录 format；隔离工作区缺少其他包依赖与 ACP 子模块，全仓 `check`、公开边界检查和文档检查未能全部通过，没有报出 E2EE 文档错误。
+
+完整五层栈还通过了核心与 Lab 类型检查、全部 401 个核心测试和 201 个 Lab 测试。工作区将刷新失败转换为 `LedgerViewSourceError`，Lab 迁移后的组件辅助代码保持同一端口合同。工作区/恢复 service 成员也受更严格的文档检查约束。这些本地合成测试结果不代表生产验收。
 
 限制：Lab 与桌面端消费者在栈中后续 PR 里迁移；尚无 IndexedDB 或移动端存储适配器；生产组合仍未接入。包仍为 `private`、版本 `0.0.0`；服务边界可复用不代表独立 SDK 或后端已经发布。

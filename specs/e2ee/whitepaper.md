@@ -3,7 +3,7 @@
 Status: draft
 Translation: current
 
-This public draft preserves the pinned proposed architecture. References to independent implementations describe the prototype source, not completion in this repository. Current public implementation and unresolved protocol decisions are tracked in the [migration guide](https://github.com/LodyAI/Lody/blob/358f06b764566241345ff041294540be0e3fea08/.agents/docs/e2ee-migration.md). No production E2EE entrypoint is enabled.
+This public draft preserves the pinned proposed architecture. References to independent implementations describe the prototype source, not completion in this repository. Current public implementation and unresolved protocol decisions are tracked in the [migration guide](../../.agents/docs/e2ee-migration.md). No production E2EE entrypoint is enabled.
 
 End-to-End Encryption, Device Trust, and Organization Collaboration
 

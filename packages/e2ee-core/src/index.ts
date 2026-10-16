@@ -110,6 +110,7 @@ export {
   type WorkspaceInvitationSnapshot,
   type WorkspaceModel,
   type WorkspacePorts,
+  type WorkspaceRecoveryConfiguration,
   type WorkspaceResources,
   type WorkspaceRestorePlan,
   type WorkspaceRestoreRequest,

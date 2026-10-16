@@ -113,6 +113,23 @@ adapters exist.
 - Workspace errors use `Schema.TaggedError` with `reason`, like other public
   errors.
 
+## The Lab on the services (stack layer 5)
+
+- The Lab's `WorkspacePlatform` supplies ports like an external integrator.
+  Its ledger actor exposes `LedgerSync`, `SubmissionJournal` and `LedgerLog`;
+  its HTTP mailbox and staging clients become `KeyMailbox` and
+  `EpochStagingStore`. The ledger pin and candidate files are per actor,
+  because several actors share one directory, and a shared pin would couple
+  their rollback knowledge.
+- Single-component fault harnesses use `./internal` testing helpers. These
+  open one workflow (receiver, distributor, publisher…) from the real Layers
+  with per-store options; there is no second implementation.
+- Platform callbacks `documentState` and `recoveryConfiguration` receive the
+  workspace's built services, since a platform may need workflows (key reads,
+  delivery) while assembling native state or recovery inputs.
+- The Lab projects service errors by `reason` and protocol errors by `code`;
+  the staging adapter keeps a backend refusal's reason.
+
 ## Verification
 
 Core: 20 test files (356 tests), including composition and public-docs tests, on real
@@ -125,6 +142,12 @@ passed core typecheck, type-aware lint (existing warnings), Effect lint (advisor
 warnings) and root format. Full root `check`, public-boundary and docs checks
 could not finish cleanly in the isolated worktree: other package dependencies
 and ACP submodules are absent. No E2EE documentation errors were reported.
+
+The assembled five-layer stack also passes core typecheck, Lab typecheck, all
+401 core tests and all 201 Lab tests. The workspace maps refresh failures into
+`LedgerViewSourceError`, and the Lab's relocated component harness preserves the
+same port contract. Workspace/recovery service members are covered by the stricter
+documentation check. These local synthetic results are not production acceptance.
 
 Limits: Lab and desktop consumers are migrated in the later PRs of the stack;
 no IndexedDB or mobile storage adapters exist; production composition is still

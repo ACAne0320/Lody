@@ -23,3 +23,5 @@ export {
   openSqliteConnection,
   makeSqliteLedgerPin,
 } from '../adapters/node-sqlite/store';
+export * from './testing';
+export { createRecoveryVault, openRecoveryVault, openRecoveryVaultWithPasskey } from './recovery';

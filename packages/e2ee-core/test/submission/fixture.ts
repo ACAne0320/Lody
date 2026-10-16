@@ -1,17 +1,10 @@
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { Effect, Layer, Result } from 'effect';
+import { Effect, Result } from 'effect';
 import * as Bytes from '../../src/internal/foundation/bytes';
 import { encodeCbor, bytesEqual, type CborValue } from '../../src/internal/foundation/cbor';
 import { hashRecordBytes, verifyLedger, type LedgerCheckpoint } from '../../src/internal/ledger';
-import { LedgerSubmission } from '@lody/e2ee-core';
-import {
-  LedgerLog,
-  LedgerLogError,
-  WorkspaceScope,
-  type GenesisHash,
-  type SubmissionResult,
-} from '@lody/e2ee-core/services';
+import { LedgerLog, LedgerLogError } from '@lody/e2ee-core/services';
 const ok = Result.getOrThrow;
 export const filled = (n: number, length = 32) => new Uint8Array(length).fill(n);
 export function keys(n: number) {
@@ -87,19 +80,9 @@ export function host(path: string) {
   };
 }
 
-/** The workflow bound to `anchor`, still requiring its two ports. */
-export const submissionLayer = (workspace: GenesisHash) =>
-  LedgerSubmission.layer.pipe(Layer.provide(Layer.succeed(WorkspaceScope, { genesis: workspace })));
-const withSubmission = <A, E>(
-  workspace: GenesisHash,
-  work: (submission: LedgerSubmission['Service']) => Effect.Effect<A, E>
-) =>
-  Effect.gen(function* () {
-    return yield* work(yield* LedgerSubmission);
-  }).pipe(Effect.provide(submissionLayer(workspace)));
-export const submitRecord = (workspace: GenesisHash, record: Uint8Array) =>
-  withSubmission(workspace, (s) => s.submit(record));
-export const resumeSubmission = (workspace: GenesisHash) =>
-  withSubmission(workspace, (s) => s.resume());
-export const acknowledgeSubmission = (workspace: GenesisHash, result: SubmissionResult) =>
-  withSubmission(workspace, (s) => s.acknowledge(result));
+export {
+  submissionLayer,
+  submitRecord,
+  resumeSubmission,
+  acknowledgeSubmission,
+} from '../../src/internal/testing/submission';

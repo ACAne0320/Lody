@@ -83,4 +83,4 @@ The design direction above is supplied by the user; this revised Spec remains
 strict B, account recovery or an MLS replacement. See [producer and replay](../../packages/e2ee-core/src/internal/ledger/ADMISSION.md),
 [staging port](../../packages/e2ee-core/src/internal/keys/staging.ts),
 [rotation workflow](../../packages/e2ee-core/src/internal/keys/publisher.ts) and
-[Lab](https://github.com/LodyAI/Lody/blob/358f06b764566241345ff041294540be0e3fea08/packages/e2ee-lab/README.md).
+[Lab](../../packages/e2ee-lab/README.md).

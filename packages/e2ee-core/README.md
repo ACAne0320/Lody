@@ -179,3 +179,5 @@ pnpm --filter @lody/e2ee-core check:docs  # exports, namespaces and service memb
 
 Tests use fixed synthetic vectors, real SQLite, real Ed25519/HPKE and child
 processes; the `test/generate-*.py` scripts regenerate vectors (optional).
+
+[Non-gating benchmarks](bench/README.md) emit environment-qualified JSON.
