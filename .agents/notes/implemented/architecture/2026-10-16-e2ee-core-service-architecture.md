@@ -82,6 +82,9 @@ adapters exist.
   `LedgerViewSourceError` replaces the view port's `unknown` error channel;
   expected source failures keep the cause and leave the rollback pin unchanged.
   This changes the adapter's compile-time contract, not ledger or wire behavior.
+  Submission acknowledgement still copies its argument at invocation, before
+  the lazy traced body runs; the real-journal test mutates the caller's argument
+  before execution to preserve that ownership guarantee.
 - **Delivery refusals propagate.** Only an `unavailable` mailbox leaves a
   delivery `Pending`; a refusal (unauthorized, conflict) fails, matching the old
   distinction between transport loss and host rejection.
