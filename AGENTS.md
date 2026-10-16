@@ -48,8 +48,7 @@ extend the migration into unfinished dependency chains.
 For migration scope, read relevant [charter](.agents/notes/proposed/architecture/2026-09-27-effect-lifecycle-migration-roadmap.md#unit-ledger)
 rows and the [selection guide](.agents/docs/cli-effect-ts.md#small-migrations-during-feature-and-fix-work).
 Apply the charter's completion criteria; update its unit ledger when a migration
-changes dependencies, native boundaries, consumers or ownership. Keep small modules
-simple; use the guide's responsibility split only when a large module needs it.
+changes dependencies, native boundaries, consumers or ownership.
 
 ## Repository boundary
 
@@ -105,10 +104,10 @@ simple; use the guide's responsibility split only when a large module needs it.
   Test the real boundary and resulting state, including failure paths; retain
   meaningful compile-failure contracts. Extend the owning suite instead of adding
   a file per small fix. Do not delete behavioral coverage to reduce counts.
-- For future work, follow
-  [documentation consolidation](.agents/AGENTS.md#documentation-at-submission).
-  Update owning docs and Notes; update a Spec only when reviewed intent is affected.
-  Consolidate redundant PR-local notes and repair inbound links.
+- Before submission, follow [documentation consolidation](.agents/AGENTS.md#documentation-at-submission)
+  and repair inbound links.
+- Contain failures: before changing teardown, fencing, retry or readiness gates,
+  read [failure containment](.agents/docs/failure-containment.md).
 - Keep edits request-scoped; preserve unrelated work. Prefer explicit
   contracts over hidden fallbacks; remove only unused code. Update the nearest
   public `AGENTS.md` when an invariant or boundary changes.
@@ -120,5 +119,6 @@ remains, react 👍. Details: [.github/codex-review.md](.github/codex-review.md)
 
 - P0: exploitable security, secret leak, auth/capability bypass, data loss, or a
   broken public/cloud/local boundary.
-- P1: likely shipped breakage or a durable catalog/session contract violation.
+- P1: likely shipped breakage, including a failure-containment regression, or a
+  durable catalog/session contract violation.
 - Skip style, nits, P2+, extra tests, and duplication under 100 lines.

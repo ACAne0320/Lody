@@ -134,11 +134,14 @@ instead of creating a new checklist document for every edit.
 | Cancellation     | Does cancellation end one wait, the producer, or raw external work? How is actual termination confirmed? |
 | Handoff          | What observable release condition allows a successor or replacement to start?                            |
 | Failure recovery | Who retains unresolved resources and the complete failure, and who can retry cleanup?                    |
+| Containment      | Which unrelated paths stop when this release, wait or gate fails, and what recovers them without reload? |
 
 Map applicable answers to behavioral acceptance cases. A cancelled reader must not
 stop a shared producer needed by other readers; a cleanup timeout must not permit
-replacement while the old resource is still owned. Review/debug can use the same
-questions to assess existing evidence without editing the Note.
+replacement while the old resource is still owned. That fence binds the same owner
+only: sibling teardown still runs, and the next acquire retries the retained release
+instead of failing permanently. See [failure containment](failure-containment.md).
+Review/debug can use the same questions to assess existing evidence without editing the Note.
 
 ## Choosing a native unit and its structure
 
@@ -499,6 +502,7 @@ For lifecycle changes, select the applicable behaviors from this acceptance matr
 | Close/replacement | Concurrent close joins one receipt; a new generation waits for confirmed old release            |
 | Deadline/retry    | Clock-driven expiry is observable; body/release failures do not become acquisition retries      |
 | Release failure   | Retain the unresolved owner and full Cause, including simultaneous body/release failure         |
+| Containment       | Sibling teardown completes after one failure; the next acquire retries release first            |
 | Composition       | Real consumers use the kernel; applicable filesystem/process/protocol boundaries remain covered |
 
 Confirm readiness with an explicit signal before advancing time or cancelling. Await
