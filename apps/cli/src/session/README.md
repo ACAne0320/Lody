@@ -325,8 +325,9 @@ almost never adopted, and discarding it cost more than a cold start
 them. The daemon answers both at once without work; prepare reports an accepted duplicate
 so an older desktop holds one lease per draft instead of re-asking after every pause.
 `worktree/legacy-speculative-worktrees.ts` handles worktrees an older daemon prepared:
-creation claims the Session's marker (rebuilding a mismatched target and rerunning setup
-for a matching one), and a sweep removes orphans whose Session never became durable.
+creation claims the Session's marker and reruns setup on its worktree. Only a worktree no
+Session adopted is rebuilt for a target mismatch: an adopted one keeps its branch, which
+resume restores by name. A sweep removes orphans whose Session never became durable.
 
 Memory identity references travel with turn configuration. `Session.createAgent` maps
 them through `../lib/memory-providers.ts` at spawn; the execution service restarts a

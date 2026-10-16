@@ -1512,6 +1512,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
         workspaceId: config.workspaceId,
         machineId: this.machineId,
         target: legacyTarget,
+        restoreBranchName: config.restoreBranchName,
         logger: this.logger,
       });
       const legacySetupPending = legacyClaim === 'setup-pending';
@@ -1565,7 +1566,6 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
             sessionId: config.sessionId!,
             workspaceId: config.workspaceId,
             machineId: this.machineId,
-            target: legacyTarget,
           });
         }
       }

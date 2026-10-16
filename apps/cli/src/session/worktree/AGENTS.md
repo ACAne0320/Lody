@@ -95,10 +95,11 @@ and file responsibilities: [../README.md](../README.md).
   idle GC must skip setup when the session's worktree directory already exists, but setup still
   runs when a missing worktree directory is materialized again.
 - Nothing writes speculative-worktree markers any more; `legacy-speculative-worktrees.ts`
-  handles those older daemons left. Session creation claims its marker before probing the
-  directory: rebuild a mismatched target, rerun setup for a matching one, then drop it. The
-  sweep removes only orphans of non-durable, inactive Sessions. Claim and sweep share the
-  per-session marker lock, and the sweep re-checks liveness under it.
+  handles those older daemons left. Creation claims its marker before probing the directory
+  and reruns setup before dropping it. NEVER destroy a worktree a Session adopted
+  (`durable-pending-setup`, or a `restoreBranchName`) over a target mismatch: removal deletes
+  the branch resume restores. Only unadopted mismatches rebuild. The sweep removes orphans of
+  non-durable, inactive Sessions under the shared per-session lock, re-checking liveness.
 - `worktree-config-resolver.ts` follows the durable launch-config rule in
   [../AGENTS.md](../AGENTS.md): do not write per-session `sessionLaunchConfig`.
 - Archive and delete never delete a Session branch; only the worktree directory goes

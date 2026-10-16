@@ -42,7 +42,10 @@ project, the launch configuration and the run selection (model, memory, MCP
 servers, option values) to match exactly. That daemon predated the claim-miss
 reason logging added in
 [preparation cleanup diagnostics](../bug-fix/2026-10-16-preparation-cleanup-diagnostics.md),
-so the log never recorded which field differed.
+so the log never recorded which field differed. One cause is visible in code for
+local worktree projects: a preparation recorded the project's branch selector
+(`main`), while the durable create compares the resolved ref (`refs/heads/main`),
+so those claims could never match.
 
 The cost was not only latency. Preparation owned a separate lifecycle: a TTL
 control, a retirement barrier that a cold start had to wait on, a credential
@@ -67,10 +70,16 @@ after 75 s because releasing a missed preparation timed out.
   lease until the draft idles or is sent. A rejection would make it send a new
   prepare and a cancel after every pause in typing. Cancel reports `not-found`.
 - `legacy-speculative-worktrees.ts` handles the markers older daemons left.
-  Session creation claims the Session's marker before it probes the directory.
-  A worktree built for another repository or base branch is removed and rebuilt.
-  A matching one is reused, but setup runs first, because a preparation never
-  ran it. The marker is dropped only after setup succeeds. On startup and
+  Session creation claims the Session's marker before it probes the directory
+  and reruns setup on the worktree, because a preparation never completed it;
+  the marker is dropped only after setup succeeds. A worktree no Session ever
+  adopted is rebuilt when it targets another repository or base branch. A
+  worktree a Session adopted (`durable-pending-setup`, or a create that records
+  a branch to restore) is never destroyed over a target mismatch, and claiming
+  promotes an unadopted marker before creation records the branch. Removal also
+  deletes the branch, and resume restores the branch by name. A drifted
+  spelling such as `main` versus `refs/heads/main` would otherwise leave the
+  Session permanently unresumable, which a test reproduced. On startup and
   metadata recovery, a sweep removes orphans: markers, and the worktrees they
   created, whose Session is neither durable nor being created. Worktree GC
   cannot, because it never acts on a Session it does not know. New daemons write
@@ -108,8 +117,10 @@ after 75 s because releasing a missed preparation timed out.
   that starts during the sweep's durability check keeps its worktree, failed
   removal retried, mismatched target rebuilt, matching target pending setup
   until completion); the whole session-manager suite, including real-Git cases
-  where a matching legacy worktree is reused with setup rerun on resume and a
-  mismatched one is rebuilt; the credential-broker worktree suite; AgentClient
+  where a legacy worktree is reused with setup rerun on resume, an adopted
+  worktree with a drifted base-branch spelling resumes on its own branch, and an
+  unadopted mismatched one is rebuilt. With the old rule (any mismatch destroys),
+  those adoption cases fail with `Session restore branch not found`; the credential-broker worktree suite; AgentClient
   session startup; dispatch watcher; credential runtime ownership; shared
   schema/sensitivity tests; the Loro Streams RPC suites; and the chat-landing,
   Machine RPC facade and runtime tests.

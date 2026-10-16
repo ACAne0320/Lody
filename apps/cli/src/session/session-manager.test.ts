@@ -721,6 +721,7 @@ describe('SessionManager worktree setup', () => {
     sessionId: SessionId;
     sourceDir: string;
     baseBranch: string;
+    phase: 'speculative' | 'durable-pending-setup';
   }): string => {
     const originalRootPath = localProjectsLegacy.normalizeLocalProjectRootPath(input.sourceDir);
     const markerPath = getLegacySpeculativeWorktreeMarkerPath(input.sessionId);
@@ -737,7 +738,7 @@ describe('SessionManager worktree setup', () => {
         source: { kind: 'local-shared', originalRootPath },
         baseBranch: input.baseBranch,
         ownsWorktree: true,
-        phase: 'durable-pending-setup',
+        phase: input.phase,
         createdAtMs: 0,
       })
     );
@@ -757,12 +758,18 @@ describe('SessionManager worktree setup', () => {
       }
     );
 
-  const localWorktreeConfig = (sessionId: SessionId, sourceDir: string, resume: boolean) =>
+  /** `restoreBranchName` set means the shape of a real resume, which restores by name. */
+  const localWorktreeConfig = (
+    sessionId: SessionId,
+    sourceDir: string,
+    restoreBranchName?: string
+  ) =>
     createSessionConfig({
       sessionId,
       branch: 'main',
       workdir: sourceDir,
-      resume,
+      resume: restoreBranchName !== undefined,
+      ...(restoreBranchName ? { restoreBranchName } : {}),
       project: {
         kind: 'local',
         localProjectId: 'local-project-legacy' as LocalProjectId,
@@ -771,22 +778,27 @@ describe('SessionManager worktree setup', () => {
       },
     });
 
+  const currentBranch = (workdir: string) => runGit(workdir, ['symbolic-ref', '--short', 'HEAD']);
+
   it('reruns setup on resume when an older daemon left it pending', async () => {
     const sourceDir = createLocalRepo(tempHome);
     const sessionId = 'setup-legacy-pending' as SessionId;
     const manager = createLocalWorktreeManager(new Map());
 
-    const created = await createSessionInner(
-      manager,
-      localWorktreeConfig(sessionId, sourceDir, false)
-    );
+    const created = await createSessionInner(manager, localWorktreeConfig(sessionId, sourceDir));
     expect(runWorktreeSetup).toHaveBeenCalledTimes(1);
+    const branchName = currentBranch(created.getWorkdir());
     writeFileSync(path.join(created.getWorkdir(), 'keep.txt'), 'reused\n', 'utf8');
-    const markerPath = writeLegacyPreparationMarker({ sessionId, sourceDir, baseBranch: 'main' });
+    const markerPath = writeLegacyPreparationMarker({
+      sessionId,
+      sourceDir,
+      baseBranch: 'main',
+      phase: 'durable-pending-setup',
+    });
 
     const resumed = await createSessionInner(
       manager,
-      localWorktreeConfig(sessionId, sourceDir, true)
+      localWorktreeConfig(sessionId, sourceDir, branchName)
     );
 
     expect(resumed.getWorkdir()).toBe(created.getWorkdir());
@@ -795,25 +807,53 @@ describe('SessionManager worktree setup', () => {
     expect(existsSync(markerPath)).toBe(false);
   });
 
-  it('rebuilds a worktree an older daemon prepared for another base branch', async () => {
+  it('resumes an adopted worktree whose recorded base branch is spelled differently', async () => {
+    const sourceDir = createLocalRepo(tempHome);
+    const sessionId = 'setup-legacy-drift' as SessionId;
+    const manager = createLocalWorktreeManager(new Map());
+
+    const created = await createSessionInner(manager, localWorktreeConfig(sessionId, sourceDir));
+    const branchName = currentBranch(created.getWorkdir());
+    writeFileSync(path.join(created.getWorkdir(), 'keep.txt'), 'reused\n', 'utf8');
+    // A first create records the resolved ref; resume passes the project selector.
+    const markerPath = writeLegacyPreparationMarker({
+      sessionId,
+      sourceDir,
+      baseBranch: 'refs/heads/main',
+      phase: 'durable-pending-setup',
+    });
+
+    const resumed = await createSessionInner(
+      manager,
+      localWorktreeConfig(sessionId, sourceDir, branchName)
+    );
+
+    expect(resumed.getWorkdir()).toBe(created.getWorkdir());
+    expect(currentBranch(resumed.getWorkdir())).toBe(branchName);
+    expect(existsSync(path.join(created.getWorkdir(), 'keep.txt'))).toBe(true);
+    expect(runWorktreeSetup).toHaveBeenCalledTimes(2);
+    expect(existsSync(markerPath)).toBe(false);
+  });
+
+  it('rebuilds an unadopted worktree an older daemon prepared for another base branch', async () => {
     const sourceDir = createLocalRepo(tempHome);
     const sessionId = 'setup-legacy-mismatch' as SessionId;
     const manager = createLocalWorktreeManager(new Map());
 
-    const created = await createSessionInner(
-      manager,
-      localWorktreeConfig(sessionId, sourceDir, false)
-    );
-    const workdir = created.getWorkdir();
+    // Stands in for the directory a preparation materialized for the draft.
+    const prepared = await createSessionInner(manager, localWorktreeConfig(sessionId, sourceDir));
+    const workdir = prepared.getWorkdir();
     writeFileSync(path.join(workdir, 'stale.txt'), 'from the old base\n', 'utf8');
-    const markerPath = writeLegacyPreparationMarker({ sessionId, sourceDir, baseBranch: 'dev' });
+    const markerPath = writeLegacyPreparationMarker({
+      sessionId,
+      sourceDir,
+      baseBranch: 'dev',
+      phase: 'speculative',
+    });
 
-    const resumed = await createSessionInner(
-      manager,
-      localWorktreeConfig(sessionId, sourceDir, true)
-    );
+    const created = await createSessionInner(manager, localWorktreeConfig(sessionId, sourceDir));
 
-    expect(resumed.getWorkdir()).toBe(workdir);
+    expect(created.getWorkdir()).toBe(workdir);
     expect(existsSync(path.join(workdir, 'stale.txt'))).toBe(false);
     expect(runWorktreeSetup).toHaveBeenCalledTimes(2);
     expect(existsSync(markerPath)).toBe(false);

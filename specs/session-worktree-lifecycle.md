@@ -25,9 +25,10 @@ further happens on disk.
 A Session's worktree is created when its first turn is dispatched, never while the
 user is still writing a draft. Older daemons could create one for a draft and stop
 before releasing it. If that Session never became durable, the worktree is removed.
-If it did, the Session reuses the worktree only when it was built for the same
-repository and base branch, and runs setup on it first; otherwise the worktree is
-rebuilt. This does not change the archive and restore retention contract below.
+If it did, the Session runs setup on the worktree before using it. The worktree is
+rebuilt only when no Session ever adopted it and it targets a different repository or
+base branch; an adopted worktree and its branch are never discarded, because resume
+restores that branch. This does not change the archive and restore retention contract below.
 
 ## Git execution failure
 

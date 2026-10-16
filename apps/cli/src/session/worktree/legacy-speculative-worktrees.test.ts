@@ -49,7 +49,12 @@ function createWorktreeHost(sessionIds: SessionId[]) {
 
 function writeLegacyMarker(
   sessionId: SessionId,
-  overrides: { ownsWorktree?: boolean; workspaceId?: string; baseBranch?: string } = {}
+  overrides: {
+    ownsWorktree?: boolean;
+    workspaceId?: string;
+    baseBranch?: string;
+    phase?: 'speculative' | 'durable-pending-setup';
+  } = {}
 ): string {
   const markerPath = getLegacySpeculativeWorktreeMarkerPath(sessionId);
   mkdirSync(path.dirname(markerPath), { recursive: true });
@@ -65,7 +70,7 @@ function writeLegacyMarker(
       source: { kind: 'local-shared', originalRootPath: '/tmp/source' },
       baseBranch: overrides.baseBranch ?? 'main',
       ownsWorktree: overrides.ownsWorktree ?? true,
-      phase: 'speculative',
+      phase: overrides.phase ?? 'speculative',
       createdAtMs: CREATED_AT_MS,
     })
   );
@@ -98,12 +103,17 @@ describe('legacy speculative worktrees', () => {
       ...overrides,
     });
 
-  const claim = (sessionId: SessionId, host: ReturnType<typeof createWorktreeHost>) =>
+  const claim = (
+    sessionId: SessionId,
+    host: ReturnType<typeof createWorktreeHost>,
+    overrides: { baseBranch?: string; restoreBranchName?: string } = {}
+  ) =>
     claimLegacySpeculativeWorktree({
       sessionId,
       workspaceId: WORKSPACE_ID,
       machineId: MACHINE_ID,
-      target: TARGET,
+      target: { ...TARGET, baseBranch: overrides.baseBranch ?? TARGET.baseBranch },
+      ...(overrides.restoreBranchName ? { restoreBranchName: overrides.restoreBranchName } : {}),
       logger: createLogger(),
       getManager: host.getManager,
     });
@@ -184,7 +194,7 @@ describe('legacy speculative worktrees', () => {
     expect(existsSync(markerPath)).toBe(true);
   });
 
-  it('rebuilds a worktree that was prepared for a different base branch', async () => {
+  it('rebuilds an unadopted worktree that was prepared for a different base branch', async () => {
     const sessionId = 'session-rebased' as SessionId;
     const markerPath = writeLegacyMarker(sessionId, { baseBranch: 'dev' });
     const host = createWorktreeHost([sessionId]);
@@ -209,11 +219,49 @@ describe('legacy speculative worktrees', () => {
       sessionId,
       workspaceId: WORKSPACE_ID,
       machineId: MACHINE_ID,
-      target: TARGET,
     });
 
     expect(existsSync(markerPath)).toBe(false);
     await expect(claim(sessionId, host)).resolves.toBe('no-marker');
+  });
+
+  it('never destroys a worktree a Session already adopted, even when its target drifted', async () => {
+    const sessionId = 'session-adopted-drift' as SessionId;
+    const markerPath = writeLegacyMarker(sessionId, { phase: 'durable-pending-setup' });
+    const host = createWorktreeHost([sessionId]);
+
+    await expect(claim(sessionId, host, { baseBranch: 'refs/heads/main' })).resolves.toBe(
+      'setup-pending'
+    );
+
+    expect(host.worktrees.has(sessionId)).toBe(true);
+    expect(existsSync(markerPath)).toBe(true);
+  });
+
+  it('keeps the worktree of a Session that records a branch to restore', async () => {
+    const sessionId = 'session-restoring' as SessionId;
+    writeLegacyMarker(sessionId);
+    const host = createWorktreeHost([sessionId]);
+
+    await expect(
+      claim(sessionId, host, { baseBranch: 'dev', restoreBranchName: 'lody/session-restoring' })
+    ).resolves.toBe('setup-pending');
+
+    expect(host.worktrees.has(sessionId)).toBe(true);
+  });
+
+  it('protects a claimed worktree on a retry whose target spelling changed', async () => {
+    const sessionId = 'session-retried' as SessionId;
+    writeLegacyMarker(sessionId);
+    const host = createWorktreeHost([sessionId]);
+
+    // The first create adopts it, then fails during setup.
+    await expect(claim(sessionId, host)).resolves.toBe('setup-pending');
+    await expect(claim(sessionId, host, { baseBranch: 'refs/heads/main' })).resolves.toBe(
+      'setup-pending'
+    );
+
+    expect(host.worktrees.has(sessionId)).toBe(true);
   });
 
   it('ignores another workspace marker for the same Session id', async () => {

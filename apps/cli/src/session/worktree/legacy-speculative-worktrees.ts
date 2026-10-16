@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import type { MachineId, RepoId, SessionId, WorkspaceId } from '@lody/shared';
 import type { Logger } from '@/utils/logger';
@@ -99,6 +99,14 @@ async function readMarkerFile(markerPath: string): Promise<LegacySpeculativeWork
   }
 }
 
+async function writeMarker(marker: LegacySpeculativeWorktreeMarker): Promise<void> {
+  const markerPath = getLegacySpeculativeWorktreeMarkerPath(marker.sessionId as SessionId);
+  await mkdir(path.dirname(markerPath), { recursive: true });
+  const temporaryPath = `${markerPath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(marker)}\n`, { encoding: 'utf8', mode: 0o600 });
+  await rename(temporaryPath, markerPath);
+}
+
 async function deleteMarker(sessionId: SessionId): Promise<void> {
   await rm(getLegacySpeculativeWorktreeMarkerPath(sessionId), { force: true });
 }
@@ -170,44 +178,58 @@ async function disposeMarker(
 /**
  * How Session creation's claim of a legacy marker resolved.
  *
- * - `setup-pending`: the marker matched the target. Its worktree may be reused,
- *   but setup has not completed, so it must run even on resume.
+ * - `setup-pending`: the worktree belongs to this Session. Reuse it, but run
+ *   setup even on resume, because setup never completed for it.
  * - `no-marker`: nothing to claim, including another workspace's marker.
- * - `mismatch`: the worktree was built for a different target and has been
- *   disposed together with the marker; creation must build a fresh one.
+ * - `mismatch`: an unadopted worktree was built for a different target and has
+ *   been disposed together with the marker; creation must build a fresh one.
  */
 export type LegacySpeculativeWorktreeClaim = 'setup-pending' | 'no-marker' | 'mismatch';
 
-/** Runs before Session creation reuses or creates the Session's worktree. */
+/**
+ * Runs before Session creation reuses or creates the Session's worktree.
+ *
+ * Only a worktree no Session ever adopted may be destroyed for a target
+ * mismatch. Once a Session has adopted it (`durable-pending-setup`), or records a
+ * branch to restore, the worktree and its branch are that Session's: removing
+ * them for a drifted base-branch spelling would delete the branch resume needs
+ * and leave the Session permanently unresumable. Adopting promotes the marker
+ * before creation records the branch, so a retry cannot destroy it either.
+ */
 export async function claimLegacySpeculativeWorktree(args: {
   sessionId: SessionId;
   workspaceId: WorkspaceId;
   machineId: MachineId;
   target: LegacySpeculativeWorktreeTarget;
+  restoreBranchName?: string;
   logger: Logger;
   getManager?: GetManager;
 }): Promise<LegacySpeculativeWorktreeClaim> {
   return await withSessionMarkerLock(args.sessionId, async () => {
     const marker = await readMarker(args.sessionId);
     if (!marker || !belongsTo(marker, args)) return 'no-marker';
-    if (!markerMatchesTarget(marker, args.target)) {
+    const adopted =
+      marker.phase === 'durable-pending-setup' || Boolean(args.restoreBranchName?.trim());
+    if (!adopted && !markerMatchesTarget(marker, args.target)) {
       await disposeMarker(marker, args.logger, args.getManager);
       return 'mismatch';
+    }
+    if (marker.phase !== 'durable-pending-setup') {
+      await writeMarker({ ...marker, phase: 'durable-pending-setup' });
     }
     return 'setup-pending';
   });
 }
 
-/** Drops a matching marker once setup has completed for the durable Session. */
+/** Drops this Session's claimed marker once setup has completed for it. */
 export async function completeLegacySpeculativeWorktreeSetup(args: {
   sessionId: SessionId;
   workspaceId: WorkspaceId;
   machineId: MachineId;
-  target: LegacySpeculativeWorktreeTarget;
 }): Promise<void> {
   await withSessionMarkerLock(args.sessionId, async () => {
     const marker = await readMarker(args.sessionId);
-    if (marker && belongsTo(marker, args) && markerMatchesTarget(marker, args.target)) {
+    if (marker && belongsTo(marker, args)) {
       await deleteMarker(args.sessionId);
     }
   });
