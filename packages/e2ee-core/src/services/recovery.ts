@@ -22,9 +22,13 @@ import type { VaultCiphertext } from '../internal/recovery/crypto';
 export class RecoveryVaultStore extends Context.Service<
   RecoveryVaultStore,
   {
+    /** Store exact encrypted entry bytes once; identical retries succeed and different bytes at the same id fail. */
     putImmutable(vaultId: string, entry: VaultCiphertext): Effect.Effect<void, unknown>;
+    /** Read an owned encrypted entry or null; retrieval permission is not proof of its authenticity. */
     readEntry(vaultId: string, entryId: string): Effect.Effect<VaultCiphertext | null, unknown>;
+    /** Read the encrypted current index or null; the client authenticates it and checks its durable pin. */
     readIndex(vaultId: string): Effect.Effect<VaultCiphertext | null, unknown>;
+    /** Atomically compare index identity and replace it with next; Conflict keeps the stored index, while an error may have an uncertain outcome. */
     compareAndSwapIndex(
       vaultId: string,
       expected: { readonly revision: number; readonly digest: string } | null,
@@ -52,12 +56,15 @@ export class RecoveryVaultStore extends Context.Service<
 export class RecoveryVaultLocalStore extends Context.Service<
   RecoveryVaultLocalStore,
   {
+    /** Read an owned copy or null; a storage failure must not be treated as absence. */
     read(key: string): Effect.Effect<Uint8Array | null, unknown>;
+    /** Atomically match expected bytes (null means absent), persist next and verify readback before returning Committed. */
     compareAndSwap(
       key: string,
       expected: Uint8Array | null,
       next: Uint8Array
     ): Effect.Effect<'Committed' | 'Conflict', unknown>;
+    /** Return owned copies of entries with the prefix, preserving every pending intent for reconciliation after restart. */
     list(
       prefix: string
     ): Effect.Effect<readonly { readonly key: string; readonly value: Uint8Array }[], unknown>;

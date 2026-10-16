@@ -92,11 +92,17 @@ function captureCommand(command: LedgerCommand) {
 export class WorkspaceControl extends Context.Service<
   WorkspaceControl,
   {
+    /** Read the local feed through LedgerSync without network work; rejects a closed owner. */
     current(): Effect.Effect<Effect.Success<ReturnType<LedgerSync['Service']['current']>>, unknown>;
+    /** Refresh the verified feed through LedgerSync; source-specific failures propagate without authorizing a command. */
     refresh(): Effect.Effect<Effect.Success<ReturnType<LedgerSync['Service']['refresh']>>, unknown>;
+    /** Prepare and sign once against a refreshed view, then submit; pending or unacknowledged work blocks new signing. */
     execute(command: LedgerCommand): Effect.Effect<SubmissionResult, unknown>;
+    /** Submit the exact caller-supplied signed record; conflicts never trigger rebase or re-signing. */
     executeOriginal(record: Uint8Array): Effect.Effect<SubmissionResult, unknown>;
+    /** Resume the journaled original, or return null; never signs a replacement for an uncertain outcome. */
     resume(): Effect.Effect<SubmissionResult | null, unknown>;
+    /** Consume only after the local feed durably contains the observed submission checkpoint; otherwise fail feed-not-persisted. */
     acknowledge(result: SubmissionResult): Effect.Effect<void, unknown>;
   }
 >()('@lody/e2ee-core/WorkspaceControl') {

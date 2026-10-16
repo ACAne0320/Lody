@@ -172,6 +172,7 @@ export class KeyReceiver extends Context.Service<
       readonly { readonly id: string; readonly outcome: 'Reported' | 'Obsolete' | 'Revoked' }[],
       ReceiveError
     >;
+    /** Mark an ended task consumed; unfinished tasks stay pending. Fails on invalid ids, storage errors or a closed owner. */
     acknowledge(id: string): Effect.Effect<void, ReceiveError>;
     /**
      * Fetch one page of envelopes for the current epoch from {@link KeyMailbox}
@@ -706,7 +707,9 @@ export class KeyReceiver extends Context.Service<
         ) {
           return yield* gate.run(batch('report', limit, cursor));
         }),
-        results: (limit = 100) => gate.run(results(limit)),
+        results: Effect.fn('@lody/e2ee-core/KeyReceiver.results')(function* (limit = 100) {
+          return yield* gate.run(results(limit));
+        }),
         acknowledge: Effect.fn('@lody/e2ee-core/KeyReceiver.acknowledge')(function* (id: string) {
           yield* gate.guard;
           if (!Reports.isHash(id)) return yield* fail('invalid-input');

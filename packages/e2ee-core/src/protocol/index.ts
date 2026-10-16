@@ -12,6 +12,7 @@
  */
 
 // Foundation
+/** Validated, copy-owning protocol byte values and their parsers; parsing does not establish authority. */
 export * as Bytes from '../internal/foundation/bytes';
 export {
   ValidationError,

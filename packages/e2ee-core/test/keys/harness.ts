@@ -29,6 +29,7 @@ import {
   KeyProtector,
   LedgerLog,
   LedgerViewSource,
+  LedgerViewSourceError,
   SubmissionJournal,
   WorkspaceScope,
   type DeviceSigner,
@@ -109,7 +110,13 @@ const identity = (input: {
   VerifiedLedger.layer.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
-        Layer.succeed(LedgerViewSource, LedgerViewSource.of({ current: input.ledger })),
+        Layer.succeed(
+          LedgerViewSource,
+          LedgerViewSource.of({
+            current: () =>
+              input.ledger().pipe(Effect.mapError((cause) => new LedgerViewSourceError({ cause }))),
+          })
+        ),
         sqliteLedgerPinStore({ path: pinFile(input.anchorFile), mode: 'create-or-open' })
       )
     ),

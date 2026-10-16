@@ -61,11 +61,14 @@ export interface RepairBatch {
 export class KeyRepair extends Context.Service<
   KeyRepair,
   {
+    /** Persist a caller-chosen stable request id for the current epoch; identical retries reuse it without sending yet. */
     enqueue(
       requestId: string,
       rejectedDigest?: string
     ): Effect.Effect<{ readonly id: string }, RepairError>;
+    /** Send one id-ordered page (1–100, default 100); failed requests stay pending and appear in `blocked`. */
     flush(limit?: number, cursor?: string | null): Effect.Effect<RepairBatch, RepairError>;
+    /** List one page of unacknowledged terminal requests; `next` is a hint, not proof of key installation. */
     results(
       limit?: number,
       cursor?: string | null
@@ -79,6 +82,7 @@ export class KeyRepair extends Context.Service<
       },
       RepairError
     >;
+    /** Consume a terminal result; pending requests remain retryable and storage or closed-owner failures propagate. */
     acknowledge(id: string): Effect.Effect<void, RepairError>;
   }
 >()('@lody/e2ee-core/KeyRepair') {

@@ -133,6 +133,7 @@ export interface DistributionResult {
 export class KeyDistributor extends Context.Service<
   KeyDistributor,
   {
+    /** Discover one page of current eligible devices (1–100, default 100) and durably schedule missing deliveries. */
     reconcileCurrentEpoch(
       limit?: number,
       cursor?: string | null
@@ -144,10 +145,12 @@ export class KeyDistributor extends Context.Service<
       },
       DistributionFailure
     >;
+    /** Retry one page of saved originals; blocked tasks retain their bytes and `next` allows later tasks to progress. */
     resumePendingDeliveries(
       limit?: number,
       cursor?: string | null
     ): Effect.Effect<DistributionBatch, DistributionFailure>;
+    /** List unacknowledged terminal tasks in id order; `Observed` records a mailbox observation, not receiver custody. */
     results(
       limit?: number,
       cursor?: string | null
@@ -155,6 +158,7 @@ export class KeyDistributor extends Context.Service<
       { readonly items: readonly DistributionResult[]; readonly next: string | null },
       DistributionError
     >;
+    /** Consume a terminal task and free task capacity; never deletes its original outbox ciphertext. Pending tasks fail. */
     acknowledge(id: string): Effect.Effect<void, DistributionError>;
   }
 >()('@lody/e2ee-core/KeyDistributor') {
