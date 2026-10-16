@@ -62,7 +62,11 @@ describe('durable submission', () => {
             const submission = yield* LedgerSubmission;
             const result = yield* submission.submit(record);
             expect(yield* submission.pending()).toMatchObject({ record, outcome: 'Committed' });
-            yield* submission.acknowledge(result);
+            const mutable = { ...result, record: new Uint8Array(result.record) };
+            const acknowledgement = submission.acknowledge(mutable);
+            mutable.record.fill(0);
+            mutable.outcome = 'Conflict';
+            yield* acknowledgement;
             expect(yield* submission.pending()).toMatchObject({
               record: null,
               outcome: null,

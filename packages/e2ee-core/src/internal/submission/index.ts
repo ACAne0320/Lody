@@ -169,6 +169,12 @@ export class LedgerSubmission extends Context.Service<
         return { outcome: checked.outcome, record: new Uint8Array(record) };
       });
 
+      const acknowledge = Effect.fn('@lody/e2ee-core/LedgerSubmission.acknowledge')(function* (
+        result: SubmissionResult
+      ) {
+        return yield* store(journal.acknowledge(anchor, result));
+      });
+
       return LedgerSubmission.of({
         submit: Effect.fn('@lody/e2ee-core/LedgerSubmission.submit')(function* (input: Uint8Array) {
           const record = (yield* Effect.fromResult(decodeRecord(input))).recordBytes;
@@ -185,14 +191,13 @@ export class LedgerSubmission extends Context.Service<
         resume: Effect.fn('@lody/e2ee-core/LedgerSubmission.resume')(function* () {
           return yield* recover();
         }),
-        acknowledge: Effect.fn('@lody/e2ee-core/LedgerSubmission.acknowledge')(function* (result) {
-          return yield* store(
-            journal.acknowledge(anchor, {
-              outcome: result.outcome,
-              record: new Uint8Array(result.record),
-            })
-          );
-        }),
+        // Keep the pre-tracing contract: detach input at invocation, before
+        // Effect.fn's lazy body runs or the caller mutates the result.
+        acknowledge: (result) =>
+          acknowledge({
+            outcome: result.outcome,
+            record: new Uint8Array(result.record),
+          }),
         pending: Effect.fn('@lody/e2ee-core/LedgerSubmission.pending')(function* () {
           return yield* store(journal.load(anchor));
         }),
