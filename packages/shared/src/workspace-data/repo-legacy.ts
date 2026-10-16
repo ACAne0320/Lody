@@ -115,6 +115,11 @@ export type WorkspaceRepoLegacyOptions = Pick<
   };
 
 type Owned<A> = WorkspaceOwnedScope & { readonly value: A };
+type TransportOwner = WorkspaceOwnedScope & {
+  readonly cancelled: AbortController;
+  value?: TransportLease;
+  transport?: WorkspaceNativeTransport;
+};
 export type WorkspaceRoomBinding = Pick<
   RepoTransportRoomSubscription,
   'status' | 'onStatusChange' | 'firstSyncedWithRemote' | 'waitUntilSynced'
@@ -168,10 +173,7 @@ export class WorkspaceRepoLegacy {
   private readonly documents = new Map<string, Promise<Owned<DocLease>>>();
   private readonly flocks = new Map<string, Promise<Owned<FlockLease>>>();
   private readonly roomOwners = new Map<string, Set<WorkspaceRoom>>();
-  private readonly attachments = new Map<
-    string,
-    Owned<TransportLease> & { readonly transport: WorkspaceNativeTransport }
-  >();
+  private readonly attachments = new Map<string, TransportOwner>();
   private readonly statusListeners = new Map<
     string,
     Set<(status: 'connected' | 'connecting' | 'disconnected') => void>
@@ -558,7 +560,7 @@ export class WorkspaceRepoLegacy {
     this.statusListeners.set(id, listeners);
     listeners.add(listener);
     const attachment = this.attachments.get(id);
-    const status = attachment && this.syncLegacy(attachment.value.statusSnapshot);
+    const status = attachment?.value && this.syncLegacy(attachment.value.statusSnapshot);
     listener(
       status === 'online' ? 'connected' : status === 'connecting' ? 'connecting' : 'disconnected'
     );
@@ -577,56 +579,81 @@ export class WorkspaceRepoLegacy {
     adapter: NativeWorkspaceTransport,
     _options?: RepoTransportOptions
   ): Promise<RepoAttachmentReport> {
+    if (this.attachments.get(id)?.cancelled.signal.aborted) await this.removeTransport(id);
+    if (this.closing) throw new RepoClosed();
     if (this.attachments.has(id)) throw new Error(`Transport already attached: ${id}`);
-    const owned = await this.own(
-      Effect.gen({ self: this }, function* () {
-        const transport = yield* adapter.make(id);
-        const route = transport.routes;
-        const attachment = yield* this.native.attachTransport({
-          ...transport,
-          routes: (target) =>
-            (
-              this.options.resolveRoomTransports?.(descriptor(target)).transportIds ?? [
-                ...this.attachments.keys(),
-                id,
-              ]
-            ).includes(id) &&
-            (route?.(target) ?? true),
-        });
-        return { attachment, transport };
-      })
-    );
-    this.attachments.set(id, {
-      ...owned,
-      value: owned.value.attachment,
-      transport: owned.value.transport,
-    });
-    this.fork(
-      Stream.runForEach(owned.value.attachment.status, (status) =>
-        Effect.sync(() => {
-          for (const listener of this.statusListeners.get(id) ?? [])
-            listener(
-              status === 'online'
-                ? 'connected'
-                : status === 'connecting'
-                  ? 'connecting'
-                  : 'disconnected'
-            );
-        })
+    const owned: TransportOwner = {
+      ...this.syncLegacy(
+        acquireWorkspaceScope(`transport:${id}`).pipe(
+          Effect.provideService(Scope.Scope, this.consumers.scope)
+        )
       ),
-      owned.scope
-    );
-    return this.attachmentReport();
+      cancelled: new AbortController(),
+    };
+    // Publish ownership before either adapter construction or native connect can suspend.
+    this.attachments.set(id, owned);
+    try {
+      const attachment = await this.runLegacy(
+        Effect.gen({ self: this }, function* () {
+          const transport = yield* adapter.make(id);
+          if (this.closing || owned.cancelled.signal.aborted)
+            return yield* Effect.fail(new RepoClosed());
+          owned.transport = transport;
+          const route = transport.routes;
+          return yield* this.native.attachTransport({
+            ...transport,
+            routes: (target) =>
+              (
+                this.options.resolveRoomTransports?.(descriptor(target)).transportIds ?? [
+                  ...this.attachments.keys(),
+                  id,
+                ]
+              ).includes(id) &&
+              (route?.(target) ?? true),
+          });
+        }).pipe(Effect.provideService(Scope.Scope, owned.scope)),
+        owned.cancelled.signal
+      );
+      if (this.closing || owned.cancelled.signal.aborted) throw new RepoClosed();
+      owned.value = attachment;
+      this.fork(
+        Stream.runForEach(attachment.status, (status) =>
+          Effect.sync(() => {
+            for (const listener of this.statusListeners.get(id) ?? [])
+              listener(
+                status === 'online'
+                  ? 'connected'
+                  : status === 'connecting'
+                    ? 'connecting'
+                    : 'disconnected'
+              );
+          })
+        ),
+        owned.scope
+      );
+      return this.attachmentReport();
+    } catch (error) {
+      owned.cancelled.abort();
+      try {
+        await this.runLegacy(owned.close);
+        if (this.attachments.get(id) === owned) this.attachments.delete(id);
+      } catch (cleanup) {
+        throw workspaceAcquisitionFailureLegacy(error, cleanup, 'Transport acquisition');
+      }
+      throw error;
+    }
   }
   async removeTransport(id: string, _options?: RemoveTransportOptions) {
     const owned = this.attachments.get(id);
     if (!owned) return;
-    await this.runLegacy(this.native.removeTransport(id));
+    owned.cancelled.abort();
+    // The Scope finalizer revokes native registration and drains accepted connect I/O.
     await this.runLegacy(owned.close);
-    this.attachments.delete(id);
+    if (this.attachments.get(id) === owned) this.attachments.delete(id);
   }
   async refreshTransportRoutes(): Promise<RepoAttachmentReport> {
-    for (const { value } of this.attachments.values()) await this.runLegacy(value.refreshRoutes);
+    for (const { value } of this.attachments.values())
+      if (value) await this.runLegacy(value.refreshRoutes);
     return this.attachmentReport();
   }
   async reconnect(options?: RepoReconnectOptions): Promise<RepoAttachmentReport> {
@@ -634,20 +661,22 @@ export class WorkspaceRepoLegacy {
       [...this.attachments]
         .filter(([id]) => !options?.transportIds || options.transportIds.includes(id))
         .map(([, { value }]) =>
-          this.runLegacy(
-            Effect.gen(function* () {
-              const status = yield* value.statusSnapshot;
-              const rooms = yield* value.rooms;
-              // Repair must not retire a generation still establishing its baseline.
-              const reset =
-                options?.resetBackoff === true ||
-                status === 'offline' ||
-                status === 'closed' ||
-                rooms.some((room) => room.status === 'failed' || room.status === 'offline');
-              yield* reset ? value.reconnect : value.refreshRoutes;
-            }),
-            options?.signal
-          )
+          value
+            ? this.runLegacy(
+                Effect.gen(function* () {
+                  const status = yield* value.statusSnapshot;
+                  const rooms = yield* value.rooms;
+                  // Repair must not retire a generation still establishing its baseline.
+                  const reset =
+                    options?.resetBackoff === true ||
+                    status === 'offline' ||
+                    status === 'closed' ||
+                    rooms.some((room) => room.status === 'failed' || room.status === 'offline');
+                  yield* reset ? value.reconnect : value.refreshRoutes;
+                }),
+                options?.signal
+              )
+            : Promise.resolve()
         )
     );
     const report = this.attachmentReport();
@@ -660,7 +689,7 @@ export class WorkspaceRepoLegacy {
   }
   transportRooms(id: string) {
     const attachment = this.attachments.get(id);
-    return attachment
+    return attachment?.value
       ? this.syncLegacy(attachment.value.rooms).filter(({ target }) =>
           this.route(target).includes(id)
         )
@@ -779,7 +808,26 @@ export class WorkspaceRepoLegacy {
           );
           return () => this.fork(Scope.close(scope, Exit.succeed(undefined)));
         },
-        waitUntilSynced: () => this.runLegacy(lease.awaitSynced(id), closed.signal),
+        waitUntilSynced: () =>
+          this.runLegacy(
+            Effect.gen({ self: this }, function* () {
+              if (this.attachments.get(id)?.transport?.authority === 'server') {
+                const result = yield* lease.awaitUploaded(id);
+                if (result.outcome === 'acked') return undefined;
+                if (result.cause) return yield* Effect.failCause(result.cause);
+                return yield* Effect.fail(
+                  new RepoIOError('room upload not confirmed', result.outcome)
+                );
+              }
+              const report = yield* lease.sync(id);
+              if (
+                !report.transports.some((route) => route.id === id && route.outcome === 'confirmed')
+              )
+                return yield* Effect.fail(new RepoSyncFailed(report));
+              return undefined;
+            }),
+            closed.signal
+          ),
       };
       bindings.set(id, value);
       return value;

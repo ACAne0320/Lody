@@ -29,7 +29,15 @@ PR: [#1607](https://github.com/LodyAI/Lody/pull/1607)
 
 配置保存保持本地优先。Writer 在提交本窗口编写的 Provider 行后记录待交接 token；只有该配置存在待交接写入时，probe 才等待指定本机 Machine Flock peer 的回执。没有待交接写入的启动、backstop、强制刷新不新增数据面依赖。确认只清除调用捕获的 token，不吞掉并发的新写入；未确认或超时返回失败响应并保留 token 供重试。取消或 dispose 阻止晚到回执启动进程；云 transport 和服务端权威不参与这次本机交接。
 
+兼容层的写入屏障与连接撤销保留了 readiness 和已完成句柄表无法替代的两项保证。首次同步后再发生本地编辑，仍需要新的确认：`waitUntilSynced` 对 server 路由使用原生捕获版本的上传 ACK，对 peer 路由检查指定路由的协议回执。路由缺失、离线或不支持确认只使这次显式等待失败；首次同步 readiness 与本地优先写入不增加新门槛。即使借用者取消等待，有期限的上传 producer 仍由 native Repo 持有；取消不会退休其他借用者的副本。
+
+Transport owner 在 adapter 构造或 native connect 前同步登记。移除会取消获取并关闭 owner Scope，由 native finalizer 撤销注册、等待已接受的连接工作。获取在 native 注册前与完成 lease 发布前均检查取消；移除与获取失败清理共享现有的串行 close，且仅当登记仍指向自身 owner 时删除。确认释放后才允许同名后继接入。关闭失败保留 native retry owner，下次同 id add 自动重试，兄弟 id 仍可用。生命周期原语是 Scope，登记表只持有 owner，不复制 native 状态。
+
 ## 验证与限制
+
+回归 fixture 使用真实 SDK，在 baseline 后阻塞上传 POST；另以显式连接暂停驱动真实 Streams transport。断言服务端收到的字节、native 清单移除与同 id 重连；其他 native 边界用例覆盖构造/connect 中取消、晚到完成与后继隔离、释放重试及未确认 peer 回执。这些是合成 HTTP fixture，不代表生产网络验收。
+
+恢复 `d82fea54` 的 facade 后，两项真实回归 fixture 均失败。根检查在沙箱内的脚本 fixture 停止，同一完整脚本套件在沙箱外通过；受影响的 CLI 套件与完整 Shared 套件也在沙箱外通过。
 
 行为回归覆盖 cache/shortcut 释放失败后的自动恢复、共享副本、保存失败后原始字节保留、后台 observer 失败后正常关闭、workspace 清理的继续与重试、Session 释放失败后的本机房间失效，以及仅对待交接配置生效的 probe、取消和 dispose。原生 v7 host、旧 peer 兼容、快照与 Streams 套件分别保留协议覆盖；最终检查结果记录在 PR。
 真实 native 集成还覆盖失败 attach 的重试、仅由 native 借用的房间清单、反复服务端确认与本地权威，以及原有四组晚到 reconnect 成功/失败和 waiter 重试下的关闭场景。waiter 超时后仍共享保留中的 native producer，新的触发边不会重复启动它。

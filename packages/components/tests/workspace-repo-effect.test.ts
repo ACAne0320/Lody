@@ -143,6 +143,272 @@ describe('native workspace Repo ownership', () => {
 });
 
 describe('retained native release ownership', () => {
+  it.each(['make', 'connect'] as const)(
+    'removes a transport during %s and keeps a same-name successor alive after late completion',
+    async (stage) => {
+      const repo = await WorkspaceRepoLegacy.create({});
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const resources = new Set<string>();
+      const pause = Effect.promise(() => {
+        entered.resolve();
+        return release.promise;
+      }).pipe(Effect.uninterruptible);
+      const added = repo
+        .addTransport('cloud', {
+          kind: 'native-workspace-transport',
+          make: (id) =>
+            Effect.gen(function* () {
+              yield* Effect.acquireRelease(
+                Effect.sync(() => resources.add('old')),
+                () =>
+                  Effect.sync(() => {
+                    resources.delete('old');
+                  })
+              );
+              if (stage === 'make') yield* pause;
+              return {
+                id,
+                authority: 'server' as const,
+                connect: stage === 'connect' ? pause : Effect.void,
+                disconnect: Effect.void,
+                join: () =>
+                  Effect.gen(function* () {
+                    return {
+                      status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                      close: Effect.void,
+                      sync: Effect.succeed('confirmed' as const),
+                    };
+                  }),
+              };
+            }),
+        })
+        .then(
+          () => 'attached',
+          () => 'cancelled'
+        );
+      try {
+        await entered.promise;
+        const removed = repo.removeTransport('cloud');
+        if (stage === 'connect') release.resolve();
+        await removed;
+        await repo.addTransport('cloud', {
+          kind: 'native-workspace-transport',
+          make: (id) =>
+            Effect.gen(function* () {
+              yield* Effect.acquireRelease(
+                Effect.sync(() => resources.add('new')),
+                () =>
+                  Effect.sync(() => {
+                    resources.delete('new');
+                  })
+              );
+              return {
+                id,
+                connect: Effect.void,
+                disconnect: Effect.void,
+                join: () =>
+                  Effect.gen(function* () {
+                    return {
+                      status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                      close: Effect.void,
+                      sync: Effect.succeed('confirmed' as const),
+                    };
+                  }),
+              };
+            }),
+        });
+        // During construction, let the old make finish only after its successor exists.
+        release.resolve();
+        expect(await added).toBe('cancelled');
+        expect(resources).toEqual(new Set(['new']));
+        expect(await repo.runLegacy(repo.native.transportIds)).toEqual(['cloud']);
+      } finally {
+        release.resolve();
+        await added;
+        await repo.destroy();
+      }
+      expect(resources.size).toBe(0);
+    }
+  );
+
+  it('retries a failed transport release on the next add without blocking a sibling', async () => {
+    const repo = await WorkspaceRepoLegacy.create({});
+    let fail = true;
+    const specification = {
+      kind: 'native-workspace-transport' as const,
+      make: (id: string) =>
+        Effect.succeed({
+          id,
+          connect: Effect.void,
+          disconnect: Effect.suspend(() =>
+            fail && id === 'cloud'
+              ? Effect.fail(new RepoIOError('temporary disconnect failure', undefined))
+              : Effect.void
+          ),
+          join: () =>
+            Effect.gen(function* () {
+              return {
+                status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                close: Effect.void,
+                sync: Effect.succeed('confirmed' as const),
+              };
+            }),
+        }),
+    };
+    try {
+      await repo.addTransport('cloud', specification);
+      await repo.addTransport('sibling', specification);
+      await expect(repo.removeTransport('cloud')).rejects.toBeInstanceOf(RepoReleaseFailed);
+      await repo.removeTransport('sibling');
+      expect(await repo.runLegacy(repo.native.transportIds)).toEqual([]);
+      fail = false;
+      await repo.addTransport('cloud', specification);
+      expect(await repo.runLegacy(repo.native.transportIds)).toEqual(['cloud']);
+      expect(repo.hasTransport()).toBe(true);
+    } finally {
+      fail = false;
+      await repo.destroy();
+    }
+  });
+
+  it.each(['confirmed', 'offline'] as const)(
+    'requires a peer protocol receipt (%s)',
+    async (outcome) => {
+      const repo = await WorkspaceRepoLegacy.create({});
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let delivered = '';
+      try {
+        await repo.addTransport('peer', {
+          kind: 'native-workspace-transport',
+          make: (id) =>
+            Effect.succeed({
+              id,
+              authority: 'peer',
+              connect: Effect.void,
+              disconnect: Effect.void,
+              join: (_target, replica) =>
+                Effect.gen(function* () {
+                  return {
+                    status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                    state: yield* SubscriptionRef.make<RoomState>({
+                      connection: 'joined',
+                      baseline: true,
+                      current: true,
+                      uploadPending: false,
+                      epoch: 1,
+                    }),
+                    close: Effect.void,
+                    sync: Effect.promise(async () => {
+                      entered.resolve();
+                      await release.promise;
+                      if (outcome === 'confirmed' && replica.kind === 'doc')
+                        delivered = replica.lease.doc.getText('body').toString();
+                      return outcome;
+                    }),
+                  };
+                }),
+            }),
+        });
+        const room = await repo.joinDocRoom('handoff');
+        await room.subscription('peer').firstSyncedWithRemote;
+        const doc = (await repo.openPersistedDoc('handoff')).doc;
+        doc.getText('body').insert(0, 'new write');
+        doc.commit();
+        let settled = false;
+        const synced = room
+          .subscription('peer')
+          .waitUntilSynced()
+          .then(
+            () => {
+              settled = true;
+              return 'confirmed';
+            },
+            () => {
+              settled = true;
+              return 'unconfirmed';
+            }
+          );
+        await entered.promise;
+        expect(settled).toBe(false);
+        release.resolve();
+        expect(await synced).toBe(outcome === 'confirmed' ? 'confirmed' : 'unconfirmed');
+        expect(delivered).toBe(outcome === 'confirmed' ? 'new write' : '');
+        room.unsubscribe();
+      } finally {
+        release.resolve();
+        await repo.destroy();
+      }
+    }
+  );
+
+  it.each(['acked', 'offline', 'unsupported'] as const)(
+    'requires a captured server write receipt even when room status stays synced (%s)',
+    async (outcome) => {
+      const repo = await WorkspaceRepoLegacy.create({});
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let captured: unknown;
+      try {
+        await repo.addTransport('cloud', {
+          kind: 'native-workspace-transport',
+          make: (id) =>
+            Effect.succeed({
+              id,
+              authority: 'server',
+              connect: Effect.void,
+              disconnect: Effect.void,
+              join: () =>
+                Effect.gen(function* () {
+                  return {
+                    status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                    close: Effect.void,
+                    sync: Effect.succeed('confirmed' as const),
+                    ...(outcome === 'unsupported'
+                      ? {}
+                      : {
+                          awaitUploaded: (version: Record<string, unknown>) =>
+                            Effect.promise(async () => {
+                              captured = version;
+                              entered.resolve();
+                              await release.promise;
+                              return outcome;
+                            }),
+                        }),
+                  };
+                }),
+            }),
+        });
+        const room = await repo.joinDocRoom('upload');
+        await repo.runLegacy(room.native.awaitSynced('cloud'));
+        const doc = (await repo.openPersistedDoc('upload')).doc;
+        doc.getText('body').insert(0, 'new write');
+        doc.commit();
+        const version = Object.fromEntries(doc.version().toJSON());
+        const uploaded = room
+          .subscription('cloud')
+          .waitUntilSynced()
+          .then(
+            () => 'acked',
+            () => 'unconfirmed'
+          );
+        if (outcome !== 'unsupported') {
+          expect(await Promise.race([uploaded, entered.promise.then(() => 'uploading')])).toBe(
+            'uploading'
+          );
+          expect(captured).toEqual(version);
+          release.resolve();
+        }
+        expect(await uploaded).toBe(outcome === 'acked' ? 'acked' : 'unconfirmed');
+        room.unsubscribe();
+      } finally {
+        release.resolve();
+        await repo.destroy();
+      }
+    }
+  );
+
   it('closes storage after a background observer fails without poisoning shutdown', async () => {
     const adapter = storage();
     const repo = await WorkspaceRepoLegacy.create({ storageAdapter: adapter });

@@ -19,6 +19,11 @@
   attaches. Do not rebuild the full Promise Repo subscription or query APIs.
 - Pass the room borrow's signal to native waits at Promise boundaries; retiring
   one borrower must cancel its wait without retiring another borrower's replica.
+- Legacy `waitUntilSynced` is a selected-route write barrier: require a captured
+  server upload ACK or a peer protocol receipt, never readiness alone.
+- Register the transport Scope owner before construction/connect can suspend.
+  Removal cancels pending acquisition; late completion cannot publish or remove
+  a successor. The next add retries a retained release failure for that id.
 - Record newly authored Provider rows at the writer boundary. Only probes with
   a pending config write wait for the selected local peer; ordinary refreshes
   need no data-plane receipt. Clear only the write covered by that receipt.

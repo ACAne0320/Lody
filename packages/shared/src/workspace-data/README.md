@@ -25,6 +25,13 @@ failed attaches and owns pending SDK work. Application recovery loops request
 that operation rather than supervising a second set of per-room rejoin jobs.
 Native waits at Promise entries use the room borrow's signal so retiring one
 Session cancels only its wait while independent borrowers remain writable.
+First-sync readiness stays separate from `waitUntilSynced`: the latter captures
+the current version for a server upload ACK, or requires a selected peer protocol
+receipt. Offline, absent and unsupported routes cannot report write success.
+Transport Scope owners are registered before adapter construction and native
+connect. Removing one cancels its acquisition and closes its Scope, including
+native registration and accepted connection work. Late completion cannot publish
+the old owner or delete its successor; the next add retries failed release.
 
 The writer records newly authored Provider rows. A local ACP probe waits for
 Machine Flock peer coverage only while its config has a pending write, returning

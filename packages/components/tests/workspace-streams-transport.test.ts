@@ -231,7 +231,7 @@ const docUrl = (workspaceId: WorkspaceId, docId: string) =>
   });
 
 /** Byte storage only: CRDT encoding, merge, protection and cursor logic all run in the SDK. */
-function createByteServer() {
+function createByteServer(beforeRequest?: (url: URL, method: string) => Promise<void>) {
   type Room = { batches: Uint8Array[]; snapshot?: { offset: string; body: Uint8Array } };
   const rooms = new Map<string, Room>();
   const requests: { url: URL; method: string; body: Uint8Array; auth: string | null }[] = [];
@@ -270,6 +270,7 @@ function createByteServer() {
     const body = new Uint8Array(await new Response(init?.body).arrayBuffer());
     const headers = new Headers(init?.headers);
     requests.push({ url, method, body, auth: headers.get('Authorization') });
+    await beforeRequest?.(url, method);
     const path = url.pathname.replace(/\/(bootstrap|snapshot(?:\/.*)?)$/, '');
     const value = room(path);
     const currentTail = () => tail(path);
@@ -424,6 +425,131 @@ class FailingStorage extends IndexedDBStorageAdaptor {
 }
 
 describe('workspace Streams content boundary', () => {
+  it('waits for the current write upload ACK after the real SDK already has a baseline', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let block = false;
+    const server = createByteServer(async (_url, method) => {
+      if (block && method === 'POST') {
+        entered.resolve();
+        await release.promise;
+      }
+    });
+    const tab = await openTab(`upload-barrier-${++sequence}` as WorkspaceId);
+    const { repo } = tab;
+    await repo.addTransport(
+      'cloud',
+      createWorkspaceStreamsTransport({
+        repo,
+        workspaceId: tab.workspaceId,
+        documentRemoteCursorStore: tab.cursor.current,
+        auth: () => Effect.succeed('streams-jwt'),
+        streamsBaseUrl,
+        shardHostSuffix: undefined,
+      })
+    );
+    const room = await repo.joinDocRoom('doc-a');
+    const binding = room.subscription('cloud');
+    try {
+      await binding.firstSyncedWithRemote;
+      await repo.runLegacy(room.native.awaitSynced('cloud'));
+      block = true;
+      const doc = (await repo.openPersistedDoc('doc-a')).doc;
+      doc.getMap('data').set('value', 'must reach server');
+      doc.commit();
+      let confirmed = false;
+      const uploaded = binding.waitUntilSynced().then(() => {
+        confirmed = true;
+      });
+      await entered.promise;
+      // Let already-ready waiters settle before checking the held POST barrier.
+      await repo.runLegacy(Effect.yieldNow);
+      expect(confirmed).toBe(false);
+      const path = new URL(docUrl(tab.workspaceId, 'doc-a')).pathname;
+      expect(server.room(path).batches).toEqual([]);
+      const retired = await repo.joinDocRoom('doc-a');
+      const cancelled = retired
+        .subscription('cloud')
+        .waitUntilSynced()
+        .then(
+          () => 'confirmed',
+          () => 'cancelled'
+        );
+      retired.unsubscribe();
+      expect(await cancelled).toBe('cancelled');
+      expect(confirmed).toBe(false);
+      release.resolve();
+      await uploaded;
+      const received = new LoroDoc();
+      for (const batch of server.room(path).batches) {
+        for (let cursor = 0; cursor < batch.length;) {
+          const length = new DataView(batch.buffer, batch.byteOffset).getUint32(cursor);
+          received.import(batch.slice(cursor + 4, cursor + 4 + length));
+          cursor += 4 + length;
+        }
+      }
+      expect(received.toJSON()).toEqual(doc.toJSON());
+    } finally {
+      release.resolve();
+      room.unsubscribe();
+    }
+  });
+
+  it('revokes a real Streams attachment while its initial room join is still pending', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    createByteServer();
+    const tab = await openTab(`remove-connecting-${++sequence}` as WorkspaceId);
+    const { repo } = tab;
+    const room = await repo.joinDocRoom('doc-a');
+    const specification = createWorkspaceStreamsTransport({
+      repo,
+      workspaceId: tab.workspaceId,
+      documentRemoteCursorStore: tab.cursor.current,
+      auth: () => Effect.succeed('streams-jwt'),
+      streamsBaseUrl,
+      shardHostSuffix: undefined,
+    });
+    const added = repo
+      .addTransport('cloud', {
+        ...specification,
+        make: (id) =>
+          specification.make(id).pipe(
+            Effect.map((transport) => ({
+              ...transport,
+              connect: transport.connect.pipe(
+                Effect.andThen(
+                  Effect.promise(() => {
+                    entered.resolve();
+                    return release.promise;
+                  }).pipe(Effect.uninterruptible)
+                )
+              ),
+            }))
+          ),
+      })
+      .then(
+        () => 'attached',
+        () => 'cancelled'
+      );
+    try {
+      await entered.promise;
+      expect(await repo.runLegacy(repo.native.transportIds)).toContain('cloud');
+      const removed = repo.removeTransport('cloud');
+      release.resolve();
+      await removed;
+      expect(await added).toBe('cancelled');
+      expect(await repo.runLegacy(repo.native.transportIds)).toEqual([]);
+      expect(repo.hasTransport()).toBe(false);
+      await repo.addTransport('cloud', specification);
+      await room.subscription('cloud').firstSyncedWithRemote;
+      expect(await repo.runLegacy(repo.native.transportIds)).toEqual(['cloud']);
+    } finally {
+      release.resolve();
+      room.unsubscribe();
+    }
+  });
+
   it.each([
     null,
     { mode: 'unknown' },

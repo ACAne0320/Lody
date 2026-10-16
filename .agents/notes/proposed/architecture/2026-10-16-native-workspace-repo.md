@@ -81,7 +81,36 @@ Unconfirmed delivery or timeout returns a failure response and keeps the token
 for retry. Cancellation/disposal prevents late process launches. Cloud transports
 and server authority are outside this local causal handoff.
 
+The compatibility write barrier and attachment cancellation preserve two contracts
+that readiness and a completed-handle registry alone cannot provide. After a
+baseline, another local edit still needs fresh confirmation: `waitUntilSynced`
+uses native captured-version upload ACKs for a server route, and checks the
+selected route's protocol receipt for a peer. Missing, offline or unsupported
+confirmation fails only that explicit wait. First-sync readiness and local-first
+writes gain no new gate. Native Repo owns the bounded upload producer even if a
+borrower cancels its wait; cancellation does not retire another borrower's replica.
+
+The transport owner is registered synchronously before adapter construction or
+native connect. Remove aborts acquisition and closes that owner Scope; native
+finalizers revoke registration and drain accepted connection work. Both before
+native registration and before publishing a completed lease, acquisition checks
+cancellation. Removal and acquisition cleanup share the existing serialized close,
+and delete the registry entry only if it still identifies that owner. A successor
+can start after confirmed release. A failed close retains the native retry owner;
+the next add for that id retries it, while sibling ids remain usable. Scope is the
+lifetime primitive; the registry retains ownership, not another native status.
+
 ## Verification and limits
+
+Regression fixtures exercise the real SDK with an upload POST held after baseline,
+and a real Streams transport with an explicit connection suspension. They verify
+server-received bytes, removal from native inventory and same-id reconnection.
+Additional native boundary cases cover cancellation during construction/connect,
+late completion versus a successor, release retry, and unconfirmed peer receipts.
+Restoring the `d82fea54` facade makes both real regression fixtures fail. The
+sandboxed root check stops in a script fixture; the same complete script suite
+passes outside the sandbox, as do the affected CLI and full Shared suites.
+These are synthetic HTTP fixtures, not production-network acceptance.
 
 Behavioral regressions cover automatic retry after failed cache and shortcut
 release, shared replica ownership, original-byte preservation after failed save,
