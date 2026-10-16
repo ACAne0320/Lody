@@ -90,7 +90,7 @@ export * from './machine-protocol-capabilities';
 export * from './pi-extensions';
 export * from './repo-doc-meta';
 export * from './session-input';
-export * from './session-preparation';
+export * from './acp-config-option-sensitivity';
 export * from './session-bootstrap';
 export * from './goal';
 export * from './comment-reference-format';

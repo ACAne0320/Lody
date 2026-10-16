@@ -62,7 +62,7 @@ function createLogger(): Logger {
   return logger;
 }
 
-describe('AgentClient session preparation gate', () => {
+describe('AgentClient session startup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     connectionMocks.initialize.mockResolvedValue({ agentCapabilities: {} });
@@ -134,15 +134,10 @@ describe('AgentClient session preparation gate', () => {
       });
       await client.startSession(
         {} as never,
-        '/provisional',
+        '/worktree',
         operation === 'load' || operation === 'resume' ? ('existing' as never) : undefined,
         {},
         undefined,
-        async () => ({
-          workdir: '/worktree',
-          resumeSessionId:
-            operation === 'load' || operation === 'resume' ? ('existing' as never) : undefined,
-        }),
         operation === 'fork' ? ('source' as never) : undefined
       );
       const request =
@@ -184,46 +179,6 @@ describe('AgentClient session preparation gate', () => {
     });
     await client.startSession({} as never, '/worktree');
     expect(connectionMocks.newSession).toHaveBeenCalledWith({ cwd: '/worktree', mcpServers: [] });
-  });
-
-  it('initializes before the claim and starts the ACP session only with the claimed workdir', async () => {
-    const target = deferred<{ workdir: string }>();
-    const stages: string[] = [];
-    const client = new AgentClient({
-      logger: createLogger(),
-      sessionId: 'session-1' as SessionId,
-      terminalManager: {} as never,
-      onStartupStage: (event) => stages.push(event.type),
-      onUpdateMessage: vi.fn(),
-      onRequestPermission: vi.fn(),
-    });
-
-    const startPromise = client.startSession(
-      {} as never,
-      '/provisional',
-      undefined,
-      {},
-      undefined,
-      async () => await target.promise
-    );
-
-    await vi.waitFor(() => expect(stages).toEqual(['initialize_start', 'initialize_end']));
-    expect(connectionMocks.initialize).toHaveBeenCalledTimes(1);
-    expect(connectionMocks.newSession).not.toHaveBeenCalled();
-    expect(stages).toEqual(['initialize_start', 'initialize_end']);
-
-    target.resolve({ workdir: '/claimed' });
-    await expect(startPromise).resolves.toEqual({ sessionId: 'acp-session-1' });
-    expect(connectionMocks.newSession).toHaveBeenCalledWith({
-      cwd: '/claimed',
-      mcpServers: [],
-    });
-    expect(stages).toEqual([
-      'initialize_start',
-      'initialize_end',
-      'new_session_start',
-      'new_session_end',
-    ]);
   });
 
   it('starts initial and replacement sessions with selected config option values', async () => {
@@ -666,35 +621,6 @@ describe('AgentClient session preparation gate', () => {
         }),
       ],
     });
-  });
-
-  it('aborts while waiting for a claim without creating an ACP session', async () => {
-    const target = deferred<{ workdir: string }>();
-    const startupAbort = deferred<never>();
-    const client = new AgentClient({
-      logger: createLogger(),
-      sessionId: 'session-aborted' as SessionId,
-      terminalManager: {} as never,
-      onUpdateMessage: vi.fn(),
-      onRequestPermission: vi.fn(),
-    });
-
-    const startPromise = client.startSession(
-      {} as never,
-      '/provisional',
-      undefined,
-      {},
-      startupAbort.promise,
-      async () => await target.promise
-    );
-    await vi.waitFor(() => expect(connectionMocks.initialize).toHaveBeenCalledTimes(1));
-
-    const abortError = new Error('preparation cancelled');
-    abortError.name = 'AbortError';
-    startupAbort.reject(abortError);
-
-    await expect(startPromise).rejects.toBe(abortError);
-    expect(connectionMocks.newSession).not.toHaveBeenCalled();
   });
 
   it('prepares a turn-addressed fork before adopting it', async () => {

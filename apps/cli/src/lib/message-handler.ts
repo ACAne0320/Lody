@@ -2489,47 +2489,33 @@ export class MessageHandler {
     });
   }
 
-  private async prepareSessionWithAccessCheck(
-    spec: SessionPreparationSpec
-  ): Promise<SessionPrepareResponse> {
-    const { sessionId } = spec;
-    const access = await this.verifyMachineAccess({
-      sessionId,
-      requesterUserId: spec.requestedByUserId,
-      ...(spec.project?.kind === 'local' ? { localProjectId: spec.project.localProjectId } : {}),
-    });
-    if (access.outcome !== 'allowed') {
-      return {
-        type: 'session/prepare_response',
-        preparationId: spec.preparationId,
-        sessionId,
-        accepted: false,
-        disposition: access.outcome === 'denied' ? 'not-owned' : 'error',
-        error: access.outcome === 'denied' ? access.reason : access.error,
-      };
-    }
-    return this.sessionManager.requestSessionPreparation(spec);
+  /**
+   * Draft session preparation is retired. Desktops that predate its removal
+   * still ask for it, so both requests answer at once without doing any work.
+   * Prepare reports an accepted duplicate: an older desktop then holds that one
+   * lease until the draft idles or is sent. A rejection would make it ask again,
+   * and cancel, after every pause in typing.
+   */
+  private declineSessionPreparation(spec: SessionPreparationSpec): SessionPrepareResponse {
+    return {
+      type: 'session/prepare_response',
+      preparationId: spec.preparationId,
+      sessionId: spec.sessionId,
+      accepted: true,
+      disposition: 'duplicate',
+    };
   }
 
-  private async cancelSessionPreparationWithAccessCheck(
+  private declineSessionPreparationCancel(
     args: SessionPreparationCancelSpec
-  ): Promise<SessionPrepareCancelResponse> {
-    const { sessionId } = args;
-    const access = await this.verifyMachineAccess({
-      sessionId,
-      requesterUserId: args.requestedByUserId,
-    });
-    if (access.outcome !== 'allowed') {
-      return {
-        type: 'session/prepare-cancel_response',
-        preparationId: args.preparationId,
-        sessionId,
-        cancelled: false,
-        disposition: access.outcome === 'denied' ? 'not-owned' : 'error',
-        error: access.outcome === 'denied' ? access.reason : access.error,
-      };
-    }
-    return this.sessionManager.cancelSessionPreparation(args);
+  ): SessionPrepareCancelResponse {
+    return {
+      type: 'session/prepare-cancel_response',
+      preparationId: args.preparationId,
+      sessionId: args.sessionId,
+      cancelled: false,
+      disposition: 'not-found',
+    };
   }
 
   // Single access choke point for prompt-handoff steer: both RPC arrival paths
@@ -3326,9 +3312,8 @@ export class MessageHandler {
             disposition,
           };
         },
-        prepareSession: async (spec) => await this.prepareSessionWithAccessCheck(spec),
-        cancelSessionPreparation: async (args) =>
-          await this.cancelSessionPreparationWithAccessCheck(args),
+        prepareSession: async (spec) => this.declineSessionPreparation(spec),
+        cancelSessionPreparation: async (args) => this.declineSessionPreparationCancel(args),
         resolveSessionHistoryOwnerSessionId: this.resolveSessionHistoryOwnerSessionId,
         readSessionHistory: async ({ sessionId, query }) =>
           await this.readSessionHistoryForRpc(sessionId, query),
@@ -3434,8 +3419,6 @@ export class MessageHandler {
       userResolver: this.sessionUserResolver,
       workspaceDocument: this.workspaceDocument,
       executionService: this.executionService,
-      getPreparedSessionLaunchConfig: (input) =>
-        this.sessionManager.getPreparedSessionLaunchConfig(input),
       accessPolicy: makeSessionAccessPolicy(this.localWorkspaceCatalog),
       canUseMachine: async (args) => await this.verifyMachineAccess(args),
       // P5/D11 snapshot bookkeeping for the watcher's background owner
@@ -6650,9 +6633,9 @@ export class MessageHandler {
         };
       }
       case 'session/prepare':
-        return await this.prepareSessionWithAccessCheck(request.params);
+        return this.declineSessionPreparation(request.params);
       case 'session/prepare-cancel':
-        return await this.cancelSessionPreparationWithAccessCheck(request.params);
+        return this.declineSessionPreparationCancel(request.params);
       case 'ios-simulator/agent-control': {
         const sessionId = request.params.sessionId as SessionId;
         const invocation = this.executionService.getActiveInvocationContext(sessionId);

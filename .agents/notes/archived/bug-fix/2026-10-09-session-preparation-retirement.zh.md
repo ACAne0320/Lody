@@ -1,6 +1,7 @@
 # 会话预热退出清理屏障
 
 Status: implemented
+Archived: 2026-10-16
 Translation: current
 
 [English](2026-10-09-session-preparation-retirement.md)
@@ -22,10 +23,10 @@ Session manager 已在冷启动前等待 claim 未命中或 discard 返回的清
   -> 冷启动或替代预热可以使用工作目录
 ```
 
-此修改实现[预热交接约定](../../../../specs/session-worktree-lifecycle.zh.md#预热交接)，不改变归档恢复保留规则、跨进程标记所有权，也不会修复已安装应用中已损坏的驻留会话。
+此修改实现[预热交接约定](../../implemented/simplification/2026-10-16-remove-draft-session-preparation.zh.md)，不改变归档恢复保留规则、跨进程标记所有权，也不会修复已安装应用中已损坏的驻留会话。
 
 释放失败最初会永久保留 rejection；现在由下一个调用方重试
-（[未释放资源可重试](2026-10-15-unreleased-session-resources-retry.zh.md)）。
+（[未释放资源可重试](../../implemented/bug-fix/2026-10-15-unreleased-session-resources-retry.zh.md)）。
 
 ## 验证与限制
 

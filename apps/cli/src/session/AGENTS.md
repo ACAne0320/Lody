@@ -86,11 +86,10 @@
 
 ## Sagas
 
-- Peek/claim are synchronous; publish before `start()`. Peek never transfers ownership.
-  Cold/replacement starts await same-session cleanup; failures block until a retry, including late creation.
-  Before adoption: marked worktree and `newSession` only; no doc, setup, history or events.
-- Credentials are runtime leases: adopt retains, dispose releases that generation; local has none.
-- Dispatch/claim rescan `buildSessionLaunchConfig`; await incompatible cleanup.
+- ACP processes and worktrees start at dispatch, never while a draft is typed. Answer
+  `session/prepare`/`-cancel` at once as no-ops (prepare: accepted duplicate), with no access check
+  ([decision](../../../../.agents/notes/implemented/simplification/2026-10-16-remove-draft-session-preparation.md)).
+- Credentials are runtime leases: a failed creation releases that generation; local has none.
 - Nested child Sessions are rejected: ownership resolves one parent hop only.
 - Fork and continuation share `resolveSessionAcpTargetId`; source runtime config copies only at its matching user-turn fence.
 - Fork commits at `persistPendingChanges()`, never cloud sync. Persist its placeholder

@@ -17,7 +17,7 @@ Translation: current
 
 一台负载较高的 Linux daemon 上的一次失败展示了完整过程。turn 到达时的设置与预备 Session
 不一致，接管失败，冷启动按照
-[预备交接](../../../../specs/session-worktree-lifecycle.md#preparation-handoff)
+[预备交接](../../implemented/simplification/2026-10-16-remove-draft-session-preparation.zh.md)
 的要求等待预备 Session 回收。回收结束了 agent，并在按仓库加的文件锁下删除了预备的
 worktree 和分支。分支删除后约十秒，回收以空原因失败，turn 在等待 75 秒后失败。
 
