@@ -185,14 +185,17 @@ export class LedgerSubmission extends Context.Service<
         resume: Effect.fn('@lody/e2ee-core/LedgerSubmission.resume')(function* () {
           return yield* recover();
         }),
-        acknowledge: (result) =>
-          store(
+        acknowledge: Effect.fn('@lody/e2ee-core/LedgerSubmission.acknowledge')(function* (result) {
+          return yield* store(
             journal.acknowledge(anchor, {
               outcome: result.outcome,
               record: new Uint8Array(result.record),
             })
-          ),
-        pending: () => store(journal.load(anchor)),
+          );
+        }),
+        pending: Effect.fn('@lody/e2ee-core/LedgerSubmission.pending')(function* () {
+          return yield* store(journal.load(anchor));
+        }),
       });
     })
   );

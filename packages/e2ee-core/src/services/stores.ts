@@ -15,6 +15,7 @@ import type { LocalStoreError } from './errors';
 export class InstalledKeyStore extends Context.Service<
   InstalledKeyStore,
   {
+    /** Read an owned protected blob for the epoch, or `null`; never return plaintext or treat a read failure as absence. */
     load(epoch: number): Effect.Effect<Uint8Array | null, LocalStoreError>;
     /** Keep an existing blob for `epoch`; otherwise store `blob`. */
     insertIfAbsent(epoch: number, blob: Uint8Array): Effect.Effect<void, LocalStoreError>;
@@ -69,6 +70,7 @@ export class ReceiveJournal extends Context.Service<
       readonly frame: Uint8Array | null;
       readonly publication: Uint8Array | null;
     }): Effect.Effect<void, LocalStoreError>;
+    /** Read the original task and its phase, or `null`; return owned byte buffers for workflow verification. */
     load(id: string): Effect.Effect<ReceiveTaskRow | null, LocalStoreError>;
     /** `Install` → `Report` with `report`, only if no report is queued yet (else `conflict`). */
     queueReport(id: string, report: Uint8Array): Effect.Effect<void, LocalStoreError>;
@@ -121,12 +123,14 @@ export class RepairJournal extends Context.Service<
       readonly epoch: number;
       readonly rejected: string | null;
     }): Effect.Effect<void, LocalStoreError>;
+    /** Read the durable request, or `null`; its stable id and rejected digest must survive reopen unchanged. */
     load(id: string): Effect.Effect<RepairTaskRow | null, LocalStoreError>;
     /** `Pending` → `phase` (else `conflict`). */
     finish(
       id: string,
       phase: Exclude<RepairTaskPhase, 'Pending'>
     ): Effect.Effect<void, LocalStoreError>;
+    /** Page pending tasks in id order strictly after `cursor`; `next` is the last returned id only when more remain. */
     pending(
       cursor: string | null,
       limit: number
@@ -160,6 +164,7 @@ export class RepairJournal extends Context.Service<
 export class DeliveryOutbox extends Context.Service<
   DeliveryOutbox,
   {
+    /** Return an owned copy of the first saved ciphertext for this slot, or `null`; never replace it on retry. */
     load(slot: string): Effect.Effect<Uint8Array | null, LocalStoreError>;
     /** Keep the first frame stored for `slot` and return it (a racing loser gets the winner's). */
     saveOriginal(slot: string, frame: Uint8Array): Effect.Effect<Uint8Array, LocalStoreError>;
@@ -202,12 +207,14 @@ export class DistributionJournal extends Context.Service<
       readonly recipient: string;
       readonly revision: number;
     }): Effect.Effect<boolean, LocalStoreError>;
+    /** Read the durable task including consumption state, or `null`; the workflow validates its identity. */
     load(id: string): Effect.Effect<DistributionTaskRow | null, LocalStoreError>;
     /** `Pending` → `phase` (else `conflict`). */
     finish(
       id: string,
       phase: Exclude<DistributionTaskPhase, 'Pending'>
     ): Effect.Effect<void, LocalStoreError>;
+    /** Page pending task ids strictly after `cursor`; preserve blocked tasks and return `next` only when more remain. */
     pending(
       cursor: string | null,
       limit: number
@@ -245,7 +252,7 @@ export interface EpochCandidateRow {
   readonly record: Uint8Array;
   /** Canonical CBOR list of (recipient, envelope frame) for the staged group. */
   readonly envelopes: Uint8Array;
-  /** The new epoch key sealed by {@link KeyProtector}; emptied after a `Conflict`. */
+  /** The new epoch key sealed by {@link CandidateProtector}; emptied after a `Conflict`. */
   readonly blob: Uint8Array;
   readonly outcome: 'Committed' | 'Conflict' | null;
   /** Whether the epoch was current or already historical when first installed. */
@@ -266,6 +273,7 @@ export class EpochCandidateStore extends Context.Service<
   {
     /** The unconsumed candidate, if any (`corrupt` if more than one). */
     active(): Effect.Effect<EpochCandidateRow | null, LocalStoreError>;
+    /** Read a candidate including terminal or consumed state, or `null`; return owned copies of its original bytes. */
     load(id: string): Effect.Effect<EpochCandidateRow | null, LocalStoreError>;
     /** Store a new candidate (`conflict` if another one is unconsumed). */
     insert(row: EpochCandidateRow): Effect.Effect<void, LocalStoreError>;

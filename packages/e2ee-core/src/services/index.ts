@@ -23,7 +23,13 @@
  *
  * @module
  */
-export { BackendError, KeyProtectorError, LedgerLogError, LocalStoreError } from './errors';
+export {
+  BackendError,
+  KeyProtectorError,
+  LedgerLogError,
+  LedgerViewSourceError,
+  LocalStoreError,
+} from './errors';
 export {
   CandidateProtector,
   EpochStagingStore,

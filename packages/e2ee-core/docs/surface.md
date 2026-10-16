@@ -2,9 +2,11 @@
 
 [中文](surface.zh.md) · [Reading guide](../README.md)
 
-Every export of every public entry, grouped by purpose. Each export has JSDoc
+Every export of every public entry, grouped by purpose. Each export, namespace export and service member has JSDoc
 (enforced by `pnpm --filter @lody/e2ee-core check:docs` and
-`test/public-docs.test.ts`). Print the exact current list with
+`test/public-docs.test.ts`). This checks comment presence, not whether an
+explanation is sufficient; reviewers must still check ownership, failures and
+retry semantics. Print the exact current list with
 `pnpm --filter @lody/e2ee-core exec tsx scripts/check-public-docs.ts --list`.
 
 `@lody/e2ee-core/internal` is not public: it re-exports internals for this
@@ -34,7 +36,7 @@ repository's tests and the Lab, with no compatibility promise.
 | Platform | `DeviceIdentity`, `KeyProtector`, `CandidateProtector`, `nativeDeviceSigner`, `DeviceSigner` |
 | Application | `WorkspaceScope`, `LedgerViewSource`, `LedgerSync`, `EpochPublicationSource` |
 | Local storage | `LedgerPinStore`, `LedgerFeedStore`, `LedgerFeedContents`, `LedgerFeedTail`, `InstalledKeyStore`, `ReceiveJournal`, `ReceiveTaskRow`, `ReceiveTaskPhase`, `RepairJournal`, `RepairTaskRow`, `RepairTaskPhase`, `DistributionJournal`, `DistributionTaskRow`, `DistributionTaskPhase`, `DeliveryOutbox`, `EpochCandidateStore`, `EpochCandidateRow`, `SubmissionJournal`, `SubmissionEntry`, `SubmissionOutcome`, `SubmissionResult` |
-| Port errors | `BackendError`, `LedgerLogError`, `LocalStoreError`, `KeyProtectorError`, `LedgerFeedError` |
+| Port errors | `BackendError`, `LedgerLogError`, `LedgerViewSourceError`, `LocalStoreError`, `KeyProtectorError`, `LedgerFeedError` |
 | Value types | `GenesisHash`, `SigningPublicKey`, `LedgerView`, `LedgerCheckpoint`, `LedgerReadPage`, `LedgerFeedState`, `MailboxSlot`, `EpochStagedGroup`, `EpochStagedGroupKey` |
 | Recovery | `RecoveryVaultStore`, `RecoveryVaultLocalStore`, `VaultCiphertext` |
 

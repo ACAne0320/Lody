@@ -37,6 +37,20 @@ export class LedgerLogError extends Schema.TaggedError<LedgerLogError>()('Ledger
 }) {}
 
 /**
+ * The application could not supply its verified ledger view. Wrap an expected
+ * feed, storage or transport failure in `cause`; defects and interruption stay
+ * in Effect's Cause channel. This is an availability failure, not permission
+ * or rollback evidence. `VerifiedLedger` reports it as `reason: 'source'`
+ * without advancing its durable pin. Do not display the raw cause to users.
+ *
+ * @category Errors
+ */
+export class LedgerViewSourceError extends Schema.TaggedError<LedgerViewSourceError>()(
+  'LedgerViewSourceError',
+  { cause: Schema.optional(Schema.Defect()) }
+) {}
+
+/**
  * A backend (mailbox, staging, vault, invitation) request failed or was refused.
  *
  * Backends are untrusted for authority, so this error never carries a decision

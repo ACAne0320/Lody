@@ -3,6 +3,7 @@ import { Context, Effect, Layer, Result, Semaphore } from 'effect';
 import * as Bytes from '../foundation/bytes';
 import { bytesEqual } from '../foundation/cbor';
 import { LedgerViewSource } from '../../services/ledger';
+import { LedgerViewSourceError } from '../../services/errors';
 import { LedgerFeedStore, type LedgerFeedTail } from '../../services/stores';
 import { WorkspaceScope } from '../../services/workspace';
 import type { LocalStoreError } from '../../services/errors';
@@ -164,7 +165,9 @@ const verifyOrigin = (anchor: Bytes.GenesisHash, origin: LedgerFeedOrigin) =>
 export class LedgerFeed extends Context.Service<
   LedgerFeed,
   {
+    /** Return the verified in-memory view and durable position; a closed owner fails with LedgerFeedError. */
     current(): Effect.Effect<LedgerFeedState, LedgerFeedError>;
+    /** Verify one page against the independently supplied checkpoint, then atomically persist records and position. */
     accept(
       page: LedgerReadPage,
       checkpoint: LedgerCheckpoint
@@ -312,7 +315,11 @@ export class LedgerFeed extends Context.Service<
     Effect.gen(function* () {
       const feed = yield* LedgerFeed;
       return LedgerViewSource.of({
-        current: () => feed.current().pipe(Effect.map((state) => state.view)),
+        current: () =>
+          feed.current().pipe(
+            Effect.map((state) => state.view),
+            Effect.mapError((cause) => new LedgerViewSourceError({ cause }))
+          ),
       });
     })
   );
