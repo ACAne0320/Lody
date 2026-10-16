@@ -1760,11 +1760,6 @@ export class LoroDocumentManager {
     this.logger.debug(`Started watching document existence for machine ${machineId}`);
   }
 
-  /** Cleanup errors elsewhere must not fence a workspace whose presence already ended. */
-  isPresenceReleased(): boolean {
-    return this.presenceRuntime?.isReleased() ?? true;
-  }
-
   async cleanUp(options: { fast?: boolean; preserveSessionStatus?: boolean } = {}) {
     this.cleaningUp = true;
     let presenceCleanupFailure: unknown;

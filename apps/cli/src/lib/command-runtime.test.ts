@@ -53,14 +53,9 @@ const commandScope = {
 };
 const makeCommandManager = () => ({
   live: true,
-  presenceReleased: false,
   writes: [] as string[],
   async cleanUp() {
     this.live = false;
-    this.presenceReleased = true;
-  },
-  isPresenceReleased() {
-    return this.presenceReleased;
   },
   write(value: string) {
     if (!this.live) throw new Error('Manager closed');
@@ -251,16 +246,15 @@ describe('workspace command manager sharing', () => {
     expect(manager.live).toBe(false);
   });
 
-  it('admits a waiting command after failed cleanup has released presence', async () => {
+  it('reports a failed cleanup once and never fences waiting or later commands', async () => {
     const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
     const closing = Promise.withResolvers<void>();
     const finish = Promise.withResolvers<void>();
-    const failure = new Error('Synthetic transport cleanup failure');
+    const failure = new Error('Synthetic presence release failure');
     const old = makeCommandManager();
     old.cleanUp = async () => {
       closing.resolve();
       await finish.promise;
-      old.presenceReleased = true;
       throw failure;
     };
     const errors: unknown[] = [];
@@ -268,67 +262,40 @@ describe('workspace command manager sharing', () => {
       'workspace',
       commandScope,
       async () => old,
-      async () => 'accepted',
+      async (owner) => {
+        owner.write('accepted');
+        return 'accepted';
+      },
       (error) => errors.push(error)
     );
     await closing.promise;
-    const next = makeCommandManager();
+    const waiting = makeCommandManager();
     const incoming = withManager(
       'workspace',
       commandScope,
-      async () => {
-        expect(old.isPresenceReleased()).toBe(true);
-        return next;
-      },
-      async (owner) => owner.write('next command'),
+      async () => waiting,
+      async (owner) => owner.write('waiting command'),
       (error) => errors.push(error)
     );
     try {
       finish.resolve();
       expect(await first).toBe('accepted');
       await incoming;
-      expect(next.writes).toEqual(['next command']);
+      expect(waiting.writes).toEqual(['waiting command']);
+      const later = makeCommandManager();
+      await withManager(
+        'workspace',
+        commandScope,
+        async () => later,
+        async (owner) => owner.write('later command'),
+        (error) => errors.push(error)
+      );
+      expect(later.writes).toEqual(['later command']);
       expect(errors).toEqual([failure]);
     } finally {
       finish.resolve();
       await Promise.allSettled([first, incoming]);
     }
-  });
-
-  it('preserves an accepted result and fences cleanup with unreleased presence', async () => {
-    const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
-    const failure = new Error('Synthetic cleanup failure');
-    const manager = makeCommandManager();
-    manager.cleanUp = async () => {
-      throw failure;
-    };
-    const errors: unknown[] = [];
-    expect(
-      await withManager(
-        'workspace',
-        commandScope,
-        async () => manager,
-        async (owner) => {
-          owner.write('accepted');
-          return 'accepted';
-        },
-        (error) => errors.push(error)
-      )
-    ).toBe('accepted');
-    expect(manager.writes).toEqual(['accepted']);
-    expect(manager.live).toBe(true);
-    expect(errors).toEqual([failure]);
-    await expect(
-      withManager(
-        'workspace',
-        commandScope,
-        async () => {
-          throw new Error('Unsafe replacement');
-        },
-        async () => 'unexpected',
-        () => {}
-      )
-    ).rejects.toBe(failure);
   });
 });
 

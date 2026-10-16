@@ -56,7 +56,7 @@ import {
 } from '@/lib/cloud-cli-port';
 import { getCliPlatformKind } from '@/lib/cli-platform';
 import type { CloudSessionSharingPort } from '@lody/platform';
-import { getSessionCommandEnvironment } from './session-command-environment';
+import { getDaemonWorkspace, getSessionCommandEnvironment } from './session-command-environment';
 import { makeWorkspaceCommandManagers } from './workspace-command-manager';
 
 export function getCommandSessionSharingPort(): CloudSessionSharingPort | null {
@@ -354,6 +354,17 @@ export async function withWorkspaceManager<T>(
     if (auth !== environment.auth || workspace.id !== environment.workspace.id)
       throw new Error('Session command workspace mismatch');
     return fn(environment.manager);
+  }
+  const daemon = getDaemonWorkspace();
+  if (daemon) {
+    // A daemon-executed command never opens a second replica of its own workspace.
+    if (
+      workspace.id !== daemon.workspaceId ||
+      auth.userId !== daemon.userId ||
+      auth.machineId !== daemon.machineId
+    )
+      throw new Error('Daemon command workspace mismatch');
+    return fn(daemon.manager);
   }
   // One-shot commands write directly into the workspace repo and rely on
   // Loro Streams to reach the cloud (and the daemon); without the remote

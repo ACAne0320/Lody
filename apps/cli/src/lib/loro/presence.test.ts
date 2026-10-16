@@ -224,7 +224,7 @@ describe('presence replica and local-origin contracts', () => {
 });
 // Native owner cases inject capabilities; the integration cases below use the published SDK fetch boundary.
 import { it as effectIt } from '@effect/vitest';
-import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from 'effect';
+import { Cause, Clock, Context, Deferred, Effect, Exit, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import {
   PresenceHost,
@@ -235,6 +235,7 @@ import {
   type PresenceStream,
   type PresenceStats,
   PresenceDeliveryStalled,
+  WorkspacePresenceOwners,
   WorkspacePresenceOwnersLive,
   recoverWorkspacePresenceShutdown,
 } from './workspace-presence';
@@ -261,6 +262,7 @@ const nativeFixture = Effect.fnUntraced(function* (
     joinFailure?: Cause.Cause<unknown>;
     rejoinFailure?: Cause.Cause<unknown>;
     releaseFailure?: Cause.Cause<unknown>;
+    retryRelease?: Effect.Effect<void>;
   }> = [];
   const io = Layer.succeed(PresenceTransport, {
     isReleaseFailure: (cause) =>
@@ -300,6 +302,7 @@ const nativeFixture = Effect.fnUntraced(function* (
           joinFailure: undefined as Cause.Cause<unknown> | undefined,
           rejoinFailure: undefined as Cause.Cause<unknown> | undefined,
           releaseFailure: undefined as Cause.Cause<unknown> | undefined,
+          retryRelease: undefined as Effect.Effect<void> | undefined,
           status: (status: string) => {
             stats.status = status;
             notify(status);
@@ -320,7 +323,7 @@ const nativeFixture = Effect.fnUntraced(function* (
         const stream: PresenceStream = {
           stats,
           close,
-          retryRelease: close,
+          retryRelease: Effect.suspend(() => room.retryRelease ?? close),
           rejoin: Effect.suspend(() =>
             room.rejoinFailure
               ? Effect.failCause(room.rejoinFailure)
@@ -859,6 +862,53 @@ effectIt.effect(
       expect(application.isReleased()).toBe(true);
       return undefined;
     })
+);
+
+effectIt.effect('a failed release never blocks its workspace; a live duplicate stays refused', () =>
+  Effect.gen(function* () {
+    const fixture = yield* nativeFixture();
+    const clock = Layer.succeed(Clock.Clock, fixture.clock);
+    const owners = Context.get(
+      yield* Layer.build(
+        WorkspacePresenceOwnersLive.pipe(
+          Layer.provide(Layer.mergeAll(fixture.io, fixture.host, clock))
+        )
+      ),
+      WorkspacePresenceOwners
+    );
+    const workspaceId = 'workspace-replaced' as WorkspaceId;
+    const first = yield* owners.create(workspaceId);
+    yield* first.attach({
+      streamsBaseUrl: 'https://synthetic.invalid',
+      auth: () => Effect.succeed('synthetic-token'),
+    });
+    const room = fixture.rooms[0];
+    if (!room) return yield* Effect.die('No registry room');
+    yield* Deferred.await(room.started);
+    yield* Deferred.succeed(room.bootstrap, undefined);
+    yield* first.waitUntilJoined(1000);
+    const duplicate = yield* owners.create(workspaceId).pipe(Effect.exit);
+    expect(Exit.isFailure(duplicate)).toBe(true);
+
+    room.releaseFailure = Cause.die(new Error('synthetic-release-timeout'));
+    yield* Deferred.succeed(room.released, undefined);
+    expect(Exit.isFailure(yield* first.stop.pipe(Effect.exit))).toBe(true);
+    expect(first.isReleased()).toBe(false);
+
+    const retrying = yield* Deferred.make<void>();
+    room.releaseFailure = undefined;
+    room.retryRelease = Deferred.succeed(retrying, undefined).pipe(
+      Effect.andThen(Effect.sync(() => (room.live = false)))
+    );
+    const replacement = yield* owners.create(workspaceId);
+    expect(replacement).not.toBe(first);
+    // The replaced owner gets one detached recovery attempt and still releases.
+    yield* Deferred.await(retrying);
+    yield* first.stop;
+    expect(first.isReleased()).toBe(true);
+    expect(room.live).toBe(false);
+    return undefined;
+  })
 );
 
 effectIt.effect('bootstrap readiness becomes unknown during recovery and flap backoff grows', () =>

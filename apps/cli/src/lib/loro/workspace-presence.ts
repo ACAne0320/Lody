@@ -108,6 +108,7 @@ export interface WorkspacePresence {
   readonly retryCleanup: Effect.Effect<void, PresenceReleaseFailed>;
   readonly waitUntilJoined: (timeoutMs: number) => Effect.Effect<void, PresenceUnavailable>;
   readonly failure: () => Cause.Cause<unknown>;
+  readonly isStopped: () => boolean;
   readonly isReleased: () => boolean;
   readonly deliveryHealth: () => PresenceDeliveryStalled | 'unknown' | 'pending' | 'idle';
 }
@@ -601,6 +602,7 @@ export const makeWorkspacePresence = Effect.fnUntraced(function* (
         );
       }),
     failure: () => (generation ? Cause.combine(failure, generation.cause) : failure),
+    isStopped: () => stopped,
     isReleased: () => released,
     deliveryHealth: () => generation?.health ?? 'unknown',
   };
@@ -629,7 +631,8 @@ export const WorkspacePresenceOwnersLive = Layer.effect(
         gate.withPermit(
           Effect.gen(function* () {
             const previous = owners.get(workspaceId);
-            if (previous && !previous.isReleased())
+            // Two live owners of one workspace remain forbidden.
+            if (previous && !previous.isStopped())
               return yield* Effect.fail(
                 new PresenceReleaseFailed({
                   cause: previous.failure(),
@@ -637,6 +640,11 @@ export const WorkspacePresenceOwnersLive = Layer.effect(
                   generation: 0,
                 })
               );
+            // A stopped owner whose release failed never blocks the workspace. It keeps
+            // its retained work in the root Scope, so application shutdown still stops
+            // it; one detached recovery attempt frees the work sooner when it can.
+            if (previous && !previous.isReleased())
+              yield* Effect.forkIn(Effect.ignoreCause(previous.retryCleanup), root);
             const owner = yield* Scope.provide(
               makeWorkspacePresence(workspaceId).pipe(Effect.provideContext(services)),
               root
