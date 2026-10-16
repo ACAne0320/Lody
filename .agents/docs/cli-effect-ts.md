@@ -134,13 +134,22 @@ instead of creating a new checklist document for every edit.
 | Cancellation     | Does cancellation end one wait, the producer, or raw external work? How is actual termination confirmed? |
 | Handoff          | What observable release condition allows a successor or replacement to start?                            |
 | Failure recovery | Who retains unresolved resources and the complete failure, and who can retry cleanup?                    |
-| Containment      | Which unrelated paths stop when this release, wait or gate fails, and what recovers them without reload? |
+| Containment      | Which independent work remains available, who bounds recovery, and how does terminal shutdown finish?    |
 
 Map applicable answers to behavioral acceptance cases. A cancelled reader must not
-stop a shared producer needed by other readers; a cleanup timeout must not permit
-replacement while the old resource is still owned. That fence binds the same owner
-only: sibling teardown still runs, and the next acquire retries the retained release
-instead of failing permanently. See [failure containment](failure-containment.md).
+stop a shared producer needed by other readers. A cleanup timeout does not prove
+release; exclude a successor only where unresolved ownership makes proceeding
+unsafe. Verify the lower owner's partial-release and safe-reuse contract instead
+of treating any cleanup failure as an acquisition fence. For one key, share
+concurrent cleanup retries; continue independent teardown. Bound recovery and its
+dependencies under a named owner; cross-dispose recovery coordinates same-Repo
+adoption or confirmed close before replacement. At quit, sign-out or workspace deletion, use a bounded final
+flush, report unconfirmed persistence and release resources. A waiter timeout alone
+does not stop a writer or permit a second Repo. If lower-owner safety cannot be
+verified, preserve base behavior by default and record the missing evidence as
+conditional in the owning Note; do not invent a fence or destructive fallback.
+Observe background rejections and keep unconfirmed gate results out of success
+caches and once sets. See [failure containment](failure-containment.md).
 Review/debug can use the same questions to assess existing evidence without editing the Note.
 
 ## Choosing a native unit and its structure
@@ -494,16 +503,20 @@ The guard rejects retired facade imports/exports and aliases that hide Legacy.
 
 For lifecycle changes, select the applicable behaviors from this acceptance matrix:
 
-| Mechanism         | Observable acceptance                                                                           |
-| ----------------- | ----------------------------------------------------------------------------------------------- |
-| Queue/admission   | Cancelled waiters cannot acquire later; preserve ordering and reentry policy                    |
-| Resource/body     | Failure or interruption releases acquired resources before a successor proceeds                 |
-| Shared work       | One reader's cancellation preserves other leases; the last release awaits producer cleanup      |
-| Close/replacement | Concurrent close joins one receipt; a new generation waits for confirmed old release            |
-| Deadline/retry    | Clock-driven expiry is observable; body/release failures do not become acquisition retries      |
-| Release failure   | Retain the unresolved owner and full Cause, including simultaneous body/release failure         |
-| Containment       | Sibling teardown completes after one failure; the next acquire retries release first            |
-| Composition       | Real consumers use the kernel; applicable filesystem/process/protocol boundaries remain covered |
+| Mechanism         | Observable acceptance                                                                                             |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Queue/admission   | Cancelled waiters cannot acquire later; preserve ordering and reentry policy                                      |
+| Resource/body     | Failure or interruption preserves custody within the selected recovery/shutdown lifetime                          |
+| Shared work       | One reader's cancellation preserves other leases; the last release awaits producer cleanup                        |
+| Close/replacement | Concurrent close joins one receipt; replacement obeys the verified release/reuse contract                         |
+| Deadline/retry    | Clock-driven expiry is observable; body/release failures do not become acquisition retries                        |
+| Release failure   | The recovery owner retains the full Cause, including simultaneous body/release failure, for its bounded lifetime  |
+| Containment       | Independent cleanup continues; safe reuse survives persistent failure; same-key retries share one flight          |
+| Recovery handoff  | A named owner bounds retention/retry; same-key acquire adopts the retained Repo or joins close before replacement |
+| Terminal boundary | Quit/sign-out/deletion finish bounded flush, report unconfirmed persistence and release resources                 |
+| Background error  | Fire-and-forget entries observe rejection; recovery has an owner and safe diagnostics stay bounded                |
+| Unconfirmed gate  | Degradation is observable and retryable; no authoritative success cache or once-set update                        |
+| Composition       | Real consumers use the kernel; applicable filesystem/process/protocol boundaries remain covered                   |
 
 Confirm readiness with an explicit signal before advancing time or cancelling. Await
 the affected fiber and cleanup, then inspect resulting resource/data state. Pure

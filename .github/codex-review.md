@@ -14,8 +14,11 @@ request solves the linked Issue and no P0/P1 remains, react 👍 and stop.
 - **P1:** likely shipped user-facing breakage, or a durable catalog/session
   contract violation that will ship. This includes a failure-containment
   regression: compared with the base, an ordinary failure such as storage
-  quota, a network drop or an absent peer now aborts teardown, permanently
-  blocks a resource, or gates work unrelated to the hazard. See
+  quota, a network drop or an absent peer now aborts independent cleanup, keeps
+  safely reusable resources unavailable, destroys state within its owned recovery
+  lifetime, blocks terminal shutdown indefinitely, or gates work
+  unrelated to the hazard. Verify the underlying safety contract before judging
+  an exclusion necessary or redundant. See
   [failure containment](../.agents/docs/failure-containment.md); the
   [review skill](../.agents/skills/failure-containment-review/SKILL.md) traces
   these from trigger to user-visible effect.
