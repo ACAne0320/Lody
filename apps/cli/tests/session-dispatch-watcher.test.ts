@@ -1748,6 +1748,8 @@ describe('SessionDispatchWatcher', () => {
                 workspaceId: 'workspace-1',
                 requesterUserId,
                 ...(localProjectId ? { localProjectId } : {}),
+                ownerUserId: 'user-owner',
+                machineId: 'machine-1',
                 verifiedAt: verdict === 'allowed' ? new Date(now).toISOString() : null,
               })
             ),
@@ -1771,7 +1773,12 @@ describe('SessionDispatchWatcher', () => {
       expect(online.startSession).toHaveBeenCalledTimes(1);
       await vi.waitFor(async () =>
         expect(await cachedMembers()).toEqual([
-          { requesterUserId: 'user-1', verifiedAt: new Date(now).toISOString() },
+          {
+            requesterUserId: 'user-1',
+            ownerUserId: 'user-owner',
+            machineId: 'machine-1',
+            verifiedAt: new Date(now).toISOString(),
+          },
         ])
       );
       online.watcher.stop();

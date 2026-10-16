@@ -20,6 +20,8 @@ export type SessionAccessPolicyInput = {
   workspaceId: string;
   currentUserId: string;
   requesterUserId: string;
+  // The Machine dispatching; member grants are bound to it.
+  machineId?: string;
   localProjectId?: string;
 };
 
@@ -66,7 +68,10 @@ export function decideSessionAccessFromCatalog(
     const member = workspace.memberAccessSnapshots?.find(
       (entry) =>
         entry.requesterUserId === input.requesterUserId &&
-        entry.localProjectId === input.localProjectId
+        entry.localProjectId === input.localProjectId &&
+        entry.ownerUserId === input.currentUserId &&
+        input.machineId !== undefined &&
+        entry.machineId === input.machineId
     );
     return member && isMemberAccessSnapshotFresh(member, nowMs)
       ? { outcome: 'allow', source: 'member-cached' }

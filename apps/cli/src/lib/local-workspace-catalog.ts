@@ -38,12 +38,18 @@ const CatalogAccessSnapshotSchema = z.object({
 // owner. The owner snapshot above never expires; a member allow is trusted only
 // for MEMBER_ACCESS_SNAPSHOT_TTL_MS after the backend last confirmed it, and is
 // keyed by the local project because project sharing is part of the verdict.
+// Each grant is bound to the CLI account and Machine that verified it: a grant
+// for another machine owner says nothing about the current one.
 export const MEMBER_ACCESS_SNAPSHOT_TTL_MS = 60 * 60 * 1000;
 const MEMBER_ACCESS_SNAPSHOT_LIMIT = 64;
 
 const CatalogMemberAccessSnapshotSchema = z.object({
   requesterUserId: z.string(),
   localProjectId: z.string().optional(),
+  // Optional only so an unbound entry parses (and never matches) instead of
+  // making the whole catalog corrupt.
+  ownerUserId: z.string().optional(),
+  machineId: z.string().optional(),
   verifiedAt: z.string(),
 });
 
@@ -128,6 +134,9 @@ export type RecordMemberAccessSnapshotInput = {
   workspaceId: string;
   requesterUserId: string;
   localProjectId?: string;
+  // The CLI account and Machine whose backend check produced this verdict.
+  ownerUserId: string;
+  machineId: string;
   // Confirmed backend allow time; `null` clears the entry after a definitive deny.
   verifiedAt: string | null;
 };
@@ -344,6 +353,10 @@ export function makeLocalWorkspaceCatalog(
       mutate((snapshot) => {
         const now = getServerNow();
         const remoteIds = new Set(input.workspaces.map((workspace) => workspace.id));
+        // Member grants were verified for the previous account and Machine.
+        const keepMemberGrants =
+          snapshot.identity?.userId === input.identity.userId &&
+          snapshot.machine?.machineId === input.machine.machineId;
         const previousById = new Map(
           snapshot.workspaces.map((workspace) => [workspace.workspaceId, workspace])
         );
@@ -361,7 +374,7 @@ export function makeLocalWorkspaceCatalog(
               cachedAt: now,
             },
             ...(previous?.accessSnapshot ? { accessSnapshot: previous.accessSnapshot } : {}),
-            ...(previous?.memberAccessSnapshots
+            ...(keepMemberGrants && previous?.memberAccessSnapshots
               ? { memberAccessSnapshots: previous.memberAccessSnapshots }
               : {}),
           };
@@ -417,6 +430,8 @@ export function makeLocalWorkspaceCatalog(
                     {
                       requesterUserId: input.requesterUserId,
                       ...(input.localProjectId ? { localProjectId: input.localProjectId } : {}),
+                      ownerUserId: input.ownerUserId,
+                      machineId: input.machineId,
                       verifiedAt: input.verifiedAt,
                     },
                   ].slice(-MEMBER_ACCESS_SNAPSHOT_LIMIT);

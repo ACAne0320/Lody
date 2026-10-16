@@ -23,8 +23,12 @@ workspace 成员的消息发到别人的机器上时，每次派发都要阻塞�
 ## 决定
 
 - catalog 的 workspace 条目新增可选的 `memberAccessSnapshots`：
-  `{ requesterUserId, localProjectId?, verifiedAt }`。本地项目属于 key 的一部分，因为项目共享
-  本身就是后端判定的一部分。
+  `{ requesterUserId, localProjectId?, ownerUserId, machineId, verifiedAt }`。本地项目属于 key 的
+  一部分，因为项目共享本身就是后端判定的一部分。`ownerUserId` 和 `machineId` 记录产生这次放行的
+  CLI 账号和机器。一条放行只回答"这个成员能否使用这个 owner 的机器"，所以策略要求两者都与当前
+  派发一致；在不同账号或机器下刷新 workspace 列表时会丢弃全部成员条目。评审发现了早先版本的问题：
+  workspace 刷新会在账号切换后保留放行，两个账号共享同一 workspace 时，在 A 的机器上被放行的
+  成员会在 B 登录后继续被信任。
 - 满足 `0 <= now - verifiedAt < 1 小时` 时条目有效。未来时间戳（例如时钟回拨后）不被信任。
 - 有效条目返回 `{ outcome: 'allow', source: 'member-cached' }`，派发不等待。这次派发已经发起的
   后端查询就是复核：确认放行会重写 `verifiedAt`，明确拒绝会删除条目，`indeterminate` 什么都不写。

@@ -27,8 +27,14 @@ turn became `indeterminate`.
 ## Decision
 
 - The catalog workspace entry gains optional `memberAccessSnapshots` entries:
-  `{ requesterUserId, localProjectId?, verifiedAt }`. The local project is part of the key because
-  project sharing is part of the backend verdict.
+  `{ requesterUserId, localProjectId?, ownerUserId, machineId, verifiedAt }`. The local project is
+  part of the key because project sharing is part of the backend verdict. `ownerUserId` and
+  `machineId` record the CLI account and Machine whose check produced the allow. A grant only
+  answers "may this member use this owner's Machine", so the policy requires both to match the
+  current dispatch, and a workspace refresh under a different account or Machine drops all member
+  entries. Review caught the earlier version: workspace refreshes preserved grants across an
+  account switch, so a member allowed on account A's Machine was trusted after account B signed
+  in, when both accounts shared the workspace.
 - A member entry is fresh while `0 <= now - verifiedAt < 1 hour`. A timestamp in the future, for
   example after the clock moved backwards, is not trusted.
 - A fresh entry returns `{ outcome: 'allow', source: 'member-cached' }`. Dispatch does not wait. The

@@ -1588,6 +1588,7 @@ export class SessionDispatchWatcher {
                 workspaceId: this.deps.workspaceId,
                 currentUserId: this.deps.currentUserId,
                 requesterUserId,
+                machineId: this.deps.machineId,
                 ...(localProjectId ? { localProjectId } : {}),
               })
             )

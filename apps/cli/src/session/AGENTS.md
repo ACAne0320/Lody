@@ -117,4 +117,4 @@
   `indeterminate` stays pending behind `verifyMachineAccessWithRetry()`. A throw is never denial.
 - Only confirmed backend verdicts write caches (allow refreshes `verifiedAt`, deny clears,
   `indeterminate` nothing). Owner hits recheck with `forceBackendVerification`; member
-  entries key on requester and local project.
+  entries bind requester, project, CLI account and Machine.

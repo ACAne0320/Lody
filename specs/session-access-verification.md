@@ -24,7 +24,8 @@ authorization service as permission beyond the cached allows below.
 Message dispatch on the target Machine may start from a local cache of confirmed allows instead of
 waiting for the control plane. The Machine owner's cached allow does not expire. A workspace member's
 allow is cached per requester and local project for one hour after the control plane last confirmed
-it. Each cached dispatch still verifies in the background: a confirmed allow refreshes the entry and
+it, and only for the signed-in account and Machine that verified it; a CLI account or Machine change
+discards every member allow. Each cached dispatch still verifies in the background: a confirmed allow refreshes the entry and
 a definitive denial clears it. Revocation therefore reaches the next dispatch while the control plane
 is reachable, and within one hour while it is not. A transport failure never creates or extends a
 cached allow.

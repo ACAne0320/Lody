@@ -3457,6 +3457,8 @@ export class MessageHandler {
             workspaceId: this.workspaceId,
             requesterUserId,
             ...(localProjectId ? { localProjectId } : {}),
+            ownerUserId: this.userId,
+            machineId: this.machineId,
             verifiedAt: verdict === 'allowed' ? new Date(getServerNow()).toISOString() : null,
           })
         ),
