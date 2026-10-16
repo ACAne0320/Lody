@@ -16,7 +16,9 @@ import { Flock } from '@loro-dev/flock-wasm';
 import { LoroDoc } from 'loro-crdt';
 import { getLoroMetaStreamId, type WorkspaceId } from '@lody/shared';
 import type { LoroStreamsTokenProviderLegacy } from '@lody/platform';
-import { LoroRepo } from 'loro-repo';
+import { WorkspaceRepoLegacy as LoroRepo } from '@lody/shared/workspace-data/repo-legacy';
+import { Effect } from 'effect';
+import { nativeTransportHarness } from '../../../packages/shared/test-support/workspace-transport';
 import {
   createCliSqliteRepoStore,
   createDocumentRemoteCursorStore,
@@ -111,14 +113,15 @@ const originalDataDir = process.env.LODY_DATA_DIR;
 /** One daemon or one-shot command: its own connection and in-memory replica. */
 async function openCliProcess(scope: DocumentCursorScope = 'shared-durable'): Promise<CliProcess> {
   const store = await createCliSqliteRepoStore(workspaceId);
+  const documentRemoteCursorStore = createDocumentRemoteCursorStore(store, scope);
   const repo = await LoroRepo.create({
+    documentRemoteCursorStore,
     storageAdapter: store.storageAdapter,
-    metaDebounceCommitMs: 0,
   });
   const cliProcess = {
     store,
     repo,
-    documentRemoteCursorStore: createDocumentRemoteCursorStore(store, scope),
+    documentRemoteCursorStore,
   };
   openProcesses.add(cliProcess);
   return cliProcess;
@@ -132,19 +135,20 @@ async function closeCliProcess(cliProcess: CliProcess): Promise<void> {
 
 async function withTransport<T>(
   cliProcess: CliProcess,
-  run: (adapter: Awaited<ReturnType<typeof createCliStreamsTransport>>['adapter']) => Promise<T>
+  run: (adapter: ReturnType<typeof nativeTransportHarness>) => Promise<T>
 ): Promise<T> {
   const { adapter } = await createCliStreamsTransport({
     workspaceId,
     tokenProvider,
-    repo: cliProcess.repo,
+    auth: () => Effect.succeed('streams-jwt'),
     documentRemoteCursorStore: cliProcess.documentRemoteCursorStore,
     logger: silentLogger,
   });
+  const transport = nativeTransportHarness(cliProcess.repo, adapter);
   try {
-    return await run(adapter);
+    return await run(transport);
   } finally {
-    await adapter.close();
+    await transport.close();
   }
 }
 

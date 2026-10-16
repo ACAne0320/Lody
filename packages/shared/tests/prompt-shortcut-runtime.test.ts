@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LoroRepo } from 'loro-repo';
+import { WorkspaceRepoLegacy as LoroRepo } from '../src/workspace-data/repo-legacy';
+import { PromptShortcutSync } from '../src/prompt-shortcuts/sync';
+import { LoroDoc } from 'loro-crdt';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { FileSystemStorageAdaptor } from 'loro-repo/storage/filesystem';
 import { getShortcutBodyStreamId, type ShortcutResource } from '../src/prompt-shortcuts/access';
 import {
   projectShortcutIndex,
@@ -15,6 +21,12 @@ import {
 
 const workspaceId = 'workspace-a';
 const userId = 'user-a';
+const directories: string[] = [];
+async function createRepo() {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lody-shortcut-native-'));
+  directories.push(baseDir);
+  return LoroRepo.create({ storageAdapter: new FileSystemStorageAdaptor({ baseDir }) });
+}
 
 function shortcut(id: string): PromptShortcut {
   return {
@@ -49,7 +61,7 @@ async function createRuntime(
   values: readonly PromptShortcut[],
   acquire: ShortcutPublicationPort['acquire']
 ) {
-  const repo = await LoroRepo.create({});
+  const repo = await createRepo();
   const store = await LocalShortcutStore.open({ repo, workspaceId, userId });
   const entries = values.map((value) => projectShortcutIndex(value, `body-${value.id}`));
   await store.cacheDiscovery({
@@ -89,6 +101,93 @@ const cleanups: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  await Promise.all(
+    directories.splice(0).map((path) => rm(path, { recursive: true, force: true }))
+  );
+  vi.unstubAllGlobals();
+});
+
+describe('PromptShortcutSync native SDK ownership', () => {
+  it('imports a read-only body without echo uploads and retains it for another borrower', async () => {
+    const repo = await createRepo();
+    const author = new LoroDoc();
+    author.getText('body').insert(0, 'shared shortcut');
+    author.commit();
+    const snapshot = author.export({ mode: 'snapshot' });
+    const writes: string[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+      if (method !== 'GET' && method !== 'HEAD') writes.push(method);
+      const headers = { 'Stream-Next-Offset': '100', 'Stream-Up-To-Date': 'true' };
+      if (url.pathname.endsWith('/bootstrap'))
+        return new Response(
+          Buffer.concat([
+            Buffer.from('--shortcut\r\nContent-Type: application/octet-stream\r\n\r\n'),
+            snapshot,
+            Buffer.from('\r\n--shortcut--\r\n'),
+          ]),
+          {
+            headers: {
+              ...headers,
+              'Content-Type': 'multipart/mixed; boundary=shortcut',
+              'Stream-Snapshot-Offset': '100',
+            },
+          }
+        );
+      return new Response(null, { headers });
+    });
+    const streamId = getShortcutBodyStreamId('native-read');
+    const sync = new PromptShortcutSync({
+      repo,
+      now: () => 0,
+      grant: async () => ({
+        token: 'synthetic-grant',
+        expiresIn: 3600,
+        gatewayBaseUrl: 'https://shortcut.invalid',
+        streamId,
+      }),
+    });
+    cleanups.push(async () => {
+      await sync.dispose();
+      await repo.destroy();
+      author.free();
+    });
+    const resource = { kind: 'body', bodyDocId: 'native-read' } as const;
+    const first = await sync.acquire(resource, false);
+    const second = await sync.acquire(resource, false);
+    await first.sync();
+    const borrower = await repo.acquireDoc(streamId);
+    expect(borrower.doc.getText('body').toString()).toBe('shared shortcut');
+    await first.release();
+    await second.sync();
+    expect(borrower.doc.getText('body').toString()).toBe('shared shortcut');
+    expect(writes).toEqual([]);
+    await second.release();
+    await borrower.release();
+  });
+
+  it('rejects a grant for a different body before opening a replica or making HTTP requests', async () => {
+    const repo = await createRepo();
+    const sync = new PromptShortcutSync({
+      repo,
+      now: () => 0,
+      grant: async () => ({
+        token: 'synthetic-grant',
+        expiresIn: 60,
+        gatewayBaseUrl: 'https://shortcut.invalid',
+        streamId: 'wrong-body',
+      }),
+    });
+    cleanups.push(async () => {
+      await sync.dispose();
+      await repo.destroy();
+    });
+    await expect(sync.acquire({ kind: 'body', bodyDocId: 'wanted' }, false)).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+    expect(await repo.listDoc()).toEqual([]);
+  });
 });
 
 describe('PromptShortcutRuntime body warming', () => {

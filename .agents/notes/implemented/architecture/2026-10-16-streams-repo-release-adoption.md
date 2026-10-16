@@ -88,3 +88,5 @@ renderer migration, storage relocation and live-service browser acceptance
 remain separate work. The upstream intermittent SQLite teardown assertion is
 unresolved; this dependency change does not claim to fix it or replace Lody's
 existing SQLite versions.
+
+The subsequent native consumer work is recorded in [native workspace ownership](../../proposed/architecture/2026-10-16-native-workspace-repo.md), in the same #1607. The release-only verification above predates that implementation.

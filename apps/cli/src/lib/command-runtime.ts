@@ -1,3 +1,4 @@
+import { SessionDirectory } from '@lody/shared/workspace-data/session-directory';
 import { closeLoginShellApplicationLegacy } from '@/agent/login-shell-env';
 import {
   createServerTimeFetcher,
@@ -7,9 +8,8 @@ import {
   getMachineRoomId,
   resolveNewSessionHistoryBackend,
   type MachineMeta,
-  getSessionIdFromRoomId,
+  getSessionRoomId,
   isLoroRepoDocDeleted,
-  isSessionDocRoomId,
   isTimeSynced,
   syncTime,
   type LocalSessionControlRequest,
@@ -480,13 +480,14 @@ export async function listAliveDocMetas<Meta>(
  * must not be trusted for discovery or identity.
  */
 export async function listAliveSessionMetas(
-  manager: LoroDocumentManager
+  manager: Pick<LoroDocumentManager, 'repo'>
 ): Promise<Array<{ roomId: string; meta: SessionMeta }>> {
-  const rows = await listAliveDocMetas<SessionMeta>(manager, isSessionDocRoomId);
-  return rows.flatMap(({ roomId, meta }) => {
-    const id = getSessionIdFromRoomId(roomId);
-    return id === null ? [] : [{ roomId, meta: { ...meta, id } }];
-  });
+  const sessions = await manager.repo.runLegacy(
+    Effect.flatMap(SessionDirectory, (directory) => directory.list({ archive: 'any' })).pipe(
+      Effect.provide(manager.repo.dataLayer)
+    )
+  );
+  return sessions.map((meta) => ({ roomId: getSessionRoomId(meta.id), meta }));
 }
 
 function readLocalControlTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {

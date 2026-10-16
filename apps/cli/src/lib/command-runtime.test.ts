@@ -624,26 +624,17 @@ describe('command runtime helpers', () => {
   });
 
   it('derives Session identity from the room key and excludes legacy comment rooms', async () => {
-    const scan = vi.fn(async () => [
-      { key: ['e', 'session-real'], value: true },
-      { key: ['e', 'session-comment-old'], value: true },
-    ]);
-    const manager = {
-      repo: {
-        getMeta: () => ({ scan }),
-        getDocMeta: vi.fn(async (roomId: string) => ({
-          meta: roomId === 'session-real' ? { latestUserMsgId: 'turn-1' } : { id: 'wrong' },
-          exists: true,
-        })),
-      },
-    } as any;
-
-    await expect(listAliveSessionMetas(manager)).resolves.toEqual([
-      {
-        roomId: 'session-real',
-        meta: { id: 'real', latestUserMsgId: 'turn-1' },
-      },
-    ]);
+    const { WorkspaceRepoLegacy } = await import('@lody/shared/workspace-data/repo-legacy');
+    const repo = await WorkspaceRepoLegacy.create({});
+    try {
+      await repo.upsertDocMeta('session-real', { latestUserMsgId: 'turn-1' });
+      await repo.upsertDocMeta('session-comment-old', { id: 'wrong' });
+      await expect(listAliveSessionMetas({ repo })).resolves.toEqual([
+        { roomId: 'session-real', meta: { id: 'real', latestUserMsgId: 'turn-1' } },
+      ]);
+    } finally {
+      await repo.destroy();
+    }
   });
 
   it('rejects when workspace metadata writes are not confirmed synced', async () => {

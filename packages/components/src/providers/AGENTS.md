@@ -63,6 +63,7 @@ Replacement contract: [shared rules](../../../shared/AGENTS.md#session-history).
   [background prefetch](../../../../specs/session-background-prefetch.zh.md).
 - Keep one Repo view; `WorkspaceTargetRouter` owns target/transport selection.
   Never restore a second writer or proxy-authoring/write-intent mirror.
+- Repo ownership: [contracts](../../../shared/src/workspace-data/AGENTS.md).
 - Runtime close cancels auth, joins attach/reconnect work, then destroys Repo.
   Failed startup shares this close path.
 - Local-only window bootstrap may exchange same-workspace CRDT snapshots from

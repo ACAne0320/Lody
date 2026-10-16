@@ -1,3 +1,4 @@
+import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import {
   applyPreviewVisualCommentMutation,
   getServerNow,
@@ -6,7 +7,7 @@ import {
   type PreviewVisualCommentDocInput,
 } from '@lody/shared';
 import type { SessionId } from '@lody/shared/ids';
-import type { LoroRepo } from 'loro-repo';
+
 import type {
   PreviewVisualCommentDocStore,
   SessionDocDraft,
@@ -22,7 +23,7 @@ import type { WorkspaceWriter } from './workspace-writer';
 
 /** Deps the writer needs from the runtime (repo + session stores). */
 export type DirectWorkspaceWriterDeps = {
-  repo: LoroRepo;
+  repo: WorkspaceRepoLegacy;
   acquireSessionStore: (sessionId: SessionId) => Promise<SessionDocStore>;
   releaseSessionStoreRef: (sessionId: SessionId) => void;
   acquirePreviewVisualCommentStore: (sessionId: SessionId) => Promise<PreviewVisualCommentDocStore>;
@@ -70,7 +71,7 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
 
   return {
     async upsertDocMeta(roomId, patch) {
-      await deps.repo.upsertDocMeta(roomId, patch as Parameters<LoroRepo['upsertDocMeta']>[1]);
+      await deps.repo.upsertDocMeta(roomId, patch as Parameters<WorkspaceRepoLegacy['upsertDocMeta']>[1]);
     },
 
     async startSession(sessionId, meta, entry, dispatch) {
@@ -79,7 +80,7 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
       // document that a later opener interprets as legacy Loro.
       await deps.repo.upsertDocMeta(
         getSessionRoomId(sessionId as SessionId),
-        meta as Parameters<LoroRepo['upsertDocMeta']>[1]
+        meta as Parameters<WorkspaceRepoLegacy['upsertDocMeta']>[1]
       );
       await withSessionStore(sessionId, async (store) => {
         await store.sessionData.commands.appendTurn(entry);

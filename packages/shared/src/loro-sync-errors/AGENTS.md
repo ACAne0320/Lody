@@ -8,6 +8,8 @@ Root and shared package rules apply. `CLAUDE.md` symlinks here; edit `AGENTS.md`
 - Callers bind `createLoroSyncErrorTools` to their own Repo error constructors;
   different pnpm peer contexts can have different class identities. Do not replace
   this boundary with arbitrary-object or message-based error recognition.
+- Native workspace formatters bind `workspaceSyncFailuresLegacy`; project only
+  validated native Streams scalars, never its private full Cause.
 - CLI Streams composition registers its bound formatter with the generic error
   utility. Keep Repo runtime imports out of that utility: standalone process
   workers consume it without a WASM loader.

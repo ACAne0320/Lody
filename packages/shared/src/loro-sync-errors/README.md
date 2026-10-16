@@ -16,3 +16,8 @@ that projection as JSON rather than maintaining another list of display fields.
 The projected return type uses public `RepoTransportError` property types so
 declaration generation also works when Repo derives its context from SDK types.
 Binding rules: [AGENTS.md](AGENTS.md).
+
+Native workspace consumers additionally bind `nativeFailures` to
+`workspaceSyncFailuresLegacy`. That constructor-bound bridge traverses retained
+native Causes and selects the Repo transport's validated public projection.
+Private Causes and payloads remain available for recovery and are never formatted.

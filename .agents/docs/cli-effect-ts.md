@@ -106,6 +106,14 @@ its consumers and deletion condition. Extend the owning behavioral suite for
 failure, interruption and release paths with explicit signals and injected clocks.
 Pure reducers, CRDT codecs and synchronous calculations remain ordinary functions.
 
+Workspace durable data now uses the released native Repo and Streams SDK.
+`packages/shared/src/workspace-data/repo-legacy.ts` is its one deprecated execution
+door for CLI managers, renderer stores, shortcut grants and snapshot migration
+readers; the same Repo owns every borrowed replica. Remove it as those consumers
+accept native Services and caller Scopes. The local v7 client and eager worker are
+native; upper Session/Turn workflows, grant acquisition, host server and RPC remain
+separate units. See [ownership and acceptance](../notes/proposed/architecture/2026-10-16-native-workspace-repo.md).
+
 When migration would pull in unfinished dependencies or substantially expand the
 task, complete the requested feature/fix and schedule that migration separately.
 Record the chosen boundary and remaining work in the owning Note when updating it;

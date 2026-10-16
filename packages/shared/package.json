@@ -168,6 +168,10 @@
     "./local-loro-writer/legacy": {
       "types": "./src/local-loro-writer/legacy.ts",
       "import": "./src/local-loro-writer/legacy.ts"
+    },
+    "./workspace-data/*": {
+      "types": "./src/workspace-data/*.ts",
+      "import": "./src/workspace-data/*.ts"
     }
   },
   "scripts": {

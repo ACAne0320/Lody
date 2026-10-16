@@ -72,3 +72,5 @@ workspace 冻结安装、全包类型检查、lint、Effect lint、i18n 及全�
 原生 WorkspaceData 所有权、renderer 迁移、存储搬迁及浏览器真实服务验收仍是
 独立工作。上游间歇性的 SQLite 析构断言尚未定位；本次依赖升级不声称修复它，
 也不替换 Lody 现有 SQLite 版本。
+
+同一个 #1607 随后的消费者迁移记录在[原生 workspace 所有权](../../proposed/architecture/2026-10-16-native-workspace-repo.zh.md)；上面的依赖接入验证早于该实现。

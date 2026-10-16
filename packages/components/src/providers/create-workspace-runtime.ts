@@ -1,6 +1,9 @@
+import {
+  WorkspaceRepoLegacy,
+  workspaceAcquisitionFailureLegacy,
+} from '@lody/shared/workspace-data/repo-legacy';
 import type { AgentConfigId, MachineProviderRateLimitsRefreshResponse } from '@lody/shared';
 import { createWorkspacePendingSends } from './workspace-pending-sends';
-import { createLoroSyncErrorTools } from '@lody/shared/loro-sync-errors';
 import { migrateLegacySessionSends } from '../lib/legacy-session-send-migration';
 import { createSessionSendResources } from '@/lib/session-send-resources';
 import { waitForScheduleWriteSync, withScheduleWrite } from './schedule-write-sync';
@@ -29,16 +32,9 @@ import {
   type MachineProtocolCapabilities,
   negotiatedAcpCapabilitiesRefreshForce,
 } from '@lody/shared';
-import {
-  LoroRepo,
-  RepoSyncError,
-  RepoTransportError,
-  type RepoRoomSubscription,
-  type RepoWatchHandle,
-} from 'loro-repo';
+import { type RepoRoomSubscription, type RepoWatchHandle } from 'loro-repo';
 import { IndexedDBStorageAdaptor } from 'loro-repo/storage/indexeddb';
-import type { StreamsTransportAdapter } from 'loro-repo/transport/streams';
-import { StreamsCrdt, createLoroDocAdapter } from '@loro-dev/streams-crdt/loro';
+import type { NativeWorkspaceTransport } from '@lody/shared/workspace-data/repo-legacy';
 import type { PlatformSyncMode } from '@lody/platform';
 import {
   createLoroStreamsJsonStreamClient,
@@ -52,7 +48,6 @@ import {
   buildLoroStreamsTokenEndpoint,
   createLoroStreamsTokenProviderLegacy,
   getPreviewCommentRoomId,
-  createLoroStreamUrl,
   getLoroMetaStreamId,
   getLoroStreamIdForDocId,
   getLoroStreamsBaseUrl,
@@ -92,7 +87,6 @@ import {
   getServerNow,
   collectOnlineMachineIdsFromPresence,
   previewVisualCommentDocSchema,
-  streamsSnapshotCodec,
   base64ToBytes,
   parseLodyPresenceStates,
   LODY_PRESENCE_TTL_MS,
@@ -101,7 +95,7 @@ import {
   type SyncReason,
   ACP_CAPABILITIES_REFRESH_CLIENT_BACKSTOP_MS,
 } from '@lody/shared';
-import { LocalLoroTransportAdapter } from '@lody/shared/local-loro-transport';
+import { localWorkspaceTransport } from '@lody/shared/workspace-data/local-transport';
 import type { WorkspaceId } from '@lody/shared';
 import { createDirectWorkspaceWriter } from './workspace-writer-impl';
 import {
@@ -171,7 +165,7 @@ import { createRoostSessionDataFactoryForMachine } from '@/lib/roost-session-bri
 
 declare global {
   interface Window {
-    repo?: LoroRepo;
+    repo?: WorkspaceRepoLegacy;
   }
 }
 
@@ -182,7 +176,6 @@ declare global {
  * the PostHog wrappers. Rejected: importing posthog-js here directly — the
  * runtime must stay framework-agnostic and unit-testable without a client.
  */
-const { formatLoroSyncError } = createLoroSyncErrorTools({ RepoSyncError, RepoTransportError });
 
 export type WorkspaceRuntimeAnalyticsEvent = {
   name: string;
@@ -270,24 +263,6 @@ class SupersededAttachError extends Error {
     this.name = 'SupersededAttachError';
   }
 }
-
-const formatTransportError = (error: unknown): string => {
-  const syncError = formatLoroSyncError(error);
-  if (syncError) return syncError;
-  if (typeof error !== 'object' || error === null) {
-    return String(error);
-  }
-
-  if ('message' in error && typeof error.message === 'string') {
-    return error.message;
-  }
-
-  if ('code' in error && typeof error.code === 'string') {
-    return error.code;
-  }
-
-  return 'unknown_transport_error';
-};
 
 const RECONNECTING_STATUS_DISPLAY_DELAY_MS = 1_000;
 const META_FIRST_SYNC_TIMEOUT_MS = 120_000;
@@ -479,12 +454,6 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     | null = null;
   const repoStorage = new IndexedDBStorageAdaptor({ dbName: cacheIdentity.repoDbName });
   const openSessionWithSnapshot = createSessionSnapshotLoader(repoStorage);
-  const repo = await LoroRepo.create({
-    storageAdapter: repoStorage,
-    metaDebounceCommitMs: 0,
-    resolveRoomTransports: (room) =>
-      resolveRoomTransportsImpl?.(room) ?? { transportIds: ['cloud'] },
-  });
   // Liveness invariant: opening a workspace must never wait forever on rebuildable
   // local cache. Loro Streams cursors are checkpoints, not source-of-truth data, so
   // a broken IndexedDB cursor store must fail open and let Streams bootstrap/catch up.
@@ -505,6 +474,18 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
         ...context,
       });
     },
+  });
+
+  const repo = await WorkspaceRepoLegacy.create({
+    storageAdapter: repoStorage,
+    documentRemoteCursorStore: remoteCursorStore,
+    documentCursorPolicy: 'reuse-existing',
+    authority:
+      (deps.syncMode ?? (isElectronLocalDataPlaneEnabled() ? 'dual' : 'cloud')) === 'local'
+        ? { mode: 'local' }
+        : { mode: 'remote', transports: ['cloud'] },
+    resolveRoomTransports: (room) =>
+      resolveRoomTransportsImpl?.(room) ?? { transportIds: ['cloud'] },
   });
 
   const transportReady = createDeferred<void>();
@@ -530,7 +511,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   });
   resolveRoomTransportsImpl = (room) => targetRouter.resolveTransportRoute(room);
   let localTransportAttachPromise: Promise<void> | null = null;
-  let localLoroTransport: LocalLoroTransportAdapter | null = null;
+  let localLoroTransport: NativeWorkspaceTransport | null = null;
   let localMachineMonitorTransport: WorkspaceLocalMachineMonitorTransport | null = null;
   let localDataPlaneConnectionDispose: (() => void) | null = null;
   let localPresenceUnsubscribe: (() => void) | null = null;
@@ -3046,7 +3027,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     }
     localDataPlaneConnectionDispose = localConnection.dispose;
 
-    localLoroTransport = new LocalLoroTransportAdapter({
+    localLoroTransport = localWorkspaceTransport({
       workspaceId,
       peerId,
       connection: localConnection.connection,
@@ -3091,12 +3072,12 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   const createStreamsDurableTransport = (
     activeStreamsTokenProvider: LoroStreamsTokenProviderLegacy,
     streamsBaseUrl: string
-  ): StreamsTransportAdapter =>
+  ): NativeWorkspaceTransport =>
     createWorkspaceStreamsTransport({
       repo,
       workspaceId,
       documentRemoteCursorStore: remoteCursorStore,
-      auth: activeStreamsTokenProvider.createAuthCallback(),
+      auth: activeStreamsTokenProvider.createNativeAuthCallback(),
       streamsBaseUrl,
       shardHostSuffix: getStreamsShardHostSuffixForProvider(activeStreamsTokenProvider),
     });
@@ -4074,40 +4055,12 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
       throw new Error('Loro Streams token provider not ready');
     }
 
-    const streamId = getLoroStreamIdForDocId(workspaceId, roomId);
-    const streamsBaseUrl = transportStreamsBaseUrl ?? getStreamsBaseUrlForProvider(provider);
-
     const attemptCreate = async (): Promise<void> => {
-      const transport = new StreamsCrdt({
-        streamUrl: createLoroStreamUrl({
-          bucketId: LORO_STREAMS_BUCKET_ID,
-          streamId,
-          baseUrl: streamsBaseUrl,
-        }),
-        auth: provider.createAuthCallback(),
-        adapter: createLoroDocAdapter(new LoroDoc()),
-        shardUrls: getLoroStreamsShardUrls(
-          streamsBaseUrl,
-          getStreamsShardHostSuffixForProvider(provider)
-        ),
-        snapshotCodec: streamsSnapshotCodec,
-      });
-      try {
-        // New session docs create the remote stream before any room join.
-        // This avoids paying the stream_not_found fallback/retry path on first open.
-        const created = await withTimeout(
-          transport.createStream(),
-          DOC_STREAM_CREATE_TIMEOUT_MS,
-          `Timeout creating Loro doc stream (room=${roomId})`
-        );
-        if (!created.ok) {
-          throw new Error(
-            `Failed to create Loro doc stream: ${formatTransportError(created.error)}`
-          );
-        }
-      } finally {
-        await transport.close().catch(() => {});
-      }
+      await withTimeout(
+        repo.createRemoteStreamLegacy('cloud', { kind: 'doc', id: roomId }),
+        DOC_STREAM_CREATE_TIMEOUT_MS,
+        `Timeout creating Loro doc stream (room=${roomId})`
+      );
     };
 
     // Machines joining the session doc room depend on this stream existing; a
@@ -4178,18 +4131,21 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     // of silently constructing a Loro history reader.
     // Merge bootstrap state before Repo adopts a cold document and before its
     // history reader subscribes. Existing live documents retain their identity.
-    const persistedDoc = await openSessionWithSnapshot(repo, roomId, () =>
-      readSessionBootstrapSnapshot(
-        () =>
-          withTimeout(
-            readEagerSyncSnapshot(eagerSyncScope, roomId).then(async (entry) =>
-              entry ? new Uint8Array(await entry.snapshot.arrayBuffer()) : undefined
+    const persistedDoc = await openSessionWithSnapshot(
+      { openPersistedDoc: (id) => repo.acquireDocHandleLegacy(id) },
+      roomId,
+      () =>
+        readSessionBootstrapSnapshot(
+          () =>
+            withTimeout(
+              readEagerSyncSnapshot(eagerSyncScope, roomId).then(async (entry) =>
+                entry ? new Uint8Array(await entry.snapshot.arrayBuffer()) : undefined
+              ),
+              1_500,
+              'Eager-sync cache read timed out'
             ),
-            1_500,
-            'Eager-sync cache read timed out'
-          ),
-        () => windowBootstrap?.readDocument(roomId) ?? Promise.resolve(undefined)
-      )
+          () => windowBootstrap?.readDocument(roomId) ?? Promise.resolve(undefined)
+        )
     );
     const sessionDoc = persistedDoc.doc as LoroDoc;
     // Read metadata after the bootstrap merge. Otherwise a cold remote Roost
@@ -4246,7 +4202,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     } catch (error) {
       // A Roost session without its renderer adapter fails closed. Release the
       // cold repo handle before the cache gets a chance to retry the open.
-      await repo.unloadDoc(roomId).catch(() => {});
+      await persistedDoc.release();
       throw error;
     }
     const { mirror, history, sessionData, dispose: disposeConversation } = conversation;
@@ -4388,13 +4344,16 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
       subscribe: (listener) => mirror.subscribe(listener as never),
       history,
       sessionData,
-      dispose: () => {
-        disposed = true;
-        sharedWindowDocuments.delete(roomId);
-        materializedSessionIds.delete(sessionId);
-        stopSyncNow();
-        syncTracker.dispose();
-        disposeConversation();
+      dispose: async () => {
+        if (!disposed) {
+          disposed = true;
+          sharedWindowDocuments.delete(roomId);
+          materializedSessionIds.delete(sessionId);
+          stopSyncNow();
+          syncTracker.dispose();
+          disposeConversation();
+        }
+        await persistedDoc.release();
       },
       waitUntilSynced: async (signal?: AbortSignal) => {
         if (signal) await waitForPromiseOrAbort(transportReady.promise, signal);
@@ -4443,26 +4402,43 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
       }
     },
     releaseDelayMs: STORE_RELEASE_DELAY_MS,
-    // The cache is the doc's sole application-layer owner: hard release = stop
-    // sync + Mirror.dispose (store.dispose) + repo.unloadDoc, serialized per key
-    // by the cache so a concurrent acquire waits for the unload, then recreates.
-    unload: (sessionId) => repo.unloadDoc(getSessionRoomId(sessionId)),
+    // Stop projections, then await the native lease Scope. Failed release fences
+    // replacement; another independent borrower retains the shared replica.
   });
 
+  const initializeBorrowedStore = async <A>(
+    lease: { release(): Promise<void> },
+    initialize: () => A
+  ): Promise<A> => {
+    try {
+      return initialize();
+    } catch (error) {
+      try {
+        await lease.release();
+      } catch (cleanup) {
+        throw workspaceAcquisitionFailureLegacy(error, cleanup, 'Store initialization');
+      }
+      throw error;
+    }
+  };
   const createPreviewVisualCommentStore = async (
     sessionId: SessionId
   ): Promise<PreviewVisualCommentDocStore> => {
     const roomId = getPreviewCommentRoomId(sessionId);
-    const persistedDoc = await repo.openPersistedDoc(roomId);
+    const persistedDoc = await repo.acquireDocHandleLegacy(roomId);
 
-    const mirror = new Mirror({
-      doc: persistedDoc.doc as LoroDoc,
-      schema: previewVisualCommentDocSchema,
-      // Tolerate root keys written by peers running a newer schema version.
-      ignoreUnknownProperties: true,
-      initialState: { meta: { sessionId }, turns: {} },
-      debug: false,
-    });
+    const mirror = await initializeBorrowedStore(
+      persistedDoc,
+      () =>
+        new Mirror({
+          doc: persistedDoc.doc as LoroDoc,
+          schema: previewVisualCommentDocSchema,
+          // Tolerate root keys written by peers running a newer schema version.
+          ignoreUnknownProperties: true,
+          initialState: { meta: { sessionId }, turns: {} },
+          debug: false,
+        })
+    );
 
     const syncTracker = createTrackedRoomSyncTracker(roomId);
     let roomSub: Awaited<ReturnType<typeof persistedDoc.joinRoom>> | null = null;
@@ -4512,13 +4488,16 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
         mirror.setState(updater as never);
       },
       subscribe: (listener) => mirror.subscribe(listener),
-      dispose: () => {
-        disposed = true;
-        cloudRepairUnsubscribe?.();
-        cloudRepairUnsubscribe = null;
-        syncTracker.dispose();
-        mirror.dispose();
-        roomSub?.unsubscribe();
+      dispose: async () => {
+        if (!disposed) {
+          disposed = true;
+          cloudRepairUnsubscribe?.();
+          cloudRepairUnsubscribe = null;
+          syncTracker.dispose();
+          mirror.dispose();
+          roomSub?.unsubscribe();
+        }
+        await persistedDoc.release();
       },
       waitUntilSynced: async () => {
         await transportReady.promise;
@@ -4536,22 +4515,23 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   >({
     create: createPreviewVisualCommentStore,
     releaseDelayMs: STORE_RELEASE_DELAY_MS,
-    // Same ownership contract as sessionStoreCache: the cache alone unloads the
-    // doc from the repo on hard release, serialized per key.
-    unload: (sessionId) => repo.unloadDoc(getPreviewCommentRoomId(sessionId)),
+    // The cache serializes asynchronous lease release and replacement per key.
   });
 
   const scheduleStoreCache = createManagedStoreCache<string, ScheduleDocStore>({
     releaseDelayMs: STORE_RELEASE_DELAY_MS,
-    unload: (id) => repo.unloadDoc(getScheduleRoomId(id)),
     create: async (id) => {
       const roomId = getScheduleRoomId(id);
-      const handle = await repo.openPersistedDoc(roomId);
-      const mirror = new Mirror({
-        doc: handle.doc as LoroDoc,
-        schema: scheduleDocSchema,
-        ignoreUnknownProperties: true,
-      });
+      const handle = await repo.acquireDocHandleLegacy(roomId);
+      const mirror = await initializeBorrowedStore(
+        handle,
+        () =>
+          new Mirror({
+            doc: handle.doc as LoroDoc,
+            schema: scheduleDocSchema,
+            ignoreUnknownProperties: true,
+          })
+      );
       let room: RepoRoomSubscription | null = null;
       let disposed = false;
       const syncAbort = new AbortController();
@@ -4582,11 +4562,14 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
               syncAbort.signal
             );
         },
-        dispose: () => {
-          disposed = true;
-          syncAbort.abort();
-          mirror.dispose();
-          room?.unsubscribe();
+        dispose: async () => {
+          if (!disposed) {
+            disposed = true;
+            syncAbort.abort();
+            mirror.dispose();
+            room?.unsubscribe();
+          }
+          await handle.release();
         },
       };
     },

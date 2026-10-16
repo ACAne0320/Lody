@@ -1,3 +1,9 @@
+import { Effect } from 'effect';
+import { SyncAuthority } from '@lody/shared/workspace-data/sync-authority';
+import {
+  WorkspaceRepoLegacy,
+  workspaceAcquisitionFailureLegacy,
+} from '@lody/shared/workspace-data/repo-legacy';
 import type { LodyRateLimitsCapability } from 'acp-extension-core';
 import { createSessionAgentWrites, type SessionAgentWrites } from './session-agent-writes';
 import { createSessionBackend, disposeSessionBackend } from '@/session/session-backend';
@@ -87,7 +93,6 @@ import { traceAsync } from '@/utils/trace-span';
 
 import WebSocketOriginal from 'ws';
 import {
-  LoroRepo,
   RepoDocHandle,
   RepoSyncError,
   RepoWatchHandle,
@@ -179,7 +184,7 @@ type GlobalWithOptionalBun = typeof globalThis & { Bun?: unknown };
 type GlobalWithWebSocket = { WebSocket: typeof ProxiedWebSocket };
 
 const createLocalLoroDataPlaneServer = (
-  repo: LoroRepo,
+  repo: WorkspaceRepoLegacy,
   workspaceId: WorkspaceId,
   presenceRuntime: CliPresenceRuntimeLegacy,
   machineMonitorRuntime: CliMachineMonitorRuntime
@@ -319,7 +324,7 @@ type AcpModelSummary = {
 };
 
 export interface LoroDocumentManagerOptions {
-  repo: LoroRepo;
+  repo: WorkspaceRepoLegacy;
   workspaceId: WorkspaceId;
   userId: string;
   metaSub: RepoRoomSubscription | null;
@@ -349,7 +354,7 @@ export type LoroRepoPersistReason =
   | 'session-edit-and-resend-rollback';
 
 export class LoroDocumentManager {
-  public readonly repo: LoroRepo;
+  public readonly repo: WorkspaceRepoLegacy;
   sessions: Map<SessionId, SessionDocument> = new Map();
   machine: MachineDocument | null = null;
   private readonly workspaceId: WorkspaceId;
@@ -422,28 +427,31 @@ export class LoroDocumentManager {
       `[${workspaceId}] Initializing local-first Loro repo: storageDb=${cliSqliteRepoStore.dbPath}`
     );
 
-    let repo: LoroRepo | null = null;
+    const documentRemoteCursorStore = createDocumentRemoteCursorStore(
+      cliSqliteRepoStore,
+      options.documentCursorScope ?? 'process'
+    );
+    let repo: WorkspaceRepoLegacy | null = null;
     let presenceRuntime: CliPresenceRuntimeLegacy | null = null;
     let manager: LoroDocumentManager | null = null;
     try {
       const createRepoStartMs = Date.now();
-      repo = await traceAsync(
-        logger,
-        'startup.loro_repo_create',
-        { workspaceId },
-        async () =>
-          await withTimeout(
-            LoroRepo.create({
-              storageAdapter: cliSqliteRepoStore.storageAdapter,
-              metaDebounceCommitMs: 0,
-              flockDocRetentionMs: getFlockDocRetentionMs,
-            }),
-            createRepoTimeoutMs,
-            `Timeout waiting for LoroRepo.create (workspace=${workspaceId})`
-          )
+      repo = await traceAsync(logger, 'startup.loro_repo_create', { workspaceId }, async () =>
+        WorkspaceRepoLegacy.create({
+          acquisitionTimeoutMs: createRepoTimeoutMs,
+          storageAdapter: cliSqliteRepoStore.storageAdapter,
+          documentRemoteCursorStore,
+          documentCursorPolicy: 'reuse-existing',
+          authority: options.streamsTokens
+            ? { mode: 'remote', transports: ['streams'] }
+            : { mode: 'local' },
+          flockDocRetentionMs: getFlockDocRetentionMs,
+        })
       );
       const createdRepo = repo;
-      logger.debug(`[${workspaceId}] LoroRepo created in ${Date.now() - createRepoStartMs}ms`);
+      logger.debug(
+        `[${workspaceId}] WorkspaceRepoLegacy created in ${Date.now() - createRepoStartMs}ms`
+      );
       // Presence is produced locally regardless of remote sync so local-first
       // renderers get machine/session liveness over the data plane; the cloud
       // Streams sink is attached later by the remote bridge.
@@ -486,10 +494,7 @@ export class LoroDocumentManager {
         machineMonitorRuntime,
         localLoroDataPlaneServer,
         sqliteRepoStore: cliSqliteRepoStore,
-        documentRemoteCursorStore: createDocumentRemoteCursorStore(
-          cliSqliteRepoStore,
-          options.documentCursorScope ?? 'process'
-        ),
+        documentRemoteCursorStore,
         remoteStreamsAttached: false,
         streamsTokens: options.streamsTokens ?? null,
         cloudBilling: options.cloudBilling ?? null,
@@ -505,9 +510,8 @@ export class LoroDocumentManager {
       try {
         if (repo) {
           await repo.destroy();
-        } else {
-          cliSqliteRepoStore.sqliteStore.close();
         }
+        // Once create starts, its native Scope owns storage, including failed acquisition cleanup.
       } catch (closeError) {
         logger.debug(
           `[${workspaceId}] Failed to close SQLite repo store after init failure: ${formatErrorMessage(
@@ -673,7 +677,7 @@ export class LoroDocumentManager {
     const streamsTransport = await createCliStreamsTransport({
       workspaceId: this.workspaceId,
       tokenProvider: streamsTokens.legacy,
-      repo: this.repo,
+      auth: streamsTokens.native.createAuthCallback(),
       documentRemoteCursorStore: this.documentRemoteCursorStore,
       logger: this.logger,
     }).catch(async (error: unknown) => {
@@ -693,7 +697,8 @@ export class LoroDocumentManager {
       throw error;
     });
     installStreamsDiagnostics();
-    const detachStreamsTransportStatusListener = streamsTransport.adapter.onStatusChange(
+    const detachStreamsTransportStatusListener = this.repo.onTransportStatusChange(
+      'streams',
       (status) => {
         this.logger.debug(`[${this.workspaceId}] Loro streams transport status: ${status}`);
         // With Streams attached, the adapter's own status is the workspace's
@@ -755,7 +760,6 @@ export class LoroDocumentManager {
       // Registration happens before connect, so remove and close both boundaries.
       for (const cleanup of [
         () => this.repo.removeTransport('streams', { close: true }),
-        () => streamsTransport.adapter.close(),
         () => streamsTokens.legacy.close(),
       ]) {
         try {
@@ -950,10 +954,13 @@ export class LoroDocumentManager {
   async syncMetaOrThrow(options: { timeoutMs?: number; reason?: string } = {}): Promise<void> {
     const reason = options.reason ?? 'explicit-sync';
     const timeoutMs = options.timeoutMs ?? readTimeoutEnv('LODY_LORO_SYNC_META_TIMEOUT_MS', 20_000);
-    const timeoutMessage = `Timeout waiting for workspace metadata sync (workspace=${this.workspaceId})`;
 
     try {
-      await withTimeout(this.repo.sync({ scope: 'meta' }), timeoutMs, timeoutMessage);
+      await this.repo.runLegacy(
+        Effect.flatMap(SyncAuthority, (authority) =>
+          authority.refresh({ kind: 'workspace-meta' }, { reason, timeoutMs })
+        ).pipe(Effect.provide(this.repo.dataLayer))
+      );
       this.initialMetaSyncCompleted = true;
     } catch (error) {
       throw new Error(`Workspace metadata sync failed (${reason}): ${formatErrorMessage(error)}`, {
@@ -1947,7 +1954,7 @@ export function subscribeSessionChanges(
 
 export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'history'>, SessionMeta> {
   private mirror: SessionControlPlaneMirror | null = null;
-  handle: RepoDocHandle | null = null;
+  handle: (RepoDocHandle & { release(): Promise<void> }) | null = null;
   docSub: RepoRoomSubscription | null = null;
   // Detached-aware 'streams' binding view of `docSub` (see streamsRoomBinding);
   // all status reads and sync waits go through it, never the classic surface.
@@ -1974,7 +1981,7 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
   private remoteSyncReady: Promise<void> = Promise.resolve();
   roomId: string = '';
   constructor(
-    private repo: LoroRepo,
+    private repo: WorkspaceRepoLegacy,
     public sessionId: SessionId,
     /**
      * Evicts the doc from the repo cache AND invalidates the local data-plane
@@ -2196,7 +2203,7 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
   async init(options: { skipAutoRead?: boolean; historyBackend?: SessionHistoryBackendKind } = {}) {
     this.destroyed = false;
     try {
-      this.handle = await this.repo.openPersistedDoc(this.roomId);
+      this.handle = await this.repo.acquireDocHandleLegacy(this.roomId);
       const historyBackend = await this.resolveHistoryBackend(options.historyBackend);
       // Create the mirror before remote sync completes so dispatch watchers can subscribe
       // immediately; the room join continues in the background and remote changes merge later.
@@ -2207,7 +2214,11 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
       await this.sessionBackendInstance.initialize({ skipAutoRead: options.skipAutoRead === true });
       this.remoteSyncReady = this.startDocRoomSync();
     } catch (error) {
-      await this.abortInitialization();
+      try {
+        await this.abortInitialization();
+      } catch (cleanup) {
+        throw workspaceAcquisitionFailureLegacy(error, cleanup, 'Session initialization');
+      }
       throw error;
     }
   }
@@ -2288,7 +2299,7 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
   ) {
     this.destroyed = false;
     try {
-      this.handle = await this.repo.openPersistedDoc(this.roomId);
+      this.handle = await this.repo.acquireDocHandleLegacy(this.roomId);
       const historyBackend = await this.resolveHistoryBackend(options.historyBackend);
       this.docSub?.unsubscribe();
       this.docSub = null;
@@ -2301,7 +2312,11 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
       this.sessionBackendInstance = await createSessionBackend(this, { historyBackend });
       await this.sessionBackendInstance.initialize({ skipAutoRead: false });
     } catch (error) {
-      await this.abortInitialization();
+      try {
+        await this.abortInitialization();
+      } catch (cleanup) {
+        throw workspaceAcquisitionFailureLegacy(error, cleanup, 'Session initialization');
+      }
       throw error;
     }
   }
@@ -2329,9 +2344,6 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     this.detachDocRoomStatusListener?.();
     this.detachDocRoomStatusListener = null;
     this.docRoomStatusListeners.clear();
-    if (this.handle) {
-      await this.unloadDocRoom(this.roomId).catch(() => {});
-    }
     this.sessionDataInstance?.dispose();
     this.sessionDataInstance = null;
     this.modelSummary?.dispose();
@@ -2340,6 +2352,10 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     this.historyAutoReadHandle = null;
     this.mirror?.dispose();
     this.mirror = null;
+    if (this.handle) {
+      await this.handle.release();
+      await this.unloadDocRoom(this.roomId);
+    }
     this.handle = null;
   }
 
@@ -3331,6 +3347,11 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
 
   async destroy(options: { preserveStatus?: boolean } = {}) {
     if (!this.mirror) {
+      if (this.handle) {
+        await this.handle.release();
+        await this.unloadDocRoom(this.roomId);
+        this.handle = null;
+      }
       return;
     }
 
@@ -3365,7 +3386,6 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     this.docSub?.unsubscribe();
     this.docSub = null;
     this.docBinding = null;
-    await this.unloadDocRoom(this.roomId);
     this.detachDocRoomStatusListener?.();
     this.detachDocRoomStatusListener = null;
     this.docRoomStatusListeners.clear();
@@ -3374,6 +3394,8 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     this.sessionDataInstance?.dispose();
     this.mirror?.dispose();
     this.mirror = null;
+    await this.handle?.release();
+    await this.unloadDocRoom(this.roomId);
     this.handle = null;
   }
 
@@ -3382,7 +3404,10 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
   }
 }
 
-const getAliveDocMeta = async <Meta>(repo: LoroRepo, roomId: string): Promise<Meta | undefined> => {
+const getAliveDocMeta = async <Meta>(
+  repo: WorkspaceRepoLegacy,
+  roomId: string
+): Promise<Meta | undefined> => {
   const meta = await repo.getDocMeta(roomId);
   if (!meta || isLoroRepoDocDeleted(meta)) return undefined;
   return meta.meta as Meta | undefined;
@@ -3423,11 +3448,11 @@ const serializeAcpCapabilityWithoutFetchTime = (entry: AcpCapabilityCacheEntry):
 
 export class MachineDocument implements LoroDocument<{}, MachineMeta> {
   roomId: string;
-  handle: RepoDocHandle | null = null;
+  handle: (RepoDocHandle & { release(): Promise<void> }) | null = null;
   private rateLimitsUpdateQueue: Promise<void> = Promise.resolve();
 
   constructor(
-    private repo: LoroRepo,
+    private repo: WorkspaceRepoLegacy,
     private workspaceId: WorkspaceId,
     private machineId: MachineId,
     private markMachineFlockDirty?: (reason: string) => void
@@ -3440,7 +3465,10 @@ export class MachineDocument implements LoroDocument<{}, MachineMeta> {
   }
 
   private async upsertMeta(meta: MachineMetaPatch): Promise<void> {
-    await this.repo.upsertDocMeta(this.roomId, meta as Parameters<LoroRepo['upsertDocMeta']>[1]);
+    await this.repo.upsertDocMeta(
+      this.roomId,
+      meta as Parameters<WorkspaceRepoLegacy['upsertDocMeta']>[1]
+    );
   }
 
   async init() {

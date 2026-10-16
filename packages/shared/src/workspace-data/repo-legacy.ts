@@ -1,0 +1,1005 @@
+import { Cause, Effect, Exit, Option, Scope, Stream } from 'effect';
+import {
+  RepoClosed,
+  RepoIOError,
+  RepoUnsupported,
+  RepoReleaseFailed,
+  RepoSyncFailed,
+  type DocLease,
+  type FlockLease,
+  type Repo,
+  type MakeOptions,
+  type RepoError,
+  type RoomState,
+  type RoomTarget,
+  type TransportLease,
+} from 'loro-repo/effect';
+import {
+  RepoSyncError,
+  RepoTransportError,
+  StaleReplicaError,
+  type LoroRepoOptions,
+  type RepoRoomDescriptor,
+  type RepoRoomSubscription,
+  type RepoTransportRoomSubscription,
+  type RepoTransportRoomStatus,
+  type RepoRoomWaitOptions,
+  type RepoRoomWaitResult,
+  type RepoSyncOptions,
+  type RepoSyncReport,
+  type RepoAttachmentReport,
+  type RepoHealthSnapshot,
+  type RepoEventListener,
+  type RepoEventFilter,
+  type RepoWatchHandle,
+  type ReplicaCheckpointTarget,
+  type JsonObject,
+  type RepoDocHandle,
+  type RepoFlockDocHandle,
+  type RepoDocLease,
+  type RepoFlockDocLease,
+  type ListDocQuery,
+  type ListFlockDocQuery,
+  type EvictDocOptions,
+  type RepoReconnectOptions,
+  type RepoTransportOptions,
+  type RemoveTransportOptions,
+  type RepoTransportRoomEntry,
+} from 'loro-repo';
+import type { RemoteCursorStore } from '@loro-dev/streams-crdt';
+import type { NativeWorkspaceTransport, WorkspaceNativeTransport } from './transport';
+export type { NativeWorkspaceTransport } from './transport';
+import { makeWorkspaceRepo } from './repo';
+import { workspaceDataLayer } from './services';
+import { DataReadSyncFailed } from './sync-authority';
+import { acquireWorkspaceScope, recoverRepoRelease, type WorkspaceOwnedScope } from './ownership';
+
+/** Preserve typed failures and defects, including release retry owners. Never log this object. */
+export class WorkspaceRepoLegacyFailure extends Error {
+  constructor(readonly effectCause: Cause.Cause<unknown>) {
+    super('Workspace Repo operation failed');
+    this.name = 'WorkspaceRepoLegacyFailure';
+  }
+}
+export const workspaceAcquisitionFailureLegacy = (
+  error: unknown,
+  cleanup: unknown,
+  operation: string
+) => new AggregateError([error, cleanup], `${operation} and release failed`, { cause: error });
+
+/** Bound native failures become the existing safe diagnostic vocabulary only here. */
+export const workspaceSyncFailuresLegacy = (
+  error: unknown,
+  TransportError = RepoTransportError
+): readonly unknown[] => {
+  if (error instanceof RepoSyncError)
+    return error.report.transports.flatMap((route) =>
+      route.failures.map((failure) => failure.error)
+    );
+  const reasons = (cause: Cause.Cause<unknown>) =>
+    cause.reasons.flatMap((reason) =>
+      Cause.isFailReason(reason) ? [reason.error] : Cause.isDieReason(reason) ? [reason.defect] : []
+    );
+  if (error instanceof WorkspaceRepoLegacyFailure) return reasons(error.effectCause);
+  if (error instanceof DataReadSyncFailed) {
+    const report = error.cause;
+    if (
+      typeof report === 'object' &&
+      report !== null &&
+      'resources' in report &&
+      Array.isArray(report.resources)
+    )
+      return report.resources.flatMap((resource: unknown) =>
+        typeof resource === 'object' &&
+        resource !== null &&
+        'exit' in resource &&
+        Exit.isExit(resource.exit) &&
+        Exit.isFailure(resource.exit)
+          ? reasons(resource.exit.cause)
+          : []
+      );
+    return [report];
+  }
+  if (error instanceof RepoReleaseFailed) return reasons(error.fullCause);
+  if (error instanceof RepoSyncFailed)
+    return error.report.transports.flatMap((route) => (route.cause ? reasons(route.cause) : []));
+  if (
+    error instanceof RepoIOError &&
+    error.operation === 'streams protocol' &&
+    typeof error.failure === 'object' &&
+    error.failure !== null &&
+    'streamsCode' in error.failure
+  ) {
+    // Repo's native transport already validates this public projection. Never forward fullCause.
+    const safe = error.failure as Pick<
+      RepoTransportError,
+      'streamsCode' | 'streamsContext' | 'failureKind' | 'retryable'
+    >;
+    return [
+      new TransportError('Streams protocol failed', {
+        code: 'internal',
+        phase: 'sync',
+        transportId: 'streams',
+        retryable: safe.retryable,
+        streamsCode: safe.streamsCode,
+        streamsContext: safe.streamsContext,
+        failureKind: safe.failureKind,
+      }),
+    ];
+  }
+  return [];
+};
+
+export type WorkspaceRepoLegacyOptions = Pick<
+  LoroRepoOptions,
+  'storageAdapter' | 'resolveRoomTransports' | 'flockDocRetentionMs'
+> &
+  Pick<MakeOptions, 'authority' | 'documentCursorPolicy' | 'documentRemoteCursorStore'> & {
+    readonly acquisitionTimeoutMs?: number;
+  };
+
+type Owned<A> = WorkspaceOwnedScope & { readonly value: A };
+const descriptor = (target: RoomTarget): RepoRoomDescriptor =>
+  target.kind === 'meta'
+    ? { kind: 'meta', id: 'meta' }
+    : { kind: target.kind === 'flock' ? 'flock-doc' : 'doc', id: target.id };
+const keyOf = (target: RoomTarget) => JSON.stringify(target);
+const roomStatus = (state: RoomState): RepoTransportRoomStatus => {
+  switch (state.connection) {
+    case 'joined':
+      return state.current ? 'joined' : 'connecting';
+    case 'joining':
+      return state.baseline ? 'reconnecting' : 'connecting';
+    case 'offline':
+      return state.baseline ? 'disconnected' : 'connecting';
+    case 'failed':
+      return 'error';
+    default:
+      return 'detached';
+  }
+};
+
+/**
+ * @deprecated Single execution door for existing manager/renderer consumers.
+ * The implementation owns a native Repo; no Promise LoroRepo or second replica.
+ * Delete as WorkspaceData consumers accept Services and caller Scopes directly.
+ */
+export class WorkspaceRepoLegacy {
+  readonly native: Repo;
+  readonly dataLayer: ReturnType<typeof workspaceDataLayer>;
+  private readonly scope: Scope.Closeable;
+  private readonly consumers: WorkspaceOwnedScope;
+  private readonly meta: FlockLease;
+  private readonly options: WorkspaceRepoLegacyOptions;
+  private readonly documents = new Map<string, Promise<Owned<DocLease>>>();
+  private readonly flocks = new Map<string, Promise<Owned<FlockLease>>>();
+  private readonly rooms = new Map<string, Set<RepoRoomSubscription>>();
+  private readonly attachments = new Map<string, Owned<TransportLease>>();
+  private readonly controls = new Map<string, WorkspaceNativeTransport>();
+  private readonly adapters = new Map<string, NativeWorkspaceTransport>();
+  private readonly statusListeners = new Map<
+    string,
+    Set<(status: 'connected' | 'connecting' | 'disconnected') => void>
+  >();
+  private readonly statuses = new Map<string, string>();
+  private readonly failures: Cause.Cause<unknown>[] = [];
+  private closing = false;
+  private released = false;
+  private closeReceipt?: Promise<void>;
+
+  private constructor(
+    native: Repo,
+    scope: Scope.Closeable,
+    meta: FlockLease,
+    options: WorkspaceRepoLegacyOptions,
+    consumers: WorkspaceOwnedScope
+  ) {
+    this.native = native;
+    this.dataLayer = workspaceDataLayer(native, {
+      local: options.authority?.mode !== 'remote',
+      serverTransports: options.authority?.mode === 'remote' ? options.authority.transports : [],
+    });
+    this.scope = scope;
+    this.consumers = consumers;
+    this.meta = meta;
+    this.options = options;
+  }
+
+  static async create(options: WorkspaceRepoLegacyOptions) {
+    const scope = Scope.makeUnsafe();
+    const initialize = Effect.gen(function* () {
+      const repo = yield* makeWorkspaceRepo({
+        storageAdapter: options.storageAdapter,
+        documentCursorPolicy: options.documentCursorPolicy,
+        authority: options.authority,
+        documentRemoteCursorStore: options.documentRemoteCursorStore,
+      });
+      const consumers = yield* acquireWorkspaceScope('workspace consumers');
+      const meta = yield* repo.acquireMetaReplica.pipe(
+        Effect.provideService(Scope.Scope, consumers.scope)
+      );
+      return { repo, meta, consumers };
+    });
+    const acquired = await Effect.runPromiseExit(
+      (options.acquisitionTimeoutMs && options.acquisitionTimeoutMs > 0
+        ? initialize.pipe(Effect.timeout(options.acquisitionTimeoutMs))
+        : initialize
+      ).pipe(Effect.provideService(Scope.Scope, scope))
+    );
+    if (Exit.isFailure(acquired)) {
+      const cleanup = await Effect.runPromiseExit(Scope.close(scope, acquired));
+      throw new WorkspaceRepoLegacyFailure(
+        Exit.isFailure(cleanup) ? Cause.combine(acquired.cause, cleanup.cause) : acquired.cause
+      );
+    }
+    return new WorkspaceRepoLegacy(
+      acquired.value.repo,
+      scope,
+      acquired.value.meta,
+      options,
+      acquired.value.consumers
+    );
+  }
+
+  /** Native consumers borrow the existing workspace owner, never construct another Repo. */
+  runLegacy<A, E>(effect: Effect.Effect<A, E>, signal?: AbortSignal): Promise<A> {
+    return Effect.runPromiseExit(effect, { signal }).then((exit) => {
+      if (Exit.isSuccess(exit)) return exit.value;
+      const reason = exit.cause.reasons[0];
+      if (exit.cause.reasons.length === 1 && reason && Cause.isFailReason(reason))
+        throw reason.error;
+      throw new WorkspaceRepoLegacyFailure(exit.cause);
+    });
+  }
+
+  private syncLegacy<A, E>(effect: Effect.Effect<A, E>): A {
+    const exit = Effect.runSyncExit(effect);
+    if (Exit.isFailure(exit)) throw new WorkspaceRepoLegacyFailure(exit.cause);
+    return exit.value;
+  }
+
+  private fork<A, E>(effect: Effect.Effect<A, E>, scope = this.consumers.scope): void {
+    Effect.runFork(
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            if (!Cause.hasInterruptsOnly(cause)) this.failures.push(cause);
+          })
+        ),
+        Effect.forkIn(scope)
+      )
+    ).addObserver((exit) => {
+      if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
+        this.failures.push(exit.cause);
+    });
+  }
+
+  async acquireScopeLegacy(resource: string): Promise<WorkspaceOwnedScope> {
+    if (this.closing) throw new RepoClosed();
+    const owner = await this.runLegacy(
+      acquireWorkspaceScope(resource).pipe(Effect.provideService(Scope.Scope, this.consumers.scope))
+    );
+    if (this.closing) {
+      await this.runLegacy(owner.close);
+      throw new RepoClosed();
+    }
+    return owner;
+  }
+
+  private async own<A>(effect: Effect.Effect<A, RepoError, Scope.Scope>): Promise<Owned<A>> {
+    if (this.closing) throw new RepoClosed();
+    const owner = this.syncLegacy(
+      acquireWorkspaceScope('workspace borrower').pipe(
+        Effect.provideService(Scope.Scope, this.consumers.scope)
+      )
+    );
+    try {
+      const value = await this.runLegacy(
+        effect.pipe(Effect.provideService(Scope.Scope, owner.scope))
+      );
+      if (this.closing) throw new RepoClosed();
+      return { value, ...owner };
+    } catch (error) {
+      try {
+        await this.runLegacy(owner.close);
+      } catch (cleanup) {
+        throw workspaceAcquisitionFailureLegacy(error, cleanup, 'Workspace acquisition');
+      }
+      throw error;
+    }
+  }
+
+  private document(id: string): Promise<Owned<DocLease>> {
+    let owned = this.documents.get(id);
+    if (!owned) {
+      owned = this.own(this.native.acquireDoc(id));
+      this.documents.set(id, owned);
+      void owned.catch(() => {
+        if (this.documents.get(id) === owned) this.documents.delete(id);
+      });
+    }
+    return owned;
+  }
+
+  private flock(id: string): Promise<Owned<FlockLease>> {
+    let owned = this.flocks.get(id);
+    if (!owned) {
+      owned = this.own(this.native.acquireFlockDoc(id));
+      this.flocks.set(id, owned);
+      void owned.catch(() => {
+        if (this.flocks.get(id) === owned) this.flocks.delete(id);
+      });
+    }
+    return owned;
+  }
+
+  async openPersistedDoc(id: string): Promise<RepoDocHandle> {
+    const { value } = await this.document(id);
+    return {
+      doc: value.doc,
+      syncOnce: () => this.sync({ scope: 'doc', docIds: [id] }),
+      joinRoom: () => this.joinDocRoom(id),
+    };
+  }
+  async acquireDocHandleLegacy(id: string): Promise<RepoDocHandle & { release(): Promise<void> }> {
+    const lease = await this.acquireDoc(id);
+    return {
+      doc: lease.doc,
+      release: lease.release,
+      syncOnce: () => this.sync({ scope: 'doc', docIds: [id] }),
+      joinRoom: () => this.joinDocRoom(id),
+    };
+  }
+  async openFlockDoc(id: string): Promise<RepoFlockDocHandle> {
+    const { value } = await this.flock(id);
+    const retention =
+      typeof this.options.flockDocRetentionMs === 'function'
+        ? this.options.flockDocRetentionMs(id)
+        : this.options.flockDocRetentionMs;
+    if (retention !== undefined)
+      await this.runLegacy(this.native.extendFlockDoc(id, Date.now() + retention));
+    return {
+      flock: value.flock,
+      syncOnce: () => this.sync({ scope: 'doc', flockDocIds: [id] }),
+      joinRoom: () => this.joinFlockDocRoom(id),
+    };
+  }
+  async acquireDoc(id: string): Promise<RepoDocLease> {
+    const owned = await this.own(this.native.acquireDoc(id));
+    return {
+      doc: owned.value.doc,
+      generation: owned.value.generation,
+      release: () => this.runLegacy(owned.close),
+    };
+  }
+  async acquireFlockDoc(id: string): Promise<RepoFlockDocLease> {
+    const owned = await this.own(this.native.acquireFlockDoc(id));
+    return {
+      flock: owned.value.flock,
+      generation: owned.value.generation,
+      release: () => this.runLegacy(owned.close),
+    };
+  }
+  async unloadDoc(id: string, _options?: EvictDocOptions) {
+    const owned = await this.documents.get(id);
+    if (owned) {
+      if (this.native.hasStorage) await this.runLegacy(owned.value.persist);
+      await this.runLegacy(owned.close);
+      this.documents.delete(id);
+    }
+  }
+  async unloadFlockDoc(id: string, _options?: EvictDocOptions) {
+    const owned = await this.flocks.get(id);
+    if (owned) {
+      if (this.native.hasStorage) await this.runLegacy(owned.value.persist);
+      await this.runLegacy(owned.close);
+      this.flocks.delete(id);
+    }
+  }
+  upsertDocMeta(id: string, patch: Partial<JsonObject>) {
+    return this.runLegacy(this.native.upsertDocMeta(id, patch));
+  }
+  getDocMeta(id: string) {
+    return this.runLegacy(this.native.getDocMeta(id));
+  }
+  getDocMetaMany(ids: readonly string[]) {
+    return this.runLegacy(this.native.getDocMetaMany(ids));
+  }
+  async listDoc(query?: ListDocQuery) {
+    return [...(await this.runLegacy(this.native.listDoc(query)))];
+  }
+  async listFlockDoc(query?: ListFlockDocQuery) {
+    return [...(await this.runLegacy(this.native.listFlockDoc(query)))];
+  }
+  getFlockDoc(id: string) {
+    return this.runLegacy(this.native.getFlockDoc(id));
+  }
+  deleteDoc(id: string) {
+    return this.runLegacy(this.native.deleteDoc(id));
+  }
+  restoreDoc(id: string) {
+    return this.runLegacy(this.native.restoreDoc(id));
+  }
+  deleteFlockDoc(id: string) {
+    return this.runLegacy(this.native.deleteFlockDoc(id));
+  }
+  restoreFlockDoc(id: string) {
+    return this.runLegacy(this.native.restoreFlockDoc(id));
+  }
+  async purgeDoc(id: string, _options?: EvictDocOptions) {
+    for (const room of this.rooms.get(keyOf({ kind: 'doc', id })) ?? []) room.unsubscribe();
+    await this.unloadDoc(id);
+    return this.runLegacy(this.native.purgeDoc(id));
+  }
+  async purgeFlockDoc(id: string, _options?: EvictDocOptions) {
+    for (const room of this.rooms.get(keyOf({ kind: 'flock', id })) ?? []) room.unsubscribe();
+    await this.unloadFlockDoc(id);
+    return this.runLegacy(this.native.purgeFlockDoc(id));
+  }
+  async purgeExpiredFlockDocs(nowMs?: number) {
+    const report = await this.runLegacy(this.native.purgeExpiredFlockDocs(nowMs));
+    if (report.failed.length)
+      throw new AggregateError(
+        report.failed.map((entry) => new WorkspaceRepoLegacyFailure(entry.cause)),
+        'Flock purge failed'
+      );
+    return [...report.purged];
+  }
+  getMeta(): FlockLease['flock'] {
+    return this.meta.flock;
+  }
+  hasStorage() {
+    return this.native.hasStorage;
+  }
+  supportsReplicaCheckpoints() {
+    return this.native.hasStorage;
+  }
+  getReplicaCheckpointStore(target: ReplicaCheckpointTarget): RemoteCursorStore {
+    const lease = async () => {
+      const current =
+        target.kind === 'meta' ? this.meta : (await this.flock(target.flockDocId)).value;
+      if (current.flock !== target.flock) throw new StaleReplicaError('flock', current.id);
+      return this.runLegacy(current.checkpoint);
+    };
+    return {
+      load: async (url) => this.runLegacy((await lease()).load(url)),
+      save: async (cursor) => this.runLegacy((await lease()).save(cursor)),
+      delete: async (url) => this.runLegacy((await lease()).delete(url)),
+    };
+  }
+  // Legacy memory-only consumers used these as no-op barriers; native persist
+  // deliberately requires storage and remains strict at the native API boundary.
+  persistMetaNow() {
+    return this.native.hasStorage ? this.runLegacy(this.native.persistMeta) : Promise.resolve();
+  }
+  async persistDocNow(id: string, doc: RepoDocHandle['doc']) {
+    const current = (await this.document(id)).value;
+    if (doc !== current.doc) throw new StaleReplicaError('doc', id);
+    if (this.native.hasStorage) await this.runLegacy(current.persist);
+  }
+  async persistFlockDocNow(id: string, flock: RepoFlockDocHandle['flock']) {
+    const current = (await this.flock(id)).value;
+    if (flock !== current.flock) throw new StaleReplicaError('flock', id);
+    if (this.native.hasStorage) await this.runLegacy(current.persist);
+  }
+  async openDetachedDoc(id: string) {
+    const value = await this.runLegacy(this.native.openDetachedDoc(id));
+    if (!value) throw new RepoIOError('open detached document', new Error('Document body missing'));
+    return value;
+  }
+  async openDetachedFlockDoc(id: string): Promise<FlockLease['flock']> {
+    const value = await this.runLegacy(this.native.openDetachedFlockDoc(id));
+    if (!value) throw new RepoIOError('open detached Flock', new Error('Flock body missing'));
+    return value;
+  }
+  watch(
+    listener: RepoEventListener<JsonObject>,
+    filter?: RepoEventFilter<JsonObject>
+  ): RepoWatchHandle {
+    const scope = this.syncLegacy(Scope.fork(this.consumers.scope));
+    const events = this.syncLegacy(
+      this.native.watch(filter).pipe(Effect.provideService(Scope.Scope, scope))
+    );
+    this.fork(
+      Stream.runForEach(events, ({ event }) =>
+        Effect.sync(() => {
+          if (event.kind !== 'flock-doc-expiration-changed') listener(this.currentEvent(event));
+        })
+      ),
+      scope
+    );
+    return { unsubscribe: () => this.fork(Scope.close(scope, Exit.succeed(undefined))) };
+  }
+  observeDocs(
+    listener: RepoEventListener<JsonObject>,
+    options?: { query?: ListDocQuery; filter?: RepoEventFilter<JsonObject> }
+  ) {
+    const scope = this.syncLegacy(Scope.fork(this.consumers.scope));
+    const observation = this.syncLegacy(
+      this.native
+        .observeDocs(options?.query, options?.filter)
+        .pipe(Effect.provideService(Scope.Scope, scope))
+    );
+    this.fork(
+      Stream.runForEach(observation.changes, ({ event }) =>
+        Effect.sync(() => {
+          if (event.kind !== 'flock-doc-expiration-changed') listener(this.currentEvent(event));
+        })
+      ),
+      scope
+    );
+    return {
+      snapshot: observation.snapshot,
+      watermark: observation.watermark,
+      unsubscribe: () => this.fork(Scope.close(scope, Exit.succeed(undefined))),
+    };
+  }
+  private currentEvent<E extends { kind: string }>(event: E): E {
+    if (event.kind !== 'doc-metadata' || !('docId' in event) || typeof event.docId !== 'string')
+      return event;
+    const row = this.syncLegacy(this.native.getDocMeta(event.docId));
+    // A native metadata write can publish multiple rows. Legacy observers must
+    // validate the completed catalog row, never accept an intermediate owner/backend pair.
+    return row
+      ? {
+          ...event,
+          patch: {
+            ...('patch' in event && typeof event.patch === 'object' && event.patch !== null
+              ? event.patch
+              : {}),
+            ...row.meta,
+          },
+        }
+      : event;
+  }
+  flush() {
+    return this.runLegacy(this.native.flush);
+  }
+  get destroyed() {
+    return this.closing;
+  }
+  destroy(): Promise<void> {
+    if (this.released) return Promise.resolve();
+    if (this.closeReceipt) return this.closeReceipt;
+    this.closing = true;
+    this.closeReceipt = this.runLegacy(
+      Effect.gen({ self: this }, function* () {
+        const observed: Cause.Cause<unknown>[] = [];
+        for (const cause of this.failures) {
+          const releases = cause.reasons.every(
+            (reason) =>
+              (Cause.isFailReason(reason)
+                ? reason.error
+                : Cause.isDieReason(reason)
+                  ? reason.defect
+                  : undefined) instanceof RepoReleaseFailed
+          );
+          if (releases) yield* recoverRepoRelease(cause);
+          else observed.push(cause);
+        }
+        this.failures.length = 0;
+        this.failures.push(...observed);
+        yield* this.consumers.close;
+        yield* this.native.close;
+        yield* Scope.close(this.scope, Exit.succeed(undefined));
+        this.released = true;
+        if (this.failures.length) yield* Effect.failCause(this.failures.reduce(Cause.combine));
+      })
+    ).finally(() => {
+      this.closeReceipt = undefined;
+    });
+    return this.closeReceipt;
+  }
+
+  private route(target: RoomTarget): readonly string[] {
+    return (
+      this.options.resolveRoomTransports?.(descriptor(target)).transportIds ?? [
+        ...this.attachments.keys(),
+      ]
+    );
+  }
+  onTransportStatusChange(
+    id: string,
+    listener: (status: 'connected' | 'connecting' | 'disconnected') => void
+  ) {
+    const listeners = this.statusListeners.get(id) ?? new Set();
+    this.statusListeners.set(id, listeners);
+    listeners.add(listener);
+    const status = this.statuses.get(id);
+    listener(
+      status === 'online' ? 'connected' : status === 'connecting' ? 'connecting' : 'disconnected'
+    );
+    return () => {
+      listeners.delete(listener);
+    };
+  }
+  hasTransport() {
+    return this.attachments.size > 0;
+  }
+  getTransportIds() {
+    return [...this.attachments.keys()];
+  }
+  getTransportAdapter(id?: string) {
+    const selected = id ?? this.getTransportIds()[0];
+    return selected ? this.adapters.get(selected) : undefined;
+  }
+  async addTransport(
+    id: string,
+    adapter: NativeWorkspaceTransport,
+    _options?: RepoTransportOptions
+  ): Promise<RepoAttachmentReport> {
+    if (this.attachments.has(id)) throw new Error(`Transport already attached: ${id}`);
+    const owned = await this.own(
+      Effect.gen({ self: this }, function* () {
+        const transport = yield* adapter.make(id);
+        const route = transport.routes;
+        const attachment = yield* this.native.attachTransport({
+          ...transport,
+          routes: (target) =>
+            (
+              this.options.resolveRoomTransports?.(descriptor(target)).transportIds ?? [
+                ...this.attachments.keys(),
+                id,
+              ]
+            ).includes(id) &&
+            (route?.(target) ?? true),
+        });
+        return { attachment, transport };
+      })
+    );
+    this.attachments.set(id, { ...owned, value: owned.value.attachment });
+    this.controls.set(id, owned.value.transport);
+    this.adapters.set(id, adapter);
+    this.fork(
+      Stream.runForEach(owned.value.attachment.status, (status) =>
+        Effect.sync(() => {
+          this.statuses.set(id, status);
+          for (const listener of this.statusListeners.get(id) ?? [])
+            listener(
+              status === 'online'
+                ? 'connected'
+                : status === 'connecting'
+                  ? 'connecting'
+                  : 'disconnected'
+            );
+        })
+      ),
+      owned.scope
+    );
+    return this.attachmentReport();
+  }
+  async removeTransport(id: string, _options?: RemoveTransportOptions) {
+    const owned = this.attachments.get(id);
+    if (!owned) return;
+    await this.runLegacy(this.native.removeTransport(id));
+    await this.runLegacy(owned.close);
+    this.attachments.delete(id);
+    this.adapters.delete(id);
+    this.controls.delete(id);
+    this.statuses.delete(id);
+  }
+  async refreshTransportRoutes(): Promise<RepoAttachmentReport> {
+    for (const { value } of this.attachments.values()) await this.runLegacy(value.refreshRoutes);
+    return this.attachmentReport();
+  }
+  async reconnect(options?: RepoReconnectOptions): Promise<RepoAttachmentReport> {
+    const results = await Promise.allSettled(
+      [...this.attachments]
+        .filter(([id]) => !options?.transportIds || options.transportIds.includes(id))
+        .map(([, { value }]) =>
+          this.runLegacy(
+            Effect.gen(function* () {
+              const status = yield* value.statusSnapshot;
+              const rooms = yield* value.rooms;
+              // Repair must not retire a generation still establishing its baseline.
+              const reset =
+                options?.resetBackoff === true ||
+                status === 'offline' ||
+                status === 'closed' ||
+                rooms.some((room) => room.status === 'failed' || room.status === 'offline');
+              yield* reset ? value.reconnect : value.refreshRoutes;
+            }),
+            options?.signal
+          )
+        )
+    );
+    const report = this.attachmentReport();
+    const failed = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+    return failed.length
+      ? { ...report, ok: false, error: new AggregateError(failed.map((item) => item.reason)) }
+      : report;
+  }
+  transportRooms(id: string): RepoTransportRoomEntry[] {
+    const entries: RepoTransportRoomEntry[] = [];
+    for (const [key, holders] of this.rooms) {
+      const target: RoomTarget = JSON.parse(key);
+      const holder = holders.values().next().value;
+      if (holder && holder.transportIds().includes(id))
+        entries.push({ room: descriptor(target), subscription: holder.subscription(id) });
+    }
+    return entries;
+  }
+  private attachmentReport(): RepoAttachmentReport {
+    const rooms = this.getTransportIds().flatMap((id) =>
+      this.transportRooms(id).map(({ room, subscription }) => ({
+        kind: room.kind,
+        roomId: room.id,
+        transportId: id,
+        status: subscription.status,
+        attached: subscription.status !== 'detached',
+      }))
+    );
+    const failed = rooms.filter((room) => room.status === 'error');
+    return { ok: failed.length === 0, rooms, failed };
+  }
+  health(): RepoHealthSnapshot {
+    return {
+      transports: this.getTransportIds().map((id) => {
+        const rooms = this.transportRooms(id);
+        const status = this.statuses.get(id);
+        return {
+          transportId: id,
+          reachability:
+            status === 'online'
+              ? 'connected'
+              : status === 'connecting'
+                ? 'connecting'
+                : 'disconnected',
+          roomCounts: {
+            total: rooms.length,
+            attached: rooms.filter((r) => r.subscription.status !== 'detached').length,
+            caughtUp: rooms.filter((r) => r.subscription.status === 'joined').length,
+            connecting: rooms.filter(
+              (r) =>
+                r.subscription.status === 'connecting' || r.subscription.status === 'reconnecting'
+            ).length,
+            error: rooms.filter((r) => r.subscription.status === 'error').length,
+            detached: rooms.filter((r) => r.subscription.status === 'detached').length,
+          },
+          failedRooms: this.attachmentReport().failed.filter((room) => room.transportId === id),
+        };
+      }),
+    };
+  }
+  createRemoteStreamLegacy(id: string, target: RoomTarget) {
+    const transport = this.attachments.has(id) ? this.controls.get(id) : undefined;
+    if (!transport?.createStream)
+      return Promise.reject(new RepoUnsupported('remote stream creation'));
+    return this.runLegacy(transport.createStream(target));
+  }
+  joinMetaRoom() {
+    return this.joinRoom({ kind: 'meta' });
+  }
+  joinDocRoom(id: string) {
+    return this.joinRoom({ kind: 'doc', id });
+  }
+  joinFlockDocRoom(id: string) {
+    return this.joinRoom({ kind: 'flock', id });
+  }
+
+  private async joinRoom(target: RoomTarget): Promise<RepoRoomSubscription> {
+    const owned = await this.own(this.native.acquireRoom(target));
+    const lease = owned.value;
+    const closed = new AbortController();
+    this.syncLegacy(
+      Scope.addFinalizer(
+        owned.scope,
+        Effect.sync(() => closed.abort())
+      )
+    );
+    const bindings = new Map<string, RepoTransportRoomSubscription>();
+    const binding = (id: string): RepoTransportRoomSubscription => {
+      const existing = bindings.get(id);
+      if (existing) return existing;
+      const project = (state: RoomState): RepoTransportRoomStatus =>
+        state.connection === 'detached' &&
+        !state.baseline &&
+        !closed.signal.aborted &&
+        this.syncLegacy(this.native.transportIds).includes(id)
+          ? 'connecting'
+          : roomStatus(state);
+      const status = () => project(this.syncLegacy(lease.stateSnapshot(id)));
+      const firstSyncedWithRemote = this.runLegacy(
+        lease.state(id).pipe(
+          Stream.mapEffect((state) =>
+            state.connection === 'failed' || project(state) === 'detached'
+              ? Effect.fail(new RepoIOError('room readiness', state.connection))
+              : Effect.succeed(state)
+          ),
+          Stream.filter((state) => state.baseline && state.current),
+          Stream.runHead,
+          Effect.flatMap((state) =>
+            Option.isSome(state) ? Effect.void : Effect.fail(new RepoClosed())
+          )
+        ),
+        closed.signal
+      );
+      // Old consumers sometimes only observe statuses; retain rejection for actual waiters.
+      void firstSyncedWithRemote.catch(() => undefined);
+      const value: RepoTransportRoomSubscription = {
+        transportId: id,
+        get status() {
+          return status();
+        },
+        firstSyncedWithRemote,
+        onStatusChange: (listener) => {
+          const scope = this.syncLegacy(Scope.fork(owned.scope));
+          this.fork(
+            Stream.runForEach(lease.state(id).pipe(Stream.map(project), Stream.changes), (next) =>
+              Effect.sync(() => listener(next))
+            ),
+            scope
+          );
+          return () => this.fork(Scope.close(scope, Exit.succeed(undefined)));
+        },
+        waitUntilSynced: () => this.runLegacy(lease.awaitSynced(id), closed.signal),
+        rejoin: async () => {
+          const transport = this.attachments.get(id);
+          if (!transport) throw new RepoUnsupported(`transport ${id}`);
+          const state = this.syncLegacy(lease.stateSnapshot(id));
+          if (!state.current) await this.reconnect({ transportIds: [id] });
+          else await this.runLegacy(transport.value.refreshRoutes, closed.signal);
+          await this.runLegacy(lease.awaitSynced(id), closed.signal);
+        },
+        waitFor: async (options?: RepoRoomWaitOptions): Promise<RepoRoomWaitResult> => {
+          const phase = options?.phase ?? 'caught-up';
+          const snapshot = () => this.syncLegacy(lease.stateSnapshot(id));
+          const result = (
+            resultStatus: RepoRoomWaitResult['status'],
+            error?: unknown
+          ): RepoRoomWaitResult => ({
+            status: resultStatus,
+            phase,
+            generation: snapshot().epoch,
+            ...(error === undefined ? {} : { error }),
+          });
+          if (closed.signal.aborted) return result('closed');
+          if (options?.signal?.aborted) return result('aborted');
+          if (status() === 'detached') return result('detached');
+          const signal = options?.signal
+            ? AbortSignal.any([closed.signal, options.signal])
+            : closed.signal;
+          const wait =
+            phase === 'pending-upload-empty'
+              ? lease
+                  .awaitUploaded(id)
+                  .pipe(
+                    Effect.flatMap((receipt) =>
+                      receipt.outcome === 'acked'
+                        ? Effect.void
+                        : Effect.fail(new RepoIOError('upload unconfirmed', receipt))
+                    )
+                  )
+              : lease.awaitSynced(id);
+          const operation =
+            options?.timeoutMs === undefined ? wait : wait.pipe(Effect.timeout(options.timeoutMs));
+          try {
+            await this.runLegacy(operation, signal);
+            return result('complete');
+          } catch (error) {
+            if (closed.signal.aborted) return result('closed');
+            if (options?.signal?.aborted) return result('aborted');
+            if (
+              typeof error === 'object' &&
+              error !== null &&
+              '_tag' in error &&
+              error._tag === 'TimeoutError'
+            )
+              return result('timeout');
+            return result('error', error);
+          }
+        },
+      };
+      bindings.set(id, value);
+      return value;
+    };
+    const single = () => {
+      const ids = this.route(target);
+      if (ids.length !== 1) throw new RepoUnsupported('select a transport explicitly');
+      const id = ids[0];
+      if (!id) throw new RepoUnsupported('room transport');
+      return binding(id);
+    };
+    const holders = this.rooms.get(keyOf(target)) ?? new Set<RepoRoomSubscription>();
+    this.rooms.set(keyOf(target), holders);
+    const subscription: RepoRoomSubscription = {
+      unsubscribe: () => {
+        if (closed.signal.aborted) return;
+        closed.abort();
+        holders.delete(subscription);
+        if (holders.size === 0) this.rooms.delete(keyOf(target));
+        this.fork(owned.close);
+      },
+      get status() {
+        const next = single().status;
+        return next === 'detached' ? 'disconnected' : next;
+      },
+      get firstSyncedWithRemote() {
+        return single().firstSyncedWithRemote;
+      },
+      waitUntilSynced: () => single().waitUntilSynced(),
+      rejoin: () => single().rejoin(),
+      onStatusChange: (listener) =>
+        single().onStatusChange((status) =>
+          listener(status === 'detached' ? 'disconnected' : status)
+        ),
+      waitFor: (options) =>
+        this.route(target).length === 0
+          ? Promise.resolve({
+              status: 'detached',
+              phase: options?.phase ?? 'caught-up',
+              generation: 0,
+            })
+          : single().waitFor(options),
+      transportIds: () => this.route(target),
+      subscription: binding,
+      subscriptions: () => this.route(target).map(binding),
+    };
+    holders.add(subscription);
+    return subscription;
+  }
+  async sync(options?: RepoSyncOptions): Promise<RepoSyncReport> {
+    const report = await this.runLegacy(this.native.sync(options), options?.signal);
+    const transports = new Map<
+      string,
+      {
+        transportId: string;
+        ok: boolean;
+        failures: { kind: RepoRoomDescriptor['kind']; id?: string; error: unknown }[];
+      }
+    >();
+    for (const resource of report.resources) {
+      const sync = Exit.isSuccess(resource.exit) ? resource.exit.value : undefined;
+      for (const entry of sync?.transports ?? []) {
+        const transport = transports.get(entry.id) ?? {
+          transportId: entry.id,
+          ok: true,
+          failures: [],
+        };
+        if (entry.outcome !== 'confirmed') {
+          transport.ok = false;
+          transport.failures.push({
+            kind: descriptor(resource.target).kind,
+            id: descriptor(resource.target).id,
+            error: entry.cause
+              ? new WorkspaceRepoLegacyFailure(entry.cause)
+              : new RepoIOError('transport offline', entry.id),
+          });
+        }
+        transports.set(entry.id, transport);
+      }
+      if (Exit.isFailure(resource.exit)) {
+        for (const id of options?.requireTransports ?? this.route(resource.target)) {
+          const transport = transports.get(id) ?? { transportId: id, ok: true, failures: [] };
+          transport.ok = false;
+          transport.failures.push({
+            kind: descriptor(resource.target).kind,
+            id: descriptor(resource.target).id,
+            error: new WorkspaceRepoLegacyFailure(resource.exit.cause),
+          });
+          transports.set(id, transport);
+        }
+      }
+    }
+    const outcome =
+      report.outcome === 'confirmed'
+        ? 'synced'
+        : report.outcome === 'skipped'
+          ? transports.size
+            ? 'failed'
+            : 'no-route'
+          : report.outcome;
+    const result: RepoSyncReport = {
+      ok: outcome === 'synced' || outcome === 'no-route',
+      outcome,
+      transports: [...transports.values()],
+      missingRequiredTransports: options?.requireTransports?.filter(
+        (id) => !transports.get(id)?.ok
+      ),
+    };
+    if (outcome === 'failed') throw new RepoSyncError(result);
+    return result;
+  }
+}

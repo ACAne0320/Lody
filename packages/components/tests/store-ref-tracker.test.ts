@@ -470,3 +470,37 @@ describe('createManagedStoreCache', () => {
     expect(unload).not.toHaveBeenCalled();
   });
 });
+
+describe('asynchronous native store release', () => {
+  it('joins release before replacement and retains a failed owner until explicit retry', async () => {
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    let failing = true;
+    let generation = 0;
+    const first = {
+      generation: ++generation,
+      dispose: async () => {
+        started.resolve();
+        await finish.promise;
+        if (failing) throw new Error('retained native release');
+      },
+    };
+    const cache = createManagedStoreCache({
+      create: async () => (generation === 1 ? first : { generation, dispose: async () => {} }),
+      releaseDelayMs: 0,
+    });
+    expect(await cache.acquire('session-a')).toBe(first);
+    const closing = cache.release('session-a');
+    await started.promise;
+    const reopening = cache.get('session-a');
+    finish.resolve();
+    await expect(closing).rejects.toThrow('retained native release');
+    await expect(reopening).rejects.toThrow('retained native release');
+    await expect(cache.get('session-a')).rejects.toThrow('retained native release');
+    failing = false;
+    generation++;
+    await cache.release('session-a');
+    expect((await cache.get('session-a')).generation).toBe(2);
+    await cache.disposeAll();
+  });
+});

@@ -53,10 +53,12 @@ see [observe scopes](../../commands/session-observe-runtime.ts).
 
 ## Streams cursors are replica-bound
 
-Daemon/commands share `repo.sqlite3`, not replicas: Meta/Flock cursors use `createRepoStreamsPersistence`, LoroDoc cursors from
+Daemon/commands share `repo.sqlite3`, not replicas: native leases own Meta/Flock checkpoints; Doc cursors use
 `createDocumentRemoteCursorStore` (shared rows: daemon only). No shared
 `remoteCursorStore` or schedule-only `onPersist*`. Test:
 `tests/cli-streams-replica-checkpoints.test.ts`.
+
+Repo uses `WorkspaceRepoLegacy`: stop projections, release lease, then invalidate room.
 
 ## Shared ACP runtime config contains no secrets
 

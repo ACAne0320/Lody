@@ -2,7 +2,7 @@ import { LoroMap } from 'loro-crdt';
 import { updateTestHistory } from './history-port-fixture';
 import { describe, expect, it, vi } from 'vitest';
 
-import { LoroRepo } from 'loro-repo';
+import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import { v4 as uuidv4 } from 'uuid';
 
 import { SessionDocument } from '../src/lib/loro/doc';
@@ -20,7 +20,7 @@ const createUserEntry = (id: string, text: string): SessionHistoryInput => ({
 
 describe('SessionDocument auto read', () => {
   it('acknowledges from shallow fields without reading assistant bodies on notifications', async () => {
-    const repo = await LoroRepo.create({});
+    const repo = await WorkspaceRepoLegacy.create({});
     const session = new SessionDocument(repo, uuidv4() as SessionId);
     try {
       await session.initOffline({
@@ -57,7 +57,7 @@ describe('SessionDocument auto read', () => {
   });
 
   it('marks latest user entry as read on history updates', async () => {
-    const repo = await LoroRepo.create({});
+    const repo = await WorkspaceRepoLegacy.create({});
     try {
       const sessionId = uuidv4() as SessionId;
       const doc = new SessionDocument(repo, sessionId);
@@ -81,7 +81,7 @@ describe('SessionDocument auto read', () => {
   });
 
   it('only marks the latest user entry when multiple are unread', async () => {
-    const repo = await LoroRepo.create({});
+    const repo = await WorkspaceRepoLegacy.create({});
     try {
       const sessionId = uuidv4() as SessionId;
       const doc = new SessionDocument(repo, sessionId);
@@ -109,7 +109,7 @@ describe('SessionDocument auto read', () => {
   });
 
   it('can mark the latest user entry as read for existing history', async () => {
-    const repo = await LoroRepo.create({});
+    const repo = await WorkspaceRepoLegacy.create({});
     try {
       const sessionId = uuidv4() as SessionId;
       const doc = new SessionDocument(repo, sessionId);
@@ -148,7 +148,7 @@ describe('SessionDocument auto read', () => {
   });
 
   it('does not pop the first queued message while it is being edited', async () => {
-    const repo = await LoroRepo.create({});
+    const repo = await WorkspaceRepoLegacy.create({});
     try {
       const sessionId = uuidv4() as SessionId;
       const doc = new SessionDocument(repo, sessionId);
@@ -182,7 +182,7 @@ describe('SessionDocument auto read', () => {
   });
 
   it('pops a queued message whose editing lease has expired', async () => {
-    const repo = await LoroRepo.create({});
+    const repo = await WorkspaceRepoLegacy.create({});
     try {
       const sessionId = uuidv4() as SessionId;
       const doc = new SessionDocument(repo, sessionId);
@@ -216,7 +216,7 @@ describe('SessionDocument auto read', () => {
   });
 
   it('treats a missing editingStartedAt as an expired lease (legacy item)', async () => {
-    const repo = await LoroRepo.create({});
+    const repo = await WorkspaceRepoLegacy.create({});
     try {
       const sessionId = uuidv4() as SessionId;
       const doc = new SessionDocument(repo, sessionId);

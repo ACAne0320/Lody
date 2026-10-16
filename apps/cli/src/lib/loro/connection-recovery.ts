@@ -1,7 +1,7 @@
+import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import type { WorkspaceId } from '@lody/shared';
 import { Effect, Fiber, Queue } from 'effect';
 import type {
-  LoroRepo,
   RepoTransportRoomEntry,
   RepoTransportRoomStatus,
   TransportConnectionStatus,
@@ -96,7 +96,7 @@ type RecoveryEvent =
     };
 
 type LoroConnectionRecoveryControllerOptions = {
-  repo: LoroRepo;
+  repo: WorkspaceRepoLegacy;
   workspaceId: WorkspaceId;
   logger: Logger;
   initialMetaSub: RepoRoomSubscription | null;
@@ -134,7 +134,7 @@ export class LoroConnectionRecoveryController {
   private readonly streamsOnlineListeners = new Set<StreamsOnlineListener>();
   private readonly pendingReconnectCompletions = new Set<ReconnectCompletion>();
   private readonly eventFiber: Fiber.Fiber<never, never>;
-  private readonly repo: LoroRepo;
+  private readonly repo: WorkspaceRepoLegacy;
   private readonly workspaceId: WorkspaceId;
   private readonly logger: Logger;
   private readonly onMetaRoomReady: () => void;

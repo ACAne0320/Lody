@@ -1,3 +1,4 @@
+import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import type { MemoryProviderRequest, MemoryProviderResponse } from '@lody/shared';
 import type { PendingSessionSends } from '../lib/session-pending-sends';
 import type { SessionSendResources } from '@/lib/session-send-resources';
@@ -5,7 +6,7 @@ import type { LocalFilePreviewResource } from '@lody/shared/local-file-preview';
 import type { SessionData } from '@lody/shared/session-data';
 import { atom } from 'jotai';
 import type { LoroDoc } from 'loro-crdt';
-import type { LoroRepo } from 'loro-repo';
+
 import type { ConversationView } from '@/lib/conversation-view';
 import type {
   McpToolListResult,
@@ -121,7 +122,7 @@ export type SessionDocStore = {
   readonly history: ConversationView;
   /** CRDT-neutral history reads, commands and stored-copy capabilities. */
   readonly sessionData: SessionData;
-  dispose: () => void;
+  dispose: () => void | Promise<void>;
   /**
    * Resolves when all pending local CRDT changes have been flushed to the server.
    * Returns immediately if there are no pending changes or transport is not ready.
@@ -148,7 +149,7 @@ export type PreviewVisualCommentDocStore = {
   getState: () => PreviewVisualCommentDocState;
   setState: (updater: PreviewVisualCommentDocUpdater) => void;
   subscribe: (listener: (state: PreviewVisualCommentDocState) => void) => () => void;
-  dispose: () => void;
+  dispose: () => void | Promise<void>;
   waitUntilSynced: () => Promise<void>;
 };
 
@@ -157,7 +158,7 @@ export type ScheduleDocStore = {
   readonly firstSynced: Promise<void>;
   getState: () => import('@lody/shared').ScheduleDocument | null;
   subscribe: (listener: () => void) => () => void;
-  dispose: () => void;
+  dispose: () => void | Promise<void>;
   waitUntilSynced: () => Promise<void>;
 };
 
@@ -186,7 +187,7 @@ export type WorkspaceRuntime = {
    * (its route needs the network and the browser is offline).
    */
   isMachineRpcUnreachable?: (machineId: MachineId) => boolean;
-  readonly repo: LoroRepo;
+  readonly repo: WorkspaceRepoLegacy;
   /** Read targets from the ready metadata source, independently of UI projection. */
   readSessionOperationTargets: (
     sessionId: SessionId,

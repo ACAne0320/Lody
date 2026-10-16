@@ -192,15 +192,19 @@ const enableElectronLocalDataPlane = (): void => {
   });
 };
 
-vi.mock('loro-repo', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('loro-repo')>();
+// This suite controls application composition. Native Repo/SDK ownership is
+// exercised separately by workspace-repo-effect and workspace-streams-transport.
+vi.mock('@lody/shared/workspace-data/repo-legacy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@lody/shared/workspace-data/repo-legacy')>();
   return {
     ...actual,
-    LoroRepo: {
+    WorkspaceRepoLegacy: {
       create: vi.fn(
         async () =>
-          mocks.repoOverride ?? {
+          (mocks.repoOverride &&
+            Object.assign(mocks.repoOverride, { createRemoteStreamLegacy: async () => true })) ?? {
             setTransportAdapter: mocks.setTransportAdapter,
+            createRemoteStreamLegacy: async () => true,
             addTransport: mocks.addTransport,
             removeTransport: mocks.removeTransport,
             refreshTransportRoutes: mocks.refreshTransportRoutes,
@@ -217,6 +221,19 @@ vi.mock('loro-repo', async (importOriginal) => {
           }
       ),
     },
+  };
+});
+
+vi.mock('../src/providers/workspace-streams-transport', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../src/providers/workspace-streams-transport')>();
+  const { StreamsTransportAdapter } = await import('loro-repo/transport/streams');
+  return {
+    ...actual,
+    createWorkspaceStreamsTransport: (options: unknown) =>
+      new StreamsTransportAdapter(
+        options as ConstructorParameters<typeof StreamsTransportAdapter>[0]
+      ),
   };
 });
 
@@ -245,14 +262,6 @@ vi.mock('loro-repo/transport/streams', () => ({
       return vi.fn();
     });
   },
-}));
-
-vi.mock('@loro-dev/streams-crdt/loro', () => ({
-  StreamsCrdt: class StreamsCrdt {
-    createStream = vi.fn(async () => ({ ok: true }));
-    close = vi.fn(async () => {});
-  },
-  createLoroDocAdapter: vi.fn(() => ({})),
 }));
 
 vi.mock('../src/providers/resilient-remote-cursor-store', () => ({
@@ -369,6 +378,7 @@ vi.mock('../src/providers/eager-sync-worker-client', () => ({
 
 vi.mock('@lody/shared', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@lody/shared')>();
+  const { Effect } = await import('effect');
   return {
     ...actual,
     buildLoroStreamsTokenEndpoint: vi.fn(
@@ -391,6 +401,7 @@ vi.mock('@lody/shared', async (importOriginal) => {
             return 'streams-token';
           };
         }),
+        createNativeAuthCallback: () => () => Effect.succeed('streams-token'),
       };
     }),
   };

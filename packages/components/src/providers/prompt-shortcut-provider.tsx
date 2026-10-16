@@ -1,3 +1,4 @@
+import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import {
   createContext,
   useContext,
@@ -8,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAtomValue } from 'jotai';
-import { LoroRepo } from 'loro-repo';
+
 import { IndexedDBStorageAdaptor } from 'loro-repo/storage/indexeddb';
 import {
   LocalShortcutStore,
@@ -138,7 +139,7 @@ export function PromptShortcutProvider({
     if (!workspaceId || !userId) return undefined;
     let disposed = false;
     let owned: PromptShortcutRuntime | undefined;
-    let repo: LoroRepo | undefined;
+    let repo: WorkspaceRepoLegacy | undefined;
     const databaseName = promptShortcutDatabaseName(workspaceId, userId);
     const previousClose = closingDatabases.get(databaseName);
     const check = () => {
@@ -155,7 +156,7 @@ export function PromptShortcutProvider({
     const opening = (async () => {
       await previousClose;
       check();
-      repo = await LoroRepo.create({
+      repo = await WorkspaceRepoLegacy.create({
         storageAdapter: new IndexedDBStorageAdaptor({
           dbName: databaseName,
         }),

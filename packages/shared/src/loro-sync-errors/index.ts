@@ -1,6 +1,12 @@
 import type { RepoTransportError, RepoDiagnosticEvent } from 'loro-repo';
 
-type RepoErrorRuntime = Pick<typeof import('loro-repo'), 'RepoTransportError' | 'RepoSyncError'>;
+type RepoErrorRuntime = Pick<typeof import('loro-repo'), 'RepoTransportError' | 'RepoSyncError'> & {
+  /** A caller-bound native constructor boundary; never inspect arbitrary error payloads. */
+  readonly nativeFailures?: (
+    error: unknown,
+    transportError: typeof import('loro-repo').RepoTransportError
+  ) => readonly unknown[];
+};
 
 type LoroSyncFailure = {
   code: RepoTransportError['code'];
@@ -63,6 +69,11 @@ export const createLoroSyncErrorTools = (runtime: RepoErrorRuntime) => {
       }
       if (seen.has(value)) return;
       seen.add(value);
+      const native = runtime.nativeFailures?.(value, runtime.RepoTransportError) ?? [];
+      if (native.length) {
+        for (const nested of native) visit(nested, depth + 1, transportId);
+        return;
+      }
       if (value instanceof runtime.RepoSyncError) {
         for (const transport of value.report.transports) {
           for (const failure of transport.failures)
