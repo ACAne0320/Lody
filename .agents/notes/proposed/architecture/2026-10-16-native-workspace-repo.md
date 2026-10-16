@@ -112,7 +112,36 @@ can start after confirmed release. A failed close retains the native retry owner
 the next add for that id retries it, while sibling ids remain usable. Scope is the
 lifetime primitive; the registry retains ownership, not another native status.
 
+Local v7 congestion recovery keeps the 1,024-event/default 64 MiB bounds. Overflow
+fails only that room's current barriers, including accepted but unconsumed sync
+events. Explicit reconnect or a physical online edge interrupts and awaits the
+old consumer and its accepted Flock I/O, stops the deadline, then creates a fresh
+queue and worker in the same room Scope. It discards incomplete chunks, request
+ids and server frontier state before rejoining from the retained replica version.
+The CRDT/lease and state references survive; completed catch-up advances the epoch.
+An interrupted waiter removes its receipt without retiring the shared replica.
+A per-room native semaphore serializes restart with close, so replacement cannot
+overtake the previous consumer and close prevents later recovery admission. This
+is a local lifecycle boundary, not a workspace readiness or write gate.
+Room recovery runs independently: waiting for one accepted import does not delay
+another room's catch-up worker.
+
 ## Verification and limits
+
+Real v7 host tests exercise two consecutive overflows at the default event cap,
+default byte cap, and an injected small byte cap. Schema-valid bursts, including
+real Loro update bytes, fail current waits, preserve independent room sync, then
+recover both incoming and outgoing writes on the original Doc/Meta replica. A
+separately gated real Meta import proves recovery awaits accepted uninterruptible
+I/O before replacing the consumer, while a sibling completes its catch-up epoch.
+The owning native suite passes 11 cases.
+At this repair, full Shared passes 1,522 cases and four affected renderer suites
+pass 89 cases. In a separate worktree at `a2f0911d`, all five added congestion
+regressions fail against the previous implementation.
+The root run also encountered a timeout in the unchanged SubagentTaskPanel
+command-details case; its owning suite passes all 19 cases when rerun alone.
+Record that separately from the known SSH credential fixture failure rather
+than reporting the root run green.
 
 Real renderer SDK fixtures verify plaintext/protected snapshot success, a held PUT
 with 275 ms of injected elapsed time, and a 60 s total upload timeout carried
@@ -123,7 +152,7 @@ are excluded by projection, as are synthetic private payloads and Causes in real
 failure paths. Only SDK-provided transmission evidence is logged.
 Removing observer registration and the three error classifications makes the
 regression fixtures fail.
-Diagnostics validation passed 63 affected component cases and 5 CLI cases, plus
+At `a2f0911d`, diagnostics validation passed 63 affected component cases and 5 CLI cases, plus
 full workspace type/static checks, formatting, docs and boundary guards. Full CLI
 has 4,313 passes, one skip and the already reproduced SSH `context_unreadable`
 fixture failure; root `pnpm check` therefore remains red and not every package's

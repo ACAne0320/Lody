@@ -35,11 +35,15 @@ CLI 与 renderer 在 transport 组合入口注册 SDK 快照诊断 observer。�
 
 Transport owner 在 adapter 构造或 native connect 前同步登记。移除会取消获取并关闭 owner Scope，由 native finalizer 撤销注册、等待已接受的连接工作。获取在 native 注册前与完成 lease 发布前均检查取消；移除与获取失败清理共享现有的串行 close，且仅当登记仍指向自身 owner 时删除。确认释放后才允许同名后继接入。关闭失败保留 native retry owner，下次同 id add 自动重试，兄弟 id 仍可用。生命周期原语是 Scope，登记表只持有 owner，不复制 native 状态。
 
+本机 v7 拥塞恢复保留 1,024 个事件、默认 64 MiB 的队列上限。溢出只使该房间当前的屏障失败，包括已接受但尚未消费的 sync 事件。显式 reconnect 或物理连接 online 边会中断并等待旧消费者及其已接受的 Flock I/O，停止期限任务，再在同一个房间 Scope 中创建新队列和 worker。重置不完整分块、请求 id 和服务端 frontier 后，从保留的副本版本重新追赶。CRDT/lease 与状态引用不变，完成追赶才增加 epoch。等待被取消时移除自身回执，不退休共享副本。每个房间的原生 semaphore 将重启与 close 串行化，避免新消费者超越旧任务；关闭后不再准入恢复。这是局部生命周期边界，不是工作区 readiness 或写入 gate。各房间分别恢复，一个房间等待已接受的导入不延迟其他房间的追赶 worker。
+
 ## 验证与限制
+
+真实 v7 host 测试分别在默认事件数上限、默认字节预算和注入的小字节预算下连续触发两次拥塞。经过 schema 校验的消息突发包含真实 Loro update 字节，当前等待会失败，独立房间仍可同步，随后原 Doc/Meta 副本恢复上下行写入。另用显式 gate 阻塞真实 Meta import，证明恢复会先等待已接受的不可中断 I/O，再替换消费者；期间兄弟房间仍能完成追赶 epoch。所属原生套件 11 项通过。本次修复的 Shared 全量 1,522 项、受影响 renderer 四组套件 89 项通过。在独立的 `a2f0911d` 工作树上，新增五项拥塞回归针对修复前实现均失败。根检查另有未改动的 SubagentTaskPanel 命令详情用例超时，所属套件单独复跑 19 项全部通过；将此结果与已知 SSH 凭据 fixture 失败分别记录，不把根检查报告为全绿。
 
 真实 renderer SDK fixture 覆盖明文/保护快照成功、PUT 阻塞期间注入的 275 ms 实际耗时，以及经过 native Repo 错误格式化的 60 s 总上传超时。日志 sink 与异步 observer 抛错都不会使上传失败，也不会跳过已有 observer。CLI SQLite/SDK fixture 校验阶段记录，并将编码后字节数、request id 与真实 PUT 关联。投影排除诊断 DTO 中额外添加的私有字段，真实失败路径中的合成私有 payload 与 Cause 同样不进入日志；传输信息只记录 SDK 实际提供的证据。移除 observer 注册与三项错误分类后，回归 fixture 失败。
 
-诊断修订通过受影响组件 63 项与 CLI 专项 5 项，以及完整 workspace 类型/静态、格式、文档和边界检查。CLI 全量为 4,313 项通过、1 项跳过，另有此前已复现的 SSH `context_unreadable` fixture 失败，因此根 `pnpm check` 仍未全绿，也没有通过该命令跑完所有包的完整套件。脚本套件 58 项全部通过。
+在 `a2f0911d`，诊断修订通过受影响组件 63 项与 CLI 专项 5 项，以及完整 workspace 类型/静态、格式、文档和边界检查。CLI 全量为 4,313 项通过、1 项跳过，另有此前已复现的 SSH `context_unreadable` fixture 失败，因此根 `pnpm check` 仍未全绿，也没有通过该命令跑完所有包的完整套件。脚本套件 58 项全部通过。
 
 回归 fixture 使用真实 SDK，在 baseline 后阻塞上传 POST；另以显式连接暂停驱动真实 Streams transport。断言服务端收到的字节、native 清单移除与同 id 重连；其他 native 边界用例覆盖构造/connect 中取消、晚到完成与后继隔离、释放重试及未确认 peer 回执。这些是合成 HTTP fixture，不代表生产网络验收。
 

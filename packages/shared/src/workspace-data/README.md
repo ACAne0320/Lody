@@ -23,6 +23,11 @@ use. Inventory and transport snapshots come from native leases; the local owner
 registry exists only to release borrows during purge. Native reconnect retries
 failed attaches and owns pending SDK work. Application recovery loops request
 that operation rather than supervising a second set of per-room rejoin jobs.
+The local v7 client keeps its 1,024-event and default 64 MiB queue bounds.
+After overflow, reconnect (including a physical online edge) drains the failed
+worker and replaces its queue, clears incomplete protocol state, then catches up
+from the retained replica. Pending barriers fail; new barriers can succeed after
+recovery. The Doc/Meta/Flock leases and other rooms remain owned by their Scopes.
 Native waits at Promise entries use the room borrow's signal so retiring one
 Session cancels only its wait while independent borrowers remain writable.
 First-sync readiness stays separate from `waitUntilSynced`: the latter captures

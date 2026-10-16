@@ -38,7 +38,11 @@
   Meta/Flock checkpoints remain replica-bound. Never share worker cursors with UI.
 - Product code uses the native local v7 client; the previous client lives only
   in test-support as a host wire-compatibility fixture. The native client owns bounded protocol queues and workers in Scope; physical
-  Electron callbacks only enqueue events. Queue overflow requires a new snapshot.
+  Electron callbacks only enqueue events. After overflow, reconnect drains the old
+  worker and rebuilds its bounded queue before catching up from the retained
+  replica. Recover rooms independently. Keep recovery and close serialized per
+  room; settle unconsumed sync waits too. Overflow must not permanently fence the
+  room or retire its lease.
 - Never log private Causes, grants, cursor URLs or request bodies. Project only
   upstream validated diagnostic scalars.
 

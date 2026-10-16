@@ -6,6 +6,7 @@ import {
   Fiber,
   Queue,
   Scope,
+  Semaphore,
   Stream,
   SubscriptionRef,
 } from 'effect';
@@ -93,8 +94,12 @@ type Event =
   | { readonly kind: 'dirty' }
   | { readonly kind: 'refresh' }
   | { readonly kind: 'deadline'; readonly id: string }
-  | { readonly kind: 'sync'; readonly receipt: Receipt };
-type Member = { readonly room: LocalLoroDataPlaneRoom; readonly offer: (event: Event) => void };
+  | { readonly kind: 'sync' };
+type Member = {
+  readonly room: LocalLoroDataPlaneRoom;
+  readonly offer: (event: Event) => void;
+  readonly reconnect: Effect.Effect<void>;
+};
 
 export type LocalWorkspaceTransportOptions = {
   readonly workspaceId: string;
@@ -171,7 +176,12 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
       Stream.runForEach((online) =>
         Effect.gen(function* () {
           yield* SubscriptionRef.set(transportStatus, online ? 'online' : 'offline');
-          for (const member of members.values()) member.offer({ kind: 'connection', online });
+          if (online)
+            yield* Effect.forEach(members.values(), (member) => member.reconnect, {
+              concurrency: 'unbounded',
+              discard: true,
+            });
+          else for (const member of members.values()) member.offer({ kind: 'connection', online });
         })
       ),
       Effect.forkScoped
@@ -195,7 +205,10 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
     const room = toRoom(target);
     const key = roomKey(room);
     if (members.has(key)) return yield* Effect.fail(new RepoIOError('local duplicate room', key));
-    const queue = yield* Queue.make<Event, RepoError>({ capacity: 1024, strategy: 'dropping' });
+    const makeQueue = () => Queue.make<Event, RepoError>({ capacity: 1024, strategy: 'dropping' });
+    let queue = yield* makeQueue();
+    const lifecycle = Semaphore.makeUnsafe(1);
+    let worker: Fiber.Fiber<void> | undefined;
     const status = yield* SubscriptionRef.make<RoomStatus>('joining');
     const state = yield* SubscriptionRef.make<RoomState>({
       connection: 'joining',
@@ -257,6 +270,7 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
       if (closed) return;
       closed = true;
       members.delete(key);
+      if (worker) yield* Fiber.interrupt(worker);
       yield* stopTimer;
       yield* settle(new RepoClosed());
       Queue.shutdownUnsafe(queue);
@@ -264,10 +278,9 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
         yield* send({ type: 'leave', ...envelope, room }).pipe(Effect.catch(() => Effect.void));
       yield* change({ connection: 'detached', current: false });
       yield* SubscriptionRef.set(status, 'detached');
-    });
+    }).pipe(lifecycle.withPermits(1), Effect.uninterruptible);
     // Establish cleanup before installing callbacks or starting any worker.
     yield* Effect.addFinalizer(() => close.pipe(Effect.orDie));
-    members.set(key, { room, offer });
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         replica.kind === 'doc'
@@ -391,8 +404,8 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
         for (let index = receipts.length - 1; index >= 0; index--) {
           const receipt = receipts[index];
           if (receipt && covers(serverVersion, receipt.version)) {
-            Deferred.doneUnsafe(receipt.done, Exit.succeed('confirmed'));
             receipts.splice(index, 1);
+            Deferred.doneUnsafe(receipt.done, Exit.succeed('confirmed'));
           }
         }
       });
@@ -403,14 +416,6 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
         if (overflow) return yield* Effect.fail(new RepoResnapshotRequired(`local:${key}`));
         switch (event.kind) {
           case 'sync':
-            if (receipts.length >= 256) {
-              yield* Deferred.fail(
-                event.receipt.done,
-                new RepoResnapshotRequired(`local receipts:${key}`)
-              );
-              return undefined;
-            }
-            receipts.push(event.receipt);
             if (!connection.isConnected()) {
               yield* settle();
               return undefined;
@@ -490,29 +495,66 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
         yield* SubscriptionRef.set(status, 'failed');
         yield* settle(new RepoIOError('local protocol', cause));
       });
-    yield* Stream.fromQueue(queue).pipe(
-      Stream.runForEach((event) =>
-        Effect.gen(function* () {
-          queuedBytes -= eventBytes(event);
-          yield* process(event).pipe(Effect.catchCause(failed));
-        })
-      ),
-      Effect.catchCause(failed),
-      Effect.forkScoped
-    );
+    const startWorker = (events: Queue.Queue<Event, RepoError>) =>
+      Stream.fromQueue(events).pipe(
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            queuedBytes -= eventBytes(event);
+            yield* process(event).pipe(Effect.catchCause(failed));
+          })
+        ),
+        Effect.catchCause(failed),
+        Effect.forkIn(scope)
+      );
+    const reconnect = Effect.gen(function* () {
+      if (closed || retired) return;
+      if (overflow) {
+        // The failed queue and consumer cannot accept refresh. Drain the old
+        // producer before replacing protocol state, preserving the replica lease.
+        if (worker) yield* Fiber.interrupt(worker);
+        yield* stopTimer;
+        yield* settle(new RepoResnapshotRequired(`local:${key}`));
+        if (closed || retired) return;
+        Queue.shutdownUnsafe(queue);
+        queue = yield* makeQueue();
+        queuedBytes = 0;
+        dirtyQueued = false;
+        requested = undefined;
+        deadlineId = undefined;
+        serverVersion = undefined;
+        docChunks = undefined;
+        importComplete = true;
+        awaitingCatchUpEpoch = false;
+        overflow = false;
+        worker = yield* startWorker(queue);
+      }
+      if (!closed && !retired) offer({ kind: 'refresh' });
+    }).pipe(lifecycle.withPermits(1), Effect.uninterruptible);
+    members.set(key, { room, offer, reconnect });
+    worker = yield* startWorker(queue);
     offer({ kind: 'refresh' });
     return {
       state,
       status,
       close,
-      sync: Effect.gen(function* () {
-        if (closed || retired) return yield* Effect.fail(new RepoClosed());
-        if (overflow) return yield* Effect.fail(new RepoResnapshotRequired(`local:${key}`));
-        const done = yield* Deferred.make<'confirmed' | 'offline', RepoError>();
+      sync: Effect.suspend(() => {
+        if (closed || retired) return Effect.fail(new RepoClosed());
+        if (overflow) return Effect.fail(new RepoResnapshotRequired(`local:${key}`));
+        if (receipts.length >= 256)
+          return Effect.fail(new RepoResnapshotRequired(`local receipts:${key}`));
+        const done = Deferred.makeUnsafe<'confirmed' | 'offline', RepoError>();
         const receipt = { done, version: version() };
-        const accepted = yield* Queue.offer(queue, { kind: 'sync', receipt });
-        if (!accepted) return yield* Effect.fail(new RepoResnapshotRequired(`local:${key}`));
-        return yield* Deferred.await(done);
+        // Register before enqueueing: overflow must also settle unconsumed waits.
+        receipts.push(receipt);
+        offer({ kind: 'sync' });
+        return Deferred.await(done).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              const index = receipts.indexOf(receipt);
+              if (index !== -1) receipts.splice(index, 1);
+            })
+          )
+        );
       }),
     };
   });
@@ -523,8 +565,11 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
     connect,
     disconnect,
     join,
-    reconnect: Effect.sync(() => {
-      for (const member of members.values()) member.offer({ kind: 'refresh' });
+    reconnect: Effect.gen(function* () {
+      yield* Effect.forEach(members.values(), (member) => member.reconnect, {
+        concurrency: 'unbounded',
+        discard: true,
+      });
     }),
   };
 });

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { Effect, Layer, Stream } from 'effect';
+import { describe, expect, it, vi } from 'vitest';
+import { Effect, Fiber, Layer, Stream } from 'effect';
 import { LoroDoc } from 'loro-crdt';
 import { make as makeWorkspaceRepo } from 'loro-repo/effect';
 import { WorkspaceRepoLegacy } from '../src/workspace-data/repo-legacy';
@@ -13,9 +13,11 @@ import {
 } from '../src/local-loro-data-plane-server';
 import { makeLocalLoroWriterLegacy } from '../src/local-loro-writer/legacy';
 import { LocalLoroWriterTurn } from '../src/local-loro-writer';
-import type {
-  LocalLoroDataPlaneServerMessage,
-  LocalLoroDataPlaneClientMessage,
+import {
+  LocalLoroDataPlaneServerMessageSchema,
+  bytesToBase64,
+  type LocalLoroDataPlaneServerMessage,
+  type LocalLoroDataPlaneClientMessage,
 } from '../src/local-loro-data-plane';
 
 function wire(
@@ -87,6 +89,226 @@ function wire(
 }
 
 describe('native local v7 transport', () => {
+  it('drains an accepted Flock import before restarting its overflowing worker', async () => {
+    const remote = new LoroDoc();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const host = yield* makeWorkspaceRepo();
+            const hostMeta = yield* host.acquireRoom({ kind: 'meta' });
+            if (hostMeta.replica.kind !== 'meta') throw new Error('Expected Meta replica');
+            const remoteMeta = hostMeta.replica.lease.flock;
+            remoteMeta.set(['remote'], 'accepted import');
+            remoteMeta.commit();
+            const harness = yield* Effect.acquireRelease(
+              Effect.sync(() => wire(remote, { serverFlock: remoteMeta })),
+              (owned) => Effect.promise(owned.close)
+            );
+            const repo = yield* makeWorkspaceRepo();
+            const room = yield* repo.acquireRoom({ kind: 'meta' });
+            if (room.replica.kind !== 'meta') throw new Error('Expected Meta replica');
+            const flock = room.replica.lease.flock;
+            const importJson = flock.importJson.bind(flock);
+            let importing = false;
+            let firstImport = true;
+            const spy = vi.spyOn(flock, 'importJson').mockImplementation(async (bundle) => {
+              if (!firstImport) return importJson(bundle);
+              firstImport = false;
+              importing = true;
+              entered.resolve();
+              await release.promise;
+              try {
+                return await importJson(bundle);
+              } finally {
+                importing = false;
+              }
+            });
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                release.resolve();
+                spy.mockRestore();
+              })
+            );
+            const attachment = yield* repo.attachTransport(
+              yield* makeLocalWorkspaceTransport('local', {
+                workspaceId: 'ws',
+                peerId: 'peer-a',
+                connection: harness.connection,
+              })
+            );
+            yield* Effect.promise(() => entered.promise);
+            const sibling = yield* repo.acquireRoom({ kind: 'doc', id: 'sibling' });
+            yield* sibling.sync('local');
+            const siblingEpoch = (yield* sibling.stateSnapshot('local')).epoch;
+            const burst = LocalLoroDataPlaneServerMessageSchema.parse({
+              type: 'room-status',
+              protocolVersion: 7,
+              workspaceId: 'ws',
+              peerId: 'peer-a',
+              room: { scope: 'meta' },
+              status: 'joined',
+            });
+            yield* Effect.sync(() => {
+              for (let index = 0; index < 1100; index++)
+                for (const listener of harness.listeners) listener(burst);
+            });
+            const recovery = yield* attachment.reconnect.pipe(
+              Effect.forkScoped({ startImmediately: true })
+            );
+            try {
+              yield* sibling.state('local').pipe(
+                Stream.filter((state) => state.epoch > siblingEpoch && state.current),
+                Stream.runHead
+              );
+              expect(importing).toBe(true);
+              expect(recovery.pollUnsafe()).toBeUndefined();
+            } finally {
+              release.resolve();
+            }
+            yield* Fiber.join(recovery);
+            expect(importing).toBe(false);
+            expect((yield* room.sync('local')).outcome).toBe('confirmed');
+            expect(flock.get(['remote'])).toBe('accepted import');
+          })
+        )
+      );
+    } finally {
+      release.resolve();
+      remote.free();
+    }
+  });
+  it.each([
+    { kind: 'doc', limit: 'events', recovery: 'reconnect' },
+    { kind: 'doc', limit: 'bytes', recovery: 'reconnect' },
+    { kind: 'doc', limit: 'default-bytes', recovery: 'reconnect' },
+    { kind: 'meta', limit: 'events', recovery: 'online' },
+  ] as const)(
+    'recovers $kind queue $limit overflow via $recovery without replacing the replica',
+    async ({ kind, limit, recovery }) => {
+      const remote = new LoroDoc();
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const host = yield* makeWorkspaceRepo();
+              const hostMeta = yield* host.acquireRoom({ kind: 'meta' });
+              if (hostMeta.replica.kind !== 'meta') throw new Error('Expected Meta replica');
+              const remoteMeta = hostMeta.replica.lease.flock;
+              const harness = yield* Effect.acquireRelease(
+                Effect.sync(() => wire(remote, { serverFlock: remoteMeta })),
+                (owned) => Effect.promise(owned.close)
+              );
+              const repo = yield* makeWorkspaceRepo();
+              const attachment = yield* repo.attachTransport(
+                yield* makeLocalWorkspaceTransport('local', {
+                  workspaceId: 'ws',
+                  peerId: 'peer-a',
+                  connection: harness.connection,
+                  ...(limit === 'bytes' ? { maxQueuedBytes: 4096 } : {}),
+                })
+              );
+              const target =
+                kind === 'meta' ? ({ kind } as const) : ({ kind, id: 'session-a' } as const);
+              const room = yield* repo.acquireRoom(target);
+              yield* room.sync('local');
+              const originalReplica = room.replica.lease;
+              const sibling = yield* repo.acquireRoom({ kind: 'doc', id: 'sibling' });
+              yield* sibling.sync('local');
+              if (limit === 'default-bytes') {
+                let seed = 1;
+                const content = Array.from({ length: 128 * 1024 }, () => {
+                  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+                  return String.fromCharCode(32 + ((seed >>> 16) % 95));
+                }).join('');
+                remote.getText('burst').insert(0, content);
+                remote.commit();
+              }
+              const burstMessage = LocalLoroDataPlaneServerMessageSchema.parse(
+                limit === 'default-bytes'
+                  ? {
+                      type: 'update',
+                      protocolVersion: 7,
+                      workspaceId: 'ws',
+                      peerId: 'peer-a',
+                      room: { scope: 'doc', docId: 'session-a' },
+                      payload: {
+                        kind: 'doc-update',
+                        dataBase64: bytesToBase64(remote.export({ mode: 'update' })),
+                      },
+                    }
+                  : {
+                      type: 'room-status',
+                      protocolVersion: 7,
+                      workspaceId: 'ws',
+                      peerId: 'peer-a',
+                      room:
+                        kind === 'meta' ? { scope: 'meta' } : { scope: 'doc', docId: 'session-a' },
+                      status: 'joined',
+                    }
+              );
+              const burstCount =
+                limit === 'default-bytes'
+                  ? Math.floor((64 * 1024 * 1024) / (JSON.stringify(burstMessage).length * 2)) + 2
+                  : 1100;
+              // The default byte-budget case must overflow before the event-count cap.
+              if (limit === 'default-bytes') expect(burstCount).toBeLessThan(1024);
+              for (let cycle = 1; cycle <= 2; cycle++) {
+                const epoch = (yield* room.stateSnapshot('local')).epoch;
+                // Enqueue a barrier immediately before the synchronous burst. Even a
+                // sync event the consumer has not reached must fail rather than hang.
+                const waiting = yield* room
+                  .sync('local')
+                  .pipe(Effect.exit, Effect.forkScoped({ startImmediately: true }));
+                yield* Effect.sync(() => {
+                  for (let index = 0; index < burstCount; index++)
+                    for (const listener of harness.listeners) listener(burstMessage);
+                });
+                yield* room.state('local').pipe(
+                  Stream.filter((state) => state.connection === 'failed'),
+                  Stream.runHead
+                );
+                expect((yield* Fiber.join(waiting))._tag).toBe('Failure');
+                expect((yield* room.stateSnapshot('local')).current).toBe(false);
+                expect((yield* sibling.sync('local')).outcome).toBe('confirmed');
+                if (room.replica.kind === 'doc') {
+                  room.replica.lease.doc.getMap('local').set(`cycle-${cycle}`, cycle);
+                  room.replica.lease.doc.commit();
+                  remote.getMap('remote').set(`cycle-${cycle}`, cycle);
+                  remote.commit();
+                } else {
+                  room.replica.lease.flock.set(['local', `cycle-${cycle}`], cycle);
+                  room.replica.lease.flock.commit();
+                  remoteMeta.set(['remote', `cycle-${cycle}`], cycle);
+                  remoteMeta.commit();
+                }
+                if (recovery === 'online') {
+                  for (const listener of harness.statuses) listener(true);
+                } else yield* attachment.reconnect;
+                yield* room.state('local').pipe(
+                  Stream.filter((state) => state.epoch > epoch && state.current),
+                  Stream.runHead
+                );
+                expect((yield* room.sync('local')).outcome).toBe('confirmed');
+                expect(room.replica.lease).toBe(originalReplica);
+                if (room.replica.kind === 'doc') {
+                  expect(remote.getMap('local').get(`cycle-${cycle}`)).toBe(cycle);
+                  expect(room.replica.lease.doc.getMap('remote').get(`cycle-${cycle}`)).toBe(cycle);
+                } else {
+                  expect(remoteMeta.get(['local', `cycle-${cycle}`])).toBe(cycle);
+                  expect(room.replica.lease.flock.get(['remote', `cycle-${cycle}`])).toBe(cycle);
+                }
+              }
+            })
+          )
+        );
+      } finally {
+        remote.free();
+      }
+    }
+  );
   it('automatically rejoins an invalidated host room and resumes incoming edits', async () => {
     const remote = new LoroDoc();
     remote.getText('body').insert(0, 'baseline');
