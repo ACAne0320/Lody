@@ -16,7 +16,7 @@ import {
   type ContentHeader,
   type ContentKey,
   type ContentScope,
-} from '@lody/e2ee-core';
+} from '@lody/e2ee-core/protocol';
 import vectors from './crypto-vector.json';
 
 const read = <A, E>(result: Result.Result<A, E>): A => Result.getOrThrow(result);

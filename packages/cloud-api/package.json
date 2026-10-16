@@ -9,6 +9,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./e2ee-epoch-staging": {
+      "types": "./src/e2ee-epoch-staging.ts",
+      "import": "./src/e2ee-epoch-staging.ts"
     }
   },
   "scripts": {
@@ -17,6 +21,7 @@
     "format:check": "oxfmt --check 'src/**/*.ts'"
   },
   "dependencies": {
+    "@lody/e2ee-core": "workspace:*",
     "@lody/shared": "workspace:*",
     "acp-extension-core": "workspace:*",
     "convex": "catalog:"
