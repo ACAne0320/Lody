@@ -191,7 +191,9 @@ export const makeInstalledKeySealer = Effect.fnUntraced(function* (
 export class InstalledEpochKeys extends Context.Service<
   InstalledEpochKeys,
   {
+    /** Protect and durably reload a key matching the ledger commitment; borrows `key`, which remains caller-owned. */
     saveAndReload(epoch: number, key: Bytes.EpochKey): Effect.Effect<void, InstalledKeyError>;
+    /** Open an installed key after current membership checks; the caller owns and must dispose the returned key. */
     read(epoch: number): Effect.Effect<Bytes.EpochKey, InstalledKeyError>;
   }
 >()('@lody/e2ee-core/InstalledEpochKeys') {
@@ -289,6 +291,7 @@ export class InstalledEpochHistory extends Context.Service<
   {
     /** Validate the full chain and install every recoverable older key. */
     recover(): Effect.Effect<readonly number[], InstalledKeyError | EpochKeyError>;
+    /** Read an owned key, recovering only genuinely missing history; permission, corruption and protection failures propagate. */
     read(epoch: number): Effect.Effect<Bytes.EpochKey, InstalledKeyError | EpochKeyError>;
   }
 >()('@lody/e2ee-core/InstalledEpochHistory') {

@@ -34,7 +34,9 @@ export class WorkspaceScope extends Context.Service<
 export class DeviceIdentity extends Context.Service<
   DeviceIdentity,
   {
+    /** Borrowed signer and public identity; the platform retains the private key for the workspace Scope. */
     readonly signer: DeviceSigner;
+    /** Borrowed X25519 keys registered for this device; retain them until all admitted native work settles. */
     readonly encryptionKeyPair: CryptoKeyPair;
   }
 >()('@lody/e2ee-core/DeviceIdentity') {}

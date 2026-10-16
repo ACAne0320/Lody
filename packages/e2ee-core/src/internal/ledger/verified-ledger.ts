@@ -45,7 +45,9 @@ const reject = (reason: VerifiedLedgerError['reason'], cause?: unknown) =>
 export class VerifiedLedger extends Context.Service<
   VerifiedLedger,
   {
+    /** Verify workspace, continuation and the durable pin before returning a view; source failures leave the pin unchanged. */
     current(): Effect.Effect<LedgerView, VerifiedLedgerError>;
+    /** Reject a view superseded by this process's observed history; performs no source read or pin write. */
     ensureCurrent(view: LedgerView): Effect.Effect<void, VerifiedLedgerError>;
   }
 >()('@lody/e2ee-core/VerifiedLedger') {
@@ -103,7 +105,9 @@ export class VerifiedLedger extends Context.Service<
           yield* serial.withPermit(accept(view));
           return view;
         }),
-        ensureCurrent: (view) => serial.withPermit(ensureCurrent(view)),
+        ensureCurrent: Effect.fn('@lody/e2ee-core/VerifiedLedger.ensureCurrent')(function* (view) {
+          return yield* serial.withPermit(ensureCurrent(view));
+        }),
       });
     })
   );

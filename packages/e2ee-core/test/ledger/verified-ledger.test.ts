@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { Context, Effect, Exit, Layer, type Scope } from 'effect';
+import { Context, Effect, Exit, Layer, Tracer, type Scope } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
 import { VerifiedLedger } from '@lody/e2ee-core';
-import { LedgerViewSource, WorkspaceScope, type LedgerView } from '@lody/e2ee-core/services';
+import { LedgerViewSource, LedgerViewSourceError, WorkspaceScope } from '@lody/e2ee-core/services';
 import { sqliteLedgerPinStore } from '@lody/e2ee-core/adapters/node-sqlite';
 import { envelopeFixture } from '../keys/fixture';
 
@@ -28,17 +28,14 @@ const failure = (exit: Exit.Exit<unknown, unknown>) =>
 const open = (
   f: ReturnType<typeof envelopeFixture>,
   file: string,
-  current: () => LedgerView
+  current: LedgerViewSource['Service']['current']
 ): Effect.Effect<VerifiedLedger['Service'], unknown, Scope.Scope> =>
   Effect.map(
     Layer.build(
       VerifiedLedger.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
-            Layer.succeed(
-              LedgerViewSource,
-              LedgerViewSource.of({ current: () => Effect.sync(current) })
-            ),
+            Layer.succeed(LedgerViewSource, LedgerViewSource.of({ current })),
             sqliteLedgerPinStore({ path: file, mode: 'create-or-open' })
           )
         ),
@@ -67,7 +64,7 @@ describe('VerifiedLedger rollback guard over a durable pin', () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const ledger = yield* open(f, file, () => current);
+          const ledger = yield* open(f, file, () => Effect.succeed(current));
           expect((yield* ledger.current()).length).toBe(2);
           current = high;
           expect((yield* ledger.current()).length).toBe(3);
@@ -81,7 +78,7 @@ describe('VerifiedLedger rollback guard over a durable pin', () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const restarted = yield* open(f, file, () => current);
+          const restarted = yield* open(f, file, () => Effect.succeed(current));
           expect(failure(yield* Effect.exit(restarted.current()))).toBe('rollback');
           current = high;
           expect((yield* restarted.current()).length).toBe(3);
@@ -97,7 +94,7 @@ describe('VerifiedLedger rollback guard over a durable pin', () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const ledger = yield* open(f, file, () => other.view());
+          const ledger = yield* open(f, file, () => Effect.sync(other.view));
           expect(failure(yield* Effect.exit(ledger.current()))).toBe('rollback');
         })
       )
@@ -108,7 +105,7 @@ describe('VerifiedLedger rollback guard over a durable pin', () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.flatMap(
-          open(f, file, () => f.view()),
+          open(f, file, () => Effect.sync(f.view)),
           (ledger) => ledger.current()
         )
       )
@@ -116,7 +113,7 @@ describe('VerifiedLedger rollback guard over a durable pin', () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const ledger = yield* open(f, file, () => fork.view());
+          const ledger = yield* open(f, file, () => Effect.sync(fork.view));
           expect(failure(yield* Effect.exit(ledger.current()))).toBe('rollback');
         })
       )
@@ -133,7 +130,7 @@ describe('VerifiedLedger rollback guard over a durable pin', () => {
       await Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {
-            const ledger = yield* open(f, file, () => current);
+            const ledger = yield* open(f, file, () => Effect.succeed(current));
             yield* ledger.current();
             const db = new Database(file);
             try {
@@ -169,13 +166,62 @@ describe('VerifiedLedger rollback guard over a durable pin', () => {
     }
   );
 
+  it('preserves the pin on a typed source failure and exposes completed workflow spans', async () => {
+    const f = envelopeFixture(),
+      file = pinFile();
+    const cause = new Error('synthetic source unavailable');
+    const sourceError = new LedgerViewSourceError({ cause });
+    let unavailable = false;
+    const spans: Tracer.Span[] = [];
+    const tracer = Tracer.make({
+      span(options) {
+        const span = Tracer.nativeTracer.span(options);
+        spans.push(span);
+        return span;
+      },
+    });
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const ledger = yield* open(f, file, () =>
+            unavailable ? Effect.fail(sourceError) : Effect.sync(f.view)
+          );
+          const view = yield* ledger.current();
+          const before = pin(file);
+          unavailable = true;
+          const result = yield* Effect.exit(ledger.current());
+          expect(failure(result)).toBe('source');
+          if (Exit.isFailure(result)) {
+            expect(result.cause.reasons).toEqual([
+              expect.objectContaining({
+                _tag: 'Fail',
+                error: expect.objectContaining({ cause: sourceError }),
+              }),
+            ]);
+          }
+          expect(pin(file)).toEqual(before);
+          yield* ledger.ensureCurrent(view);
+          unavailable = false;
+          expect((yield* ledger.current()).head).toEqual(view.head);
+        })
+      ).pipe(Effect.provideService(Tracer.Tracer, tracer))
+    );
+    const current = spans.filter((span) => span.name === '@lody/e2ee-core/VerifiedLedger.current');
+    expect(
+      current.map((span) => (span.status._tag === 'Ended' ? span.status.exit._tag : 'Started'))
+    ).toEqual(['Success', 'Failure', 'Success']);
+    expect(
+      spans.find((span) => span.name === '@lody/e2ee-core/VerifiedLedger.ensureCurrent')?.status
+    ).toMatchObject({ _tag: 'Ended', exit: { _tag: 'Success' } });
+  });
+
   it('does not rewrite an unchanged pin on repeated reads', async () => {
     const f = envelopeFixture(),
       file = pinFile();
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const ledger = yield* open(f, file, () => f.view());
+          const ledger = yield* open(f, file, () => Effect.sync(f.view));
           yield* ledger.current();
           const db = new Database(file);
           try {

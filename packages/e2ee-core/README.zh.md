@@ -6,6 +6,13 @@
 
 这个库不绑定 Lody，也不绑定 Convex。所有远端系统、平台能力和本地存储都是由你提供的 service，因此适用于任何通过 Loro / Durable Streams 或类似追加日志同步的应用。
 
+## 可用范围
+
+服务架构已经支持复用，但当前仍是仓库内的私有包（`private: true`、版本 `0.0.0`），
+尚未发布为独立 SDK，生产 E2EE 组合也未启用。已有 Node SQLite 与 Loro Streams
+适配器；其他运行时需要实现自己的存储和平台适配器。后端端口与 `/host` 规定其他
+后端需要实现什么，并不负责部署服务器。
+
 ## 从这里开始
 
 | 你想要… | 阅读 |
@@ -116,7 +123,7 @@ docs/                      架构、服务、流程、公开接口、后端指�
 
 **有后台循环吗？** 没有。每个操作只处理有限的一页并返回 `next` 提示，何时调用由应用安排。
 
-**一次调用可能返回哪些错误？** 每个方法的 JSDoc 都列出了错误；每个流程导出完整的失败联合类型（如 `ReceiveFailure`）。错误带有 `reason`（协议错误为 `code`），不含任何秘密。
+**一次调用可能返回哪些错误？** 方法签名列出具体错误类型，JSDoc 说明行为和所有权；每个流程导出完整的失败联合类型（如 `ReceiveFailure`）。按文档中的 tag、`reason` 或协议 `code` 分支处理。部分错误保留适配器的原始 `cause` 供本地诊断，不能直接展示或导出。
 
 **如何测试我的集成？** 使用 SQLite 适配器、参考邮箱（`makeSqliteKeyMailbox` + `referenceKeyMailbox`），并参考 `test/` 中的测试。Lab 会端到端复现协议攻击。
 
@@ -125,7 +132,7 @@ docs/                      架构、服务、流程、公开接口、后端指�
 ```sh
 pnpm --filter @lody/e2ee-core typecheck
 pnpm --filter @lody/e2ee-core test        # 包含公开文档测试
-pnpm --filter @lody/e2ee-core check:docs  # 每个公开导出都有 JSDoc
+pnpm --filter @lody/e2ee-core check:docs  # 公开导出、命名空间与 service 成员
 ```
 
 测试使用固定的合成向量、真实 SQLite、真实 Ed25519/HPKE 和子进程；`test/generate-*.py` 用于（可选地）重新生成向量。

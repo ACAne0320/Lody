@@ -5,6 +5,7 @@ import { ValidationError } from './errors';
 export interface EpochKey extends Brand.Brand<'EpochKey'> {}
 const materials = new WeakMap<EpochKey, Uint8Array>();
 
+/** Copy exactly 32 secret bytes into an opaque key; malformed input returns canonical. The caller retains ownership of the input. */
 export function epochKey(input: unknown): Result.Result<EpochKey, ValidationError> {
   if (!(input instanceof Uint8Array) || input.length !== 32)
     return Result.fail(new ValidationError({ code: 'canonical' }));

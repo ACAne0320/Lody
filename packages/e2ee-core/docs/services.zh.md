@@ -93,6 +93,10 @@
 
 `current()` 返回应用持有的最新*真实*账本视图，通常是 `LedgerFeed.viewSource`。`VerifiedLedger` 会检查每个视图：由库验证、属于本工作区、延续本设备此前看到的内容，并包含持久化的钉。
 
+预期的 feed、存储或传输失败必须包装成 `LedgerViewSourceError({ cause })`；
+`LedgerFeed.viewSource` 已完成这一步。`VerifiedLedger` 返回 `reason: 'source'`，
+不会推进持久化检查点。缺陷和中断仍保留在 Effect 的 Cause 通道中，不能转成可用性错误，也不要向用户显示原始 cause。
+
 ### EpochPublicationSource
 
 `current(view)` 返回发布当前纪元的那条记录的原始字节（纪元 0 为创世记录），或 `null`。分发器只用它记录本设备自己的发布，并会先验证。通常是对本地 feed 的逆向扫描。
