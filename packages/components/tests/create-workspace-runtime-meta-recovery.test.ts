@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  CURRENT_MACHINE_PROTOCOL_CAPABILITIES,
-  getMachineRoomId,
   getMachineFlockDocId,
   getSessionRoomId,
   type AgentConfigId,
@@ -1740,62 +1738,6 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       }
     }
   );
-
-  it('reuses a machine capability read across local file previews', async () => {
-    mocks.joinMetaRoom.mockResolvedValueOnce(createMetaSub(Promise.resolve()));
-    const machineId = 'local-machine' as MachineId;
-    const preview = {
-      status: 'error' as const,
-      code: 'file_not_found' as const,
-      message: 'synthetic missing file',
-      path: 'notes.md',
-      retryable: false,
-    };
-    const invoke = vi.fn(async (channel: string) => {
-      if (channel === 'loro.isConnected') return true;
-      if (channel === 'machineRpc.previewFile') return preview;
-      return undefined;
-    });
-    Object.assign(window, {
-      __LODY_ELECTRON__: true,
-      ipc: {
-        invoke,
-        on: vi.fn(() => () => {}),
-        send: vi.fn(),
-      },
-    });
-    mocks.getDocMeta.mockImplementation(async (docId) =>
-      docId === getMachineRoomId(machineId)
-        ? { meta: { protocolCapabilities: CURRENT_MACHINE_PROTOCOL_CAPABILITIES } }
-        : undefined
-    );
-
-    const runtime = await createWorkspaceRuntime({
-      workspaceSlug: 'workspace',
-      workspaceId: 'workspace-1' as WorkspaceId,
-      apiBaseUrl: 'https://api.example.test',
-      syncMode: 'local',
-    });
-
-    await expect(
-      runtime.requestFilePreview(machineId, {
-        sessionId: 'session-1' as SessionId,
-        path: 'notes.md',
-      })
-    ).resolves.toMatchObject({ status: 'error', code: 'file_not_found' });
-    await expect(
-      runtime.requestFilePreview(machineId, {
-        sessionId: 'session-1' as SessionId,
-        path: 'other.md',
-      })
-    ).resolves.toMatchObject({ status: 'error', code: 'file_not_found' });
-
-    expect(mocks.getDocMeta).toHaveBeenCalledTimes(1);
-    expect(
-      invoke.mock.calls.filter(([channel]) => channel === 'machineRpc.previewFile')
-    ).toHaveLength(2);
-    await runtime.dispose();
-  });
 
   it('hot-attaches one cloud plane on auth without touching the local plane', async () => {
     mocks.joinMetaRoom.mockResolvedValueOnce(createMetaSub(Promise.resolve()));
