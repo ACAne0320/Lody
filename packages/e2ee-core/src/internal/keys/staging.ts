@@ -77,7 +77,7 @@ export function ownEpochStagedGroup(input: EpochStagedGroup) {
     )
       return yield* Result.fail(fail('invalid-group'));
     const recipients = new Set<string>();
-    const envelopes = [];
+    const envelopes: { readonly recipient: string; readonly frame: Uint8Array }[] = [];
     const count = decoded.envelopes.length;
     for (let index = 0; index < count; index++) {
       const row = decoded.envelopes[index]!;
