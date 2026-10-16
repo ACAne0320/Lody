@@ -6,7 +6,12 @@ import type {
   LedgerFeedState,
   LedgerReadPage,
 } from '../internal/ledger/feed-page';
-import type { BackendError, LedgerLogError, LocalStoreError } from './errors';
+import type {
+  BackendError,
+  LedgerLogError,
+  LedgerViewSourceError,
+  LocalStoreError,
+} from './errors';
 
 /**
  * The remote append-only log that stores a workspace's signed ledger records.
@@ -33,6 +38,7 @@ import type { BackendError, LedgerLogError, LocalStoreError } from './errors';
 export class LedgerLog extends Context.Service<
   LedgerLog,
   {
+    /** Read original records from genesis and the claimed endpoint; failures are transport outcomes, not authority. */
     read(anchor: GenesisHash): Effect.Effect<
       {
         readonly records: readonly Uint8Array[];
@@ -40,6 +46,7 @@ export class LedgerLog extends Context.Service<
       },
       LedgerLogError
     >;
+    /** Atomically append at `expected`; an error may follow a committed write, so callers must read back. */
     appendCas(
       anchor: GenesisHash,
       expected: LedgerCheckpoint,
@@ -61,6 +68,7 @@ export class LedgerLog extends Context.Service<
 export class LedgerFeedSource extends Context.Service<
   LedgerFeedSource,
   {
+    /** Read after the opaque offset (`'-1'` starts at genesis); return an untrusted page or LedgerFeedError. */
     readAfter(offset: string): Effect.Effect<LedgerReadPage, LedgerFeedError>;
   }
 >()('@lody/e2ee-core/LedgerFeedSource') {}
@@ -78,7 +86,8 @@ export class LedgerFeedSource extends Context.Service<
 export class LedgerViewSource extends Context.Service<
   LedgerViewSource,
   {
-    current(): Effect.Effect<LedgerView, unknown>;
+    /** Return the newest genuine view available; wrap expected source failures in LedgerViewSourceError. */
+    current(): Effect.Effect<LedgerView, LedgerViewSourceError>;
   }
 >()('@lody/e2ee-core/LedgerViewSource') {}
 
@@ -94,7 +103,9 @@ export class LedgerViewSource extends Context.Service<
 export class LedgerPinStore extends Context.Service<
   LedgerPinStore,
   {
+    /** Read the last durable checkpoint, or `null` on first use; a read failure must not reset it. */
     read(): Effect.Effect<LedgerCheckpoint | null, LocalStoreError>;
+    /** Atomically persist and verify the checkpoint; callers have already established continuation. */
     write(checkpoint: LedgerCheckpoint): Effect.Effect<void, LocalStoreError>;
   }
 >()('@lody/e2ee-core/LedgerPinStore') {}
@@ -114,6 +125,7 @@ export class LedgerPinStore extends Context.Service<
 export class EpochPublicationSource extends Context.Service<
   EpochPublicationSource,
   {
+    /** Return original publication bytes for `view`'s epoch, or `null`; callers authenticate them before use. */
     current(view: LedgerView): Effect.Effect<Uint8Array | null, LocalStoreError | BackendError>;
   }
 >()('@lody/e2ee-core/EpochPublicationSource') {}
@@ -161,7 +173,9 @@ export interface SubmissionEntry {
 export class SubmissionJournal extends Context.Service<
   SubmissionJournal,
   {
+    /** Read the bound workspace's slot and retained checkpoint; an unused slot contains null fields. */
     load(anchor: GenesisHash): Effect.Effect<SubmissionEntry, LocalStoreError>;
+    /** Persist a copy before network I/O; identical retries are no-ops and a different occupied record conflicts. */
     prepare(anchor: GenesisHash, record: Uint8Array): Effect.Effect<void, LocalStoreError>;
     /** Record a newer observed checkpoint while the outcome is still unknown. */
     observe(
@@ -170,6 +184,7 @@ export class SubmissionJournal extends Context.Service<
       before: LedgerCheckpoint | null,
       after: LedgerCheckpoint
     ): Effect.Effect<void, LocalStoreError>;
+    /** Atomically retain the terminal outcome and advance the pin only when record and `before` still match. */
     finish(
       anchor: GenesisHash,
       record: Uint8Array,
@@ -177,6 +192,7 @@ export class SubmissionJournal extends Context.Service<
       before: LedgerCheckpoint | null,
       after: LedgerCheckpoint
     ): Effect.Effect<void, LocalStoreError>;
+    /** Clear only the matching terminal result, retaining its pin; unfinished or mismatched results conflict. */
     acknowledge(
       anchor: GenesisHash,
       result: SubmissionResult
@@ -198,7 +214,9 @@ export class SubmissionJournal extends Context.Service<
 export class LedgerSync extends Context.Service<
   LedgerSync,
   {
+    /** Read the retained verified feed without network work; source-specific failures propagate to the application. */
     current(): Effect.Effect<LedgerFeedState, unknown>;
+    /** Read and verify up to an independently chosen endpoint, then persist it; never trust a server-selected endpoint implicitly. */
     refresh(): Effect.Effect<LedgerFeedState, unknown>;
   }
 >()('@lody/e2ee-core/LedgerSync') {}

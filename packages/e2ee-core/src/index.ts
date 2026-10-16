@@ -62,6 +62,7 @@ export {
 export { EpochKeyError } from './internal/keys/history';
 
 // Value types used by the workflows above.
+/** Validated, copy-owning protocol byte values and their parsers; parsing does not establish authority. */
 export * as Bytes from './internal/foundation/bytes';
 export { ValidationError, ContentError } from './internal/foundation/errors';
 export { LedgerError } from './internal/ledger/errors';

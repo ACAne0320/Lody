@@ -73,6 +73,15 @@ adapters exist.
   unpublished rotation key uses a distinct protector from installed keys is
   kept as a separate `CandidateProtector` port, rather than reusing
   `KeyProtector`.
+- **Public contract completion.** The documentation check now traverses namespace
+  exports and resolved service members, including inherited contracts. The old
+  check missed `Bytes` exports and service methods with no JSDoc. A compiler-backed
+  fixture checks both rejection and acceptance; documentation quality still needs
+  human review. Public ledger/key workflow queries and acknowledgements now have
+  named spans too, without adding argument attributes or installing telemetry.
+  `LedgerViewSourceError` replaces the view port's `unknown` error channel;
+  expected source failures keep the cause and leave the rollback pin unchanged.
+  This changes the adapter's compile-time contract, not ledger or wire behavior.
 - **Delivery refusals propagate.** Only an `unavailable` mailbox leaves a
   delivery `Pending`; a refusal (unauthorized, conflict) fails, matching the old
   distinction between transport loss and host rejection.
@@ -120,12 +129,24 @@ adapters exist.
 
 ## Verification
 
-Core: 20 test files (353 tests), including composition and public-docs tests, on real
-SQLite, Ed25519, HPKE and child processes; typecheck; type-aware lint; repo
-boundary checks. `test/composition.test.ts` delivers a key between two devices
+Core: 20 test files (356 tests), including composition and public-docs tests, on real
+SQLite, Ed25519, HPKE and child processes. `test/composition.test.ts` delivers a key between two devices
 through `E2eeWorkflows`. `test/public-docs.test.ts` requires JSDoc on every
-public export and that `docs/surface*.md` match the exports.
+public export, namespace export and service member and that `docs/surface*.md`
+match the exports. Contract-completion tests also check typed source failure
+without pin advancement and completed query/acknowledgement spans. The follow-up
+passed core typecheck, type-aware lint (existing warnings), Effect lint (advisory
+warnings) and root format. Full root `check`, public-boundary and docs checks
+could not finish cleanly in the isolated worktree: other package dependencies
+and ACP submodules are absent. No E2EE documentation errors were reported.
+
+The assembled five-layer stack also passes core typecheck, Lab typecheck, all
+401 core tests and all 201 Lab tests. The workspace maps refresh failures into
+`LedgerViewSourceError`, and the Lab's relocated component harness preserves the
+same port contract. Workspace/recovery service members are covered by the stricter
+documentation check. These local synthetic results are not production acceptance.
 
 Limits: Lab and desktop consumers are migrated in the later PRs of the stack;
 no IndexedDB or mobile storage adapters exist; production composition is still
-not wired.
+not wired. The package is still private at version `0.0.0`; reusable service
+boundaries do not mean that a standalone SDK or backend has been published.

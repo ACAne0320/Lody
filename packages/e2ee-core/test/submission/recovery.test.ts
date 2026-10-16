@@ -5,9 +5,10 @@ import os from 'node:os';
 import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { Deferred, Effect, Fiber, Result, Scope, Exit } from 'effect';
+import { Deferred, Effect, Fiber, Result, Scope, Exit, Tracer } from 'effect';
 import { SubmissionJournal, LedgerLog, LedgerLogError } from '@lody/e2ee-core/services';
-import { submitRecord, resumeSubmission, acknowledgeSubmission } from './fixture';
+import { LedgerSubmission } from '@lody/e2ee-core';
+import { submissionLayer, submitRecord, resumeSubmission, acknowledgeSubmission } from './fixture';
 import { sqliteSubmissionJournal } from '@lody/e2ee-core/adapters/node-sqlite';
 import { openSqliteStore } from '@lody/e2ee-core/internal';
 import { anchor, checkpoint, filled, genesis, host, keys, owner, rotate, signed } from './fixture';
@@ -42,6 +43,47 @@ const using = <A, E, R>(
   );
 
 describe('durable submission', () => {
+  it('traces pending and acknowledgement while retaining then consuming the committed original', async () => {
+    const f = fixture();
+    const spans: Tracer.Span[] = [];
+    const tracer = Tracer.make({
+      span(options) {
+        const span = Tracer.nativeTracer.span(options);
+        spans.push(span);
+        return span;
+      },
+    });
+    try {
+      const record = rotate();
+      await Effect.runPromise(
+        using(
+          f,
+          Effect.gen(function* () {
+            const submission = yield* LedgerSubmission;
+            const result = yield* submission.submit(record);
+            expect(yield* submission.pending()).toMatchObject({ record, outcome: 'Committed' });
+            yield* submission.acknowledge(result);
+            expect(yield* submission.pending()).toMatchObject({
+              record: null,
+              outcome: null,
+              checkpoint: checkpoint(f.remote.read()),
+            });
+          }).pipe(
+            Effect.provide(submissionLayer(anchor)),
+            Effect.provideService(Tracer.Tracer, tracer)
+          )
+        )
+      );
+      for (const method of ['pending', 'acknowledge']) {
+        expect(
+          spans.find((span) => span.name === `@lody/e2ee-core/LedgerSubmission.${method}`)?.status
+        ).toMatchObject({ _tag: 'Ended', exit: { _tag: 'Success' } });
+      }
+    } finally {
+      f.close();
+    }
+  });
+
   it.each(['empty-file', 'rolled-back-initialization'] as const)(
     'initializes an existing %s without treating it as a legacy journal',
     async (kind) => {

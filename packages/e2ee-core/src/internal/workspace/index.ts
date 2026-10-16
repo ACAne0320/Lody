@@ -19,6 +19,7 @@ import { makeWorkspaceRecovery, type WorkspaceRecoveryInput } from '../recovery'
 import { disposeEpochKey } from '../foundation/epoch-key';
 import { E2eeWorkflows } from '../../workflows';
 import { EpochStagingStore } from '../../services/keys';
+import { LedgerViewSourceError } from '../../services/errors';
 import { LedgerSync, LedgerViewSource } from '../../services/ledger';
 import { DeviceIdentity, WorkspaceScope } from '../../services/workspace';
 export { WorkspaceControl, WorkspaceControlError } from './control';
@@ -125,7 +126,9 @@ export interface WorkspaceRestorePlan {
 export class WorkspacePlatform extends Context.Service<
   WorkspacePlatform,
   {
+    /** Acquire ports and native owners in the caller Scope; create initializes new resources, open reuses retained originals and pins. */
     acquire(mode: 'create' | 'open'): Effect.Effect<WorkspaceResources, unknown, Scope.Scope>;
+    /** Prepare recovery and subsequent personal-device acquisition in the caller Scope; this alone does not admit or open that device. */
     prepareRecovery(
       input: WorkspaceRestoreRequest
     ): Effect.Effect<WorkspaceRestorePlan, unknown, Scope.Scope>;
@@ -166,7 +169,11 @@ const workspaceLayer = (ports: WorkspaceResources['ports']) =>
         Effect.gen(function* () {
           const sync = yield* LedgerSync;
           return LedgerViewSource.of({
-            current: () => sync.refresh().pipe(Effect.map((state) => state.view)),
+            current: () =>
+              sync.refresh().pipe(
+                Effect.map((state) => state.view),
+                Effect.mapError((cause) => new LedgerViewSourceError({ cause }))
+              ),
           });
         })
       )

@@ -19,7 +19,7 @@ whitepaper, Specs, decisions and this package's docs. Contract:
 - Every remote system, platform capability and local store is a port. Do not
   add a workflow input that bypasses one (callbacks, paths, SDK objects).
 - Workflows capture ports once with `own()`, declare complete failure unions,
-  use `Effect.fn('@lody/e2ee-core/<Service>.<method>')` for public methods and
+  use `Effect.fn('@lody/e2ee-core/<Service>.<method>')` for public ledger/key workflow methods and
   `Effect.fnUntraced` internally, and never call `Effect.run*`.
 - Close behavior is part of the contract: the admission gate (waits) only where
   native protection is borrowed; the close guard elsewhere.
@@ -28,8 +28,9 @@ whitepaper, Specs, decisions and this package's docs. Contract:
 
 ## Documentation
 
-- Every public export has JSDoc; `test/public-docs.test.ts` enforces it and that
-  `docs/surface*.md` lists exactly each entry's exports. Update the bilingual
+- Every public export, namespace export and service member has JSDoc; `test/public-docs.test.ts` enforces it and that
+  `docs/surface*.md` lists exactly each entry's exports. Presence is not quality:
+  explain ownership, failure and retry semantics when applicable. Update the bilingual
   docs (`README*`, `docs/*`) in the same change as the behavior or surface.
 - Port contracts live in their JSDoc and `docs/services.md`; backend rules in
   `docs/backend-guide.md` and `./host`. Keep them in agreement with the code.

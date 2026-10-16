@@ -148,7 +148,12 @@ binds itself to it; a store created for another workspace is refused.
 `current()` returns the newest *genuine* ledger view the application holds.
 Normally `LedgerFeed.viewSource`. `VerifiedLedger` checks that each view is
 library-verified, belongs to the workspace, extends what this device saw
-before, and contains the durable pin.
+before, and contains the durable pin. Expected feed, storage or transport
+failures must be wrapped in
+`LedgerViewSourceError({ cause })`; `LedgerFeed.viewSource` does this for you.
+`VerifiedLedger` returns `reason: 'source'` without advancing the durable pin.
+Defects and interruption remain in Effect's Cause channel; do not convert them
+into availability errors or display raw causes to users.
 
 ### EpochPublicationSource
 
