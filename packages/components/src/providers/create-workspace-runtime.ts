@@ -2175,7 +2175,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
         'local',
         { signal, timeoutMs: 20_000 }
       );
-      if (signal?.aborted) return null;
+      if (signal?.aborted || disposePromise) return null;
       if (handoff.outcome !== 'confirmed')
         return {
           type: 'machine/acp-capabilities-refresh_response',

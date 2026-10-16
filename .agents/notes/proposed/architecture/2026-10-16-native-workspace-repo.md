@@ -90,6 +90,8 @@ peer coverage is never server authority. This restores the causal ordering lost
 when synchronous local send callbacks became asynchronous Effect workers. Tests
 hold the handoff before launch, reject unconfirmed delivery, and synchronize a
 real Flock configuration through the real v7 server and native transport.
+Cancellation or workspace disposal while awaiting handoff also prevents launch;
+a late receipt cannot start a process after its calling workspace has closed.
 
 Legacy metadata observers project the completed catalog row when delivering a
 metadata patch. Native row events can otherwise expose an intermediate owner/backend

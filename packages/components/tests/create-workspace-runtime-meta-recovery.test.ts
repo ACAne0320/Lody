@@ -1530,7 +1530,7 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     await runtime.dispose();
   });
 
-  it.each(['confirmed', 'skipped'] as const)(
+  it.each(['confirmed', 'skipped', 'disposed', 'cancelled'] as const)(
     'hands off a local config before probing, with a %s peer receipt',
     async (outcome) => {
       mocks.joinMetaRoom.mockResolvedValueOnce(createMetaSub(Promise.resolve()));
@@ -1540,11 +1540,12 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       const launches: boolean[] = [];
       const machineId = 'local-machine' as MachineId;
       const configId = 'synthetic-config';
+      const controller = new AbortController();
       mocks.syncRoomLegacy.mockImplementationOnce(async () => {
         entered.resolve();
         await imported.promise;
-        configAvailable = outcome === 'confirmed';
-        return { outcome };
+        configAvailable = outcome !== 'skipped';
+        return { outcome: outcome === 'skipped' ? 'skipped' : 'confirmed' };
       });
       Object.assign(window, {
         __LODY_ELECTRON__: true,
@@ -1581,11 +1582,14 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       });
       runtime.setLocalMachineId(machineId);
       try {
-        const request = runtime.requestMachineAcpCapabilitiesRefresh({
-          type: 'machine/acp-capabilities-refresh',
-          machineId,
-          configId: configId as AgentConfigId,
-        });
+        const request = runtime.requestMachineAcpCapabilitiesRefresh(
+          {
+            type: 'machine/acp-capabilities-refresh',
+            machineId,
+            configId: configId as AgentConfigId,
+          },
+          { signal: controller.signal }
+        );
         expect(
           await Promise.race([
             entered.promise.then(() => 'waiting-for-peer'),
@@ -1593,8 +1597,12 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
           ])
         ).toBe('waiting-for-peer');
         expect(launches).toEqual([]);
+        if (outcome === 'disposed') await runtime.dispose();
+        if (outcome === 'cancelled') controller.abort();
         imported.resolve();
-        expect((await request)?.success).toBe(outcome === 'confirmed');
+        const response = await request;
+        if (outcome === 'disposed' || outcome === 'cancelled') expect(response).toBeNull();
+        else expect(response?.success).toBe(outcome === 'confirmed');
         expect(launches).toEqual(outcome === 'confirmed' ? [true] : []);
       } finally {
         imported.resolve();
