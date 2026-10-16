@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1612](https://github.com/LodyAI/Lody/pull/1612)
 
 [English](2026-10-16-subagent-history-windows.md)
 
