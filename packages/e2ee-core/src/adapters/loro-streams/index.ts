@@ -6,7 +6,8 @@
  * offset CAS append) and {@link streamsLedgerFeedSource} implements
  * {@link LedgerFeedSource} (paged reads). Both take the released
  * `@durable-streams/client` 0.9 shape structurally, so the caller owns the SDK,
- * its URL, auth and timeouts. Details: `./README.md`.
+ * its URL, auth and timeouts. {@link streamsDocumentBinding} protects document
+ * updates and snapshots for `@loro-dev/streams-crdt`. Details: `./README.md`.
  *
  * @module
  */
@@ -21,3 +22,8 @@ export {
   streamsLedgerFeedSource,
   type LedgerStreamReader,
 } from './ledger-feed-source';
+export {
+  makeStreamsUpdateBinding,
+  streamsDocumentBinding,
+  type StreamsDocumentBindingOptions,
+} from './document-binding';

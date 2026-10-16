@@ -5,7 +5,7 @@
  * version, bound to one workspace (and device) on creation; a file of another
  * kind or workspace is refused, never converted. {@link sqliteLocalStores}
  * composes all of them in one directory. Also contains the reference mailbox
- * backend used by tests and the Lab.
+ * backend and the reference snapshot publication journal used by tests and the Lab.
  *
  * @module
  */
@@ -41,6 +41,12 @@ export {
   type MailboxStatus,
   type MailboxTarget,
 } from './reference-mailbox-host';
+export {
+  makeSqliteSnapshotPublication,
+  snapshotPublicationDigest,
+  SnapshotPublicationError,
+  type SnapshotPublicationRow,
+} from './reference-snapshot-journal';
 
 /** File names used by {@link sqliteLocalStores}, relative to its directory. */
 export const SQLITE_STORE_FILES = {

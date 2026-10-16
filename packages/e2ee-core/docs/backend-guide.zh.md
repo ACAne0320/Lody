@@ -57,6 +57,16 @@ Loro / Durable Streams 直接提供这些能力：`@lody/e2ee-core/adapters/loro
 
 暂存服务器从不读取或解释账本；在账本包含确切记录之前，已存组没有任何效力。
 
+## 4. 文档内容
+
+存储文档帧的同步服务器应只接纳当前写入者封装的帧。它不解密这些帧（读取方仍会校验 AEAD）。
+
+- 存储已封装帧之前执行 `admitDocument`：已认证的设备具有当前写权限，且帧的纪元已发布、不晚于当前纪元（活跃写入者在换代前封装的帧仍然有效）。
+- `@loro-dev/streams-crdt` 0.17 批次使用 `admitStreamsUpdateBatch`：检查分帧、头部 3 以及每一帧的签名与权限。整批接受或整批拒绝，并原样转发原始字节。
+- 快照（头部 4）使用 `admitStreamsSnapshot`：此外还需由 `StreamsRecordBoundaryPort` 证明签名中的续读 offset 是不晚于 head 的记录边界（字符串顺序不能作为证明）。
+
+“恰好一次”快照发布日志的单主机参考实现是 `@lody/e2ee-core/adapters/node-sqlite` 中的 `makeSqliteSnapshotPublication`。
+
 ## 服务器能了解到什么
 
 谁在何时与谁通信、工作区和设备标识符、纪元号、大小与时间。它永远看不到纪元密钥、文档密钥或明文，也无法生成有效的记录、信封或报告。见白皮书的威胁模型：[specs/e2ee/whitepaper.zh.md](../../../specs/e2ee/whitepaper.zh.md)。

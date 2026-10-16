@@ -167,6 +167,26 @@ admin personal devices may rotate. A manager who bypasses staging and appends
 directly can withhold the key. That is a known availability limitation, not a
 confidentiality break.
 
+## Documents
+
+Document content uses content v0: a signed header, XChaCha20-Poly1305 under a
+document key derived from the epoch key, and purpose-bound AAD.
+
+- **Loro / streams-crdt**: `streamsDocumentBinding({ resource, model, writeEpoch })`
+  (`@lody/e2ee-core/adapters/loro-streams`) is the payload-protection binding
+  for a `@loro-dev/streams-crdt` document. It seals updates (header 3) and
+  snapshots (header 4, with the continuation offset inside the signed header),
+  and opens what it reads. It takes its signer, ledger view and keys from
+  `DeviceIdentity`, `VerifiedLedger` and `InstalledEpochHistory`.
+- **Other transports**: `sealDocument`, `openDocument` and
+  `authenticateDocument` (`/protocol`) take a document key, a signer and a
+  verified-view lookup. A new seal requires current write permission at the
+  exact current epoch, checked before encryption and again after signing. Each
+  run encrypts anew, so a retry must resend the returned bytes.
+- Reading authenticates the historical author before decrypting. A revoked
+  author's old content still opens and is attributed (`member`, or
+  `device-only` after a snapshot), but this grants no current write right.
+
 ## Delivery (inside the distributor)
 
 `deliverEpochEnvelope` (internal) performs one put and read-back round. Saved

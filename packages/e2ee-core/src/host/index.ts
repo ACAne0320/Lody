@@ -17,6 +17,11 @@
  *   for `report`. A runnable reference backend is `makeSqliteKeyMailbox` in
  *   `@lody/e2ee-core/adapters/node-sqlite`.
  *
+ * - Documents: {@link admitDocument} before storing a sealed frame, and
+ *   {@link admitStreamsUpdateBatch} / {@link admitStreamsSnapshot} for
+ *   `@loro-dev/streams-crdt` batches and snapshots (with a
+ *   {@link StreamsRecordBoundaryPort} proving snapshot offsets).
+ *
  * @module
  */
 export * from './staging';
@@ -44,3 +49,15 @@ export {
 export { authenticateEpochEnvelope } from '../internal/keys/envelope';
 export type { KeyMailboxStatus } from '../services/keys';
 export type { EpochStagingStore, KeyMailbox } from '../services/keys';
+export { admitDocument } from '../internal/content';
+export {
+  admitStreamsSnapshot,
+  admitStreamsSnapshotEffect,
+  admitStreamsUpdateBatch,
+  admitStreamsUpdateBatchEffect,
+  authenticateStreamsSnapshotEffect,
+} from '../internal/content/streams';
+export type {
+  StreamsRecordBoundary,
+  StreamsRecordBoundaryPort,
+} from '../internal/content/record-boundary';

@@ -42,7 +42,8 @@ repository's tests and the Lab, with no compatibility promise.
 | Bytes and encoding | `Bytes`, `encodeCbor`, `decodeCbor`, `CborValue`, `ValidationError`, `ValidationErrorCode`, `ContentError` |
 | Signatures | `verifySignature`, `verifyContentSignature`, `signVerified`, `nativeDeviceSigner`, `DeviceSigner` |
 | Content format | `encodeDocumentContext`, `encodeContentContext`, `encodeContentHeader`, `contentKeyInfo`, `contentHkdfSalt`, `contentAad`, `contentSigningBytes`, `inspectContentFrame`, `DocumentScope`, `ContentScope`, `ContentPurpose`, `ContentHeader`, `ContentMetadata` |
-| Content crypto | `deriveContentKey`, `sealContentAead`, `openContentAead`, `ContentKey`, `SealedContentAead` |
+| Documents | `sealDocument`, `openDocument`, `authenticateDocument`, `admitDocument`, `deriveDocumentKey`, `scopedDocumentKey`, `importDocumentKey`, `exportDocumentKey`, `disposeDocumentKey`, `DocumentKey` |
+| Content crypto | `deriveContentKey`, `disposeContentKey`, `sealContentAead`, `openContentAead`, `ContentKey`, `SealedContentAead` |
 | Epoch HPKE | `epochHpkeAad`, `sealEpochKeyHpke`, `openEpochKeyHpke`, `HpkePrimitiveError`, `EpochHpkeContext`, `SealedEpochHpke` |
 | Records | `decodeRecord`, `hashRecordBytes`, `recordSigningBytes`, `joinRequestSigningBytes`, `possessionSigningBytes`, `DecodedRecord`, `RecordBody`, `Operation`, `JoinRequest`, `Role`, `DeviceKind`, `LedgerError`, `LedgerErrorCode` |
 | Replay and views | `verifyLedger`, `verifyLedgerEffect`, `extendLedger`, `extendLedgerEffect`, `requireLedgerContinuation`, `hasVerifiedRecordHash`, `hasVerifiedCheckpoint`, `contentPermissions`, `epochHistoryPacket`, `epochPublicationRecord`, `LedgerView`, `LedgerCheckpoint`, `LedgerState`, `Member`, `Device`, `ContentPermissions`, `EpochHistoryPacket`, `HistoricalContentAuthor` |
@@ -62,6 +63,7 @@ repository's tests and the Lab, with no compatibility promise.
 | Staging wire contract | `EpochStagedGroupDto`, `EpochStagedGroupKeyDto`, `EpochStagedEnvelopeDto`, `EpochStagingRequestProofDto`, `encodeEpochStagedGroup`, `decodeEpochStagedGroup`, `decodeEpochStagedGroupKey`, `epochStagingRequestSigningBytes` |
 | Staging rules | `checkEpochStageRequest`, `ownEpochStagedGroup`, `ownEpochStagedGroupKey`, `sameEpochStagedGroup`, `obsoleteEpochStagedGroup`, `getCommittedEpochStagingKey`, `EpochStagingError`, `EpochStagedGroup`, `EpochStagedGroupKey` |
 | Mailbox rules | `envelopeRouting`, `authenticateEpochEnvelope`, `authenticateInstallationReport`, `checkLocalPublication`, `decodeInstallationReport`, `mailboxDigest`, `slotId`, `validSlot`, `MailboxSlot`, `InstallationContext` |
+| Document admission | `admitDocument`, `admitStreamsUpdateBatch`, `admitStreamsUpdateBatchEffect`, `admitStreamsSnapshot`, `admitStreamsSnapshotEffect`, `authenticateStreamsSnapshotEffect`, `StreamsRecordBoundary`, `StreamsRecordBoundaryPort` |
 | Port types | `KeyMailbox`, `KeyMailboxStatus`, `EpochStagingStore` |
 
 ## `@lody/e2ee-core/adapters/node-sqlite`
@@ -71,9 +73,11 @@ repository's tests and the Lab, with no compatibility promise.
 | All stores | `sqliteLocalStores`, `SQLITE_STORE_FILES`, `SqliteFileOptions` |
 | One store each | `sqliteLedgerPinStore`, `sqliteLedgerFeedStore`, `sqliteInstalledKeyStore`, `sqliteReceiveJournal`, `sqliteRepairJournal`, `sqliteDistributionJournal`, `SqliteDistributionJournalOptions`, `sqliteDeliveryOutbox`, `sqliteEpochCandidateStore`, `sqliteSubmissionJournal` |
 | Reference mailbox backend | `makeSqliteKeyMailbox`, `referenceKeyMailbox`, `MailboxError`, `MailboxStatus`, `MailboxTarget` |
+| Reference snapshot journal | `makeSqliteSnapshotPublication`, `snapshotPublicationDigest`, `SnapshotPublicationError`, `SnapshotPublicationRow` |
 
 ## `@lody/e2ee-core/adapters/loro-streams`
 
 `streamsLedgerLog`, `makeStreamsLedgerLog`, `StreamsLedgerLogOptions`,
 `LedgerSubmissionStream`, `streamsLedgerFeedSource`, `makeLedgerStreamReader`,
-`LedgerStreamReader`.
+`LedgerStreamReader`, `streamsDocumentBinding`, `StreamsDocumentBindingOptions`,
+`makeStreamsUpdateBinding`.

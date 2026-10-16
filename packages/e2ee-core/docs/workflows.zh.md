@@ -116,6 +116,14 @@ results() / acknowledge()   已完成任务保留到确认为止
 
 `resume` 在崩溃后完成同一个候选，不再签名。`cleanupStaged` 在该纪元被不同承诺占用后删除本设备的暂存组。`acknowledge` 释放已完成的结果。只有 owner 或 admin 的个人设备可以换代。绕过暂存直接追加的管理者可以扣留密钥：这是已知的可用性限制，不破坏机密性。
 
+## 文档
+
+文档内容使用 content v0：签名头部，以由纪元密钥派生的文档密钥做 XChaCha20-Poly1305 加密，AAD 绑定用途。
+
+- **Loro / streams-crdt**：`streamsDocumentBinding({ resource, model, writeEpoch })`（`@lody/e2ee-core/adapters/loro-streams`）是 `@loro-dev/streams-crdt` 文档的载荷保护绑定。它封装更新（头部 3）与快照（头部 4，续读 offset 位于签名头部内），并打开读到的内容。签名器、账本视图与密钥分别取自 `DeviceIdentity`、`VerifiedLedger` 与 `InstalledEpochHistory`。
+- **其他传输**：`sealDocument`、`openDocument` 与 `authenticateDocument`（`/protocol`）接收文档密钥、签名器和已验证视图的查询函数。新的封装要求在确切的当前纪元具有当前写权限，加密前与签名后各检查一次；每次执行都重新加密，因此重试必须重发返回的字节。
+- 读取时先认证历史作者再解密：被吊销作者的旧内容仍可打开并归属（`member`，或快照之后的 `device-only`），但这不授予当前写权限。
+
 ## 投递（分发器内部）
 
 `deliverEpochEnvelope`（内部）执行一轮 put 与回读。outbox 中已保存的字节优先于新生成的字节。后端 `unavailable` 时投递保持 `Pending`，原始字节不变；其他后端失败会向上传播。

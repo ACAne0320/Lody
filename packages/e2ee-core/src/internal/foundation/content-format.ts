@@ -35,6 +35,8 @@ export interface ContentScope extends DocumentScope {
 export interface ContentHeader extends ContentScope {
   readonly docEpoch: 0;
   readonly device: string;
+  /** Snapshot continuation position; absent for updates and other purposes. */
+  readonly continuationOffset?: string;
 }
 /** Unverified routing fields read from a content frame by `inspectContentFrame`; never authority. */
 export interface ContentMetadata {
@@ -42,6 +44,8 @@ export interface ContentMetadata {
   readonly docEpoch: 0;
   readonly epoch: number;
   readonly device: string;
+  /** Snapshot continuation position; absent for updates and other purposes. */
+  readonly continuationOffset?: string;
 }
 export interface ParsedContentFrame {
   readonly header: ContentMetadata;
@@ -58,6 +62,7 @@ export const CONTENT_SIGNATURE_BYTES = 64;
 export const CONTENT_KEY_BYTES = 32;
 export const CONTENT_PREFIX_BYTES = 39;
 export const CONTENT_OVERHEAD_BYTES = 143;
+export const MAX_SNAPSHOT_OFFSET_BYTES = 0xffff;
 export const CONTENT_VERSION = 0;
 export const MAX_CONTENT_ADDITIONAL_DATA_BYTES = 1024;
 const encoder = new TextEncoder();
@@ -131,6 +136,24 @@ export function isDocumentPurpose(purpose: ContentPurpose): boolean {
   return PURPOSES.indexOf(purpose) >= 0 && PURPOSES.indexOf(purpose) < 4;
 }
 
+export function isSnapshotPurpose(purpose: ContentPurpose): boolean {
+  return purpose === 'doc-snapshot' || purpose === 'flock-snapshot';
+}
+/** The position is an opaque printable ASCII token, never an ordered number. */
+export function encodeSnapshotContinuationOffset(
+  offset: unknown
+): Result.Result<Uint8Array<ArrayBuffer>, ContentError> {
+  if (
+    typeof offset !== 'string' ||
+    !/^[\x21-\x7e]+$/.test(offset) ||
+    offset.length > MAX_SNAPSHOT_OFFSET_BYTES ||
+    offset === 'now' ||
+    offset === '-1'
+  )
+    return fail('invalid-snapshot-offset');
+  const bytes = encoder.encode(offset);
+  return Result.succeed(concat([u16(bytes.length), bytes]));
+}
 /** Canonical content v0 header bytes for a trusted `ContentHeader`. */
 export function encodeContentHeader(
   header: ContentHeader
@@ -138,11 +161,17 @@ export function encodeContentHeader(
   return Result.gen(function* () {
     yield* encodeContentContext(header);
     yield* checkContentSigningKey(header.device);
+    const continuation = isSnapshotPurpose(header.purpose)
+      ? yield* encodeSnapshotContinuationOffset(header.continuationOffset)
+      : header.continuationOffset === undefined
+        ? new Uint8Array()
+        : yield* fail('invalid-snapshot-offset');
     return concat([
       new Uint8Array([CONTENT_VERSION]),
       u32(header.epoch),
       u16(0),
       fromHex(header.device),
+      continuation,
     ]);
   });
 }
@@ -198,36 +227,63 @@ export function contentSigningBytes(
 ): Result.Result<Uint8Array<ArrayBuffer>, ContentError> {
   return authenticatedBytes('signature', scope, unsigned, additionalData);
 }
+/** Parsing needs the caller-selected purpose because v0 carries no purpose tag. */
 export function parseContentFrame(
-  frame: Uint8Array
+  frame: Uint8Array,
+  purpose: ContentPurpose = 'doc-update'
 ): Result.Result<ParsedContentFrame, ContentError> {
-  if (
-    !(frame instanceof Uint8Array) ||
-    frame.byteLength < CONTENT_OVERHEAD_BYTES ||
-    frame.byteLength > MAX_CONTENT_BYTES + CONTENT_OVERHEAD_BYTES
-  )
-    return fail('invalid-content-frame');
-  if (frame[0] !== CONTENT_VERSION) return fail('unsupported-content-version');
-  if (new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint16(5, false) !== 0)
-    return fail('unsupported-document-epoch');
-  const wire = copyBytes(frame);
-  const device = keyId(wire.subarray(7, CONTENT_PREFIX_BYTES));
-  return Result.map(checkContentSigningKey(device), () => ({
-    header: Object.freeze({
-      version: CONTENT_VERSION,
-      docEpoch: 0,
-      epoch: new DataView(wire.buffer).getUint32(1, false),
-      device,
-    }),
-    nonce: wire.subarray(CONTENT_PREFIX_BYTES, CONTENT_PREFIX_BYTES + CONTENT_NONCE_BYTES),
-    ciphertext: wire.subarray(CONTENT_PREFIX_BYTES + CONTENT_NONCE_BYTES, -CONTENT_SIGNATURE_BYTES),
-    unsigned: wire.subarray(0, -CONTENT_SIGNATURE_BYTES),
-    signatureHex: keyId(wire.subarray(-CONTENT_SIGNATURE_BYTES)),
-  }));
+  return Result.gen(function* () {
+    const snapshot = isSnapshotPurpose(purpose);
+    const maximumExtra = snapshot ? 2 + MAX_SNAPSHOT_OFFSET_BYTES : 0;
+    if (
+      !(frame instanceof Uint8Array) ||
+      frame.byteLength < CONTENT_OVERHEAD_BYTES + (snapshot ? 3 : 0) ||
+      frame.byteLength > MAX_CONTENT_BYTES + CONTENT_OVERHEAD_BYTES + maximumExtra
+    )
+      return yield* fail('invalid-content-frame');
+    if (frame[0] !== CONTENT_VERSION) return yield* fail('unsupported-content-version');
+    if (new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint16(5, false) !== 0)
+      return yield* fail('unsupported-document-epoch');
+    const wire = copyBytes(frame);
+    let prefixBytes = CONTENT_PREFIX_BYTES;
+    let continuationOffset: string | undefined;
+    if (snapshot) {
+      const length = new DataView(wire.buffer).getUint16(CONTENT_PREFIX_BYTES, false);
+      prefixBytes += 2 + length;
+      if (!length || wire.length < CONTENT_OVERHEAD_BYTES + 2 + length)
+        return yield* fail('invalid-snapshot-offset');
+      const raw = wire.subarray(CONTENT_PREFIX_BYTES + 2, prefixBytes);
+      if (raw.some((byte) => byte < 0x21 || byte > 0x7e))
+        return yield* fail('invalid-snapshot-offset');
+      continuationOffset = new TextDecoder().decode(raw);
+      yield* encodeSnapshotContinuationOffset(continuationOffset);
+    }
+    if (
+      wire.length - CONTENT_OVERHEAD_BYTES - (prefixBytes - CONTENT_PREFIX_BYTES) >
+      MAX_CONTENT_BYTES
+    )
+      return yield* fail('invalid-content-frame');
+    const device = keyId(wire.subarray(7, CONTENT_PREFIX_BYTES));
+    yield* checkContentSigningKey(device);
+    return {
+      header: Object.freeze({
+        version: CONTENT_VERSION,
+        docEpoch: 0,
+        epoch: new DataView(wire.buffer).getUint32(1, false),
+        device,
+        ...(snapshot ? { continuationOffset } : {}),
+      }),
+      nonce: wire.subarray(prefixBytes, prefixBytes + CONTENT_NONCE_BYTES),
+      ciphertext: wire.subarray(prefixBytes + CONTENT_NONCE_BYTES, -CONTENT_SIGNATURE_BYTES),
+      unsigned: wire.subarray(0, -CONTENT_SIGNATURE_BYTES),
+      signatureHex: keyId(wire.subarray(-CONTENT_SIGNATURE_BYTES)),
+    };
+  });
 }
 /** Unverified metadata only; never establishes authority or authenticates content. */
 export function inspectContentFrame(
-  frame: Uint8Array
+  frame: Uint8Array,
+  purpose: ContentPurpose = 'doc-update'
 ): Result.Result<ContentMetadata, ContentError> {
-  return Result.map(parseContentFrame(frame), (parsed) => parsed.header);
+  return Result.map(parseContentFrame(frame, purpose), (parsed) => parsed.header);
 }

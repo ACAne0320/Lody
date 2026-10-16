@@ -38,7 +38,8 @@
 | 字节与编码 | `Bytes`, `encodeCbor`, `decodeCbor`, `CborValue`, `ValidationError`, `ValidationErrorCode`, `ContentError` |
 | 签名 | `verifySignature`, `verifyContentSignature`, `signVerified`, `nativeDeviceSigner`, `DeviceSigner` |
 | 内容格式 | `encodeDocumentContext`, `encodeContentContext`, `encodeContentHeader`, `contentKeyInfo`, `contentHkdfSalt`, `contentAad`, `contentSigningBytes`, `inspectContentFrame`, `DocumentScope`, `ContentScope`, `ContentPurpose`, `ContentHeader`, `ContentMetadata` |
-| 内容加密 | `deriveContentKey`, `sealContentAead`, `openContentAead`, `ContentKey`, `SealedContentAead` |
+| 文档 | `sealDocument`, `openDocument`, `authenticateDocument`, `admitDocument`, `deriveDocumentKey`, `scopedDocumentKey`, `importDocumentKey`, `exportDocumentKey`, `disposeDocumentKey`, `DocumentKey` |
+| 内容加密 | `deriveContentKey`, `disposeContentKey`, `sealContentAead`, `openContentAead`, `ContentKey`, `SealedContentAead` |
 | 纪元 HPKE | `epochHpkeAad`, `sealEpochKeyHpke`, `openEpochKeyHpke`, `HpkePrimitiveError`, `EpochHpkeContext`, `SealedEpochHpke` |
 | 记录 | `decodeRecord`, `hashRecordBytes`, `recordSigningBytes`, `joinRequestSigningBytes`, `possessionSigningBytes`, `DecodedRecord`, `RecordBody`, `Operation`, `JoinRequest`, `Role`, `DeviceKind`, `LedgerError`, `LedgerErrorCode` |
 | 重放与视图 | `verifyLedger`, `verifyLedgerEffect`, `extendLedger`, `extendLedgerEffect`, `requireLedgerContinuation`, `hasVerifiedRecordHash`, `hasVerifiedCheckpoint`, `contentPermissions`, `epochHistoryPacket`, `epochPublicationRecord`, `LedgerView`, `LedgerCheckpoint`, `LedgerState`, `Member`, `Device`, `ContentPermissions`, `EpochHistoryPacket`, `HistoricalContentAuthor` |
@@ -58,6 +59,7 @@
 | 暂存线上合同 | `EpochStagedGroupDto`, `EpochStagedGroupKeyDto`, `EpochStagedEnvelopeDto`, `EpochStagingRequestProofDto`, `encodeEpochStagedGroup`, `decodeEpochStagedGroup`, `decodeEpochStagedGroupKey`, `epochStagingRequestSigningBytes` |
 | 暂存规则 | `checkEpochStageRequest`, `ownEpochStagedGroup`, `ownEpochStagedGroupKey`, `sameEpochStagedGroup`, `obsoleteEpochStagedGroup`, `getCommittedEpochStagingKey`, `EpochStagingError`, `EpochStagedGroup`, `EpochStagedGroupKey` |
 | 邮箱规则 | `envelopeRouting`, `authenticateEpochEnvelope`, `authenticateInstallationReport`, `checkLocalPublication`, `decodeInstallationReport`, `mailboxDigest`, `slotId`, `validSlot`, `MailboxSlot`, `InstallationContext` |
+| 文档准入 | `admitDocument`, `admitStreamsUpdateBatch`, `admitStreamsUpdateBatchEffect`, `admitStreamsSnapshot`, `admitStreamsSnapshotEffect`, `authenticateStreamsSnapshotEffect`, `StreamsRecordBoundary`, `StreamsRecordBoundaryPort` |
 | 端口类型 | `KeyMailbox`, `KeyMailboxStatus`, `EpochStagingStore` |
 
 ## `@lody/e2ee-core/adapters/node-sqlite`
@@ -67,9 +69,11 @@
 | 全部存储 | `sqliteLocalStores`, `SQLITE_STORE_FILES`, `SqliteFileOptions` |
 | 单个存储 | `sqliteLedgerPinStore`, `sqliteLedgerFeedStore`, `sqliteInstalledKeyStore`, `sqliteReceiveJournal`, `sqliteRepairJournal`, `sqliteDistributionJournal`, `SqliteDistributionJournalOptions`, `sqliteDeliveryOutbox`, `sqliteEpochCandidateStore`, `sqliteSubmissionJournal` |
 | 参考邮箱后端 | `makeSqliteKeyMailbox`, `referenceKeyMailbox`, `MailboxError`, `MailboxStatus`, `MailboxTarget` |
+| 参考快照日志 | `makeSqliteSnapshotPublication`, `snapshotPublicationDigest`, `SnapshotPublicationError`, `SnapshotPublicationRow` |
 
 ## `@lody/e2ee-core/adapters/loro-streams`
 
 `streamsLedgerLog`, `makeStreamsLedgerLog`, `StreamsLedgerLogOptions`,
 `LedgerSubmissionStream`, `streamsLedgerFeedSource`, `makeLedgerStreamReader`,
-`LedgerStreamReader`.
+`LedgerStreamReader`, `streamsDocumentBinding`, `StreamsDocumentBindingOptions`,
+`makeStreamsUpdateBinding`.
