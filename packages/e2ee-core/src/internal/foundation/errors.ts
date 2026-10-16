@@ -1,4 +1,5 @@
 import { Data } from 'effect';
+/** Why bytes failed structural validation. */
 export type ValidationErrorCode =
   | 'canonical'
   | 'truncated'
@@ -15,6 +16,7 @@ export class ValidationError extends Data.TaggedError('ValidationError')<{
   readonly position?: number;
 }> {}
 
+/** A content, signing or authority check failed; `code` names the reason. Never carries secret material. */
 export class ContentError extends Data.TaggedError('ContentError')<{
   readonly code: string;
 }> {}

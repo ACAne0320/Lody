@@ -14,6 +14,7 @@ import {
 } from '../ledger';
 import { verifySignature } from '../foundation/signature';
 
+/** SHA-256 hex digest used to name envelope frames and reports. */
 export const mailboxDigest = (bytes: Uint8Array) => keyId(sha256(bytes));
 export const fromHex = (hex: string) =>
   Uint8Array.from(hex.match(/../g) ?? [], (x) => parseInt(x, 16));
@@ -22,20 +23,25 @@ export const isHash = (x: unknown): x is string =>
 export const isBytes = (x: unknown): x is string =>
   typeof x === 'string' && /^(?:[0-9a-f]{2})+$/.test(x) && x.length <= 16384;
 const invalid = () => Result.fail(new ValidationError({ code: 'canonical' }));
+/** One mailbox slot: the envelope for (workspace genesis, epoch, recipient device), ids in hex. */
 export interface MailboxSlot {
   readonly genesis: string;
   readonly epoch: number;
   readonly recipient: string;
 }
+/** Stable string key of a mailbox slot. */
 export const slotId = (s: MailboxSlot) => `${s.genesis}:${s.epoch}:${s.recipient}`;
+/** Where an installed key came from: a received envelope (sender and frame digest) or this device's own publication record. */
 export type InstallationSource =
   | { readonly _tag: 'Envelope'; readonly sender: string; readonly frameDigest: string }
   | { readonly _tag: 'LocalPublication'; readonly recordHash: string };
+/** Everything an installation report claims: slot, epoch commitment, mailbox revision and source. */
 export interface InstallationContext extends MailboxSlot {
   readonly commitment: string;
   readonly revision: number;
   readonly source: InstallationSource;
 }
+/** Structural check of a mailbox slot (hex ids, valid epoch number). */
 export const validSlot = (s: MailboxSlot) =>
   isHash(s.genesis) && isHash(s.recipient) && Result.isSuccess(epochNumber(s.epoch));
 export const validContext = (c: InstallationContext) =>
@@ -47,6 +53,7 @@ export const validContext = (c: InstallationContext) =>
     ? isHash(c.source.sender) && isHash(c.source.frameDigest)
     : c.source?._tag === 'LocalPublication' && isHash(c.source.recordHash));
 
+/** Canonical CBOR body of an installation report for a context. */
 export function installationBody(c: InstallationContext) {
   if (!validContext(c)) return invalid();
   const source: CborValue =
@@ -63,8 +70,10 @@ export function installationBody(c: InstallationContext) {
     c.revision,
   ]);
 }
+/** Exact bytes a recipient signs for an installation report body. */
 export const installationSigningBytes = (body: Uint8Array) =>
   concat([new TextEncoder().encode('lody-e2ee/key-installed/v1\0'), body]);
+/** Encode a signed installation report (body and signature). */
 export function encodeInstallationReport(c: InstallationContext, signed: Uint8Array) {
   return Result.gen(function* () {
     const body = yield* installationBody(c);
@@ -72,6 +81,7 @@ export function encodeInstallationReport(c: InstallationContext, signed: Uint8Ar
     return yield* encodeCbor([body, signed]);
   });
 }
+/** Decode an installation report into its claimed context, signed message and signature, without verifying it. */
 export function decodeInstallationReport(bytes: Uint8Array) {
   return Result.gen(function* () {
     const outer = yield* decodeCbor(bytes);
@@ -170,6 +180,7 @@ export function checkLocalPublication(
     return undefined;
   });
 }
+/** Check that a claimed installation context matches a genuine ledger view (current epoch, commitment and eligible recipient). */
 export function checkInstallationContext(view: LedgerView, c: InstallationContext) {
   return Result.gen(function* () {
     // Query authenticates runtime view provenance before any projected state is used.

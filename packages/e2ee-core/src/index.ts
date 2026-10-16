@@ -42,18 +42,21 @@ export {
   ReceiveError,
   MailboxInstallError,
   type ReceiveBatch,
+  type ReceiveFailure,
 } from './internal/keys/receiver';
 export { KeyRepair, RepairError, type RepairBatch } from './internal/keys/repair';
 export {
   KeyDistributor,
   DistributionError,
   type DistributionBatch,
+  type DistributionFailure,
   type DistributionResult,
 } from './internal/keys/distributor';
 export { DeliveryError, type DeliveryOutcome } from './internal/keys/delivery';
 export {
   EpochPublisher,
   EpochPublishError,
+  type EpochPublishFailure,
   type EpochPublishResult,
 } from './internal/keys/publisher';
 export { EpochKeyError } from './internal/keys/history';

@@ -23,7 +23,7 @@ import type { HpkePrimitiveError } from '../crypto/hpke';
 import type { EpochKeyError } from './history';
 import type { EpochStagingError } from './staging';
 import type { BackendError, LocalStoreError } from '../../services/errors';
-import { EpochStagingStore, KeyProtector } from '../../services/keys';
+import { CandidateProtector, EpochStagingStore } from '../../services/keys';
 import type { SubmissionResult } from '../../services/ledger';
 import { EpochCandidateStore, type EpochCandidateRow } from '../../services/stores';
 import { DeviceIdentity, WorkspaceScope } from '../../services/workspace';
@@ -48,7 +48,7 @@ import {
  * - `candidate-missing`: a rotation record is in flight but its local
  *   candidate (and thus its key) is gone; it cannot be completed here.
  * - `stage-readback`: the staging store did not return the exact group.
- * - `native-failed`: the {@link KeyProtector} failed.
+ * - `native-failed`: the {@link CandidateProtector} failed.
  *
  * @category Errors
  */
@@ -171,7 +171,7 @@ export class EpochPublisher extends Context.Service<
 >()('@lody/e2ee-core/EpochPublisher') {
   /**
    * Requires {@link WorkspaceScope}, {@link DeviceIdentity}, `VerifiedLedger`,
-   * `InstalledEpochKeys`, {@link KeyProtector}, {@link EpochStagingStore},
+   * `InstalledEpochKeys`, {@link CandidateProtector}, {@link EpochStagingStore},
    * `LedgerSubmission` and {@link EpochCandidateStore}.
    */
   static readonly layer = Layer.effect(
@@ -182,7 +182,7 @@ export class EpochPublisher extends Context.Service<
       const publicKey = signer.publicKey;
       const ledger = yield* VerifiedLedger;
       const installed = yield* InstalledEpochKeys;
-      const protector = own(yield* KeyProtector);
+      const protector = own(yield* CandidateProtector);
       const staging = own(yield* EpochStagingStore);
       const submission = yield* LedgerSubmission;
       const candidates = own(yield* EpochCandidateStore);

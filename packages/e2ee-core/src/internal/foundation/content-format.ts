@@ -5,6 +5,7 @@ import { ContentError } from './errors';
 import { keyId } from './identifiers';
 import { concat } from './concat';
 
+/** What a content frame carries; selects its key-derivation leaf and AAD domain. */
 export type ContentPurpose =
   | 'doc-update'
   | 'doc-snapshot'
@@ -16,6 +17,7 @@ export type ContentPurpose =
   | 'rpc-request'
   | 'rpc-response';
 
+/** Trusted identity of one document: workspace genesis, epoch, logical resource id and document generation. */
 export interface DocumentScope {
   readonly genesis: string;
   readonly epoch: number;
@@ -24,6 +26,7 @@ export interface DocumentScope {
   /** Reserved document generation. Only 0 is supported. */
   readonly docEpoch?: number;
 }
+/** A `DocumentScope` plus the purpose of one content frame. */
 export interface ContentScope extends DocumentScope {
   readonly purpose: ContentPurpose;
 }
@@ -33,6 +36,7 @@ export interface ContentHeader extends ContentScope {
   readonly docEpoch: 0;
   readonly device: string;
 }
+/** Unverified routing fields read from a content frame by `inspectContentFrame`; never authority. */
 export interface ContentMetadata {
   readonly version: 0;
   readonly docEpoch: 0;
@@ -70,6 +74,7 @@ const PURPOSES: readonly ContentPurpose[] = [
 ];
 const fail = (code: string) => Result.fail(new ContentError({ code }));
 const domain = (name: string) => encoder.encode(`lody-content-${name}/v0\0`);
+/** Fresh copy of the fixed content HKDF salt. */
 export const contentHkdfSalt = (): Uint8Array<ArrayBuffer> => domain('hkdf');
 function u32(value: number): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(4);
@@ -126,6 +131,7 @@ export function isDocumentPurpose(purpose: ContentPurpose): boolean {
   return PURPOSES.indexOf(purpose) >= 0 && PURPOSES.indexOf(purpose) < 4;
 }
 
+/** Canonical content v0 header bytes for a trusted `ContentHeader`. */
 export function encodeContentHeader(
   header: ContentHeader
 ): Result.Result<Uint8Array<ArrayBuffer>, ContentError> {
@@ -140,6 +146,7 @@ export function encodeContentHeader(
     ]);
   });
 }
+/** HKDF `info` (derivation context) for a content scope; context, not key material. */
 export function contentKeyInfo(
   scope: ContentScope
 ): Result.Result<Uint8Array<ArrayBuffer>, ContentError> {
@@ -175,6 +182,7 @@ function authenticatedBytes(
     return concat([domain(`${name}-bound`), context, length, binding, bytes]);
   });
 }
+/** AEAD additional data binding a content header to its trusted scope (and optional binding bytes). */
 export function contentAad(
   scope: ContentScope,
   prefix: Uint8Array,
@@ -182,6 +190,7 @@ export function contentAad(
 ): Result.Result<Uint8Array<ArrayBuffer>, ContentError> {
   return authenticatedBytes('aad', scope, prefix, additionalData);
 }
+/** Exact bytes a device signs for a content frame. */
 export function contentSigningBytes(
   scope: ContentScope,
   unsigned: Uint8Array,

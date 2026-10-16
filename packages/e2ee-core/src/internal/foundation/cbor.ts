@@ -9,6 +9,7 @@ export const MAX_ARRAY_LENGTH = 32;
 export const MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024;
 export const MAX_SNAPSHOT_ARRAY_LENGTH = 16_384;
 export const MAX_BSTR_BYTES = 256;
+/** Values accepted by the bounded canonical CBOR codec: integers, byte strings, text, booleans, null and arrays of these. */
 export type CborValue = null | boolean | number | Uint8Array | readonly CborValue[];
 type Result<A> = Result.Result<A, ValidationError>;
 const invalid = (code: ValidationErrorCode): Result<never> =>
@@ -85,6 +86,7 @@ function decodeBounded(input: unknown, maxBytes: number, maxArray: number): Resu
   });
 }
 
+/** Decode canonical bounded CBOR. Rejects non-canonical, truncated or trailing input with `ValidationError`. */
 export const decodeCbor = (input: unknown): Result<CborValue> =>
   decodeBounded(input, MAX_RECORD_BYTES, MAX_ARRAY_LENGTH);
 
@@ -167,6 +169,7 @@ function encodeBounded(
 }
 
 export const encodeCanonical = (value: CborValue) => encodeBounded(value, MAX_RECORD_BYTES);
+/** Encode a `CborValue` as canonical CBOR, budgeting expanded size before serializing; fails on cycles or oversize input. */
 export const encodeCbor = (value: CborValue): Result<Uint8Array<ArrayBuffer>> =>
   Result.gen(function* () {
     const bytes = yield* encodeCanonical(value);

@@ -21,6 +21,7 @@ import {
 } from '@lody/e2ee-core';
 import {
   BackendError,
+  CandidateProtector,
   DeviceIdentity,
   EpochPublicationSource,
   EpochStagingStore,
@@ -402,7 +403,7 @@ export const makeSqliteEpochRotation = (input: {
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(InstalledEpochKeys, input.installed),
-            KeyProtector.layerFromPromises(input.protector),
+            CandidateProtector.layerFromPromises(input.protector),
             Layer.succeed(
               EpochStagingStore,
               EpochStagingStore.of({

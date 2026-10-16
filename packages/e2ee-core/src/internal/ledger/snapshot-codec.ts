@@ -54,6 +54,7 @@ export interface SnapshotIdentityPin {
   readonly length: number;
   readonly headSignature: Bytes.Signature;
 }
+/** Externally confirmed qualification of a snapshot endorser (identity, position, role and kind). */
 export interface SnapshotTrust extends SnapshotIdentityPin {
   readonly source: 'external-confirmation';
   readonly membershipId: Bytes.MembershipId;
@@ -84,11 +85,13 @@ function ownedPin(pin: SnapshotIdentityPin) {
     })
   );
 }
+/** Bytes a manager signs to endorse a snapshot: body, snapshot signing bytes and head attestation. */
 export interface SnapshotProposal {
   readonly bodyBytes: Uint8Array;
   readonly signingBytes: Uint8Array;
   readonly headAttestationSigningBytes: Uint8Array;
 }
+/** Out-of-band comparison tuple: workspace, head, length, state digest and the note's signer. */
 export interface ComparisonNote {
   readonly genesis: Bytes.GenesisHash;
   readonly head: Bytes.RecordHash;
@@ -96,6 +99,7 @@ export interface ComparisonNote {
   readonly stateDigest: Bytes.RecordHash;
   readonly noteSigner: Bytes.SigningPublicKey;
 }
+/** Result of comparing two notes: same, conflict, pending sync or different workspace. */
 export type Comparison =
   | { readonly kind: 'different-org' }
   | { readonly kind: 'pending-sync'; readonly localLength: number; readonly remoteLength: number }
@@ -112,7 +116,9 @@ export type Comparison =
       readonly independent: boolean;
       readonly confirmationSource?: 'manual' | 'authenticated-channel';
     };
+/** Exact bytes an endorser signs for a snapshot body. */
 export const snapshotSigningBytes = (body: Uint8Array) => concat([domain('snapshot/v1'), body]);
+/** Exact bytes an endorser signs to attest a head. */
 export const headAttestationSigningBytes = (genesis: Bytes.GenesisHash, head: Bytes.RecordHash) =>
   concat([domain('head-attest/v1'), genesis.toBytes(), head.toBytes()]);
 function authState(s: InternalState): CborValue {
@@ -462,6 +468,7 @@ export function verifiedSnapshotState(
     })
   );
 }
+/** Signature evidence from a snapshot whose endorser is pinned by identity only; carries role claims, not a view. */
 export interface SnapshotEvidence {
   readonly stage: 'signature-evidence';
   readonly genesis: Bytes.GenesisHash;
@@ -550,6 +557,7 @@ export function compareNotes(
     };
   });
 }
+/** A comparison tuple obtained independently (manually or over an authenticated channel). */
 export interface IndependentConfirmation {
   readonly source: 'manual' | 'authenticated-channel';
   /** Caller-obtained actual tuple from the independently authenticated peer, not copied server JSON. */

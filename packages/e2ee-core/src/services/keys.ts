@@ -150,3 +150,25 @@ export class KeyProtector extends Context.Service<
     return Layer.succeed(KeyProtector, KeyProtector.fromPromises(native));
   }
 }
+
+/**
+ * Platform protection for this device's *unpublished* rotation candidates (the
+ * new epoch key before the ledger commits it), used only by `EpochPublisher`.
+ *
+ * Same contract as {@link KeyProtector}, but a distinct capability on purpose:
+ * installed-key protection is approved only for keys the ledger already
+ * committed, so an application must decide explicitly what protects a key that
+ * is not yet published. Providing the same native backend for both is allowed,
+ * but it must be a deliberate composition choice.
+ *
+ * @category Platform ports
+ */
+export class CandidateProtector extends Context.Service<
+  CandidateProtector,
+  KeyProtector['Service']
+>()('@lody/e2ee-core/CandidateProtector') {
+  /** See {@link KeyProtector.fromPromises}. */
+  static layerFromPromises(native: Parameters<typeof KeyProtector.fromPromises>[0]) {
+    return Layer.succeed(CandidateProtector, KeyProtector.fromPromises(native));
+  }
+}

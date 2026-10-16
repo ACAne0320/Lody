@@ -83,6 +83,7 @@ function keyForScope(key: ContentKey, scope: ContentScope) {
   });
 }
 
+/** Output of `sealContentAead`: the random 24-byte nonce and `ciphertext ‖ tag`, with no header or signature. */
 export interface SealedContentAead {
   readonly nonce: Uint8Array;
   /** ciphertext || one 16-byte tag; no header or signature. */

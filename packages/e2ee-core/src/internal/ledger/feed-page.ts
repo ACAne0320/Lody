@@ -10,6 +10,7 @@ import {
   type LedgerCheckpoint,
 } from './index';
 
+/** A ledger feed page, frame or local feed operation failed; `code` names the reason. */
 export class LedgerFeedError extends Data.TaggedError('LedgerFeedError')<{
   readonly cause?: unknown;
   readonly code:
@@ -26,6 +27,7 @@ export class LedgerFeedError extends Data.TaggedError('LedgerFeedError')<{
     | 'transport'
     | 'native-unavailable';
 }> {}
+/** Structural check of an opaque feed offset (bounded, no control characters). */
 export const validLedgerOffset = (offset: unknown): offset is string =>
   typeof offset === 'string' &&
   offset.length > 0 &&
@@ -34,17 +36,20 @@ export const validLedgerOffset = (offset: unknown): offset is string =>
   !offset.includes('\r') &&
   !offset.includes('\n') &&
   !offset.includes('\0');
+/** One untrusted page from a `LedgerFeedSource`: request/next offsets, original records and whether the source was up to date. */
 export interface LedgerReadPage {
   readonly requestOffset: string;
   readonly nextOffset: string;
   readonly records: readonly Uint8Array[];
   readonly upToDate: boolean;
 }
+/** A verified feed position: the view, the source offset to read after, and whether the genesis bootstrap page is still expected. */
 export interface LedgerFeedState {
   readonly view: LedgerView;
   readonly offset: string;
   readonly bootstrap: boolean;
 }
+/** Frame one record as stored in a ledger stream: u32 big-endian length then the record. */
 export function frameLedgerRecord(record: Uint8Array): Result.Result<Uint8Array, LedgerFeedError> {
   if (!(record instanceof Uint8Array) || record.length === 0 || record.length > MAX_RECORD_BYTES)
     return Result.fail(new LedgerFeedError({ code: 'invalid-frame' }));
@@ -125,6 +130,7 @@ function captureLedgerPage(
     };
   });
 }
+/** Verify a page against a feed state and expected checkpoint, returning the next state (synchronous). */
 export function prepareLedgerPage(
   state: LedgerFeedState,
   page: LedgerReadPage,
@@ -140,6 +146,7 @@ export function prepareLedgerPage(
     return { view, offset: captured.nextOffset!, bootstrap: false };
   });
 }
+/** Effect form of `prepareLedgerPage` that verifies signatures cooperatively. */
 export const prepareLedgerPageEffect = Effect.fnUntraced(function* (
   state: LedgerFeedState,
   page: LedgerReadPage,

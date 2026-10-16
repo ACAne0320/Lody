@@ -5,8 +5,11 @@ import { decodeCbor, encodeCbor, type CborValue } from '../foundation/cbor';
 import { concat } from '../foundation/concat';
 import { LedgerError, type LedgerErrorCode } from './errors';
 
+/** Member role. */
 export type Role = 'owner' | 'admin' | 'member' | 'guest';
+/** Device kind: personal, machine or recovery. */
 export type DeviceKind = 'personal' | 'machine' | 'recovery';
+/** A signed join consent: request id, user, device keys, expiry and signature. */
 export interface JoinRequest {
   readonly requestId: Bytes.RequestId;
   readonly userId: Bytes.UserId;
@@ -15,6 +18,7 @@ export interface JoinRequest {
   readonly expiresAt: number | null;
   readonly signature: Bytes.Signature;
 }
+/** Unverified decoded ordinary operation. */
 export type Operation =
   | {
       readonly type: 'admitMember';
@@ -48,6 +52,7 @@ export type Operation =
       readonly commitment: Bytes.EpochCommitment;
       readonly previousEpochKey: Uint8Array;
     };
+/** Unverified decoded record body (genesis or ordinary). */
 export type RecordBody =
   | {
       readonly type: 'genesis';
@@ -178,6 +183,7 @@ function parseOperation(value: CborValue): Result.Result<Operation, LedgerError>
     }
   });
 }
+/** Parse one record into unverified inspection data (no signature or permission check). */
 export function decodeRecord(input: unknown): Result.Result<DecodedRecord, LedgerError> {
   return Result.gen(function* () {
     const root = yield* array(yield* lift(decodeCbor(input)), 2);
@@ -211,11 +217,14 @@ export function decodeRecord(input: unknown): Result.Result<DecodedRecord, Ledge
   });
 }
 const domain = (name: string) => new TextEncoder().encode(`lody-e2ee/${name}\0`);
+/** Exact bytes a device signs for a record body. */
 export const recordSigningBytes = (body: Uint8Array) => concat([domain('sig/v1'), body]);
+/** Record hash of original record bytes. */
 export const hashRecordBytes = (record: Uint8Array): Bytes.RecordHash =>
   Result.getOrThrow(
     Bytes.recordHash(sha256.create().update(domain('rec/v1')).update(record).digest())
   );
+/** Exact bytes a joining device signs for its join request. */
 export function joinRequestSigningBytes(
   genesis: Bytes.GenesisHash,
   request: Omit<JoinRequest, 'signature'>
@@ -234,6 +243,7 @@ export function joinRequestSigningBytes(
     (body) => concat([domain('join/v1'), body])
   );
 }
+/** Exact bytes a device signs to prove possession of its keys on admission. */
 export function possessionSigningBytes(input: {
   readonly genesis: Bytes.GenesisHash;
   readonly targetMembershipId: Bytes.MembershipId;

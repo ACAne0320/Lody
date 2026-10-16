@@ -13,6 +13,7 @@ import {
 } from './replay';
 
 declare const prepared: unique symbol;
+/** An ordinary record prepared against a genuine view, ready to sign exactly once. */
 export interface PreparedLedgerRecord {
   readonly [prepared]: true;
   readonly signer: SigningPublicKey;

@@ -16,6 +16,7 @@ import {
   type MailboxSlot,
   isHash,
 } from '../../internal/keys/reports';
+/** Failure of the reference mailbox host. `unauthorized` covers every refused request (wrong principal, ineligible device, bad envelope); `replay` a reused id with different bytes or a full per-sender slot. */
 export class MailboxError extends Data.TaggedError('MailboxError')<{
   readonly code:
     | 'storage'
@@ -34,12 +35,14 @@ const sql = <A>(work: () => A) =>
       error instanceof MailboxError ? error : new MailboxError({ code: 'storage' }),
   });
 const raw = (s: string) => new Uint8Array(Buffer.from(s, 'hex'));
+/** Delivery state of one slot as the reference host computes it (see `KeyMailboxStatus`). */
 export type MailboxStatus =
   | 'NeedsEnvelope'
   | 'EnvelopeStored'
   | 'InstallationReported'
   | 'Ineligible'
   | 'Obsolete';
+/** A slot with its current delivery status and repair revision, as the reference host reports it. */
 export interface MailboxTarget extends MailboxSlot {
   readonly status: MailboxStatus;
   readonly revision: number;

@@ -26,9 +26,11 @@ class OwnedBytes<K extends string> implements Brand.Brand<K> {
   }
 }
 
+/** A device's Ed25519 public key (32 bytes); also its device id in hex. */
 export type SigningPublicKey = OwnedBytes<'SigningPublicKey'>;
 export type EncryptionPublicKey = OwnedBytes<'EncryptionPublicKey'>;
 export type Signature = OwnedBytes<'Signature'>;
+/** Hash of a workspace's genesis record: the workspace identity every protocol object is bound to. */
 export type GenesisHash = OwnedBytes<'GenesisHash'>;
 export type RecordHash = OwnedBytes<'RecordHash'>;
 export type EpochCommitment = OwnedBytes<'EpochCommitment'>;

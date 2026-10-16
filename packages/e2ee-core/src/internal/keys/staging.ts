@@ -19,10 +19,12 @@ export interface EpochStagedGroupKey {
   readonly commitment: string;
   readonly recordHash: string;
 }
+/** One rotation's staged envelope group: its key plus the signed record and one envelope frame per recipient. */
 export interface EpochStagedGroup extends EpochStagedGroupKey {
   readonly record: Uint8Array;
   readonly envelopes: readonly { readonly recipient: string; readonly frame: Uint8Array }[];
 }
+/** A staged group is malformed, not committed, incomplete or not obsolete. */
 export class EpochStagingError extends Data.TaggedError('EpochStagingError')<{
   readonly code: 'invalid-group' | 'uncommitted' | 'incomplete' | 'not-obsolete';
 }> {}
@@ -35,6 +37,7 @@ const Group = Schema.Struct({
   envelopes: Schema.Array(Schema.Struct({ recipient: Hash, frame: Schema.Uint8Array })),
 });
 const fromHex = (hex: string) => Uint8Array.from(hex.match(/../g) ?? [], (x) => parseInt(x, 16));
+/** Validate and copy a staged group key. */
 export function ownEpochStagedGroupKey(input: EpochStagedGroupKey) {
   return Result.gen(function* () {
     const key = yield* Result.mapError(Schema.decodeUnknownResult(Key)(input), () =>
@@ -87,6 +90,7 @@ export function ownEpochStagedGroup(input: EpochStagedGroup) {
     return Object.freeze({ ...key, record, envelopes: Object.freeze(envelopes) });
   });
 }
+/** Byte-for-byte equality of two staged groups. */
 export const sameEpochStagedGroup = (a: EpochStagedGroup, b: EpochStagedGroup) =>
   a.genesis === b.genesis &&
   a.epoch === b.epoch &&

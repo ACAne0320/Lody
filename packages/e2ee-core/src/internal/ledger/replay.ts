@@ -45,6 +45,7 @@ export interface LedgerCheckpoint {
   readonly length: number;
 }
 declare const verified: unique symbol;
+/** A genuine, library-verified ledger view: genesis, head, length and the state it proves. Only this library constructs views. */
 export interface LedgerView {
   readonly [verified]: true;
   readonly genesis: GenesisHash;
@@ -264,11 +265,13 @@ const auditLedgerEffect = Effect.fnUntraced(function* (
     return yield* new LedgerError({ code: 'checkpoint-mismatch' });
   return view;
 });
+/** Effect form of `verifyLedger` that verifies signatures cooperatively. */
 export const verifyLedgerEffect = (input: {
   readonly anchor: GenesisHash;
   readonly records: readonly Uint8Array[];
   readonly checkpoint: LedgerCheckpoint;
 }) => auditLedgerEffect(input);
+/** Effect form of `extendLedger` that verifies signatures cooperatively. */
 export const extendLedgerEffect = (
   view: LedgerView,
   records: readonly Uint8Array[],
@@ -291,6 +294,7 @@ export function extendLedger(
     : fail('unauthorized');
 }
 
+/** What a device may do with document content at a verified view. */
 export interface ContentPermissions {
   /** Host admission: active personal/machine device of a non-Guest member. */
   readonly mayWriteDocument: boolean;
@@ -382,6 +386,7 @@ export function authorizeUnsignedRecord(
 }
 
 declare const verifiedTrust: unique symbol;
+/** Snapshot qualification derived from a genuine view at the same position. */
 export interface VerifiedViewSnapshotTrust {
   readonly [verifiedTrust]: true;
   readonly source: 'verified-view';
@@ -449,14 +454,17 @@ export function verifyLedgerSnapshot(input: {
     return viewOf(yield* verifiedSnapshotState(input.snapshot, input.trust));
   });
 }
+/** Canonical snapshot body and signing bytes of a genuine view, for `signer` to endorse. */
 export function prepareLedgerSnapshot(view: LedgerView, signer: SigningPublicKey) {
   const state = states.get(view);
   return state ? proposalOf(state, signer) : fail('unauthorized');
 }
+/** The tuple two devices compare out of band to detect a forked ledger. */
 export function comparisonNote(view: LedgerView, signer: SigningPublicKey) {
   const state = states.get(view);
   return state ? noteOf(state, signer) : fail('unauthorized');
 }
+/** Who authored historical content: the member (when history is available) or only the device. */
 export type HistoricalContentIdentity =
   | (HistoricalContentAuthor & { readonly kind: 'member' })
   | {
@@ -508,6 +516,7 @@ function importHash(hash: RecordHash) {
   return recordHash(hash.toBytes());
 }
 
+/** Whether a genuine view contains the checkpoint (head at that length) in its verified history. */
 export function hasVerifiedCheckpoint(
   view: LedgerView,
   point: LedgerCheckpoint

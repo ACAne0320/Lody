@@ -8,6 +8,7 @@ import { concat } from '../foundation/concat';
 import { epochHistoryPacket, type LedgerView } from '../ledger';
 import { Data } from 'effect';
 
+/** An epoch-key commitment, history packet or recovery check failed. */
 export class EpochKeyError extends Data.TaggedError('EpochKeyError')<{
   readonly code:
     | 'invalid-input'
@@ -81,6 +82,7 @@ function commitMaterial(
     tagged.fill(0);
   }
 }
+/** Seal the previous epoch key under the new one (XChaCha20-Poly1305 with a fresh nonce) as the 72-byte history packet of a rotation record. */
 export function sealHistoryPacket(input: {
   readonly genesis: Bytes.GenesisHash;
   readonly epoch: number;

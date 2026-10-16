@@ -8,8 +8,9 @@
  *   {@link LedgerFeedSource} (the append-only ledger, e.g. Loro Streams),
  *   {@link KeyMailbox} and {@link EpochStagingStore} (key delivery, e.g. a
  *   Convex or HTTP service). Rules and wire schemas: `@lody/e2ee-core/host`.
- * - **Platform ports** — {@link DeviceIdentity} (signing and encryption keys)
- *   and {@link KeyProtector} (OS-level protection of keys at rest).
+ * - **Platform ports** — {@link DeviceIdentity} (signing and encryption keys),
+ *   {@link KeyProtector} (OS-level protection of installed keys at rest) and
+ *   {@link CandidateProtector} (protection of unpublished rotation keys).
  * - **Application ports** — {@link WorkspaceScope}, {@link LedgerViewSource}
  *   and {@link EpochPublicationSource}.
  * - **Local storage ports** — durable journals and stores. Ready-made SQLite
@@ -22,7 +23,13 @@
  * @module
  */
 export { BackendError, KeyProtectorError, LedgerLogError, LocalStoreError } from './errors';
-export { EpochStagingStore, KeyMailbox, KeyProtector, type KeyMailboxStatus } from './keys';
+export {
+  CandidateProtector,
+  EpochStagingStore,
+  KeyMailbox,
+  KeyProtector,
+  type KeyMailboxStatus,
+} from './keys';
 export {
   EpochPublicationSource,
   LedgerFeedSource,

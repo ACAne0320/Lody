@@ -24,11 +24,13 @@ import {
 export class DeliveryError extends Schema.TaggedError<DeliveryError>()('DeliveryError', {
   reason: Schema.Literals(['corrupt', 'missing']),
 }) {}
+/** Result of one envelope delivery round: `Stored` (exact read-back matched) or `Pending` (retry the same original later). */
 export type DeliveryOutcome = {
   readonly outcome: 'Stored' | 'Pending';
   readonly slot: string;
   readonly frame: Uint8Array;
 };
+/** Stable 16-byte delivery slot id (hex) for one (workspace, epoch, sender, recipient) envelope. */
 export function epochDeliveryId(context: EpochEnvelopeContext) {
   return Result.gen(function* () {
     const anchor = yield* Bytes.genesisHash(context.genesis.toBytes());

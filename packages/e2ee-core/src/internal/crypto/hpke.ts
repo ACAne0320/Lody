@@ -6,6 +6,7 @@ import { encodeCbor } from '../foundation/cbor';
 import { copyEpochKeyBytes } from '../foundation/epoch-key';
 import { ValidationError } from '../foundation/errors';
 
+/** The fixed epoch-key HPKE primitive failed (bad key, context or ciphertext); carries no secret detail. */
 export class HpkePrimitiveError extends Data.TaggedError('HpkePrimitiveError')<{
   readonly code:
     | 'random-unavailable'

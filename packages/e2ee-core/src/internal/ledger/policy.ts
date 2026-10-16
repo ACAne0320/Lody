@@ -5,15 +5,18 @@ import { copyBytes } from '../foundation/cbor';
 import { fail, type DeviceKind, type RecordBody, type Role } from './records';
 import type { LedgerError } from './errors';
 
+/** A current member: user id and role. */
 export interface Member {
   readonly userId: Bytes.UserId;
   readonly role: Role;
 }
+/** A current device: its membership, kind and encryption public key. */
 export interface Device {
   readonly membershipId: Bytes.MembershipId;
   readonly kind: DeviceKind;
   readonly encryptionPublicKey: Bytes.EncryptionPublicKey;
 }
+/** Detached snapshot of the state a verified view describes: owner, members, devices and epoch. */
 export interface LedgerState {
   readonly genesis: Bytes.GenesisHash;
   readonly owner: Bytes.MembershipId;
