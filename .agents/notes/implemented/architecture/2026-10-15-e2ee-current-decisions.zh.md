@@ -57,7 +57,7 @@ Lab 会话及进程/CLI 命令接通稳定 ID repair、各阶段独立分页和�
 
 ## 模块与验证边界
 
-[Core](../../../../packages/e2ee-core/README.md) 拥有协议基础，[Lab](https://github.com/LodyAI/Lody/blob/358f06b764566241345ff041294540be0e3fea08/packages/e2ee-lab/README.zh.md) 用发布 SDK、合成保护、真实 SQLite/HTTP 和进程故障消费这些入口；它不是产品组装或真实 Keychain 验收。[Manifest](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/.agents/docs/e2ee-migration-manifest.json) 保留来源 SHA、去向及未完成项。作者测试、独立审查、准确 head CI 与生产验收分别归属。
+[Core](../../../../packages/e2ee-core/README.md) 拥有协议基础，[Lab](../../../../packages/e2ee-lab/README.zh.md) 用发布 SDK、合成保护、真实 SQLite/HTTP 和进程故障消费这些入口；它不是产品组装或真实 Keychain 验收。[Manifest](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/.agents/docs/e2ee-migration-manifest.json) 保留来源 SHA、去向及未完成项。作者测试、独立审查、准确 head CI 与生产验收分别归属。
 
 按切片累计的进度 Note 直接移除，不再复制一份仓库内归档。原文固定保存在 [15d35f75 历史](https://github.com/LodyAI/Lody/tree/15d35f75cd702f9d8846a73f03636ce4afce1d80/.agents/notes)。本次合并本身不改变协议批准或运行行为。
 

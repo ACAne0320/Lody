@@ -67,4 +67,4 @@ core 仅定义暂存、读回、按条件删除 port；DTO 归 cloud-api；Conve
 参见[准入](../../packages/e2ee-core/src/internal/ledger/ADMISSION.md)、
 [暂存 port](../../packages/e2ee-core/src/internal/keys/staging.ts)、
 [换代流程](../../packages/e2ee-core/src/internal/keys/publisher.ts)和
-[Lab](https://github.com/LodyAI/Lody/blob/358f06b764566241345ff041294540be0e3fea08/packages/e2ee-lab/README.zh.md)。
+[Lab](../../packages/e2ee-lab/README.zh.md)。

@@ -3,7 +3,7 @@
 Status: draft
 Translation: current
 
-本公开草案保留固定来源的设计意图。文中的独立包实现指来源原型，不表示本公共仓已完成；实际迁移与未定协议见[迁移指南](https://github.com/LodyAI/Lody/blob/358f06b764566241345ff041294540be0e3fea08/.agents/docs/e2ee-migration.zh.md)。生产 E2EE 入口未开放。
+本公开草案保留固定来源的设计意图。文中的独立包实现指来源原型，不表示本公共仓已完成；实际迁移与未定协议见[迁移指南](../../.agents/docs/e2ee-migration.zh.md)。生产 E2EE 入口未开放。
 
 端到端加密、设备信任与团队协作
 

@@ -41,6 +41,13 @@ Translation: current
 - 恢复 vault 存储改为两个端口（`RecoveryVaultStore`、`RecoveryVaultLocalStore`）加一个 `RecoveryVaults` 流程；vault 线上 DTO 以 Schema 形式移入 `./host`，`@lody/cloud-api` 重新导出（与暂存一致）。
 - 工作区错误改用带 `reason` 的 `Schema.TaggedError`，与其他公开错误一致。
 
+## Lab 基于服务运行（栈第 5 层）
+
+- Lab 的 `WorkspacePlatform` 像外部集成方一样提供端口：其账本 actor 暴露 `LedgerSync`、`SubmissionJournal` 与 `LedgerLog`，HTTP 邮箱与暂存客户端分别成为 `KeyMailbox` 与 `EpochStagingStore`。账本钉与候选文件按 actor 区分，因为多个 actor 共用一个目录，共享钉会让它们的回滚知识相互耦合。
+- 单组件故障测试使用 `./internal` 的测试辅助：它们以真实 Layer 打开单个流程（接收方、分发方、发布者等），并带各存储的选项，不存在第二份实现。
+- 平台回调 `documentState` 与 `recoveryConfiguration` 会收到工作区已构建的服务，因为平台在组装原生状态或恢复输入时可能需要流程（读取密钥、投递）。
+- Lab 对服务错误按 `reason`、对协议错误按 `code` 投影；暂存适配器保留后端拒绝的原因。
+
 ## 验证
 
 核心：20 个测试文件（共 353 个测试，含组合测试与公开文档测试），使用真实 SQLite、Ed25519、HPKE 与子进程；类型检查、类型感知 lint 和仓库边界检查。`test/composition.test.ts` 通过 `E2eeWorkflows` 在两台设备之间完成一次密钥分发。`test/public-docs.test.ts` 要求每个公开导出都有 JSDoc，并要求 `docs/surface*.md` 与实际导出一致。

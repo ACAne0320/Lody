@@ -129,3 +129,5 @@ pnpm --filter @lody/e2ee-core check:docs  # 每个公开导出都有 JSDoc
 ```
 
 测试使用固定的合成向量、真实 SQLite、真实 Ed25519/HPKE 和子进程；`test/generate-*.py` 用于（可选地）重新生成向量。
+
+[非门禁基准测试](bench/README.md)输出带环境信息的 JSON。

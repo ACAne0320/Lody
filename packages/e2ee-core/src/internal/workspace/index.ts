@@ -76,19 +76,30 @@ export type WorkspacePorts =
 export interface WorkspaceResources {
   /** All ports, built in the workspace's Scope (stores, backends, identity, protectors). */
   readonly ports: Layer.Layer<WorkspacePorts, unknown>;
-  readonly recoveryConfiguration?: Omit<
-    WorkspaceRecoveryInput,
-    'genesis' | 'personalSigner' | 'ledger' | 'submitOriginal' | 'installed'
-  >;
+  /**
+   * Recovery inputs, or a function that derives them once the workspace's
+   * workflows exist (for example to deliver a recovery device's envelope).
+   */
+  readonly recoveryConfiguration?:
+    | WorkspaceRecoveryConfiguration
+    | ((
+        services: Context.Context<WorkspaceServices>
+      ) => Effect.Effect<WorkspaceRecoveryConfiguration, unknown, Scope.Scope>);
   /** Stop admitting platform work (abort transports) before owners close. */
   readonly stop: () => Effect.Effect<void, unknown>;
-  /** Native document model state for a resource, given its content binding. */
+  /** Native document model state for a resource, given its content binding and the workspace's services. */
   readonly documentState: (
     resource: string,
     model: WorkspaceModel,
-    crypto: Effect.Success<ReturnType<typeof makeStreamsUpdateBinding>>
+    crypto: Effect.Success<ReturnType<typeof makeStreamsUpdateBinding>>,
+    services: Context.Context<WorkspaceServices>
   ) => Effect.Effect<WorkspaceDocumentState, unknown, Scope.Scope>;
 }
+/** Recovery inputs a platform supplies; the workspace adds identity, ledger, submission and keys. */
+export type WorkspaceRecoveryConfiguration = Omit<
+  WorkspaceRecoveryInput,
+  'genesis' | 'personalSigner' | 'ledger' | 'submitOriginal' | 'installed'
+>;
 type RecoveryOwner = Effect.Success<ReturnType<typeof makeWorkspaceRecovery>>;
 /** The new personal device a restore admits through the recovery device. */
 export interface WorkspaceRestoreRequest {
@@ -289,7 +300,7 @@ export const makeE2eeWorkspace = Effect.fn('E2eeWorkspace.acquire')(function* (
             child
           );
           const state = yield* Scope.provide(
-            resources.documentState(resource, model, crypto),
+            resources.documentState(resource, model, crypto, services),
             child
           );
           found = { crypto, state };
@@ -308,9 +319,13 @@ export const makeE2eeWorkspace = Effect.fn('E2eeWorkspace.acquire')(function* (
           state: owner.state,
         });
       });
-      const recovery = resources.recoveryConfiguration
+      const recoveryConfiguration =
+        typeof resources.recoveryConfiguration === 'function'
+          ? yield* Scope.provide(resources.recoveryConfiguration(services), child)
+          : resources.recoveryConfiguration;
+      const recovery = recoveryConfiguration
         ? yield* makeWorkspaceRecovery({
-            ...resources.recoveryConfiguration,
+            ...recoveryConfiguration,
             genesis,
             personalSigner: signer,
             ledger,
