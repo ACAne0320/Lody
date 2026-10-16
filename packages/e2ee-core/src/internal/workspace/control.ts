@@ -92,7 +92,7 @@ function captureCommand(command: LedgerCommand) {
 export class WorkspaceControl extends Context.Service<
   WorkspaceControl,
   {
-    /** Read the local feed through LedgerSync without network work; rejects a closed owner. */
+    /** Read the local feed through LedgerSync without network work; source-specific failures propagate. */
     current(): Effect.Effect<Effect.Success<ReturnType<LedgerSync['Service']['current']>>, unknown>;
     /** Refresh the verified feed through LedgerSync; source-specific failures propagate without authorizing a command. */
     refresh(): Effect.Effect<Effect.Success<ReturnType<LedgerSync['Service']['refresh']>>, unknown>;
@@ -122,8 +122,12 @@ export class WorkspaceControl extends Context.Service<
         return undefined;
       });
       return WorkspaceControl.of({
-        current: () => sync.current(),
-        refresh: () => serial.withPermit(refresh()),
+        current: Effect.fn('@lody/e2ee-core/WorkspaceControl.current')(function* () {
+          return yield* sync.current();
+        }),
+        refresh: Effect.fn('@lody/e2ee-core/WorkspaceControl.refresh')(function* () {
+          return yield* serial.withPermit(refresh());
+        }),
         executeOriginal: Effect.fn('@lody/e2ee-core/WorkspaceControl.executeOriginal')(
           function* (source) {
             const parsed = yield* Effect.fromResult(decodeRecord(new Uint8Array(source)));
