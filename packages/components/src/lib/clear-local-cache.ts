@@ -727,6 +727,7 @@ export function resetBootClearMemoForTests(): void {
  */
 export function reloadApp(): void {
   if (typeof window === 'undefined') return;
+  // The reload will not wait for IndexedDB; the page-hide spill keeps this entry.
   recordClientLog('warn', 'app.reload_requested', undefined, { path: window.location.pathname });
   void flushClientLog();
   if (window.__LODY_ELECTRON__ === true) {

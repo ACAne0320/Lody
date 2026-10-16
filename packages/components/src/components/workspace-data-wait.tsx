@@ -4,28 +4,42 @@ import { BlockingWaitPlaceholder } from '@/components/blocking-wait-placeholder'
 import { preloadMainLayout } from '@/components/preloaded-main-layout';
 
 /**
- * The workspace whose data scope was last ready in this page load. Module-level
- * on purpose: a cold start and a workspace switch both remount the route, and
- * only page lifetime tells them apart.
+ * The workspace whose data scope was last ready under the mounted authed
+ * layout, and the account it was ready for. Module-level on purpose: the wait
+ * renders before the layout's own state survives a switch. Forgotten when that
+ * layout unmounts (sign-out, leaving the workspace routes): there is then no
+ * layout to keep, and the next wait is a cold one.
  */
-let lastReadyWorkspaceSlug: string | null = null;
+let lastReady: { slug: string; accountId: string | null } | null = null;
 
 export type WorkspaceDataWaitKind = 'cold-start' | 'reload' | 'switch';
 
-export function resolveWorkspaceDataWaitKind(targetSlug: string): WorkspaceDataWaitKind {
-  if (lastReadyWorkspaceSlug === null) return 'cold-start';
-  return lastReadyWorkspaceSlug === targetSlug ? 'reload' : 'switch';
+export function resolveWorkspaceDataWaitKind(
+  targetSlug: string,
+  accountId: string | null
+): WorkspaceDataWaitKind {
+  if (lastReady === null || lastReady.accountId !== accountId) return 'cold-start';
+  return lastReady.slug === targetSlug ? 'reload' : 'switch';
 }
 
-/** Record the workspace whose data scope just became ready. */
-export function useRecordWorkspaceDataReady(readySlug: string | null): void {
+/** Record the workspace whose data scope just became ready, for this account. */
+export function useRecordWorkspaceDataReady(
+  readySlug: string | null,
+  accountId: string | null
+): void {
   useEffect(() => {
-    if (readySlug) lastReadyWorkspaceSlug = readySlug;
-  }, [readySlug]);
+    if (readySlug) lastReady = { slug: readySlug, accountId };
+  }, [accountId, readySlug]);
+  useEffect(
+    () => () => {
+      lastReady = null;
+    },
+    []
+  );
 }
 
 export function resetWorkspaceDataReadyForTests(): void {
-  lastReadyWorkspaceSlug = null;
+  lastReady = null;
 }
 
 /**

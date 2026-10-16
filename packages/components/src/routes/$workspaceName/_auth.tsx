@@ -367,7 +367,7 @@ function AuthedLayoutRoutes({
   useBillingOverviewPreload(user ? currentWorkspaceId : null);
   const [orgSettled, setOrgSettled] = useState(!organizationsLoading);
   const [userSettled, setUserSettled] = useState(Boolean(user) && Boolean(currentWorkspaceId));
-  useRecordWorkspaceDataReady(currentWorkspaceId ? workspaceName : null);
+  useRecordWorkspaceDataReady(currentWorkspaceId ? workspaceName : null, user?.id ?? null);
 
   useEffect(() => {
     if (!organizationsLoading) {
@@ -387,7 +387,7 @@ function AuthedLayoutRoutes({
     }
 
     if (!currentWorkspaceId) {
-      const waitKind = resolveWorkspaceDataWaitKind(workspaceName);
+      const waitKind = resolveWorkspaceDataWaitKind(workspaceName, user?.id ?? null);
       if (waitKind === 'cold-start') {
         return <WorkspaceDataWait kind={waitKind} />;
       }

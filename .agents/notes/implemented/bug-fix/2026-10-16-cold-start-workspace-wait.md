@@ -41,14 +41,16 @@ does not reset the scope.
 
 ## Decision
 
-`components/workspace-data-wait.tsx` remembers, for the page's lifetime, which
-workspace last had a ready data scope. The `_auth` wait uses it:
+`components/workspace-data-wait.tsx` remembers which workspace last had a ready
+data scope under the mounted authed layout, and for which account. It forgets
+that workspace when the layout unmounts, for example on sign-out: there is then
+no layout to keep. The `_auth` wait uses it:
 
-| Situation                                            | Wait                                                                        |
-| ---------------------------------------------------- | --------------------------------------------------------------------------- |
-| Nothing ready yet in this page (launch, host reload) | boot shell with "Loading workspace"; the layout chunk preloads meanwhile    |
-| The same workspace became unready again              | pane placeholder "Loading workspace" inside the mounted layout              |
-| A different workspace was ready before               | pane placeholder "Switching workspace" inside the mounted layout, as before |
+| Situation                                                                          | Wait                                                                        |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Nothing ready yet under this layout and account (launch, host reload, new sign-in) | boot shell with "Loading workspace"; the layout chunk preloads meanwhile    |
+| The same workspace became unready again                                            | pane placeholder "Loading workspace" inside the mounted layout              |
+| A different workspace was ready before                                             | pane placeholder "Switching workspace" inside the mounted layout, as before |
 
 Real switches keep `MainLayout` mounted, so the sidebar and workspace identity
 stay stable. A cold start has no layout to keep, and the boot shell already
@@ -76,8 +78,11 @@ first frame. Every variant is still a `BlockingWaitPlaceholder` with gate
 
 ## Verification
 
-`tests/blocking-wait-placeholder.test.tsx` covers four cases. A cold start renders
-the boot shell without "Switching workspace". A switch after another workspace
-was ready says "Switching workspace" in the pane. A same-workspace wait stays in
-the pane without claiming a switch. A cold start that never becomes ready still
-reaches the recovery page. None of this was run on an iOS device.
+`tests/blocking-wait-placeholder.test.tsx` covers six cases:
+
+- a cold start renders the boot shell without "Switching workspace";
+- a switch after another workspace was ready says "Switching workspace" in the pane;
+- a same-workspace wait stays in the pane without claiming a switch;
+- a workspace that another account had open counts as a cold start;
+- a wait after the authed layout unmounted (sign-out) counts as a cold start;
+- a cold start that never becomes ready still reaches the recovery page. None of this was run on an iOS device.

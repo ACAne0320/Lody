@@ -31,8 +31,12 @@ renderer crash that the user then reloaded away.
 
 **Recording (`lib/client-log.ts`).** An explicit API, `recordClientLog` and
 `recordClientError`, rather than intercepting `console`, so only events a
-caller chose are kept. Every string passes through `redactClientLogText`, which
-strips bearer tokens, JWTs and token-like query parameters. One entry, stack
+caller chose are kept. Every string passes through `redactClientLogText`. It
+strips bearer and basic credentials, JWTs, and query parameters, JSON fields and
+headers whose name contains a credential word anywhere (`refresh_token`,
+`client_secret`, `api_key`, `X-Amz-Signature`). The patterns run on error paths,
+so names are captured with a length limit and tested in a callback; an earlier
+backtracking pattern took seconds per entry on long text. One entry, stack
 included, is capped at 16 KiB.
 
 | Event                                         | Source                                                                        |
@@ -47,18 +51,37 @@ included, is capped at 16 KiB.
 | `page.previous_ended_without_unload`          | a previous page that never reached `pagehide`                                 |
 
 The last row is how an automatic restart shows up. Nothing runs when a WebContent
-process is killed, so each page keeps a boot marker in `localStorage`. The
-marker is updated synchronously on visibility changes and `pagehide`. The next
-boot reports a marker that never ended, with its last visibility and the time of
-that change.
+process is killed, so each page load keeps its own entry in a `localStorage`
+marker map, keyed by boot id. The entry is updated synchronously on visibility
+changes and `pagehide`. Every page also holds a Web Lock named after its boot id
+for as long as it runs. A new page reports each entry that never ended and
+whose lock nobody holds, with its last visibility and when that changed, then
+removes the entry. So a window or tab that is still open is never reported, and
+one page's ordinary exit cannot hide another page's kill. Without the Locks API
+the report says `liveness: unknown`. The pre-React failure page installs the log
+too (installation is idempotent), so its entries carry a boot.
 
 **Storage.** Entries are written in batches (an error is written at once, and
-the page flushes when hidden), to the `lody-client-log` database. A cache clear
-keeps the log, because it explains why the clear was needed; a full reset
-deletes it. Without IndexedDB the log is kept in memory under the same limits.
+the page flushes when hidden), to the `lody-client-log` database.
+
+- **Pruning:** the store is pruned whenever 256 KiB have been written since the
+  last prune, so a burst of errors cannot grow it far past its budget.
+- **Unavailable storage:** an open that errors or has not settled within 3 seconds
+  counts as unavailable for that attempt. WebKit can leave an open pending
+  forever after its storage process restarts. The open is retried after 30
+  seconds, and a late success is closed rather than leaked, so it cannot block a
+  full reset's delete. Meanwhile entries stay in memory under the same limits.
+- **Reloads:** a reload or a kill does not wait for an IndexedDB transaction.
+  When the page hides or unloads, entries not yet committed are therefore saved
+  synchronously to `localStorage` (at most 128 KiB). The next page imports them,
+  and every read de-duplicates by entry key and orders by time. That keeps the
+  `app.reload_requested` entry a reload would otherwise drop.
+- **Clearing:** a cache clear keeps the log, because it explains why the clear
+  was needed; a full reset deletes it.
 
 **Sending.** The bug report dialog builds the upload: the newest lines that fit
-2 MiB raw and 1 MiB gzipped, base64 encoded. The 1 MiB compressed bound matches
+2 MiB raw and 1 MiB gzipped, base64 encoded. It waits at most 5 seconds for
+storage, then files the report without the log rather than never. The 1 MiB compressed bound matches
 the Code Collab and file-preview payloads that already cross the Loro Streams
 request path. The `machine/bug-report` request schema is strict, so an older
 daemon would reject the whole report if the field were present. The client log
@@ -66,7 +89,10 @@ is therefore gated on the new `bugReportClientLog` machine protocol capability.
 The workspace RPC facade drops the field for a machine that does not advertise
 it, and the report is still filed. The daemon decodes the log and appends it
 after its own logs. If the log does not decode, the section says why instead of
-failing the report.
+failing the report. The schema bounds the base64 string itself, so an oversized
+payload is rejected before the daemon decodes anything. The contract and limits
+live in the schema-free `@lody/shared/bug-report-client-log`, so the pre-React
+boot and recovery pages do not pull a schema library in.
 
 ## Alternatives
 
@@ -86,18 +112,23 @@ failing the report.
   parameters in plaintext, as the description already does, so it is retained in
   the workspace request stream until expiry. Encrypting it to the target machine,
   as authentication input is, would remove that.
-- **Last seconds before a kill:** entries written in the last second before a
-  process is killed can be lost. The boot marker survives because it is
-  synchronous.
+- **Kill while visible:** a kill gives no warning. Entries recorded after the
+  page last hid, and not yet written, can be lost; the boot marker survives
+  because it is synchronous.
 
 ## Verification
 
 - `tests/client-log.test.tsx` covers:
   - persistence across a simulated reload;
   - detection of a page that ended without `pagehide`;
+  - a page still running in another window not being reported, then being
+    reported once it dies;
+  - entries saved on page hide surviving the reload that drops their write;
+  - a report that does not wait on an IndexedDB open that never answers;
+  - time ordering across memory and IndexedDB;
   - uncaught errors and rejections;
   - the age and byte limits;
-  - redaction;
+  - redaction of credential names wherever the word sits;
   - an upload that decodes back to the log;
   - an `ErrorBoundary` catch recorded with its component stack.
 - `tests/workspace-machine-rpc-facade.test.ts` checks that the log reaches a

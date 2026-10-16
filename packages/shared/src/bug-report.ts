@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  BUG_REPORT_CLIENT_LOG_LIMITS,
+  BUG_REPORT_CLIENT_LOG_MAX_DATA_LENGTH,
+  type BugReportClientLog,
+} from './bug-report-client-log';
 
 export const BUG_REPORT_LOG_PATH_PREFIX = '/bug-report-logs/workspaces/';
 
@@ -31,22 +36,17 @@ export const parseBugReportLogPath = (
   }
 };
 
-/**
- * Budgets for the renderer's own log riding along a machine-backed bug report.
- * The raw bound matches what the client keeps (2 MiB or 48 hours); the
- * compressed bound matches the 1 MiB Code Collab / file-preview payload that
- * already crosses the Loro Streams request path.
- */
-export const BUG_REPORT_CLIENT_LOG_LIMITS = {
-  maxRawBytes: 2 * 1024 * 1024,
-  maxCompressedBytes: 1024 * 1024,
-} as const;
+export {
+  BUG_REPORT_CLIENT_LOG_LIMITS,
+  BUG_REPORT_CLIENT_LOG_MAX_DATA_LENGTH,
+  type BugReportClientLog,
+} from './bug-report-client-log';
 
-/** The client log as sent in `machine/bug-report`: UTF-8 text, gzipped, base64. */
+/** Validates {@link BugReportClientLog}; `data` is bounded before any decode. */
 export const BugReportClientLogSchema = z
   .object({
     encoding: z.literal('gzip-base64'),
-    data: z.string().min(1),
+    data: z.string().min(1).max(BUG_REPORT_CLIENT_LOG_MAX_DATA_LENGTH),
     rawBytes: z.number().int().positive().max(BUG_REPORT_CLIENT_LOG_LIMITS.maxRawBytes),
     compressedBytes: z
       .number()
@@ -54,5 +54,4 @@ export const BugReportClientLogSchema = z
       .positive()
       .max(BUG_REPORT_CLIENT_LOG_LIMITS.maxCompressedBytes),
   })
-  .strict();
-export type BugReportClientLog = z.infer<typeof BugReportClientLogSchema>;
+  .strict() satisfies z.ZodType<BugReportClientLog>;

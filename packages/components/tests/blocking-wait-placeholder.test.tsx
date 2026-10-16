@@ -389,10 +389,18 @@ describe('BlockingWaitPlaceholder', () => {
 });
 
 /** The `_auth` route's use: record readiness, otherwise wait by kind. */
-function WorkspaceDataRoute({ slug, ready }: { slug: string; ready: boolean }) {
-  useRecordWorkspaceDataReady(ready ? slug : null);
+function WorkspaceDataRoute({
+  slug,
+  ready,
+  accountId = 'user-1',
+}: {
+  slug: string;
+  ready: boolean;
+  accountId?: string;
+}) {
+  useRecordWorkspaceDataReady(ready ? slug : null, accountId);
   if (ready) return <div>Workspace content</div>;
-  return <WorkspaceDataWait kind={resolveWorkspaceDataWaitKind(slug)} />;
+  return <WorkspaceDataWait kind={resolveWorkspaceDataWaitKind(slug, accountId)} />;
 }
 
 describe('WorkspaceDataWait', () => {
@@ -423,6 +431,26 @@ describe('WorkspaceDataWait', () => {
 
     expect(bootShell()).toBeNull();
     expect(text()).toContain('Loading workspace');
+    expect(text()).not.toContain('Switching workspace');
+  });
+
+  it('treats a workspace opened by another account as a cold start', () => {
+    const store = createWorkspaceStore({ scan: 'pending' });
+    renderNode(store, <WorkspaceDataRoute slug="acme" ready />, 'acme');
+    renderNode(store, <WorkspaceDataRoute slug="beta" ready={false} accountId="user-2" />, 'beta');
+
+    expect(bootShell()).not.toBeNull();
+    expect(text()).not.toContain('Switching workspace');
+  });
+
+  it('forgets the ready workspace once the authed layout unmounts', () => {
+    const store = createWorkspaceStore({ scan: 'pending' });
+    renderNode(store, <WorkspaceDataRoute slug="acme" ready />, 'acme');
+    // Sign-out leaves the workspace routes.
+    renderNode(store, <div>Sign in</div>, null);
+    renderNode(store, <WorkspaceDataRoute slug="beta" ready={false} />, 'beta');
+
+    expect(bootShell()).not.toBeNull();
     expect(text()).not.toContain('Switching workspace');
   });
 
