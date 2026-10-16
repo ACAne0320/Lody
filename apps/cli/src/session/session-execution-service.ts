@@ -49,6 +49,7 @@ import {
 } from '@/orchestration/inbox/model';
 import { sessionExecutionResource } from '@/orchestration/platform/session-resources';
 import { formatErrorMessage } from '@/utils/format-error';
+import { describeSessionStartFailure, type SessionStartStage } from './session-start-stage';
 import type { Logger } from '@/utils/logger';
 import { startTraceSpan, traceAsync } from '@/utils/trace-span';
 import type { ContentBlock } from '@agentclientprotocol/sdk';
@@ -308,6 +309,8 @@ type TurnRuntimeState = {
   /** Publish-once latch for the workspace git-state flags; both cancel routes read it. */
   workspaceGitStateSynced: boolean;
   prePromptFailureRecorded: boolean;
+  /** Start step in progress; cleared once a Session is bound, so later failures name none. */
+  startStage?: SessionStartStage;
   cancelRequested: boolean;
   pendingInputOnCancel: PendingInputCancellationPolicy;
   releaseFailure?: unknown;
@@ -3241,7 +3244,7 @@ export class SessionExecutionService {
       return;
     }
     runtime.prePromptFailureRecorded = true;
-    const message = formatErrorMessage(error);
+    const message = describeSessionStartFailure(runtime.startStage, formatErrorMessage(error));
     if (isGitExecutableNotFoundError(error)) {
       await this.deps.recordChatFailure(
         sessionDoc,
@@ -4219,6 +4222,7 @@ export class SessionExecutionService {
               }
               runtime.session = nextSession;
               runtime.pendingSession = undefined;
+              runtime.startStage = undefined;
             };
 
             const trackPendingSession = Effect.fnUntraced(function* (
@@ -5425,6 +5429,10 @@ export class SessionExecutionService {
           )
             self.deps.setSessionActivePresencePhase(sessionId, phase, detail);
         },
+        onStartStage: (stage) => {
+          if (self.turnRuntimeBySession.get(sessionId) === ctx.runtime)
+            ctx.runtime.startStage = stage;
+        },
       };
 
       const restoreAttempt = Effect.gen(function* () {
@@ -5574,18 +5582,25 @@ export class SessionExecutionService {
                 Effect.catch((fallbackError) =>
                   Effect.gen(function* () {
                     yield* ctx.abortIfCancelled();
-                    const fallbackErrMessage = formatErrorMessage(fallbackError);
+                    const fallbackNeedsAuthentication =
+                      fallbackError instanceof AcpAuthenticationRequiredError;
+                    const fallbackErrMessage = fallbackNeedsAuthentication
+                      ? formatErrorMessage(fallbackError)
+                      : describeSessionStartFailure(
+                          ctx.runtime.startStage,
+                          formatErrorMessage(fallbackError)
+                        );
                     self.deps.logger.error(
-                      `[${sessionId}] Fallback restore also failed: ${fallbackErrMessage}`
+                      `[${sessionId}] Fallback restore also failed: ${fallbackErrMessage}`,
+                      fallbackError
                     );
                     return yield* self.recordKnownChatFailureAndHaltEffect({
                       sessionId,
                       sessionDoc,
                       userTurnId: executionUserTurnId,
-                      reason:
-                        fallbackError instanceof AcpAuthenticationRequiredError
-                          ? 'acp_auth_required'
-                          : 'session_restore_failed',
+                      reason: fallbackNeedsAuthentication
+                        ? 'acp_auth_required'
+                        : 'session_restore_failed',
                       message: fallbackErrMessage,
                     });
                   })
@@ -5594,8 +5609,12 @@ export class SessionExecutionService {
             }
 
             yield* acpReplaySuppression.release;
+            const failureMessage = needsAuthentication
+              ? errMessage
+              : describeSessionStartFailure(ctx.runtime.startStage, errMessage);
             self.deps.logger.error(
-              `[${sessionId}] Failed to restore session for chat: ${errMessage}`
+              `[${sessionId}] Failed to restore session for chat: ${failureMessage}`,
+              error
             );
             return yield* self.recordKnownChatFailureAndHaltEffect({
               sessionId,
@@ -5605,7 +5624,7 @@ export class SessionExecutionService {
               // arrives wrapped as `[ACP_RESUME_FAILED] …`; without it the UI
               // reports a generic restore failure and offers no way to sign in.
               reason: needsAuthentication ? 'acp_auth_required' : 'session_restore_failed',
-              message: errMessage,
+              message: failureMessage,
             });
           })
         )
@@ -6478,6 +6497,9 @@ export class SessionExecutionService {
               !runtime.cancelRequested
             )
               self.deps.setSessionActivePresencePhase(sessionId, phase, detail);
+          };
+          sessionConfig.onStartStage = (stage) => {
+            if (self.turnRuntimeBySession.get(sessionId) === runtime) runtime.startStage = stage;
           };
           sessionConfig.worktreeScriptHistoryInsertBeforeEntryId = turnId;
           const session = yield* trackPendingSession(

@@ -26,10 +26,29 @@ const readStructuredErrorDetail = (error: Error): string | undefined => {
   return typeof rawMessage === 'string' && rawMessage.length > 0 ? rawMessage : undefined;
 };
 
+/**
+ * A tagged error without a message (Effect's `Data.TaggedError` default) still
+ * names its type and cause, so a failure is never reported as an empty string.
+ */
+const describeMessagelessError = (error: Error, seen: ReadonlySet<unknown>): string => {
+  const tag = (error as { _tag?: unknown })._tag;
+  const label = typeof tag === 'string' && tag.length > 0 ? tag : error.name || 'Error';
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause === undefined || cause === null || seen.has(cause)) return label;
+  const detail =
+    cause instanceof Error && !cause.message
+      ? describeMessagelessError(cause, new Set([...seen, cause]))
+      : formatErrorMessage(cause);
+  return detail ? `${label}: ${detail}` : label;
+};
+
 export const formatErrorMessage = (error: unknown, options: FormatErrorOptions = {}): string => {
   const syncError = formatLoroSyncError(error);
   if (syncError) return syncError;
   if (error instanceof Error) {
+    if (!error.message && !options.includeStack && !readStructuredErrorDetail(error)) {
+      return describeMessagelessError(error, new Set([error]));
+    }
     const base = options.includeStack ? (error.stack ?? error.message) : error.message;
     const detail = readStructuredErrorDetail(error);
     if (!detail || base.includes(detail)) {

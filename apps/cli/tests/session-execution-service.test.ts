@@ -34,7 +34,7 @@ import {
   type WorkspaceId,
 } from '@lody/shared';
 import Database from 'better-sqlite3';
-import { Effect, Fiber } from 'effect';
+import { Data, Effect, Fiber } from 'effect';
 import type { LoroRepo } from 'loro-repo';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -64,9 +64,16 @@ import {
   type SessionExecutionServiceDeps,
 } from '../src/session/session-execution-service';
 import type { SessionManager } from '../src/session/session-manager';
+import type { SessionStartStage } from '../src/session/session-start-stage';
+import type { SessionConfig } from '../src/session/types';
 import { GitExecutableNotFoundError } from '../src/session/worktree/git-process-error';
 import type { Logger } from '../src/utils/logger';
 import { withHistoryPort } from './history-port-fixture';
+
+/** Shape of an Effect tagged error without a message, as the lock errors once were. */
+class MessagelessStartFailure extends Data.TaggedError('MessagelessStartFailure')<{
+  cause: unknown;
+}> {}
 import { composeTestSessionDoc } from './session-doc-fixture';
 
 const capabilityConfigId = 'config-1' as AgentConfigId;
@@ -6003,6 +6010,7 @@ describe('SessionExecutionService', () => {
     expectedMessage: string;
     expectedCode?: string;
     expectedTerminateForce?: boolean;
+    stage?: SessionStartStage;
   }>([
     {
       name: 'JSON-RPC internal error',
@@ -6040,6 +6048,14 @@ describe('SessionExecutionService', () => {
       expectedMessage: 'Git is unavailable: Lody could not find the Git executable in PATH.',
       expectedCode: 'git_executable_not_found',
     },
+    {
+      name: 'message-less failure while preparing the worktree',
+      error: new MessagelessStartFailure({ cause: new Error("Operation timed out after '5s'") }),
+      stage: 'worktree',
+      expectedReason: 'turn_pre_prompt_failed',
+      expectedMessage:
+        "Preparing the worktree failed: MessagelessStartFailure: Operation timed out after '5s'",
+    },
   ])('records exactly one visible chat_failed for a pre-prompt $name', async (testCase) => {
     let history: SessionHistoryInput[] = [];
     const sessionDoc = withHistoryPort({
@@ -6058,7 +6074,8 @@ describe('SessionExecutionService', () => {
     const sessionManager = {
       getSession: vi.fn(() => null),
       getPendingSession: vi.fn(() => null),
-      createSession: vi.fn(async () => {
+      createSession: vi.fn(async (config: SessionConfig) => {
+        if (testCase.stage) config.onStartStage?.(testCase.stage);
         throw testCase.error;
       }),
       setSessionError: vi.fn(),
@@ -6349,6 +6366,8 @@ describe('SessionExecutionService', () => {
     history: SessionHistoryInput[];
     /** How many times the restore path may reach `createSession`. */
     expectedCreateSessionCalls: number;
+    /** Start step each attempt reports before failing. */
+    stage?: SessionStartStage;
   }>([
     {
       name: 'reports an ordinary restore failure',
@@ -6411,6 +6430,27 @@ describe('SessionExecutionService', () => {
       // resume pointer must survive: no replacement session is created.
       expectedCreateSessionCalls: 1,
     },
+    {
+      name: 'names the start step and type of a message-less restore failure',
+      errors: [new MessagelessStartFailure({ cause: new Error("Operation timed out after '5s'") })],
+      stage: 'worktree',
+      expectedReason: 'session_restore_failed',
+      expectedMessage:
+        "Preparing the worktree failed: MessagelessStartFailure: Operation timed out after '5s'",
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 1,
+    },
+    {
+      name: 'keeps the auth message without a start step',
+      errors: [new AcpAuthenticationRequiredError([])],
+      stage: 'agent-start',
+      expectedReason: 'acp_auth_required',
+      expectedMessage: 'Authentication required',
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 1,
+    },
   ])('$name', async (testCase) => {
     vi.useFakeTimers();
     const { errors, expectedReason, expectedMessage, resumeSessionId, history } = testCase;
@@ -6429,7 +6469,8 @@ describe('SessionExecutionService', () => {
     const sessionManager = {
       getSession: vi.fn(() => null),
       getPendingSession: vi.fn(() => null),
-      createSession: vi.fn(async () => {
+      createSession: vi.fn(async (config: SessionConfig) => {
+        if (testCase.stage) config.onStartStage?.(testCase.stage);
         const error = errors.shift();
         if (!error) throw new Error('Unexpected restore attempt');
         throw error;

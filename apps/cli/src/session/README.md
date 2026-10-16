@@ -58,6 +58,8 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
   session and process lifecycle, workdirs, worktrees, sandboxed spawning, ACP terminals.
   Managed GitHub credential preparation excludes local projects and their worktrees;
   each managed runtime owns a scoped credential lease, retained across adoption.
+- `session-start-stage.ts` — start step names and the user-visible failure text
+  ([start failures](#start-failures)).
 - `session-fork-service.ts` / `session-fork-operation-store.ts` — the fork saga and its
   machine-local marker store.
 - `session-edit-and-resend-service.ts` — same-session replacement of the last normal User turn.
@@ -318,6 +320,21 @@ itself comes from the conversation-owner GitHub credential, not from git config.
 changes update the host Session environment without restarting ACP or its sandbox.
 Existing ACP children retain their launch environment; live
 identity propagation into adapter-owned Git commands remains unresolved.
+
+### Start failures
+
+`SessionManager.createSession` reports each start step through `onStartStage` as it
+begins: credentials, working directory, worktree, Git identity, agent runtime, then agent
+start. The execution service keeps the last step on the turn and clears it once a Session
+is bound. A failure is recorded as `<step> failed: <message>`, using
+`session-start-stage.ts`, so the user sees where start-up stopped. Authentication failures
+keep their own message. The error itself is never wrapped: the restore and create paths
+classify it by identity to choose sign-in, the history-replay fallback or a generic failure.
+When a start fails, cleanup terminates the partial Session and releases its credentials.
+Each cleanup failure is logged, and the original error is rethrown. `formatErrorMessage`
+names the type and cause of an error whose message is empty, which a `Data.TaggedError`
+without a message getter produces. See the
+[decision](../../../../.agents/notes/implemented/bug-fix/2026-10-16-session-start-failure-attribution.md).
 
 ### No draft preparation
 
