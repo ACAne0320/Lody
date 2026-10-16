@@ -93,7 +93,7 @@ scripts/check-public-docs.ts  JSDoc 与接口文档检查
 docs/                      架构、服务、流程、公开接口、后端指南
 ```
 
-协议内部的模块说明：[账本](src/internal/ledger/README.md)、[密钥](src/internal/keys/README.md)、[Streams 适配器](src/adapters/loro-streams/README.md)（英文）。
+协议内部的模块说明：[账本](src/internal/ledger/README.md)、[密钥](src/internal/keys/README.md)、[Streams 适配器](src/adapters/loro-streams/README.md)、[文档](src/internal/content/README.md)（英文）。
 
 ## 应该读的文档
 
@@ -108,6 +108,8 @@ docs/                      架构、服务、流程、公开接口、后端指�
 **服务器能看到什么？** 只有元数据：标识符、纪元号、大小与时间。永远看不到密钥或明文。见白皮书的威胁模型。
 
 **新设备如何拿到密钥？** 新设备通过一条签名账本记录被接纳；已有设备在账本中看到它后，由 `KeyDistributor` 通过邮箱给它发送信封；新设备执行 `KeyReceiver.fetchAndInstall`。
+
+**如何加密文档？** 通过 Streams 同步 Loro 时，把 `streamsDocumentBinding` 作为文档的载荷保护；其他情况使用 `sealDocument` / `openDocument`。见[流程](docs/workflows.zh.md#文档)。
 
 **如何换代密钥或移除成员？** `EpochPublisher.publish()` / `publishRemoving(membershipId)`。移除与换代在同一条签名记录中完成，被移除的成员不存在能读取新内容的时间窗口。
 

@@ -57,6 +57,7 @@ src/
                       + InstalledEpochKeys, KeyReceiver, KeyRepair,
                         KeyDistributor, EpochPublisher
     submission/       LedgerSubmission
+    content/          document keys, sealed documents, Streams content codec
     lifecycle.ts      admission gate, close guard, own()
 ```
 

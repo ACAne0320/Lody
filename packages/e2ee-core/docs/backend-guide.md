@@ -108,6 +108,25 @@ Immutable storage for a rotation's complete envelope group, keyed by
 The staging server never reads or interprets the ledger. A stored group is
 inert until the ledger contains its exact record.
 
+## 4. Document content
+
+A sync server that stores document frames should admit only frames a current
+writer sealed. It does not decrypt them; readers still verify the AEAD.
+
+- `admitDocument` before storing a sealed frame: the authenticated device has
+  current write permission, and the frame's epoch is published and not later
+  than the current one. Earlier frames of an active writer stay valid after a
+  rotation.
+- `admitStreamsUpdateBatch` for a `@loro-dev/streams-crdt` 0.17 batch: framing,
+  header 3 and every frame's signature and permission. The batch is accepted or
+  rejected as a whole, and the unchanged original bytes are forwarded.
+- `admitStreamsSnapshot` for a snapshot (header 4): additionally, a
+  `StreamsRecordBoundaryPort` must prove the signed continuation offset is a
+  record boundary no later than the head. String ordering is not proof.
+
+A single-host reference of an exactly-once snapshot publication journal is
+`makeSqliteSnapshotPublication` in `@lody/e2ee-core/adapters/node-sqlite`.
+
 ## What a server learns
 
 Who talks to whom and when, workspace and device identifiers, epoch numbers,

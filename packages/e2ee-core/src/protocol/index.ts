@@ -45,6 +45,7 @@ export {
 } from '../internal/foundation/content-format';
 export {
   deriveContentKey,
+  disposeContentKey,
   sealContentAead,
   openContentAead,
   type ContentKey,
@@ -58,6 +59,20 @@ export {
   type EpochHpkeContext,
   type SealedEpochHpke,
 } from '../internal/crypto/hpke';
+
+// Documents
+export {
+  sealDocument,
+  authenticateDocument,
+  openDocument,
+  admitDocument,
+  deriveDocumentKey,
+  disposeDocumentKey,
+  scopedDocumentKey,
+  importDocumentKey,
+  exportDocumentKey,
+  type DocumentKey,
+} from '../internal/content';
 
 // Ledger
 export * from '../internal/ledger/index';

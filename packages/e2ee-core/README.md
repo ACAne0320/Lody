@@ -103,7 +103,8 @@ docs/                      architecture, services, workflows, surface, backend g
 
 Module notes for protocol internals: [ledger](src/internal/ledger/README.md),
 [keys](src/internal/keys/README.md),
-[Streams adapter](src/adapters/loro-streams/README.md).
+[Streams adapter](src/adapters/loro-streams/README.md),
+[documents](src/internal/content/README.md).
 
 ## Documents to read
 
@@ -131,6 +132,10 @@ timing. Never keys or plaintext. See the whitepaper's threat model.
 **How does a new device get the key?** It is admitted by a signed ledger
 record. Existing devices see it in the ledger and `KeyDistributor` sends it an
 envelope through the mailbox. The new device runs `KeyReceiver.fetchAndInstall`.
+
+**How do I encrypt a document?** For Loro over Streams, use
+`streamsDocumentBinding` as the document's payload protection. Otherwise use
+`sealDocument` / `openDocument`. See [workflows](docs/workflows.md#documents).
 
 **How do I rotate the key or remove a member?** `EpochPublisher.publish()` /
 `publishRemoving(membershipId)`. Removal and rotation are one signed record, so

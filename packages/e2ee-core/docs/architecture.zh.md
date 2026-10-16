@@ -50,6 +50,7 @@ src/
                       + InstalledEpochKeys、KeyReceiver、KeyRepair、
                         KeyDistributor、EpochPublisher
     submission/       LedgerSubmission
+    content/          文档密钥、已封装文档、Streams 内容编解码
     lifecycle.ts      准入门、关闭守卫、own()
 ```
 

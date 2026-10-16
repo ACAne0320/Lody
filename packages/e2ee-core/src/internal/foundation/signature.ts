@@ -144,7 +144,7 @@ export function verifyContentSignature(
   expectedSigner: SigningPublicKey,
   additionalData?: Uint8Array
 ): Result.Result<ContentMetadata, ContentError> {
-  return Result.flatMap(parseContentFrame(frame), (parsed) =>
+  return Result.flatMap(parseContentFrame(frame, scope.purpose), (parsed) =>
     verifyParsedContentSignature(parsed, scope, expectedSigner, additionalData)
   );
 }
