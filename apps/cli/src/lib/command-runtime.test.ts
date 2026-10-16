@@ -297,6 +297,35 @@ describe('workspace command manager sharing', () => {
       await Promise.allSettled([first, incoming]);
     }
   });
+
+  it('keeps the accepted result and later commands when the failure reporter throws', async () => {
+    const withManager = makeWorkspaceCommandManagers<ReturnType<typeof makeCommandManager>>();
+    const old = makeCommandManager();
+    old.cleanUp = async () => {
+      throw new Error('Synthetic cleanup failure');
+    };
+    const throwingReporter = () => {
+      throw new Error('Synthetic closed logger');
+    };
+    expect(
+      await withManager(
+        'workspace',
+        commandScope,
+        async () => old,
+        async () => 'accepted',
+        throwingReporter
+      )
+    ).toBe('accepted');
+    const next = makeCommandManager();
+    await withManager(
+      'workspace',
+      commandScope,
+      async () => next,
+      async (owner) => owner.write('next command'),
+      throwingReporter
+    );
+    expect(next.writes).toEqual(['next command']);
+  });
 });
 
 function makeTempDir(): string {

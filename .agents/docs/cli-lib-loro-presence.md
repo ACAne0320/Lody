@@ -144,9 +144,10 @@ cache. `doc.ts` acquires a child workspace through the deprecated
 and borrow its manager, so they open no presence owner of their own. Overlapping
 standalone commands share one document manager through `command-runtime.ts`; last
 release awaits its cleanup, and a failed cleanup never blocks the next command. Two
-live owners of one workspace remain forbidden. A stopped owner whose release failed
-is retired: it keeps its retained work in the application root Scope, gets one
-detached `retryCleanup`, and a new owner is admitted
+live owners of one workspace remain forbidden. A replacement waits for the previous
+stop to settle; an owner whose release failed is retired: it keeps its retained work
+in the application root Scope, every later acquisition retries it in the background,
+and a new owner is admitted
 ([decision](../notes/implemented/architecture/2026-10-16-daemon-hosted-mcp-workspace-commands.md)).
 The native owner uses child Scopes for
 heartbeat, shared bootstrap, probes and remote generations; `platform/presence.ts`

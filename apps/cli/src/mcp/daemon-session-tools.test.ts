@@ -179,6 +179,9 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
       await expect(
         withWorkspaceManager(auth, { ...workspace, id: 'other-workspace' }, 'test', async () => 1)
       ).rejects.toThrow('Daemon command workspace mismatch');
+      await expect(
+        withWorkspaceManager({ ...auth, userId: 'other-user' }, workspace, 'test', async () => 1)
+      ).rejects.toThrow('restart the daemon');
     });
     // The borrowing command never cleans up the daemon's replica.
     expect((await manager.repo.getDocMeta(getSessionRoomId(sessionId)))?.meta).toMatchObject({
@@ -208,5 +211,19 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         )
       )
     ).rejects.toThrow('Requester Session does not belong to this machine');
+    // A process outliving its Turn cannot keep using the Session's tools.
+    await expect(
+      runWithDaemonWorkspace(
+        {
+          ...daemon,
+          readInvocation: (id) => ({
+            type: 'session/active-invocation-context',
+            sessionId: id,
+            active: false,
+          }),
+        },
+        () => executeDaemonSessionTool(context(), 'lody_operation_list', {})
+      )
+    ).rejects.toThrow('Session tool requires an active Turn');
   });
 });

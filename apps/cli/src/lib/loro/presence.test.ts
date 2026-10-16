@@ -895,18 +895,65 @@ effectIt.effect('a failed release never blocks its workspace; a live duplicate s
     expect(Exit.isFailure(yield* first.stop.pipe(Effect.exit))).toBe(true);
     expect(first.isReleased()).toBe(false);
 
-    const retrying = yield* Deferred.make<void>();
+    const firstRetry = yield* Deferred.make<void>();
     room.releaseFailure = undefined;
-    room.retryRelease = Deferred.succeed(retrying, undefined).pipe(
-      Effect.andThen(Effect.sync(() => (room.live = false)))
+    room.retryRelease = Deferred.succeed(firstRetry, undefined).pipe(
+      Effect.andThen(Effect.die(new Error('synthetic-retry-timeout')))
     );
     const replacement = yield* owners.create(workspaceId);
     expect(replacement).not.toBe(first);
-    // The replaced owner gets one detached recovery attempt and still releases.
-    yield* Deferred.await(retrying);
+    // The retired owner is recovered in the background, not by blocking the workspace.
+    yield* Deferred.await(firstRetry);
+    expect(Exit.isFailure(yield* first.stop.pipe(Effect.exit))).toBe(true);
+    expect(first.isReleased()).toBe(false);
+
+    const secondRetry = yield* Deferred.make<void>();
+    room.retryRelease = Deferred.succeed(secondRetry, undefined).pipe(
+      Effect.andThen(Effect.sync(() => (room.live = false)))
+    );
+    // A failed retry is not the last one: a later acquisition retries again.
+    yield* owners.create('workspace-other' as WorkspaceId);
+    yield* Deferred.await(secondRetry);
     yield* first.stop;
     expect(first.isReleased()).toBe(true);
     expect(room.live).toBe(false);
+    return undefined;
+  })
+);
+
+effectIt.effect('a replacement waits for an in-flight release instead of overlapping it', () =>
+  Effect.gen(function* () {
+    const fixture = yield* nativeFixture();
+    const clock = Layer.succeed(Clock.Clock, fixture.clock);
+    const owners = Context.get(
+      yield* Layer.build(
+        WorkspacePresenceOwnersLive.pipe(
+          Layer.provide(Layer.mergeAll(fixture.io, fixture.host, clock))
+        )
+      ),
+      WorkspacePresenceOwners
+    );
+    const workspaceId = 'workspace-handoff' as WorkspaceId;
+    const first = yield* owners.create(workspaceId);
+    yield* first.attach({
+      streamsBaseUrl: 'https://synthetic.invalid',
+      auth: () => Effect.succeed('synthetic-token'),
+    });
+    const room = fixture.rooms[0];
+    if (!room) return yield* Effect.die('No handoff room');
+    yield* Deferred.await(room.started);
+    yield* Deferred.succeed(room.bootstrap, undefined);
+    yield* first.waitUntilJoined(1000);
+    const stopping = yield* Effect.forkChild(first.stop);
+    yield* Deferred.await(room.closing);
+    const replacing = yield* Effect.forkChild(
+      owners.create(workspaceId).pipe(Effect.map(() => room.live))
+    );
+    yield* Deferred.succeed(room.released, undefined);
+    // The old stream had finished releasing when the replacement was admitted.
+    expect(yield* Fiber.join(replacing)).toBe(false);
+    yield* Fiber.join(stopping);
+    expect(first.isReleased()).toBe(true);
     return undefined;
   })
 );

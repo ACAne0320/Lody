@@ -68,7 +68,14 @@ export function makeWorkspaceCommandManagers<Manager extends CommandManager>() {
         borrowed.closing = Promise.resolve()
           .then(() => manager.cleanUp({ fast: true, preserveSessionStatus: true }))
           // Preserve an accepted command's result, matching the existing cleanup policy.
-          .catch(onCleanupFailure)
+          // A throwing reporter must not fail this command or the waiters behind it.
+          .catch((error: unknown) => {
+            try {
+              onCleanupFailure(error);
+            } catch {
+              // Reporting is best effort.
+            }
+          })
           .finally(() => {
             entries.delete(workspaceId);
           });

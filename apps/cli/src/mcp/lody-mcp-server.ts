@@ -175,8 +175,11 @@ const OPERATION_CANCEL_TOOL_NAME = 'lody_operation_cancel';
 const SESSION_FILE_MAX_SIZE_MB = Math.floor(SESSION_FILE_MAX_SIZE_BYTES / (1024 * 1024));
 const SESSION_CONTROL_TIMEOUT_MS = 30_000;
 const MAX_MCP_SESSION_WAIT_TIMEOUT_SECONDS = 3_600;
-// Daemon-executed Session tools must outlast the longest legacy reply wait.
-const DAEMON_SESSION_TOOL_TIMEOUT_MS = (MAX_MCP_SESSION_WAIT_TIMEOUT_SECONDS + 10 * 60) * 1000;
+// Daemon-executed Session tools keep the bound the child-CLI path had; only a
+// legacy reply wait gets enough time to outlast its own maximum.
+const DAEMON_SESSION_TOOL_TIMEOUT_MS = 10 * 60_000;
+const DAEMON_SESSION_TOOL_WAIT_TIMEOUT_MS =
+  MAX_MCP_SESSION_WAIT_TIMEOUT_SECONDS * 1000 + DAEMON_SESSION_TOOL_TIMEOUT_MS;
 const MAX_MCP_COMMAND_BATCH_SIZE = 20;
 const MAX_MCP_STATUS_BATCH_SIZE = 50;
 const MAX_MCP_CREATE_OPTION_MATCHES = 20;
@@ -3730,7 +3733,12 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
                   arguments: z.record(z.string(), z.json()).parse(args),
                 },
               },
-              { timeoutMs: DAEMON_SESSION_TOOL_TIMEOUT_MS }
+              {
+                timeoutMs:
+                  typeof args === 'object' && args !== null && 'wait' in args && args.wait === true
+                    ? DAEMON_SESSION_TOOL_WAIT_TIMEOUT_MS
+                    : DAEMON_SESSION_TOOL_TIMEOUT_MS,
+              }
             )
             .pipe(Effect.result)
         );
@@ -4502,22 +4510,24 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
       inputSchema: SessionArchiveToolInputSchema,
     },
     async (args: SessionArchiveToolInput) => {
+      let sessionId = args.sessionId;
       try {
         const ctx = getSessionContext();
         const auth = getCliAuthContextOrThrow('mcp');
         const workspace = await resolveWorkspaceOrThrow(auth, getMcpWorkspaceId(ctx));
-        const sessionId = resolveMcpSessionId(args.sessionId, ctx) as SessionId;
+        sessionId = resolveMcpSessionId(args.sessionId, ctx);
         const archivedChildSessionIds = await withWorkspaceManager(
           auth,
           workspace,
           'mcp',
-          (manager) => runSessionOperationWithSyncedMetadata(manager, sessionId, 'archive')
+          (manager) =>
+            runSessionOperationWithSyncedMetadata(manager, sessionId as SessionId, 'archive')
         );
         return jsonTextResult({ ok: true, sessionId, archivedChildSessionIds });
       } catch (error) {
         const message = formatMcpErrorMessage(error);
         if (message.includes('already archived')) {
-          return jsonTextResult({ ok: true, sessionId: args.sessionId });
+          return jsonTextResult({ ok: true, sessionId });
         }
         return mcpErrorResult(error);
       }

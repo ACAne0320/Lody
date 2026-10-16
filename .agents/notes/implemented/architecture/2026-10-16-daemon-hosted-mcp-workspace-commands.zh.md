@@ -35,10 +35,10 @@ MCP 进程 ──session/call-tool──▶ daemon：唯一的工作区副本
 ```
 
 - 一台机器上，daemon 持有唯一的工作区副本。Session 与目录类 MCP 工具（包括 MCP 配置、归档、取消和 schedule）都在那里执行；`session/call-tool` 同时服务两种组合。
-- `runWithDaemonWorkspace` 把 daemon 的 manager 借给 daemon 执行的命令。它只改变命令使用哪份副本：Cloud 的鉴权、工作区解析和远端恢复都保持原样。本地平台另外保留单用户环境和"活跃本地 Turn"网关检查；Cloud 工具自行鉴权请求者，因为共享机器上可能是协作者在驱动 Session。
+- `runWithDaemonWorkspace` 把 daemon 的 manager 借给 daemon 执行的命令。它只改变命令使用哪份副本：Cloud 的鉴权、工作区解析和远端恢复都保持原样。daemon 网关只在驱动请求者 Session 的那个 Turn 仍活跃时放行，因此比 Turn 活得更久的进程不能继续使用这些工具。本地平台另外保留单用户环境，并要求该 Turn 的请求者是本地用户；Cloud 中共享机器上可能是协作者在驱动 Session。
 - 借用副本的命令从不清理 daemon 的副本，因此命令结束时不再有可能失败的释放步骤。
 - MCP 的取消和归档改为调用共享的进程内函数，不再启动会自建副本的子 `lody` CLI。
-- 释放失败永远不阻塞工作区。presence 注册表会让"已停止但释放失败"的 owner 退役并接纳新 owner；退役 owner 的残留工作仍归应用根 Scope 所有，退出时照样被停止，并获得一次脱离调用方的 `retryCleanup`。两个存活 owner 仍被禁止。独立命令池对清理失败只报告一次，并总是移除条目。
+- 释放失败永远不阻塞工作区。接纳替换者之前，presence 注册表先等上一个 owner 的停止流程结束，新流不会与未完成的释放重叠；若释放失败，该 owner 退役：残留工作仍归应用根 Scope 所有，退出时照样被停止，且之后每次申请 owner 都会在后台重试它，直到释放成功。两个存活 owner 仍被禁止。`cleanUp` 即使前面的步骤失败也会停止 presence，不会留下存活 owner。独立命令池对清理失败只报告一次（报告器抛错会被忽略），并总是移除条目。
 
 ## 考虑过的方案
 
@@ -49,7 +49,7 @@ MCP 进程 ──session/call-tool──▶ daemon：唯一的工作区副本
 ## 取舍与限制
 
 - Cloud MCP 工具的工作现在跑在 daemon 事件循环上，包括 operation store 的同步 SQLite 调用。OSS 自 #1133 起即如此；MCP 进程仍是协议适配层，因此没有把这部分挪回去。
-- 路由后的调用依赖 daemon。调用 Lody MCP 的 agent 本身就运行在 daemon 管理的 Session 中，所以没有新增可用性依赖。IPC 上限为最长的旧式等待回复时长加十分钟，路由不会截断进程内路径原本允许的调用；此前 OSS 的上限是 30 秒。
+- 路由后的调用依赖 daemon。调用 Lody MCP 的 agent 本身就运行在 daemon 管理的 Session 中，所以没有新增可用性依赖。路由后的调用沿用子 CLI 路径的十分钟上限，只有旧式 `wait: true` 调用在其最长等待之外再加这十分钟；此前 OSS 的上限是 30 秒。local-control 协议不携带取消，被放弃的调用仍会在该上限内于 daemon 中执行完；OSS 原本就是如此。
 - 旧 owner 的工作仍被保留时就接纳替换者，旧流的迟到写入可能到达。presence 是最新状态，TTL 90 秒、心跳 30 秒，零星条目会自愈；durable 数据不受影响。
 - 终端独立运行的 `lody` 命令仍打开短生命周期副本，因为那里不保证有 daemon；它们的失败不再阻塞后续命令。`lody_session_share` 留在 MCP 进程，因为它需要 MCP 请求的 abort signal，且不使用工作区副本。
 
@@ -57,6 +57,8 @@ MCP 进程 ──session/call-tool──▶ daemon：唯一的工作区副本
 
 - 新的归属测试 `daemon-session-tools.test.ts` 在 Cloud 组合下使用真实 `LoroDocumentManager`：MCP 客户端调用经真实 local-control socket 到达 daemon；协作者的请求在 daemon 副本上执行；嵌套命令借用该副本且不销毁它；超出 daemon 工作区或机器范围的调用被拒绝。
 - `loro-document-manager-create.test.ts` 的清理失败用例新增了经原生注册表的真实 presence 释放失败。恢复旧注册表后，该用例以用户报告的 `Workspace presence operation failed` 失败。
-- `presence.test.ts` 检查原生注册表：拒绝存活的重复 owner，替换释放失败的已停止 owner，其脱离调用方的恢复能完成释放。恢复旧注册表后该测试同样失败。
-- 命令池测试证明清理失败只报告一次，等待中与之后的命令都不被阻塞。已删除被移除的子 CLI 取消路径对应的参数形状测试。
+- `presence.test.ts` 检查原生注册表：拒绝存活的重复 owner；替换释放失败的已停止 owner；后台重试失败后，之后的申请会再次重试直到释放；释放进行中时申请的替换者会等旧流结束。恢复旧注册表后替换测试同样失败。
+- 文档管理器测试还让 data-plane 释放在 presence 停止前失败；去掉 `cleanUp` 中的保护会留下存活 owner，下一条命令失败。
+- daemon 测试还会拒绝 Turn 已结束的调用，以及登录身份与 daemon 不再一致的借用命令。
+- 命令池测试证明清理失败只报告一次，等待中与之后的命令都不被阻塞，报告器抛错既不改变已接受的结果，也不影响之后的命令。已删除被移除的子 CLI 取消路径对应的参数形状测试。
 - CLI 类型检查、类型感知 lint、Effect lint，平台、进程、presence、公开边界、本地写入器、inbox 与 Code Collab 边界检查，以及 MCP、session、schedule、zero-cloud 与 presence 测试均通过。未运行打包应用、线上 Cloud 与真实 agent 端到端测试。

@@ -419,7 +419,7 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
     }
   });
 
-  it.each(['transport', 'repo', 'presence'] as const)(
+  it.each(['transport', 'repo', 'presence', 'data-plane'] as const)(
     'allows the next command after %s cleanup fails',
     async (failedPhase) => {
       const failure = new Error(`Synthetic ${failedPhase} cleanup failure`);
@@ -469,6 +469,15 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
       const run = () =>
         withWorkspaceManager(auth, workspace, 'synthetic-cleanup', async (manager) => {
           if (failedPhase === 'presence' && managers.length === 0) failNextPresenceClose = failure;
+          if (failedPhase === 'data-plane' && managers.length === 0) {
+            // Fails before presence would stop; the owner must not be left live.
+            const server = Reflect.get(manager, 'localLoroDataPlaneServer') as {
+              disposeLegacy: () => Promise<void>;
+            };
+            server.disposeLegacy = async () => {
+              throw failure;
+            };
+          }
           managers.push(manager);
           manager.publishSessionPresence(
             'synthetic-next-session' as SessionId,

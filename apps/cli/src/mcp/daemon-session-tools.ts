@@ -38,12 +38,13 @@ export async function executeDaemonSessionTool(
     context.workspaceId !== daemon.workspaceId
   )
     throw new Error('Session tool scope mismatch');
-  // The local platform has one user; cloud tools authorize their own requester.
+  // Only the exact Turn driving this Session may invoke its tools. The local
+  // platform has one user; on a shared cloud machine a collaborator may drive it.
+  const invocation = daemon.readInvocation(context.sessionId);
   if (getSessionCommandEnvironment()) {
-    const invocation = daemon.readInvocation(context.sessionId);
     if (!invocation.active || invocation.requesterUserId !== daemon.userId)
       throw new Error('Session tool requires an active local user Turn');
-  }
+  } else if (!invocation.active) throw new Error('Session tool requires an active Turn');
   const row = await daemon.manager.repo.getDocMeta(getSessionRoomId(context.sessionId));
   if (
     !row?.meta ||

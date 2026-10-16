@@ -108,11 +108,12 @@ See the [decision and verification](../../../../.agents/notes/implemented/bug-fi
   MCP arguments and parses daemon inputs; `session-command-environment.ts` lends
   the daemon replica (`runWithDaemonWorkspace`) and, on the local platform, also
   scopes identity and host operations with AsyncLocalStorage. Require exact
-  workspace/machine scope, plus an active local user Turn on the local platform;
-  never open a second replica. Cloud keeps its authenticated command behavior and
+  workspace/machine scope and an active invoking Turn (the local user's on the
+  local platform); never open a second replica. Cloud keeps its authenticated command behavior and
   remote recovery confirmation; only the replica changes. Schedule tools use the
   daemon's schedule control, and cancel/archive run in-process rather than through
-  a child `lody` CLI. The IPC bound outlasts the longest legacy reply wait. See
+  a child `lody` CLI. Calls keep a ten-minute IPC bound; legacy `wait: true` adds
+  its maximum wait. See
   the [decision](../../../../.agents/notes/implemented/architecture/2026-10-16-daemon-hosted-mcp-workspace-commands.md).
 
 ## Bounded collaboration

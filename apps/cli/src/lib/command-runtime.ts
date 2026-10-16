@@ -357,13 +357,13 @@ export async function withWorkspaceManager<T>(
   }
   const daemon = getDaemonWorkspace();
   if (daemon) {
-    // A daemon-executed command never opens a second replica of its own workspace.
-    if (
-      workspace.id !== daemon.workspaceId ||
-      auth.userId !== daemon.userId ||
-      auth.machineId !== daemon.machineId
-    )
-      throw new Error('Daemon command workspace mismatch');
+    // A daemon-executed command never opens a second replica of its own workspace,
+    // and never writes into it under a different identity.
+    if (workspace.id !== daemon.workspaceId) throw new Error('Daemon command workspace mismatch');
+    if (auth.userId !== daemon.userId || auth.machineId !== daemon.machineId)
+      throw new Error(
+        'The CLI login no longer matches the running Lody daemon; restart the daemon to use the new login.'
+      );
     return fn(daemon.manager);
   }
   // One-shot commands write directly into the workspace repo and rely on

@@ -625,6 +625,9 @@ export const WorkspacePresenceOwnersLive = Layer.effect(
     const root = yield* Scope.Scope;
     const services = yield* Effect.context<PresenceHost | PresenceTransport>();
     const owners = new Map<WorkspaceId, WorkspacePresence>();
+    // Stopped owners whose release failed. They stay in the root Scope, so shutdown
+    // still stops them, and every later acquisition retries them until released.
+    const retired = new Set<WorkspacePresence>();
     const gate = yield* Semaphore.make(1);
     return WorkspacePresenceOwners.of({
       create: (workspaceId) =>
@@ -640,11 +643,16 @@ export const WorkspacePresenceOwnersLive = Layer.effect(
                   generation: 0,
                 })
               );
-            // A stopped owner whose release failed never blocks the workspace. It keeps
-            // its retained work in the root Scope, so application shutdown still stops
-            // it; one detached recovery attempt frees the work sooner when it can.
-            if (previous && !previous.isReleased())
-              yield* Effect.forkIn(Effect.ignoreCause(previous.retryCleanup), root);
+            // A replacement never overlaps an unfinished release: settle the stop
+            // first. A failed release is retired instead of blocking the workspace.
+            if (previous && !previous.isReleased()) {
+              yield* Effect.exit(previous.stop);
+              if (!previous.isReleased()) retired.add(previous);
+            }
+            for (const owner of retired) {
+              if (owner.isReleased()) retired.delete(owner);
+              else yield* Effect.forkIn(Effect.ignoreCause(owner.retryCleanup), root);
+            }
             const owner = yield* Scope.provide(
               makeWorkspacePresence(workspaceId).pipe(Effect.provideContext(services)),
               root

@@ -1767,7 +1767,14 @@ export class LoroDocumentManager {
     for (const docId of [...this.localDocRoomBridges.keys()]) {
       this.cancelLocalDocRoomBridge(docId);
     }
-    await this.localLoroDataPlaneServer?.disposeLegacy();
+    try {
+      await this.localLoroDataPlaneServer?.disposeLegacy();
+    } catch (error) {
+      // Still stop presence: a live owner left behind would refuse every later
+      // owner of this workspace, while a stopped one can be retired.
+      await this.presenceRuntime?.stop().catch(() => undefined);
+      throw error;
+    }
     try {
       await this.machineMonitorRuntime?.stop();
     } catch (error) {
