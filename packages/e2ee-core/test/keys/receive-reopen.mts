@@ -1,7 +1,9 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { Effect } from 'effect';
-import { makeSqliteEpochReceiver, ReceiveError } from '@lody/e2ee-core/keys/host/receive/sqlite';
-import { ContentError } from '../../src/errors';
+import { makeSqliteEpochReceiver } from './harness';
+import { ReceiveError } from '@lody/e2ee-core';
+import type { KeyMailboxStatus } from '@lody/e2ee-core/services';
+import { ContentError } from '../../src/internal/foundation/errors';
 import { envelopeFixture, recipientPair } from './fixture';
 import { synthetic } from './protection-fixture';
 const f = envelopeFixture(),
@@ -44,14 +46,14 @@ try {
                     epoch: number;
                     recipient: string;
                     revision: number;
-                    status: string;
+                    status: KeyMailboxStatus;
                   }>('status', [slot]),
-                catch: () => new ReceiveError({ code: 'storage' }),
+                catch: () => new ReceiveError({ reason: 'storage' }),
               }),
             report: (bytes, publication) =>
               Effect.tryPromise({
                 try: () => rpc<void>('report', [bytes, publication]),
-                catch: () => new ReceiveError({ code: 'storage' }),
+                catch: () => new ReceiveError({ reason: 'storage' }),
               }),
           },
         });
@@ -63,7 +65,7 @@ try {
 } catch (error) {
   parentPort!.postMessage({
     kind: 'failed',
-    category: error instanceof ReceiveError ? error.code : 'unexpected',
+    category: error instanceof ReceiveError ? error.reason : 'unexpected',
   });
   process.exitCode = 1;
 }

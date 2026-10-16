@@ -1,6 +1,6 @@
 import { Effect, Result } from 'effect';
-import { makeSqliteMailboxRepair } from '@lody/e2ee-core/keys/mailbox/repair/sqlite';
-import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
+import { makeSqliteMailboxRepair } from './harness';
+import { makeSqliteKeyMailbox } from '@lody/e2ee-core/adapters/node-sqlite';
 import { envelopeFixture } from './fixture';
 const f = envelopeFixture(),
   dir = process.argv[2]!;

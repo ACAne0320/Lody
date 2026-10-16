@@ -7,9 +7,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Context, Deferred, Effect, Exit, Fiber, Layer, Result, Scope } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
-import * as Bytes from '../../src/bytes';
-import { decodeCbor, encodeCbor } from '../../src/cbor';
-import { disposeEpochKey } from '../../src/epoch-key';
+import * as Bytes from '../../src/internal/foundation/bytes';
+import { decodeCbor, encodeCbor } from '../../src/internal/foundation/cbor';
+import { disposeEpochKey } from '../../src/internal/foundation/epoch-key';
 import {
   decodeRecord,
   extendLedger,
@@ -18,29 +18,32 @@ import {
   recordSigningBytes,
   verifyLedger,
   type LedgerView,
-} from '../../src/ledger';
+} from '../../src/internal/ledger';
 import {
   prepareDeviceAdmission,
   prepareJoinRequest,
   prepareLedgerCommand,
-} from '../../src/ledger/admission';
-import { prepareLedgerRecord, signLedgerRecord } from '../../src/ledger/signing';
-import { SubmissionJournal, SubmissionRemote, SubmissionRemoteError } from '../../src/submission';
-import { sqliteSubmissionJournal } from '../../src/submission/sqlite';
+} from '../../src/internal/ledger/admission';
+import { prepareLedgerRecord, signLedgerRecord } from '../../src/internal/ledger/signing';
+import { SubmissionJournal, LedgerLog, LedgerLogError } from '../../src/services';
+import { sqliteSubmissionJournal } from '../../src/adapters/node-sqlite/submission-journal';
 import {
   getCommittedEpochStagingKey,
   ownEpochStagedGroup,
   type EpochStagedGroup,
-  type EpochStagingPort,
-} from '../../src/keys/staging';
-import { makeSqliteEpochRotation } from '../../src/keys/epoch-rotation';
-import { commitEpochKey, recoverLedgerHistory, sealHistoryPacket } from '../../src/keys/history';
-import { prepareEpochEnvelope } from '../../src/keys/envelope';
-import { makeSqliteEpochReceiver } from '../../src/keys/receive-sqlite';
-import { makeSqliteProtectedEpochKeys } from '../../src/keys/protected-sqlite';
-import { makeSqliteKeyDistribution } from '../../src/keys/distribution-sqlite';
-import { makeSqliteKeyMailbox } from '../../src/keys/mailbox-sqlite';
-import { makeSqliteRecipientMailbox } from '../../src/keys/mailbox-client';
+} from '../../src/internal/keys/staging';
+import { makeSqliteEpochRotation, type EpochStagingPort } from './harness';
+import {
+  commitEpochKey,
+  recoverLedgerHistory,
+  sealHistoryPacket,
+} from '../../src/internal/keys/history';
+import { prepareEpochEnvelope } from '../../src/internal/keys/envelope';
+import { makeSqliteEpochReceiver } from './harness';
+import { makeSqliteProtectedEpochKeys } from './harness';
+import { makeSqliteKeyDistribution } from './harness';
+import { makeSqliteKeyMailbox } from '@lody/e2ee-core/adapters/node-sqlite';
+import { makeSqliteRecipientMailbox } from './harness';
 import { envelopeFixture, recipientPair } from './fixture';
 import { synthetic } from './protection-fixture';
 const ok = Result.getOrThrow;
@@ -149,11 +152,11 @@ function fixture(kind: 0 | 1 | 2 = 0) {
       }),
   };
   const lookup = () => Effect.sync(() => view);
-  const remote = SubmissionRemote.of({
+  const remote = LedgerLog.of({
     read: () =>
       Effect.suspend(() =>
         readbackLost
-          ? Effect.fail(new SubmissionRemoteError())
+          ? Effect.fail(new LedgerLogError())
           : Effect.sync(() => ({
               records: records.map((r) => new Uint8Array(r)),
               checkpoint: { head: view.head, length: view.length },
@@ -183,12 +186,12 @@ function fixture(kind: 0 | 1 | 2 = 0) {
                 .every((value, index) => value === candidatePurpose[index])
           )
         ).toBe(true);
-        if (mode === 'unavailable') return Effect.fail(new SubmissionRemoteError());
+        if (mode === 'unavailable') return Effect.fail(new LedgerLogError());
         if (!view.head.equals(expected.head) || view.length !== expected.length)
-          return Effect.fail(new SubmissionRemoteError());
+          return Effect.fail(new LedgerLogError());
         append(record);
         if (mode === 'lost-readback') readbackLost = true;
-        return mode === 'lost-ack' ? Effect.fail(new SubmissionRemoteError()) : Effect.void;
+        return mode === 'lost-ack' ? Effect.fail(new LedgerLogError()) : Effect.void;
       }),
   });
   const signer = {
@@ -218,7 +221,7 @@ function fixture(kind: 0 | 1 | 2 = 0) {
       protector: native.protector,
     });
     if (openMode === 'create') yield* installed.saveAndReload(0, f.secret);
-    const context = yield* Layer.build(sqliteSubmissionJournal(files.journal)),
+    const context = yield* Layer.build(sqliteSubmissionJournal({ path: files.journal })),
       journal = Context.get(context, SubmissionJournal);
     const rotation = yield* makeSqliteEpochRotation({
       path: files.candidate,
@@ -231,7 +234,7 @@ function fixture(kind: 0 | 1 | 2 = 0) {
       staging: options.staging ?? staging,
     }).pipe(
       Effect.provideService(SubmissionJournal, journal),
-      Effect.provideService(SubmissionRemote, options.remote ?? remote)
+      Effect.provideService(LedgerLog, options.remote ?? remote)
     );
     return { rotation, installed, journal };
   });
@@ -525,12 +528,12 @@ describe('durable local epoch rotation', () => {
         Effect.gen(function* () {
           const first = yield* winner.open();
           let loserCasAttempts = 0;
-          const loserRemote = SubmissionRemote.of({
+          const loserRemote = LedgerLog.of({
             read: winner.remote.read,
             appendCas: () =>
               Effect.sync(() => {
                 loserCasAttempts++;
-              }).pipe(Effect.andThen(Effect.fail(new SubmissionRemoteError()))),
+              }).pipe(Effect.andThen(Effect.fail(new LedgerLogError()))),
           });
           const other = yield* loser.open('create', {
             lookup: winner.lookup,
@@ -639,10 +642,7 @@ describe('durable local epoch rotation', () => {
           expect(f.signed()).toBe(1);
           initial = f.records().map((record) => Buffer.from(record).toString('hex'));
           f.mode('lost-readback');
-          failureCode(
-            yield* Effect.exit(rotation.publishRemoving(target)),
-            'SubmissionRemoteError'
-          );
+          failureCode(yield* Effect.exit(rotation.publishRemoving(target)), 'LedgerLogError');
           expect(f.row()!.record).toEqual(original.record);
           expect(f.row()!.outcome).toBeNull();
           expect(f.view().inspectState().epoch.number).toBe(1);
@@ -917,7 +917,7 @@ describe('durable local epoch rotation', () => {
             const keydb = new Database(f.files.keys);
             try {
               keydb.exec(
-                'CREATE TRIGGER ignore_install BEFORE INSERT ON protected_epoch_keys WHEN NEW.epoch=1 BEGIN SELECT RAISE(IGNORE);END'
+                'CREATE TRIGGER ignore_install BEFORE INSERT ON installed_epoch_keys WHEN NEW.epoch=1 BEGIN SELECT RAISE(IGNORE);END'
               );
               failureCode(yield* Effect.exit(rotation.publish()), 'missing-key');
               const original = f.row()!;
@@ -1088,7 +1088,7 @@ describe('durable local epoch rotation', () => {
             db = new Database(f.files.keys);
           try {
             db.exec(
-              'CREATE TRIGGER hold_install BEFORE INSERT ON protected_epoch_keys WHEN NEW.epoch=1 BEGIN SELECT RAISE(IGNORE);END'
+              'CREATE TRIGGER hold_install BEFORE INSERT ON installed_epoch_keys WHEN NEW.epoch=1 BEGIN SELECT RAISE(IGNORE);END'
             );
             failureCode(yield* Effect.exit(rotation.publish()), 'missing-key');
             const original = f.row()!;
@@ -1284,7 +1284,7 @@ describe('durable local epoch rotation', () => {
               staging: f.staging,
             }).pipe(
               Effect.provideService(SubmissionJournal, journal),
-              Effect.provideService(SubmissionRemote, f.remote)
+              Effect.provideService(LedgerLog, f.remote)
             );
             failureCode(yield* Effect.exit(rotation.publish()), 'unauthorized');
             expect(f.records()).toHaveLength(4);
@@ -1308,15 +1308,15 @@ describe('durable local epoch rotation', () => {
             );
           f.append(yield* signLedgerRecord(ok(prepareLedgerRecord(before, body)), f.owner.signer));
           selected = f.view();
-          const db = new Database(f.files.candidate);
+          const db = new Database(path.join(path.dirname(f.files.candidate), 'ledger-pin.sqlite'));
           try {
             db.exec(
-              'CREATE TRIGGER ignore_pin BEFORE UPDATE ON epoch_rotation_meta BEGIN SELECT RAISE(IGNORE);END'
+              'CREATE TRIGGER ignore_pin BEFORE UPDATE ON ledger_pin BEGIN SELECT RAISE(IGNORE);END'
             );
             failureCode(yield* Effect.exit(rotation.resume()), 'corrupt');
-            expect(db.prepare('SELECT count FROM epoch_rotation_meta').get()).toEqual({ count: 4 });
+            expect(db.prepare('SELECT count FROM ledger_pin').get()).toEqual({ count: 4 });
             selected = before;
-            failureCode(yield* Effect.exit(rotation.resume()), 'context-changed');
+            failureCode(yield* Effect.exit(rotation.resume()), 'rollback');
             db.exec('DROP TRIGGER ignore_pin');
             selected = f.view();
             expect(yield* rotation.resume()).toMatchObject({ outcome: 'Conflict' });

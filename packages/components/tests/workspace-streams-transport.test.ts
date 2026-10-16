@@ -21,9 +21,9 @@ import {
   openContentAead,
   verifyContentSignature,
   type ContentScope,
-} from '@lody/e2ee-core';
-import { hashRecordBytes, recordSigningBytes, verifyLedger } from '@lody/e2ee-core/ledger';
-import { encodeCbor } from '@lody/e2ee-core';
+} from '@lody/e2ee-core/protocol';
+import { hashRecordBytes, recordSigningBytes, verifyLedger } from '@lody/e2ee-core/protocol';
+import { encodeCbor } from '@lody/e2ee-core/protocol';
 import { encodeStreamsRoomAdditionalData } from 'loro-repo/transport/streams';
 import { PayloadProtectionError } from '@loro-dev/streams-crdt';
 import { afterEach, describe, expect, it, vi } from 'vitest';

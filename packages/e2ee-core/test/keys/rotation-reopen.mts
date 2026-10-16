@@ -1,15 +1,15 @@
 import Database from 'better-sqlite3';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Context, Effect, Layer, Result, Schema } from 'effect';
-import * as Bytes from '../../src/bytes';
-import { bytesEqual } from '../../src/cbor';
-import { ContentError } from '../../src/errors';
-import { decodeRecord, hashRecordBytes, verifyLedger } from '../../src/ledger';
-import { SubmissionJournal, SubmissionRemote, SubmissionRemoteError } from '../../src/submission';
-import { sqliteSubmissionJournal } from '../../src/submission/sqlite';
-import { ownEpochStagedGroup, type EpochStagedGroup } from '../../src/keys/staging';
-import { makeSqliteEpochRotation } from '../../src/keys/epoch-rotation';
-import { makeSqliteProtectedEpochKeys } from '../../src/keys/protected-sqlite';
+import * as Bytes from '../../src/internal/foundation/bytes';
+import { bytesEqual } from '../../src/internal/foundation/cbor';
+import { ContentError } from '../../src/internal/foundation/errors';
+import { decodeRecord, hashRecordBytes, verifyLedger } from '../../src/internal/ledger';
+import { SubmissionJournal, LedgerLog, LedgerLogError } from '../../src/services';
+import { sqliteSubmissionJournal } from '../../src/adapters/node-sqlite/submission-journal';
+import { ownEpochStagedGroup, type EpochStagedGroup } from '../../src/internal/keys/staging';
+import { makeSqliteEpochRotation } from './harness';
+import { makeSqliteProtectedEpochKeys } from './harness';
 import { synthetic } from './protection-fixture';
 const Config = Schema.Struct({
   genesis: Schema.String,
@@ -60,9 +60,9 @@ await Effect.runPromise(
         ledger,
         protector: native.protector,
       });
-      const context = yield* Layer.build(sqliteSubmissionJournal(config.files.journal)),
+      const context = yield* Layer.build(sqliteSubmissionJournal({ path: config.files.journal })),
         journal = Context.get(context, SubmissionJournal);
-      const remote = SubmissionRemote.of({
+      const remote = LedgerLog.of({
         read: () =>
           Effect.sync(() => {
             const value = load();
@@ -76,7 +76,7 @@ await Effect.runPromise(
               !current.checkpoint.head.equals(checkpoint.head) ||
               !bytesEqual(record, candidate)
             )
-              return Effect.fail(new SubmissionRemoteError());
+              return Effect.fail(new LedgerLogError());
             writeFileSync(
               config.files.history,
               JSON.stringify(
@@ -115,7 +115,7 @@ await Effect.runPromise(
         },
       }).pipe(
         Effect.provideService(SubmissionJournal, journal),
-        Effect.provideService(SubmissionRemote, remote)
+        Effect.provideService(LedgerLog, remote)
       );
       const result = yield* rotation.resume();
       if (!result) throw new Error('missing-candidate');

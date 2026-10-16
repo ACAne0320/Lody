@@ -1,6 +1,6 @@
 import { Effect, Result } from 'effect';
-import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
-import { commitEpochKey } from '../../src/keys/history';
+import { makeSqliteProtectedEpochKeys } from './harness';
+import { commitEpochKey } from '../../src/internal/keys/history';
 import { envelopeFixture } from './fixture';
 import { synthetic } from './protection-fixture';
 const f = envelopeFixture();

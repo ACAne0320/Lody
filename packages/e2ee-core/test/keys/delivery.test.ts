@@ -6,17 +6,13 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Effect, Result, Deferred, Fiber, Exit } from 'effect';
-import { ContentError } from '../../src/errors';
-import { bytesEqual } from '../../src/cbor';
-import * as Envelopes from '@lody/e2ee-core/keys/envelope';
-import {
-  DeliveryOutbox,
-  DeliveryRemote,
-  DeliveryRemoteError,
-  deliverEpochEnvelope,
-  epochDeliveryId,
-} from '@lody/e2ee-core/keys/delivery';
-import { sqliteDeliveryOutbox } from '@lody/e2ee-core/keys/delivery/sqlite';
+import { ContentError } from '../../src/internal/foundation/errors';
+import { bytesEqual } from '../../src/internal/foundation/cbor';
+import * as Envelopes from '@lody/e2ee-core/protocol';
+import { DeliveryOutbox, KeyMailbox } from '@lody/e2ee-core/services';
+import { deliverEpochEnvelope, epochDeliveryId } from '@lody/e2ee-core/internal';
+import { DeliveryRemote, DeliveryRemoteError, deliveryMailbox } from './harness';
+import { sqliteDeliveryOutbox } from '@lody/e2ee-core/adapters/node-sqlite';
 import { envelopeFixture } from './fixture';
 const ok = <A, E>(r: Result.Result<A, E>) => Result.getOrThrow(r);
 const directories: string[] = [];
@@ -72,27 +68,27 @@ function host(f: ReturnType<typeof envelopeFixture>, file: string) {
   };
 }
 const run = <A, E>(
-  work: Effect.Effect<A, E, DeliveryOutbox | DeliveryRemote>,
+  work: Effect.Effect<A, E, DeliveryOutbox | KeyMailbox>,
   file: string,
   mode: 'create' | 'open',
-  remote: DeliveryRemote['Service']
+  remote: Parameters<typeof deliveryMailbox>[0]
 ) =>
   Effect.runPromise(
     work.pipe(
-      Effect.provideService(DeliveryRemote, remote),
+      Effect.provideService(KeyMailbox, deliveryMailbox(remote)),
       Effect.provide(sqliteDeliveryOutbox({ path: file, mode }))
     )
   );
 const runResult = <A, E>(
-  work: Effect.Effect<A, E, DeliveryOutbox | DeliveryRemote>,
+  work: Effect.Effect<A, E, DeliveryOutbox | KeyMailbox>,
   file: string,
   mode: 'create' | 'open',
-  remote: DeliveryRemote['Service']
+  remote: Parameters<typeof deliveryMailbox>[0]
 ) =>
   Effect.runPromise(
     Effect.result(
       work.pipe(
-        Effect.provideService(DeliveryRemote, remote),
+        Effect.provideService(KeyMailbox, deliveryMailbox(remote)),
         Effect.provide(sqliteDeliveryOutbox({ path: file, mode }))
       )
     )
@@ -207,7 +203,7 @@ describe('durable exact-byte epoch delivery', () => {
       ).toEqual(first);
       const closed = await Effect.runPromise(Effect.result(escaped!.load(slot)));
       expect(Result.isFailure(closed)).toBe(true);
-      if (Result.isFailure(closed)) expect(closed.failure.code).toBe('closed');
+      if (Result.isFailure(closed)) expect(closed.failure.reason).toBe('closed');
     } finally {
       remote.db.close();
     }
@@ -387,7 +383,7 @@ describe('durable exact-byte epoch delivery', () => {
               ledger: f.ledger,
               prepare: { key: f.secret, signer: f.owner.signer },
             }).pipe(
-              Effect.provideService(DeliveryRemote, remote),
+              Effect.provideService(KeyMailbox, deliveryMailbox(remote)),
               Effect.provide(sqliteDeliveryOutbox({ path: file, mode: 'create' }))
             )
           );
@@ -466,7 +462,7 @@ describe('durable exact-byte epoch delivery', () => {
       }
       const failed = await runResult(pending(slot), file, 'open', remote.service);
       expect(Result.isFailure(failed)).toBe(true);
-      if (Result.isFailure(failed)) expect(failed.failure.code).toBe('corrupt');
+      if (Result.isFailure(failed)) expect(failed.failure.reason).toBe('corrupt');
       expect(await run(pending(other), file, 'open', remote.service)).toEqual(new Uint8Array([2]));
       const preserved = new Database(file, { readonly: true });
       try {

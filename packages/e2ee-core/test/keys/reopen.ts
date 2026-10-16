@@ -1,15 +1,13 @@
 import Database from 'better-sqlite3';
 import { writeSync } from 'node:fs';
 import { Effect, Result } from 'effect';
-import { ContentError } from '../../src/errors';
-import { bytesEqual } from '../../src/cbor';
-import { authenticateEpochEnvelope } from '@lody/e2ee-core/keys/envelope';
-import {
-  DeliveryRemote,
-  deliverEpochEnvelope,
-  epochDeliveryId,
-} from '@lody/e2ee-core/keys/delivery';
-import { sqliteDeliveryOutbox } from '@lody/e2ee-core/keys/delivery/sqlite';
+import { ContentError } from '../../src/internal/foundation/errors';
+import { bytesEqual } from '../../src/internal/foundation/cbor';
+import { authenticateEpochEnvelope } from '@lody/e2ee-core/protocol';
+import { KeyMailbox } from '@lody/e2ee-core/services';
+import { deliverEpochEnvelope, epochDeliveryId } from '@lody/e2ee-core/internal';
+import { DeliveryRemote, deliveryMailbox } from './harness';
+import { sqliteDeliveryOutbox } from '@lody/e2ee-core/adapters/node-sqlite';
 import { envelopeFixture } from './fixture';
 const [mode, file, hostPath] = process.argv.slice(2);
 if (!file || !hostPath || !['before-send', 'lost-response', 'resume'].includes(mode!))
@@ -55,7 +53,7 @@ try {
       ledger: f.ledger,
       ...(mode === 'resume' ? {} : { prepare: { key: f.secret, signer: f.owner.signer } }),
     }).pipe(
-      Effect.provideService(DeliveryRemote, remote),
+      Effect.provideService(KeyMailbox, deliveryMailbox(remote)),
       Effect.provide(
         sqliteDeliveryOutbox({ path: file, mode: mode === 'resume' ? 'open' : 'create' })
       )

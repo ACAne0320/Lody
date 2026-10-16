@@ -1,0 +1,19 @@
+import { Data } from 'effect';
+import type { ValidationErrorCode } from '../foundation/errors';
+
+export type LedgerErrorCode =
+  | ValidationErrorCode
+  | 'unknown-version'
+  | 'unknown-operation'
+  | 'bad-proof'
+  | 'unauthorized'
+  | 'replay'
+  | 'wrong-parent'
+  | 'wrong-anchor'
+  | 'genesis-mismatch'
+  | 'checkpoint-mismatch'
+  | 'native-unavailable';
+export class LedgerError extends Data.TaggedError('LedgerError')<{
+  readonly code: LedgerErrorCode;
+  readonly position?: number;
+}> {}

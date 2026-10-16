@@ -920,6 +920,9 @@ importers:
 
   packages/cloud-api:
     dependencies:
+      '@lody/e2ee-core':
+        specifier: workspace:*
+        version: link:../e2ee-core
       '@lody/shared':
         specifier: workspace:*
         version: link:../shared

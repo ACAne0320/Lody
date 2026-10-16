@@ -1,6 +1,6 @@
 import { workerData, parentPort } from 'node:worker_threads';
 import { Effect, Result } from 'effect';
-import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
+import { makeSqliteKeyMailbox } from '@lody/e2ee-core/adapters/node-sqlite';
 import { envelopeFixture } from './fixture';
 const state = new Int32Array(workerData.signal);
 try {

@@ -1,29 +1,24 @@
-import * as EpochKeys from '@lody/e2ee-core/keys';
+import * as EpochKeys from '@lody/e2ee-core/protocol';
 import { envelopeFixture } from '../keys/fixture';
-import * as Snapshots from '@lody/e2ee-core/ledger/snapshot';
-import { decodeSnapshotCbor, encodeSnapshotCbor } from '../../src/cbor';
+import * as Snapshots from '@lody/e2ee-core/protocol';
+import { decodeSnapshotCbor, encodeSnapshotCbor } from '../../src/internal/foundation/cbor';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {
-  submitRecord,
-  resumeSubmission,
-  SubmissionRemote,
-  SubmissionJournal,
-  SubmissionRemoteError,
-} from '@lody/e2ee-core/submission';
-import { sqliteSubmissionJournal } from '@lody/e2ee-core/submission/sqlite';
+import { LedgerLog, SubmissionJournal, LedgerLogError } from '@lody/e2ee-core/services';
+import { submitRecord, resumeSubmission } from '../submission/fixture';
+import { sqliteSubmissionJournal } from '@lody/e2ee-core/adapters/node-sqlite';
 import * as SubmissionFixture from '../submission/fixture';
 import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { Effect, Result, Deferred, Fiber } from 'effect';
-import * as Admission from '@lody/e2ee-core/ledger/admission';
-import * as Commands from '@lody/e2ee-core/ledger/signing';
-import type { DeviceSigner } from '@lody/e2ee-core/signing';
-import * as Bytes from '../../src/bytes';
-import { encodeCbor, type CborValue } from '../../src/cbor';
-import { keyId } from '../../src/identifiers';
-import * as Ledger from '@lody/e2ee-core/ledger';
+import * as Admission from '@lody/e2ee-core/protocol';
+import * as Commands from '@lody/e2ee-core/protocol';
+import type { DeviceSigner } from '@lody/e2ee-core/protocol';
+import * as Bytes from '../../src/internal/foundation/bytes';
+import { encodeCbor, type CborValue } from '../../src/internal/foundation/cbor';
+import { keyId } from '../../src/internal/foundation/identifiers';
+import * as Ledger from '@lody/e2ee-core/protocol';
 
 const ok = <A, E>(r: Result.Result<A, E>): A => Result.getOrThrow(r);
 const filled = (n: number, size = 32) => new Uint8Array(size).fill(n);
@@ -1048,17 +1043,17 @@ it('submits prepared signed bytes through real SQLite and recovers without a liv
       ) =>
         Effect.gen(function* () {
           yield* remote.service.appendCas(anchor, expected, record);
-          return yield* new SubmissionRemoteError();
+          return yield* new LedgerLogError();
         }),
     };
     const run = <A, E>(
-      work: Effect.Effect<A, E, SubmissionRemote | SubmissionJournal>,
+      work: Effect.Effect<A, E, LedgerLog | SubmissionJournal>,
       service = remote.service
     ) =>
       Effect.runPromise(
         work.pipe(
-          Effect.provideService(SubmissionRemote, service),
-          Effect.provide(sqliteSubmissionJournal(journal))
+          Effect.provideService(LedgerLog, service),
+          Effect.provide(sqliteSubmissionJournal({ path: journal }))
         )
       );
     const committed = await run(submitRecord(SubmissionFixture.anchor, produced), lostResponse);

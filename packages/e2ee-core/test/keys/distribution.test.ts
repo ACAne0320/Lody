@@ -5,15 +5,12 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import Database from 'better-sqlite3';
 import { Effect, Result } from 'effect';
-import { ContentError } from '@lody/e2ee-core';
+import { ContentError } from '@lody/e2ee-core/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  makeSqliteKeyDistribution,
-  type DistributionMailboxRemote,
-} from '@lody/e2ee-core/keys/host/distribution/sqlite';
-import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
-import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
-import { makeSqliteRecipientMailbox } from '@lody/e2ee-core/keys/host/mailbox/sqlite';
+import { makeSqliteKeyDistribution, type DistributionMailboxRemote } from './harness';
+import { makeSqliteProtectedEpochKeys } from './harness';
+import { makeSqliteKeyMailbox } from '@lody/e2ee-core/adapters/node-sqlite';
+import { makeSqliteRecipientMailbox } from './harness';
 import { envelopeFixture, recipientPair } from './fixture';
 import { synthetic } from './protection-fixture';
 
@@ -394,7 +391,8 @@ describe('verified targets and durable finite distribution', () => {
             }
             const failed = yield* Effect.result(client.resumePendingDeliveries());
             expect(Result.isFailure(failed)).toBe(true);
-            if (Result.isFailure(failed)) expect(failed.failure).toMatchObject({ code: 'corrupt' });
+            if (Result.isFailure(failed))
+              expect(failed.failure).toMatchObject({ reason: 'corrupt' });
             expect(rows(file('send'))[0]!.phase).toBe('Pending');
             const original = saved(file('outbox'));
             const fixed = new Database(file('send'));

@@ -6,16 +6,16 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { Effect, Result, type Scope } from 'effect';
 import { describe, expect, it } from 'vitest';
-import { Bytes } from '@lody/e2ee-core';
+import { Bytes } from '@lody/e2ee-core/protocol';
 import {
   signLedgerSnapshot,
   snapshotTrustFromView,
   type SnapshotTrust,
-} from '@lody/e2ee-core/ledger/snapshot';
+} from '@lody/e2ee-core/protocol';
 import {
   makeSqliteSnapshotLedgerFeed,
   type SqliteSnapshotLedgerFeedInput,
-} from '@lody/e2ee-core/ledger/feed/snapshot/sqlite';
+} from './ledger/feed-fixture';
 import { envelopeFixture } from './keys/fixture';
 
 const ok = Result.getOrThrow;
@@ -61,8 +61,8 @@ async function fixture() {
 }
 function rows(db: Database.Database) {
   return {
-    meta: db.prepare('SELECT * FROM snapshot_feed_meta').all(),
-    records: db.prepare('SELECT * FROM snapshot_feed_records ORDER BY position').all(),
+    meta: db.prepare('SELECT * FROM feed_meta').all(),
+    records: db.prepare('SELECT * FROM feed_records ORDER BY position').all(),
   };
 }
 
@@ -85,10 +85,9 @@ describe('independently qualified snapshot origin with durable exact suffix', ()
         })
       );
       const db = new Database(config.path);
-      expect(db.prepare('SELECT COUNT(*) AS n FROM snapshot_feed_records').get()).toEqual({ n: 1 });
+      expect(db.prepare('SELECT COUNT(*) AS n FROM feed_records').get()).toEqual({ n: 1 });
       expect(
-        (db.prepare('SELECT record FROM snapshot_feed_records').get() as { record: Uint8Array })
-          .record
+        (db.prepare('SELECT record FROM feed_records').get() as { record: Uint8Array }).record
       ).toEqual(Buffer.from(f.suffix[0]!));
       db.close();
       const childConfig = join(f.dir, 'child.json');
@@ -241,9 +240,9 @@ describe('independently qualified snapshot origin with durable exact suffix', ()
   it('rolls back failed inserts and metadata writes, then retries the same handle', async () => {
     const f = await fixture();
     const faults = [
-      'CREATE TRIGGER fault BEFORE INSERT ON snapshot_feed_records BEGIN SELECT RAISE(IGNORE); END',
-      'CREATE TRIGGER fault BEFORE UPDATE ON snapshot_feed_meta BEGIN SELECT RAISE(IGNORE); END',
-      "CREATE TRIGGER fault BEFORE UPDATE ON snapshot_feed_meta BEGIN SELECT RAISE(ABORT,'injected failure'); END",
+      'CREATE TRIGGER fault BEFORE INSERT ON feed_records BEGIN SELECT RAISE(IGNORE); END',
+      'CREATE TRIGGER fault BEFORE UPDATE ON feed_meta BEGIN SELECT RAISE(IGNORE); END',
+      "CREATE TRIGGER fault BEFORE UPDATE ON feed_meta BEGIN SELECT RAISE(ABORT,'injected failure'); END",
     ];
     try {
       for (let index = 0; index < faults.length; index++) {

@@ -6,10 +6,10 @@ import { execNativeChild } from '../native-child';
 import { fileURLToPath } from 'node:url';
 import { Effect, Result, Scope, Exit, Deferred, Fiber } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeSqliteMailboxRepair } from '@lody/e2ee-core/keys/mailbox/repair/sqlite';
-import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
-import { mailboxDigest } from '@lody/e2ee-core/keys/reports';
-import { ContentError } from '../../src/errors';
+import { makeSqliteMailboxRepair } from './harness';
+import { makeSqliteKeyMailbox } from '@lody/e2ee-core/adapters/node-sqlite';
+import { mailboxDigest } from '@lody/e2ee-core/protocol';
+import { ContentError } from '../../src/internal/foundation/errors';
 import { envelopeFixture } from './fixture';
 const ok = Result.getOrThrow,
   hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
@@ -409,7 +409,7 @@ describe('durable stable-ID mailbox repair episodes', () => {
             total = 0;
           const blocked: string[] = [];
           do {
-            const page: { processed: number; blocked: string[]; next: string | null } =
+            const page: { processed: number; blocked: readonly string[]; next: string | null } =
               yield* queue.flush(17, cursor);
             total += page.processed;
             blocked.push(...page.blocked);
@@ -484,7 +484,7 @@ describe('durable stable-ID mailbox repair episodes', () => {
 });
 
 describe('repair authority observations survive failed pin writes', () => {
-  it.each(['abort', 'ignore', 'rewrite-head', 'rewrite-context'] as const)(
+  it.each(['abort', 'ignore', 'rewrite-head', 'rewrite-genesis'] as const)(
     'does not dispatch through rollback after %s',
     async (fault) => {
       const f = envelopeFixture(),
@@ -512,31 +512,31 @@ describe('repair authority observations survive failed pin writes', () => {
               remote,
             });
             yield* queue.enqueue('initial');
-            const db = new Database(journal);
+            const db = new Database(journal),
+              pins = new Database(path.join(dir, 'ledger-pin.sqlite'));
             try {
               if (fault === 'abort' || fault === 'ignore')
-                db.exec(
-                  `CREATE TRIGGER fail_pin BEFORE UPDATE ON repair_meta BEGIN SELECT RAISE(${fault === 'abort' ? "ABORT,'fault'" : 'IGNORE'}); END`
+                pins.exec(
+                  `CREATE TRIGGER fail_pin BEFORE UPDATE ON ledger_pin BEGIN SELECT RAISE(${fault === 'abort' ? "ABORT,'fault'" : 'IGNORE'}); END`
                 );
               else
-                db.exec(
-                  `CREATE TRIGGER fail_pin AFTER UPDATE ON repair_meta BEGIN UPDATE repair_meta SET ${fault === 'rewrite-head' ? `head=x'${hex(old.head.toBytes())}',count=2` : "recipient='" + '00'.repeat(32) + "'"} WHERE id=1; END`
+                pins.exec(
+                  `CREATE TRIGGER fail_pin AFTER UPDATE ON ledger_pin BEGIN UPDATE ledger_pin SET ${fault === 'rewrite-head' ? `head=x'${hex(old.head.toBytes())}',count=2` : "genesis='" + '00'.repeat(32) + "'"} WHERE id=1; END`
                 );
               f.append([5, f.phone.raw]);
               const high = f.view();
               current = high;
               expect(Exit.isFailure(yield* Effect.exit(queue.enqueue('rejected')))).toBe(true);
-              expect(
-                db.prepare('SELECT genesis,recipient,count FROM repair_meta WHERE id=1').get()
-              ).toEqual({
-                genesis: hex(f.context.genesis.toBytes()),
-                recipient: hex(f.phone.raw),
-                count: 2,
-              });
+              expect(pins.prepare('SELECT genesis,count FROM ledger_pin WHERE id=1').get()).toEqual(
+                {
+                  genesis: hex(f.context.genesis.toBytes()),
+                  count: 2,
+                }
+              );
               expect(db.prepare('SELECT id,phase FROM repair_tasks').all()).toEqual([
                 { id: 'initial', phase: 'Pending' },
               ]);
-              db.exec('DROP TRIGGER fail_pin');
+              pins.exec('DROP TRIGGER fail_pin');
               current = old;
               expect((yield* queue.flush()).blocked).toEqual(['initial']);
               expect(
@@ -554,6 +554,7 @@ describe('repair authority observations survive failed pin writes', () => {
               ]);
             } finally {
               db.close();
+              pins.close();
             }
           })
         )

@@ -5,9 +5,9 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { Effect, Result, Deferred, Fiber, Scope, Exit } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
-import * as Reports from '@lody/e2ee-core/keys/reports';
-import * as Envelopes from '@lody/e2ee-core/keys/envelope';
+import { makeSqliteKeyMailbox } from '@lody/e2ee-core/adapters/node-sqlite';
+import * as Reports from '@lody/e2ee-core/protocol';
+import * as Envelopes from '@lody/e2ee-core/protocol';
 import { envelopeFixture } from './fixture';
 const ok = <A, E>(r: Result.Result<A, E>) => Result.getOrThrow(r);
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
@@ -171,7 +171,7 @@ describe('authenticated SQLite key mailbox', () => {
     const run = (
       mode: 'create' | 'open',
       body: (
-        host: Effect.Success<ReturnType<typeof makeSqliteKeyMailbox<never, never>>>
+        host: Effect.Success<ReturnType<typeof makeSqliteKeyMailbox>>
       ) => Effect.Effect<void, unknown>
     ) =>
       Effect.runPromise(

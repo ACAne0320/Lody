@@ -1,14 +1,14 @@
 import { Effect, Result, Fiber, Exit, Scope } from 'effect';
-import { makeLedgerStreamReader } from '@lody/e2ee-core/ledger/feed';
+import { makeLedgerStreamReader } from '@lody/e2ee-core/adapters/loro-streams';
 import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { makeSqliteLedgerFeed } from '@lody/e2ee-core/ledger/feed/sqlite';
+import { makeSqliteLedgerFeed } from './feed-fixture';
 import { describe, expect, it, vi } from 'vitest';
-import { verifyLedger, hashRecordBytes } from '@lody/e2ee-core/ledger';
+import { verifyLedger, hashRecordBytes } from '@lody/e2ee-core/protocol';
 import { envelopeFixture } from '../keys/fixture';
-import { prepareLedgerPage, frameLedgerRecord } from '@lody/e2ee-core/ledger/feed';
+import { prepareLedgerPage, frameLedgerRecord } from '@lody/e2ee-core/protocol';
 const ok = Result.getOrThrow;
 describe('verified ledger increments without known-record skipping', () => {
   it('binds the initial exact genesis once, then extends only an authenticated suffix', () => {
@@ -219,7 +219,7 @@ describe('durable full-history feed boundary', () => {
                 // is still pending, rather than waiting for an accept write lock.
                 expect(
                   disk
-                    .prepare('UPDATE ledger_feed_meta SET offset=? WHERE id=1')
+                    .prepare('UPDATE feed_meta SET offset=? WHERE id=1')
                     .run('external-during-native').changes
                 ).toBe(1);
               } finally {
@@ -232,20 +232,18 @@ describe('durable full-history feed boundary', () => {
             expect(Result.isFailure(result) && result.failure).toMatchObject({ code: 'conflict' });
             const disk = new Database(file);
             try {
-              expect(disk.prepare('SELECT count,offset FROM ledger_feed_meta').get()).toEqual({
+              expect(disk.prepare('SELECT count,offset FROM feed_meta').get()).toEqual({
                 count: 1,
                 offset: 'external-during-native',
               });
               expect(
                 (
-                  disk
-                    .prepare('SELECT record FROM ledger_feed_records ORDER BY position')
-                    .all() as {
+                  disk.prepare('SELECT record FROM feed_records ORDER BY position').all() as {
                     record: Uint8Array;
                   }[]
                 ).map((row) => new Uint8Array(row.record))
-              ).toEqual([originals[0]]);
-              disk.prepare('UPDATE ledger_feed_meta SET offset=? WHERE id=1').run('-1');
+              ).toEqual([]);
+              disk.prepare('UPDATE feed_meta SET offset=? WHERE id=1').run('-1');
             } finally {
               disk.close();
             }
@@ -260,19 +258,17 @@ describe('durable full-history feed boundary', () => {
             expect(retried.offset).toBe('opaque/2');
             const saved = new Database(file);
             try {
-              expect(saved.prepare('SELECT count,offset FROM ledger_feed_meta').get()).toEqual({
+              expect(saved.prepare('SELECT count,offset FROM feed_meta').get()).toEqual({
                 count: 2,
                 offset: 'opaque/2',
               });
               expect(
                 (
-                  saved
-                    .prepare('SELECT record FROM ledger_feed_records ORDER BY position')
-                    .all() as {
+                  saved.prepare('SELECT record FROM feed_records ORDER BY position').all() as {
                     record: Uint8Array;
                   }[]
                 ).map((row) => new Uint8Array(row.record))
-              ).toEqual(originals);
+              ).toEqual(originals.slice(1));
             } finally {
               saved.close();
             }
@@ -330,7 +326,7 @@ describe('durable full-history feed boundary', () => {
         query: string
       ) {
         const statement = nativePrepare.call(this, query);
-        if (query === 'SELECT position,record FROM ledger_feed_records ORDER BY position LIMIT ?') {
+        if (query === 'SELECT position,record FROM feed_records ORDER BY position LIMIT ?') {
           const all = statement.all.bind(statement);
           statement.all = (...parameters: unknown[]) => {
             const rows = Reflect.apply(all, statement, parameters) as unknown[];
@@ -357,7 +353,7 @@ describe('durable full-history feed boundary', () => {
         await read;
         const disk = new Database(file);
         try {
-          disk.prepare('UPDATE ledger_feed_meta SET offset=? WHERE id=1').run('external-position');
+          disk.prepare('UPDATE feed_meta SET offset=? WHERE id=1').run('external-position');
         } finally {
           disk.close();
         }
@@ -371,10 +367,8 @@ describe('durable full-history feed boundary', () => {
       }
       const repair = new Database(file);
       try {
-        repair
-          .prepare('UPDATE ledger_feed_records SET record=? WHERE position=2')
-          .run(f.records()[1]);
-        repair.prepare('UPDATE ledger_feed_meta SET offset=? WHERE id=1').run('opaque/2');
+        repair.prepare('UPDATE feed_records SET record=? WHERE position=2').run(f.records()[1]);
+        repair.prepare('UPDATE feed_meta SET offset=? WHERE id=1').run('opaque/2');
       } finally {
         repair.close();
       }
@@ -420,9 +414,7 @@ describe('durable full-history feed boundary', () => {
       const disk = new Database(file);
       try {
         disk
-          .prepare(
-            'UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=2'
-          )
+          .prepare('UPDATE feed_records SET record=zeroblob(length(record)) WHERE position=2')
           .run();
       } finally {
         disk.close();
@@ -488,13 +480,13 @@ describe('durable full-history feed boundary', () => {
               expect((yield* feed.current()).offset).toBe('opaque/2');
               const disk = new Database(file);
               try {
-                expect(disk.prepare('SELECT offset,count FROM ledger_feed_meta').get()).toEqual({
+                expect(disk.prepare('SELECT offset,count FROM feed_meta').get()).toEqual({
                   offset: 'opaque/2',
                   count: 2,
                 });
-                expect(disk.prepare('SELECT COUNT(*) AS n FROM ledger_feed_records').get()).toEqual(
-                  { n: 2 }
-                );
+                expect(disk.prepare('SELECT COUNT(*) AS n FROM feed_records').get()).toEqual({
+                  n: 1,
+                });
               } finally {
                 disk.close();
               }
@@ -572,8 +564,8 @@ describe('durable full-history feed boundary', () => {
             expect(retained.view.length).toBe(2);
             const disk = new Database(file);
             try {
-              expect(disk.prepare('SELECT COUNT(*) AS n FROM ledger_feed_records').get()).toEqual({
-                n: 2,
+              expect(disk.prepare('SELECT COUNT(*) AS n FROM feed_records').get()).toEqual({
+                n: 1,
               });
             } finally {
               disk.close();
@@ -612,8 +604,8 @@ describe('durable full-history feed boundary', () => {
               try {
                 disk.exec(
                   fault === 'IGNORE'
-                    ? 'CREATE TRIGGER corrupt_record BEFORE INSERT ON ledger_feed_records BEGIN SELECT RAISE(IGNORE); END;'
-                    : "CREATE TRIGGER corrupt_record AFTER INSERT ON ledger_feed_records BEGIN UPDATE ledger_feed_records SET record=x'00' WHERE position=NEW.position; END;"
+                    ? 'CREATE TRIGGER corrupt_record BEFORE INSERT ON feed_records BEGIN SELECT RAISE(IGNORE); END;'
+                    : "CREATE TRIGGER corrupt_record AFTER INSERT ON feed_records BEGIN UPDATE feed_records SET record=x'00' WHERE position=NEW.position; END;"
                 );
               } finally {
                 disk.close();
@@ -637,10 +629,10 @@ describe('durable full-history feed boundary', () => {
               expect((yield* feed.current()).offset).toBe('-1');
               const check = new Database(file);
               try {
-                expect(
-                  check.prepare('SELECT COUNT(*) AS n FROM ledger_feed_records').get()
-                ).toEqual({ n: 1 });
-                expect(check.prepare('SELECT offset,count FROM ledger_feed_meta').get()).toEqual({
+                expect(check.prepare('SELECT COUNT(*) AS n FROM feed_records').get()).toEqual({
+                  n: 0,
+                });
+                expect(check.prepare('SELECT offset,count FROM feed_meta').get()).toEqual({
                   offset: '-1',
                   count: 1,
                 });
@@ -695,9 +687,9 @@ describe('durable full-history feed boundary', () => {
             expect((yield* feed.current()).offset).toBe('opaque/3');
             const db = new Database(file);
             try {
-              const row = db
-                .prepare('SELECT record FROM ledger_feed_records WHERE position=2')
-                .get() as { record: Uint8Array };
+              const row = db.prepare('SELECT record FROM feed_records WHERE position=2').get() as {
+                record: Uint8Array;
+              };
               expect(new Uint8Array(row.record)).toEqual(initialRecords[1]);
             } finally {
               db.close();
@@ -749,8 +741,8 @@ describe('durable full-history feed boundary', () => {
               try {
                 disk.exec(
                   fault === 'later-overwrite'
-                    ? 'CREATE TRIGGER final_fault AFTER INSERT ON ledger_feed_records WHEN NEW.position=3 BEGIN UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=2; END;'
-                    : 'CREATE TRIGGER final_fault AFTER UPDATE ON ledger_feed_meta BEGIN UPDATE ledger_feed_records SET record=zeroblob(length(record)) WHERE position=2; END;'
+                    ? 'CREATE TRIGGER final_fault AFTER INSERT ON feed_records WHEN NEW.position=3 BEGIN UPDATE feed_records SET record=zeroblob(length(record)) WHERE position=2; END;'
+                    : 'CREATE TRIGGER final_fault AFTER UPDATE ON feed_meta BEGIN UPDATE feed_records SET record=zeroblob(length(record)) WHERE position=2; END;'
                 );
               } finally {
                 disk.close();
@@ -769,19 +761,19 @@ describe('durable full-history feed boundary', () => {
               expect(retained.offset).toBe('-1');
               const check = new Database(file);
               try {
-                expect(
-                  check.prepare('SELECT COUNT(*) AS n FROM ledger_feed_records').get()
-                ).toEqual({ n: 1 });
+                expect(check.prepare('SELECT COUNT(*) AS n FROM feed_records').get()).toEqual({
+                  n: 0,
+                });
                 expect(
                   new Uint8Array(
                     (
-                      check
-                        .prepare('SELECT record FROM ledger_feed_records WHERE position=1')
-                        .get() as { record: Uint8Array }
+                      check.prepare('SELECT origin AS record FROM feed_meta WHERE id=1').get() as {
+                        record: Uint8Array;
+                      }
                     ).record
                   )
                 ).toEqual(f.genesisRecord);
-                expect(check.prepare('SELECT offset,count FROM ledger_feed_meta').get()).toEqual({
+                expect(check.prepare('SELECT offset,count FROM feed_meta').get()).toEqual({
                   offset: '-1',
                   count: 1,
                 });
@@ -821,8 +813,8 @@ describe('durable full-history feed boundary', () => {
               try {
                 disk.exec(
                   failure === 'GENESIS'
-                    ? 'CREATE TRIGGER fail_feed AFTER UPDATE ON ledger_feed_meta BEGIN UPDATE ledger_feed_meta SET genesis=zeroblob(32); END'
-                    : `CREATE TRIGGER fail_feed BEFORE UPDATE ON ledger_feed_meta BEGIN SELECT RAISE(${failure}${failure === 'ABORT' ? ", 'synthetic storage fault'" : ''}); END;`
+                    ? 'CREATE TRIGGER fail_feed AFTER UPDATE ON feed_meta BEGIN UPDATE feed_meta SET genesis=zeroblob(32); END'
+                    : `CREATE TRIGGER fail_feed BEFORE UPDATE ON feed_meta BEGIN SELECT RAISE(${failure}${failure === 'ABORT' ? ", 'synthetic storage fault'" : ''}); END;`
                 );
               } finally {
                 disk.close();
@@ -846,10 +838,10 @@ describe('durable full-history feed boundary', () => {
               expect((yield* feed.current()).offset).toBe('-1');
               const check = new Database(file);
               try {
-                expect(
-                  check.prepare('SELECT COUNT(*) AS n FROM ledger_feed_records').get()
-                ).toEqual({ n: 1 });
-                expect(check.prepare('SELECT offset,count FROM ledger_feed_meta').get()).toEqual({
+                expect(check.prepare('SELECT COUNT(*) AS n FROM feed_records').get()).toEqual({
+                  n: 0,
+                });
+                expect(check.prepare('SELECT offset,count FROM feed_meta').get()).toEqual({
                   offset: '-1',
                   count: 1,
                 });

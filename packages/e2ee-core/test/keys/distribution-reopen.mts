@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { Effect, Result } from 'effect';
-import { ContentError } from '@lody/e2ee-core';
-import { makeSqliteKeyDistribution } from '@lody/e2ee-core/keys/host/distribution/sqlite';
-import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
+import { ContentError } from '@lody/e2ee-core/protocol';
+import { makeSqliteKeyDistribution } from './harness';
+import { makeSqliteKeyMailbox } from '@lody/e2ee-core/adapters/node-sqlite';
 import { envelopeFixture, recipientPair } from './fixture';
 import { synthetic } from './protection-fixture';
 

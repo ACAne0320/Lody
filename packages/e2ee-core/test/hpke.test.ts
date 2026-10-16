@@ -1,15 +1,15 @@
 import { envelopeFixture } from './keys/fixture';
-import * as Envelopes from '@lody/e2ee-core/keys/envelope';
-import * as EpochKeys from '@lody/e2ee-core/keys';
-import * as KeyMaterial from '../src/epoch-key';
-import { concat } from '../src/concat';
-import type { DeviceSigner } from '@lody/e2ee-core/signing';
+import * as Envelopes from '@lody/e2ee-core/protocol';
+import * as EpochKeys from '@lody/e2ee-core/protocol';
+import * as KeyMaterial from '../src/internal/foundation/epoch-key';
+import { concat } from '../src/internal/foundation/concat';
+import type { DeviceSigner } from '@lody/e2ee-core/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Cause, Deferred, Effect, Exit, Fiber, Result } from 'effect';
 import { CipherSuite, DhkemX25519HkdfSha256, HkdfSha256 } from '@hpke/core';
 import { Chacha20Poly1305 } from '@hpke/chacha20poly1305';
-import * as Public from '../src/index';
-import { copyEpochKeyBytes } from '../src/epoch-key';
+import * as Public from '../src/protocol';
+import { copyEpochKeyBytes } from '../src/internal/foundation/epoch-key';
 import vector from './hpke-vector.json';
 
 const bytes = (hex: string) => new Uint8Array(Buffer.from(hex, 'hex'));

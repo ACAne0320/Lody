@@ -21,6 +21,7 @@
     "format:check": "oxfmt --check 'src/**/*.ts'"
   },
   "dependencies": {
+    "@lody/e2ee-core": "workspace:*",
     "@lody/shared": "workspace:*",
     "acp-extension-core": "workspace:*",
     "convex": "catalog:"

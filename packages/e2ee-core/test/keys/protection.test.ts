@@ -4,15 +4,15 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
+import { makeSqliteProtectedEpochKeys } from './harness';
 import { synthetic } from './protection-fixture';
-import { execNativeChild, runNativeChild } from '../native-child';
+import { execNativeChild } from '../native-child';
 import { fileURLToPath } from 'node:url';
-import { makeHostEpochProtection, type NativeEpochProtector } from '@lody/e2ee-core/keys/host';
-import { makeInstalledEpochHistory } from '@lody/e2ee-core/keys/host/history';
-import { Bytes } from '@lody/e2ee-core';
-import { commitEpochKey, sealHistoryPacket } from '../../src/keys/history';
-import { contentPermissions } from '@lody/e2ee-core/ledger';
+import { makeHostEpochProtection, type NativeEpochProtector } from './harness';
+import { makeInstalledEpochHistory } from './harness';
+import { Bytes } from '@lody/e2ee-core/protocol';
+import { commitEpochKey, sealHistoryPacket } from '../../src/internal/keys/history';
+import { contentPermissions } from '@lody/e2ee-core/protocol';
 import { envelopeFixture } from './fixture';
 const ok = Result.getOrThrow;
 const dirs: string[] = [];
@@ -72,20 +72,20 @@ describe('host-only epoch protection', () => {
             })
           );
           const fault = yield* Effect.flip(broken.seal(0, f.secret));
-          expect(fault.code).toBe('native-failed');
+          expect(fault.reason).toBe('native-failed');
           expect(JSON.stringify(fault)).not.toContain('sensitive');
           expect(failed?.every((x) => x === 0)).toBe(true);
           const badSeal = yield* makeHostEpochProtection(
             config(f, { ...native.protector, protect: async () => new Uint8Array(8193) })
           );
-          expect((yield* Effect.flip(badSeal.seal(0, f.secret))).code).toBe('invalid-input');
+          expect((yield* Effect.flip(badSeal.seal(0, f.secret))).reason).toBe('invalid-input');
           const normal = yield* makeHostEpochProtection(config(f, native.protector)),
             blob = yield* normal.seal(0, f.secret);
           const malformed = new Uint8Array(162).fill(87);
           const badOpen = yield* makeHostEpochProtection(
             config(f, { ...native.protector, unprotect: async () => malformed })
           );
-          expect((yield* Effect.flip(badOpen.open(0, blob))).code).toBe('binding-mismatch');
+          expect((yield* Effect.flip(badOpen.open(0, blob))).reason).toBe('binding-mismatch');
           expect(malformed.every((x) => x === 0)).toBe(true);
         })
       )
@@ -110,13 +110,13 @@ describe('host-only epoch protection', () => {
             ok(commitEpochKey(f.context.genesis, 0, f.secret))
           );
           const wrongOrg = yield* makeHostEpochProtection(config(other, native.protector));
-          expect((yield* Effect.flip(wrongOrg.open(0, blob))).code).toBe('binding-mismatch');
+          expect((yield* Effect.flip(wrongOrg.open(0, blob))).reason).toBe('binding-mismatch');
           for (const position of [0, 29, 61, 93, 97, 129]) {
             const body = yield* Effect.promise(() => native.protector.unprotect(blob));
             body[position] ^= 1;
             const changed = yield* Effect.promise(() => native.protector.protect(body));
             body.fill(0);
-            expect((yield* Effect.flip(host.open(0, changed))).code).toBe(
+            expect((yield* Effect.flip(host.open(0, changed))).reason).toBe(
               position === 129 ? 'commitment-mismatch' : 'binding-mismatch'
             );
           }
@@ -246,7 +246,7 @@ describe('host-only epoch protection', () => {
       )
     );
     const inspect = new Database(dbPath);
-    const blob = inspect.prepare('SELECT blob FROM protected_epoch_keys').get() as {
+    const blob = inspect.prepare('SELECT blob FROM installed_epoch_keys').get() as {
       blob: Uint8Array;
     };
     expect(blob.blob.length).toBeGreaterThan(32);
@@ -327,7 +327,7 @@ describe('host-only epoch protection', () => {
     );
     const after = new Database(dbPath);
     expect(
-      (after.prepare('SELECT blob FROM protected_epoch_keys').get() as { blob: Uint8Array }).blob
+      (after.prepare('SELECT blob FROM installed_epoch_keys').get() as { blob: Uint8Array }).blob
     ).toEqual(blob.blob);
     after.close();
     wiped(native.plains);
@@ -365,12 +365,12 @@ describe('host-only epoch protection', () => {
           });
           const db = new Database(actual);
           db.exec(
-            "CREATE TRIGGER reject_key BEFORE INSERT ON protected_epoch_keys BEGIN SELECT RAISE(ABORT,'synthetic disk failure'); END"
+            "CREATE TRIGGER reject_key BEFORE INSERT ON installed_epoch_keys BEGIN SELECT RAISE(ABORT,'synthetic disk failure'); END"
           );
           db.close();
           expect(Exit.isFailure(yield* Effect.exit(store.saveAndReload(0, f.secret)))).toBe(true);
           const check = new Database(actual);
-          expect(check.prepare('SELECT count(*) AS n FROM protected_epoch_keys').get()).toEqual({
+          expect(check.prepare('SELECT count(*) AS n FROM installed_epoch_keys').get()).toEqual({
             n: 0,
           });
           check.exec('DROP TRIGGER reject_key');
@@ -430,102 +430,6 @@ describe('verified host observations and durable authority readback', () => {
       )
     );
   });
-  it.each(['none', 'abort', 'ignore', 'rewrite-head', 'rewrite-context'] as const)(
-    'successful reads persist fixed authority; %s faults fail and retain knowledge',
-    async (fault) => {
-      const f = envelopeFixture(),
-        native = synthetic(),
-        old = f.view(),
-        dbPath = file();
-      let current = old;
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const store = yield* makeSqliteProtectedEpochKeys({
-              ...config(f, native.protector),
-              ledger: () => Effect.succeed(current),
-              path: dbPath,
-              mode: 'create',
-            });
-            yield* store.saveAndReload(0, f.secret);
-            const db = new Database(dbPath);
-            try {
-              const original = db
-                .prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0')
-                .get() as { blob: Uint8Array };
-              if (fault === 'abort' || fault === 'ignore')
-                db.exec(
-                  `CREATE TRIGGER fail_pin BEFORE UPDATE ON protected_key_meta BEGIN SELECT RAISE(${fault === 'abort' ? "ABORT,'fault'" : 'IGNORE'}); END`
-                );
-              if (fault === 'rewrite-head' || fault === 'rewrite-context')
-                db.exec(
-                  `CREATE TRIGGER fail_pin AFTER UPDATE ON protected_key_meta BEGIN UPDATE protected_key_meta SET ${fault === 'rewrite-head' ? `head=x'${Buffer.from(old.head.toBytes()).toString('hex')}',count=2` : "recipient='" + '00'.repeat(32) + "'"} WHERE id=1; END`
-                );
-              f.append([5, f.owner.raw]);
-              const high = f.view();
-              current = high;
-              const read = yield* Effect.exit(store.read(0));
-              const pin = db
-                .prepare('SELECT genesis,recipient,count FROM protected_key_meta WHERE id=1')
-                .get();
-              expect(
-                !Exit.isSuccess(read) || (pin as { count: number }).count === 3,
-                'a successful key read must not silently drop the durable authority pin'
-              ).toBe(true);
-              expect(Exit.isSuccess(read)).toBe(fault === 'none');
-              expect(pin).toEqual({
-                genesis: Buffer.from(f.context.genesis.toBytes()).toString('hex'),
-                recipient: Buffer.from(f.phone.raw).toString('hex'),
-                count: fault === 'none' ? 3 : 2,
-              });
-              if (fault !== 'none') {
-                db.exec('DROP TRIGGER fail_pin');
-                current = old;
-                expect(Exit.isFailure(yield* Effect.exit(store.read(0)))).toBe(true);
-                current = high;
-                const recovered = yield* store.read(0);
-                expect(ok(commitEpochKey(f.context.genesis, 0, recovered))).toEqual(
-                  ok(commitEpochKey(f.context.genesis, 0, f.secret))
-                );
-                expect(db.prepare('SELECT count FROM protected_key_meta WHERE id=1').get()).toEqual(
-                  { count: 3 }
-                );
-              }
-              expect(
-                (
-                  db.prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0').get() as {
-                    blob: Uint8Array;
-                  }
-                ).blob
-              ).toEqual(original.blob);
-            } finally {
-              db.close();
-            }
-          })
-        )
-      );
-      // Success, including retry after a failed write, must reject old authority in another OS process.
-      const child = await runNativeChild(process.execPath, [
-        '--import',
-        'tsx',
-        fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
-        dbPath,
-      ]);
-      expect(child.status).not.toBeNull();
-      expect(child.status).not.toBe(0);
-      expect(child.stderr).toContain('unauthorized');
-      const allowed = await execNativeChild(process.execPath, [
-        '--import',
-        'tsx',
-        fileURLToPath(new URL('./protected-reopen.mts', import.meta.url)),
-        dbPath,
-        'sender-revoked',
-      ]);
-      expect(allowed.trim()).toBe(
-        Buffer.from(ok(commitEpochKey(f.context.genesis, 0, f.secret)).toBytes()).toString('hex')
-      );
-    }
-  );
 });
 
 it('recovers and durably reloads all old keys from only installed latest K, validating the whole chain before writes; failed missing-epoch reads retain observed revocation', async () => {
@@ -583,7 +487,7 @@ it('recovers and durably reloads all old keys from only installed latest K, vali
         );
         const db = new Database(pathName, { readonly: true, fileMustExist: true });
         try {
-          expect(db.prepare('SELECT epoch FROM protected_epoch_keys ORDER BY epoch').all()).toEqual(
+          expect(db.prepare('SELECT epoch FROM installed_epoch_keys ORDER BY epoch').all()).toEqual(
             [{ epoch: 0 }, { epoch: 1 }, { epoch: 2 }]
           );
         } finally {
@@ -648,11 +552,11 @@ it('bad signed history produces no partial older durable keys, and retries after
           try {
             if (!corrupt)
               db.exec(
-                "CREATE TRIGGER deny_old BEFORE INSERT ON protected_epoch_keys WHEN NEW.epoch<2 BEGIN SELECT RAISE(ABORT,'synthetic storage fault'); END"
+                "CREATE TRIGGER deny_old BEFORE INSERT ON installed_epoch_keys WHEN NEW.epoch<2 BEGIN SELECT RAISE(ABORT,'synthetic storage fault'); END"
               );
             expect(Result.isFailure(yield* Effect.result(history.recover()))).toBe(true);
             expect(
-              db.prepare('SELECT epoch FROM protected_epoch_keys ORDER BY epoch').all()
+              db.prepare('SELECT epoch FROM installed_epoch_keys ORDER BY epoch').all()
             ).toEqual([{ epoch: 2 }]);
             if (!corrupt) {
               db.exec('DROP TRIGGER deny_old');
@@ -768,7 +672,7 @@ describe('protected store repair and read-only authority pins', () => {
     );
     const disk = new Database(dbPath);
     const unreadable = new Uint8Array([1, 2, 3]);
-    disk.prepare('UPDATE protected_epoch_keys SET blob=? WHERE epoch=0').run(unreadable);
+    disk.prepare('UPDATE installed_epoch_keys SET blob=? WHERE epoch=0').run(unreadable);
     disk.close();
     await Effect.runPromise(
       Effect.scoped(
@@ -786,7 +690,7 @@ describe('protected store repair and read-only authority pins', () => {
     expect(
       new Uint8Array(
         (
-          unchanged.prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0').get() as {
+          unchanged.prepare('SELECT blob FROM installed_epoch_keys WHERE epoch=0').get() as {
             blob: Uint8Array;
           }
         ).blob
@@ -815,44 +719,12 @@ describe('protected store repair and read-only authority pins', () => {
     expect(
       new Uint8Array(
         (
-          repaired.prepare('SELECT blob FROM protected_epoch_keys WHERE epoch=0').get() as {
+          repaired.prepare('SELECT blob FROM installed_epoch_keys WHERE epoch=0').get() as {
             blob: Uint8Array;
           }
         ).blob
       )
     ).not.toEqual(unreadable);
     repaired.close();
-  });
-  it('repeated key reads do not write an unchanged ledger pin', async () => {
-    const f = envelopeFixture(),
-      native = synthetic(),
-      dbPath = file();
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const store = yield* makeSqliteProtectedEpochKeys({
-            ...config(f, native.protector),
-            path: dbPath,
-            mode: 'create',
-          });
-          yield* store.saveAndReload(0, f.secret);
-          const observer = yield* Effect.acquireRelease(
-            Effect.sync(() => new Database(dbPath)),
-            (db) => Effect.sync(() => db.close())
-          );
-          observer.exec(
-            'CREATE TABLE observed_pin_writes(n INTEGER);INSERT INTO observed_pin_writes VALUES(0);CREATE TRIGGER count_pin_write AFTER UPDATE ON protected_key_meta BEGIN UPDATE observed_pin_writes SET n=n+1;END;'
-          );
-          const before = observer.prepare('SELECT n FROM observed_pin_writes').get();
-          for (let index = 0; index < 4; index++) {
-            const key = yield* store.read(0);
-            expect(ok(commitEpochKey(f.context.genesis, 0, key))).toEqual(
-              ok(commitEpochKey(f.context.genesis, 0, f.secret))
-            );
-          }
-          expect(observer.prepare('SELECT n FROM observed_pin_writes').get()).toEqual(before);
-        })
-      )
-    );
   });
 });

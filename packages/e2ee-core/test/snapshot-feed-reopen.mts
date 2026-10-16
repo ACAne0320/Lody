@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Effect, Result } from 'effect';
-import { Bytes } from '@lody/e2ee-core';
-import { makeSqliteSnapshotLedgerFeed } from '@lody/e2ee-core/ledger/feed/snapshot/sqlite';
+import { Bytes } from '@lody/e2ee-core/protocol';
+import { makeSqliteSnapshotLedgerFeed } from './ledger/feed-fixture';
 
 const input = JSON.parse(readFileSync(process.argv[2]!, 'utf8'));
 const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'hex'));

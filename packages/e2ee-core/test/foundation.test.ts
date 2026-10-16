@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { Cause, Effect, Exit, Fiber, Result } from 'effect';
 import { Point } from '@noble/ed25519';
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
-import { verifySignatureEffect } from '../src/signature';
-import { signVerified } from '../src/signing';
+import { verifySignatureEffect } from '../src/internal/foundation/signature';
+import { signVerified } from '../src/internal/foundation/signing';
 import {
   Bytes,
   decodeCbor,
@@ -21,7 +21,7 @@ import {
   type ContentScope,
   type ContentPurpose,
   type CborValue,
-} from '../src/index';
+} from '../src/protocol';
 import vector from './content-vector.json';
 
 const hex = (s: string) => Uint8Array.from(Buffer.from(s, 'hex'));

@@ -5,17 +5,14 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { Effect, Result, Deferred, Fiber, Scope, Exit } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  makeSqliteEpochReceiver,
-  type ReceiveMailboxRemote,
-} from '@lody/e2ee-core/keys/host/receive/sqlite';
-import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
-import { makeSqliteProtectedEpochKeys } from '@lody/e2ee-core/keys/host/sqlite';
-import { commitEpochKey } from '@lody/e2ee-core/keys';
-import * as Reports from '@lody/e2ee-core/keys/reports';
-import type { LedgerView } from '@lody/e2ee-core/ledger';
-import type { DeviceSigner } from '@lody/e2ee-core/signing';
-import { ContentError } from '../../src/errors';
+import { makeSqliteEpochReceiver, type ReceiveMailboxRemote } from './harness';
+import { makeSqliteKeyMailbox } from '@lody/e2ee-core/adapters/node-sqlite';
+import { makeSqliteProtectedEpochKeys } from './harness';
+import { commitEpochKey } from '@lody/e2ee-core/protocol';
+import * as Reports from '@lody/e2ee-core/protocol';
+import type { LedgerView } from '@lody/e2ee-core/protocol';
+import type { DeviceSigner } from '@lody/e2ee-core/protocol';
+import { ContentError } from '../../src/internal/foundation/errors';
 import { envelopeFixture, recipientPair } from './fixture';
 import { synthetic } from './protection-fixture';
 const ok = Result.getOrThrow,
@@ -259,7 +256,7 @@ describe('durable finite epoch receive and original-report queue', () => {
               })
             )
           );
-          expect(rejected).toMatchObject({ _tag: 'Failure', failure: { code: 'corrupt' } });
+          expect(rejected).toMatchObject({ _tag: 'Failure', failure: { reason: 'corrupt' } });
           expect(readFileSync(oldJournal)).toEqual(oldBytes);
 
           yield* Effect.scoped(
@@ -396,7 +393,7 @@ describe('durable finite epoch receive and original-report queue', () => {
           const first = yield* receiver.receive(f.owner.publicKey, frame);
           yield* receiver.flushReports();
           const lost = new Database(keyFile);
-          lost.exec('DELETE FROM protected_epoch_keys');
+          lost.exec('DELETE FROM installed_epoch_keys');
           lost.close();
           expect(
             Result.isFailure(yield* Effect.result(receiver.receive(f.owner.publicKey, frame)))
@@ -603,7 +600,7 @@ describe('durable finite epoch receive and original-report queue', () => {
             total = 0;
           const blocked: string[] = [];
           do {
-            const page: { processed: number; blocked: string[]; next: string | null } =
+            const page: { processed: number; blocked: readonly string[]; next: string | null } =
               yield* receiver.flushReports(3, cursor);
             total += page.processed;
             blocked.push(...page.blocked);

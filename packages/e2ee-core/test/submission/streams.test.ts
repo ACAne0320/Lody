@@ -7,13 +7,17 @@ import Database from 'better-sqlite3';
 import { Effect, Result, Deferred, Fiber, Scope, Exit } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { StreamsClient } from '@loro-dev/streams-client';
-import { makeStreamsSubmissionRemote } from '@lody/e2ee-core/submission/streams';
-import { SubmissionRemote, submitRecord, resumeSubmission } from '@lody/e2ee-core/submission';
-import { sqliteSubmissionJournal } from '@lody/e2ee-core/submission/sqlite';
-import { frameLedgerRecord, makeLedgerStreamReader } from '@lody/e2ee-core/ledger/feed';
-import { extendLedger, hashRecordBytes, requireLedgerContinuation } from '@lody/e2ee-core/ledger';
+import {
+  makeStreamsLedgerLog,
+  makeLedgerStreamReader,
+} from '@lody/e2ee-core/adapters/loro-streams';
+import { LedgerLog } from '@lody/e2ee-core/services';
+import { submitRecord, resumeSubmission } from './fixture';
+import { sqliteSubmissionJournal } from '@lody/e2ee-core/adapters/node-sqlite';
+import { frameLedgerRecord } from '@lody/e2ee-core/protocol';
+import { extendLedger, hashRecordBytes, requireLedgerContinuation } from '@lody/e2ee-core/protocol';
 import { anchor, checkpoint, genesis, host, rotate, filled, owner, signed } from './fixture';
-import { Bytes } from '@lody/e2ee-core';
+import { Bytes } from '@lody/e2ee-core/protocol';
 const ok = Result.getOrThrow;
 async function localHost() {
   const dir = mkdtempSync(path.join(tmpdir(), 'submission-sdk-')),
@@ -154,7 +158,7 @@ async function localHost() {
       mode = value;
     },
     make: () =>
-      makeStreamsSubmissionRemote({
+      makeStreamsLedgerLog({
         genesis: anchor,
         stream: sdk,
         checkpoint: () => Effect.sync(() => checkpoint(store.read())),
@@ -175,8 +179,8 @@ const using = <A, E, R>(f: Awaited<ReturnType<typeof localHost>>, effect: Effect
     Effect.gen(function* () {
       const remote = yield* f.make();
       return yield* effect.pipe(
-        Effect.provideService(SubmissionRemote, remote),
-        Effect.provide(sqliteSubmissionJournal(path.join(f.dir, 'journal.sqlite')))
+        Effect.provideService(LedgerLog, remote),
+        Effect.provide(sqliteSubmissionJournal({ path: path.join(f.dir, 'journal.sqlite') }))
       );
     })
   );
@@ -454,7 +458,7 @@ describe('released SDK CAS bound to independently verified ledger endpoint', () 
       await Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {
-            const tooSmall = yield* makeStreamsSubmissionRemote({
+            const tooSmall = yield* makeStreamsLedgerLog({
               genesis: anchor,
               stream: f.sdk,
               checkpoint: () => Effect.succeed(checkpoint([genesis])),

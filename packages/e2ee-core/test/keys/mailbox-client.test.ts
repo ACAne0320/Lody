@@ -4,15 +4,12 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { Effect, Result, Deferred, Fiber, Scope, Exit } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  makeSqliteRecipientMailbox,
-  type RecipientMailboxRemote,
-} from '@lody/e2ee-core/keys/host/mailbox/sqlite';
-import { makeSqliteKeyMailbox } from '@lody/e2ee-core/keys/mailbox/sqlite';
+import { makeSqliteRecipientMailbox, type RecipientMailboxRemote } from './harness';
+import { makeSqliteKeyMailbox } from '@lody/e2ee-core/adapters/node-sqlite';
 import { envelopeFixture, recipientPair } from './fixture';
 import { synthetic } from './protection-fixture';
-import { prepareEpochEnvelope } from '@lody/e2ee-core/keys/envelope';
-import { mailboxDigest } from '@lody/e2ee-core/keys/reports';
+import { prepareEpochEnvelope } from '@lody/e2ee-core/protocol';
+import { mailboxDigest } from '@lody/e2ee-core/protocol';
 const ok = Result.getOrThrow,
   hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
 const dirs: string[] = [];
@@ -79,7 +76,7 @@ describe('real recipient receive/repair/fetch composition', () => {
           expect((yield* remote.status(target)).status).toBe('InstallationReported');
           const lost = new Database(path.join(dir, 'keys.sqlite'));
           try {
-            lost.exec('DELETE FROM protected_epoch_keys');
+            lost.exec('DELETE FROM installed_epoch_keys');
           } finally {
             lost.close();
           }
@@ -166,7 +163,7 @@ describe('real recipient receive/repair/fetch composition', () => {
           expect(inspect(config.path)).toEqual([{ phase: 'Install', report: null }]);
           const keys = new Database(config.keyStore.path);
           try {
-            expect(keys.prepare('SELECT COUNT(*) AS n FROM protected_epoch_keys').get()).toEqual({
+            expect(keys.prepare('SELECT COUNT(*) AS n FROM installed_epoch_keys').get()).toEqual({
               n: 0,
             });
           } finally {
@@ -276,7 +273,7 @@ describe('real recipient receive/repair/fetch composition', () => {
               const keys = new Database(path.join(dir, 'keys.sqlite'));
               try {
                 expect(
-                  keys.prepare('SELECT COUNT(*) AS n FROM protected_epoch_keys').get()
+                  keys.prepare('SELECT COUNT(*) AS n FROM installed_epoch_keys').get()
                 ).toEqual({ n: 1 });
               } finally {
                 keys.close();
@@ -377,7 +374,7 @@ describe('real recipient receive/repair/fetch composition', () => {
             expect(inspect(path.join(dir, 'receive.sqlite'))).toEqual([]);
             const keys = new Database(path.join(dir, 'keys.sqlite'));
             try {
-              expect(keys.prepare('SELECT COUNT(*) AS n FROM protected_epoch_keys').get()).toEqual({
+              expect(keys.prepare('SELECT COUNT(*) AS n FROM installed_epoch_keys').get()).toEqual({
                 n: 0,
               });
             } finally {
@@ -397,6 +394,7 @@ describe('real recipient receive/repair/fetch composition', () => {
         frame = await Effect.runPromise(f.prepare()),
         initial = f.view(),
         protection = synthetic();
+      const pinPath = path.join(dir, 'ledger-pin.sqlite');
       let view = initial;
       const ledger = () => Effect.succeed(view);
       const config = {
@@ -431,12 +429,12 @@ describe('real recipient receive/repair/fetch composition', () => {
             f.append([5, f.phone.raw]);
             view = f.view();
             if (fault !== 'none') {
-              const broken = new Database(config.path);
+              const broken = new Database(pinPath);
               try {
                 broken.exec(
                   fault === 'IGNORE'
-                    ? 'CREATE TRIGGER observation_fault BEFORE UPDATE ON receive_meta WHEN NEW.count>OLD.count BEGIN SELECT RAISE(IGNORE); END;'
-                    : 'CREATE TRIGGER observation_fault AFTER UPDATE ON receive_meta WHEN NEW.count>OLD.count BEGIN UPDATE receive_meta SET head=OLD.head,count=OLD.count WHERE id=NEW.id; END;'
+                    ? 'CREATE TRIGGER observation_fault BEFORE UPDATE ON ledger_pin WHEN NEW.count>OLD.count BEGIN SELECT RAISE(IGNORE); END;'
+                    : 'CREATE TRIGGER observation_fault AFTER UPDATE ON ledger_pin WHEN NEW.count>OLD.count BEGIN UPDATE ledger_pin SET head=OLD.head,count=OLD.count WHERE id=NEW.id; END;'
                 );
               } finally {
                 broken.close();
@@ -444,11 +442,11 @@ describe('real recipient receive/repair/fetch composition', () => {
               const failed = yield* Effect.result(client.fetchAndInstall());
               expect(Result.isFailure(failed)).toBe(true);
               if (Result.isFailure(failed))
-                expect(failed.failure).toMatchObject({ code: 'corrupt' });
-              const unchanged = new Database(config.path);
+                expect(failed.failure).toMatchObject({ reason: 'corrupt' });
+              const unchanged = new Database(pinPath);
               try {
                 const pin = unchanged
-                  .prepare('SELECT head,count FROM receive_meta WHERE id=1')
+                  .prepare('SELECT head,count FROM ledger_pin WHERE id=1')
                   .get() as { head: Uint8Array; count: number };
                 expect(pin.count).toBe(initial.length);
                 expect(new Uint8Array(pin.head)).toEqual(initial.head.toBytes());
@@ -457,7 +455,7 @@ describe('real recipient receive/repair/fetch composition', () => {
               }
               view = initial;
               expect(Result.isFailure(yield* Effect.result(client.fetchAndInstall()))).toBe(true);
-              const restored = new Database(config.path);
+              const restored = new Database(pinPath);
               try {
                 restored.exec('DROP TRIGGER observation_fault');
               } finally {
@@ -466,9 +464,9 @@ describe('real recipient receive/repair/fetch composition', () => {
               view = f.view();
             }
             expect(Result.isFailure(yield* Effect.result(client.fetchAndInstall()))).toBe(true);
-            const db = new Database(config.path);
+            const db = new Database(pinPath);
             try {
-              const pin = db.prepare('SELECT head,count FROM receive_meta WHERE id=1').get() as {
+              const pin = db.prepare('SELECT head,count FROM ledger_pin WHERE id=1').get() as {
                 head: Uint8Array;
                 count: number;
               };
@@ -488,7 +486,7 @@ describe('real recipient receive/repair/fetch composition', () => {
             expect(inspect(config.path)).toEqual([]);
             const keys = new Database(config.keyStore.path);
             try {
-              expect(keys.prepare('SELECT COUNT(*) AS n FROM protected_epoch_keys').get()).toEqual({
+              expect(keys.prepare('SELECT COUNT(*) AS n FROM installed_epoch_keys').get()).toEqual({
                 n: 0,
               });
             } finally {
