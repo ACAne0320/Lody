@@ -625,10 +625,19 @@ describe('command runtime helpers', () => {
 
   it('derives Session identity from the room key and excludes legacy comment rooms', async () => {
     const { WorkspaceRepoLegacy } = await import('@lody/shared/workspace-data/repo-legacy');
+    const { Effect } = await import('effect');
     const repo = await WorkspaceRepoLegacy.create({});
+    vi.spyOn(repo.native, 'acquireDoc').mockReturnValue(
+      Effect.die(new Error('Directory must not open a body'))
+    );
+    vi.spyOn(repo.native, 'openDoc').mockReturnValue(
+      Effect.die(new Error('Directory must not open a body'))
+    );
     try {
       await repo.upsertDocMeta('session-real', { latestUserMsgId: 'turn-1' });
       await repo.upsertDocMeta('session-comment-old', { id: 'wrong' });
+      await repo.upsertDocMeta('session-deleted', { title: 'deleted' });
+      await repo.deleteDoc('session-deleted');
       await expect(listAliveSessionMetas({ repo })).resolves.toEqual([
         { roomId: 'session-real', meta: { id: 'real', latestUserMsgId: 'turn-1' } },
       ]);

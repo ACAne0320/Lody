@@ -1,20 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  Cause,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Scope,
-  Stream,
-  SubscriptionRef,
-  Option,
-} from 'effect';
+import { Cause, Deferred, Effect, Exit, Fiber, Scope, Stream, SubscriptionRef } from 'effect';
 import type { RoomState, RoomStatus, TransportStatus } from 'loro-repo/effect';
-import type { SessionId } from '@lody/shared';
-import { makeSessionDirectory, makeSyncAuthority } from '@lody/shared/workspace-data/services';
-import { DataReadSyncFailed } from '@lody/shared/workspace-data/sync-authority';
 import { acquireWorkspaceScope } from '@lody/shared/workspace-data/ownership';
 import { RepoDocAlreadyExists, RepoIOError, RepoReleaseFailed } from 'loro-repo/effect';
 import { IndexedDBStorageAdaptor } from 'loro-repo/storage/indexeddb';
@@ -155,69 +142,6 @@ describe('native workspace Repo ownership', () => {
   });
 });
 
-describe('native WorkspaceData services', () => {
-  it('lists normalized Session identities without materializing bodies', async () => {
-    const adapter = storage();
-    adapter.loadDoc = async () => {
-      throw new Error('Directory must not open a body');
-    };
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const repo = yield* makeWorkspaceRepo({ storageAdapter: adapter });
-          yield* repo.upsertDocMeta('session-a', { id: 'untrusted embedded id', title: 'kept' });
-          yield* repo.upsertDocMeta('session-b', { title: 'deleted' });
-          yield* repo.deleteDoc('session-b');
-          const directory = makeSessionDirectory(repo);
-          expect((yield* directory.list({ archive: 'any' })).map((row) => row.id)).toEqual(['a']);
-          expect(yield* directory.get('b' as SessionId)).toEqual(Option.none());
-          expect(yield* directory.get('a' as SessionId)).toEqual(
-            Option.some({ id: 'a', title: 'kept' })
-          );
-        })
-      )
-    );
-  });
-
-  it('requires a new server confirmation on each refresh and preserves local authority', async () => {
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const repo = yield* makeWorkspaceRepo({
-            authority: { mode: 'remote', transports: ['cloud'] },
-          });
-          const authority = makeSyncAuthority(repo, { local: false, serverTransports: ['cloud'] });
-          expect(yield* authority.refresh({ reason: 'missing' }).pipe(Effect.flip)).toBeInstanceOf(
-            DataReadSyncFailed
-          );
-          let online = true;
-          const status = yield* SubscriptionRef.make<RoomStatus>('synced');
-          yield* repo.attachTransport({
-            id: 'cloud',
-            authority: 'server',
-            connect: Effect.void,
-            disconnect: Effect.void,
-            join: () =>
-              Effect.succeed({
-                status,
-                close: Effect.void,
-                sync: Effect.sync(() => (online ? ('confirmed' as const) : ('offline' as const))),
-              }),
-          });
-          yield* authority.refresh({ reason: 'online' });
-          online = false;
-          expect(yield* authority.refresh({ reason: 'offline' }).pipe(Effect.flip)).toBeInstanceOf(
-            DataReadSyncFailed
-          );
-          yield* makeSyncAuthority(repo, { local: true, serverTransports: [] }).refresh({
-            reason: 'local',
-          });
-        })
-      )
-    );
-  });
-});
-
 describe('retained native release ownership', () => {
   it('closes storage after a background observer fails without poisoning shutdown', async () => {
     const adapter = storage();
@@ -304,6 +228,63 @@ describe('retained native release ownership', () => {
       const room = await repo.joinDocRoom('unavailable');
       await expect(room.subscription('broken').firstSyncedWithRemote).rejects.toBeInstanceOf(
         RepoIOError
+      );
+      room.unsubscribe();
+    } finally {
+      await repo.destroy();
+    }
+  });
+  it('native reconnect retries a failed room attach and retains the shared replica', async () => {
+    const repo = await WorkspaceRepoLegacy.create({});
+    let unavailable = true;
+    try {
+      await repo.addTransport('cloud', {
+        kind: 'native-workspace-transport',
+        make: (id) =>
+          Effect.succeed({
+            id,
+            authority: 'server',
+            connect: Effect.void,
+            disconnect: Effect.void,
+            join: (_target, replica) =>
+              Effect.gen(function* () {
+                if (replica.kind === 'doc') {
+                  if (unavailable)
+                    return yield* Effect.fail(new RepoIOError('temporary join failure', undefined));
+                  replica.lease.doc.getText('body').insert(0, 'recovered');
+                  replica.lease.doc.commit();
+                }
+                return {
+                  status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                  close: Effect.void,
+                  sync: Effect.succeed('confirmed' as const),
+                };
+              }),
+          }),
+      });
+      const doc = (await repo.openPersistedDoc('retry')).doc;
+      const room = await repo.joinDocRoom('retry');
+      await expect(room.subscription('cloud').firstSyncedWithRemote).rejects.toBeInstanceOf(
+        RepoIOError
+      );
+      expect(doc.getText('body').toString()).toBe('');
+      unavailable = false;
+      const report = await repo.reconnect({ transportIds: ['cloud'], resetBackoff: true });
+      expect(report.ok).toBe(true);
+      await repo.runLegacy(room.native.awaitSynced('cloud'));
+      expect(doc.getText('body').toString()).toBe('recovered');
+      expect((await repo.openPersistedDoc('retry')).doc).toBe(doc);
+      await repo.runLegacy(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* repo.native.acquireRoom({ kind: 'doc', id: 'native-only' });
+            expect(
+              repo
+                .transportRooms('cloud')
+                .some(({ target }) => target.kind === 'doc' && target.id === 'native-only')
+            ).toBe(true);
+          })
+        )
       );
       room.unsubscribe();
     } finally {

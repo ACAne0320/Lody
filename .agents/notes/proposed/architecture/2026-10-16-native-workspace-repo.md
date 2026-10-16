@@ -26,9 +26,10 @@ remains a proposal, including host storage relocation and upper Session/Turn wor
   Foreground roots explicitly reuse same-store Doc cursors; eager workers own
   isolated replicas and volatile cursors. Peer baseline, server confirmation and
   local durability never substitute for each other.
-- Directory and metadata authority helpers bind directly to the existing Repo.
-  Unused WorkspaceRepo Context/Layer/acquire wrappers were removed; the current
-  single-target refresh takes its policy directly. No second service graph is needed.
+- CLI directory reads and metadata confirmation compose native Repo operations
+  at their existing business entries. Remove the single-consumer directory and
+  authority objects, unused query options and compatibility methods. Identity
+  normalization, deletion filtering, ordering and fresh server confirmation remain.
 - The local v7 client owns workers, deadlines and bounded queues (including an
   estimated 64 MiB retained-string budget). Chunked input must be complete and
   cover the announced frontier. Normal writes do not advance join epoch. The old
@@ -37,6 +38,12 @@ remains a proposal, including host storage relocation and upper Session/Turn wor
 - Legacy room projection includes actual routing/attachment: absent routes are
   detached, even when a native detail ref initially says joining. First-sync
   waits survive deliberate absence, and fail on an attached route's actual failure.
+  Handles retain the native RoomLease and only the UI status view still consumed.
+  Inventory and transport snapshots read native leases; local room records only
+  retain borrow owners for purge. Remove unused aggregate/wait-result APIs and
+  parallel adapter/status maps. Native reconnect retries failed attaches and
+  retains SDK producers, replacing application per-room rejoin sweeps. Keeping
+  the full old subscription contract would duplicate these owners and statuses.
 
 ## Release, recovery and causal handoff
 
@@ -83,11 +90,17 @@ workspace cleanup and switching after failure, local-room invalidation after fai
 dirty-only config handoff with cancellation and disposal. Native v7 host tests,
 existing legacy peer compatibility cases and snapshot/Streams suites retain their
 separate protocol coverage. Final check results are recorded in the PR.
+Real native integration also verifies retry after a failed attach, native-only
+room inventory, repeated server confirmation versus local authority, and all four
+late-reconnect success/failure and waiter-retry shutdown scenarios. A timed-out
+waiter shares the retained native producer; another edge does not duplicate it.
+Session retirement during reconnect/readiness also cancels only that borrower's
+wait, preserving another holder of the shared room and document.
 
-Head `9b5122ca` passed full GitHub CI and the desktop journey (six scenarios,
-40 steps); those results are a baseline, not verification of this revision.
-Local root check previously encountered the unchanged SSH fixture's
-`context_unreadable`, while the same fixture passed CI. Real production services,
+Head `df7de23d` passed full GitHub CI and Desktop E2E; those results are a
+baseline, not verification of this revision. The unchanged SSH credential
+fixture's `context_unreadable` reproduces locally both before and after this
+simplification, so the full CLI suite is not reported green locally. Real production services,
 browser-process crashes and cross-platform acceptance remain outside local tests.
 Host local server ownership, SessionDocument wrapper cache, Session/Turn/dispatch,
 shortcut grants/publication, RPC and migration target uploads retain their existing

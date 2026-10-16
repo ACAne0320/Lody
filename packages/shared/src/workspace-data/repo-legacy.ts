@@ -11,6 +11,7 @@ import {
   type MakeOptions,
   type RepoError,
   type RoomState,
+  type RoomLease,
   type RoomTarget,
   type TransportLease,
 } from 'loro-repo/effect';
@@ -23,12 +24,9 @@ import {
   type RepoRoomSubscription,
   type RepoTransportRoomSubscription,
   type RepoTransportRoomStatus,
-  type RepoRoomWaitOptions,
-  type RepoRoomWaitResult,
   type RepoSyncOptions,
   type RepoSyncReport,
   type RepoAttachmentReport,
-  type RepoHealthSnapshot,
   type RepoEventListener,
   type RepoEventFilter,
   type RepoWatchHandle,
@@ -44,14 +42,11 @@ import {
   type RepoReconnectOptions,
   type RepoTransportOptions,
   type RemoveTransportOptions,
-  type RepoTransportRoomEntry,
 } from 'loro-repo';
 import type { RemoteCursorStore } from '@loro-dev/streams-crdt';
 import type { NativeWorkspaceTransport, WorkspaceNativeTransport } from './transport';
 export type { NativeWorkspaceTransport } from './transport';
 import { make as makeWorkspaceRepo } from 'loro-repo/effect';
-import { makeSessionDirectory, makeSyncAuthority } from './services';
-import { DataReadSyncFailed } from './sync-authority';
 import { acquireWorkspaceScope, type WorkspaceOwnedScope } from './ownership';
 
 /** Preserve typed failures and defects, including release retry owners. Never log this object. */
@@ -81,25 +76,6 @@ export const workspaceSyncFailuresLegacy = (
       Cause.isFailReason(reason) ? [reason.error] : Cause.isDieReason(reason) ? [reason.defect] : []
     );
   if (error instanceof WorkspaceRepoLegacyFailure) return reasons(error.effectCause);
-  if (error instanceof DataReadSyncFailed) {
-    const report = error.cause;
-    if (
-      typeof report === 'object' &&
-      report !== null &&
-      'resources' in report &&
-      Array.isArray(report.resources)
-    )
-      return report.resources.flatMap((resource: unknown) =>
-        typeof resource === 'object' &&
-        resource !== null &&
-        'exit' in resource &&
-        Exit.isExit(resource.exit) &&
-        Exit.isFailure(resource.exit)
-          ? reasons(resource.exit.cause)
-          : []
-      );
-    return [report];
-  }
   if (error instanceof RepoReleaseFailed) return reasons(error.fullCause);
   if (error instanceof RepoSyncFailed)
     return error.report.transports.flatMap((route) => (route.cause ? reasons(route.cause) : []));
@@ -139,6 +115,25 @@ export type WorkspaceRepoLegacyOptions = Pick<
   };
 
 type Owned<A> = WorkspaceOwnedScope & { readonly value: A };
+export type WorkspaceRoomBinding = Pick<
+  RepoTransportRoomSubscription,
+  'status' | 'onStatusChange' | 'firstSyncedWithRemote' | 'waitUntilSynced'
+>;
+/** Native ownership plus the status view still consumed by application UI. */
+export type WorkspaceRoom = Pick<
+  RepoRoomSubscription,
+  'unsubscribe' | 'transportIds' | 'firstSyncedWithRemote'
+> & {
+  readonly native: RoomLease;
+  readonly signal: AbortSignal;
+  readonly subscription: (transportId: string) => WorkspaceRoomBinding;
+};
+export type WorkspaceDocHandle = Omit<RepoDocHandle, 'joinRoom'> & {
+  readonly joinRoom: () => Promise<WorkspaceRoom>;
+};
+export type WorkspaceFlockDocHandle = Omit<RepoFlockDocHandle, 'joinRoom'> & {
+  readonly joinRoom: () => Promise<WorkspaceRoom>;
+};
 const descriptor = (target: RoomTarget): RepoRoomDescriptor =>
   target.kind === 'meta'
     ? { kind: 'meta', id: 'meta' }
@@ -166,23 +161,21 @@ const roomStatus = (state: RoomState): RepoTransportRoomStatus => {
  */
 export class WorkspaceRepoLegacy {
   readonly native: Repo;
-  readonly sessionDirectory: ReturnType<typeof makeSessionDirectory>;
-  readonly syncAuthority: ReturnType<typeof makeSyncAuthority>;
   private readonly scope: Scope.Closeable;
   private readonly consumers: WorkspaceOwnedScope;
   private readonly meta: FlockLease;
   private readonly options: WorkspaceRepoLegacyOptions;
   private readonly documents = new Map<string, Promise<Owned<DocLease>>>();
   private readonly flocks = new Map<string, Promise<Owned<FlockLease>>>();
-  private readonly rooms = new Map<string, Set<RepoRoomSubscription>>();
-  private readonly attachments = new Map<string, Owned<TransportLease>>();
-  private readonly controls = new Map<string, WorkspaceNativeTransport>();
-  private readonly adapters = new Map<string, NativeWorkspaceTransport>();
+  private readonly roomOwners = new Map<string, Set<WorkspaceRoom>>();
+  private readonly attachments = new Map<
+    string,
+    Owned<TransportLease> & { readonly transport: WorkspaceNativeTransport }
+  >();
   private readonly statusListeners = new Map<
     string,
     Set<(status: 'connected' | 'connecting' | 'disconnected') => void>
   >();
-  private readonly statuses = new Map<string, string>();
   private closing = false;
   private released = false;
   private closeReceipt?: Promise<void>;
@@ -195,11 +188,6 @@ export class WorkspaceRepoLegacy {
     consumers: WorkspaceOwnedScope
   ) {
     this.native = native;
-    this.sessionDirectory = makeSessionDirectory(native);
-    this.syncAuthority = makeSyncAuthority(native, {
-      local: options.authority?.mode !== 'remote',
-      serverTransports: options.authority?.mode === 'remote' ? options.authority.transports : [],
-    });
     this.scope = scope;
     this.consumers = consumers;
     this.meta = meta;
@@ -337,7 +325,7 @@ export class WorkspaceRepoLegacy {
     return owned;
   }
 
-  async openPersistedDoc(id: string): Promise<RepoDocHandle> {
+  async openPersistedDoc(id: string): Promise<WorkspaceDocHandle> {
     const { value } = await this.document(id);
     return {
       doc: value.doc,
@@ -345,7 +333,9 @@ export class WorkspaceRepoLegacy {
       joinRoom: () => this.joinDocRoom(id),
     };
   }
-  async acquireDocHandleLegacy(id: string): Promise<RepoDocHandle & { release(): Promise<void> }> {
+  async acquireDocHandleLegacy(
+    id: string
+  ): Promise<WorkspaceDocHandle & { release(): Promise<void> }> {
     const lease = await this.acquireDoc(id);
     return {
       doc: lease.doc,
@@ -354,7 +344,7 @@ export class WorkspaceRepoLegacy {
       joinRoom: () => this.joinDocRoom(id),
     };
   }
-  async openFlockDoc(id: string): Promise<RepoFlockDocHandle> {
+  async openFlockDoc(id: string): Promise<WorkspaceFlockDocHandle> {
     const { value } = await this.flock(id);
     const retention =
       typeof this.options.flockDocRetentionMs === 'function'
@@ -406,17 +396,11 @@ export class WorkspaceRepoLegacy {
   getDocMeta(id: string) {
     return this.runLegacy(this.native.getDocMeta(id));
   }
-  getDocMetaMany(ids: readonly string[]) {
-    return this.runLegacy(this.native.getDocMetaMany(ids));
-  }
   async listDoc(query?: ListDocQuery) {
     return [...(await this.runLegacy(this.native.listDoc(query)))];
   }
   async listFlockDoc(query?: ListFlockDocQuery) {
     return [...(await this.runLegacy(this.native.listFlockDoc(query)))];
-  }
-  getFlockDoc(id: string) {
-    return this.runLegacy(this.native.getFlockDoc(id));
   }
   deleteDoc(id: string) {
     return this.runLegacy(this.native.deleteDoc(id));
@@ -431,31 +415,19 @@ export class WorkspaceRepoLegacy {
     return this.runLegacy(this.native.restoreFlockDoc(id));
   }
   async purgeDoc(id: string, _options?: EvictDocOptions) {
-    for (const room of this.rooms.get(keyOf({ kind: 'doc', id })) ?? []) room.unsubscribe();
+    for (const room of this.roomOwners.get(keyOf({ kind: 'doc', id })) ?? []) room.unsubscribe();
     await this.unloadDoc(id);
     return this.runLegacy(this.native.purgeDoc(id));
   }
   async purgeFlockDoc(id: string, _options?: EvictDocOptions) {
-    for (const room of this.rooms.get(keyOf({ kind: 'flock', id })) ?? []) room.unsubscribe();
+    for (const room of this.roomOwners.get(keyOf({ kind: 'flock', id })) ?? []) room.unsubscribe();
     await this.unloadFlockDoc(id);
     return this.runLegacy(this.native.purgeFlockDoc(id));
-  }
-  async purgeExpiredFlockDocs(nowMs?: number) {
-    const report = await this.runLegacy(this.native.purgeExpiredFlockDocs(nowMs));
-    if (report.failed.length)
-      throw new AggregateError(
-        report.failed.map((entry) => new WorkspaceRepoLegacyFailure(entry.cause)),
-        'Flock purge failed'
-      );
-    return [...report.purged];
   }
   getMeta(): FlockLease['flock'] {
     return this.meta.flock;
   }
   hasStorage() {
-    return this.native.hasStorage;
-  }
-  supportsReplicaCheckpoints() {
     return this.native.hasStorage;
   }
   getReplicaCheckpointStore(target: ReplicaCheckpointTarget): RemoteCursorStore {
@@ -485,16 +457,6 @@ export class WorkspaceRepoLegacy {
     const current = (await this.flock(id)).value;
     if (flock !== current.flock) throw new StaleReplicaError('flock', id);
     if (this.native.hasStorage) await this.runLegacy(current.persist);
-  }
-  async openDetachedDoc(id: string) {
-    const value = await this.runLegacy(this.native.openDetachedDoc(id));
-    if (!value) throw new RepoIOError('open detached document', new Error('Document body missing'));
-    return value;
-  }
-  async openDetachedFlockDoc(id: string): Promise<FlockLease['flock']> {
-    const value = await this.runLegacy(this.native.openDetachedFlockDoc(id));
-    if (!value) throw new RepoIOError('open detached Flock', new Error('Flock body missing'));
-    return value;
   }
   watch(
     listener: RepoEventListener<JsonObject>,
@@ -595,7 +557,8 @@ export class WorkspaceRepoLegacy {
     const listeners = this.statusListeners.get(id) ?? new Set();
     this.statusListeners.set(id, listeners);
     listeners.add(listener);
-    const status = this.statuses.get(id);
+    const attachment = this.attachments.get(id);
+    const status = attachment && this.syncLegacy(attachment.value.statusSnapshot);
     listener(
       status === 'online' ? 'connected' : status === 'connecting' ? 'connecting' : 'disconnected'
     );
@@ -606,12 +569,8 @@ export class WorkspaceRepoLegacy {
   hasTransport() {
     return this.attachments.size > 0;
   }
-  getTransportIds() {
+  private getTransportIds() {
     return [...this.attachments.keys()];
-  }
-  getTransportAdapter(id?: string) {
-    const selected = id ?? this.getTransportIds()[0];
-    return selected ? this.adapters.get(selected) : undefined;
   }
   async addTransport(
     id: string,
@@ -637,13 +596,14 @@ export class WorkspaceRepoLegacy {
         return { attachment, transport };
       })
     );
-    this.attachments.set(id, { ...owned, value: owned.value.attachment });
-    this.controls.set(id, owned.value.transport);
-    this.adapters.set(id, adapter);
+    this.attachments.set(id, {
+      ...owned,
+      value: owned.value.attachment,
+      transport: owned.value.transport,
+    });
     this.fork(
       Stream.runForEach(owned.value.attachment.status, (status) =>
         Effect.sync(() => {
-          this.statuses.set(id, status);
           for (const listener of this.statusListeners.get(id) ?? [])
             listener(
               status === 'online'
@@ -664,9 +624,6 @@ export class WorkspaceRepoLegacy {
     await this.runLegacy(this.native.removeTransport(id));
     await this.runLegacy(owned.close);
     this.attachments.delete(id);
-    this.adapters.delete(id);
-    this.controls.delete(id);
-    this.statuses.delete(id);
   }
   async refreshTransportRoutes(): Promise<RepoAttachmentReport> {
     for (const { value } of this.attachments.values()) await this.runLegacy(value.refreshRoutes);
@@ -701,60 +658,38 @@ export class WorkspaceRepoLegacy {
       ? { ...report, ok: false, error: new AggregateError(failed.map((item) => item.reason)) }
       : report;
   }
-  transportRooms(id: string): RepoTransportRoomEntry[] {
-    const entries: RepoTransportRoomEntry[] = [];
-    for (const [key, holders] of this.rooms) {
-      const target: RoomTarget = JSON.parse(key);
-      const holder = holders.values().next().value;
-      if (holder && holder.transportIds().includes(id))
-        entries.push({ room: descriptor(target), subscription: holder.subscription(id) });
-    }
-    return entries;
+  transportRooms(id: string) {
+    const attachment = this.attachments.get(id);
+    return attachment
+      ? this.syncLegacy(attachment.value.rooms).filter(({ target }) =>
+          this.route(target).includes(id)
+        )
+      : [];
   }
   private attachmentReport(): RepoAttachmentReport {
     const rooms = this.getTransportIds().flatMap((id) =>
-      this.transportRooms(id).map(({ room, subscription }) => ({
-        kind: room.kind,
-        roomId: room.id,
+      this.transportRooms(id).map(({ target, status }) => ({
+        kind: descriptor(target).kind,
+        roomId: descriptor(target).id,
         transportId: id,
-        status: subscription.status,
-        attached: subscription.status !== 'detached',
+        status:
+          status === 'synced'
+            ? ('joined' as const)
+            : status === 'failed'
+              ? ('error' as const)
+              : status === 'offline'
+                ? ('disconnected' as const)
+                : status === 'detached'
+                  ? ('detached' as const)
+                  : ('connecting' as const),
+        attached: status !== 'detached',
       }))
     );
     const failed = rooms.filter((room) => room.status === 'error');
     return { ok: failed.length === 0, rooms, failed };
   }
-  health(): RepoHealthSnapshot {
-    return {
-      transports: this.getTransportIds().map((id) => {
-        const rooms = this.transportRooms(id);
-        const status = this.statuses.get(id);
-        return {
-          transportId: id,
-          reachability:
-            status === 'online'
-              ? 'connected'
-              : status === 'connecting'
-                ? 'connecting'
-                : 'disconnected',
-          roomCounts: {
-            total: rooms.length,
-            attached: rooms.filter((r) => r.subscription.status !== 'detached').length,
-            caughtUp: rooms.filter((r) => r.subscription.status === 'joined').length,
-            connecting: rooms.filter(
-              (r) =>
-                r.subscription.status === 'connecting' || r.subscription.status === 'reconnecting'
-            ).length,
-            error: rooms.filter((r) => r.subscription.status === 'error').length,
-            detached: rooms.filter((r) => r.subscription.status === 'detached').length,
-          },
-          failedRooms: this.attachmentReport().failed.filter((room) => room.transportId === id),
-        };
-      }),
-    };
-  }
   createRemoteStreamLegacy(id: string, target: RoomTarget) {
-    const transport = this.attachments.has(id) ? this.controls.get(id) : undefined;
+    const transport = this.attachments.get(id)?.transport;
     if (!transport?.createStream)
       return Promise.reject(new RepoUnsupported('remote stream creation'));
     return this.runLegacy(transport.createStream(target));
@@ -784,7 +719,7 @@ export class WorkspaceRepoLegacy {
     );
   }
 
-  private async joinRoom(target: RoomTarget): Promise<RepoRoomSubscription> {
+  private async joinRoom(target: RoomTarget): Promise<WorkspaceRoom> {
     const owned = await this.own(this.native.acquireRoom(target));
     const lease = owned.value;
     const closed = new AbortController();
@@ -794,8 +729,8 @@ export class WorkspaceRepoLegacy {
         Effect.sync(() => closed.abort())
       )
     );
-    const bindings = new Map<string, RepoTransportRoomSubscription>();
-    const binding = (id: string): RepoTransportRoomSubscription => {
+    const bindings = new Map<string, WorkspaceRoomBinding>();
+    const binding = (id: string): WorkspaceRoomBinding => {
       const existing = bindings.get(id);
       if (existing) return existing;
       const project = (state: RoomState): RepoTransportRoomStatus => {
@@ -829,8 +764,7 @@ export class WorkspaceRepoLegacy {
       );
       // Old consumers sometimes only observe statuses; retain rejection for actual waiters.
       void firstSyncedWithRemote.catch(() => undefined);
-      const value: RepoTransportRoomSubscription = {
-        transportId: id,
+      const value: WorkspaceRoomBinding = {
         get status() {
           return status();
         },
@@ -846,62 +780,6 @@ export class WorkspaceRepoLegacy {
           return () => this.fork(Scope.close(scope, Exit.succeed(undefined)));
         },
         waitUntilSynced: () => this.runLegacy(lease.awaitSynced(id), closed.signal),
-        rejoin: async () => {
-          const transport = this.attachments.get(id);
-          if (!transport) throw new RepoUnsupported(`transport ${id}`);
-          const state = this.syncLegacy(lease.stateSnapshot(id));
-          if (!state.current) await this.reconnect({ transportIds: [id] });
-          else await this.runLegacy(transport.value.refreshRoutes, closed.signal);
-          await this.runLegacy(lease.awaitSynced(id), closed.signal);
-        },
-        waitFor: async (options?: RepoRoomWaitOptions): Promise<RepoRoomWaitResult> => {
-          const phase = options?.phase ?? 'caught-up';
-          const snapshot = () => this.syncLegacy(lease.stateSnapshot(id));
-          const result = (
-            resultStatus: RepoRoomWaitResult['status'],
-            error?: unknown
-          ): RepoRoomWaitResult => ({
-            status: resultStatus,
-            phase,
-            generation: snapshot().epoch,
-            ...(error === undefined ? {} : { error }),
-          });
-          if (closed.signal.aborted) return result('closed');
-          if (options?.signal?.aborted) return result('aborted');
-          if (status() === 'detached') return result('detached');
-          const signal = options?.signal
-            ? AbortSignal.any([closed.signal, options.signal])
-            : closed.signal;
-          const wait =
-            phase === 'pending-upload-empty'
-              ? lease
-                  .awaitUploaded(id)
-                  .pipe(
-                    Effect.flatMap((receipt) =>
-                      receipt.outcome === 'acked'
-                        ? Effect.void
-                        : Effect.fail(new RepoIOError('upload unconfirmed', receipt))
-                    )
-                  )
-              : lease.awaitSynced(id);
-          const operation =
-            options?.timeoutMs === undefined ? wait : wait.pipe(Effect.timeout(options.timeoutMs));
-          try {
-            await this.runLegacy(operation, signal);
-            return result('complete');
-          } catch (error) {
-            if (closed.signal.aborted) return result('closed');
-            if (options?.signal?.aborted) return result('aborted');
-            if (
-              typeof error === 'object' &&
-              error !== null &&
-              '_tag' in error &&
-              error._tag === 'TimeoutError'
-            )
-              return result('timeout');
-            return result('error', error);
-          }
-        },
       };
       bindings.set(id, value);
       return value;
@@ -913,40 +791,23 @@ export class WorkspaceRepoLegacy {
       if (!id) throw new RepoUnsupported('room transport');
       return binding(id);
     };
-    const holders = this.rooms.get(keyOf(target)) ?? new Set<RepoRoomSubscription>();
-    this.rooms.set(keyOf(target), holders);
-    const subscription: RepoRoomSubscription = {
+    const holders = this.roomOwners.get(keyOf(target)) ?? new Set<WorkspaceRoom>();
+    this.roomOwners.set(keyOf(target), holders);
+    const subscription: WorkspaceRoom = {
+      native: lease,
+      signal: closed.signal,
       unsubscribe: () => {
         if (closed.signal.aborted) return;
         closed.abort();
         holders.delete(subscription);
-        if (holders.size === 0) this.rooms.delete(keyOf(target));
+        if (holders.size === 0) this.roomOwners.delete(keyOf(target));
         this.fork(owned.close);
-      },
-      get status() {
-        const next = single().status;
-        return next === 'detached' ? 'disconnected' : next;
       },
       get firstSyncedWithRemote() {
         return single().firstSyncedWithRemote;
       },
-      waitUntilSynced: () => single().waitUntilSynced(),
-      rejoin: () => single().rejoin(),
-      onStatusChange: (listener) =>
-        single().onStatusChange((status) =>
-          listener(status === 'detached' ? 'disconnected' : status)
-        ),
-      waitFor: (options) =>
-        this.route(target).length === 0
-          ? Promise.resolve({
-              status: 'detached',
-              phase: options?.phase ?? 'caught-up',
-              generation: 0,
-            })
-          : single().waitFor(options),
       transportIds: () => this.route(target),
       subscription: binding,
-      subscriptions: () => this.route(target).map(binding),
     };
     holders.add(subscription);
     return subscription;

@@ -14,9 +14,10 @@ PR: [#1607](https://github.com/LodyAI/Lody/pull/1607)
 
 - Workspace 在既有 SQLite 或 renderer IndexedDB 上拥有一个原生 Repo；消费者在子 Scope 中借用 Doc、Flock、room lease。打开缺失与创建业务身份不同；本地模式不请求云端。
 - 原生 Streams transport 复用 token 服务和副本绑定 checkpoint；前台显式沿用同一存储的 Doc cursor，预取 worker 使用隔离副本和易失 cursor。peer baseline、服务端确认和本地持久化不能互相替代。
-- 目录与元数据权威 helper 直接绑定既有 Repo。删除无人使用的 WorkspaceRepo Context/Layer/acquire 包装；当前唯一目标的 refresh 直接接收策略，不再构造另一套服务图。
+- CLI 目录读取和元数据确认在既有业务入口组合原生 Repo 操作，删除只有一个消费者的目录与权威对象、未使用的查询选项和兼容方法；保留身份规范化、删除过滤、排序与每次新的服务端确认。
 - 本机 v7 客户端拥有 worker、期限和有界队列，含约 64 MiB 的字符串保留预算。分块输入必须完整且版本覆盖公告 frontier；普通写入不增加 join epoch。旧客户端仅作为测试 fixture 保留 host 协议兼容覆盖，没有产品导出或应用导入；原生客户端测试连接真实 v7 host。
 - Legacy 房间投影包含实际路由与 attachment：缺席路由为 detached，即使新原生 detail ref 初始为 joining。首次同步等待跨越主动缺席，但实际已挂载路由失败会拒绝等待。
+  房间句柄保留原生 RoomLease 及仍有消费者的 UI 状态视图；清单和 transport 快照直接读取原生 lease，本地房间记录只负责 purge 时释放借用 owner。删除未使用的聚合/等待结果 API 与平行 adapter/status 表。原生 reconnect 重试失败的 attach 并保留 SDK producer，替代应用层逐房间 rejoin 扫描；继续复刻完整旧订阅协议会重复这些 owner 和状态。
 
 ## 释放、恢复与因果交接
 
@@ -31,5 +32,7 @@ PR: [#1607](https://github.com/LodyAI/Lody/pull/1607)
 ## 验证与限制
 
 行为回归覆盖 cache/shortcut 释放失败后的自动恢复、共享副本、保存失败后原始字节保留、后台 observer 失败后正常关闭、workspace 清理的继续与重试、Session 释放失败后的本机房间失效，以及仅对待交接配置生效的 probe、取消和 dispose。原生 v7 host、旧 peer 兼容、快照与 Streams 套件分别保留协议覆盖；最终检查结果记录在 PR。
+真实 native 集成还覆盖失败 attach 的重试、仅由 native 借用的房间清单、反复服务端确认与本地权威，以及原有四组晚到 reconnect 成功/失败和 waiter 重试下的关闭场景。waiter 超时后仍共享保留中的 native producer，新的触发边不会重复启动它。
+Session 在 reconnect/readiness 阶段退休时，只取消自身借用的等待；持有同一房间和文档的另一个借用者仍然可用。
 
-`9b5122ca` 的完整 GitHub CI 和桌面场景（六个场景、40 步）通过；这是本次修订的基线，不是新修订的验收。此前本地根 check 遇到未改动 SSH fixture 的 `context_unreadable`，同一个 fixture 在 CI 通过。本地测试不代表真实生产服务、浏览器进程崩溃或跨平台验收。Host 本机 server 所有权、SessionDocument wrapper cache、Session/Turn/dispatch、快捷指令 grant/发布、RPC、迁移 target 上传仍保留既有应用生命周期。PR 维持用户要求的同一接入单元；删除无消费者框架和产品重复实现，不再扩大迁移，也不修改尚在提案中的 WorkspaceData 设计。
+`df7de23d` 的完整 GitHub CI 和 Desktop E2E 通过；这是本次修订的基线，不是新修订的验收。未改动 SSH 凭据 fixture 的 `context_unreadable` 在精简前后均可于本地复现，因此不将本地 CLI 全量测试报告为全绿。本地测试不代表真实生产服务、浏览器进程崩溃或跨平台验收。Host 本机 server 所有权、SessionDocument wrapper cache、Session/Turn/dispatch、快捷指令 grant/发布、RPC、迁移 target 上传仍保留既有应用生命周期。PR 维持用户要求的同一接入单元；删除无消费者框架和产品重复实现，不再扩大迁移，也不修改尚在提案中的 WorkspaceData 设计。

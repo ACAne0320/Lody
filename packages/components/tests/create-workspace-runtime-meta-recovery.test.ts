@@ -7,7 +7,7 @@ import {
   type SessionId,
   type WorkspaceId,
 } from '@lody/shared';
-import type { LoroRepo, TransportAdapter, TransportSubscription } from 'loro-repo';
+import type { LoroRepo, TransportSubscription } from 'loro-repo';
 import { Flock } from '@loro-dev/flock-wasm';
 import { LoroDoc } from 'loro-crdt';
 
@@ -1837,11 +1837,15 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     { retry: true, outcome: 'resolve' },
     { retry: true, outcome: 'reject' },
   ] as const)(
-    'joins original cloud rejoin tasks before real Repo destruction (retry=$retry, $outcome)',
+    'joins native cloud reconnect I/O before Repo destruction (retry=$retry, $outcome)',
     async ({ retry, outcome }) => {
-      const { LoroRepo: RealRepo } = await vi.importActual<typeof import('loro-repo')>('loro-repo');
+      const { WorkspaceRepoLegacy: RealRepo } = await vi.importActual<
+        typeof import('@lody/shared/workspace-data/repo-legacy')
+      >('@lody/shared/workspace-data/repo-legacy');
+      const { Effect, SubscriptionRef } = await import('effect');
+      const { RepoIOError } = await import('loro-repo/effect');
       const repo = await RealRepo.create({
-        metaDebounceCommitMs: 0,
+        acquisitionTimeoutMs: 10_000,
         resolveRoomTransports: () => ({
           transportIds: ['local', 'cloud'],
           readinessTransportId: 'local',
@@ -1852,9 +1856,14 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       const active = new Set<number>();
       let attempts = 0;
       let cloudStatus: TransportSubscription['status'] = 'joined';
+      const cloudRoomState = await Effect.runPromise(
+        SubscriptionRef.make<import('loro-repo/effect').RoomStatus>('synced')
+      );
       let destroyed = false;
       const activeAtDestroy: number[] = [];
-      const subscription = (cloudDoc: boolean): TransportSubscription => ({
+      const subscription = (
+        cloudDoc: boolean
+      ): TransportSubscription & { rejoin(): Promise<void> } => ({
         get status() {
           return cloudDoc ? cloudStatus : 'joined';
         },
@@ -1874,17 +1883,36 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
           }
         },
       });
-      const adapter = (cloud: boolean): TransportAdapter => ({
-        connect: async () => {},
-        close: async () => {},
-        isConnected: () => true,
-        getStatus: () => 'connected',
-        onStatusChange: () => () => {},
-        reconnect: async () => {},
-        syncMeta: async () => ({ ok: true }),
-        syncDoc: async () => ({ ok: true }),
-        joinMetaRoom: () => subscription(false),
-        joinDocRoom: () => subscription(cloud),
+      const adapter = (
+        cloud: boolean
+      ): import('@lody/shared/workspace-data/repo-legacy').NativeWorkspaceTransport => ({
+        kind: 'native-workspace-transport',
+        make: (id) =>
+          Effect.succeed({
+            id,
+            authority: cloud ? 'server' : 'peer',
+            connect: Effect.void,
+            disconnect: Effect.void,
+            reconnect: Effect.uninterruptible(
+              Effect.tryPromise({
+                try: () => subscription(cloud).rejoin(),
+                catch: (failure) => new RepoIOError('test reconnect', failure),
+              })
+            ),
+            join: (target) =>
+              Effect.gen(function* () {
+                return {
+                  status:
+                    cloud && target.kind === 'doc'
+                      ? cloudRoomState
+                      : yield* SubscriptionRef.make<import('loro-repo/effect').RoomStatus>(
+                          'synced'
+                        ),
+                  close: Effect.void,
+                  sync: Effect.succeed('confirmed' as const),
+                };
+              }),
+          }),
       });
       const add = repo.addTransport.bind(repo);
       vi.spyOn(repo, 'addTransport').mockImplementation((id, _adapter, options) =>
@@ -1911,15 +1939,16 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       let closed = false;
       try {
         cloudStatus = 'error';
+        await Effect.runPromise(SubscriptionRef.set(cloudRoomState, 'failed'));
         dispatchWindowEvent('online');
         await entered[0].promise;
         if (retry) {
-          // The existing timeout must still release the running retry loop.
-          // A new pass can start while the previous raw SDK task is pending.
+          // The native owner retains and shares the original SDK reconnect
+          // after a waiter times out; a later edge must not duplicate it.
           await vi.advanceTimersByTimeAsync(10_000);
           dispatchWindowEvent('online');
-          await entered[1].promise;
-          expect([...active]).toEqual([0, 1]);
+          await flushPromises();
+          expect([...active]).toEqual([0]);
         }
         closing = runtime.dispose();
         expect(runtime.dispose()).toBe(closing);
@@ -1929,17 +1958,11 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
         await vi.advanceTimersByTimeAsync(10_000);
         expect({ closed, destroyed }).toEqual({ closed: false, destroyed: false });
 
-        // Resolve the newest attempt first: closing must still retain older
-        // timed-out work. A rejection must neither escape nor end close early.
-        const last = retry ? 1 : 0;
+        // A rejection must neither escape nor end close before raw I/O settles.
+        const last = 0;
         if (outcome === 'reject') gates[last]!.reject(new Error('late rejoin failed'));
         else gates[last]!.resolve();
         await vi.advanceTimersByTimeAsync(0);
-        if (retry) {
-          expect([...active]).toEqual([0]);
-          expect({ closed, destroyed }).toEqual({ closed: false, destroyed: false });
-          gates[0].resolve();
-        }
         await closing;
         expect({ closed, destroyed, activeAtDestroy }).toEqual({
           closed: true,
@@ -1950,7 +1973,7 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
         dispatchWindowEvent('online');
         await vi.advanceTimersByTimeAsync(60_000);
         expect(active.size).toBe(0);
-        expect(attempts).toBe(retry ? 2 : 1);
+        expect(attempts).toBe(1);
       } finally {
         for (const gate of gates) gate.resolve();
         lease.unsubscribe();
@@ -1985,26 +2008,23 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     // A detached binding is deliberate absence — never a repair trigger.
     mocks.transportRooms.mockReturnValue([
       {
-        room: { kind: 'doc', id: 'machine-local-machine' },
-        subscription: { status: 'detached', rejoin: vi.fn(async () => {}) },
+        target: { kind: 'doc', id: 'machine-local-machine' },
+        status: 'detached',
       },
     ]);
     await vi.advanceTimersByTimeAsync(120_000);
     await flushPromises();
     expect(mocks.reconnect).not.toHaveBeenCalled();
 
-    const brokenRejoin = vi.fn(async () => {});
     mocks.transportRooms.mockReturnValue([
       {
-        room: { kind: 'doc', id: 'machine-local-machine' },
-        subscription: { status: 'error', rejoin: brokenRejoin },
+        target: { kind: 'doc', id: 'machine-local-machine' },
+        status: 'failed',
       },
     ]);
     await vi.advanceTimersByTimeAsync(120_000);
     await flushPromises();
     expect(mocks.reconnect).toHaveBeenCalledWith({ transportIds: ['cloud'], resetBackoff: true });
-    // A failed loro-repo-level attach is only repaired by the per-room rejoin.
-    expect(brokenRejoin).toHaveBeenCalled();
 
     mocks.transportRooms.mockReturnValue([]);
     await runtime.dispose();

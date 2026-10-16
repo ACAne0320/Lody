@@ -7,7 +7,8 @@ import {
   getMachineRoomId,
   resolveNewSessionHistoryBackend,
   type MachineMeta,
-  getSessionRoomId,
+  getSessionIdFromRoomId,
+  SESSION_DOC_PREFIX,
   isLoroRepoDocDeleted,
   isTimeSynced,
   syncTime,
@@ -481,10 +482,22 @@ export async function listAliveDocMetas<Meta>(
 export async function listAliveSessionMetas(
   manager: Pick<LoroDocumentManager, 'repo'>
 ): Promise<Array<{ roomId: string; meta: SessionMeta }>> {
-  const sessions = await manager.repo.runLegacy(
-    manager.repo.sessionDirectory.list({ archive: 'any' })
+  const rows = await manager.repo.runLegacy(
+    manager.repo.native.listDoc({ prefix: SESSION_DOC_PREFIX })
   );
-  return sessions.map((meta) => ({ roomId: getSessionRoomId(meta.id), meta }));
+  return rows
+    .flatMap((row) => {
+      const id = getSessionIdFromRoomId(row.docId);
+      return row.deleted || id === null
+        ? []
+        : [{ roomId: row.docId, meta: { ...row.meta, id } as SessionMeta }];
+    })
+    .sort((left, right) => {
+      const activity = (row: SessionMeta) => row.lastMessageAt ?? (Date.parse(row.createdAt) || 0);
+      return (
+        activity(right.meta) - activity(left.meta) || right.meta.id.localeCompare(left.meta.id)
+      );
+    });
 }
 
 function readLocalControlTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {

@@ -3,11 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { Effect, Exit, Option, Scope } from 'effect';
-import {
-  type SessionDirectoryQuery,
-  selectSessionDirectoryRows,
-} from '@lody/shared/workspace-data/session-directory';
+import { Effect, Exit, Scope } from 'effect';
 import type { SessionActivePresenceControllerLegacy } from '../src/lib/loro/session-active-presence-legacy';
 
 import {
@@ -123,18 +119,15 @@ function createHarness(options?: {
   });
   const repo = {
     runLegacy: Effect.runPromise,
-    sessionDirectory: {
-      list: (query: SessionDirectoryQuery) =>
+    native: {
+      listDoc: () =>
         Effect.sync(() =>
-          selectSessionDirectoryRows(
-            [...sessionMetas.values()].filter(
-              (meta) => !options?.deletedSessionIds?.includes(meta.id)
-            ),
-            query
-          )
+          [...sessionMetas].map(([docId, meta]) => ({
+            docId,
+            meta,
+            deleted: options?.deletedSessionIds?.includes(meta.id) === true,
+          }))
         ),
-      get: (id: SessionId) =>
-        Effect.sync(() => Option.fromNullable(sessionMetas.get(getSessionRoomId(id)))),
     },
     watch: vi.fn(() => ({ unsubscribe: vi.fn() })),
     getDocMeta: vi.fn(async (roomId: string) => {

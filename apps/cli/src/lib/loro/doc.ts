@@ -1,3 +1,5 @@
+import { RepoIOError, RepoUnsupported } from 'loro-repo/effect';
+import { Effect, Exit } from 'effect';
 import {
   WorkspaceRepoLegacy,
   workspaceAcquisitionFailureLegacy,
@@ -91,14 +93,14 @@ import { traceAsync } from '@/utils/trace-span';
 
 import WebSocketOriginal from 'ws';
 import {
-  RepoDocHandle,
   RepoSyncError,
   RepoWatchHandle,
   type RepoSyncReport,
   type TransportConnectionStatus,
-  type RepoRoomSubscription,
   type RepoTransportRoomStatus,
 } from 'loro-repo';
+import type { WorkspaceDocHandle as RepoDocHandle } from '@lody/shared/workspace-data/repo-legacy';
+import type { WorkspaceRoom as RepoRoomSubscription } from '@lody/shared/workspace-data/repo-legacy';
 import { createCliPresenceRuntimeLegacy, type CliPresenceRuntimeLegacy } from './presence-legacy';
 import { CliMachineMonitorRuntime } from './machine-monitor';
 import {
@@ -129,7 +131,11 @@ import {
   createDocumentRemoteCursorStore,
   type DocumentCursorScope,
 } from './sqlite-repo-store';
-import { streamsRoomBinding, type StreamsRoomBinding } from './streams-room-binding';
+import {
+  STREAMS_TRANSPORT_ID,
+  streamsRoomBinding,
+  type StreamsRoomBinding,
+} from './streams-room-binding';
 import { formatErrorMessage } from '@/utils/format-error';
 import {
   findSoleMachineAgentConfig,
@@ -724,22 +730,20 @@ export class LoroDocumentManager {
       this.remoteStreamsAttached = true;
       this.remoteStreamsGeneration += 1;
       this.logger.info(`[${this.workspaceId}] Remote Streams transport attached`);
-      // addTransport resolves even when individual rooms failed to attach at
-      // the repo level (their bindings sit in 'error', and repo.reconnect does
-      // NOT retry those — only binding.rejoin() does). Surface them here; the
-      // connection-recovery sweep owns the repair. Diagnostics only, and past
+      // Native reconnect retries failed room attaches. Surface their current
+      // inventory here for diagnostics, past
       // the `remoteStreamsAttached` commit point: its own try keeps a throw
       // here from running the rollback below, which would detach the transport
       // while the flag stays set and leave the workspace cloud-dead.
       try {
         const failedRooms = this.repo
           .transportRooms('streams')
-          .filter((entry) => entry.subscription.status === 'error');
+          .filter((entry) => entry.status === 'failed');
         if (failedRooms.length > 0) {
           this.logger.warn(
             `[${this.workspaceId}] Streams transport attached with ${failedRooms.length} failed room binding(s): ${failedRooms
-              .map((entry) => `${entry.room.kind}:${entry.room.id}`)
-              .join(', ')} (recovery sweep will rejoin)`
+              .map(({ target }) => `${target.kind}:${target.kind === 'meta' ? 'meta' : target.id}`)
+              .join(', ')} (native reconnect will retry)`
           );
         }
       } catch (error) {
@@ -954,7 +958,20 @@ export class LoroDocumentManager {
     const timeoutMs = options.timeoutMs ?? readTimeoutEnv('LODY_LORO_SYNC_META_TIMEOUT_MS', 20_000);
 
     try {
-      await this.repo.runLegacy(this.repo.syncAuthority.refresh({ reason, timeoutMs }));
+      if (this.streamsTokens) {
+        const report = await this.repo.runLegacy(
+          this.repo.native.sync({
+            scope: 'meta',
+            requireTransports: [STREAMS_TRANSPORT_ID],
+            timeoutMs,
+          })
+        );
+        for (const resource of report.resources)
+          if (Exit.isFailure(resource.exit))
+            await this.repo.runLegacy(Effect.failCause(resource.exit.cause));
+        if (report.outcome !== 'confirmed' || report.authority !== 'server')
+          throw new RepoIOError('workspace metadata confirmation', report);
+      }
       this.initialMetaSyncCompleted = true;
     } catch (error) {
       throw new Error(`Workspace metadata sync failed (${reason}): ${formatErrorMessage(error)}`, {
@@ -2275,14 +2292,17 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
       return;
     }
 
-    if (!this.docSub) {
+    const room = this.docSub;
+    if (!room) {
       await this.ensureDocRoomJoined();
       return;
     }
 
-    if (this.docSub.rejoin) {
-      await this.docSub.rejoin();
-    }
+    if (streamsRoomBinding(room).status === 'detached')
+      throw new RepoUnsupported(`transport ${STREAMS_TRANSPORT_ID}`);
+    await this.repo.reconnect({ transportIds: [STREAMS_TRANSPORT_ID] });
+    if (this.destroyed || this.docSub !== room) return;
+    await this.repo.runLegacy(room.native.awaitSynced(STREAMS_TRANSPORT_ID), room.signal);
   }
 
   /**

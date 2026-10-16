@@ -1,5 +1,5 @@
 import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
-import type { StorageAdapter, RepoDocHandle } from 'loro-repo';
+import type { StorageAdapter } from 'loro-repo';
 import { LoroDoc } from 'loro-crdt';
 
 const MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024;
@@ -178,7 +178,7 @@ export function createSessionSnapshotLoader(storage: Pick<StorageAdapter, 'loadD
       return persisted;
     }
   };
-  return async <Handle extends RepoDocHandle>(
+  return async <Handle extends { readonly doc: LoroDoc }>(
     repo: { openPersistedDoc(id: string): Promise<Handle> },
     room: string,
     readSnapshot: () => Promise<Uint8Array | undefined>

@@ -1,6 +1,6 @@
 import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import type { MachineFlockEvent } from '@lody/shared';
-import type { RepoRoomSubscription } from 'loro-repo';
+import type { WorkspaceRoom as RepoRoomSubscription } from '@lody/shared/workspace-data/repo-legacy';
 
 import type { Logger } from '@/utils/logger';
 import { formatErrorMessage } from '@/utils/format-error';

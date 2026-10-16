@@ -14,6 +14,11 @@
 - Legacy room status includes actual attachment/routing: an absent route is
   detached even if its native detail ref starts joining. First-sync waiters
   survive deliberate absence and settle only on a routed baseline or failure.
+- Read inventory and transport snapshots from native leases. Keep local room
+  records only for ownership release, and let native reconnect retry failed
+  attaches. Do not rebuild the full Promise Repo subscription or query APIs.
+- Pass the room borrow's signal to native waits at Promise boundaries; retiring
+  one borrower must cancel its wait without retiring another borrower's replica.
 - Record newly authored Provider rows at the writer boundary. Only probes with
   a pending config write wait for the selected local peer; ordinary refreshes
   need no data-plane receipt. Clear only the write covered by that receipt.

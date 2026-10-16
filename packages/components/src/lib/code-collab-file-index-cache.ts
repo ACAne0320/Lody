@@ -1,6 +1,7 @@
 import { Cause, Duration, Effect, Exit, Scope, ScopedCache } from 'effect';
 import type { Flock } from '@loro-dev/flock-wasm';
-import { ResourceBusyError, type RepoRoomSubscription } from 'loro-repo';
+import { ResourceBusyError } from 'loro-repo';
+import type { WorkspaceRoom as RepoRoomSubscription } from '@lody/shared/workspace-data/repo-legacy';
 import {
   applyCodeCollabFileIndexFlockEvents,
   getServerNow,

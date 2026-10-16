@@ -32,7 +32,8 @@ import {
   type MachineProtocolCapabilities,
   negotiatedAcpCapabilitiesRefreshForce,
 } from '@lody/shared';
-import { type RepoRoomSubscription, type RepoWatchHandle } from 'loro-repo';
+import { type RepoWatchHandle } from 'loro-repo';
+import type { WorkspaceRoom as RepoRoomSubscription } from '@lody/shared/workspace-data/repo-legacy';
 import { IndexedDBStorageAdaptor } from 'loro-repo/storage/indexeddb';
 import type { NativeWorkspaceTransport } from '@lody/shared/workspace-data/repo-legacy';
 import type { PlatformSyncMode } from '@lody/platform';
@@ -310,13 +311,6 @@ const createTimeoutError = (message: string): Error => {
 
 const isTimeoutError = (error: unknown): boolean =>
   error instanceof Error && error.name === 'TimeoutError';
-
-// Cloud errored-binding rejoin sweep bounds: per rejoin, batch width, and the
-// whole sweep. It runs inside the reconnect loop's in-flight guard, so an
-// unbounded pass would wedge cloud repair permanently.
-const CLOUD_REJOIN_TIMEOUT_MS = 10_000;
-const CLOUD_REJOIN_SWEEP_CONCURRENCY = 4;
-const CLOUD_REJOIN_SWEEP_BUDGET_MS = 30_000;
 
 const withTimeout = async <TResult>(
   promise: Promise<TResult>,
@@ -665,7 +659,6 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   // generation is torn down it must not publish provider, transport or state.
   let webAttachGeneration = 0;
   const pendingWebAttaches = new Set<Promise<void>>();
-  const pendingCloudRejoins = new Set<Promise<void>>();
   // loro-repo registers a transport synchronously when addTransport starts and
   // only resolves after routing live rooms, so an in-flight add is already live.
   // Generations do not wait for each other, so adds of several generations can
@@ -893,16 +886,23 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   // excluded: their cloud binding is the room's own tracked status (registry
   // covers them), so counting them here would double-trigger the loop.
   const listCloudTransportProblemEntries = () =>
-    repo
-      .transportRooms('cloud')
-      .filter(
-        (entry) =>
-          (entry.subscription.status === 'error' || entry.subscription.status === 'disconnected') &&
-          targetRouter.getReadinessTransportForRoom(entry.room) === 'local'
-      );
+    repo.transportRooms('cloud').filter(
+      (entry) =>
+        (entry.status === 'failed' || entry.status === 'offline') &&
+        targetRouter.getReadinessTransportForRoom(
+          entry.target.kind === 'meta'
+            ? { kind: 'meta', id: 'meta' }
+            : {
+                kind: entry.target.kind === 'flock' ? 'flock-doc' : 'doc',
+                id: entry.target.id,
+              }
+        ) === 'local'
+    );
 
   const listCloudTransportProblemRooms = (): string[] =>
-    listCloudTransportProblemEntries().map((entry) => `${entry.room.kind}:${entry.room.id}`);
+    listCloudTransportProblemEntries().map(
+      ({ target }) => `${target.kind}:${target.kind === 'meta' ? 'meta' : target.id}`
+    );
 
   const hasCloudReconnectableProblem = (): boolean =>
     canRunCloudReconnect() &&
@@ -2178,9 +2178,10 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
       let confirmed = true;
       if (pendingHandoff) {
         try {
-          const handoff = await repo.syncRoomLegacy(
-            { kind: 'flock', id: flockId }, 'local', { signal, timeoutMs: 20_000 }
-          );
+          const handoff = await repo.syncRoomLegacy({ kind: 'flock', id: flockId }, 'local', {
+            signal,
+            timeoutMs: 20_000,
+          });
           confirmed = handoff.outcome === 'confirmed';
           if (confirmed && pendingConfigHandoffs.get(handoffKey) === pendingHandoff)
             pendingConfigHandoffs.delete(handoffKey);
@@ -4001,9 +4002,8 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
             roomId !== machineMonitorSyncRoomId &&
             isCloudHealthRoom(roomId)
         );
-        // Registry-invisible failures on dual-homed rooms; the member rejoin
-        // below re-exports the delta from the server-known version, so pending
-        // local ops flush with it.
+        // Native inventory includes the cloud route of dual-homed local rooms,
+        // which their local readiness tracker does not observe.
         const cloudMemberProblemRooms = listCloudTransportProblemRooms();
         const restartPresence =
           presenceTransport.needsReconnect() ||
@@ -4018,37 +4018,6 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
 
         if (force || durableProblemRooms.length > 0 || cloudMemberProblemRooms.length > 0) {
           await repo.reconnect({ transportIds: ['cloud'], resetBackoff: true });
-          // Adapter reconnect revives adapter-level sessions but does not retry
-          // loro-repo-level FAILED ATTACHES (binding 'error'); only the per-room
-          // rejoin re-runs the attach. Bounded per rejoin, in width, and in
-          // total: rejoin awaits doc setup inside loro-repo with no deadline of
-          // its own, and this runs inside the reconnect loop's `inFlight` guard
-          // — one that never settles would kill cloud repair for the runtime's
-          // lifetime. Leftovers are picked up by the next pass.
-          const errored = listCloudTransportProblemEntries().filter(
-            (entry) => entry.subscription.status === 'error'
-          );
-          const sweepDeadline = Date.now() + CLOUD_REJOIN_SWEEP_BUDGET_MS;
-          for (let i = 0; i < errored.length; i += CLOUD_REJOIN_SWEEP_CONCURRENCY) {
-            if (disposePromise || Date.now() >= sweepDeadline) {
-              break;
-            }
-            await Promise.all(
-              errored.slice(i, i + CLOUD_REJOIN_SWEEP_CONCURRENCY).map((entry) => {
-                // The timeout releases the retry loop, not the underlying SDK
-                // work. Retain every attempt until it actually settles.
-                const rejoin = entry.subscription.rejoin().finally(() => {
-                  pendingCloudRejoins.delete(rejoin);
-                });
-                pendingCloudRejoins.add(rejoin);
-                return withTimeout(
-                  rejoin,
-                  CLOUD_REJOIN_TIMEOUT_MS,
-                  `Timeout rejoining cloud binding (room=${entry.room.kind}:${entry.room.id})`
-                ).catch(() => undefined);
-              })
-            );
-          }
         }
         if (
           (restartPresence || restartMachineMonitor) &&
@@ -4889,138 +4858,140 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     disposeFailed = false;
 
     // Publish retirement before any cancellation callback or asynchronous close runs.
-    disposePromise = Promise.resolve().then(async () => {
-      const failures: unknown[] = [];
-      const attempt = async (close: () => void | Promise<unknown>) => {
-        try { await close(); } catch (error) {
-          if (!isDestroyedError(error)) failures.push(error);
+    disposePromise = Promise.resolve()
+      .then(async () => {
+        const failures: unknown[] = [];
+        const attempt = async (close: () => void | Promise<unknown>) => {
+          try {
+            await close();
+          } catch (error) {
+            if (!isDestroyedError(error)) failures.push(error);
+          }
+        };
+        windowBootstrap?.close();
+        sharedWindowDocuments.clear();
+        streamsTokenAbort?.abort();
+        const reconnectsClosed = Promise.allSettled([
+          localReconnectLoop?.close(),
+          cloudReconnectLoop?.close(),
+          webAttachReconnectLoop?.close(),
+        ]);
+        // Held sends are in memory only: closing the workspace drops them.
+        await attempt(() => pendingSends.dispose());
+        // Cancel and join send I/O while its cache, transport and repo still exist.
+        await attempt(() => sendResources.dispose());
+        cancelDelayedBackgroundSyncStart?.();
+        cancelDelayedBackgroundSyncStart = null;
+        cancelDelayedStartupAcpCapabilitiesRefresh?.();
+        cancelDelayedStartupAcpCapabilitiesRefresh = null;
+        startupAcpCapabilitiesRefreshAbortController?.abort();
+        startupAcpCapabilitiesRefreshAbortController = null;
+        backgroundSyncCoordinator?.stop();
+        backgroundSyncCoordinator = null;
+        backgroundSyncHighWaterStore?.close();
+        backgroundSyncHighWaterStore = null;
+        eagerSyncWorkerClient?.dispose();
+        eagerSyncWorkerClient = null;
+        localReconnectLoop?.stop();
+        cloudReconnectLoop?.stop();
+        webAttachReconnectLoop?.stop();
+        if (reconnectBackstopTimer) {
+          clearInterval(reconnectBackstopTimer);
+          reconnectBackstopTimer = null;
         }
-      };
-      windowBootstrap?.close();
-      sharedWindowDocuments.clear();
-      streamsTokenAbort?.abort();
-      const reconnectsClosed = Promise.allSettled([
-        localReconnectLoop?.close(),
-        cloudReconnectLoop?.close(),
-        webAttachReconnectLoop?.close(),
-      ]);
-      // Held sends are in memory only: closing the workspace drops them.
-      await attempt(() => pendingSends.dispose());
-      // Cancel and join send I/O while its cache, transport and repo still exist.
-      await attempt(() => sendResources.dispose());
-      cancelDelayedBackgroundSyncStart?.();
-      cancelDelayedBackgroundSyncStart = null;
-      cancelDelayedStartupAcpCapabilitiesRefresh?.();
-      cancelDelayedStartupAcpCapabilitiesRefresh = null;
-      startupAcpCapabilitiesRefreshAbortController?.abort();
-      startupAcpCapabilitiesRefreshAbortController = null;
-      backgroundSyncCoordinator?.stop();
-      backgroundSyncCoordinator = null;
-      backgroundSyncHighWaterStore?.close();
-      backgroundSyncHighWaterStore = null;
-      eagerSyncWorkerClient?.dispose();
-      eagerSyncWorkerClient = null;
-      localReconnectLoop?.stop();
-      cloudReconnectLoop?.stop();
-      webAttachReconnectLoop?.stop();
-      if (reconnectBackstopTimer) {
-        clearInterval(reconnectBackstopTimer);
-        reconnectBackstopTimer = null;
-      }
-      untrackPresenceSync();
-      unsubscribeStartupAcpCapabilitiesPresence();
-      unsubscribePresenceSyncState?.();
-      untrackMachineMonitorSync();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      transportReady.reject(new Error('Runtime disposed'));
+        untrackPresenceSync();
+        unsubscribeStartupAcpCapabilitiesPresence();
+        unsubscribePresenceSyncState?.();
+        untrackMachineMonitorSync();
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+        transportReady.reject(new Error('Runtime disposed'));
 
-      for (const pending of pendingSessionCreateResponses.values()) {
-        clearTimeout(pending.timeoutId);
-        pending.resolve(null);
-      }
-      pendingSessionCreateResponses.clear();
-      sessionCreateResponseCache.clear();
-
-      for (const pending of pendingSessionCancelResponses.values()) {
-        clearTimeout(pending.timeoutId);
-        pending.resolve(null);
-      }
-      pendingSessionCancelResponses.clear();
-
-      for (const pending of pendingSessionChatResponses.values()) {
-        clearTimeout(pending.timeoutId);
-        pending.resolve(null);
-      }
-      pendingSessionChatResponses.clear();
-
-      for (const pending of pendingMachineStatusResponses.values()) {
-        clearTimeout(pending.timeoutId);
-        pending.resolve(null);
-      }
-      pendingMachineStatusResponses.clear();
-
-      for (const pending of pendingMachinePingResponses.values()) {
-        clearTimeout(pending.timeoutId);
-        pending.resolve(null);
-      }
-      pendingMachinePingResponses.clear();
-
-      machineAcpBinaryStatusRegistry.clearAll();
-      machineAcpBinaryInstallRegistry.clearAll();
-      machineAcpAuthenticateRegistry.clearAll();
-      machineAcpBinaryProgressListeners.clear();
-      machineAcpBinaryProgressSnapshots.clear();
-      machineAcpAuthenticationProgressListeners.clear();
-      for (const machineId of machineProtocolCapabilitiesReads.keys()) {
-        invalidateMachineProtocolCapabilities(machineId);
-      }
-      machineProtocolCapabilitiesCache.clear();
-      machineProtocolCapabilitiesReads.clear();
-
-      for (const handle of watchHandles) {
-        try {
-          handle.unsubscribe();
-        } catch {
-          // ignore
+        for (const pending of pendingSessionCreateResponses.values()) {
+          clearTimeout(pending.timeoutId);
+          pending.resolve(null);
         }
-      }
-      watchHandles.length = 0;
+        pendingSessionCreateResponses.clear();
+        sessionCreateResponseCache.clear();
 
-      // These owners are independent. Start network retirement even if a store
-      // is still draining a slow save; wait for all before closing the Repo.
-      await Promise.all([
-        attempt(() => sessionStoreCache.disposeAll()),
-        attempt(() => previewVisualCommentStoreCache.disposeAll()),
-        attempt(() => scheduleStoreCache.disposeAll()),
-        attempt(() => codeCollabFileIndexCache.dispose()),
-        attempt(() => teardownTransport()),
-      ]);
+        for (const pending of pendingSessionCancelResponses.values()) {
+          clearTimeout(pending.timeoutId);
+          pending.resolve(null);
+        }
+        pendingSessionCancelResponses.clear();
 
-      // Teardown first fences/removes live bindings; SDK work can then unwind.
-      // Joining includes superseded generations, not just the latest attach.
-      await Promise.allSettled([
-        ...pendingWebAttaches,
-        metaRoomJoinPromise,
-        localTransportAttachPromise,
-      ]);
-      for (const result of await reconnectsClosed)
-        if (result.status === 'rejected') failures.push(result.reason);
-      // No reconnect sweep can add work after its loop has closed. Timed-out
-      // attempts may still be running, including attempts from earlier sweeps.
-      await Promise.allSettled(pendingCloudRejoins);
-      if (window.repo === repo) delete window.repo;
+        for (const pending of pendingSessionChatResponses.values()) {
+          clearTimeout(pending.timeoutId);
+          pending.resolve(null);
+        }
+        pendingSessionChatResponses.clear();
 
-      await attempt(() => repo.destroy());
-      if (failures.length === 1) throw failures[0];
-      if (failures.length) throw new AggregateError(failures, 'Workspace cleanup failed');
-    }).catch((error: unknown) => {
-      // disposePromise remains a permanent fence against new work. A later
-      // dispose retries retained owners without making the workspace live again.
-      disposeFailed = true;
-      throw error;
-    });
+        for (const pending of pendingMachineStatusResponses.values()) {
+          clearTimeout(pending.timeoutId);
+          pending.resolve(null);
+        }
+        pendingMachineStatusResponses.clear();
+
+        for (const pending of pendingMachinePingResponses.values()) {
+          clearTimeout(pending.timeoutId);
+          pending.resolve(null);
+        }
+        pendingMachinePingResponses.clear();
+
+        machineAcpBinaryStatusRegistry.clearAll();
+        machineAcpBinaryInstallRegistry.clearAll();
+        machineAcpAuthenticateRegistry.clearAll();
+        machineAcpBinaryProgressListeners.clear();
+        machineAcpBinaryProgressSnapshots.clear();
+        machineAcpAuthenticationProgressListeners.clear();
+        for (const machineId of machineProtocolCapabilitiesReads.keys()) {
+          invalidateMachineProtocolCapabilities(machineId);
+        }
+        machineProtocolCapabilitiesCache.clear();
+        machineProtocolCapabilitiesReads.clear();
+
+        for (const handle of watchHandles) {
+          try {
+            handle.unsubscribe();
+          } catch {
+            // ignore
+          }
+        }
+        watchHandles.length = 0;
+
+        // These owners are independent. Start network retirement even if a store
+        // is still draining a slow save; wait for all before closing the Repo.
+        await Promise.all([
+          attempt(() => sessionStoreCache.disposeAll()),
+          attempt(() => previewVisualCommentStoreCache.disposeAll()),
+          attempt(() => scheduleStoreCache.disposeAll()),
+          attempt(() => codeCollabFileIndexCache.dispose()),
+          attempt(() => teardownTransport()),
+        ]);
+
+        // Teardown first fences/removes live bindings; SDK work can then unwind.
+        // Joining includes superseded generations, not just the latest attach.
+        await Promise.allSettled([
+          ...pendingWebAttaches,
+          metaRoomJoinPromise,
+          localTransportAttachPromise,
+        ]);
+        for (const result of await reconnectsClosed)
+          if (result.status === 'rejected') failures.push(result.reason);
+        // Native Repo close joins SDK producers retained after waiter timeout.
+        if (window.repo === repo) delete window.repo;
+
+        await attempt(() => repo.destroy());
+        if (failures.length === 1) throw failures[0];
+        if (failures.length) throw new AggregateError(failures, 'Workspace cleanup failed');
+      })
+      .catch((error: unknown) => {
+        // disposePromise remains a permanent fence against new work. A later
+        // dispose retries retained owners without making the workspace live again.
+        disposeFailed = true;
+        throw error;
+      });
 
     return disposePromise;
   };

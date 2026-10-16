@@ -2,8 +2,8 @@
 
 Workspace roots call `make` from `loro-repo/effect` in their owning Scope.
 Borrow document and room leases in caller Scopes; `openDoc` preserves absence,
-while `createDoc` explicitly registers an identity. Directory and metadata sync
-helpers bind directly to that Repo, without an extra Context or Layer.
+while `createDoc` explicitly registers an identity. CLI directory reads and metadata
+confirmation use this Repo directly at their business entry points.
 
 `streams.ts` configures the native SDK with the existing token service.
 `local-transport.ts` is the product's v7 client. The previous client is a frozen
@@ -17,6 +17,14 @@ stops projections, then releases the native lease; failed release is automatical
 retried by the next acquire. Workspace shutdown continues independent cleanup and
 reports failures afterwards. Calling dispose again retries retained owners while
 new work stays fenced; unsettled writes keep their storage owner.
+
+Room handles retain the native `RoomLease` and the small UI status view still in
+use. Inventory and transport snapshots come from native leases; the local owner
+registry exists only to release borrows during purge. Native reconnect retries
+failed attaches and owns pending SDK work. Application recovery loops request
+that operation rather than supervising a second set of per-room rejoin jobs.
+Native waits at Promise entries use the room borrow's signal so retiring one
+Session cancels only its wait while independent borrowers remain writable.
 
 The writer records newly authored Provider rows. A local ACP probe waits for
 Machine Flock peer coverage only while its config has a pending write, returning

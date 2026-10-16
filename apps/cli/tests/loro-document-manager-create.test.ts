@@ -132,9 +132,6 @@ vi.mock('@lody/shared/workspace-data/repo-legacy', async (importOriginal) => {
           return () => {};
         };
         repo.runLegacy ??= Effect.runPromise;
-        repo.syncAuthority ??= {
-          refresh: () => Effect.tryPromise(() => repo.sync!({ scope: 'meta' })).pipe(Effect.asVoid),
-        };
         repo.acquireDocHandleLegacy ??= async (id: string) => ({
           ...(await repo.openPersistedDoc!(id)),
           release: async () => {},
@@ -285,6 +282,60 @@ const originalHomeEnv = process.env.HOME;
 let tempHomeDir: string | undefined;
 
 describe('LoroDocumentManager.create degraded startup behavior', () => {
+  it.each([true, false])(
+    'uses native metadata authority without a second service (cloud=%s)',
+    async (cloud) => {
+      const { WorkspaceRepoLegacy: NativeRepo } = await vi.importActual<
+        typeof import('@lody/shared/workspace-data/repo-legacy')
+      >('@lody/shared/workspace-data/repo-legacy');
+      const { SubscriptionRef } = await import('effect');
+      const repo = await NativeRepo.create({
+        authority: cloud ? { mode: 'remote', transports: ['streams'] } : { mode: 'local' },
+      });
+      const manager = new LoroDocumentManager({
+        repo,
+        workspaceId: 'authority-test' as WorkspaceId,
+        userId: 'user-1',
+        metaSub: null,
+        logger: createSilentLogger(),
+        streamsTokens: cloud ? testStreamsTokens : null,
+      });
+      let online = true;
+      try {
+        if (cloud)
+          await expect(manager.syncMetaOrThrow()).rejects.toThrow('Workspace metadata sync failed');
+        await repo.addTransport('streams', {
+          kind: 'native-workspace-transport',
+          make: (id) =>
+            Effect.succeed({
+              id,
+              authority: cloud ? 'server' : 'peer',
+              connect: Effect.void,
+              disconnect: Effect.void,
+              join: () =>
+                Effect.gen(function* () {
+                  return {
+                    status: yield* SubscriptionRef.make<'synced'>('synced'),
+                    close: Effect.void,
+                    sync: Effect.sync(() =>
+                      online ? ('confirmed' as const) : ('offline' as const)
+                    ),
+                  };
+                }),
+            }),
+        });
+        await manager.syncMetaOrThrow();
+        online = false;
+        if (cloud)
+          await expect(manager.syncMetaOrThrow()).rejects.toThrow('Workspace metadata sync failed');
+        else await manager.syncMetaOrThrow();
+        online = true;
+        await manager.syncMetaOrThrow();
+      } finally {
+        await manager.cleanUp({ fast: true });
+      }
+    }
+  );
   beforeEach(async () => {
     vi.clearAllMocks();
     mocks.transportOptions.length = 0;

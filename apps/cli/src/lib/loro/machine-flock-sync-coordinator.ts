@@ -1,6 +1,7 @@
 import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import { getMachineFlockDocId, type MachineId, type WorkspaceId } from '@lody/shared';
-import type { RepoTransportRoomStatus, TransportSubscription } from 'loro-repo';
+import type { RepoTransportRoomStatus } from 'loro-repo';
+import type { WorkspaceRoom as TransportSubscription } from '@lody/shared/workspace-data/repo-legacy';
 
 import { formatErrorMessage } from '@/utils/format-error';
 import type { Logger } from '@/utils/logger';

@@ -12,15 +12,9 @@ const files = [
   'apps/cli/src/lib/loro/presence-replica.ts',
   'apps/cli/src/lib/loro/session-active-presence.ts',
 ];
-const workspaceFiles = [
-  'ownership',
-  'transport',
-  'streams',
-  'local-transport',
-  'session-directory',
-  'sync-authority',
-  'services',
-].map((name) => `packages/shared/src/workspace-data/${name}.ts`);
+const workspaceFiles = ['ownership', 'transport', 'streams', 'local-transport'].map(
+  (name) => `packages/shared/src/workspace-data/${name}.ts`
+);
 const forbidden = new Set([
   'Promise',
   'AbortController',

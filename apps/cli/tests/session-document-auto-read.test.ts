@@ -1,6 +1,8 @@
 import { LoroMap } from 'loro-crdt';
 import { updateTestHistory } from './history-port-fixture';
 import { describe, expect, it, vi } from 'vitest';
+import { Effect, SubscriptionRef } from 'effect';
+import type { RoomStatus } from 'loro-repo/effect';
 
 import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import { v4 as uuidv4 } from 'uuid';
@@ -23,6 +25,94 @@ const createUserEntry = (id: string, text: string): SessionHistoryInput => ({
 });
 
 describe('SessionDocument auto read', () => {
+  it('rejects an explicit room rejoin without a route instead of parking readiness', async () => {
+    const repo = await WorkspaceRepoLegacy.create({});
+    const session = new SessionDocument(repo, uuidv4() as SessionId, async () => {});
+    try {
+      await session.initOffline({ history: [] });
+      session.docSub = await repo.joinDocRoom(session.roomId);
+      await expect(session.rejoinDocRoom()).rejects.toMatchObject({ _tag: 'RepoUnsupported' });
+    } finally {
+      await session.destroy({ preserveStatus: true });
+      await repo.destroy();
+    }
+  });
+  it.each(['reconnect', 'readiness'] as const)(
+    'retires its own room during %s while another borrower survives',
+    async (phase) => {
+      const repo = await WorkspaceRepoLegacy.create({});
+      const session = new SessionDocument(repo, uuidv4() as SessionId, async () => {});
+      const entered = Promise.withResolvers<void>();
+      const reconnect = Promise.withResolvers<void>();
+      await session.initOffline({ history: [] });
+      await repo.addTransport('streams', {
+        kind: 'native-workspace-transport',
+        make: (id) =>
+          Effect.succeed({
+            id,
+            authority: 'server',
+            connect: Effect.void,
+            disconnect: Effect.void,
+            join: () =>
+              Effect.gen(function* () {
+                return {
+                  status: yield* SubscriptionRef.make<RoomStatus>('joining'),
+                  close: Effect.void,
+                  sync: Effect.succeed('confirmed' as const),
+                };
+              }),
+          }),
+      });
+      const room = await repo.joinDocRoom(session.roomId);
+      const other = await repo.joinDocRoom(session.roomId);
+      session.docSub = room;
+      vi.spyOn(repo, 'reconnect').mockImplementation(async () => {
+        if (phase === 'reconnect') {
+          entered.resolve();
+          await reconnect.promise;
+        }
+        return { ok: true, rooms: [], failed: [] };
+      });
+      if (phase === 'readiness') {
+        const awaitSynced = room.native.awaitSynced;
+        vi.spyOn(room.native, 'awaitSynced').mockImplementation((id) =>
+          Effect.gen(function* () {
+            entered.resolve();
+            yield* awaitSynced(id);
+          })
+        );
+      }
+      const rejoining = session.rejoinDocRoom();
+      const settled = rejoining.then(
+        () => undefined,
+        (error: unknown) => error
+      );
+      try {
+        await entered.promise;
+        await session.destroy({ preserveStatus: true });
+        reconnect.resolve();
+        const result = await settled;
+        if (phase === 'readiness') expect(result).toBeInstanceOf(Error);
+        else expect(result).toBeUndefined();
+        expect(session.isDestroyed).toBe(true);
+        expect(session.docSub).toBeNull();
+        expect(room.signal.aborted).toBe(true);
+        expect(other.signal.aborted).toBe(false);
+        expect(other.native.replica.kind).toBe('doc');
+        if (other.native.replica.kind === 'doc') {
+          other.native.replica.lease.doc.getText('survivor').insert(0, 'still writable');
+          expect(other.native.replica.lease.doc.getText('survivor').toString()).toBe(
+            'still writable'
+          );
+        }
+      } finally {
+        reconnect.resolve();
+        other.unsubscribe();
+        await session.destroy({ preserveStatus: true });
+        await repo.destroy();
+      }
+    }
+  );
   it.each(['destroy', 'reinitialize'] as const)(
     'invalidates its local room after a failed save and retries on %s',
     async (retry) => {
