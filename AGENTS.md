@@ -12,20 +12,18 @@ Repository map and entry points: [README.md](README.md#repository).
 - Specs express intent, docs explain implementation, notes record decisions.
   Distinguish bugs, stale docs, and unimplemented intent using code and evidence;
   never change a Spec to justify a bug.
-- Reserve [Specs](specs/AGENTS.md) for consequential product, architecture, or
-  protocol decisions needing human review. Prefer updating an existing Spec;
-  ordinary fixes and implementation changes do not require a new one.
-  Changes to reviewed intent/guarantees return that Spec to `draft`. `approved`
-  requires linked human approval of that revision; `outdated` needs review.
-  Only meaning-preserving editorial edits may retain approval.
-- Non-trivial work MUST add/update the owning [Agent Note](.agents/notes/AGENTS.md#when-to-write)
-  in the same PR; substantial research/design also requires a note without a PR.
-  Only mechanical/local edits without changed decisions are exempt. Link different
-  decisions; proposals stay `proposed`. Read-only tasks report deferred updates.
+- Before creating or editing a Spec, read [Spec rules](specs/AGENTS.md), including
+  status and approval requirements. Reserve Specs for consequential decisions
+  needing human review; prefer an existing Spec. Ordinary fixes need no new Spec.
+- Non-trivial work MUST add/update its [Agent Note](.agents/notes/AGENTS.md#when-to-write)
+  in the same PR; substantial research/design needs a note without a PR too.
+  Only mechanical/local edits without changed decisions are exempt. Link distinct
+  decisions, keep proposals `proposed`, and report deferred notes for read-only work.
 - Update affected docs/READMEs. Run `pnpm run docs status` at start and
   `pnpm run docs check` at finish; review SHA-protected changes before confirming.
-  Checks and translations prove neither correctness nor approval. Translation may
-  follow later. Details: [document maintenance](.agents/README.md).
+  Checks and translations establish neither correctness nor approval; translation
+  may follow later. See [document maintenance](.agents/README.md).
+- Keep PR docs compact: consolidate decisions, evidence and limits; avoid fix/run logs.
 - Keep binding rules in the nearest `AGENTS.md` (<8 KiB; new scopes need a
   `CLAUDE.md` symlink). Keep explanations and rationale in their owning docs/notes.
 
@@ -102,10 +100,9 @@ simple; use the guide's responsibility split only when a large module needs it.
   Test the real boundary and resulting state, including failure paths; retain
   meaningful compile-failure contracts. Extend the owning suite instead of adding
   a file per small fix. Do not delete behavioral coverage merely to reduce counts.
-- Keep PR documentation compact: update owning docs and Notes; update a Spec only
-  when its reviewed intent is affected. Avoid incremental fix/run-log documents.
-  Consolidate redundant PR-local notes, retaining
-  decisions, reproducible evidence and unresolved limits; repair inbound links.
+- Before changing teardown, retry, fencing or readiness, read
+  [failure containment](.agents/docs/failure-containment.md); preserve verified safe
+  reuse and bounded ownership while isolating independent work.
 - Keep edits traceable to the request and preserve unrelated work. Prefer explicit
   contracts over hidden fallbacks; remove only unused code. Update the nearest
   public `AGENTS.md` when an invariant or boundary changes.
@@ -117,5 +114,6 @@ remains, react 👍. Details: [.github/codex-review.md](.github/codex-review.md)
 
 - P0: exploitable security, secret leak, auth/capability bypass, data loss, or a
   broken public/cloud/local boundary.
-- P1: likely shipped breakage or a durable catalog/session contract violation.
+- P1: likely shipped breakage, including a failure-containment regression, or a
+  durable catalog/session contract violation.
 - Skip style, nits, P2+, extra tests, and duplication under 100 lines.
