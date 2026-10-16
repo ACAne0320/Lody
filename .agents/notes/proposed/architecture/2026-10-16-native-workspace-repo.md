@@ -19,6 +19,17 @@ remains a proposal, including host storage relocation and upper Session/Turn wor
 
 ## Responsibilities and behavior
 
+The lockfile retains the older Streams graph still pinned by E2EE packages added
+on main: CRDT 0.17.0 uses Client 0.10.0, alongside their Client 0.9.0 reference.
+Pruning those records during this upgrade leaves dangling references in GitHub's
+automatic PR merge even though the branch installs by itself. Preserve the exact
+existing package integrity and snapshots; the workspace catalog still selects
+Client 0.12.0 and CRDT 0.19.0. Validate frozen installation on the merged tree,
+not only lockfile-only resolution, which does not detect this missing graph.
+The failing CI merge reproduces the missing dependency before the repair and
+completes an offline frozen install afterwards with lifecycle scripts disabled;
+that verifies dependency closure, not native builds or the full test suite.
+
 - Workspace roots own one native Repo over existing SQLite or renderer IndexedDB.
   Consumers borrow Doc, Flock and room leases in child Scopes. Opening absence
   and creating business identity remain distinct; local mode performs no cloud I/O.

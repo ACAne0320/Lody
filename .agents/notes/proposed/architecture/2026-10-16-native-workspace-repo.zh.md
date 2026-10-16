@@ -12,6 +12,14 @@ PR: [#1607](https://github.com/LodyAI/Lody/pull/1607)
 
 ## 职责与行为
 
+锁文件保留 main 新增 E2EE 包仍锁定的旧 Streams 依赖图：CRDT 0.17.0
+依赖 Client 0.10.0，另有 Client 0.9.0 引用。升级时裁掉这些记录，会让 GitHub
+自动合并结果出现悬空引用，即使 PR 分支本身能够安装。补回既有的完整性校验值与
+snapshot，workspace catalog 仍选择 Client 0.12.0 和 CRDT 0.19.0。
+应在合并结果上验证冻结安装；仅做 lockfile-only 解析无法发现这类缺失依赖图。
+失败的 CI 合并树在修复前可复现缺失依赖，修复后完成了关闭生命周期脚本的离线冻结安装；
+这验证依赖图闭合，不代表原生构建或完整测试套件通过。
+
 - Workspace 在既有 SQLite 或 renderer IndexedDB 上拥有一个原生 Repo；消费者在子 Scope 中借用 Doc、Flock、room lease。打开缺失与创建业务身份不同；本地模式不请求云端。
 - 原生 Streams transport 复用 token 服务和副本绑定 checkpoint；前台显式沿用同一存储的 Doc cursor，预取 worker 使用隔离副本和易失 cursor。peer baseline、服务端确认和本地持久化不能互相替代。
 - CLI 目录读取和元数据确认在既有业务入口组合原生 Repo 操作，删除只有一个消费者的目录与权威对象、未使用的查询选项和兼容方法；保留身份规范化、删除过滤、排序与每次新的服务端确认。
