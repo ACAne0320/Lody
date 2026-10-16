@@ -49,10 +49,10 @@ import {
 import type { RemoteCursorStore } from '@loro-dev/streams-crdt';
 import type { NativeWorkspaceTransport, WorkspaceNativeTransport } from './transport';
 export type { NativeWorkspaceTransport } from './transport';
-import { makeWorkspaceRepo } from './repo';
-import { workspaceDataLayer } from './services';
+import { make as makeWorkspaceRepo } from 'loro-repo/effect';
+import { makeSessionDirectory, makeSyncAuthority } from './services';
 import { DataReadSyncFailed } from './sync-authority';
-import { acquireWorkspaceScope, recoverRepoRelease, type WorkspaceOwnedScope } from './ownership';
+import { acquireWorkspaceScope, type WorkspaceOwnedScope } from './ownership';
 
 /** Preserve typed failures and defects, including release retry owners. Never log this object. */
 export class WorkspaceRepoLegacyFailure extends Error {
@@ -166,7 +166,8 @@ const roomStatus = (state: RoomState): RepoTransportRoomStatus => {
  */
 export class WorkspaceRepoLegacy {
   readonly native: Repo;
-  readonly dataLayer: ReturnType<typeof workspaceDataLayer>;
+  readonly sessionDirectory: ReturnType<typeof makeSessionDirectory>;
+  readonly syncAuthority: ReturnType<typeof makeSyncAuthority>;
   private readonly scope: Scope.Closeable;
   private readonly consumers: WorkspaceOwnedScope;
   private readonly meta: FlockLease;
@@ -182,7 +183,6 @@ export class WorkspaceRepoLegacy {
     Set<(status: 'connected' | 'connecting' | 'disconnected') => void>
   >();
   private readonly statuses = new Map<string, string>();
-  private readonly failures: Cause.Cause<unknown>[] = [];
   private closing = false;
   private released = false;
   private closeReceipt?: Promise<void>;
@@ -195,7 +195,8 @@ export class WorkspaceRepoLegacy {
     consumers: WorkspaceOwnedScope
   ) {
     this.native = native;
-    this.dataLayer = workspaceDataLayer(native, {
+    this.sessionDirectory = makeSessionDirectory(native);
+    this.syncAuthority = makeSyncAuthority(native, {
       local: options.authority?.mode !== 'remote',
       serverTransports: options.authority?.mode === 'remote' ? options.authority.transports : [],
     });
@@ -263,14 +264,17 @@ export class WorkspaceRepoLegacy {
       effect.pipe(
         Effect.catchCause((cause) =>
           Effect.sync(() => {
-            if (!Cause.hasInterruptsOnly(cause)) this.failures.push(cause);
+            if (!Cause.hasInterruptsOnly(cause))
+              console.warn(
+                'Workspace Repo background task failed; independent cleanup will continue'
+              );
           })
         ),
         Effect.forkIn(scope)
       )
     ).addObserver((exit) => {
       if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-        this.failures.push(exit.cause);
+        console.warn('Workspace Repo background task failed; independent cleanup will continue');
     });
   }
 
@@ -564,26 +568,12 @@ export class WorkspaceRepoLegacy {
     this.closing = true;
     this.closeReceipt = this.runLegacy(
       Effect.gen({ self: this }, function* () {
-        const observed: Cause.Cause<unknown>[] = [];
-        for (const cause of this.failures) {
-          const releases = cause.reasons.every(
-            (reason) =>
-              (Cause.isFailReason(reason)
-                ? reason.error
-                : Cause.isDieReason(reason)
-                  ? reason.defect
-                  : undefined) instanceof RepoReleaseFailed
-          );
-          if (releases) yield* recoverRepoRelease(cause);
-          else observed.push(cause);
-        }
-        this.failures.length = 0;
-        this.failures.push(...observed);
+        // Each borrower owner remains registered here, including failed manual
+        // releases. Retry those owners, rather than replaying historical stream errors.
         yield* this.consumers.close;
         yield* this.native.close;
         yield* Scope.close(this.scope, Exit.succeed(undefined));
         this.released = true;
-        if (this.failures.length) yield* Effect.failCause(this.failures.reduce(Cause.combine));
       })
     ).finally(() => {
       this.closeReceipt = undefined;

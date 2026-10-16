@@ -1,4 +1,3 @@
-import { SessionDirectory } from '@lody/shared/workspace-data/session-directory';
 import { closeLoginShellApplicationLegacy } from '@/agent/login-shell-env';
 import {
   createServerTimeFetcher,
@@ -483,9 +482,7 @@ export async function listAliveSessionMetas(
   manager: Pick<LoroDocumentManager, 'repo'>
 ): Promise<Array<{ roomId: string; meta: SessionMeta }>> {
   const sessions = await manager.repo.runLegacy(
-    Effect.flatMap(SessionDirectory, (directory) => directory.list({ archive: 'any' })).pipe(
-      Effect.provide(manager.repo.dataLayer)
-    )
+    manager.repo.sessionDirectory.list({ archive: 'any' })
   );
   return sessions.map((meta) => ({ roomId: getSessionRoomId(meta.id), meta }));
 }

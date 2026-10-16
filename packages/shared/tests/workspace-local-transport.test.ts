@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Stream } from 'effect';
 import { LoroDoc } from 'loro-crdt';
-import { makeWorkspaceRepo } from '../src/workspace-data/repo';
+import { make as makeWorkspaceRepo } from 'loro-repo/effect';
 import { WorkspaceRepoLegacy } from '../src/workspace-data/repo-legacy';
 import {
   makeLocalWorkspaceTransport,
@@ -50,6 +50,7 @@ function wire(
     },
   };
   return {
+    server,
     listeners,
     statuses,
     connection: {
@@ -86,6 +87,54 @@ function wire(
 }
 
 describe('native local v7 transport', () => {
+  it('automatically rejoins an invalidated host room and resumes incoming edits', async () => {
+    const remote = new LoroDoc();
+    remote.getText('body').insert(0, 'baseline');
+    remote.commit();
+    const harness = wire(remote);
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const repo = yield* makeWorkspaceRepo();
+            yield* repo.attachTransport(
+              yield* makeLocalWorkspaceTransport('local', {
+                workspaceId: 'ws',
+                peerId: 'peer-a',
+                connection: harness.connection,
+              })
+            );
+            const lease = yield* repo.acquireDoc('session-a');
+            const room = yield* repo.acquireRoom({ kind: 'doc', id: 'session-a' });
+            yield* room.sync('local');
+            const epoch = (yield* room.stateSnapshot('local')).epoch;
+            harness.server.invalidateDocRoom('session-a');
+            yield* room.state('local').pipe(
+              Stream.filter((state) => state.epoch > epoch && state.current),
+              Stream.runHead
+            );
+            const imported = Promise.withResolvers<void>();
+            yield* Effect.acquireRelease(
+              Effect.sync(() =>
+                lease.doc.subscribe(() => {
+                  if (lease.doc.getText('body').toString() === 'baseline after') imported.resolve();
+                })
+              ),
+              (unsubscribe) => Effect.sync(unsubscribe)
+            );
+            remote.getText('body').insert(8, ' after');
+            remote.commit();
+            yield* Effect.promise(() => imported.promise);
+            expect(lease.doc.getText('body').toString()).toBe('baseline after');
+          })
+        )
+      );
+    } finally {
+      await harness.close();
+      remote.free();
+    }
+  });
+
   it('confirms a Machine Flock write only after the real peer has imported its configuration', async () => {
     await Effect.runPromise(
       Effect.scoped(

@@ -472,7 +472,7 @@ describe('createManagedStoreCache', () => {
 });
 
 describe('asynchronous native store release', () => {
-  it('joins release before replacement and retains a failed owner until explicit retry', async () => {
+  it('joins release before replacement and automatically retries a failed owner on the next acquire', async () => {
     const started = Promise.withResolvers<void>();
     const finish = Promise.withResolvers<void>();
     let failing = true;
@@ -499,7 +499,6 @@ describe('asynchronous native store release', () => {
     await expect(cache.get('session-a')).rejects.toThrow('retained native release');
     failing = false;
     generation++;
-    await cache.release('session-a');
     expect((await cache.get('session-a')).generation).toBe(2);
     await cache.disposeAll();
   });

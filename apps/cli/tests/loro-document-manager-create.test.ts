@@ -116,7 +116,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@lody/shared/workspace-data/repo-legacy', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@lody/shared/workspace-data/repo-legacy')>();
-  const { SyncAuthority } = await import('@lody/shared/workspace-data/sync-authority');
   return {
     ...actual,
     WorkspaceRepoLegacy: {
@@ -133,9 +132,9 @@ vi.mock('@lody/shared/workspace-data/repo-legacy', async (importOriginal) => {
           return () => {};
         };
         repo.runLegacy ??= Effect.runPromise;
-        repo.dataLayer ??= Layer.succeed(SyncAuthority, {
+        repo.syncAuthority ??= {
           refresh: () => Effect.tryPromise(() => repo.sync!({ scope: 'meta' })).pipe(Effect.asVoid),
-        });
+        };
         repo.acquireDocHandleLegacy ??= async (id: string) => ({
           ...(await repo.openPersistedDoc!(id)),
           release: async () => {},

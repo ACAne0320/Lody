@@ -108,6 +108,84 @@ afterEach(async () => {
 });
 
 describe('PromptShortcutSync native SDK ownership', () => {
+  it('closes local shortcut storage after remote close fails and retries retirement', async () => {
+    const repo = await createRepo();
+    const store = await LocalShortcutStore.open({ repo, workspaceId, userId });
+    const disposeStore = store.dispose.bind(store);
+    let storeClosed = false;
+    store.dispose = async () => {
+      await disposeStore();
+      storeClosed = true;
+    };
+    let blocked = true;
+    let remoteClosed = false;
+    const remote = noopPublicationPort(async () => {
+      throw new Error('Unexpected acquire');
+    });
+    remote.dispose = async () => {
+      if (blocked) throw new Error('synthetic remote close failure');
+      remoteClosed = true;
+    };
+    const runtime = new PromptShortcutRuntime(store, remote);
+    cleanups.push(async () => {
+      blocked = false;
+      await runtime.dispose();
+      await repo.destroy();
+    });
+    await expect(runtime.dispose()).rejects.toThrow('Shortcut cleanup failed');
+    expect(storeClosed).toBe(true);
+    expect(remoteClosed).toBe(false);
+    expect(() => runtime.setDirectory([])).toThrow('disposed');
+    blocked = false;
+    await runtime.dispose();
+    expect(remoteClosed).toBe(true);
+  });
+
+  it('automatically retries a failed release before reopening the same shortcut', async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), 'lody-shortcut-retry-'));
+    directories.push(baseDir);
+    const adapter = new FileSystemStorageAdaptor({ baseDir });
+    const save = adapter.save.bind(adapter);
+    let blocked = false;
+    adapter.save = async (payload) => {
+      if (blocked && (payload.type === 'doc-update' || payload.type === 'doc-snapshot'))
+        throw new Error('synthetic shortcut persistence failure');
+      await save(payload);
+    };
+    const repo = await LoroRepo.create({ storageAdapter: adapter });
+    const streamId = getShortcutBodyStreamId('retry');
+    const sync = new PromptShortcutSync({
+      repo,
+      now: () => 0,
+      grant: async () => ({
+        token: 'synthetic',
+        expiresIn: 3600,
+        gatewayBaseUrl: 'https://shortcut.invalid',
+        streamId,
+      }),
+    });
+    cleanups.push(async () => {
+      blocked = false;
+      await sync.dispose();
+      await repo.destroy();
+    });
+    const resource = { kind: 'body', bodyDocId: 'retry' } as const;
+    const first = await sync.acquire(resource, true);
+    const author = await repo.acquireDoc(streamId);
+    author.doc.getText('body').insert(0, 'survives failed close');
+    author.doc.commit();
+    await author.release();
+    blocked = true;
+    await expect(first.release()).rejects.toThrow();
+    await expect(sync.acquire(resource, true)).rejects.toThrow();
+    blocked = false;
+    const recovered = await sync.acquire(resource, true);
+    const reader = await repo.acquireDoc(streamId);
+    expect(reader.doc.getText('body').toString()).toBe('survives failed close');
+    await reader.release();
+    await recovered.release();
+  });
+
   it('imports a read-only body without echo uploads and retains it for another borrower', async () => {
     const repo = await createRepo();
     const author = new LoroDoc();

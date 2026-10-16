@@ -8,46 +8,28 @@ PR: [#1607](https://github.com/LodyAI/Lody/pull/1607)
 
 ## 摘要
 
-用户要求在正式依赖接入的同一个 PR 中完成内部原生接线。CLI、renderer、预取 worker 和私有快捷指令 durable room 现在消费 `loro-repo/effect` 或 Streams 原生 SDK，由一个 workspace Scope 拥有 Repo 和 transport。现有应用 Promise API 经过唯一、明确废弃的执行入口，底层共享同一个原生 Repo。WorkspaceData 仍是提案；本次不把 renderer 存储迁往新 host，也不宣称上层 Session/Turn 已完成迁移。
+用户要求在[正式依赖升级](../../implemented/architecture/2026-10-16-streams-repo-release-adoption.zh.md)的同一个 PR 中接入原生消费者。CLI、renderer、预取 worker 和私有快捷指令 room 使用已发布的 Repo/SDK；一个 workspace Repo 拥有副本，现有 Promise API 经过唯一的废弃 facade。审查发现局部释放失败会截断清理链，并留下无法从正常获取入口恢复的隔离状态；现改为继续独立清理，并在下次获取时重试保留的 owner。包括 host 存储迁移和上层 Session/Turn 工作在内的 [WorkspaceData 设计](2026-10-14-workspace-data-services.zh.md)仍是提案。
 
-## 行为合同
+## 职责与行为
 
-- 触发：workspace 初始化在既有 SQLite 或每个 renderer 的 IndexedDB 上创建唯一 Repo；本地模式不请求云端。
-- 所有者：workspace 拥有 Repo，消费者在子 Scope 中借用文档和房间；打开缺失与创建业务身份分开。
-- 取消：关闭一个消费者只释放其 lease，不驱逐其他借用者的副本，也不取消共享且已接受的上传 producer。
-- 交接：Streams 使用原生 transport 和副本绑定 checkpoint；前台原地升级显式沿用同一存储的 Doc cursor；服务端确认、peer 收敛与本地持久化独立。
-- 恢复：释放失败保留完整 Cause 和 retry owner，未完成已接受 I/O 时不得替换 owner 或关闭存储。
+- Workspace 在既有 SQLite 或 renderer IndexedDB 上拥有一个原生 Repo；消费者在子 Scope 中借用 Doc、Flock、room lease。打开缺失与创建业务身份不同；本地模式不请求云端。
+- 原生 Streams transport 复用 token 服务和副本绑定 checkpoint；前台显式沿用同一存储的 Doc cursor，预取 worker 使用隔离副本和易失 cursor。peer baseline、服务端确认和本地持久化不能互相替代。
+- 目录与元数据权威 helper 直接绑定既有 Repo。删除无人使用的 WorkspaceRepo Context/Layer/acquire 包装；当前唯一目标的 refresh 直接接收策略，不再构造另一套服务图。
+- 本机 v7 客户端拥有 worker、期限和有界队列，含约 64 MiB 的字符串保留预算。分块输入必须完整且版本覆盖公告 frontier；普通写入不增加 join epoch。旧客户端仅作为测试 fixture 保留 host 协议兼容覆盖，没有产品导出或应用导入；原生客户端测试连接真实 v7 host。
+- Legacy 房间投影包含实际路由与 attachment：缺席路由为 detached，即使新原生 detail ref 初始为 joining。首次同步等待跨越主动缺席，但实际已挂载路由失败会拒绝等待。
 
-## 实现边界
+## 释放、恢复与因果交接
 
-原生内核包含 Repo 组合、基于 catalog 的 SessionDirectory、要求新鲜服务端确认的 SyncAuthority、transport 配置、本机 v7 客户端及可重试的借用 Scope。CLI/MCP 目录读取使用这些 Service；CLI session handle 和 renderer 的 session/preview/schedule store 使用原生 lease。预取 worker 使用独立原生 Repo、transport 和易失 checkpoint。私有快捷指令 room 使用原生 durable SDK，但 grant 和发布流程仍是尚未迁移的应用边界。
+上游副本释放在取消订阅前提交并保存文档和元数据。失败会保留 `RepoReleaseFailed.retry` 及已接受的 I/O；再次获取有可能必须先成功完成旧释放，才能构建副本。SDK close 停止网络准入并等待已接受的工作，不代表发起一次新的服务端上传确认；单纯离线不能证明快捷指令 close 必然失败。
 
-`WorkspaceRepoLegacy` 是唯一执行入口，底层没有旧 Repo；静态 AST guard 禁止原生模块启动程序或导入 Legacy。关闭时必须先结束消费者，再关闭 Repo，否则 Repo 会等待尚未释放的 lease。Scope finalizer 只执行一次，失败后保留 `RepoReleaseFailed.retry`，不能假装再次 Scope.close 会重试保存。store cache 保留释放失败的 owner，在成功重试前拒绝替换。
+关闭先结束借用者再关闭 Repo，但一个 store 失败不能跳过其他 store、transport 清理、join 收尾或 Repo 关闭。Runtime 尝试这些独立步骤后统一报告错误；再次 dispose 会重试保留的 owner，且不重新允许新工作。RuntimeProvider 按 workspace 保留可重试关闭；一个关闭失败不阻塞其他 workspace，重开同一存储前先重试旧 owner。快捷指令根按数据库执行相同约束；runtime、远端、index 或 store 的失败不会跳过其他清理及 Repo 关闭，已经 disposed 的 runtime 仍能重试未完成的退休。Session lease 释放失败后仍使本机房间失效，私有保留重试 handle。cache/shortcut 下次 acquire 自动重试退休中的 owner。本次没有采纳“重试仍失败也重建”：这可能遗留 SDK producer，原生 Repo 本身也可能还需完成旧释放。持续的存储故障仍会明确失败，但恢复不再依赖外部显式解锁。
 
-本机客户端保留 v7 协议和物理连接，用 Effect worker 管理导入、追赶、有界队列和期限。分块快照必须完整且版本覆盖远端公告的 frontier，单独的 join header 不算成功。peer 回执不等于服务端确认。输入队列同时限制项数和约 64 MiB 的字符串保留量，溢出明确要求重取快照；本地编辑不递增 epoch。
+后台 stream 失败只输出不带 payload 的诊断，不再无限保留历史 Cause，也不会让后来成功的 destroy 报失败。Scope finalizer 只运行一次；小型 ownership helper 保留原生 retry owner，而不是假装重新关闭失败 Scope 能重试。日志不包含私有 Cause 或 grant。
 
-前台根只在同一存储上沿用 Doc cursor，Meta/Flock checkpoint 始终绑定原生副本。Streams 借用既有原生 token 服务，不另建 token cache。协议错误保留私有完整 Cause，日志只读取上游验证后的安全标量投影。
-
-自动恢复保留仍在建立 baseline 的 generation；仅显式重置 backoff 或 offline/failed 路由才替换它。pnpm 的不同 peer context 可能持有不同的 Repo 错误类，因此诊断桥接识别来源构造器，并用调用方绑定的构造器创建安全投影。真实 HTTP 503 的 MCP 回归验证可重试语义，不输出私有失败内容。
-
-Legacy 房间投影必须结合实际 attachment 和路由：新查询的原生 detail ref 在 transport 缺席时也从 `joining` 开始；缺席应投影为 `detached`，保持纯本地 workspace 健康。首次同步等待在主动缺席时保持待定，挂载并建立 baseline 后完成；实际已挂载房间的失败仍会拒绝等待。CI 中六个桌面启动失败暴露了该遗漏，真实零云 CLI 组合及挂载前/挂载后/移除回归现已覆盖此合同。观察测试也在向 SessionDocument 交接前借用可释放的原生 handle。
-
-修正后原生所有权/renderer 恢复 62 项、CLI 观察/零云/恢复 18 项通过。此前 CI 的静态检查、全部 components 分片、其他包、conversation 浏览器测试和真实桌面构建均通过；最终 CLI 与桌面场景结果仍需修正后的提交验收。
-
-配置保存仍然本地优先，但不会自动约束独立的进程启动通道。本机 ACP 能力探测先获取 Machine Flock 在指定本机 peer 上的原生房间回执，以版本覆盖证明机器已导入刚写入的配置；缺席或离线回执阻止启动。云 transport 不参与这次本机交接，peer 覆盖也不等于服务端权威。这恢复了同步本机发送回调改成异步 Effect worker 后丢失的因果顺序。测试在交接前阻止启动、拒绝未确认回执，并通过真实 v7 server 和原生 transport 同步真实 Flock 配置。
-
-等待交接期间调用取消或 workspace 关闭也会阻止启动；晚到的回执不能在调用所属 workspace 关闭后再发起进程探测。
-
-Legacy 元数据观察者在投递 patch 时读取已完成的 catalog 行，避免原生逐行事件让历史就绪检查看到 owner/backend 的中间组合。既有纯内存 Legacy persist 方法保留空操作语义；原生 lease.persist 仍要求存储，不能把内存当成持久化。
+配置保存保持本地优先。Writer 在提交本窗口编写的 Provider 行后记录待交接 token；只有该配置存在待交接写入时，probe 才等待指定本机 Machine Flock peer 的回执。没有待交接写入的启动、backstop、强制刷新不新增数据面依赖。确认只清除调用捕获的 token，不吞掉并发的新写入；未确认或超时返回失败响应并保留 token 供重试。取消或 dispose 阻止晚到回执启动进程；云 transport 和服务端权威不参与这次本机交接。
 
 ## 验证与限制
 
-行为覆盖：共享文档与最后释放、缺失正文和存储加载失败、保存失败重试、catalog 观察、新鲜服务端权威；真实 SQLite/IndexedDB 的 Streams checkpoint 和受保护快照；真实本机 v7 server 在丢写后的收敛；预取分块；store 异步释放失败与替换隔离；私有只读快捷指令使用原生 SDK 同步且不回传更新。
+行为回归覆盖 cache/shortcut 释放失败后的自动恢复、共享副本、保存失败后原始字节保留、后台 observer 失败后正常关闭、workspace 清理的继续与重试、Session 释放失败后的本机房间失效，以及仅对待交接配置生效的 probe、取消和 dispose。原生 v7 host、旧 peer 兼容、快照与 Streams 套件分别保留协议覆盖；最终检查结果记录在 PR。
 
-workspace 关闭回归确认：保存失败返回类型化的 `RepoReleaseFailed`，存储保持打开，重试先完成原始字节保存再关闭。历史所有权/恢复覆盖 62 项；ACP batching 测试只伪造 timeout 与 Date，保留原生 fiber 的真实调度。
-
-最终受影响包类型检查和 `check:quick` 通过；shared 1,512 项、最终 CLI/MCP 203 项、renderer 恢复 50 项、原生所有权/Streams 与既有 iOS 套件 73 项通过。根 `format` 通过。CLI、OSS desktop 构建及 CLI bundle 导入/启动检查通过，但早于最后的恢复/诊断修正，最终提交仍需 CI 重新构建。
-
-已运行完整根 `check`，尚未全绿：迁移后的组合 fixture 与一次 iOS 超时失败，修正后各自所属套件均通过；未改动的 Git SSH fixture 单独运行仍报 `context_unreadable`（其他 23 项通过），原因尚未确定。修正 fixture 后尚未重跑完整根套件。最终文档检查结果记录在 #1607。
-
-本地浏览器 fixture 不代表真实生产、浏览器进程崩溃或跨平台验收。host 本机 server、SessionDocument wrapper cache、Session/Turn/dispatch、快捷指令 grant/发布、RPC、迁移 target 上传仍保留既有应用生命周期。host 存储迁移和完整 WorkspaceData 提案尚未完成。
+`9b5122ca` 的完整 GitHub CI 和桌面场景（六个场景、40 步）通过；这是本次修订的基线，不是新修订的验收。此前本地根 check 遇到未改动 SSH fixture 的 `context_unreadable`，同一个 fixture 在 CI 通过。本地测试不代表真实生产服务、浏览器进程崩溃或跨平台验收。Host 本机 server 所有权、SessionDocument wrapper cache、Session/Turn/dispatch、快捷指令 grant/发布、RPC、迁移 target 上传仍保留既有应用生命周期。PR 维持用户要求的同一接入单元；删除无消费者框架和产品重复实现，不再扩大迁移，也不修改尚在提案中的 WorkspaceData 设计。

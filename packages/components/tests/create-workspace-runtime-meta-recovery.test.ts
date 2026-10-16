@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CURRENT_MACHINE_PROTOCOL_CAPABILITIES,
   getMachineRoomId,
+  getMachineFlockDocId,
   getSessionRoomId,
   type AgentConfigId,
   type MachineId,
@@ -9,6 +10,8 @@ import {
   type WorkspaceId,
 } from '@lody/shared';
 import type { LoroRepo, TransportAdapter, TransportSubscription } from 'loro-repo';
+import { Flock } from '@loro-dev/flock-wasm';
+import { LoroDoc } from 'loro-crdt';
 
 const mocks = vi.hoisted(() => {
   const setTransportAdapter = vi.fn(async () => {});
@@ -30,6 +33,16 @@ const mocks = vi.hoisted(() => {
   const watch = vi.fn(() => ({ unsubscribe: vi.fn() }));
   const joinMetaRoom = vi.fn();
   const syncRoomLegacy = vi.fn(async () => ({ outcome: 'confirmed' as 'confirmed' | 'skipped' }));
+  const openFlockDoc = vi.fn(async () => ({
+    flock: new (await import('@loro-dev/flock-wasm')).Flock(),
+  }));
+  const acquireDocHandleLegacy = vi.fn(
+    async (
+      _id: string
+    ): Promise<import('loro-repo').RepoDocHandle & { release(): Promise<void> }> => {
+      throw new Error('Unexpected document acquisition');
+    }
+  );
   const remoteCursorDelete = vi.fn(async () => {});
   const metaFlock = {};
   const metaCheckpointDelete = vi.fn(async (_streamUrl: string) => {});
@@ -90,6 +103,8 @@ const mocks = vi.hoisted(() => {
     watch,
     joinMetaRoom,
     syncRoomLegacy,
+    openFlockDoc,
+    acquireDocHandleLegacy,
     remoteCursorDelete,
     metaFlock,
     metaCheckpointDelete,
@@ -214,6 +229,8 @@ vi.mock('@lody/shared/workspace-data/repo-legacy', async (importOriginal) => {
             transportRooms: mocks.transportRooms,
             joinMetaRoom: mocks.joinMetaRoom,
             syncRoomLegacy: mocks.syncRoomLegacy,
+            openFlockDoc: mocks.openFlockDoc,
+            acquireDocHandleLegacy: mocks.acquireDocHandleLegacy,
             flush: mocks.flush,
             destroy: mocks.destroy,
             reconnect: mocks.reconnect,
@@ -445,6 +462,9 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     mocks.joinMetaRoom.mockReset();
     mocks.syncRoomLegacy.mockReset();
     mocks.syncRoomLegacy.mockResolvedValue({ outcome: 'confirmed' });
+    mocks.openFlockDoc.mockReset();
+    mocks.openFlockDoc.mockImplementation(async () => ({ flock: new Flock() }));
+    mocks.acquireDocHandleLegacy.mockReset();
     mocks.remoteCursorDelete.mockClear();
     mocks.metaCheckpointDelete.mockClear();
     mocks.getReplicaCheckpointStore.mockClear();
@@ -537,6 +557,86 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     ).toBe(true);
     expect(window.repo).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('finishes independent workspace cleanup after a store fails, then retries without reopening routes', async () => {
+    enableElectronLocalDataPlane();
+    mocks.joinMetaRoom.mockResolvedValue(createMetaSub(Promise.resolve()));
+    const routes = new Set<string>();
+    const stoppedRoutes = Promise.withResolvers<void>();
+    const saving = Promise.withResolvers<void>();
+    const finishSave = Promise.withResolvers<void>();
+    const addTransport = mocks.addTransport.getMockImplementation()!;
+    const removeTransport = mocks.removeTransport.getMockImplementation()!;
+    mocks.addTransport.mockImplementation(async (id) => {
+      routes.add(id);
+    });
+    mocks.removeTransport.mockImplementation(async (id) => {
+      routes.delete(id);
+      stoppedRoutes.resolve();
+    });
+    let blocked = true;
+    let retained = true;
+    let ownerClosed = false;
+    const doc = new LoroDoc();
+    mocks.acquireDocHandleLegacy.mockResolvedValue({
+      doc,
+      release: async () => {
+        saving.resolve();
+        await finishSave.promise;
+        if (blocked) throw new Error('synthetic store save failure');
+        retained = false;
+      },
+      joinRoom: async () =>
+        createMetaSub(Promise.resolve()) as unknown as import('loro-repo').RepoRoomSubscription,
+      syncOnce: async () => {
+        throw new Error('Unexpected sync');
+      },
+    });
+    mocks.destroy.mockImplementation(async () => {
+      if (retained) throw new Error('original write remains owned');
+      ownerClosed = true;
+    });
+    const runtime = await createWorkspaceRuntime({
+      workspaceSlug: 'workspace',
+      workspaceId: 'workspace-1' as WorkspaceId,
+      apiBaseUrl: 'https://api.example.test',
+      syncMode: 'local',
+    });
+    try {
+      const store = await runtime.acquireScheduleStore('schedule');
+      await vi.advanceTimersByTimeAsync(0);
+      await store.firstSynced;
+      const closing = runtime.dispose();
+      expect(runtime.dispose()).toBe(closing);
+      await saving.promise;
+      await stoppedRoutes.promise;
+      expect(routes.size).toBe(0);
+      expect(ownerClosed).toBe(false);
+      finishSave.resolve();
+      await expect(closing).rejects.toThrow(AggregateError);
+      expect(routes.size).toBe(0);
+      expect(window.repo).toBeUndefined();
+      expect(ownerClosed).toBe(false);
+      expect(retained).toBe(true);
+      await expect(runtime.acquireScheduleStore('replacement')).rejects.toThrow('disposed');
+      blocked = false;
+      await runtime.dispose();
+      expect(ownerClosed).toBe(true);
+      expect(retained).toBe(false);
+      dispatchWindowEvent('online');
+      expect(routes.size).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      blocked = false;
+      finishSave.resolve();
+      await runtime.dispose();
+      mocks.destroy.mockReset();
+      mocks.destroy.mockResolvedValue(undefined);
+      mocks.addTransport.mockImplementation(addTransport);
+      mocks.removeTransport.mockImplementation(removeTransport);
+      doc.free();
+    }
   });
 
   it('aborts the real token provider fetch when startup is cancelled', async () => {
@@ -1530,7 +1630,7 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     await runtime.dispose();
   });
 
-  it.each(['confirmed', 'skipped', 'disposed', 'cancelled'] as const)(
+  it.each(['confirmed', 'skipped', 'failed', 'disposed', 'cancelled', 'unchanged'] as const)(
     'hands off a local config before probing, with a %s peer receipt',
     async (outcome) => {
       mocks.joinMetaRoom.mockResolvedValueOnce(createMetaSub(Promise.resolve()));
@@ -1544,6 +1644,7 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       mocks.syncRoomLegacy.mockImplementationOnce(async () => {
         entered.resolve();
         await imported.promise;
+        if (outcome === 'failed') throw new Error('handoff deadline');
         configAvailable = outcome !== 'skipped';
         return { outcome: outcome === 'skipped' ? 'skipped' : 'confirmed' };
       });
@@ -1582,28 +1683,57 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       });
       runtime.setLocalMachineId(machineId);
       try {
-        const request = runtime.requestMachineAcpCapabilitiesRefresh(
-          {
-            type: 'machine/acp-capabilities-refresh',
-            machineId,
-            configId: configId as AgentConfigId,
-          },
-          { signal: controller.signal }
-        );
-        expect(
-          await Promise.race([
-            entered.promise.then(() => 'waiting-for-peer'),
-            request.then(() => 'launched'),
-          ])
-        ).toBe('waiting-for-peer');
-        expect(launches).toEqual([]);
+        if (outcome !== 'unchanged')
+          await runtime.writer.flockRowPut(
+            getMachineFlockDocId(runtime.workspaceId, machineId),
+            ['agentConfig', configId],
+            { id: configId }
+          );
+        else configAvailable = true;
+        const probe = () =>
+          runtime.requestMachineAcpCapabilitiesRefresh(
+            {
+              type: 'machine/acp-capabilities-refresh',
+              machineId,
+              configId: configId as AgentConfigId,
+            },
+            { signal: controller.signal }
+          );
+        const request = probe();
+        if (outcome !== 'unchanged')
+          expect(
+            await Promise.race([
+              entered.promise.then(() => 'waiting-for-peer'),
+              request.then(() => 'launched'),
+            ])
+          ).toBe('waiting-for-peer');
+        if (outcome !== 'unchanged') expect(launches).toEqual([]);
         if (outcome === 'disposed') await runtime.dispose();
         if (outcome === 'cancelled') controller.abort();
+        if (outcome === 'confirmed')
+          await runtime.writer.flockRowPut(
+            getMachineFlockDocId(runtime.workspaceId, machineId),
+            ['agentConfig', configId],
+            { id: configId, revision: 2 }
+          );
         imported.resolve();
         const response = await request;
         if (outcome === 'disposed' || outcome === 'cancelled') expect(response).toBeNull();
-        else expect(response?.success).toBe(outcome === 'confirmed');
-        expect(launches).toEqual(outcome === 'confirmed' ? [true] : []);
+        else expect(response?.success).toBe(outcome === 'confirmed' || outcome === 'unchanged');
+        expect(launches).toEqual(outcome === 'confirmed' || outcome === 'unchanged' ? [true] : []);
+        if (outcome === 'unchanged') expect(mocks.syncRoomLegacy).not.toHaveBeenCalled();
+        if (outcome === 'confirmed' || outcome === 'skipped' || outcome === 'failed') {
+          // A late receipt cannot swallow a newer edit; failed receipts also
+          // leave handoff pending. No config exists on the machine until retry.
+          configAvailable = false;
+          mocks.syncRoomLegacy.mockImplementationOnce(async () => {
+            configAvailable = true;
+            return { outcome: 'confirmed' };
+          });
+          expect((await probe())?.success).toBe(true);
+          mocks.syncRoomLegacy.mockRejectedValueOnce(new Error('No further handoff needed'));
+          expect((await probe())?.success).toBe(true);
+        }
       } finally {
         imported.resolve();
         await runtime.dispose();

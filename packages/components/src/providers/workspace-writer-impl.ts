@@ -28,6 +28,8 @@ export type DirectWorkspaceWriterDeps = {
   releaseSessionStoreRef: (sessionId: SessionId) => void;
   acquirePreviewVisualCommentStore: (sessionId: SessionId) => Promise<PreviewVisualCommentDocStore>;
   releasePreviewVisualCommentStoreRef: (sessionId: SessionId) => void;
+  /** Records an authored row after commit, independently of later network delivery. */
+  onFlockWrite?: (flockDocId: string, key: readonly string[]) => void;
 };
 
 /**
@@ -96,16 +98,19 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
       const handle = await deps.repo.openFlockDoc(flockDocId);
       handle.flock.set([...key], value as Parameters<typeof handle.flock.set>[1]);
       handle.flock.commit();
+      deps.onFlockWrite?.(flockDocId, key);
     },
 
     async flockRowUpdate(flockDocId, key, update) {
       const handle = await deps.repo.openFlockDoc(flockDocId);
-      return handle.flock.txn(() => {
+      const changed = handle.flock.txn(() => {
         const next = update(handle.flock.get([...key]));
         if (next === undefined) return false;
         handle.flock.set([...key], next as Parameters<typeof handle.flock.set>[1]);
         return true;
       });
+      if (changed) deps.onFlockWrite?.(flockDocId, key);
+      return changed;
     },
 
     async flockRowPutIfAbsent(
@@ -114,7 +119,7 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
       value: unknown
     ): Promise<{ inserted: boolean; value: unknown }> {
       const handle = await deps.repo.openFlockDoc(flockDocId);
-      return handle.flock.txn(() => {
+      const result = handle.flock.txn(() => {
         const existing = handle.flock.get([...key]);
         if (existing !== undefined) {
           return { inserted: false, value: existing };
@@ -123,12 +128,15 @@ export function createDirectWorkspaceWriter(deps: DirectWorkspaceWriterDeps): Wo
         handle.flock.put([...key], value as Parameters<typeof handle.flock.put>[1]);
         return { inserted: true, value };
       });
+      if (result.inserted) deps.onFlockWrite?.(flockDocId, key);
+      return result;
     },
 
     async flockRowDelete(flockDocId, key) {
       const handle = await deps.repo.openFlockDoc(flockDocId);
       handle.flock.delete([...key]);
       handle.flock.commit();
+      deps.onFlockWrite?.(flockDocId, key);
     },
 
     async appendSessionTurn(sessionId, entry, dispatch) {

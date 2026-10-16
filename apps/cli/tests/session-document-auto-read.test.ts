@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import { v4 as uuidv4 } from 'uuid';
+import { FileSystemStorageAdaptor } from 'loro-repo/storage/filesystem';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { SessionDocument } from '../src/lib/loro/doc';
 import type { MessageContent, SessionHistoryInput, SessionId } from '@lody/shared';
@@ -19,6 +23,51 @@ const createUserEntry = (id: string, text: string): SessionHistoryInput => ({
 });
 
 describe('SessionDocument auto read', () => {
+  it.each(['destroy', 'reinitialize'] as const)(
+    'invalidates its local room after a failed save and retries on %s',
+    async (retry) => {
+      const baseDir = await mkdtemp(join(tmpdir(), 'lody-session-close-'));
+      const adapter = new FileSystemStorageAdaptor({ baseDir });
+      const save = adapter.save.bind(adapter);
+      let blocked = false;
+      adapter.save = async (payload) => {
+        if (blocked && (payload.type === 'doc-update' || payload.type === 'doc-snapshot'))
+          throw new Error('synthetic session save failure');
+        await save(payload);
+      };
+      const repo = await WorkspaceRepoLegacy.create({ storageAdapter: adapter });
+      const boundRooms = new Set<string>();
+      const session = new SessionDocument(repo, uuidv4() as SessionId, async (id) => {
+        boundRooms.delete(id);
+      });
+      try {
+        await session.initOffline({ history: [] });
+        boundRooms.add(session.roomId);
+        session.handle!.doc.getText('synthetic').insert(0, 'kept');
+        session.handle!.doc.commit();
+        blocked = true;
+        await expect(session.destroy({ preserveStatus: true })).rejects.toThrow();
+        expect(boundRooms.size).toBe(0);
+        expect(session.isDestroyed).toBe(true);
+        expect(session.handle).toBeNull();
+        blocked = false;
+        if (retry === 'reinitialize') {
+          await session.initOffline();
+          expect(session.handle?.doc.getText('synthetic').toString()).toBe('kept');
+        }
+        await session.destroy({ preserveStatus: true });
+        const reopened = await repo.acquireDoc(session.roomId);
+        expect(reopened.doc.getText('synthetic').toString()).toBe('kept');
+        await reopened.release();
+      } finally {
+        blocked = false;
+        await session.destroy({ preserveStatus: true });
+        await repo.destroy();
+        await rm(baseDir, { recursive: true, force: true });
+      }
+    }
+  );
+
   it('acknowledges from shallow fields without reading assistant bodies on notifications', async () => {
     const repo = await WorkspaceRepoLegacy.create({});
     const session = new SessionDocument(repo, uuidv4() as SessionId);

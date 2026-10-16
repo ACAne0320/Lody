@@ -8,124 +8,89 @@ PR: [#1607](https://github.com/LodyAI/Lody/pull/1607)
 
 ## Abstract
 
-The owner requested native consumer migration in the same PR as the
-[released dependency adoption](../../implemented/architecture/2026-10-16-streams-repo-release-adoption.md).
-CLI and renderer must compose the published `loro-repo/effect` implementation,
-with one workspace Scope owning the Repo and its transport attachments. CLI, renderer, eager-prefetch workers and private shortcut durable rooms now
-consume those native entries. Existing application APIs execute through one
-explicitly deprecated facade over the same native Repo. The [WorkspaceData design](2026-10-14-workspace-data-services.md)
-remains proposed; this change does not move renderer storage to a new host.
+The owner requested native consumer adoption in the same PR as the
+[released dependency upgrade](../../implemented/architecture/2026-10-16-streams-repo-release-adoption.md).
+CLI, renderer, eager workers and private shortcut rooms consume the published
+native Repo/SDK. One workspace Repo owns replicas; existing Promise APIs enter
+through one deprecated facade. Review exposed cleanup short-circuiting and
+unrecoverable application fences; independent cleanup now continues and ordinary
+acquisition retries retained owners. The [WorkspaceData design](2026-10-14-workspace-data-services.md)
+remains a proposal, including host storage relocation and upper Session/Turn work.
 
-## Behavior contract
+## Responsibilities and behavior
 
-- Trigger: workspace initialization creates one native Repo over the existing
-  SQLite or per-renderer IndexedDB adapter. Local mode performs no cloud I/O.
-- Owner: the workspace owns the Repo; consumers borrow document/room leases in
-  child Scopes. Open returns absence; creation explicitly registers identity.
-- Cancellation: ending one consumer Scope releases its lease, without evicting
-  another borrower's replica or canceling a shared accepted upload producer.
-- Handoff: Streams uses the native transport and replica-bound checkpoints.
-  Existing same-store document cursors are reused on this in-place upgrade.
-  Server confirmation, peer convergence and local durability remain separate.
-- Recovery: failed release retains the full Cause and retry owner. Shutdown must
-  not dispose storage or replace an owner whose accepted I/O remains unsettled.
+- Workspace roots own one native Repo over existing SQLite or renderer IndexedDB.
+  Consumers borrow Doc, Flock and room leases in child Scopes. Opening absence
+  and creating business identity remain distinct; local mode performs no cloud I/O.
+- Native Streams transports reuse the token service and replica-bound checkpoints.
+  Foreground roots explicitly reuse same-store Doc cursors; eager workers own
+  isolated replicas and volatile cursors. Peer baseline, server confirmation and
+  local durability never substitute for each other.
+- Directory and metadata authority helpers bind directly to the existing Repo.
+  Unused WorkspaceRepo Context/Layer/acquire wrappers were removed; the current
+  single-target refresh takes its policy directly. No second service graph is needed.
+- The local v7 client owns workers, deadlines and bounded queues (including an
+  estimated 64 MiB retained-string budget). Chunked input must be complete and
+  cover the announced frontier. Normal writes do not advance join epoch. The old
+  client is test-only, retaining host wire-compatibility coverage, with no product
+  export or application import. Native client tests exercise the real v7 host.
+- Legacy room projection includes actual routing/attachment: absent routes are
+  detached, even when a native detail ref initially says joining. First-sync
+  waits survive deliberate absence, and fail on an attached route's actual failure.
 
-## Completion boundary
+## Release, recovery and causal handoff
 
-The native kernel comprises Repo composition, catalog-backed SessionDirectory,
-fresh SyncAuthority, transport configuration, the local v7 client and retryable
-borrower Scope ownership. CLI/MCP directory reads use the Services; CLI session
-handles and renderer session/preview/schedule stores borrow native leases.
-The eager worker owns an isolated native Repo, transport and volatile checkpoints.
-Private shortcut rooms consume the native durable SDK while their grant and
-publication workflow remains an explicitly unfinished application boundary.
+Upstream replica release commits and persists the document and metadata before
+unsubscribing. Failure retains a `RepoReleaseFailed.retry` and the accepted I/O;
+a second acquire can need that release to succeed before constructing a replica.
+SDK close stops network admission and drains accepted work; it is not an implicit
+fresh server-upload receipt. An offline connection alone does not establish that
+shortcut close must fail.
 
-`WorkspaceRepoLegacy` is the one execution door for current Promise APIs, not a
-wrapper around the old Repo. Native modules neither launch programs nor import
-that facade; the AST boundary guard enforces this. Cleanup must close consumers
-before Repo: Repo close waits for outstanding leases. Scope finalizers run once,
-so failed close retains native `RepoReleaseFailed.retry` rather than pretending
-that a second Scope.close retries persistence. The store cache retains failed
-owners and rejects replacement until release succeeds.
+Shutdown closes borrowers before Repo, but one failed store must not skip other
+stores, transport teardown, joins or Repo close. Runtime disposal attempts these
+independent steps and reports errors afterwards. A later dispose retries retained
+owners without reopening admission. RuntimeProvider retains retryable closes per
+workspace: a failed close cannot poison another workspace, while reopening the
+same storage retries its old owner first. Shortcut roots do the same per database;
+runtime/remote/index/store failures do not skip independent cleanup or Repo close.
+A disposed shortcut runtime can finish its failed retirement on retry. Session cleanup also invalidates the local
+room when lease release fails and privately retains its retry handle. The next
+cache/shortcut acquire automatically retries its retiring owner. Rebuilding after
+another failed retry was rejected: it can strand an SDK producer and native Repo
+itself may still need to finish the previous release. A persistent storage failure
+remains visible and recoverable; it no longer requires an explicit external unlock.
+Background stream failures emit a payload-free diagnostic, without an unbounded
+Cause history or making a later successful destroy fail. Scope finalizers run once;
+the small ownership helper retains native retry owners rather than re-closing a
+failed Scope. Private Causes/grants never enter diagnostic logs.
 
-The local client retains the v7 wire format and physical connection. Effect
-workers own imports, catch-up, bounded queues and deadlines. A join header alone
-cannot finish a chunked snapshot; completeness and advertised version coverage
-are required. A peer receipt does not count as a required server transport. The
-queue is limited by both item count and an estimated 64 MiB of retained strings;
-overflow explicitly requires resnapshot. Normal edits do not advance the epoch.
-
-Same-store Doc cursors are reused only at foreground roots. Meta/Flock checkpoints
-remain native replica-bound. Streams borrows the existing native token service;
-there is no second token cache. Protocol failures retain private full Causes while
-existing log formatters consume only upstream validated scalar projections.
-
-Automatic repair preserves a generation still establishing its baseline; only
-explicit backoff reset or an offline/failed route retires it. Repo error classes
-can differ across pnpm peer contexts, so the diagnostic bridge recognizes the
-originating constructor and creates public projections with the caller's bound
-constructor. Real HTTP 503 MCP coverage verifies retryability without logging
-private failure payloads.
-
-The Legacy room projection must include attachment and routing, rather than
-only the native detail ref: a newly queried ref starts `joining` even when its
-transport is absent. Absence projects to `detached`, preserving local-only
-workspace health. A first-sync waiter survives that deliberate absence and later
-resolves on an attached baseline; actual attached-room failures still reject it.
-CI exposed the missing projection through six desktop startup failures. The real
-zero-cloud CLI composition and the pre-attachment/attachment/removal lifecycle
-now exercise this contract. The observation fixture also borrows a releasable
-native handle before handing ownership to SessionDocument.
-After correction, native ownership/renderer recovery passes 62 cases, and CLI
-observation/zero-cloud/recovery passes 18. The preceding CI passed static checks,
-all component shards, other packages, conversation browser tests and the actual
-desktop build; final CLI and desktop journey results require the corrected head.
-
-Configuration saves remain local-first, but they do not order an independent
-process-launch channel. A local ACP capability probe first takes a native room
-receipt for the Machine Flock on the selected local peer. Its version coverage
-proves the machine imported the newly authored config; a missing/offline receipt
-prevents launch. Cloud transports do not participate in this local handoff, and
-peer coverage is never server authority. This restores the causal ordering lost
-when synchronous local send callbacks became asynchronous Effect workers. Tests
-hold the handoff before launch, reject unconfirmed delivery, and synchronize a
-real Flock configuration through the real v7 server and native transport.
-Cancellation or workspace disposal while awaiting handoff also prevents launch;
-a late receipt cannot start a process after its calling workspace has closed.
-
-Legacy metadata observers project the completed catalog row when delivering a
-metadata patch. Native row events can otherwise expose an intermediate owner/backend
-combination to history readiness checks. Existing memory-only Legacy persist
-methods retain their no-op behavior; the native lease persist API still requires
-storage and never claims that memory is durable.
+Configuration saves remain local-first. The writer records a pending token after
+committing an authored Provider row; only a probe for that config waits for the
+selected local Machine Flock peer receipt. Routine startup/backstop/forced refresh
+has no new data-plane dependency when no write is pending. A confirmed receipt
+clears only its captured token, so a concurrent newer write still needs handoff.
+Unconfirmed delivery or timeout returns a failure response and keeps the token
+for retry. Cancellation/disposal prevents late process launches. Cloud transports
+and server authority are outside this local causal handoff.
 
 ## Verification and limits
 
-Behavioral coverage exercises shared Doc leases and last release, missing bodies,
-typed storage load failures, failed-save retry, catalog observations and fresh
-server authority; real SQLite/IndexedDB Streams checkpoint and protected snapshot
-cases; real local-v7 server convergence after dropped writes; multi-chunk eager
-prefetch; asynchronous store release failure and replacement fencing; and private
-read-only shortcut SDK synchronization without echo uploads.
+Behavioral regressions cover automatic retry after failed cache and shortcut
+release, shared replica ownership, original-byte preservation after failed save,
+background observer failure followed by successful close, continuation/retry of
+workspace cleanup and switching after failure, local-room invalidation after failed Session release, and
+dirty-only config handoff with cancellation and disposal. Native v7 host tests,
+existing legacy peer compatibility cases and snapshot/Streams suites retain their
+separate protocol coverage. Final check results are recorded in the PR.
 
-The real workspace-close regression verifies that a failed save exposes
-`RepoReleaseFailed`, keeps storage open, and saves the original bytes before a
-successful retry closes it. History ownership/recovery covers 62 cases; ACP batch
-tests fake only their timeout and Date, leaving native fiber scheduling real.
-
-Final affected package typechecks and `check:quick` passed. Shared tests passed
-1,512 cases; final CLI/MCP regressions passed 203; renderer recovery passed 50;
-native ownership/Streams plus the unchanged iOS suite passed 73. Root `format`
-passed. CLI and OSS desktop builds and CLI bundle import/start smoke passed before
-the last recovery/diagnostic corrections, so CI must rebuild the final commit.
-
-The full root `check` was run but did not pass: migrated composition fixtures and
-an iOS timeout failed, then passed their owning suites after correction. An
-unchanged Git SSH fixture still fails in isolation with `context_unreadable`
-(23 other cases pass); its cause is unresolved. The full root suite has not been
-rerun after those fixture repairs. Final documentation checks are recorded in #1607.
-Local browser fixtures do not prove live production, browser-process crash or
-cross-platform acceptance. The host local server engine, SessionDocument wrapper
-cache, Session/Turn/dispatch, shortcut grants/publication, RPC and migration target
-uploads retain their existing registered application lifecycles. Host storage
-relocation and the full WorkspaceData proposal remain unfinished.
+Head `9b5122ca` passed full GitHub CI and the desktop journey (six scenarios,
+40 steps); those results are a baseline, not verification of this revision.
+Local root check previously encountered the unchanged SSH fixture's
+`context_unreadable`, while the same fixture passed CI. Real production services,
+browser-process crashes and cross-platform acceptance remain outside local tests.
+Host local server ownership, SessionDocument wrapper cache, Session/Turn/dispatch,
+shortcut grants/publication, RPC and migration target uploads retain their existing
+application lifecycles. The PR remains one owner-requested adoption unit; unused
+framework surfaces and product duplication were removed rather than adding another
+migration or changing the reviewed WorkspaceData proposal.

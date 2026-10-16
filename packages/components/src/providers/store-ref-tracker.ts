@@ -156,7 +156,8 @@ export function createManagedStoreCache<K, V extends { dispose(): void | Promise
   // Per-key in-flight dispose+unload chains. `get` serializes re-creation
   // behind these so a new store is only built after the old doc is unloaded.
   const pendingDisposals = new Map<K, Promise<void>>();
-  const retainedDisposals = new Map<K, { store: V; error: unknown }>();
+  const retainedDisposals = new Map<K, V>();
+  let closed = false;
 
   // Forward-declared so the tracker's onRelease can call release().
   const release = async (key: K, unload = true): Promise<void> => {
@@ -164,7 +165,7 @@ export function createManagedStoreCache<K, V extends { dispose(): void | Promise
     if (pending) return pending;
     tracker.forceRelease(key);
     const retained = retainedDisposals.get(key);
-    const existing = retained ? Promise.resolve(retained.store) : stores.get(key);
+    const existing = retained ? Promise.resolve(retained) : stores.get(key);
     if (!existing) {
       return;
     }
@@ -182,7 +183,7 @@ export function createManagedStoreCache<K, V extends { dispose(): void | Promise
           await store.dispose();
           retainedDisposals.delete(key);
         } catch (error) {
-          retainedDisposals.set(key, { store, error });
+          retainedDisposals.set(key, store);
           throw error;
         }
       }
@@ -211,21 +212,21 @@ export function createManagedStoreCache<K, V extends { dispose(): void | Promise
     releaseDelayMs: opts.releaseDelayMs,
     onRelease: (key) => {
       void release(key).catch(() => {
-        /* Retained for explicit release retry and workspace close. */
+        /* The next acquire or workspace close retries the retained owner. */
       });
     },
   });
 
   const get = (key: K): Promise<V> => {
-    const retained = retainedDisposals.get(key);
-    if (retained) return Promise.reject(retained.error);
+    if (closed) return Promise.reject(new Error('Store cache is disposed'));
     const existing = stores.get(key);
     if (existing) {
       return existing;
     }
     // Serialize behind an in-flight disposal: the new store must be created
     // only after the old doc was unloaded, or it would be yanked from under us.
-    const pending = pendingDisposals.get(key);
+    const pending = pendingDisposals.get(key) ??
+      (retainedDisposals.has(key) ? release(key) : undefined);
     const created = pending ? pending.then(() => opts.create(key)) : opts.create(key);
     const promise = created.then(
       (store) => {
@@ -233,7 +234,7 @@ export function createManagedStoreCache<K, V extends { dispose(): void | Promise
         return store;
       },
       (error: unknown) => {
-        stores.delete(key);
+        if (stores.get(key) === promise) stores.delete(key);
         throw error;
       }
     );
@@ -265,6 +266,7 @@ export function createManagedStoreCache<K, V extends { dispose(): void | Promise
   };
 
   const disposeAll = async (): Promise<void> => {
+    closed = true;
     tracker.dispose();
     // Let in-flight dispose+unload chains settle so destroy doesn't race them.
     await Promise.allSettled([...pendingDisposals.values()]);

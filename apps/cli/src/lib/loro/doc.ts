@@ -1,5 +1,3 @@
-import { Effect } from 'effect';
-import { SyncAuthority } from '@lody/shared/workspace-data/sync-authority';
 import {
   WorkspaceRepoLegacy,
   workspaceAcquisitionFailureLegacy,
@@ -956,11 +954,7 @@ export class LoroDocumentManager {
     const timeoutMs = options.timeoutMs ?? readTimeoutEnv('LODY_LORO_SYNC_META_TIMEOUT_MS', 20_000);
 
     try {
-      await this.repo.runLegacy(
-        Effect.flatMap(SyncAuthority, (authority) =>
-          authority.refresh({ kind: 'workspace-meta' }, { reason, timeoutMs })
-        ).pipe(Effect.provide(this.repo.dataLayer))
-      );
+      await this.repo.runLegacy(this.repo.syncAuthority.refresh({ reason, timeoutMs }));
       this.initialMetaSyncCompleted = true;
     } catch (error) {
       throw new Error(`Workspace metadata sync failed (${reason}): ${formatErrorMessage(error)}`, {
@@ -1955,6 +1949,7 @@ export function subscribeSessionChanges(
 export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'history'>, SessionMeta> {
   private mirror: SessionControlPlaneMirror | null = null;
   handle: (RepoDocHandle & { release(): Promise<void> }) | null = null;
+  private retiringHandle: SessionDocument['handle'] = null;
   docSub: RepoRoomSubscription | null = null;
   // Detached-aware 'streams' binding view of `docSub` (see streamsRoomBinding);
   // all status reads and sync waits go through it, never the classic surface.
@@ -2201,6 +2196,7 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
   }
 
   async init(options: { skipAutoRead?: boolean; historyBackend?: SessionHistoryBackendKind } = {}) {
+    if (this.retiringHandle) await this.releaseDocument();
     this.destroyed = false;
     try {
       this.handle = await this.repo.acquireDocHandleLegacy(this.roomId);
@@ -2297,6 +2293,7 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     initialState?: SessionDocInitialState,
     options: { historyBackend?: SessionHistoryBackendKind } = {}
   ) {
+    if (this.retiringHandle) await this.releaseDocument();
     this.destroyed = false;
     try {
       this.handle = await this.repo.acquireDocHandleLegacy(this.roomId);
@@ -2352,11 +2349,29 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     this.historyAutoReadHandle = null;
     this.mirror?.dispose();
     this.mirror = null;
-    if (this.handle) {
-      await this.handle.release();
-      await this.unloadDocRoom(this.roomId);
-    }
+    await this.releaseDocument();
+  }
+
+  private async releaseDocument(): Promise<void> {
+    this.retiringHandle ??= this.handle;
     this.handle = null;
+    if (!this.retiringHandle) return;
+    const failures: unknown[] = [];
+    try {
+      await this.retiringHandle?.release();
+    } catch (error) {
+      failures.push(error);
+    }
+    // Invalidate the local data plane even if persistence failed. The retryable
+    // borrower owner still holds the original replica and its accepted writes.
+    try {
+      await this.unloadDocRoom(this.roomId);
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length) throw new AggregateError(failures, 'Session release failed');
+    this.retiringHandle = null;
   }
 
   private async startDocRoomSync(): Promise<void> {
@@ -3346,57 +3361,48 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
   }
 
   async destroy(options: { preserveStatus?: boolean } = {}) {
-    if (!this.mirror) {
-      if (this.handle) {
-        await this.handle.release();
-        await this.unloadDocRoom(this.roomId);
-        this.handle = null;
-      }
-      return;
-    }
-
-    await this.modelSummary?.flush();
     this.destroyed = true;
-    await disposeSessionBackend(this);
-    this.sessionBackendInstance = null;
-
-    this.modelSummary?.dispose();
-    this.modelSummary = null;
-
-    this.historyAutoReadHandle?.dispose();
-    this.historyAutoReadHandle = null;
-
-    const status = await this.getStatus();
-    if (
-      !options.preserveStatus &&
-      (status?.type === 'running' ||
-        status?.type === 'requestPermission' ||
-        status?.type === 'initializing')
-    ) {
-      await this.setStatus(SessionStatusFactory.idle());
+    const failures: unknown[] = [];
+    const attempt = async (close: () => unknown | Promise<unknown>) => {
+      try {
+        await close();
+      } catch (error) {
+        failures.push(error);
+      }
+    };
+    if (this.mirror) {
+      await attempt(() => this.modelSummary?.flush());
+      await attempt(() => disposeSessionBackend(this));
+      this.sessionBackendInstance = null;
+      await attempt(async () => {
+        const status = await this.getStatus();
+        if (
+          !options.preserveStatus &&
+          (status?.type === 'running' ||
+            status?.type === 'requestPermission' ||
+            status?.type === 'initializing')
+        ) {
+          await this.setStatus(SessionStatusFactory.idle());
+        }
+      });
     }
-    // Release the repo room BEFORE evicting the doc. loro-repo binds the
-    // `LoroDoc` instance into a room's transport attachment once, at attach
-    // time, and `unloadDoc` does not detach rooms — so unloading first leaves
-    // every still-attached transport (the cloud one included) syncing the
-    // orphan. Rooms are ref-counted, so if any other holder keeps this room
-    // open that binding never re-attaches and is stranded permanently.
-    // Nothing is lost by releasing first: `setStatus` above writes through
-    // `repo.upsertDocMeta`, i.e. the meta room, not this doc's room.
-    this.docSub?.unsubscribe();
+    await attempt(() => this.modelSummary?.dispose());
+    this.modelSummary = null;
+    await attempt(() => this.historyAutoReadHandle?.dispose());
+    this.historyAutoReadHandle = null;
+    await attempt(() => this.docSub?.unsubscribe());
     this.docSub = null;
     this.docBinding = null;
-    this.detachDocRoomStatusListener?.();
+    await attempt(() => this.detachDocRoomStatusListener?.());
     this.detachDocRoomStatusListener = null;
     this.docRoomStatusListeners.clear();
-    // Invalidate outstanding stored-history snapshot handles: their source is
-    // this store, which is going away. Subsequent use reports `source_closed`.
-    this.sessionDataInstance?.dispose();
-    this.mirror?.dispose();
+    await attempt(() => this.sessionDataInstance?.dispose());
+    this.sessionDataInstance = null;
+    await attempt(() => this.mirror?.dispose());
     this.mirror = null;
-    await this.handle?.release();
-    await this.unloadDocRoom(this.roomId);
-    this.handle = null;
+    await attempt(() => this.releaseDocument());
+    if (failures.length === 1) throw failures[0];
+    if (failures.length) throw new AggregateError(failures, 'Session cleanup failed');
   }
 
   async flushLocalWrites(): Promise<void> {

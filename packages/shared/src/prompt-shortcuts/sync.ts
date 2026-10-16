@@ -51,6 +51,14 @@ type ShortcutSyncRoom = {
   close(): Promise<void>;
 };
 
+type ShortcutRoomEntry = {
+  refs: number;
+  write: boolean;
+  opening: Promise<ShortcutSyncRoom>;
+  retiring?: boolean;
+  closing?: Promise<void>;
+};
+
 export type ShortcutSyncLease = Pick<ShortcutSyncRoom, 'sync' | 'join'> & {
   release(): Promise<void>;
 };
@@ -61,17 +69,7 @@ export type ShortcutSyncLease = Pick<ShortcutSyncRoom, 'sync' | 'join'> & {
  */
 export class PromptShortcutSync {
   private readonly lifetime = new ShortcutLifetime();
-  private rooms = new Map<
-    string,
-    {
-      refs: number;
-      write: boolean;
-      opening: Promise<ShortcutSyncRoom>;
-      retiring?: boolean;
-      closing?: Promise<void>;
-      failure?: unknown;
-    }
-  >();
+  private rooms = new Map<string, ShortcutRoomEntry>();
   private disposed = false;
 
   constructor(
@@ -90,8 +88,7 @@ export class PromptShortcutSync {
         : getShortcutBodyStreamId(resource.bodyDocId);
     let entry = this.rooms.get(key);
     if (entry?.retiring) {
-      if (entry.closing) await entry.closing;
-      else throw entry.failure ?? new Error('Shortcut room release remains pending');
+      await this.closeRoom(key, entry);
       return this.acquire(resource, write);
     }
     if (entry && entry.write !== write)
@@ -120,23 +117,7 @@ export class PromptShortcutSync {
         captured.refs--;
       }
       if (captured.refs !== 0 || this.rooms.get(key) !== captured) return;
-      if (captured.closing) return captured.closing;
-      captured.retiring = true;
-      captured.closing = room
-        .close()
-        .then(
-          () => {
-            if (this.rooms.get(key) === captured) this.rooms.delete(key);
-          },
-          (error: unknown) => {
-            captured.failure = error;
-            throw error;
-          }
-        )
-        .finally(() => {
-          captured.closing = undefined;
-        });
-      return captured.closing;
+      return this.closeRoom(key, captured);
     };
     if (this.disposed) {
       await release();
@@ -153,6 +134,20 @@ export class PromptShortcutSync {
       },
       release,
     };
+  }
+
+  private closeRoom(key: string, entry: ShortcutRoomEntry): Promise<void> {
+    if (entry.closing) return entry.closing;
+    entry.retiring = true;
+    entry.closing = entry.opening
+      .then((room) => room.close())
+      .then(() => {
+        if (this.rooms.get(key) === entry) this.rooms.delete(key);
+      })
+      .finally(() => {
+        entry.closing = undefined;
+      });
+    return entry.closing;
   }
 
   private async open(resource: ShortcutResource, write: boolean): Promise<ShortcutSyncRoom> {
@@ -283,13 +278,9 @@ export class PromptShortcutSync {
   async dispose(): Promise<void> {
     this.disposed = true;
     this.lifetime.dispose();
-    const entries = [...this.rooms.values()];
+    const entries = [...this.rooms];
     const results = await Promise.allSettled(
-      entries.map(async (entry) => {
-        const room = await entry.opening.catch(() => null);
-        await room?.close();
-        for (const [key, current] of this.rooms) if (current === entry) this.rooms.delete(key);
-      })
+      entries.map(([key, entry]) => this.closeRoom(key, entry))
     );
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === 'rejected'

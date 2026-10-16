@@ -646,6 +646,10 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   // Slow reconcile interval for the reconnect-loop backstop tick.
   const RECONNECT_BACKSTOP_INTERVAL_MS = 60_000;
   let disposePromise: Promise<void> | null = null;
+  let disposeFailed = false;
+  // Only newly authored Provider rows need a cross-plane handoff before probing.
+  // A fresh token per write prevents a late receipt from clearing a newer edit.
+  const pendingConfigHandoffs = new Map<string, object>();
   let reconnectingStatusTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectingStatusVisible = false;
   let localReconnectLoop: LocalReconnectLoop | null = null;
@@ -2168,15 +2172,24 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
           error: `Local session control cannot route ${message.type} to machine ${message.machineId}`,
         };
       }
-      // Saving a config is local-first. The separate process-launch RPC must
-      // wait until this machine has actually imported the newly authored rows.
-      const handoff = await repo.syncRoomLegacy(
-        { kind: 'flock', id: getMachineFlockDocId(workspaceId, message.machineId) },
-        'local',
-        { signal, timeoutMs: 20_000 }
-      );
+      const flockId = getMachineFlockDocId(workspaceId, message.machineId);
+      const handoffKey = JSON.stringify([flockId, message.configId]);
+      const pendingHandoff = pendingConfigHandoffs.get(handoffKey);
+      let confirmed = true;
+      if (pendingHandoff) {
+        try {
+          const handoff = await repo.syncRoomLegacy(
+            { kind: 'flock', id: flockId }, 'local', { signal, timeoutMs: 20_000 }
+          );
+          confirmed = handoff.outcome === 'confirmed';
+          if (confirmed && pendingConfigHandoffs.get(handoffKey) === pendingHandoff)
+            pendingConfigHandoffs.delete(handoffKey);
+        } catch {
+          confirmed = false;
+        }
+      }
       if (signal?.aborted || disposePromise) return null;
-      if (handoff.outcome !== 'confirmed')
+      if (!confirmed)
         return {
           type: 'machine/acp-capabilities-refresh_response',
           machineId: message.machineId,
@@ -4420,8 +4433,8 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
       }
     },
     releaseDelayMs: STORE_RELEASE_DELAY_MS,
-    // Stop projections, then await the native lease Scope. Failed release fences
-    // replacement; another independent borrower retains the shared replica.
+    // Stop projections, then await the native lease Scope. The next acquire
+    // retries a failed release; independent borrowers retain the shared replica.
   });
 
   const initializeBorrowedStore = async <A>(
@@ -4598,6 +4611,10 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   // the CLI over the local plane (specs/local-first-two-plane.md 作者规则).
   const workspaceWriter = createDirectWorkspaceWriter({
     repo,
+    onFlockWrite: (id, key) => {
+      if (key[0] === 'agentConfig' && key[1])
+        pendingConfigHandoffs.set(JSON.stringify([id, key[1]]), {});
+    },
     acquireSessionStore: sessionStoreCache.acquire,
     releaseSessionStoreRef: sessionStoreCache.releaseRef,
     acquirePreviewVisualCommentStore: previewVisualCommentStoreCache.acquire,
@@ -4866,24 +4883,31 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   };
 
   const dispose = () => {
-    if (disposePromise) {
+    if (disposePromise && !disposeFailed) {
       return disposePromise;
     }
+    disposeFailed = false;
 
     // Publish retirement before any cancellation callback or asynchronous close runs.
     disposePromise = Promise.resolve().then(async () => {
+      const failures: unknown[] = [];
+      const attempt = async (close: () => void | Promise<unknown>) => {
+        try { await close(); } catch (error) {
+          if (!isDestroyedError(error)) failures.push(error);
+        }
+      };
       windowBootstrap?.close();
       sharedWindowDocuments.clear();
       streamsTokenAbort?.abort();
-      const reconnectsClosed = Promise.all([
+      const reconnectsClosed = Promise.allSettled([
         localReconnectLoop?.close(),
         cloudReconnectLoop?.close(),
         webAttachReconnectLoop?.close(),
       ]);
       // Held sends are in memory only: closing the workspace drops them.
-      await pendingSends.dispose();
+      await attempt(() => pendingSends.dispose());
       // Cancel and join send I/O while its cache, transport and repo still exist.
-      await sendResources.dispose();
+      await attempt(() => sendResources.dispose());
       cancelDelayedBackgroundSyncStart?.();
       cancelDelayedBackgroundSyncStart = null;
       cancelDelayedStartupAcpCapabilitiesRefresh?.();
@@ -4964,24 +4988,15 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
       }
       watchHandles.length = 0;
 
-      await sessionStoreCache.disposeAll();
-      await previewVisualCommentStoreCache.disposeAll();
-      await scheduleStoreCache.disposeAll();
-      let codeCollabFileIndexCacheDisposeError: unknown = null;
-      try {
-        await codeCollabFileIndexCache.dispose();
-      } catch (error) {
-        codeCollabFileIndexCacheDisposeError = error;
-      }
-
-      let teardownTransportError: unknown = null;
-      try {
-        await teardownTransport();
-      } catch (error) {
-        if (!isDestroyedError(error)) {
-          teardownTransportError = error;
-        }
-      }
+      // These owners are independent. Start network retirement even if a store
+      // is still draining a slow save; wait for all before closing the Repo.
+      await Promise.all([
+        attempt(() => sessionStoreCache.disposeAll()),
+        attempt(() => previewVisualCommentStoreCache.disposeAll()),
+        attempt(() => scheduleStoreCache.disposeAll()),
+        attempt(() => codeCollabFileIndexCache.dispose()),
+        attempt(() => teardownTransport()),
+      ]);
 
       // Teardown first fences/removes live bindings; SDK work can then unwind.
       // Joining includes superseded generations, not just the latest attach.
@@ -4990,30 +5005,21 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
         metaRoomJoinPromise,
         localTransportAttachPromise,
       ]);
-      await reconnectsClosed;
+      for (const result of await reconnectsClosed)
+        if (result.status === 'rejected') failures.push(result.reason);
       // No reconnect sweep can add work after its loop has closed. Timed-out
       // attempts may still be running, including attempts from earlier sweeps.
       await Promise.allSettled(pendingCloudRejoins);
       if (window.repo === repo) delete window.repo;
 
-      let destroyError: unknown = null;
-      try {
-        await repo.destroy();
-      } catch (error) {
-        if (!isDestroyedError(error)) {
-          destroyError = error;
-        }
-      }
-
-      if (destroyError) {
-        throw destroyError;
-      }
-      if (teardownTransportError) {
-        throw teardownTransportError;
-      }
-      if (codeCollabFileIndexCacheDisposeError) {
-        throw codeCollabFileIndexCacheDisposeError;
-      }
+      await attempt(() => repo.destroy());
+      if (failures.length === 1) throw failures[0];
+      if (failures.length) throw new AggregateError(failures, 'Workspace cleanup failed');
+    }).catch((error: unknown) => {
+      // disposePromise remains a permanent fence against new work. A later
+      // dispose retries retained owners without making the workspace live again.
+      disposeFailed = true;
+      throw error;
     });
 
     return disposePromise;

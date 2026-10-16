@@ -1,8 +1,8 @@
 import { Effect } from 'effect';
 import type { LoroDoc } from 'loro-crdt';
-import { makeWorkspaceRepo } from '@lody/shared/workspace-data/repo';
+import { make as makeWorkspaceRepo } from 'loro-repo/effect';
 import { makeLocalWorkspaceTransport } from '@lody/shared/workspace-data/local-transport';
-import type { LocalLoroDataPlaneConnection } from '@lody/shared/local-loro-transport';
+import type { LocalLoroDataPlaneConnection } from '@lody/shared/local-loro-data-plane';
 import { makeStreamsTransport, StreamsAuth } from 'loro-repo/effect/streams';
 import { RepoIOError } from 'loro-repo/effect';
 import { streamsSnapshotCodec } from '@lody/shared/streams-snapshot-codec';

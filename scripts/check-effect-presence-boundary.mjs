@@ -13,7 +13,6 @@ const files = [
   'apps/cli/src/lib/loro/session-active-presence.ts',
 ];
 const workspaceFiles = [
-  'repo',
   'ownership',
   'transport',
   'streams',

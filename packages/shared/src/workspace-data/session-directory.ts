@@ -1,4 +1,4 @@
-import { Context, Data, type Effect, type Option } from 'effect';
+import { Data } from 'effect';
 import type { SessionId } from '../ids';
 import type { SessionMeta } from '../schema';
 
@@ -27,24 +27,6 @@ export class DataReadFailed extends Data.TaggedError('DataReadFailed')<{
   readonly operation: string;
   readonly cause: unknown;
 }> {}
-
-/**
- * Workspace Session directory: metadata summaries only. Listing never opens a
- * Session body, activates an Agent or waits for cloud catch-up; callers that
- * need a fresh remote view ask `SyncAuthority.refresh` first.
- */
-export class SessionDirectory extends Context.Service<
-  SessionDirectory,
-  {
-    /**
-     * Matching Sessions from one read of the local metadata index, most recent
-     * activity first. Deleted Sessions are absent; archived ones follow `archive`.
-     */
-    list(query: SessionDirectoryQuery): Effect.Effect<readonly SessionMeta[], DataReadFailed>;
-    /** One Session's metadata, or `None` when it is deleted or has none yet. */
-    get(sessionId: SessionId): Effect.Effect<Option.Option<SessionMeta>, DataReadFailed>;
-  }
->()('@lody/shared/workspace-data/SessionDirectory') {}
 
 const includesFolded = (value: string | undefined, needle: string): boolean =>
   value?.toLowerCase().includes(needle) === true;
@@ -84,7 +66,7 @@ export function compareSessionsByRecentActivity(left: SessionMeta, right: Sessio
   return difference !== 0 ? difference : right.id.localeCompare(left.id);
 }
 
-/** The pure part of `SessionDirectory.list`, shared by every implementation. */
+/** Filter and order metadata without opening Session bodies. */
 export function selectSessionDirectoryRows(
   sessions: Iterable<SessionMeta>,
   query: SessionDirectoryQuery

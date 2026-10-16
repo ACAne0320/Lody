@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   Cause,
   Deferred,
@@ -18,7 +18,7 @@ import { DataReadSyncFailed } from '@lody/shared/workspace-data/sync-authority';
 import { acquireWorkspaceScope } from '@lody/shared/workspace-data/ownership';
 import { RepoDocAlreadyExists, RepoIOError, RepoReleaseFailed } from 'loro-repo/effect';
 import { IndexedDBStorageAdaptor } from 'loro-repo/storage/indexeddb';
-import { makeWorkspaceRepo } from '@lody/shared/workspace-data/repo';
+import { make as makeWorkspaceRepo } from 'loro-repo/effect';
 import {
   WorkspaceRepoLegacy,
   WorkspaceRepoLegacyFailure,
@@ -187,10 +187,9 @@ describe('native WorkspaceData services', () => {
             authority: { mode: 'remote', transports: ['cloud'] },
           });
           const authority = makeSyncAuthority(repo, { local: false, serverTransports: ['cloud'] });
-          const request = { kind: 'workspace-meta' } as const;
-          expect(
-            yield* authority.refresh(request, { reason: 'missing' }).pipe(Effect.flip)
-          ).toBeInstanceOf(DataReadSyncFailed);
+          expect(yield* authority.refresh({ reason: 'missing' }).pipe(Effect.flip)).toBeInstanceOf(
+            DataReadSyncFailed
+          );
           let online = true;
           const status = yield* SubscriptionRef.make<RoomStatus>('synced');
           yield* repo.attachTransport({
@@ -205,12 +204,12 @@ describe('native WorkspaceData services', () => {
                 sync: Effect.sync(() => (online ? ('confirmed' as const) : ('offline' as const))),
               }),
           });
-          yield* authority.refresh(request, { reason: 'online' });
+          yield* authority.refresh({ reason: 'online' });
           online = false;
-          expect(
-            yield* authority.refresh(request, { reason: 'offline' }).pipe(Effect.flip)
-          ).toBeInstanceOf(DataReadSyncFailed);
-          yield* makeSyncAuthority(repo, { local: true, serverTransports: [] }).refresh(request, {
+          expect(yield* authority.refresh({ reason: 'offline' }).pipe(Effect.flip)).toBeInstanceOf(
+            DataReadSyncFailed
+          );
+          yield* makeSyncAuthority(repo, { local: true, serverTransports: [] }).refresh({
             reason: 'local',
           });
         })
@@ -220,6 +219,27 @@ describe('native WorkspaceData services', () => {
 });
 
 describe('retained native release ownership', () => {
+  it('closes storage after a background observer fails without poisoning shutdown', async () => {
+    const adapter = storage();
+    const repo = await WorkspaceRepoLegacy.create({ storageAdapter: adapter });
+    const reported = Promise.withResolvers<void>();
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => reported.resolve());
+    const failure = new Error('synthetic private observer failure');
+    const watch = repo.watch(() => {
+      throw failure;
+    });
+    try {
+      await repo.upsertDocMeta('observed', { title: 'retained' });
+      await reported.promise;
+      expect((await repo.getDocMeta('observed'))?.meta.title).toBe('retained');
+      await expect(repo.destroy()).resolves.toBeUndefined();
+      await expect(adapter.loadDoc('observed')).rejects.toThrow();
+    } finally {
+      watch.unsubscribe();
+      warning.mockRestore();
+      await repo.destroy();
+    }
+  });
   it('keeps an unrouted room detached and its first-sync waiter alive until attachment', async () => {
     const repo = await WorkspaceRepoLegacy.create({});
     try {

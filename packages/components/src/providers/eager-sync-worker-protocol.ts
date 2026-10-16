@@ -1,5 +1,5 @@
 import type { StreamsTransportOptions } from 'loro-repo/effect/streams';
-import type { LocalLoroDataPlaneConnection } from '@lody/shared/local-loro-transport';
+import type { LocalLoroDataPlaneConnection } from '@lody/shared/local-loro-data-plane';
 
 export type LocalSyncMessage = Parameters<LocalLoroDataPlaneConnection['send']>[0];
 export type LocalSyncEvent = Parameters<
