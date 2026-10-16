@@ -132,6 +132,9 @@ body, so the protector needs no knowledge of the format.
   explicitly in your composition.
 - A protector can always read what it protects. It is a trust boundary of the
   host platform, not isolation from a compromised host.
+- Desktop: `desktopE2eePorts(custody, device)` in
+  `apps/electron/src/main/e2ee-custody.mts` provides both protectors and
+  `DeviceIdentity` from an OS-wrapped key (Electron `safeStorage`).
 
 ## Application ports
 
