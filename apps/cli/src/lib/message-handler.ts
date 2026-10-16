@@ -2492,15 +2492,17 @@ export class MessageHandler {
   /**
    * Draft session preparation is retired. Desktops that predate its removal
    * still ask for it, so both requests answer at once without doing any work.
+   * Prepare reports an accepted duplicate: an older desktop then holds that one
+   * lease until the draft idles or is sent. A rejection would make it ask again,
+   * and cancel, after every pause in typing.
    */
   private declineSessionPreparation(spec: SessionPreparationSpec): SessionPrepareResponse {
     return {
       type: 'session/prepare_response',
       preparationId: spec.preparationId,
       sessionId: spec.sessionId,
-      accepted: false,
-      disposition: 'error',
-      error: 'Session preparation is no longer supported',
+      accepted: true,
+      disposition: 'duplicate',
     };
   }
 

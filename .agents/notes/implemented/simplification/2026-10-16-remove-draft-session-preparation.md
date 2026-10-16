@@ -14,8 +14,8 @@ cases the turn arrived, found the preparation incompatible, deleted it, and
 rebuilt everything from scratch. That rebuild was slower than an ordinary cold
 start and sometimes failed the turn. Preparation is removed. A Session now
 starts its agent and worktree only when its first turn is dispatched. Daemons
-still answer the old request so older desktops keep working. A startup sweep
-removes worktrees that older daemons prepared and never released.
+still answer the old request so older desktops keep working, and worktrees that
+older daemons prepared are either claimed safely by their Session or removed.
 
 ## Problem
 
@@ -62,14 +62,21 @@ after 75 s because releasing a missed preparation timed out.
   service, its TTL control, adoption, the claim gate in `AgentClient` startup
   and the speculative worktree materialize/claim/complete steps are deleted.
 - The two RPC methods and their schemas stay. Older desktops still send them,
-  and the daemon answers both at once without an access check or any work:
-  `accepted: false` for prepare and `not-found` for cancel. The existing
-  desktop code already treats both as "nothing prepared".
-- `legacy-speculative-worktrees.ts` keeps one job: on startup and on metadata
-  recovery, it removes stale markers that an older daemon left behind. If the
-  Session never became durable, the worktree it created is removed too.
-  Otherwise only the marker goes, because the Session owns that directory. Worktree
-  GC cannot do this, because it never acts on a Session it does not know.
+  and the daemon answers both at once without an access check or any work.
+  Prepare reports an accepted `duplicate`, so an older desktop holds that one
+  lease until the draft idles or is sent. A rejection would make it send a new
+  prepare and a cancel after every pause in typing. Cancel reports `not-found`.
+- `legacy-speculative-worktrees.ts` handles the markers older daemons left.
+  Session creation claims the Session's marker before it probes the directory.
+  A worktree built for another repository or base branch is removed and rebuilt.
+  A matching one is reused, but setup runs first, because a preparation never
+  ran it. The marker is dropped only after setup succeeds. On startup and
+  metadata recovery, a sweep removes orphans: markers, and the worktrees they
+  created, whose Session is neither durable nor being created. Worktree GC
+  cannot, because it never acts on a Session it does not know. New daemons write
+  no markers, so the sweep needs no staleness window. It shares the per-session
+  marker lock with the claim and re-checks liveness under it, so it never
+  removes a worktree a starting Session has just adopted.
 - `isSensitiveAcpConfigOptionId` moves to its own shared module. Roles,
   schedules and the retained request schema still use it.
 
@@ -89,10 +96,6 @@ after 75 s because releasing a missed preparation timed out.
 - The first turn of a new Session now always pays a cold start. On this machine
   that start has a median of 6.6 s. Most of it is `git fetch` and its GitHub
   token requests, which is separate follow-up work.
-- An old marker in the `durable-pending-setup` phase meant setup had not
-  finished when an older daemon stopped. If that Session resumes on a worktree
-  that still exists, setup now counts as done. That needs a crash during setup
-  just before the upgrade, which is rare enough to accept.
 - Delete `legacy-speculative-worktrees.ts`, and the decline handlers and request
   schemas, once no supported daemon or desktop can still produce them.
 
@@ -100,16 +103,16 @@ after 75 s because releasing a missed preparation timed out.
 
 - Typecheck: CLI sources, `@lody/shared`, `@lody/loro-streams-rpc` and
   `@lody/components` pass. Type-aware lint on the changed files reports no errors.
-- Tests that passed: the new legacy-sweep suite (removes an abandoned worktree,
-  keeps a durable Session's worktree, keeps an adopted directory, ignores recent,
-  active and foreign markers, retries after a failed removal); AgentClient
-  session startup; session-manager durable ownership, termination, ACP project
-  identity and Codex binding; dispatch watcher; credential runtime ownership;
-  shared schema/sensitivity tests; the Loro Streams RPC suites; and the
-  chat-landing, Machine RPC facade and runtime tests.
-- Not run here: three session-manager groups that build a real Git repository
-  (child workdir, worktree setup, failed agent creation) and the
-  credential-broker worktree suite. In this agent's environment a plain
-  `git commit` in a fresh temporary repository hangs and blocks the test worker.
-  A clean environment does not hang. These need CI.
+- Tests that passed: the legacy marker suite (orphan removed at any age,
+  adopted directory kept, durable, active and foreign markers left, a Session
+  that starts during the sweep's durability check keeps its worktree, failed
+  removal retried, mismatched target rebuilt, matching target pending setup
+  until completion); the whole session-manager suite, including real-Git cases
+  where a matching legacy worktree is reused with setup rerun on resume and a
+  mismatched one is rebuilt; the credential-broker worktree suite; AgentClient
+  session startup; dispatch watcher; credential runtime ownership; shared
+  schema/sensitivity tests; the Loro Streams RPC suites; and the chat-landing,
+  Machine RPC facade and runtime tests.
+- The real-Git suites ran with a clean process environment. In this agent's
+  sandbox the inherited environment makes `git commit` hang.
 - Latency after removal was not measured on a remote machine.

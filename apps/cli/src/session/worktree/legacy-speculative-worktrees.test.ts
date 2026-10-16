@@ -2,10 +2,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MachineId, SessionId, WorkspaceId } from '@lody/shared';
+import type { MachineId, RepoId, SessionId, WorkspaceId } from '@lody/shared';
 import type { Logger } from '@/utils/logger';
 import type { WorktreeManager } from './worktree-manager';
 import {
+  claimLegacySpeculativeWorktree,
+  completeLegacySpeculativeWorktreeSetup,
   getLegacySpeculativeWorktreeMarkerPath,
   recoverLegacySpeculativeWorktrees,
 } from './legacy-speculative-worktrees';
@@ -13,7 +15,11 @@ import {
 const WORKSPACE_ID = 'workspace-1' as WorkspaceId;
 const MACHINE_ID = 'machine-1' as MachineId;
 const CREATED_AT_MS = 1_000_000;
-const STALE_NOW_MS = CREATED_AT_MS + 11 * 60_000;
+const TARGET = {
+  repoId: 'repo-1' as RepoId,
+  source: { kind: 'local-shared' as const, originalRootPath: '/tmp/source' },
+  baseBranch: 'main',
+};
 
 function createLogger(): Logger {
   return {
@@ -43,7 +49,7 @@ function createWorktreeHost(sessionIds: SessionId[]) {
 
 function writeLegacyMarker(
   sessionId: SessionId,
-  overrides: { ownsWorktree?: boolean; workspaceId?: string; createdAtMs?: number } = {}
+  overrides: { ownsWorktree?: boolean; workspaceId?: string; baseBranch?: string } = {}
 ): string {
   const markerPath = getLegacySpeculativeWorktreeMarkerPath(sessionId);
   mkdirSync(path.dirname(markerPath), { recursive: true });
@@ -57,16 +63,16 @@ function writeLegacyMarker(
       machineId: MACHINE_ID,
       repoId: 'repo-1',
       source: { kind: 'local-shared', originalRootPath: '/tmp/source' },
-      baseBranch: 'main',
+      baseBranch: overrides.baseBranch ?? 'main',
       ownsWorktree: overrides.ownsWorktree ?? true,
       phase: 'speculative',
-      createdAtMs: overrides.createdAtMs ?? CREATED_AT_MS,
+      createdAtMs: CREATED_AT_MS,
     })
   );
   return markerPath;
 }
 
-describe('legacy speculative worktree recovery', () => {
+describe('legacy speculative worktrees', () => {
   let tempHome: string;
 
   beforeEach(() => {
@@ -79,39 +85,37 @@ describe('legacy speculative worktree recovery', () => {
     rmSync(tempHome, { recursive: true, force: true });
   });
 
-  it('removes the worktree and marker of a stale preparation that never became durable', async () => {
-    const sessionId = 'session-abandoned' as SessionId;
-    const markerPath = writeLegacyMarker(sessionId);
-    const host = createWorktreeHost([sessionId]);
-
-    await recoverLegacySpeculativeWorktrees({
+  const sweep = (
+    host: ReturnType<typeof createWorktreeHost>,
+    overrides: Partial<Parameters<typeof recoverLegacySpeculativeWorktrees>[0]> = {}
+  ) =>
+    recoverLegacySpeculativeWorktrees({
       workspaceId: WORKSPACE_ID,
       machineId: MACHINE_ID,
       logger: createLogger(),
       isDurableSession: async () => false,
-      nowMs: STALE_NOW_MS,
+      getManager: host.getManager,
+      ...overrides,
+    });
+
+  const claim = (sessionId: SessionId, host: ReturnType<typeof createWorktreeHost>) =>
+    claimLegacySpeculativeWorktree({
+      sessionId,
+      workspaceId: WORKSPACE_ID,
+      machineId: MACHINE_ID,
+      target: TARGET,
+      logger: createLogger(),
       getManager: host.getManager,
     });
 
-    expect(host.worktrees.has(sessionId)).toBe(false);
-    expect(existsSync(markerPath)).toBe(false);
-  });
-
-  it('keeps the worktree of a durable session and only drops its marker', async () => {
-    const sessionId = 'session-durable' as SessionId;
+  it('removes an orphan at startup regardless of its age', async () => {
+    const sessionId = 'session-abandoned' as SessionId;
     const markerPath = writeLegacyMarker(sessionId);
     const host = createWorktreeHost([sessionId]);
 
-    await recoverLegacySpeculativeWorktrees({
-      workspaceId: WORKSPACE_ID,
-      machineId: MACHINE_ID,
-      logger: createLogger(),
-      isDurableSession: async (candidate) => candidate === sessionId,
-      nowMs: STALE_NOW_MS,
-      getManager: host.getManager,
-    });
+    await sweep(host);
 
-    expect(host.worktrees.has(sessionId)).toBe(true);
+    expect(host.worktrees.has(sessionId)).toBe(false);
     expect(existsSync(markerPath)).toBe(false);
   });
 
@@ -120,42 +124,50 @@ describe('legacy speculative worktree recovery', () => {
     const markerPath = writeLegacyMarker(sessionId, { ownsWorktree: false });
     const host = createWorktreeHost([sessionId]);
 
-    await recoverLegacySpeculativeWorktrees({
-      workspaceId: WORKSPACE_ID,
-      machineId: MACHINE_ID,
-      logger: createLogger(),
-      isDurableSession: async () => false,
-      nowMs: STALE_NOW_MS,
-      getManager: host.getManager,
-    });
+    await sweep(host);
 
     expect(host.worktrees.has(sessionId)).toBe(true);
     expect(existsSync(markerPath)).toBe(false);
   });
 
-  it('leaves recent, active and other-workspace markers alone', async () => {
-    const recent = 'session-recent' as SessionId;
+  it('leaves durable, active and other-workspace markers for their own Session', async () => {
+    const durable = 'session-durable' as SessionId;
     const active = 'session-active' as SessionId;
     const foreign = 'session-foreign' as SessionId;
     const markers = [
-      writeLegacyMarker(recent, { createdAtMs: STALE_NOW_MS - 60_000 }),
+      writeLegacyMarker(durable),
       writeLegacyMarker(active),
       writeLegacyMarker(foreign, { workspaceId: 'workspace-2' }),
     ];
-    const host = createWorktreeHost([recent, active, foreign]);
+    const host = createWorktreeHost([durable, active, foreign]);
 
-    await recoverLegacySpeculativeWorktrees({
-      workspaceId: WORKSPACE_ID,
-      machineId: MACHINE_ID,
-      logger: createLogger(),
+    await sweep(host, {
       isActiveSession: (candidate) => candidate === active,
-      isDurableSession: async () => false,
-      nowMs: STALE_NOW_MS,
-      getManager: host.getManager,
+      isDurableSession: async (candidate) => candidate === durable,
     });
 
-    expect([...host.worktrees].sort()).toEqual([active, foreign, recent].sort());
+    expect([...host.worktrees].sort()).toEqual([active, durable, foreign].sort());
     expect(markers.every((markerPath) => existsSync(markerPath))).toBe(true);
+  });
+
+  it('does not remove a worktree whose Session starts while the sweep checks durability', async () => {
+    const sessionId = 'session-racing' as SessionId;
+    const markerPath = writeLegacyMarker(sessionId);
+    const host = createWorktreeHost([sessionId]);
+    let creating = false;
+
+    await sweep(host, {
+      isActiveSession: (candidate) => candidate === sessionId && creating,
+      isDurableSession: async () => {
+        // The dispatch's create registers while the sweep awaits metadata.
+        creating = true;
+        return false;
+      },
+    });
+
+    expect(host.worktrees.has(sessionId)).toBe(true);
+    expect(existsSync(markerPath)).toBe(true);
+    await expect(claim(sessionId, host)).resolves.toBe('setup-pending');
   });
 
   it('keeps the marker for a later pass when worktree removal fails', async () => {
@@ -167,15 +179,54 @@ describe('legacy speculative worktree recovery', () => {
       },
     } as unknown as WorktreeManager;
 
-    await recoverLegacySpeculativeWorktrees({
+    await sweep(createWorktreeHost([sessionId]), { getManager: () => manager });
+
+    expect(existsSync(markerPath)).toBe(true);
+  });
+
+  it('rebuilds a worktree that was prepared for a different base branch', async () => {
+    const sessionId = 'session-rebased' as SessionId;
+    const markerPath = writeLegacyMarker(sessionId, { baseBranch: 'dev' });
+    const host = createWorktreeHost([sessionId]);
+
+    await expect(claim(sessionId, host)).resolves.toBe('mismatch');
+
+    expect(host.worktrees.has(sessionId)).toBe(false);
+    expect(existsSync(markerPath)).toBe(false);
+  });
+
+  it('keeps a matching worktree pending setup until setup completes', async () => {
+    const sessionId = 'session-matching' as SessionId;
+    const markerPath = writeLegacyMarker(sessionId);
+    const host = createWorktreeHost([sessionId]);
+
+    await expect(claim(sessionId, host)).resolves.toBe('setup-pending');
+    expect(host.worktrees.has(sessionId)).toBe(true);
+    // An interrupted setup leaves the claim in place for the next resume.
+    await expect(claim(sessionId, host)).resolves.toBe('setup-pending');
+
+    await completeLegacySpeculativeWorktreeSetup({
+      sessionId,
       workspaceId: WORKSPACE_ID,
       machineId: MACHINE_ID,
-      logger: createLogger(),
-      isDurableSession: async () => false,
-      nowMs: STALE_NOW_MS,
-      getManager: () => manager,
+      target: TARGET,
     });
 
+    expect(existsSync(markerPath)).toBe(false);
+    await expect(claim(sessionId, host)).resolves.toBe('no-marker');
+  });
+
+  it('ignores another workspace marker for the same Session id', async () => {
+    const sessionId = 'session-shared-id' as SessionId;
+    const markerPath = writeLegacyMarker(sessionId, {
+      workspaceId: 'workspace-2',
+      baseBranch: 'dev',
+    });
+    const host = createWorktreeHost([sessionId]);
+
+    await expect(claim(sessionId, host)).resolves.toBe('no-marker');
+
+    expect(host.worktrees.has(sessionId)).toBe(true);
     expect(existsSync(markerPath)).toBe(true);
   });
 });

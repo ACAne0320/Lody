@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { readFile, readdir, rm } from 'node:fs/promises';
 import { z } from 'zod';
 import type { MachineId, RepoId, SessionId, WorkspaceId } from '@lody/shared';
@@ -14,15 +15,19 @@ import { formatErrorMessage } from '@/utils/format-error';
 import { getLodyDataDir } from '@lody/shared/node/installation-profile';
 
 /**
- * Cleanup for worktrees left behind by draft session preparation, which daemons
- * before its removal materialized while the user was still typing. Nothing
- * writes these markers any more. A marker survives only when such a daemon
- * stopped before disposing its preparation, and worktree GC never removes the
- * directory because its Session was never published. Delete this module once
- * no supported daemon can have written a marker.
+ * Markers left by draft session preparation, which daemons before its removal
+ * used to materialize a worktree while the user was still typing. Nothing writes
+ * these markers any more, so every marker present belongs to an older process.
+ * Two things still read them:
+ *
+ * - Session creation claims the marker for its own Session. A worktree built
+ *   for a different repo or base branch is rebuilt, and a matching one still
+ *   runs setup, which a preparation never ran.
+ * - A sweep removes orphans whose Session never became durable. Worktree GC
+ *   cannot, because it never acts on a Session it does not know.
+ *
+ * Delete this module once no supported daemon can have written a marker.
  */
-const LEGACY_MARKER_STALE_MS = 10 * 60_000;
-
 const WorktreeManagerSourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('github'), repoUrl: z.string().optional() }).strict(),
   z
@@ -52,6 +57,15 @@ const LegacySpeculativeWorktreeMarkerSchema = z
 
 type LegacySpeculativeWorktreeMarker = z.infer<typeof LegacySpeculativeWorktreeMarkerSchema>;
 
+/** The worktree a durable Session expects, compared against a marker's target. */
+export type LegacySpeculativeWorktreeTarget = {
+  repoId: RepoId;
+  source: WorktreeManagerSource;
+  baseBranch?: string;
+};
+
+type GetManager = (config: WorktreeManagerConfig) => WorktreeManager;
+
 export function getLegacySpeculativeWorktreeMarkerRoot(): string {
   return path.join(getLodyDataDir(), 'session-preparations', 'worktrees');
 }
@@ -59,6 +73,19 @@ export function getLegacySpeculativeWorktreeMarkerRoot(): string {
 export function getLegacySpeculativeWorktreeMarkerPath(sessionId: SessionId): string {
   const key = createHash('sha256').update(sessionId).digest('hex');
   return path.join(getLegacySpeculativeWorktreeMarkerRoot(), `${key}.json`);
+}
+
+async function readMarker(sessionId: SessionId): Promise<LegacySpeculativeWorktreeMarker | null> {
+  try {
+    const parsed = LegacySpeculativeWorktreeMarkerSchema.safeParse(
+      JSON.parse(
+        await readFile(getLegacySpeculativeWorktreeMarkerPath(sessionId), 'utf8')
+      ) as unknown
+    );
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 async function readMarkerFile(markerPath: string): Promise<LegacySpeculativeWorktreeMarker | null> {
@@ -72,10 +99,124 @@ async function readMarkerFile(markerPath: string): Promise<LegacySpeculativeWork
   }
 }
 
+async function deleteMarker(sessionId: SessionId): Promise<void> {
+  await rm(getLegacySpeculativeWorktreeMarkerPath(sessionId), { force: true });
+}
+
 /**
- * Removes this workspace's stale legacy markers. A marker whose Session became
- * durable only loses the marker: that Session owns the directory now. Any other
- * stale marker also loses the worktree it created.
+ * Serializes marker read-check-act sequences per session within this process.
+ * Session creation's claim and the orphan sweep act on the same marker and the
+ * same worktree: unserialized, a sweep that checked before a create began could
+ * delete the worktree that create had just adopted.
+ */
+const sessionMarkerLocks = new Map<string, Promise<unknown>>();
+
+async function withSessionMarkerLock<T>(sessionId: SessionId, fn: () => Promise<T>): Promise<T> {
+  const previous = sessionMarkerLocks.get(sessionId) ?? Promise.resolve();
+  const run = previous.then(fn);
+  const tail = run.then(
+    () => undefined,
+    () => undefined
+  );
+  sessionMarkerLocks.set(sessionId, tail);
+  try {
+    return await run;
+  } finally {
+    if (sessionMarkerLocks.get(sessionId) === tail) {
+      sessionMarkerLocks.delete(sessionId);
+    }
+  }
+}
+
+function belongsTo(
+  marker: LegacySpeculativeWorktreeMarker,
+  scope: { workspaceId: WorkspaceId; machineId: MachineId }
+): boolean {
+  return marker.workspaceId === scope.workspaceId && marker.machineId === scope.machineId;
+}
+
+function markerMatchesTarget(
+  marker: LegacySpeculativeWorktreeMarker,
+  target: LegacySpeculativeWorktreeTarget
+): boolean {
+  return (
+    marker.repoId === target.repoId &&
+    marker.baseBranch === target.baseBranch &&
+    isDeepStrictEqual(marker.source, target.source)
+  );
+}
+
+async function disposeMarker(
+  marker: LegacySpeculativeWorktreeMarker,
+  logger: Logger,
+  getManager: GetManager = getWorktreeManager
+): Promise<void> {
+  if (marker.ownsWorktree) {
+    const manager = getManager({
+      repoId: marker.repoId as RepoId,
+      source: marker.source as WorktreeManagerSource,
+      logger,
+    });
+    await manager.removeWorktree(
+      marker.sessionId as SessionId,
+      true,
+      undefined,
+      marker.baseBranch ? { baseBranchName: marker.baseBranch } : undefined
+    );
+  }
+  await deleteMarker(marker.sessionId as SessionId);
+}
+
+/**
+ * How Session creation's claim of a legacy marker resolved.
+ *
+ * - `setup-pending`: the marker matched the target. Its worktree may be reused,
+ *   but setup has not completed, so it must run even on resume.
+ * - `no-marker`: nothing to claim, including another workspace's marker.
+ * - `mismatch`: the worktree was built for a different target and has been
+ *   disposed together with the marker; creation must build a fresh one.
+ */
+export type LegacySpeculativeWorktreeClaim = 'setup-pending' | 'no-marker' | 'mismatch';
+
+/** Runs before Session creation reuses or creates the Session's worktree. */
+export async function claimLegacySpeculativeWorktree(args: {
+  sessionId: SessionId;
+  workspaceId: WorkspaceId;
+  machineId: MachineId;
+  target: LegacySpeculativeWorktreeTarget;
+  logger: Logger;
+  getManager?: GetManager;
+}): Promise<LegacySpeculativeWorktreeClaim> {
+  return await withSessionMarkerLock(args.sessionId, async () => {
+    const marker = await readMarker(args.sessionId);
+    if (!marker || !belongsTo(marker, args)) return 'no-marker';
+    if (!markerMatchesTarget(marker, args.target)) {
+      await disposeMarker(marker, args.logger, args.getManager);
+      return 'mismatch';
+    }
+    return 'setup-pending';
+  });
+}
+
+/** Drops a matching marker once setup has completed for the durable Session. */
+export async function completeLegacySpeculativeWorktreeSetup(args: {
+  sessionId: SessionId;
+  workspaceId: WorkspaceId;
+  machineId: MachineId;
+  target: LegacySpeculativeWorktreeTarget;
+}): Promise<void> {
+  await withSessionMarkerLock(args.sessionId, async () => {
+    const marker = await readMarker(args.sessionId);
+    if (marker && belongsTo(marker, args) && markerMatchesTarget(marker, args.target)) {
+      await deleteMarker(args.sessionId);
+    }
+  });
+}
+
+/**
+ * Removes this workspace's orphaned markers together with the worktrees they
+ * created. A marker whose Session is durable or being created is left for that
+ * Session's claim, which knows whether setup still has to run.
  */
 export async function recoverLegacySpeculativeWorktrees(args: {
   workspaceId: WorkspaceId;
@@ -83,10 +224,8 @@ export async function recoverLegacySpeculativeWorktrees(args: {
   logger: Logger;
   isDurableSession: (sessionId: SessionId) => Promise<boolean>;
   isActiveSession?: (sessionId: SessionId) => boolean;
-  nowMs?: number;
-  getManager?: (config: WorktreeManagerConfig) => WorktreeManager;
+  getManager?: GetManager;
 }): Promise<void> {
-  const nowMs = args.nowMs ?? Date.now();
   const root = getLegacySpeculativeWorktreeMarkerRoot();
   let entries: string[];
   try {
@@ -97,33 +236,20 @@ export async function recoverLegacySpeculativeWorktrees(args: {
 
   for (const entry of entries) {
     if (!entry.endsWith('.json')) continue;
-    const markerPath = path.join(root, entry);
     try {
-      const marker = await readMarkerFile(markerPath);
-      if (
-        !marker ||
-        marker.workspaceId !== args.workspaceId ||
-        marker.machineId !== args.machineId ||
-        nowMs - marker.createdAtMs < LEGACY_MARKER_STALE_MS
-      ) {
-        continue;
-      }
-      const sessionId = marker.sessionId as SessionId;
-      if (args.isActiveSession?.(sessionId)) continue;
-      if (marker.ownsWorktree && !(await args.isDurableSession(sessionId))) {
-        const manager = (args.getManager ?? getWorktreeManager)({
-          repoId: marker.repoId as RepoId,
-          source: marker.source as WorktreeManagerSource,
-          logger: args.logger,
-        });
-        await manager.removeWorktree(
-          sessionId,
-          true,
-          undefined,
-          marker.baseBranch ? { baseBranchName: marker.baseBranch } : undefined
-        );
-      }
-      await rm(markerPath, { force: true });
+      const candidate = await readMarkerFile(path.join(root, entry));
+      if (!candidate || !belongsTo(candidate, args)) continue;
+      const sessionId = candidate.sessionId as SessionId;
+      await withSessionMarkerLock(sessionId, async () => {
+        // Re-read and re-check under the lock: a create that began while this
+        // sweep waited has claimed or is about to claim this marker.
+        const marker = await readMarker(sessionId);
+        if (!marker || marker.preparationId !== candidate.preparationId) return;
+        if (args.isActiveSession?.(sessionId)) return;
+        if (await args.isDurableSession(sessionId)) return;
+        if (args.isActiveSession?.(sessionId)) return;
+        await disposeMarker(marker, args.logger, args.getManager);
+      });
     } catch (error) {
       args.logger.debug(
         `Failed to recover legacy speculative worktree marker ${entry}: ${formatErrorMessage(error)}`

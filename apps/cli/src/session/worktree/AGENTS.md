@@ -94,9 +94,11 @@ and file responsibilities: [../README.md](../README.md).
 - Worktree setup scripts are per worktree-directory lifetime: session runtime restore after
   idle GC must skip setup when the session's worktree directory already exists, but setup still
   runs when a missing worktree directory is materialized again.
-- Nothing writes speculative-worktree markers any more. `legacy-speculative-worktrees.ts`
-  only sweeps stale ones from older daemons: it removes the worktree of a Session that never
-  became durable and only the marker of one that did.
+- Nothing writes speculative-worktree markers any more; `legacy-speculative-worktrees.ts`
+  handles those older daemons left. Session creation claims its marker before probing the
+  directory: rebuild a mismatched target, rerun setup for a matching one, then drop it. The
+  sweep removes only orphans of non-durable, inactive Sessions. Claim and sweep share the
+  per-session marker lock, and the sweep re-checks liveness under it.
 - `worktree-config-resolver.ts` follows the durable launch-config rule in
   [../AGENTS.md](../AGENTS.md): do not write per-session `sessionLaunchConfig`.
 - Archive and delete never delete a Session branch; only the worktree directory goes

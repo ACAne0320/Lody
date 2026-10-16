@@ -106,7 +106,11 @@ import type { AcpCapabilitiesResult } from '@/agent/acp-capability-normalization
 import { resolveWorkspaceLocalProjectRootPathWithRetry } from '@/lib/local-project-meta';
 import { readTimeoutEnv } from '@/lib/loro/timeout-utils';
 import { loadSessionMcpCatalog } from '@/agent/session-mcp-resolver';
-import { recoverLegacySpeculativeWorktrees } from './worktree/legacy-speculative-worktrees';
+import {
+  claimLegacySpeculativeWorktree,
+  completeLegacySpeculativeWorktreeSetup,
+  recoverLegacySpeculativeWorktrees,
+} from './worktree/legacy-speculative-worktrees';
 
 function formatManagedRuntimeProgressDetail(event: ManagedRuntimeProgressEvent): string {
   const runtimeLabel =
@@ -1493,6 +1497,24 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       this.logger.debug(
         `[${config.sessionId}] Preparing worktree (repoId=${worktreeTarget.managerConfig.repoId} sessionId=${config.sessionId}) in host`
       );
+      // An older daemon may have prepared this Session's worktree for a draft.
+      // Claim before probing the directory: a mismatched one is removed here.
+      const legacyTarget = {
+        repoId: worktreeTarget.managerConfig.repoId,
+        source: worktreeTarget.managerConfig.source ?? {
+          kind: 'github' as const,
+          repoUrl: worktreeTarget.managerConfig.repoUrl,
+        },
+        ...(config.branch ? { baseBranch: config.branch } : {}),
+      };
+      const legacyClaim = await claimLegacySpeculativeWorktree({
+        sessionId: config.sessionId!,
+        workspaceId: config.workspaceId,
+        machineId: this.machineId,
+        target: legacyTarget,
+        logger: this.logger,
+      });
+      const legacySetupPending = legacyClaim === 'setup-pending';
       const worktreeAlreadyExisted = worktreeManager.hasWorktree(config.sessionId!);
       const worktreeInfo = await worktreeManager.createWorktree(
         config.sessionId!,
@@ -1514,7 +1536,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       this.logger.debug(
         `[${config.sessionId}] Worktree details (branch=${worktreeInfo.branch} head=${worktreeInfo.headSha ?? 'unknown'}): host=${worktreeInfo.hostPath}`
       );
-      if (config.resume && worktreeAlreadyExisted) {
+      if (config.resume && worktreeAlreadyExisted && !legacySetupPending) {
         this.logger.debug(
           `[${config.sessionId}] Skipping worktree setup for restored session because the worktree already exists`
         );
@@ -1538,6 +1560,14 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
             insertBeforeEntryId: config.worktreeScriptHistoryInsertBeforeEntryId,
           }),
         });
+        if (legacySetupPending) {
+          await completeLegacySpeculativeWorktreeSetup({
+            sessionId: config.sessionId!,
+            workspaceId: config.workspaceId,
+            machineId: this.machineId,
+            target: legacyTarget,
+          });
+        }
       }
     } else if (config.parentSessionId) {
       const parentSessionDoc = await this.workspaceDocument.getOrCreateSessionDoc(

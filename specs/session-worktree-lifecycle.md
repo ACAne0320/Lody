@@ -24,9 +24,10 @@ further happens on disk.
 
 A Session's worktree is created when its first turn is dispatched, never while the
 user is still writing a draft. Older daemons could create one for a draft and stop
-before releasing it. Such a worktree is removed after it has gone stale, unless its
-Session became durable, in which case the Session keeps it. This cleanup does not
-change the archive and restore retention contract below.
+before releasing it. If that Session never became durable, the worktree is removed.
+If it did, the Session reuses the worktree only when it was built for the same
+repository and base branch, and runs setup on it first; otherwise the worktree is
+rebuilt. This does not change the archive and restore retention contract below.
 
 ## Git execution failure
 
