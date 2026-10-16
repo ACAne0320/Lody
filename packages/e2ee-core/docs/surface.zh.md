@@ -2,7 +2,7 @@
 
 [English](surface.md) · [导读](../README.zh.md)
 
-按用途分组列出每个公开入口的全部导出。每个导出都有 JSDoc（由 `pnpm --filter @lody/e2ee-core check:docs` 与 `test/public-docs.test.ts` 保证）。用 `pnpm --filter @lody/e2ee-core exec tsx scripts/check-public-docs.ts --list` 打印当前的精确列表。
+按用途分组列出每个公开入口的全部导出。每个导出、命名空间内的导出与 service 成员都有 JSDoc（由 `pnpm --filter @lody/e2ee-core check:docs` 与 `test/public-docs.test.ts` 保证）。检查器只检查注释存在性；所有权、失败与重试语义是否说明充分仍需人工检查。用 `pnpm --filter @lody/e2ee-core exec tsx scripts/check-public-docs.ts --list` 打印当前的精确列表。
 
 `@lody/e2ee-core/internal` 不是公开接口：它为本仓库测试与 Lab 重新导出内部实现，不做任何兼容性承诺。
 
@@ -28,7 +28,7 @@
 | 平台 | `DeviceIdentity`, `KeyProtector`, `CandidateProtector`, `nativeDeviceSigner`, `DeviceSigner` |
 | 应用 | `WorkspaceScope`, `LedgerViewSource`, `EpochPublicationSource` |
 | 本地存储 | `LedgerPinStore`, `LedgerFeedStore`, `LedgerFeedContents`, `LedgerFeedTail`, `InstalledKeyStore`, `ReceiveJournal`, `ReceiveTaskRow`, `ReceiveTaskPhase`, `RepairJournal`, `RepairTaskRow`, `RepairTaskPhase`, `DistributionJournal`, `DistributionTaskRow`, `DistributionTaskPhase`, `DeliveryOutbox`, `EpochCandidateStore`, `EpochCandidateRow`, `SubmissionJournal`, `SubmissionEntry`, `SubmissionOutcome`, `SubmissionResult` |
-| 端口错误 | `BackendError`, `LedgerLogError`, `LocalStoreError`, `KeyProtectorError`, `LedgerFeedError` |
+| 端口错误 | `BackendError`, `LedgerLogError`, `LedgerViewSourceError`, `LocalStoreError`, `KeyProtectorError`, `LedgerFeedError` |
 | 值类型 | `GenesisHash`, `SigningPublicKey`, `LedgerView`, `LedgerCheckpoint`, `LedgerReadPage`, `MailboxSlot`, `EpochStagedGroup`, `EpochStagedGroupKey` |
 
 ## `@lody/e2ee-core/protocol` — 纯协议

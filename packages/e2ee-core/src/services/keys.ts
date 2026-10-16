@@ -88,7 +88,9 @@ export class KeyMailbox extends Context.Service<
 export class EpochStagingStore extends Context.Service<
   EpochStagingStore,
   {
+    /** Store an immutable original group; identical retries succeed, different bytes at the same key conflict. */
     stageGroup(group: EpochStagedGroup): Effect.Effect<void, BackendError>;
+    /** Return the original stored group or `null`; presence alone never proves ledger commitment. */
     readGroup(key: EpochStagedGroupKey): Effect.Effect<EpochStagedGroup | null, BackendError>;
     /** `occupied` is the client-verified different commitment now holding this epoch. */
     deleteGroup(
@@ -99,8 +101,8 @@ export class EpochStagingStore extends Context.Service<
 >()('@lody/e2ee-core/EpochStagingStore') {}
 
 /**
- * Platform protection for key material stored on this device (installed epoch
- * keys, rotation candidates).
+ * Platform protection for installed epoch keys stored on this device.
+ * Unpublished rotation candidates use the distinct {@link CandidateProtector}.
  *
  * `protect` must authenticate and encrypt the entire body; `unprotect` returns
  * the exact body or fails. The library binds purpose, workspace, device, epoch
@@ -118,7 +120,9 @@ export class EpochStagingStore extends Context.Service<
 export class KeyProtector extends Context.Service<
   KeyProtector,
   {
+    /** Authenticate and encrypt the complete body; borrow it only until native settlement and return an owned blob. */
     protect(body: Uint8Array): Effect.Effect<Uint8Array, KeyProtectorError>;
+    /** Authenticate and open the blob, or fail; return an owned plaintext buffer that the caller will wipe. */
     unprotect(blob: Uint8Array): Effect.Effect<Uint8Array, KeyProtectorError>;
   }
 >()('@lody/e2ee-core/KeyProtector') {

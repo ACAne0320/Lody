@@ -709,7 +709,9 @@ export class EpochPublisher extends Context.Service<
         resume: Effect.fn('@lody/e2ee-core/EpochPublisher.resume')(function* () {
           return yield* lease(resume());
         }),
-        result: () => lease(loadActive().pipe(Effect.map((row) => (row ? result(row) : null)))),
+        result: Effect.fn('@lody/e2ee-core/EpochPublisher.result')(function* () {
+          return yield* lease(loadActive().pipe(Effect.map((row) => (row ? result(row) : null))));
+        }),
         cleanupStaged: Effect.fn('@lody/e2ee-core/EpochPublisher.cleanupStaged')(function* () {
           return yield* lease(cleanupStaged());
         }),

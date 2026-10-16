@@ -13,6 +13,14 @@ The library is not tied to Lody or to Convex. Every remote system, platform
 capability and local store is a service you provide, so it fits any app that
 syncs through Loro / Durable Streams or a comparable append-only log.
 
+## Availability
+
+The service architecture is reusable, but this is currently a private workspace
+package (`private: true`, version `0.0.0`), not a published SDK. Production E2EE
+composition is not enabled. Node SQLite and Loro Streams adapters are provided;
+other runtimes need their own storage and platform adapters. Backend ports and
+`/host` define what another backend must implement; they do not deploy a server.
+
 ## Start here
 
 | You want to… | Read |
@@ -145,9 +153,11 @@ specified in the whitepaper and implemented in a later layer of this PR stack.
 **Is there a background loop?** No. Every operation is a finite page that
 returns a `next` hint; the application schedules calls.
 
-**What errors can a call return?** Each method's JSDoc names them. Each
-workflow exports its full union (`ReceiveFailure`, …). Errors carry a `reason`
-(or `code` for protocol errors), never secrets.
+**What errors can a call return?** Method signatures name their typed errors;
+JSDoc explains the behavior and ownership contract. Each workflow exports its
+full union (`ReceiveFailure`, …). Branch on the documented tag, `reason` or
+protocol `code`. Some errors retain an opaque adapter `cause` for local
+diagnostics; never display or export it raw.
 
 **How do I test my integration?** Use the SQLite adapters, the reference
 mailbox (`makeSqliteKeyMailbox` + `referenceKeyMailbox`) and the suites in
@@ -158,7 +168,7 @@ mailbox (`makeSqliteKeyMailbox` + `referenceKeyMailbox`) and the suites in
 ```sh
 pnpm --filter @lody/e2ee-core typecheck
 pnpm --filter @lody/e2ee-core test        # includes the public-docs test
-pnpm --filter @lody/e2ee-core check:docs  # JSDoc on every public export
+pnpm --filter @lody/e2ee-core check:docs  # exports, namespaces and service members
 ```
 
 Tests use fixed synthetic vectors, real SQLite, real Ed25519/HPKE and child

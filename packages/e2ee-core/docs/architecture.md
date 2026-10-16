@@ -109,16 +109,21 @@ Workflows are **finite** and **scoped**:
 
 - **Services**: `Context.Service` classes. Workflows expose `static layer`.
   Ports are plain tags plus JSDoc contracts.
-- **Errors**: public errors are `Schema.TaggedError` with a `reason` literal
+- **Errors**: workflow errors generally use `Schema.TaggedError` with a `reason`
+  literal
   (`ReceiveError`, `LocalStoreError`, …). Protocol errors from older modules
   (`LedgerError`, `ContentError`, `ValidationError`, `LedgerFeedError`,
   `EpochStagingError`, `EpochKeyError`) keep `Data.TaggedError` with `code`,
   because their codes are part of tested protocol behavior. Each workflow
   declares its complete failure union (`ReceiveFailure`,
   `DistributionFailure`, `EpochPublishFailure`, `SubmissionFailure`). No
-  public method returns `unknown` errors.
-- **Functions**: public service methods are `Effect.fn('@lody/e2ee-core/<Service>.<method>')`,
-  so they appear as spans when the application installs a tracer. Internal
+  core ledger/key workflow method returns `unknown` errors. Application view
+  sources use `LedgerViewSourceError`; protocol failures retain their typed unions.
+- **Functions**: public ledger/key workflow methods (including queries and
+  acknowledgements) are `Effect.fn('@lody/e2ee-core/<Service>.<method>')`,
+  so they appear as spans when the application installs a tracer. Port adapters
+  may choose their own tracing boundaries. The library installs no exporter
+  and adds no key, plaintext or argument attributes to spans. Internal
   helpers and protocol functions use `Effect.fnUntraced`. Pure checks return
   `Result` and are lifted with `Effect.fromResult`. A function that only wraps
   `Effect.gen` is written as `Effect.fnUntraced` instead.

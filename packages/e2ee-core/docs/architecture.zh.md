@@ -76,8 +76,8 @@ src/
 ## Effect 约定
 
 - **Service**：`Context.Service` 类。流程提供 `static layer`；端口是普通标签加 JSDoc 合同。
-- **错误**：公开错误为带 `reason` 字面量的 `Schema.TaggedError`（`ReceiveError`、`LocalStoreError` 等）。较早模块的协议错误（`LedgerError`、`ContentError`、`ValidationError`、`LedgerFeedError`、`EpochStagingError`、`EpochKeyError`）保持 `Data.TaggedError` 与 `code`，因为这些 code 属于已测试的协议行为。每个流程声明完整的失败联合类型（`ReceiveFailure`、`DistributionFailure`、`EpochPublishFailure`、`SubmissionFailure`），没有公开方法返回 `unknown` 错误。
-- **函数**：公开 service 方法使用 `Effect.fn('@lody/e2ee-core/<Service>.<method>')`，应用安装 tracer 后会显示为 span。内部辅助与协议函数使用 `Effect.fnUntraced`。纯检查返回 `Result`，再用 `Effect.fromResult` 提升。只包一层 `Effect.gen` 的函数改写为 `Effect.fnUntraced`。
+- **错误**：流程错误通常为带 `reason` 字面量的 `Schema.TaggedError`（`ReceiveError`、`LocalStoreError` 等）。较早模块的协议错误（`LedgerError`、`ContentError`、`ValidationError`、`LedgerFeedError`、`EpochStagingError`、`EpochKeyError`）保持 `Data.TaggedError` 与 `code`，因为这些 code 属于已测试的协议行为。每个流程声明完整的失败联合类型（`ReceiveFailure`、`DistributionFailure`、`EpochPublishFailure`、`SubmissionFailure`），核心账本/密钥流程方法没有 `unknown` 错误。应用视图源使用 `LedgerViewSourceError`，协议错误保留具体的联合类型。
+- **函数**：公开账本/密钥流程方法（包括查询和确认）使用 `Effect.fn('@lody/e2ee-core/<Service>.<method>')`，应用安装 tracer 后会显示为 span。端口适配器自行选择追踪边界；库不安装 exporter，也不向 span 添加密钥、明文或参数属性。内部辅助与协议函数使用 `Effect.fnUntraced`。纯检查返回 `Result`，再用 `Effect.fromResult` 提升。只包一层 `Effect.gen` 的函数改写为 `Effect.fnUntraced`。
 - **资源**：每个纪元密钥副本（`disposeEpochKey`）和明文缓冲区（`fill(0)`）都使用 `Effect.acquireUseRelease`。
 
 ## 决策依据
