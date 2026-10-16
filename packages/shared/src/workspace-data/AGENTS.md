@@ -11,6 +11,9 @@
 - Open absence is distinct from explicit business identity creation. A peer
   baseline never proves server absence, upload ACK or local durability. Keep
   server, peer and local authority separate and require fresh confirmation.
+- Legacy room status includes actual attachment/routing: an absent route is
+  detached even if its native detail ref starts joining. First-sync waiters
+  survive deliberate absence and settle only on a routed baseline or failure.
 - Close borrower Scopes before Repo close. A failed finalizer retains its full
   Cause and native retry owner; closing an already closed Scope cannot retry it.
   Do not replace failed owners or dispose storage while accepted I/O is pending.

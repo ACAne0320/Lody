@@ -34,7 +34,7 @@ describe('Session observation document ownership', () => {
         status: { type: 'running' },
       };
       await repo.upsertDocMeta(roomId, meta);
-      const handle = await repo.openPersistedDoc(roomId);
+      const handle = await repo.acquireDocHandleLegacy(roomId);
       const seed = new SessionDocument(repo, id, async (docId) => {
         await manager.unloadDocRoom(docId);
       });

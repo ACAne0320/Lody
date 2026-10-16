@@ -19,6 +19,10 @@ It executes the same native Repo and owns child Scopes; it does not instantiate
 the old Repo. Store disposal stops projections before releasing the native lease.
 Release failures fence replacement until retry succeeds. Shutdown closes consumer
 Scopes before Repo close, retaining original failed owners and Causes for recovery.
+The Legacy room projection reports `detached` while its transport is absent,
+including native detail refs whose initial state is `joining`. Local-only startup
+therefore remains healthy; a first-sync waiter stays pending until attachment
+establishes a baseline, while an actual attached-room failure rejects it.
 
 This adoption does not migrate upper Session/Turn orchestration, shortcut grant
 lifetimes, the host's local server engine, RPC or OSS migration target uploads.

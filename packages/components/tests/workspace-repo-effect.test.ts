@@ -11,7 +11,7 @@ import {
   SubscriptionRef,
   Option,
 } from 'effect';
-import type { RoomStatus, TransportStatus } from 'loro-repo/effect';
+import type { RoomState, RoomStatus, TransportStatus } from 'loro-repo/effect';
 import type { SessionId } from '@lody/shared';
 import { makeSessionDirectory, makeSyncAuthority } from '@lody/shared/workspace-data/services';
 import { DataReadSyncFailed } from '@lody/shared/workspace-data/sync-authority';
@@ -220,6 +220,50 @@ describe('native WorkspaceData services', () => {
 });
 
 describe('retained native release ownership', () => {
+  it('keeps an unrouted room detached and its first-sync waiter alive until attachment', async () => {
+    const repo = await WorkspaceRepoLegacy.create({});
+    try {
+      const room = await repo.joinMetaRoom();
+      const binding = room.subscription('streams');
+      expect(binding.status).toBe('detached');
+      const firstSync = binding.firstSyncedWithRemote;
+      await repo.addTransport('streams', {
+        kind: 'native-workspace-transport',
+        make: (id) =>
+          Effect.gen(function* () {
+            return {
+              id,
+              authority: 'server' as const,
+              status: yield* SubscriptionRef.make<TransportStatus>('online'),
+              connect: Effect.void,
+              disconnect: Effect.void,
+              join: () =>
+                Effect.gen(function* () {
+                  return {
+                    status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                    state: yield* SubscriptionRef.make<RoomState>({
+                      connection: 'joined',
+                      baseline: true,
+                      current: true,
+                      uploadPending: false,
+                      epoch: 1,
+                    }),
+                    close: Effect.void,
+                    sync: Effect.succeed('confirmed' as const),
+                  };
+                }),
+            };
+          }),
+      });
+      await firstSync;
+      expect(binding.status).toBe('joined');
+      await repo.removeTransport('streams');
+      expect(binding.status).toBe('detached');
+    } finally {
+      await repo.destroy();
+    }
+  });
+
   it('rejects a first-sync waiter when the native room fails instead of waiting forever', async () => {
     const repo = await WorkspaceRepoLegacy.create({});
     try {

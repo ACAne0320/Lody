@@ -67,6 +67,20 @@ originating constructor and creates public projections with the caller's bound
 constructor. Real HTTP 503 MCP coverage verifies retryability without logging
 private failure payloads.
 
+The Legacy room projection must include attachment and routing, rather than
+only the native detail ref: a newly queried ref starts `joining` even when its
+transport is absent. Absence projects to `detached`, preserving local-only
+workspace health. A first-sync waiter survives that deliberate absence and later
+resolves on an attached baseline; actual attached-room failures still reject it.
+CI exposed the missing projection through six desktop startup failures. The real
+zero-cloud CLI composition and the pre-attachment/attachment/removal lifecycle
+now exercise this contract. The observation fixture also borrows a releasable
+native handle before handing ownership to SessionDocument.
+After correction, native ownership/renderer recovery passes 62 cases, and CLI
+observation/zero-cloud/recovery passes 18. The preceding CI passed static checks,
+all component shards, other packages, conversation browser tests and the actual
+desktop build; final CLI and desktop journey results require the corrected head.
+
 Legacy metadata observers project the completed catalog row when delivering a
 metadata patch. Native row events can otherwise expose an intermediate owner/backend
 combination to history readiness checks. Existing memory-only Legacy persist

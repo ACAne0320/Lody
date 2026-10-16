@@ -793,22 +793,28 @@ export class WorkspaceRepoLegacy {
     const binding = (id: string): RepoTransportRoomSubscription => {
       const existing = bindings.get(id);
       if (existing) return existing;
-      const project = (state: RoomState): RepoTransportRoomStatus =>
-        state.connection === 'detached' &&
-        !state.baseline &&
-        !closed.signal.aborted &&
-        this.syncLegacy(this.native.transportIds).includes(id)
+      const project = (state: RoomState): RepoTransportRoomStatus => {
+        // Native detail refs start at "joining" even before a transport exists.
+        // Deliberate route absence is idle, not a connection that needs repair.
+        if (
+          closed.signal.aborted ||
+          !this.syncLegacy(this.native.transportIds).includes(id) ||
+          (this.options.resolveRoomTransports && !this.route(target).includes(id))
+        )
+          return 'detached';
+        return state.connection === 'detached' && !state.baseline
           ? 'connecting'
           : roomStatus(state);
+      };
       const status = () => project(this.syncLegacy(lease.stateSnapshot(id)));
       const firstSyncedWithRemote = this.runLegacy(
         lease.state(id).pipe(
           Stream.mapEffect((state) =>
-            state.connection === 'failed' || project(state) === 'detached'
+            state.connection === 'failed' && project(state) !== 'detached'
               ? Effect.fail(new RepoIOError('room readiness', state.connection))
               : Effect.succeed(state)
           ),
-          Stream.filter((state) => state.baseline && state.current),
+          Stream.filter((state) => state.baseline && state.current && project(state) === 'joined'),
           Stream.runHead,
           Effect.flatMap((state) =>
             Option.isSome(state) ? Effect.void : Effect.fail(new RepoClosed())

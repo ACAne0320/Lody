@@ -30,6 +30,10 @@ PR: [#1607](https://github.com/LodyAI/Lody/pull/1607)
 
 自动恢复保留仍在建立 baseline 的 generation；仅显式重置 backoff 或 offline/failed 路由才替换它。pnpm 的不同 peer context 可能持有不同的 Repo 错误类，因此诊断桥接识别来源构造器，并用调用方绑定的构造器创建安全投影。真实 HTTP 503 的 MCP 回归验证可重试语义，不输出私有失败内容。
 
+Legacy 房间投影必须结合实际 attachment 和路由：新查询的原生 detail ref 在 transport 缺席时也从 `joining` 开始；缺席应投影为 `detached`，保持纯本地 workspace 健康。首次同步等待在主动缺席时保持待定，挂载并建立 baseline 后完成；实际已挂载房间的失败仍会拒绝等待。CI 中六个桌面启动失败暴露了该遗漏，真实零云 CLI 组合及挂载前/挂载后/移除回归现已覆盖此合同。观察测试也在向 SessionDocument 交接前借用可释放的原生 handle。
+
+修正后原生所有权/renderer 恢复 62 项、CLI 观察/零云/恢复 18 项通过。此前 CI 的静态检查、全部 components 分片、其他包、conversation 浏览器测试和真实桌面构建均通过；最终 CLI 与桌面场景结果仍需修正后的提交验收。
+
 Legacy 元数据观察者在投递 patch 时读取已完成的 catalog 行，避免原生逐行事件让历史就绪检查看到 owner/backend 的中间组合。既有纯内存 Legacy persist 方法保留空操作语义；原生 lease.persist 仍要求存储，不能把内存当成持久化。
 
 ## 验证与限制
