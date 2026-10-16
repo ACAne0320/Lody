@@ -2,8 +2,20 @@ import type { RepoTransportError, RepoDiagnosticEvent } from 'loro-repo';
 
 type RepoErrorRuntime = Pick<typeof import('loro-repo'), 'RepoTransportError' | 'RepoSyncError'>;
 
+type LoroSyncFailure = {
+  code: RepoTransportError['code'];
+  phase: RepoTransportError['phase'];
+  retryable: boolean;
+  transportId: string | undefined;
+  roomKind: RepoTransportError['roomKind'];
+  roomId: string | undefined;
+  failureKind: NonNullable<RepoTransportError['failureKind']>;
+  streamsCode: string | undefined;
+  streamsContext: RepoTransportError['streamsContext'];
+};
+
 // Select approved fields; never serialize an exception or its legacy payload.
-const projectFailure = (error: RepoTransportError, transportId?: string) => {
+const projectFailure = (error: RepoTransportError, transportId?: string): LoroSyncFailure => {
   const context = error.streamsContext;
   const streamsContext: RepoTransportError['streamsContext'] = context && {
     source: context.source,

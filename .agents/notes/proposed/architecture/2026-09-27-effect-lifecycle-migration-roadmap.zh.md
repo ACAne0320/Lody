@@ -327,8 +327,8 @@ preview 代理、`packages/loro-streams-rpc`、PR poller、Electron updater：�
 | AgentSession 与池                         | Worktree/startup、install、shell、闸门、ACP、凭据叶子 | 部分               | Promise 编排                    | 完整实例/替换拥有者待完成               | 凭据/preparation 叶子原生，完整 Session 取消仍未完成                                                                                                                                                             |
 | 会话历史所属机器就绪                      | 第三方 Repo 订阅/快照、Clock                         | 原生               | MessageHandler 执行入口        | 单次请求 Stream Scope；关闭取消       | [就绪决定](2026-10-09-roost-native-runtime.zh.md#历史所属机器就绪检查)；所属机器/后端就绪前不打开正文，Repo 与文档生命周期仍待迁移                                                                                  |
 | 历史 RPC 前置拒绝结果持久化               | SQLite driver                                      | 原生               | MessageHandler RPC 回调        | 单次操作 Scope handle；FULL 拒绝事务 | [就绪决定](2026-10-09-roost-native-runtime.zh.md#历史所属机器就绪检查)；拒绝保持到原请求过期并跨重启；Promise RPC dispatch 生命周期仍待迁移 |
-| streams-crdt / loro-repo 生命周期         | Flock 持久化、发布/消费合同、各仓库规则               | 待迁移             | Promise 库 API                  | 库持久化/room/重连 Scope 待完成         | 开始前核对发布与源码；兼容仅使用单一内核                                                                                                                                                                         |
-| workspace presence 与远程代次 | 正式 streams-crdt 0.17.0 / client 0.10.0、原生 token | 原生 | doc/bridge 经唯一 Legacy 入口 | CLI 根 registry、workspace 与代次 Scope | [P5 决定](../../implemented/architecture/2026-10-12-effect-workspace-presence.zh.md)；验证共享 token 和实际 SDK 释放；P6 租约已原生化；relay 上层接线仍待迁移 |
+| streams-crdt / loro-repo 生命周期 | 正式 CRDT 0.19.0、Client 0.12.0、Repo 0.23.0；Effect 4.0.2 | 库原生入口已具备 | 产品 durable 消费者仍用 Promise API | 原生 Repo/room/上传所有权已具备；消费方 Scope 待迁移 | [正式版本接入](../../implemented/architecture/2026-10-16-streams-repo-release-adoption.zh.md)；新增原生入口不等于消费方迁移完成 |
+| workspace presence 与远程代次 | 正式 streams-crdt 0.19.0 / client 0.12.0、原生 token | 原生 | doc/bridge 经唯一 Legacy 入口 | CLI 根 registry、workspace 与代次 Scope | [P5 决定](../../implemented/architecture/2026-10-12-effect-workspace-presence.zh.md)；验证共享 token 和实际 SDK 释放；P6 租约已原生化；relay 上层接线仍待迁移 |
 | 本地 presence 与物理 socket writer | 原生本地来源、真实 Flock SDK 导出、Node host turn/write/drain | 下层 writer 原生 | CLI doc/socket 与 room engine 经唯一 Legacy 入口 | 全进程 FIFO pacer、共享连接 lane；有界释放保留原 owner | [P7 writer 决定](../../implemented/architecture/2026-10-12-effect-local-presence-writer.zh.md)；room/LoroRepo 及应用接线仍待迁移 |
 | 会话活跃 presence 租约 / 心跳 | 同步本地发布、Clock；实际 Turn 子 Scope | 原生 | 原生 Turn 准入；MessageHandler phase/读取回调 | 每 Turn 租约；Legacy analytics/应用入口 | [P6 决策](../../implemented/architecture/2026-10-13-effect-session-presence-leases.zh.md)；完整 Session/Turn/daemon 和 analytics 所有权仍待迁移 |
 | Streams token provider | 原生凭据端口、WebCrypto/fetch、Clock | 原生 | CLI 借用 Legacy；renderer/Machine RPC 自有 Legacy | CLI workspace Scope；其余应用拥有者待迁移 | durable/presence 共用一个 provider/cache；取消只释放自身租约，未结束 I/O 保留恢复拥有者 |
@@ -381,7 +381,7 @@ flowchart TD
 在包含刷新 main 的基础上组合 FileLocks 和 WorktreeGit，不代表变更、setup 或 GC 所有权完成。
 #1385 已合并，仅提供运行实例凭据租约和预热 TTL/控制；底层 ACP/worktree 启动及完整会话所有权仍未完成。
 有限[本地源准备单元](../../implemented/architecture/2026-10-10-effect-local-worktree-preparation.zh.md) 依赖文件系统/Git，借用既有变更租约。评审 base 包含观察单元，因为管理器边界共享；原生内核并不互相依赖。
-库侧前置核对：当前 lockfile 解析到 Flock WASM 0.4.3、streams-crdt 0.17.0 和 loro-repo 0.22.0。消费版本不证明 Effect 内核已完成；库侧迁移前仍须核实发布版本、上游仓库状态/规则与当前源码/检查点契约。此前 registry 观察不能作为当前发布保证。
+库侧前置核对：[正式版本接入](../../implemented/architecture/2026-10-16-streams-repo-release-adoption.zh.md) 消费官方 streams-crdt 0.19.0、streams-client 0.12.0 和 loro-repo 0.23.0，保留 Effect 4.0.2 及 Flock WASM 0.4.4。新增原生 Repo 入口和 SDK 上传/read-epoch API 已正式发布。产品 durable 所有权仍使用 Promise API；消费者及 WorkspaceData Scope 迁移仍是独立工作。每个迁移单元仍需核对上游规则和合同。
 下文的七单元基础 stack 已于 2026-10-11 合入 main。Worktree 变更/setup/GC、runtime
 安装、ACP 和 Loro 内核仍未完成。
 

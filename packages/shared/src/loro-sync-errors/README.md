@@ -13,4 +13,6 @@ telemetry.
 
 Display and diagnostics use the same scalar projection; error detail serializes
 that projection as JSON rather than maintaining another list of display fields.
+The projected return type uses public `RepoTransportError` property types so
+declaration generation also works when Repo derives its context from SDK types.
 Binding rules: [AGENTS.md](AGENTS.md).
