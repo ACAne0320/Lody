@@ -1,7 +1,11 @@
 import { Context, type Effect } from 'effect';
 import type { GenesisHash } from '../internal/foundation/bytes';
 import type { LedgerCheckpoint, LedgerView } from '../internal/ledger';
-import type { LedgerFeedError, LedgerReadPage } from '../internal/ledger/feed-page';
+import type {
+  LedgerFeedError,
+  LedgerFeedState,
+  LedgerReadPage,
+} from '../internal/ledger/feed-page';
 import type {
   BackendError,
   LedgerLogError,
@@ -195,3 +199,24 @@ export class SubmissionJournal extends Context.Service<
     ): Effect.Effect<void, LocalStoreError>;
   }
 >()('@lody/e2ee-core/SubmissionJournal') {}
+
+/**
+ * Keeps the application's local verified feed current.
+ *
+ * `refresh()` selects the target checkpoint independently (never from the
+ * feed's own claims) and reads the feed up to it, returning the new state;
+ * `current()` returns the stored state without network work. Typically a
+ * `LedgerFeedSource` pager driving `LedgerFeed.accept`, with the checkpoint
+ * taken from a separately trusted source.
+ *
+ * @category Application ports
+ */
+export class LedgerSync extends Context.Service<
+  LedgerSync,
+  {
+    /** Read the retained verified feed without network work; source-specific failures propagate to the application. */
+    current(): Effect.Effect<LedgerFeedState, unknown>;
+    /** Read and verify up to an independently chosen endpoint, then persist it; never trust a server-selected endpoint implicitly. */
+    refresh(): Effect.Effect<LedgerFeedState, unknown>;
+  }
+>()('@lody/e2ee-core/LedgerSync') {}

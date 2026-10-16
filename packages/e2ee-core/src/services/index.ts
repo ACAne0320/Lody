@@ -7,12 +7,13 @@
  * - **Backend ports** — the remote systems: {@link LedgerLog} and
  *   {@link LedgerFeedSource} (the append-only ledger, e.g. Loro Streams),
  *   {@link KeyMailbox} and {@link EpochStagingStore} (key delivery, e.g. a
- *   Convex or HTTP service). Rules and wire schemas: `@lody/e2ee-core/host`.
+ *   Convex or HTTP service), {@link RecoveryVaultStore} (encrypted recovery
+ *   vaults). Rules and wire schemas: `@lody/e2ee-core/host`.
  * - **Platform ports** — {@link DeviceIdentity} (signing and encryption keys),
  *   {@link KeyProtector} (OS-level protection of installed keys at rest) and
  *   {@link CandidateProtector} (protection of unpublished rotation keys).
- * - **Application ports** — {@link WorkspaceScope}, {@link LedgerViewSource}
- *   and {@link EpochPublicationSource}.
+ * - **Application ports** — {@link WorkspaceScope}, {@link LedgerViewSource},
+ *   {@link LedgerSync} and {@link EpochPublicationSource}.
  * - **Local storage ports** — durable journals and stores. Ready-made SQLite
  *   implementations: `@lody/e2ee-core/adapters/node-sqlite`.
  *
@@ -41,6 +42,7 @@ export {
   LedgerFeedSource,
   LedgerLog,
   LedgerPinStore,
+  LedgerSync,
   LedgerViewSource,
   SubmissionJournal,
   type SubmissionEntry,
@@ -66,6 +68,7 @@ export {
   type RepairTaskRow,
 } from './stores';
 export { DeviceIdentity, WorkspaceScope } from './workspace';
+export { RecoveryVaultLocalStore, RecoveryVaultStore } from './recovery';
 
 // Value types that appear in port signatures.
 export type { DeviceSigner } from '../internal/foundation/signing';
@@ -75,3 +78,5 @@ export type { LedgerCheckpoint, LedgerView } from '../internal/ledger';
 export { LedgerFeedError, type LedgerReadPage } from '../internal/ledger/feed-page';
 export type { MailboxSlot } from '../internal/keys/reports';
 export type { EpochStagedGroup, EpochStagedGroupKey } from '../internal/keys/staging';
+export type { LedgerFeedState } from '../internal/ledger/feed-page';
+export type { VaultCiphertext } from '../internal/recovery/crypto';

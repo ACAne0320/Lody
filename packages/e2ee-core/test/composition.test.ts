@@ -1,9 +1,16 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Effect, Layer } from 'effect';
+import { Context, Effect, Layer } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
-import { E2eeWorkflows, InstalledEpochKeys, KeyDistributor, KeyReceiver } from '@lody/e2ee-core';
+import {
+  E2eeWorkflows,
+  E2eeWorkspace,
+  InstalledEpochKeys,
+  KeyDistributor,
+  KeyReceiver,
+  WorkspacePlatform,
+} from '@lody/e2ee-core';
 import {
   BackendError,
   CandidateProtector,
@@ -13,6 +20,7 @@ import {
   KeyProtector,
   LedgerLog,
   LedgerLogError,
+  LedgerSync,
   LedgerViewSource,
   WorkspaceScope,
   type DeviceSigner,
@@ -126,6 +134,96 @@ describe('E2eeWorkflows composition', () => {
             )
           );
           expect(status.status).toBe('InstallationReported');
+        })
+      )
+    );
+  });
+
+  it('runs a key round between two E2eeWorkspace handles opened through a WorkspacePlatform', async () => {
+    const f = envelopeFixture(),
+      dir = mkdtempSync(path.join(tmpdir(), 'e2ee-workspace-')),
+      phonePair = await recipientPair(),
+      native = synthetic();
+    dirs.push(dir);
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* makeSqliteKeyMailbox({
+            path: path.join(dir, 'mailbox.sqlite'),
+            mode: 'create',
+            genesis: f.context.genesis,
+            ledger: f.ledger,
+          });
+          const platform = (
+            name: string,
+            signer: DeviceSigner,
+            encryptionKeyPair: CryptoKeyPair
+          ) => {
+            const directory = path.join(dir, name);
+            mkdirSync(directory);
+            const state = () =>
+              Effect.sync(() => ({ view: f.view(), offset: 'opaque', bootstrap: false }));
+            return WorkspacePlatform.layer({
+              acquire: () =>
+                Effect.succeed({
+                  ports: Layer.mergeAll(
+                    sqliteLocalStores({ directory, mode: 'create-or-open' }),
+                    referenceKeyMailbox(host, signer.publicKey),
+                    Layer.succeed(LedgerSync, LedgerSync.of({ current: state, refresh: state })),
+                    Layer.succeed(
+                      LedgerLog,
+                      LedgerLog.of({
+                        read: () => Effect.fail(new LedgerLogError()),
+                        appendCas: () => Effect.fail(new LedgerLogError()),
+                      })
+                    ),
+                    Layer.succeed(
+                      EpochStagingStore,
+                      EpochStagingStore.of({
+                        stageGroup: unavailable('EpochStagingStore'),
+                        readGroup: () => Effect.succeed(null),
+                        deleteGroup: unavailable('EpochStagingStore'),
+                      })
+                    ),
+                    Layer.succeed(
+                      EpochPublicationSource,
+                      EpochPublicationSource.of({ current: () => Effect.succeed(f.genesisRecord) })
+                    ),
+                    KeyProtector.layerFromPromises(native.protector),
+                    CandidateProtector.layerFromPromises(native.protector)
+                  ).pipe(
+                    Layer.provideMerge(
+                      Layer.mergeAll(
+                        Layer.succeed(WorkspaceScope, { genesis: f.context.genesis }),
+                        Layer.succeed(DeviceIdentity, { signer, encryptionKeyPair })
+                      )
+                    )
+                  ),
+                  stop: () => Effect.void,
+                  documentState: () => Effect.die('no documents in this test'),
+                }),
+              prepareRecovery: () => Effect.die('no recovery in this test'),
+            });
+          };
+          // Owner: hold the genesis key; one key round delivers the phone's envelope.
+          yield* Effect.gen(function* () {
+            const owner = yield* E2eeWorkspace.open();
+            expect(yield* owner.rotationStatus()).toMatchObject({ epoch: 0, mayRotate: true });
+            yield* Context.get(owner.services, InstalledEpochKeys).saveAndReload(0, f.secret);
+            const round = yield* owner.keyRound();
+            expect(round.reconciliation).toMatchObject({ scheduled: 1, blocked: [] });
+            expect(round.deliveryResults.items.map((item) => item.outcome)).toEqual(['Observed']);
+            yield* owner.close();
+          }).pipe(Effect.provide(platform('owner', f.owner.signer, {} as CryptoKeyPair)));
+          // Phone: one key round fetches, installs and reports the key.
+          yield* Effect.gen(function* () {
+            const phone = yield* E2eeWorkspace.open();
+            const round = yield* phone.keyRound();
+            expect(round.received).toBe(1);
+            expect(round.results.map((item) => item.outcome)).toEqual(['Reported']);
+            yield* phone.close();
+            expect(yield* Effect.flip(phone.rotationStatus())).toMatchObject({ reason: 'closed' });
+          }).pipe(Effect.provide(platform('phone', f.phone.signer, phonePair)));
         })
       )
     );

@@ -141,3 +141,21 @@ export {
   type InstallationContext,
 } from '../internal/keys/reports';
 export { epochDeliveryId } from '../internal/keys/delivery';
+
+// Recovery
+export {
+  generateRecoveryPackage,
+  importRecoveryIdentity,
+  parseRecoveryFile,
+  wipeRecoveryPackage,
+  verifiedPasskeyPrf,
+  disposePrf,
+  ownVaultCiphertext,
+  vaultCiphertextDigest,
+  sameVaultCiphertext,
+  RecoveryVaultError,
+  type RecoveryIdentity,
+  type RecoveryPrivatePackage,
+  type VerifiedPasskeyPrf,
+  type VaultCiphertext,
+} from '../internal/recovery';

@@ -26,7 +26,7 @@ other runtimes need their own storage and platform adapters. Backend ports and
 | You want to… | Read |
 | --- | --- |
 | understand the protocol and its guarantees | [whitepaper](../../specs/e2ee/whitepaper.md) ([中文](../../specs/e2ee/whitepaper.zh.md)) |
-| integrate E2EE into an app | [services](docs/services.md) → [workflows](docs/workflows.md) → [surface](docs/surface.md) |
+| integrate E2EE into an app | [services](docs/services.md) → [workflows](docs/workflows.md) (start from `E2eeWorkspace`) → [surface](docs/surface.md) |
 | implement a backend (mailbox, staging, ledger log) | [backend guide](docs/backend-guide.md) and `@lody/e2ee-core/host` |
 | implement key custody on a platform | [`DeviceIdentity`, `KeyProtector`, `CandidateProtector`](docs/services.md#platform-ports) |
 | store state somewhere other than SQLite | [local storage ports](docs/services.md#local-storage-ports) |
@@ -152,8 +152,9 @@ checkpoint durably and refuses any view that does not contain it.
 Blobs are protected by your `KeyProtector` and stored by `InstalledKeyStore`;
 callers receive opaque keys they must dispose.
 
-**What if all devices are lost?** Recovery (vault) and recovery devices are
-specified in the whitepaper and implemented in a later layer of this PR stack.
+**What if all devices are lost?** A recovery device whose keys live in an
+encrypted vault (recovery file or passkey) admits a new personal device:
+`E2eeWorkspace.restoreFromRecovery`. See [workflows](docs/workflows.md#recovery).
 
 **Is there a background loop?** No. Every operation is a finite page that
 returns a `next` hint; the application schedules calls.

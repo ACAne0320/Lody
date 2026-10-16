@@ -51,6 +51,8 @@ src/
                         KeyDistributor、EpochPublisher
     submission/       LedgerSubmission
     content/          文档密钥、已封装文档、Streams 内容编解码
+    recovery/         恢复身份、vault-v1、工作区恢复 + RecoveryVaults
+    workspace/        E2eeWorkspace 门面、WorkspaceControl、密钥轮次、邀请
     lifecycle.ts      准入门、关闭守卫、own()
 ```
 

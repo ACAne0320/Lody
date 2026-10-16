@@ -127,6 +127,22 @@ writer sealed. It does not decrypt them; readers still verify the AEAD.
 A single-host reference of an exactly-once snapshot publication journal is
 `makeSqliteSnapshotPublication` in `@lody/e2ee-core/adapters/node-sqlite`.
 
+## 5. Recovery vault
+
+Opaque storage of encrypted vault entries and one index per vault, using the
+`RecoveryVault…` DTOs in `@lody/e2ee-core/host`.
+
+- `putImmutable`: store an entry once; a retry must carry identical bytes.
+- `readEntry` / `readIndex`: return the stored ciphertext or nothing.
+- `compareAndSwapIndex`: replace the index only if it still has the
+  `expected` revision and digest (or none), and every `referencedEntryIds`
+  exists, in one transaction; return `Committed` or `Conflict`.
+- `deleteUnreferenced`: delete an entry only if the index still equals
+  `expectedIndex` and does not reference it.
+
+Login controls who may retrieve a vault. The backend never receives the
+unlock secret, master key or recovery private key.
+
 ## What a server learns
 
 Who talks to whom and when, workspace and device identifiers, epoch numbers,

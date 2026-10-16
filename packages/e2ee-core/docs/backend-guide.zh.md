@@ -67,6 +67,17 @@ Loro / Durable Streams 直接提供这些能力：`@lody/e2ee-core/adapters/loro
 
 “恰好一次”快照发布日志的单主机参考实现是 `@lody/e2ee-core/adapters/node-sqlite` 中的 `makeSqliteSnapshotPublication`。
 
+## 5. 恢复 vault
+
+对加密 vault 条目和每个 vault 一份索引的不透明存储，使用 `@lody/e2ee-core/host` 中的 `RecoveryVault…` DTO。
+
+- `putImmutable`：条目只存一次；重试必须携带完全相同的字节。
+- `readEntry` / `readIndex`：返回已存密文或空。
+- `compareAndSwapIndex`：仅当索引仍为 `expected` 的版本与摘要（或不存在），且 `referencedEntryIds` 全部存在时，在同一事务内替换索引；返回 `Committed` 或 `Conflict`。
+- `deleteUnreferenced`：仅当索引仍等于 `expectedIndex` 且不引用该条目时删除。
+
+登录控制谁可以取回 vault；后端从不接收解锁秘密、主密钥或恢复私钥。
+
 ## 服务器能了解到什么
 
 谁在何时与谁通信、工作区和设备标识符、纪元号、大小与时间。它永远看不到纪元密钥、文档密钥或明文，也无法生成有效的记录、信封或报告。见白皮书的威胁模型：[specs/e2ee/whitepaper.zh.md](../../../specs/e2ee/whitepaper.zh.md)。

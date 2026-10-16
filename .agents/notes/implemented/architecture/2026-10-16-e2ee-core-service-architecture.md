@@ -96,6 +96,23 @@ adapters exist.
   rejected: it would not make backends or storage replaceable. One entry per
   module was rejected: it hides who each export is for.
 
+## Workspace and recovery (stack layer 3)
+
+- The `E2eeWorkspace` facade no longer receives prebuilt factory objects. A
+  `WorkspacePlatform` returns a Layer of ports, and the facade builds
+  `E2eeWorkflows` plus `WorkspaceControl` in the workspace Scope. The handle's
+  methods are unchanged, so platforms change only how they supply resources.
+- `LedgerSync` (application port) replaces the old ledger client plus
+  checkpoint callback. The workspace derives `LedgerViewSource` from
+  `LedgerSync.refresh`, preserving the old behavior that every workflow read
+  refreshes the feed.
+- Recovery vault storage is two ports (`RecoveryVaultStore`,
+  `RecoveryVaultLocalStore`) with a `RecoveryVaults` workflow. The vault wire
+  DTOs move to `./host` as Schemas, and `@lody/cloud-api` re-exports them, as
+  with staging.
+- Workspace errors use `Schema.TaggedError` with `reason`, like other public
+  errors.
+
 ## Verification
 
 Core: 20 test files (356 tests), including composition and public-docs tests, on real
