@@ -64,7 +64,7 @@ core 仅定义暂存、读回、按条件删除 port；DTO 归 cloud-api；Conve
 
 以上方向来自用户明确要求；修订后的 Spec 仍为 **draft，待审批**，不代表生产
 启用，也未决定 vault、原生保管、严格 B、账号恢复或 MLS 替换。
-参见[准入](../../packages/e2ee-core/src/ledger/ADMISSION.md)、
-[暂存 port](../../packages/e2ee-core/src/keys/staging.ts)、
-[换代流程](../../packages/e2ee-core/src/keys/epoch-rotation.ts)和
+参见[准入](../../packages/e2ee-core/src/internal/ledger/ADMISSION.md)、
+[暂存 port](../../packages/e2ee-core/src/internal/keys/staging.ts)、
+[换代流程](../../packages/e2ee-core/src/internal/keys/publisher.ts)和
 [Lab](https://github.com/LodyAI/Lody/blob/358f06b764566241345ff041294540be0e3fea08/packages/e2ee-lab/README.zh.md)。

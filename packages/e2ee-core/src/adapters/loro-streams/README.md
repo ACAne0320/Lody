@@ -1,42 +1,46 @@
-# Full-history SDK submission adapter
+# Loro / Durable Streams ledger adapters
 
-`./submission/streams` supplies a Scope-owned `SubmissionRemote` for the structural
-read/CAS shape of released streams-client0.9. Runtime owns no SDK package/client,
-URL, credentials, production composition or timers. The caller initializes one
-borrowed SDK and independently selects each exact head/count checkpoint.
+`@lody/e2ee-core/adapters/loro-streams` implements the two backend ledger
+ports over one control stream of u32be-framed signed records. Both take the
+released streams-client 0.9 shape structurally: the caller owns the SDK
+package and client, URL, credentials and timeouts. Nothing here starts a
+Runtime, timer or background fiber.
 
-Read always audits complete original history from `-1` with the shared framed
-reader, fixed genesis, real signatures and prior genuine-prefix continuation.
-It validates the endpoint before retaining its corresponding opaque offset; remote
-headers, last hashes and up-to-date flags never select checkpoint trust. Budget
-failure, corrupted history, incomplete/cyclic positions or closure do not replace
-this mapping. Empty pages cannot jump position. Local budgets are explicit up to
-one million records/64MiB; each framed read remains bounded by the reader. SDK0.9
-buffers responses upstream, so these bounds do not cap SDK allocations.
+| Export | Port | File |
+| --- | --- | --- |
+| `streamsLedgerLog(options)` / `makeStreamsLedgerLog` | `LedgerLog` | `ledger-log.ts` |
+| `streamsLedgerFeedSource(stream)` / `makeLedgerStreamReader` | `LedgerFeedSource` | `ledger-feed-source.ts` |
 
-The concrete adapter's `read` also returns the genuine `view` from this same audit,
-so host consumers can use its permissions without repeating full replay. Generic
-`SubmissionRemote` still exposes only records/checkpoint: P09 independently verifies
-arbitrary remote histories and never trusts a remote's claimed view or flag.
+## LedgerLog: full audit and CAS
 
-CAS requires a matching genuinely verified mapping, an ordinary signed record
-that really extends that history, and original u32be framing. No producer/retry,
-ordinary append fallback or offset ordering is invented. Unsupported/conflict or
-uncertain ACK is a typed remote failure. Even successful ACK leaves the mapping
-unchanged; P09 must read back and independently decide Committed/Conflict. The
-journal owns exact original persistence and result acknowledgement.
+`read` always audits the complete original history from offset `-1`: fixed
+genesis, real signatures and continuation of the previous genuine read. It
+validates the endpoint, which the caller selects independently through
+`checkpoint()`, before keeping the corresponding opaque offset. Remote headers,
+last hashes and up-to-date flags never select checkpoint trust. A budget
+failure, corrupted history, incomplete or cyclic positions, or closure never
+replace that mapping. Empty pages cannot jump position. Budgets allow up to
+one million records / 64 MiB; SDK 0.9 buffers responses upstream, so these
+bounds do not cap SDK allocations.
 
-The shared reader cancels AbortSignal-enabled reads and awaits actual raw
-settlement. SDK0.9 `appendCas` has no per-call AbortSignal: this adapter retains and
-awaits the exact request on interruption/Scope close, rejects late completion and
-creates no Runtime/background fiber. Caller SDK timeouts must be bounded; if raw
-SDK/native work never settles, local close cannot truthfully prove it stopped.
-Cancel/await borrowed checkpoint effects before destroying their owner, and close
-this Scope before destroying the borrowed SDK.
+The concrete `read` also returns the genuine `view` from the same audit. The
+generic `LedgerLog` port exposes only records and checkpoint, and
+`LedgerSubmission` verifies them independently.
 
-This is full audit only. Qualified snapshot bootstrap, protected snapshot-offset
-AAD, sender-publication reconstruction and the actual Lab are later consumers.
-The tests use the actual registry SDK, loopback synthetic HTTP gateway and real
-SQLite/P09, including another OS process reopening the journal. Their trusted
-checkpoint comes from synthetic fixture control state rather than HTTP metadata;
-this is not deployed backend, native custody, original Lab2 or production E2EE.
+`appendCas` requires a matching verified mapping, an ordinary signed record
+that extends that history, and original u32be framing. There is no retry
+producer, unconditional append fallback or offset ordering. A mismatch,
+unsupported response or uncertain acknowledgement is a `LedgerLogError`. Even a
+successful append leaves the mapping unchanged: `LedgerSubmission` reads back
+and decides Committed or Conflict.
+
+## Cancellation
+
+The reader cancels AbortSignal-enabled reads and awaits their settlement. SDK
+0.9 `appendCas` has no per-call AbortSignal, so the adapter keeps and awaits the
+exact request on interruption or Scope close and rejects late completion.
+Bound the SDK's timeouts. Close this Scope before destroying the borrowed SDK.
+
+Tests (`test/submission/streams.test.ts`) use the real registry SDK, a loopback
+synthetic HTTP gateway and real SQLite, including another OS process reopening
+the journal. They are not deployed-backend acceptance.

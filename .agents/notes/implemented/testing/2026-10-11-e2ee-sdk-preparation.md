@@ -47,7 +47,7 @@ The fixture uses the public RFC 8032 seed and disposable synthetic data only.
 P08's public `verifyLedger` authenticates the fixture's current personal Owner
 from a pinned genesis and head/count. Its public `LedgerState.devices` describes
 current devices and does not expose the original-author/member-instance mapping
-needed after revocation or rejoining. [P08's limits](../../../../packages/e2ee-core/src/ledger/README.md)
+needed after revocation or rejoining. [P08's limits](../../../../packages/e2ee-core/src/internal/ledger/README.md)
 explicitly defer historical-author APIs and snapshot trust. [P07-b](../architecture/2026-10-11-e2ee-content-crypto.md)
 exposes AEAD only, not a signer or full signed workflow. Importing candidate
 ContentCipher/authority/signing hosts would conceal these missing dependencies;

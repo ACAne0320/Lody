@@ -1,0 +1,41 @@
+# E2EE core 拆分为端口、流程与适配器
+
+Status: implemented
+Translation: current
+
+[English](2026-10-16-e2ee-core-service-architecture.md)
+
+## 摘要
+
+`@lody/e2ee-core` 原先暴露约二十个工厂函数：每个都自己打开 SQLite 文件、以裸回调接入远端系统，并各自维护一份回滚钉。这让库难以在 Lody 之外复用、难以阅读，也无法换用别的后端或存储。现在核心拆为端口（由应用提供的 Effect service）、流程（库在端口之上以 Layer 实现的 service）和适配器（SQLite 与 Loro Streams 实现），通过六个按使用者角色划分的入口加一个不稳定的 `./internal` 暴露。协议字节、存储保证和流程行为保持不变，原有行为测试全部改为针对真实 Layer 运行；主要剩余限制是目前只有 Node SQLite 与 Loro Streams 两类适配器。
+
+## 问题
+
+- 每个流程工厂（`makeSqliteEpochReceiver`、`makeSqliteKeyDistribution`、`makeSqliteEpochRotation` 等）接收路径、模式、保护器和远端回调，自行打开存储并嵌套其他工厂。组合关系隐式且重复；换后端或存储只能复制代码。
+- 每个存储都内嵌一份账本钉，回滚保护被复制到七处，错误映射略有差异。
+- 二十五个子路径混合了纯协议、仅宿主可用的流程、适配器和测试辅助；README 仍在描述更早的抽取阶段。
+- 错误通道多为 `unknown`；大量函数只是包一层 `Effect.gen`。
+
+## 决定
+
+1. **端口**（`./services`）：后端（`LedgerLog`、`LedgerFeedSource`、`KeyMailbox`、`EpochStagingStore`）、平台（`DeviceIdentity`、`KeyProtector`、`CandidateProtector`）、应用（`WorkspaceScope`、`LedgerViewSource`、`EpochPublicationSource`）和本地存储（每个日志或存储一个端口）。端口带有类型化错误（`BackendError`、`LocalStoreError` 等）与 JSDoc 合同。
+2. **流程**（`.`）：`VerifiedLedger`、`LedgerFeed`、`LedgerSubmission`、`InstalledEpochKeys`、`InstalledEpochHistory`、`KeyReceiver`、`KeyRepair`、`KeyDistributor`、`EpochPublisher`，均为带 `layer` 的 `Context.Service`，只依赖端口和协议代码；`E2eeWorkflows` 负责组合。
+3. **唯一的回滚守卫。** `VerifiedLedger` 加一个 `LedgerPinStore` 取代各存储自带的钉；钉故障测试集中到一个归属测试套件。
+4. **适配器**（`./adapters/node-sqlite`、`./adapters/loro-streams`）。每次存储写入都在同一事务内读回校验自身写入以及文件的工作区/设备绑定，被篡改或被忽略的写入会回滚，与旧存储一致。
+5. **后端合同**（`./host`）：以 Effect Schema 定义的暂存 DTO、请求签名字节和暂存请求校验，以及邮箱规则函数。平台无关；`@lody/cloud-api` 改为重新导出暂存合同，不再自行定义。
+6. **Effect 实践。** 公开方法使用 `Effect.fn` 产生 span；内部辅助使用 `Effect.fnUntraced`；只包 `Effect.gen` 的函数改为 `Effect.fnUntraced`；各流程声明完整的失败联合类型。
+
+## 发现与取舍
+
+- **关闭语义按流程区分。** 让所有流程在 Scope 关闭时等待进行中的调用，会让现有测试死锁：接收、修复和分发本就让进行中的远端工作在下一个守卫处失败，而不是被等待。只有持有原生保护的流程（已安装密钥、历史恢复、发布者）才等待。两种行为都显式表达（`makeAdmissionGate`、`makeCloseGuard`）。
+- **构造时捕获。** 旧工厂在初始化时绑定借用的回调，有测试在之后修改它们。流程现在用 `own()` 捕获端口，之后的修改无法替换能力。
+- **候选密钥保护保持独立。** 已审定的决定是：尚未发布的换代密钥使用与已安装密钥不同的保护器。该决定保留为独立的 `CandidateProtector` 端口，而不是复用 `KeyProtector`。
+- **投递拒绝会向上传播。** 只有邮箱 `unavailable` 时投递保持 `Pending`；拒绝（unauthorized、conflict）视为失败，延续旧实现中“传输丢失”与“宿主拒绝”的区分。
+- **统一的 feed 存储。** 全历史与快照 feed 共用一个 `LedgerFeedStore`（起点加后续原始记录），验证逻辑在 `LedgerFeed` 中。由于尚未部署，各存储文件格式都重新定版本。
+- **考虑过的替代方案。** 保留工厂函数只补文档：被否决，因为后端和存储仍不可替换。每个模块一个入口：被否决，因为看不出每个导出面向谁。
+
+## 验证
+
+核心：20 个测试文件（共 353 个测试，含组合测试与公开文档测试），使用真实 SQLite、Ed25519、HPKE 与子进程；类型检查、类型感知 lint 和仓库边界检查。`test/composition.test.ts` 通过 `E2eeWorkflows` 在两台设备之间完成一次密钥分发。`test/public-docs.test.ts` 要求每个公开导出都有 JSDoc，并要求 `docs/surface*.md` 与实际导出一致。
+
+限制：Lab 与桌面端消费者在栈中后续 PR 里迁移；尚无 IndexedDB 或移动端存储适配器；生产组合仍未接入。

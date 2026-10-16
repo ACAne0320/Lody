@@ -1,13 +1,14 @@
 # Ledger records and replay
 
-`@lody/e2ee-core/ledger` provides synchronous Effect 4 Result functions. The root
-foundation entry remains unchanged. No runtime, network, CAS, journal, snapshot
-endorsement, private key or content cipher is introduced.
+Ledger records, replay, snapshots and admission are pure protocol code exported
+through `@lody/e2ee-core/protocol`: synchronous Result functions plus Effect
+forms for cooperative verification. `VerifiedLedger` and `LedgerFeed` are the
+stateful workflows in this directory; see [workflows](../../../docs/workflows.md).
 
 ```text
 caller-pinned genesis + expected (head, length) + raw records
   bounded canonical parsing
-  predecessor check + [P07](../../README.md#terms)-a strict signature verification
+  predecessor check + [P07](../../../README.md)-a strict signature verification
   Org/member/kind-bound join or possession proof
   permission from preceding state
   private state transition
@@ -39,7 +40,7 @@ Owner. Recovery devices only admit their own personal devices. Revocation affect
 only its target, records never create an approval ancestry tree, and Owner retains
 a personal/recovery path. Retired signing/encryption keys, member IDs, closed join
 requests and epoch commitments remain replay facts. Legacy tag 2 removal is rejected:
-it violates the already adopted atomic removal/rotation rule; [P12](../../README.md#terms) owns the current tag8 transition.
+it violates the already adopted atomic removal/rotation rule; [P12](../../../README.md) owns the current tag8 transition.
 No new tag or protocol policy is defined here.
 
 Join `expiresAt` remains a signed nullable field; pure historical replay does not
@@ -59,42 +60,40 @@ honest new-content sealing: active non-Guest personal/machine devices may write,
 Recovery never writes, and a pending rotation additionally blocks new seals.
 Permission is relative to the caller-selected verified endpoint; freshness and
 scope binding remain caller obligations. Every query requires the module-created
-view, not an inspection object. Snapshot endorsement/import uses the separate entry below; delivery uses its
-explicit keys/delivery entry. Product integration remains separate.
+view, not an inspection object. Snapshot endorsement/import uses the separate entry below; delivery is a key workflow. Product integration remains separate.
 
-[Extraction and reproduced defects](../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-ledger-records.md)
+[Extraction and reproduced defects](../../../../../.agents/notes/implemented/architecture/2026-10-11-e2ee-ledger-records.md)
 and [source fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/ledger/provenance.json). Run package `typecheck` and `test`;
 `test/ledger/replay.test.ts` signs fixed synthetic seeds with native Node Ed25519,
 independent of the production verifier, and exercises the public ledger subentry.
 
-[Historical-author trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority).
+[Historical-author trust decisions](../../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority).
 
 `requireLedgerContinuation(previous, next)` verifies that two real full views share
 this exact authenticated prefix using private hashes. It rejects rollback, alternate
-forks and fabricated views; it does not discover globally latest state. The scoped
-[key cache](../keys/README.md) uses this local relation after observing revocation.
+forks and fabricated views; it does not discover globally latest state. `VerifiedLedger` uses this relation as its rollback guard.
 
 ## Ordinary-record signing
 
-`@lody/e2ee-core/ledger/signing` prepares canonical ordinary body CBOR against a
+`prepareLedgerRecord` prepares canonical ordinary body CBOR against a
 real verified view before any signing. Permission and nested possession proofs use
 the same replay checks. `signLedgerRecord` borrows a DeviceSigner and verifies
 its output through fixed signature verification and complete ledger extension.
 Only registered proposals are accepted; signing bytes and caller inputs are copies.
 
 Execute signing once, then persist and submit the returned original bytes through
-the existing submission entry. Re-running signing requests a new signature; the
+`LedgerSubmission`. Re-running signing requests a new signature; the
 proposal is not a durable command. The parent is fixed, and a competing suffix
 requires CAS conflict handling, never automatic re-signing or rebasing. This entry
 does not create genesis, discover freshness, generate/store private keys, or own
 transport. Legacy removal remains rejected.
 
-[Signing durability decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#durability-and-lifecycle)
+[Signing durability decisions](../../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#durability-and-lifecycle)
 and [source/destination fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/ledger/signing-provenance.json).
 
 ## Authenticated permission snapshots
 
-The explicit `@lody/e2ee-core/ledger/snapshot` entry preserves v1 complete-state
+The snapshot functions preserve v1 complete-state
 CBOR and snapshot/v1/head-attest/v1/snapshot-digest/v1 domains. Caller-pinned
 external qualification must include genesis, exact head/count, endorser key,
 membership, Owner/Admin role and personal kind. Missing role facts never default
@@ -128,27 +127,24 @@ or authenticated-channel confirmation, including actual peer identity. Key lists
 and relabeled server notes are insufficient. This confirmation grants no permissions
 and upgrades no audit provenance. No new comparison wire/signature domain is added.
 
-[Snapshot trust decisions](../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
+[Snapshot trust decisions](../../../../../.agents/notes/implemented/architecture/2026-10-15-e2ee-current-decisions.md#trust-and-authority)
 · [Snapshot fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/ledger/snapshot-provenance.json).
 
 ## Admission consent and ordinary intent
 
-The explicit [`./ledger/admission`](ADMISSION.md) entry adds fixed-verified borrowed signing of joining consent/device possession proofs, genuine-view ordinary command preparation and v1 genesis production from an already retained initial epoch key. Account identity, expiry enforcement, durable key custody, publication and atomic-removal/rotation orchestration use the explicit local candidate owner, not the ordinary command union.
+[Admission](ADMISSION.md) (`admission.ts`) adds fixed-verified borrowed signing of joining consent/device possession proofs, genuine-view ordinary command preparation and v1 genesis production from an already retained initial epoch key. Account identity, expiry enforcement, durable key custody, publication and atomic-removal/rotation orchestration use the explicit local candidate owner, not the ordinary command union.
 
-## Full-history feed and durable position
+## Local feed
 
-The explicit [`./ledger/feed`](FEED.md) and `./ledger/feed/sqlite` entries retain
-original v1 frames and atomically persist authenticated suffixes with opaque
-transport position. They reject repeated records and rollback pages, require a
-separately trusted exact endpoint, and retain/await borrowed SDK reads on close.
-No snapshot-prefix skipping, submission/CAS replacement or endpoint discovery is
-introduced. Local budgets retain history on failure. Shared SQLite setup verifies
-application/version and fixed genesis bindings. Opening verifies all stored signed
-records; later writes compare the current metadata point and newly written rows.
-They do not audit local schemas, triggers, external-write counters or old rows on
-every call. The client/OS threat model remains the whitepaper's trusted boundary;
-SQL rows still cannot select ledger authority. Rollback pins advance only with a
-new verified head/count.
+`LedgerFeed` keeps the original v1 frames, the opaque source offset and the
+verified view in a `LedgerFeedStore`, starting from the genesis record or an
+independently qualified snapshot. It rejects repeated records and rollback
+pages, requires a separately trusted endpoint on every open and re-verifies all
+stored records then. SQL rows never select ledger authority; local OS or
+database tampering is outside the whitepaper's threat model. Behavior:
+[workflows](../../../docs/workflows.md#ledgerfeed).
+
+## Atomic removal
 
 Current tag8 is `[8, membershipId, nextEpoch, commitment, previousEpochKey]`.
 It removes a non-Owner member and all its current devices while installing the

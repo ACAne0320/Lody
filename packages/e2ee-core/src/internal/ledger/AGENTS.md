@@ -1,10 +1,10 @@
 # Public ledger workflows
 
-Follow the package [boundary](../../AGENTS.md) and [record/replay contract](README.md).
+Follow the package [boundary](../../../AGENTS.md) and [record/replay contract](README.md).
 
 - Keep record domains, supported v1 operations and explicit snapshot qualification.
   No arbitrary-state authority, injected verifier or unknown-prefix skipping.
-- Admission/genesis lives only under `./ledger/admission`; use fixed borrowed-signer
+- Admission/genesis lives only in `admission.ts`; use fixed borrowed-signer
   verification and existing genuine-view proof/permission gates. Proof is consent,
   not account identity or admission. Producer genesis bytes do not prove publication,
   endpoint freshness, key durability or recovery backup.
@@ -17,10 +17,10 @@ Follow the package [boundary](../../AGENTS.md) and [record/replay contract](READ
 - Prepared ordinary records remain parent-relative; no implicit rebase/re-sign.
   Application Scope owns storage/network/native handles, cancellation and await.
 
-- Full-history feed entries retain original v1 frames and opaque offsets. Only the
-  initial exact genesis can be bound once; never skip known records or unknown
-  snapshot prefixes. A separately trusted endpoint is required, not inferred from
-  remote position. Persist records and cursor atomically; no progress on failure.
+- `LedgerFeed` retains original v1 frames and opaque offsets. Only the exact
+  origin can be bound once; never skip known records or unknown snapshot
+  prefixes. A separately trusted endpoint is required, not inferred from remote
+  position. Persist records and cursor atomically; no progress on failure.
   Local retention budgets fail closed, without deleting committed history.
 - Borrowed SDK reads propagate abort and are retained/awaited until settlement.
   Close this Scope before destroying the SDK owner. ACK/CAS and snapshot bootstrap
@@ -35,7 +35,10 @@ Follow the package [boundary](../../AGENTS.md) and [record/replay contract](READ
   tampering is outside the whitepaper threat model. Shared SQLite helpers own file
   creation, application/version, WAL/FULL and binding checks; unchanged pins are read-only.
 
-- Explicit `./ledger/feed/snapshot/sqlite` begins only at independently qualified
-  signed snapshot bytes and an explicit transport locator. Requalify on every open;
+- A snapshot-origin `LedgerFeed` begins only at independently qualified signed
+  snapshot bytes and an explicit transport locator. Requalify on every open;
   persist exact snapshot/suffix/position together. No SQL-chosen endorser, unknown
-  prefix skipping or implied snapshot-only P09/CAS authorization.
+  prefix skipping or implied snapshot-only submission authorization.
+- `VerifiedLedger` is the single rollback guard: genuine view, same workspace,
+  continuation of the newest observed view, containment of the durable pin.
+  Unchanged pins are not rewritten; failed pin writes keep the in-memory view.

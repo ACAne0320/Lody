@@ -1,91 +1,54 @@
-# Epoch keys and host protection
+# Epoch keys
 
 `CLAUDE.md` is a symlink to this file. Edit `AGENTS.md` only.
 
-- Ordinary `./keys`, envelope/content/delivery consumers retain opaque epoch keys.
-  Secret-bearing protection callbacks live only under explicit `./keys/host` and
-  `./keys/host/sqlite`, `./keys/host/receive/sqlite` and `./keys/host/mailbox/sqlite`,
-  initialized once by trusted host composition. Never accept per-install arbitrary
-  callbacks, add a generic secret export, or wire production.
-- Native protection must authenticate the entire fixed purpose/Org/recipient/epoch/
-  commitment/key payload. Disk metadata and an epoch-zero commitment alone cannot
-  bind Org. No plaintext fallback, new wire algorithm or recovery format.
-- Await non-cancellable native settlement and wipe operation-owned plaintext on
-  success, failure and interruption. Application Scope closes admission, waits
-  native leases and closes storage; a timeout does not prove native work stopped.
-- Record genuine fixed-Org/known-prefix observations before business rejection or
-  pin UPDATE. Unchanged head/count performs no write. Failed writes retain memory; advancing persistence requires one row
-  and exact bounded context/head/count readback, without a failed-write reopen claim.
-- Save/reload/unprotect/commitment verification precedes any installation report
-  queue. Signed reports remain claims. Failed uncertain writes retain originals;
-  valid originals remain first-wins; unreadable installed rows may be replaced only after the new blob opens and matches the same verified commitment. No legacy import. Durable public authority observations
-  do not become document/transport cursors or trusted journal role certificates.
-- Host adapters and synthetic Lab protection are distinct. Never access real
-  keys/keychains or claim a mock protector establishes native-platform acceptance.
+Behavior: [workflows](../../../docs/workflows.md). Ports: [services](../../../docs/services.md).
 
-- Recipient receive/report uses actual HPKE/commitment, protected save/readback and
-  fixed own-signature verification before queuing original report bytes. A disk
-  phase or old report cannot stand in for decrypting a new envelope or current
-  protected-key possession. Retry queued bytes without signing again.
-  A single pending Install phase repeats these checks after reopen; local schema2
-  rejects unsupported former receiver files without conversion.
-- Discovery/repair revisions are remote hints, not ledger authority. Only a real
-  current ledger may terminate an epoch/recipient task as obsolete/revoked. Finite
-  keyset task pages allow blocked work without starving later tasks; no hidden loop.
-- Reported is local remote-ACK attempt history, never server/key-custody proof or
-  current key availability. No document/transport cursor is advanced here. Retain
-  source/report history and unconsumed results until explicit acknowledgement.
+- Only `InstalledEpochKeys` touches installed key material; every other workflow
+  borrows its `saveAndReload`/`read` and receives opaque keys. Never add a generic
+  secret export, per-call protection callback, or a second owner of the store.
+- Protection authenticates the whole fixed purpose/genesis/device/epoch/commitment
+  /key payload; epoch-zero's genesis-free commitment cannot let a blob move between
+  workspaces. No plaintext fallback, new wire algorithm or recovery format.
+- Await native settlement and wipe operation-owned plaintext on success, failure
+  and interruption. Scope close refuses admission, waits native work, then closes
+  storage; a timeout does not prove native work stopped.
+- Save/reload/unprotect/commitment checks precede any installation report. Valid
+  stored originals win; an unreadable blob is replaced only after the new blob
+  opened and matched the same verified commitment. Reports are claims.
 
-- Repair retains validated observations across failed pin UPDATEs; never dispatch
-  via an older view. Successful pin persistence binds exact Org/self/head/count.
-- Repair enqueue durably binds stable caller IDs to this Org/device/epoch/rejected
-  digest before dispatch; retries never invent another ID. Only genuine ledger
-  changes terminate work. Keep original/result rows through explicit acknowledgement.
-  Repaired is local repair-ACK history, never key installation or custody proof.
-  This Scope owns the journal; callers cancel/await borrowed ledger/transport work
-  before destroying those owners. Closure guards reject late local ACK writes.
+- `KeyReceiver`: every pending envelope installation repeats real HPKE and
+  commitment checks, including after reopen; a disk phase or old report never
+  stands in. Queued reports retry their original bytes without re-signing. Copy
+  and validate a whole fetched page before any write; a failed install returns no
+  `next`. `MailboxInstallError` diagnoses the exact frame; it never rejects it.
+- Discovery/repair revisions and mailbox statuses are hints, never authority. Only
+  a genuine current ledger ends a task as Obsolete/Revoked. Finite pages let blocked
+  work be skipped without starving later tasks; no hidden loop.
+- Reported/Repaired/Observed are local attempt history, never custody or
+  installation proof. Keep originals and results until explicit acknowledgement.
 
-- The recipient mailbox facade constructs actual receiver/protected store and repair
-  queue at host initialization. No arbitrary install callback. Own every fetched
-  row before async recheck; validate the whole bounded page before task writes.
-  Failed install returns no successful next hint; no durable cursor is saved.
-  Failure diagnosis binds the exact owned frame digest and public context while
-  retaining the original Cause. No automatic rejection; callers explicitly choose
-  stable-ID targeted repair versus retry of local storage/native failures.
+- `KeyRepair` binds stable caller ids to workspace/device/epoch/rejected digest
+  before dispatch; retries never invent another id. Never dispatch through a view
+  older than one already observed, even after a failed pin write.
+- `KeyDistributor` discovers targets from the genuine ledger, never a server list.
+  The first outbox ciphertext per recipient/epoch is immutable and re-sent on every
+  revision; Recovery devices never send. Capacity blocks new tasks, never deletes.
 
-- Facade fetch and repair share the receiver’s genuine durable observation boundary
-  before eligibility. Rejected revocation remains known; observation writes/readback
-  preserve fixed Org/self/head/count, and failure rolls back without forgetting the
-  genuine in-memory prefix. Fixed page counts cannot change while row getters run.
+- `EpochPublisher` candidates use `CandidateProtector`, never installed-key
+  protection, and authenticate purpose/context/original record/envelope digest.
+  Persist and open the candidate, stage the complete post-transition group and
+  compare exact readback before submission. Retry exact records; install only
+  genuinely committed epochs; Conflict discards the candidate key. Delete staged
+  groups only for a genuine different commitment at the same epoch, by the group's
+  signing device. Storage never supplies ledger authority.
+- `InstalledEpochHistory` recovers from the installed latest key only, verifies the
+  whole chain before writes, wipes copies on every exit and retries only genuinely
+  missing keys. It restores no envelopes, publishes nothing, selects no vault.
 
-- Sender distribution composes the actual receiver/protected store/outbox owners.
-  Discover targets from genuine current ledger, not a remote list. Preserve immutable
-  outbox ciphertext and every per-revision task/result through explicit acknowledgement.
-  Hints only trigger retries; only genuine epoch/revocation changes terminate tasks.
-  Exact readback is observation, never installation. Use already committed protected
-  keys; staged publication is a separate owner and vault/native custody stay separate.
-
-- `./keys/host/history` borrows installed protected-store capabilities at trusted
-  initialization. Recover from the installed latest key only, fixed-verify the
-  full history/commitments before writes, wipe owned opaque recovery copies on
-  every exit, and preserve validated observations before missing-epoch failures.
-  It never restores historical envelopes, publishes epochs, creates reports,
-  selects vault formats or grants current writing rights. Storage failures may
-  leave safe originals; retries are explicit and idempotent, never deletion.
-
-- Distributor indexed metadata uses a captured task budget; reaching capacity never deletes originals. Existing terminal/ack transitions remain possible within budget; new tasks are blocked explicitly.
-
-- The receiver constructs the installed store once; host facades forward the same opaque read/save capability. Borrowers do not create/close another owner. No caller-supplied substitute or secret material export.
-
-- Local `./keys/host/rotation/sqlite` candidates use a separate initialized host
-  protector and authenticated purpose/context/original record. Never call installed
-  protection on an unpublished key. Persist and actually open the candidate before
-  P09; retry exact records, install only genuine committed epochs, retain Conflict
-  and original results through explicit ACK. Persist all complete post-transition
-  recipient frames, stage atomically and compare exact readback before CAS. A
-  conflict discards the protected candidate; committed staged recipients bind
-  original R/signer and current recipient eligibility. Delete staged groups only
-  for a genuine different commitment occupying the same epoch, by the group's
-  original signing device only. Every cleanup page authenticates that device;
-  account roles or an occupied claim cannot substitute. The storage
-  service never supplies signed-ledger authority.
+- Envelopes keep `AAD || enc32 || ct48 || signature64` and `lody-e2ee/epoch-env/v1\0`;
+  context comes from the caller, never the frame. Check the outer signature before
+  decryption and current authority after it. Recovery devices cannot send.
+- History packets keep the v1 commitment/AAD domains and epoch-zero exception; no
+  nonce override. `recoverLedgerHistory` requires a genuine view and returns all
+  epochs or none.

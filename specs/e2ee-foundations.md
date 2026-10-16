@@ -27,7 +27,7 @@ keys A and identity nonce points R, and scalars S >= L. Both pure and native
 verification apply this same preflight before the signature equation so native
 provider differences cannot select a different accepted record set.
 
-Signature validity is only one prerequisite. The root foundation entry does not verify current
+Signature validity is only one prerequisite. The foundation primitives (`@lody/e2ee-core/protocol`) do not verify current
 membership, freshness, write permission, snapshot history or server admission.
 The separate AEAD primitive derives a scoped content key with HKDF-SHA-256 and
 validates XChaCha20-Poly1305 tags using caller-supplied context/header and binding.
@@ -65,7 +65,7 @@ recovery file/wrapping/concurrency and native custody remain separate decisions;
 [stage-before-CAS](e2ee/publisher-key-recoverability.md). This Spec revision stays draft; accepted boundary direction
 and executed synthetic tests do not approve this entire revision or native custody.
 
-[Host contract and validation boundary](../packages/e2ee-core/src/keys/HOST-PROTECTION.md).
+[Host contract and validation boundary](../packages/e2ee-core/docs/workflows.md#installedepochkeys-and-installedepochhistory).
 
 ## Evidence
 

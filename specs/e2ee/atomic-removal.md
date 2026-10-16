@@ -80,7 +80,7 @@ force a malicious publisher to make usable ciphertext or preserve it forever.
 
 The design direction above is supplied by the user; this revised Spec remains
 **draft for approval**. It does not enable production, select vault/native custody,
-strict B, account recovery or an MLS replacement. See [producer and replay](../../packages/e2ee-core/src/ledger/ADMISSION.md),
-[staging port](../../packages/e2ee-core/src/keys/staging.ts),
-[rotation workflow](../../packages/e2ee-core/src/keys/epoch-rotation.ts) and
+strict B, account recovery or an MLS replacement. See [producer and replay](../../packages/e2ee-core/src/internal/ledger/ADMISSION.md),
+[staging port](../../packages/e2ee-core/src/internal/keys/staging.ts),
+[rotation workflow](../../packages/e2ee-core/src/internal/keys/publisher.ts) and
 [Lab](https://github.com/LodyAI/Lody/blob/358f06b764566241345ff041294540be0e3fea08/packages/e2ee-lab/README.md).
