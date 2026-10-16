@@ -1,6 +1,7 @@
 export * from './preview-control';
 import { CliType } from './ai';
 export * from './history-writer';
+export type { AgentHistoryTargets } from './history-agent-window';
 export * from './history-write-schema';
 export * from './session-mirror';
 export * from './session-control-plane';
