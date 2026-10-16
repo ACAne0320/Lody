@@ -324,8 +324,8 @@ identity propagation into adapter-owned Git commands remains unresolved.
 ### Start failures
 
 `SessionManager.createSession` reports each start step through `onStartStage` as it
-begins: credentials, working directory, worktree, Git identity, agent runtime, then agent
-start. The execution service keeps the last step on the turn and clears it once a Session
+begins: credentials, working directory, worktree, worktree setup script, Git identity,
+agent runtime, then agent start. The execution service keeps the last step on the turn and clears it once a Session
 is bound. A failure is recorded as `<step> failed: <message>`, using
 `session-start-stage.ts`, so the user sees where start-up stopped. Authentication failures
 keep their own message. The error itself is never wrapped: the restore and create paths
@@ -338,6 +338,19 @@ which a `Data.TaggedError` without a message getter produces. Only Error and str
 are described. Classifiers keep using `formatErrorMessage`, whose output does not change.
 See the
 [decision](../../../../.agents/notes/implemented/bug-fix/2026-10-16-session-start-failure-attribution.md).
+
+`startWithTransientRetry` in the execution service starts again after a temporary OS
+failure (`EAGAIN`, `EMFILE`, `ENFILE` or `ENOMEM` anywhere in the cause chain), up to three
+attempts with 1- and 3-second delays from `SESSION_START_RETRY_DELAYS_MS`. Before each delay
+it publishes `Retrying after a temporary system error` as presence detail, and after the
+delay it checks for Stop. Each attempt is a fresh `createSession`, because the failed one
+already released its process and credentials. `sessionStartRetryMode` decides how to repeat.
+A new Session repeats unchanged if it failed before its worktree setup script. If it got past
+the script, it repeats as a resume, which skips the script. It never repeats if it failed
+while the script was running. A restore always repeats unchanged, because its existing
+worktree already skips setup. Authentication, resume and every other error fail on the first
+attempt. See the
+[retry decision](../../../../.agents/notes/implemented/feature/2026-10-16-session-start-transient-retry.md).
 
 ### No draft preparation
 

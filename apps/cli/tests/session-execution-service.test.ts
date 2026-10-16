@@ -74,6 +74,10 @@ import { withHistoryPort } from './history-port-fixture';
 class MessagelessStartFailure extends Data.TaggedError('MessagelessStartFailure')<{
   cause: unknown;
 }> {}
+
+/** The OS refusing a fork, as `spawnSync` reports it. */
+const temporarySpawnFailure = () =>
+  Object.assign(new Error('spawnSync /usr/bin/git EAGAIN'), { code: 'EAGAIN' });
 import { composeTestSessionDoc } from './session-doc-fixture';
 
 const capabilityConfigId = 'config-1' as AgentConfigId;
@@ -6056,6 +6060,14 @@ describe('SessionExecutionService', () => {
       expectedMessage:
         "Preparing the worktree failed: MessagelessStartFailure: Operation timed out after '5s'",
     },
+    {
+      // A setup script is not known to be safe to run twice, so nothing repeats it.
+      name: 'temporary system error while the worktree setup script ran',
+      error: temporarySpawnFailure(),
+      stage: 'worktree-setup',
+      expectedReason: 'turn_pre_prompt_failed',
+      expectedMessage: 'Running the worktree setup script failed: spawnSync /usr/bin/git EAGAIN',
+    },
   ])('records exactly one visible chat_failed for a pre-prompt $name', async (testCase) => {
     let history: SessionHistoryInput[] = [];
     const sessionDoc = withHistoryPort({
@@ -6138,6 +6150,7 @@ describe('SessionExecutionService', () => {
       reason: testCase.expectedReason,
       message: testCase.expectedMessage,
     });
+    expect(sessionManager.createSession).toHaveBeenCalledTimes(1);
     if (testCase.expectedCode) {
       expect(notices[0]?.meta).toMatchObject({ code: testCase.expectedCode });
     }
@@ -6357,6 +6370,131 @@ describe('SessionExecutionService', () => {
     expect(notices).toHaveLength(0);
   });
 
+  const createRetryFixture = (createSession: (config: SessionConfig) => Promise<unknown>) => {
+    let history: SessionHistoryInput[] = [];
+    const sessionDoc = withHistoryPort({
+      getMetaState: vi.fn(async () => undefined),
+      getHistory: vi.fn(() => history),
+      setStatus: vi.fn(async () => {}),
+      setProject: vi.fn(async () => {}),
+      setBaseBranch: vi.fn(async () => {}),
+      updateHistory: vi.fn(
+        async (update: (entries: SessionHistoryInput[]) => SessionHistoryInput[]) => {
+          history = update(history);
+        }
+      ),
+      roomId: 'session-session-start-retry',
+    });
+    const sessionManager = {
+      getSession: vi.fn(() => null),
+      getPendingSession: vi.fn(() => null),
+      createSession: vi.fn(createSession),
+      setSessionError: vi.fn(),
+      terminateSession: vi.fn(),
+      validateSessionCredentials: vi.fn(async () => {}),
+    } as unknown as SessionManager;
+    let backoffStarted!: () => void;
+    const backoff = new Promise<void>((resolve) => {
+      backoffStarted = resolve;
+    });
+    const deps = createBaseDeps({
+      sessionManager,
+      beginConversationTurn: vi.fn(() => 'assistant-start-retry'),
+      setSessionActivePresencePhase: vi.fn(
+        (_sessionId: SessionId, _phase: SessionActivePresencePhase, detail?: string) => {
+          if (detail === 'Retrying after a temporary system error') backoffStarted();
+        }
+      ),
+      recordChatFailure: vi.fn(async (_sessionDoc: unknown, reason: string, message?: string) => {
+        await sessionDoc.updateHistory?.((entries: SessionHistoryInput[]) => [
+          ...entries,
+          {
+            id: `system-notice-${entries.length}`,
+            role: 'system',
+            timestamp: '2026-10-16T00:00:00.000Z',
+            fileDiff: [],
+            items: [{ type: 'system_notice', name: 'chat_failed', meta: { reason, message } }],
+          } as SessionHistoryInput,
+        ]);
+      }),
+      workspaceDocument: {
+        repo: {
+          upsertDocMeta: vi.fn(async () => {}),
+          getDocMeta: vi.fn(async () => undefined),
+        },
+        getOrCreateSessionDoc: vi.fn(async () => sessionDoc),
+        updateAcpCapabilities: vi.fn(async () => {}),
+      } as unknown as LoroDocumentManager,
+    });
+    const service = new SessionExecutionService(deps);
+    const start = () =>
+      service.startSession({
+        type: 'session/create',
+        sessionId: 'session-start-retry' as SessionId,
+        machineId: 'machine-1',
+        workspaceId: 'workspace-1' as WorkspaceId,
+        acpSessionConfig: { prompt: 'hello', cliType: 'builtin', agentType: 'codex' },
+        userTurnId: 'turn-start-retry',
+        userId: 'user-2',
+        userName: 'User 2',
+        userEmail: 'user2@example.com',
+      });
+    const notices = () =>
+      history
+        .flatMap((entry) => entry.items ?? [])
+        .filter((item) => item.type === 'system_notice' && item.name === 'chat_failed');
+    return { service, sessionManager, backoff, start, notices };
+  };
+
+  it('repeats a new start as a resume once its worktree setup has finished', async () => {
+    vi.useFakeTimers();
+    const resumeFlags: Array<boolean | undefined> = [];
+    const { sessionManager, start, notices } = createRetryFixture(async (config) => {
+      resumeFlags.push(config.resume);
+      config.onStartStage?.('agent-start');
+      throw resumeFlags.length === 1 ? temporarySpawnFailure() : new Error('agent crashed');
+    });
+    const execution = start();
+    await vi.advanceTimersByTimeAsync(16000);
+    await execution;
+    vi.useRealTimers();
+
+    // The second attempt skips the setup script that the first one already ran.
+    expect(resumeFlags).toEqual([undefined, true]);
+    expect(sessionManager.createSession).toHaveBeenCalledTimes(2);
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0]?.meta).toMatchObject({
+      reason: 'turn_pre_prompt_failed',
+      message: 'Starting the agent failed: agent crashed',
+    });
+  });
+
+  it('makes no further start attempt after Stop during the retry delay', async () => {
+    vi.useFakeTimers();
+    const { service, sessionManager, backoff, start, notices } = createRetryFixture(
+      async (config) => {
+        config.onStartStage?.('worktree');
+        throw temporarySpawnFailure();
+      }
+    );
+    const execution = start();
+    await backoff;
+    const cancelling = service.cancelSession({
+      type: 'session/cancel',
+      sessionId: 'session-start-retry' as SessionId,
+      machineId: 'machine-1',
+      workspaceId: 'workspace-1' as WorkspaceId,
+      turnId: 'assistant-start-retry',
+    });
+    await vi.advanceTimersByTimeAsync(16000);
+    await expect(cancelling).resolves.toEqual({ success: true });
+    await execution;
+    vi.useRealTimers();
+
+    expect(sessionManager.createSession).toHaveBeenCalledTimes(1);
+    expect(notices()).toHaveLength(0);
+  });
+
   it.each<{
     name: string;
     errors: unknown[];
@@ -6477,6 +6615,36 @@ describe('SessionExecutionService', () => {
       expectedReason: 'session_restore_failed',
       expectedMessage:
         "Preparing the worktree failed: MessagelessStartFailure: Operation timed out after '5s'",
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 1,
+    },
+    {
+      name: 'retries a temporary system error and reports the last failure',
+      errors: [temporarySpawnFailure(), temporarySpawnFailure(), new Error('restore failed')],
+      stage: 'worktree',
+      expectedReason: 'session_restore_failed',
+      expectedMessage: 'Preparing the worktree failed: restore failed',
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 3,
+    },
+    {
+      name: 'stops retrying a temporary system error after three attempts',
+      errors: [temporarySpawnFailure(), temporarySpawnFailure(), temporarySpawnFailure()],
+      stage: 'agent-start',
+      expectedReason: 'session_restore_failed',
+      expectedMessage: 'Starting the agent failed: spawnSync /usr/bin/git EAGAIN',
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 3,
+    },
+    {
+      name: 'never repeats a restore whose worktree setup script failed',
+      errors: [temporarySpawnFailure()],
+      stage: 'worktree-setup',
+      expectedReason: 'session_restore_failed',
+      expectedMessage: 'Running the worktree setup script failed: spawnSync /usr/bin/git EAGAIN',
       resumeSessionId: undefined,
       history: [],
       expectedCreateSessionCalls: 1,

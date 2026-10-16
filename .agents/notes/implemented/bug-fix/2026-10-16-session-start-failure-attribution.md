@@ -92,3 +92,6 @@ MessagelessStartFailure: <cause>`. An authentication failure reported during
 makes the restore case record exactly the production symptom: `Preparing the worktree
 failed: ` followed by nothing. Existing cases without a reported step keep their old
 messages.
+
+Later change: the retry decision added a `worktree-setup` step, reported when the setup
+script starts. See [transient retry](../feature/2026-10-16-session-start-transient-retry.md).

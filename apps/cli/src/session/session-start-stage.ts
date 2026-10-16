@@ -7,6 +7,7 @@ export type SessionStartStage =
   | 'credentials'
   | 'workdir'
   | 'worktree'
+  | 'worktree-setup'
   | 'git-identity'
   | 'agent-runtime'
   | 'agent-start';
@@ -15,6 +16,7 @@ const STAGE_LABELS: Record<SessionStartStage, string> = {
   credentials: 'Preparing repository credentials',
   workdir: 'Preparing the working directory',
   worktree: 'Preparing the worktree',
+  'worktree-setup': 'Running the worktree setup script',
   'git-identity': 'Resolving the Git identity',
   'agent-runtime': 'Resolving the agent runtime',
   'agent-start': 'Starting the agent',
@@ -25,3 +27,52 @@ export const describeSessionStartFailure = (
   stage: SessionStartStage | undefined,
   message: string
 ): string => (stage ? `${STAGE_LABELS[stage]} failed: ${message}` : message);
+
+/** Delays before the second and third start attempts; their count bounds the retries. */
+export const SESSION_START_RETRY_DELAYS_MS = [1_000, 3_000] as const;
+
+/**
+ * The OS was momentarily out of processes, descriptors or memory. Only these are
+ * retried: they were observed failing starts that succeeded when resent, and the
+ * same request can succeed once the resource frees up. Anything else stays final.
+ */
+const TRANSIENT_SYSTEM_CODES = new Set(['EAGAIN', 'EMFILE', 'ENFILE', 'ENOMEM']);
+
+export const isTransientSessionStartError = (error: unknown): boolean => {
+  const seen = new Set<unknown>();
+  const visit = (value: unknown): boolean => {
+    if (!value || typeof value !== 'object' || seen.has(value)) return false;
+    seen.add(value);
+    const code = (value as { code?: unknown }).code;
+    if (typeof code === 'string' && TRANSIENT_SYSTEM_CODES.has(code)) return true;
+    if (value instanceof AggregateError && value.errors.some(visit)) return true;
+    return visit((value as { cause?: unknown }).cause);
+  };
+  return visit(error);
+};
+
+/**
+ * Whether a failed start may run again, and how. A start that never reached the
+ * worktree setup script repeats as-is; one that finished it repeats as a resume so
+ * the script is skipped; one that failed while the script ran never repeats,
+ * because a user script is not known to be safe to run twice.
+ */
+const RETRY_MODE_BY_STAGE: Record<SessionStartStage, 'repeat' | 'resume' | 'none'> = {
+  credentials: 'repeat',
+  workdir: 'repeat',
+  worktree: 'repeat',
+  'worktree-setup': 'none',
+  'git-identity': 'resume',
+  'agent-runtime': 'resume',
+  'agent-start': 'resume',
+};
+
+export const sessionStartRetryMode = (
+  stage: SessionStartStage | undefined,
+  resume: boolean
+): 'repeat' | 'resume' | 'none' => {
+  if (stage === 'worktree-setup') return 'none';
+  // A resumed start skips the script whenever its worktree already exists.
+  if (resume || stage === undefined) return 'repeat';
+  return RETRY_MODE_BY_STAGE[stage];
+};

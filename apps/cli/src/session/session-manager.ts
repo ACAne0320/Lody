@@ -1569,6 +1569,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
           `[${config.sessionId}] Skipping worktree setup for restored session because the worktree already exists`
         );
       } else {
+        this.reportStartStage(config, 'worktree-setup');
         await runWorktreeSetup({
           config: await this.resolveWorktreeSetupConfig(config),
           sessionId: config.sessionId!,
