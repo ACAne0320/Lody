@@ -72,6 +72,18 @@ Cause history or making a later successful destroy fail. Scope finalizers run on
 the small ownership helper retains native retry owners rather than re-closing a
 failed Scope. Private Causes/grants never enter diagnostic logs.
 
+CLI and renderer register the SDK snapshot diagnostic observer at their transport
+composition entries. The shared explicit scalar projection preserves snapshot and
+request correlation, permission/auth/HEAD/export/encode/PUT stages, encoded body
+length, outcomes and monotonic stage/workflow elapsed time. Native Repo error
+formatting also preserves `abortKind`, `timeoutKind` and `uploadStage`; it never
+forwards private Causes, arbitrary error text, bodies, tokens, headers or sensitive
+URLs. Ordinary fetch remains `total-only`: missing transmission substages stay
+unknown, and a timeout budget is never presented as elapsed time. Snapshot stages
+use debug and failures use warn. Protected-content observers remain composed,
+including asynchronous failure isolation; neither logger nor observer failures
+change upload, retry, authorization or local-only composition.
+
 Configuration saves remain local-first. The writer records a pending token after
 committing an authored Provider row; only a probe for that config waits for the
 selected local Machine Flock peer receipt. Routine startup/backstop/forced refresh
@@ -102,13 +114,28 @@ lifetime primitive; the registry retains ownership, not another native status.
 
 ## Verification and limits
 
+Real renderer SDK fixtures verify plaintext/protected snapshot success, a held PUT
+with 275 ms of injected elapsed time, and a 60 s total upload timeout carried
+through native Repo error formatting. Throwing log sinks and async observers cannot
+fail the upload or skip the configured observer. CLI SQLite/SDK fixtures verify stage records and correlate encoded byte
+length and request id with the actual PUT. Added private fields in diagnostic DTOs
+are excluded by projection, as are synthetic private payloads and Causes in real
+failure paths. Only SDK-provided transmission evidence is logged.
+Removing observer registration and the three error classifications makes the
+regression fixtures fail.
+Diagnostics validation passed 63 affected component cases and 5 CLI cases, plus
+full workspace type/static checks, formatting, docs and boundary guards. Full CLI
+has 4,313 passes, one skip and the already reproduced SSH `context_unreadable`
+fixture failure; root `pnpm check` therefore remains red and not every package's
+full suite completed through that command. The script suite passed all 58 cases.
+
 Regression fixtures exercise the real SDK with an upload POST held after baseline,
 and a real Streams transport with an explicit connection suspension. They verify
 server-received bytes, removal from native inventory and same-id reconnection.
 Additional native boundary cases cover cancellation during construction/connect,
 late completion versus a successor, release retry, and unconfirmed peer receipts.
-Restoring the `d82fea54` facade makes both real regression fixtures fail. The
-sandboxed root check stops in a script fixture; the same complete script suite
+Restoring the `d82fea54` facade makes both real regression fixtures fail. At
+`95ee59f7`, the sandboxed root check stopped in a script fixture; the same complete script suite
 passes outside the sandbox, as do the affected CLI and full Shared suites.
 These are synthetic HTTP fixtures, not production-network acceptance.
 

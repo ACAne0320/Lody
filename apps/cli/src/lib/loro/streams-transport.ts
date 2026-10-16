@@ -1,5 +1,5 @@
 import type { RemoteCursorStore } from '@loro-dev/streams-crdt';
-import { createLoroSyncErrorTools } from '@lody/shared/loro-sync-errors';
+import { createLoroSyncErrorTools, getLoroSnapshotDiagnostic } from '@lody/shared/loro-sync-errors';
 import { workspaceSyncFailuresLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import { RepoSyncError, RepoTransportError } from 'loro-repo';
 import { registerLoroSyncErrorFormatter } from '../../utils/format-error';
@@ -69,6 +69,12 @@ export async function createCliStreamsTransport(args: {
         snapshotUpload: {
           canUpload: async () => true,
           debounceMs: 5_000,
+          onDiagnostic: (event) => {
+            const diagnostic = getLoroSnapshotDiagnostic(event);
+            const message = `Streams snapshot ${JSON.stringify(diagnostic)}`;
+            if (event.outcome === 'failed') args.logger.warn(message);
+            else args.logger.debug(message);
+          },
         },
       },
       args.auth

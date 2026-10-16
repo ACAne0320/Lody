@@ -11,7 +11,7 @@ import {
   WorkspaceRepoLegacyFailure,
   workspaceSyncFailuresLegacy,
 } from '@lody/shared/workspace-data/repo-legacy';
-import { createLoroSyncErrorTools } from '@lody/shared/loro-sync-errors';
+import { createLoroSyncErrorTools, getLoroSnapshotDiagnostic } from '@lody/shared/loro-sync-errors';
 import { RepoSyncError, RepoTransportError } from 'loro-repo';
 
 let sequence = 0;
@@ -603,17 +603,100 @@ describe('retained native release ownership', () => {
       nativeFailures: workspaceSyncFailuresLegacy,
     });
     const failure = new RepoIOError('streams protocol', {
-      streamsCode: 'auth_failed',
+      streamsCode: 'timeout',
       retryable: false,
-      failureKind: 'local',
-      streamsContext: { source: 'auth', operation: 'sync', retryable: false },
+      failureKind: 'timeout',
+      streamsContext: {
+        source: 'deadline',
+        operation: 'snapshot',
+        stage: 'upload',
+        originalCode: 'timeout',
+        retryable: false,
+        phase: 'upload',
+        abortKind: 'deadline',
+        timeoutKind: 'idle',
+        uploadStage: 'awaiting-response',
+        requestId: 'synthetic-request-1',
+        elapsedMs: 125,
+      },
       fullCause: Cause.die(new Error('synthetic-private-token-in-request')),
     });
-    const rendered = tools.formatLoroSyncError(new WorkspaceRepoLegacyFailure(Cause.fail(failure)));
-    expect(rendered).toContain('auth_failed');
+    const wrapped = new WorkspaceRepoLegacyFailure(Cause.fail(failure));
+    const rendered = tools.formatLoroSyncError(wrapped);
+    expect(rendered).toContain('timeout');
     expect(rendered).toContain('"retryable":false');
+    expect(rendered).toContain('"abortKind":"deadline"');
+    expect(rendered).toContain('"timeoutKind":"idle"');
+    expect(rendered).toContain('"uploadStage":"awaiting-response"');
     expect(rendered).not.toContain('synthetic-private-token');
     expect(rendered).not.toContain('fullCause');
+    expect(
+      tools.getLoroSyncDiagnostic({ level: 'warn', event: 'room.sync.failed', error: wrapped })
+    ).toMatchObject({
+      failures: [
+        {
+          streamsContext: {
+            abortKind: 'deadline',
+            timeoutKind: 'idle',
+            uploadStage: 'awaiting-response',
+            requestId: 'synthetic-request-1',
+            elapsedMs: 125,
+          },
+        },
+      ],
+    });
+  });
+  it('selects snapshot diagnostic scalars and excludes added payload/cause fields', () => {
+    const secret = 'synthetic-private-request-body-token';
+    const event = {
+      snapshotId: 'snapshot-1',
+      stage: 'put' as const,
+      outcome: 'failed' as const,
+      elapsedMs: 175,
+      snapshotElapsedMs: 300,
+      snapshotByteLength: 4096,
+      requestId: 'request-1',
+      requestOperation: 'put-snapshot' as const,
+      uploadMode: 'progress' as const,
+      uploadStage: 'uploading' as const,
+      transferredBytes: 1024,
+      idleTimeoutMs: 100,
+      body: secret,
+      url: `https://private.invalid/?token=${secret}`,
+      error: {
+        source: 'deadline' as const,
+        operation: 'snapshot' as const,
+        stage: 'upload' as const,
+        originalCode: 'timeout' as const,
+        retryable: true,
+        phase: 'upload' as const,
+        abortKind: 'deadline' as const,
+        timeoutKind: 'idle' as const,
+        uploadStage: 'uploading' as const,
+        requestId: 'request-1',
+        elapsedMs: 175,
+        bodyText: secret,
+        headers: { Authorization: secret },
+        fullCause: Cause.die(new Error(secret)),
+      },
+    };
+    const diagnostic = getLoroSnapshotDiagnostic(event);
+    expect(diagnostic).toMatchObject({
+      snapshotId: 'snapshot-1',
+      stage: 'put',
+      outcome: 'failed',
+      elapsedMs: 175,
+      snapshotElapsedMs: 300,
+      snapshotByteLength: 4096,
+      transferredBytes: 1024,
+      requestId: 'request-1',
+      uploadMode: 'progress',
+      uploadStage: 'uploading',
+      error: { abortKind: 'deadline', timeoutKind: 'idle', uploadStage: 'uploading' },
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain(secret);
+    expect(JSON.stringify(diagnostic)).not.toContain('private.invalid');
+    expect(JSON.stringify(diagnostic)).not.toContain('fullCause');
   });
   it('retains a failed last-document save and retries before allowing a replacement', async () => {
     const adapter = storage();

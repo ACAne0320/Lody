@@ -27,6 +27,8 @@ PR: [#1607](https://github.com/LodyAI/Lody/pull/1607)
 
 后台 stream 失败只输出不带 payload 的诊断，不再无限保留历史 Cause，也不会让后来成功的 destroy 报失败。Scope finalizer 只运行一次；小型 ownership helper 保留原生 retry owner，而不是假装重新关闭失败 Scope 能重试。日志不包含私有 Cause 或 grant。
 
+CLI 与 renderer 在 transport 组合入口注册 SDK 快照诊断 observer。共享显式标量投影保留快照与请求关联、permission/auth/HEAD/export/encode/PUT 阶段、编码后正文长度、结果和单调时钟测得的阶段/工作流实际耗时。Native Repo 错误格式化同时保留 `abortKind`、`timeoutKind`、`uploadStage`，不转发私有 Cause、任意错误文本、正文、token、headers 或敏感 URL。普通 fetch 仍为 `total-only`：没有传输子阶段就保留未知，不把超时预算当作实际耗时。快照阶段使用 debug，失败使用 warn。保护内容已有 observer 继续组合，异步失败也隔离；日志或 observer 失败不改变上传、重试、授权及 local-only 组合。
+
 配置保存保持本地优先。Writer 在提交本窗口编写的 Provider 行后记录待交接 token；只有该配置存在待交接写入时，probe 才等待指定本机 Machine Flock peer 的回执。没有待交接写入的启动、backstop、强制刷新不新增数据面依赖。确认只清除调用捕获的 token，不吞掉并发的新写入；未确认或超时返回失败响应并保留 token 供重试。取消或 dispose 阻止晚到回执启动进程；云 transport 和服务端权威不参与这次本机交接。
 
 兼容层的写入屏障与连接撤销保留了 readiness 和已完成句柄表无法替代的两项保证。首次同步后再发生本地编辑，仍需要新的确认：`waitUntilSynced` 对 server 路由使用原生捕获版本的上传 ACK，对 peer 路由检查指定路由的协议回执。路由缺失、离线或不支持确认只使这次显式等待失败；首次同步 readiness 与本地优先写入不增加新门槛。即使借用者取消等待，有期限的上传 producer 仍由 native Repo 持有；取消不会退休其他借用者的副本。
@@ -35,9 +37,13 @@ Transport owner 在 adapter 构造或 native connect 前同步登记。移除会
 
 ## 验证与限制
 
+真实 renderer SDK fixture 覆盖明文/保护快照成功、PUT 阻塞期间注入的 275 ms 实际耗时，以及经过 native Repo 错误格式化的 60 s 总上传超时。日志 sink 与异步 observer 抛错都不会使上传失败，也不会跳过已有 observer。CLI SQLite/SDK fixture 校验阶段记录，并将编码后字节数、request id 与真实 PUT 关联。投影排除诊断 DTO 中额外添加的私有字段，真实失败路径中的合成私有 payload 与 Cause 同样不进入日志；传输信息只记录 SDK 实际提供的证据。移除 observer 注册与三项错误分类后，回归 fixture 失败。
+
+诊断修订通过受影响组件 63 项与 CLI 专项 5 项，以及完整 workspace 类型/静态、格式、文档和边界检查。CLI 全量为 4,313 项通过、1 项跳过，另有此前已复现的 SSH `context_unreadable` fixture 失败，因此根 `pnpm check` 仍未全绿，也没有通过该命令跑完所有包的完整套件。脚本套件 58 项全部通过。
+
 回归 fixture 使用真实 SDK，在 baseline 后阻塞上传 POST；另以显式连接暂停驱动真实 Streams transport。断言服务端收到的字节、native 清单移除与同 id 重连；其他 native 边界用例覆盖构造/connect 中取消、晚到完成与后继隔离、释放重试及未确认 peer 回执。这些是合成 HTTP fixture，不代表生产网络验收。
 
-恢复 `d82fea54` 的 facade 后，两项真实回归 fixture 均失败。根检查在沙箱内的脚本 fixture 停止，同一完整脚本套件在沙箱外通过；受影响的 CLI 套件与完整 Shared 套件也在沙箱外通过。
+恢复 `d82fea54` 的 facade 后，两项真实回归 fixture 均失败。在 `95ee59f7`，根检查在沙箱内的脚本 fixture 停止，同一完整脚本套件在沙箱外通过；受影响的 CLI 套件与完整 Shared 套件也在沙箱外通过。
 
 行为回归覆盖 cache/shortcut 释放失败后的自动恢复、共享副本、保存失败后原始字节保留、后台 observer 失败后正常关闭、workspace 清理的继续与重试、Session 释放失败后的本机房间失效，以及仅对待交接配置生效的 probe、取消和 dispose。原生 v7 host、旧 peer 兼容、快照与 Streams 套件分别保留协议覆盖；最终检查结果记录在 PR。
 真实 native 集成还覆盖失败 attach 的重试、仅由 native 借用的房间清单、反复服务端确认与本地权威，以及原有四组晚到 reconnect 成功/失败和 waiter 重试下的关闭场景。waiter 超时后仍共享保留中的 native producer，新的触发边不会重复启动它。

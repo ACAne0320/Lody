@@ -15,6 +15,7 @@ import {
 import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import type { LoroStreamsTokenAuth } from '@lody/shared';
 import { workspaceStreamsTransport } from '@lody/shared/workspace-data/streams';
+import { getLoroSnapshotDiagnostic } from '@lody/shared/loro-sync-errors';
 import { type StreamsRoomPayloadProtectionResolver } from 'loro-repo/effect/streams';
 
 /** Transport configuration, not a persisted workspace mode or an E2EE capability verdict. */
@@ -94,8 +95,23 @@ export const createWorkspaceStreamsTransport = (options: WorkspaceStreamsTranspo
           : streamsSnapshotCodec,
       baseUrl: options.streamsBaseUrl,
       shardUrls: getLoroStreamsShardUrls(options.streamsBaseUrl, options.shardHostSuffix),
-      snapshotUpload:
-        content?.mode === 'protected' ? content.snapshotUpload : { canUpload: async () => true },
+      snapshotUpload: {
+        ...(content?.mode === 'protected'
+          ? content.snapshotUpload
+          : { canUpload: async () => true }),
+        onDiagnostic: (event) => {
+          try {
+            const diagnostic = getLoroSnapshotDiagnostic(event);
+            if (event.outcome === 'failed') console.warn('Streams snapshot', diagnostic);
+            else console.debug('Streams snapshot', diagnostic);
+          } catch {
+            // A diagnostic sink cannot interrupt upload or the configured observer.
+          }
+          return content?.mode === 'protected'
+            ? content.snapshotUpload.onDiagnostic?.(event)
+            : undefined;
+        },
+      },
       ...(content?.mode === 'protected'
         ? {
             payloadProtectionNamespace: content.namespace,

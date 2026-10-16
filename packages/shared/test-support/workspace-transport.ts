@@ -84,6 +84,8 @@ export const nativeTransportHarness = (
     }
   };
   return {
+    uploadSnapshot: (target: RoomTarget) =>
+      start().then((value) => run(value.uploadSnapshot(target))),
     health: () => start().then((value) => run(value.health({ kind: 'doc', id: 'doc-a' }))),
     advance: async (ms: number) => {
       await testClock.then((clock) => Effect.runPromise(clock.adjust(ms)));

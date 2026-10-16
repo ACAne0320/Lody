@@ -13,6 +13,9 @@ import 'fake-indexeddb/auto';
 import { createPrivateKey, sign } from 'node:crypto';
 import { Effect, Result } from 'effect';
 import { WorkspaceRepoLegacy as LoroRepo } from '@lody/shared/workspace-data/repo-legacy';
+import { workspaceSyncFailuresLegacy } from '@lody/shared/workspace-data/repo-legacy';
+import { createLoroSyncErrorTools, getLoroSnapshotDiagnostic } from '@lody/shared/loro-sync-errors';
+import { RepoSyncError, RepoTransportError } from 'loro-repo';
 import { nativeTransportHarness } from '../../shared/test-support/workspace-transport';
 import {
   Bytes,
@@ -231,10 +234,18 @@ const docUrl = (workspaceId: WorkspaceId, docId: string) =>
   });
 
 /** Byte storage only: CRDT encoding, merge, protection and cursor logic all run in the SDK. */
-function createByteServer(beforeRequest?: (url: URL, method: string) => Promise<void>) {
+function createByteServer(
+  beforeRequest?: (url: URL, method: string, init?: RequestInit) => Promise<void>
+) {
   type Room = { batches: Uint8Array[]; snapshot?: { offset: string; body: Uint8Array } };
   const rooms = new Map<string, Room>();
-  const requests: { url: URL; method: string; body: Uint8Array; auth: string | null }[] = [];
+  const requests: {
+    url: URL;
+    method: string;
+    body: Uint8Array;
+    auth: string | null;
+    requestId: string | null;
+  }[] = [];
   const live = new Map<string, ReadableStreamDefaultController<Uint8Array>>();
   const liveReady = Promise.withResolvers<void>();
   const liveWaiters = new Map<string, Array<() => void>>();
@@ -269,8 +280,14 @@ function createByteServer(beforeRequest?: (url: URL, method: string) => Promise<
     const method = init?.method ?? 'GET';
     const body = new Uint8Array(await new Response(init?.body).arrayBuffer());
     const headers = new Headers(init?.headers);
-    requests.push({ url, method, body, auth: headers.get('Authorization') });
-    await beforeRequest?.(url, method);
+    requests.push({
+      url,
+      method,
+      body,
+      auth: headers.get('Authorization'),
+      requestId: headers.get('X-Request-ID'),
+    });
+    await beforeRequest?.(url, method, init);
     const path = url.pathname.replace(/\/(bootstrap|snapshot(?:\/.*)?)$/, '');
     const value = room(path);
     const currentTail = () => tail(path);
@@ -425,6 +442,128 @@ class FailingStorage extends IndexedDBStorageAdaptor {
 }
 
 describe('workspace Streams content boundary', () => {
+  it.each([
+    { protected: false, timeout: false },
+    { protected: true, timeout: false },
+    { protected: true, timeout: true },
+  ])(
+    'logs safe snapshot stages, correlated requests and actual elapsed time (%j)',
+    async (scenario) => {
+      const diagnostics: ReturnType<typeof getLoroSnapshotDiagnostic>[] = [];
+      const capture = (
+        _message: unknown,
+        diagnostic: ReturnType<typeof getLoroSnapshotDiagnostic>
+      ) => {
+        diagnostics.push(diagnostic);
+        if (scenario.protected && !scenario.timeout)
+          throw new Error('synthetic private diagnostic sink failure');
+      };
+      const debug = vi.spyOn(console, 'debug').mockImplementation(capture);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(capture);
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const privateText = 'synthetic-private-snapshot-body-token';
+      const server = createByteServer(async (url, method, init) => {
+        if (method !== 'PUT' || !url.pathname.includes('/snapshot/')) return;
+        entered.resolve();
+        await new Promise<void>((resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new Error(`${privateText} ${url.href}`)),
+            { once: true }
+          );
+          void release.promise.then(resolve, reject);
+        });
+      });
+      const tab = await openTab(`diagnostics-${++sequence}` as WorkspaceId);
+      const doc = (await tab.repo.openPersistedDoc('doc-a')).doc;
+      doc.getMap('data').set('private', privateText);
+      doc.commit();
+      const observed: string[] = [];
+      const content = scenario.protected
+        ? protectedContent({
+            snapshotUpload: {
+              canUpload: () => true,
+              // eslint-disable-next-line @typescript-eslint/no-misused-promises -- The SDK isolates rejected observer promises despite its void callback type.
+              onDiagnostic: async (event) => {
+                observed.push(event.stage);
+                if (event.stage === 'export') throw new Error('synthetic private observer failure');
+              },
+            },
+          })
+        : undefined;
+      const transport = transportFor(tab, content);
+      try {
+        expect((await transport.syncDoc('doc-a', doc)).ok).toBe(true);
+        const result = transport.uploadSnapshot({ kind: 'doc', id: 'doc-a' }).then(
+          (value) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error })
+        );
+        await entered.promise;
+        const elapsed = scenario.timeout ? 60_000 : 275;
+        await transport.advance(elapsed);
+        if (!scenario.timeout) release.resolve();
+        const uploaded = await result;
+        expect(uploaded.ok).toBe(!scenario.timeout);
+        expect(new Set(diagnostics.map((event) => event.stage))).toEqual(
+          new Set(['permission', 'auth', 'head', 'export', 'encode', 'put'])
+        );
+        expect(new Set(diagnostics.map((event) => event.snapshotId)).size).toBe(1);
+        const started = diagnostics.find(
+          (event) => event.stage === 'put' && event.outcome === 'started'
+        );
+        const completed = diagnostics.find(
+          (event) =>
+            event.stage === 'put' && event.outcome === (scenario.timeout ? 'failed' : 'succeeded')
+        );
+        const put = server.requests.find(
+          (request) => request.method === 'PUT' && request.url.pathname.includes('/snapshot/')
+        );
+        expect(completed).toMatchObject({
+          requestId: put?.requestId,
+          requestOperation: 'put-snapshot',
+          snapshotByteLength: put?.body.byteLength,
+          elapsedMs: elapsed,
+          snapshotElapsedMs: elapsed,
+          uploadMode: 'total-only',
+        });
+        expect(started?.requestId).toEqual(expect.any(String));
+        expect(started?.requestId).toBe(completed?.requestId);
+        if (scenario.protected) expect(observed).toContain('put');
+        if (!uploaded.ok) {
+          const tools = createLoroSyncErrorTools({
+            RepoSyncError,
+            RepoTransportError,
+            nativeFailures: workspaceSyncFailuresLegacy,
+          });
+          const formatted = tools.formatLoroSyncError(uploaded.error);
+          expect(formatted).toContain('"abortKind":"deadline"');
+          expect(formatted).toContain('"timeoutKind":"total"');
+          // Fetch provides no actual transmission progress, so its upload substage stays unknown.
+          expect(formatted).not.toContain('"uploadStage":');
+          expect(formatted).toContain('"elapsedMs":60000');
+          expect(completed?.error).toMatchObject({ abortKind: 'deadline', timeoutKind: 'total' });
+          expect(formatted).not.toContain(privateText);
+          expect(formatted).not.toContain(streamsBaseUrl);
+          expect(formatted).not.toContain('fullCause');
+        }
+        const logged = JSON.stringify(diagnostics);
+        for (const secret of [
+          privateText,
+          'streams-jwt',
+          streamsBaseUrl,
+          'fullCause',
+          'private observer failure',
+        ])
+          expect(logged).not.toContain(secret);
+      } finally {
+        release.resolve();
+        debug.mockRestore();
+        warn.mockRestore();
+      }
+    }
+  );
+
   it('waits for the current write upload ACK after the real SDK already has a baseline', async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();

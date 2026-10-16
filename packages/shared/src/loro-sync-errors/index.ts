@@ -1,4 +1,5 @@
 import type { RepoTransportError, RepoDiagnosticEvent } from 'loro-repo';
+import type { SnapshotDiagnosticEvent } from '@loro-dev/streams-crdt';
 
 type RepoErrorRuntime = Pick<typeof import('loro-repo'), 'RepoTransportError' | 'RepoSyncError'> & {
   /** A caller-bound native constructor boundary; never inspect arbitrary error payloads. */
@@ -31,6 +32,9 @@ const projectFailure = (error: RepoTransportError, transportId?: string): LoroSy
     retryable: context.retryable,
     requestOperation: context.requestOperation,
     phase: context.phase,
+    abortKind: context.abortKind,
+    timeoutKind: context.timeoutKind,
+    uploadStage: context.uploadStage,
     timeoutMs: context.timeoutMs,
     elapsedMs: context.elapsedMs,
     status: context.status,
@@ -47,6 +51,66 @@ const projectFailure = (error: RepoTransportError, transportId?: string): LoroSy
     failureKind: error.failureKind ?? 'unknown',
     streamsCode: error.streamsCode,
     streamsContext,
+  };
+};
+
+type SnapshotError = NonNullable<SnapshotDiagnosticEvent['error']>;
+type SnapshotErrorDiagnostic = Pick<
+  SnapshotError,
+  | 'source'
+  | 'operation'
+  | 'originalCode'
+  | 'retryable'
+  | 'phase'
+  | 'abortKind'
+  | 'timeoutKind'
+  | 'uploadStage'
+  | 'timeoutMs'
+  | 'elapsedMs'
+  | 'status'
+  | 'requestId'
+  | 'networkCode'
+> &
+  Partial<Pick<NonNullable<RepoTransportError['streamsContext']>, 'stage' | 'requestOperation'>>;
+
+/** Only SDK diagnostic DTOs enter here. Never pass errors or request/response objects to logs. */
+export const getLoroSnapshotDiagnostic = (
+  event: SnapshotDiagnosticEvent
+): Omit<SnapshotDiagnosticEvent, 'error'> & { readonly error?: SnapshotErrorDiagnostic } => {
+  const error = event.error;
+  return {
+    snapshotId: event.snapshotId,
+    stage: event.stage,
+    outcome: event.outcome,
+    elapsedMs: event.elapsedMs,
+    snapshotElapsedMs: event.snapshotElapsedMs,
+    snapshotOffset: event.snapshotOffset,
+    snapshotByteLength: event.snapshotByteLength,
+    requestId: event.requestId,
+    requestOperation: event.requestOperation,
+    timeoutMs: event.timeoutMs,
+    uploadMode: event.uploadMode,
+    uploadStage: event.uploadStage,
+    transferredBytes: event.transferredBytes,
+    idleTimeoutMs: event.idleTimeoutMs,
+    status: event.status,
+    error: error && {
+      source: error.source,
+      operation: error.operation,
+      stage: 'stage' in error ? error.stage : undefined,
+      originalCode: error.originalCode,
+      retryable: error.retryable,
+      requestOperation: 'requestOperation' in error ? error.requestOperation : undefined,
+      phase: error.phase,
+      abortKind: error.abortKind,
+      timeoutKind: error.timeoutKind,
+      uploadStage: error.uploadStage,
+      timeoutMs: error.timeoutMs,
+      elapsedMs: error.elapsedMs,
+      status: error.status,
+      requestId: error.requestId,
+      networkCode: error.networkCode,
+    },
   };
 };
 
