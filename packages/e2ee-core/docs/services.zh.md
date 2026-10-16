@@ -89,6 +89,7 @@
 - 原生工作结束前调用不能返回：调用返回后库就会擦除缓冲区。`KeyProtector.fromPromises(native)` 会让每个 Promise 调用不可中断。
 - `KeyProtector` 保护**已安装**的密钥（账本已承诺）；`CandidateProtector` 保护**未发布**的换代密钥。二者刻意分开：用什么保护尚未发布的密钥是一项单独的决定。两者可以由同一种原生机制实现，但必须在组合中显式表明。
 - 保护器总能读取它保护的内容：它是宿主平台的信任边界，而不是对被攻破宿主的隔离。
+- 桌面端：`apps/electron/src/main/e2ee-custody.mts` 中的 `desktopE2eePorts(custody, device)` 基于操作系统包装的密钥（Electron `safeStorage`）提供两个保护器和 `DeviceIdentity`。
 
 ## 应用端口
 
