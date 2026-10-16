@@ -81,6 +81,16 @@ observation/zero-cloud/recovery passes 18. The preceding CI passed static checks
 all component shards, other packages, conversation browser tests and the actual
 desktop build; final CLI and desktop journey results require the corrected head.
 
+Configuration saves remain local-first, but they do not order an independent
+process-launch channel. A local ACP capability probe first takes a native room
+receipt for the Machine Flock on the selected local peer. Its version coverage
+proves the machine imported the newly authored config; a missing/offline receipt
+prevents launch. Cloud transports do not participate in this local handoff, and
+peer coverage is never server authority. This restores the causal ordering lost
+when synchronous local send callbacks became asynchronous Effect workers. Tests
+hold the handoff before launch, reject unconfirmed delivery, and synchronize a
+real Flock configuration through the real v7 server and native transport.
+
 Legacy metadata observers project the completed catalog row when delivering a
 metadata patch. Native row events can otherwise expose an intermediate owner/backend
 combination to history readiness checks. Existing memory-only Legacy persist

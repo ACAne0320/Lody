@@ -23,6 +23,11 @@ The Legacy room projection reports `detached` while its transport is absent,
 including native detail refs whose initial state is `joining`. Local-only startup
 therefore remains healthy; a first-sync waiter stays pending until attachment
 establishes a baseline, while an actual attached-room failure rejects it.
+`syncRoomLegacy` selects one transport's native receipt. Before a local ACP probe,
+the renderer waits for the Machine Flock's local peer to cover the saved config;
+IPC process launch cannot overtake the asynchronous data-plane worker. Unconfirmed
+handoff prevents launch. This does not make ordinary configuration saves wait for
+the network or treat local-peer delivery as server confirmation.
 
 This adoption does not migrate upper Session/Turn orchestration, shortcut grant
 lifetimes, the host's local server engine, RPC or OSS migration target uploads.

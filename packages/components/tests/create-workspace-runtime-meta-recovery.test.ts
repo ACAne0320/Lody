@@ -3,6 +3,7 @@ import {
   CURRENT_MACHINE_PROTOCOL_CAPABILITIES,
   getMachineRoomId,
   getSessionRoomId,
+  type AgentConfigId,
   type MachineId,
   type SessionId,
   type WorkspaceId,
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => {
   );
   const watch = vi.fn(() => ({ unsubscribe: vi.fn() }));
   const joinMetaRoom = vi.fn();
+  const syncRoomLegacy = vi.fn(async () => ({ outcome: 'confirmed' as 'confirmed' | 'skipped' }));
   const remoteCursorDelete = vi.fn(async () => {});
   const metaFlock = {};
   const metaCheckpointDelete = vi.fn(async (_streamUrl: string) => {});
@@ -87,6 +89,7 @@ const mocks = vi.hoisted(() => {
     getDocMeta,
     watch,
     joinMetaRoom,
+    syncRoomLegacy,
     remoteCursorDelete,
     metaFlock,
     metaCheckpointDelete,
@@ -210,6 +213,7 @@ vi.mock('@lody/shared/workspace-data/repo-legacy', async (importOriginal) => {
             refreshTransportRoutes: mocks.refreshTransportRoutes,
             transportRooms: mocks.transportRooms,
             joinMetaRoom: mocks.joinMetaRoom,
+            syncRoomLegacy: mocks.syncRoomLegacy,
             flush: mocks.flush,
             destroy: mocks.destroy,
             reconnect: mocks.reconnect,
@@ -439,6 +443,8 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     mocks.getDocMeta.mockResolvedValue(undefined);
     mocks.watch.mockClear();
     mocks.joinMetaRoom.mockReset();
+    mocks.syncRoomLegacy.mockReset();
+    mocks.syncRoomLegacy.mockResolvedValue({ outcome: 'confirmed' });
     mocks.remoteCursorDelete.mockClear();
     mocks.metaCheckpointDelete.mockClear();
     mocks.getReplicaCheckpointStore.mockClear();
@@ -1523,6 +1529,79 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
 
     await runtime.dispose();
   });
+
+  it.each(['confirmed', 'skipped'] as const)(
+    'hands off a local config before probing, with a %s peer receipt',
+    async (outcome) => {
+      mocks.joinMetaRoom.mockResolvedValueOnce(createMetaSub(Promise.resolve()));
+      const entered = Promise.withResolvers<void>();
+      const imported = Promise.withResolvers<void>();
+      let configAvailable = false;
+      const launches: boolean[] = [];
+      const machineId = 'local-machine' as MachineId;
+      const configId = 'synthetic-config';
+      mocks.syncRoomLegacy.mockImplementationOnce(async () => {
+        entered.resolve();
+        await imported.promise;
+        configAvailable = outcome === 'confirmed';
+        return { outcome };
+      });
+      Object.assign(window, {
+        __LODY_ELECTRON__: true,
+        ipc: {
+          invoke: async (channel: string) => {
+            if (channel === 'loro.isConnected') return true;
+            if (channel === 'sessionControl.send') {
+              launches.push(configAvailable);
+              return {
+                ok: true,
+                responses: [
+                  {
+                    type: 'machine/acp-capabilities-refresh_response',
+                    machineId,
+                    configId,
+                    cliType: 'custom',
+                    agentType: 'synthetic',
+                    success: configAvailable,
+                  },
+                ],
+              };
+            }
+            return undefined;
+          },
+          on: () => () => {},
+          send: () => {},
+        },
+      });
+      const runtime = await createWorkspaceRuntime({
+        workspaceSlug: 'workspace',
+        workspaceId: 'workspace-1' as WorkspaceId,
+        apiBaseUrl: 'https://api.example.test',
+        syncMode: 'local',
+      });
+      runtime.setLocalMachineId(machineId);
+      try {
+        const request = runtime.requestMachineAcpCapabilitiesRefresh({
+          type: 'machine/acp-capabilities-refresh',
+          machineId,
+          configId: configId as AgentConfigId,
+        });
+        expect(
+          await Promise.race([
+            entered.promise.then(() => 'waiting-for-peer'),
+            request.then(() => 'launched'),
+          ])
+        ).toBe('waiting-for-peer');
+        expect(launches).toEqual([]);
+        imported.resolve();
+        expect((await request)?.success).toBe(outcome === 'confirmed');
+        expect(launches).toEqual(outcome === 'confirmed' ? [true] : []);
+      } finally {
+        imported.resolve();
+        await runtime.dispose();
+      }
+    }
+  );
 
   it('reuses a machine capability read across local file previews', async () => {
     mocks.joinMetaRoom.mockResolvedValueOnce(createMetaSub(Promise.resolve()));

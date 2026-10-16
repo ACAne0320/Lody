@@ -2168,6 +2168,24 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
           error: `Local session control cannot route ${message.type} to machine ${message.machineId}`,
         };
       }
+      // Saving a config is local-first. The separate process-launch RPC must
+      // wait until this machine has actually imported the newly authored rows.
+      const handoff = await repo.syncRoomLegacy(
+        { kind: 'flock', id: getMachineFlockDocId(workspaceId, message.machineId) },
+        'local',
+        { signal, timeoutMs: 20_000 }
+      );
+      if (signal?.aborted) return null;
+      if (handoff.outcome !== 'confirmed')
+        return {
+          type: 'machine/acp-capabilities-refresh_response',
+          machineId: message.machineId,
+          configId: message.configId,
+          cliType: 'builtin',
+          agentType: 'unknown',
+          success: false,
+          error: 'Local Provider configuration has not reached the machine',
+        };
       const localRequest = requestLocalSessionControl(negotiatedMessage, {
         onProgress: (progress) => {
           if (!signal?.aborted) options.onProgress?.(progress);

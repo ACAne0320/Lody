@@ -34,6 +34,8 @@ Legacy 房间投影必须结合实际 attachment 和路由：新查询的原生 
 
 修正后原生所有权/renderer 恢复 62 项、CLI 观察/零云/恢复 18 项通过。此前 CI 的静态检查、全部 components 分片、其他包、conversation 浏览器测试和真实桌面构建均通过；最终 CLI 与桌面场景结果仍需修正后的提交验收。
 
+配置保存仍然本地优先，但不会自动约束独立的进程启动通道。本机 ACP 能力探测先获取 Machine Flock 在指定本机 peer 上的原生房间回执，以版本覆盖证明机器已导入刚写入的配置；缺席或离线回执阻止启动。云 transport 不参与这次本机交接，peer 覆盖也不等于服务端权威。这恢复了同步本机发送回调改成异步 Effect worker 后丢失的因果顺序。测试在交接前阻止启动、拒绝未确认回执，并通过真实 v7 server 和原生 transport 同步真实 Flock 配置。
+
 Legacy 元数据观察者在投递 patch 时读取已完成的 catalog 行，避免原生逐行事件让历史就绪检查看到 owner/backend 的中间组合。既有纯内存 Legacy persist 方法保留空操作语义；原生 lease.persist 仍要求存储，不能把内存当成持久化。
 
 ## 验证与限制

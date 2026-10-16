@@ -14,6 +14,9 @@
 - Legacy room status includes actual attachment/routing: an absent route is
   detached even if its native detail ref starts joining. First-sync waiters
   survive deliberate absence and settle only on a routed baseline or failure.
+- A local configuration write does not order a separate process-launch RPC.
+  Confirm its Machine Flock through the selected local peer before probing;
+  a peer receipt is causal handoff, never server authority. Saves stay local-first.
 - Close borrower Scopes before Repo close. A failed finalizer retains its full
   Cause and native retry owner; closing an already closed Scope cannot retry it.
   Do not replace failed owners or dispose storage while accepted I/O is pending.

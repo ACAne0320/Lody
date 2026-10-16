@@ -2,8 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { Effect, Layer } from 'effect';
 import { LoroDoc } from 'loro-crdt';
 import { makeWorkspaceRepo } from '../src/workspace-data/repo';
-import { makeLocalWorkspaceTransport } from '../src/workspace-data/local-transport';
-import { LocalLoroDataPlaneServerLegacy } from '../src/local-loro-data-plane-server';
+import { WorkspaceRepoLegacy } from '../src/workspace-data/repo-legacy';
+import {
+  makeLocalWorkspaceTransport,
+  localWorkspaceTransport,
+} from '../src/workspace-data/local-transport';
+import {
+  LocalLoroDataPlaneServerLegacy,
+  type LocalLoroFlockLike,
+} from '../src/local-loro-data-plane-server';
 import { makeLocalLoroWriterLegacy } from '../src/local-loro-writer/legacy';
 import { LocalLoroWriterTurn } from '../src/local-loro-writer';
 import type {
@@ -13,7 +20,11 @@ import type {
 
 function wire(
   serverDoc: LoroDoc,
-  options: { dropFirstUpdate?: boolean; maxPayloadBytes?: number } = {}
+  options: {
+    dropFirstUpdate?: boolean;
+    maxPayloadBytes?: number;
+    serverFlock?: LocalLoroFlockLike;
+  } = {}
 ) {
   const writer = makeLocalLoroWriterLegacy(
     Layer.succeed(LocalLoroWriterTurn, { next: Effect.yieldNow })
@@ -26,6 +37,7 @@ function wire(
     maxPayloadBytes: options.maxPayloadBytes,
     resolveDoc: async () => serverDoc,
     resolveFlockDoc: async () => {
+      if (options.serverFlock) return options.serverFlock;
       throw new Error('Unexpected Flock room');
     },
   });
@@ -74,6 +86,44 @@ function wire(
 }
 
 describe('native local v7 transport', () => {
+  it('confirms a Machine Flock write only after the real peer has imported its configuration', async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* makeWorkspaceRepo();
+          const remote = yield* host.acquireFlockDoc('machine');
+          const harness = yield* Effect.acquireRelease(
+            Effect.sync(() => wire(new LoroDoc(), { serverFlock: remote.flock })),
+            (owned) => Effect.promise(owned.close)
+          );
+          const repo = yield* Effect.acquireRelease(
+            Effect.promise(() => WorkspaceRepoLegacy.create({})),
+            (owned) => Effect.promise(() => owned.destroy())
+          );
+          yield* Effect.promise(() =>
+            repo.addTransport(
+              'local',
+              localWorkspaceTransport({
+                workspaceId: 'ws',
+                peerId: 'peer-a',
+                connection: harness.connection,
+              })
+            )
+          );
+          const local = yield* Effect.promise(() => repo.openFlockDoc('machine'));
+          const sync = () => repo.syncRoomLegacy({ kind: 'flock', id: 'machine' }, 'local');
+          yield* Effect.promise(sync);
+          local.flock.set(['agentConfig', 'synthetic'], { command: 'synthetic-agent' });
+          local.flock.commit();
+          expect((yield* Effect.promise(sync)).outcome).toBe('confirmed');
+          expect(remote.flock.get(['agentConfig', 'synthetic'])).toEqual({
+            command: 'synthetic-agent',
+          });
+        })
+      )
+    );
+  });
+
   it('fails oversized queued input and releases its observers instead of hanging a sync waiter', async () => {
     const remote = new LoroDoc();
     remote.getText('body').insert(0, 'remote state');

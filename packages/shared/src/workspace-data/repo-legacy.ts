@@ -779,6 +779,21 @@ export class WorkspaceRepoLegacy {
     return this.joinRoom({ kind: 'flock', id });
   }
 
+  /** A selected peer receipt is a causal handoff, not proof of server upload. */
+  syncRoomLegacy(
+    target: RoomTarget,
+    transportId: string,
+    options: { signal?: AbortSignal; timeoutMs?: number } = {}
+  ) {
+    const sync = Effect.scoped(
+      Effect.flatMap(this.native.acquireRoom(target), (room) => room.sync(transportId))
+    );
+    return this.runLegacy(
+      options.timeoutMs === undefined ? sync : sync.pipe(Effect.timeout(options.timeoutMs)),
+      options.signal
+    );
+  }
+
   private async joinRoom(target: RoomTarget): Promise<RepoRoomSubscription> {
     const owned = await this.own(this.native.acquireRoom(target));
     const lease = owned.value;
