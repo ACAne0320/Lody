@@ -28,6 +28,11 @@ bounded Machine RPC reads. Indexing and saving still require the daemon. See the
   cards start collapsed and remain individually expandable. A base (All Changes)
   diff opened without a focus starts with every card collapsed, while a direct
   conversation/turn diff without a file focus keeps its all-files-open default.
+  A card still loading draws a pulsing skeleton body only if it will open, and
+  only the first `MAX_DIFF_SKELETON_BODIES` such cards do; the rest wait as
+  headers. One body per file in a diff of a few thousand files made WebKit
+  composite thousands of pulsing layers and killed the iOS WebContent process
+  ([decision](../notes/implemented/bug-fix/2026-10-16-diff-loading-skeleton-cap.md)).
   On mobile, the diff-header action closes the diff sheet before opening the
   file drawer so the diff modal cannot cover the destination viewer.
   `SessionMobileDiffDrawerContent` explicitly portals the diff into the nearest

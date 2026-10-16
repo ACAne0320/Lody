@@ -16,6 +16,7 @@
 //   the raw error with us).
 
 import { STATUS_ILLUSTRATION_CSS, STATUS_ILLUSTRATIONS } from './status-illustrations';
+import { flushClientLog, recordClientError, recordClientLog } from './client-log';
 
 export type BootDiagnostics = {
   message: string;
@@ -575,6 +576,8 @@ export function renderBootFailure(
   // Pre-React `app/boot_failed` beacon (spec §7.4): emit once, here at the single
   // entry point every shell funnels boot failures through, before the SDK exists.
   captureBootFailedBeacon(error, { ...options, failureKind });
+  recordClientError('boot.failed', error, { failureKind, surface: options.surface ?? 'boot' });
+  void flushClientLog();
 
   // Make sure the error reaches the devtools console even when no UI is visible.
   // Use %s formatting so devtools renders multi-line strings nicely.
@@ -674,6 +677,8 @@ export function renderBootFailure(
   if (reloadButton) {
     reloadButton.addEventListener('click', () => {
       postBootBeaconEvent('app/boot_failure_reload_clicked', { platform: beaconPlatform });
+      recordClientLog('warn', 'boot.failure_reload_clicked');
+      void flushClientLog();
       reloadButton.disabled = true;
       setStatus(copy.reloading);
       const reenable = (): void => {

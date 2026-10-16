@@ -2,6 +2,7 @@ import { isMagpieGatewayUrl } from './magpie-import';
 import { MemoryBindingSchema } from './memory-provider';
 import { AgentRoleSnapshotSchema } from './message-author';
 import { z } from 'zod';
+import { BugReportClientLogSchema } from './bug-report';
 import { SubagentTaskPayloadSchema } from './acp/claude-subagent-task';
 import {
   isLodySubagentSnapshot,
@@ -1689,6 +1690,7 @@ export const MachineBugReportRequestSchema = z
     description: z.string().trim().min(1),
     reporterUserId: z.string().trim().min(1),
     requestToken: z.string().trim().min(1),
+    clientLog: BugReportClientLogSchema.optional(),
   })
   .strict();
 

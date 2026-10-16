@@ -1,3 +1,4 @@
+import { BugReportClientLogSchema, type BugReportClientLog } from '@lody/shared';
 import {
   MemoryProviderRequestSchema,
   MemoryProviderResponseSchema,
@@ -445,6 +446,7 @@ export const LoroMachineBugReportRpcRequestSchema = BaseRpcRequestSchema.extend(
       description: z.string().trim().min(1),
       reporterUserId: z.string().trim().min(1),
       requestToken: z.string().trim().min(1),
+      clientLog: BugReportClientLogSchema.optional(),
     })
     .strict(),
 }).strict();
@@ -2977,6 +2979,8 @@ export class LoroStreamsMachineRpcClient {
     description: string;
     reporterUserId: string;
     requestToken: string;
+    /** Send only to a machine advertising `bugReportClientLog`; older daemons reject it. */
+    clientLog?: BugReportClientLog;
     timeoutMs?: number;
   }): Promise<MachineBugReportResponse | null> {
     return (await this.sendRequest({
@@ -2986,6 +2990,7 @@ export class LoroStreamsMachineRpcClient {
         description: options.description,
         reporterUserId: options.reporterUserId,
         requestToken: options.requestToken,
+        ...(options.clientLog ? { clientLog: options.clientLog } : {}),
       },
     })) as MachineBugReportResponse | null;
   }
@@ -3572,6 +3577,7 @@ export class LoroStreamsMachineRpcClient {
             description: string;
             reporterUserId: string;
             requestToken: string;
+            clientLog?: BugReportClientLog;
           };
         }
       | {

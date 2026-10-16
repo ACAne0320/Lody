@@ -124,6 +124,10 @@
       "types": "./src/ids.ts",
       "import": "./src/ids.ts"
     },
+    "./bug-report": {
+      "types": "./src/bug-report.ts",
+      "import": "./src/bug-report.ts"
+    },
     "./platform-kind": {
       "types": "./src/platform-kind.ts",
       "import": "./src/platform-kind.ts"

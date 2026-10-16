@@ -10,6 +10,7 @@ import { readStoredAuthToken } from '@/lib/auth-bootstrap';
 import { readChatLandingDefaults } from '@/lib/chat-landing-defaults';
 import { mintBugReportRequestToken, submitWebBugReport } from '@/lib/bug-report-api';
 import { appendClientBuildInfo } from '@/lib/client-build-info';
+import { buildClientLogUpload, recordClientLog } from '@/lib/client-log';
 import {
   BugReportDialog,
   type BugReportMachineOption,
@@ -95,9 +96,16 @@ export function BugReportDialogContainer() {
         setState({ status: 'error', message: minted.error });
         return;
       }
+      recordClientLog('info', 'bug_report.submitting', undefined, { machineId });
+      const clientLog = await buildClientLogUpload().catch(() => null);
       const response = await runtime.requestMachineBugReport(
         machineId,
-        { description: reportDescription, reporterUserId, requestToken: minted.requestToken },
+        {
+          description: reportDescription,
+          reporterUserId,
+          requestToken: minted.requestToken,
+          ...(clientLog ? { clientLog } : {}),
+        },
         { timeoutMs: 120_000 }
       );
       if (response?.success && response.bugReportId) {
