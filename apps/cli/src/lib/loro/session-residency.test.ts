@@ -280,4 +280,45 @@ describe('makeSessionResidency', () => {
       expect(log).toEqual(['open leased#1', 'open idle#2', 'close leased#1', 'close idle#2']);
     })
   );
+
+  it.effect('lets an observation lease protect a value without postponing its retirement', () =>
+    Effect.gen(function* () {
+      const { residency } = harness();
+      yield* withLease(residency, 's', () => Effect.void);
+      yield* TestClock.adjust('21 minutes');
+
+      // Like GC's goal check: it holds the value while reading it...
+      const scope = yield* Scope.make();
+      yield* Scope.provide(residency.acquire('s', undefined, 'observe'), scope);
+      expect(yield* residency.retire('s', { minIdleMs: 20 * 60_000 })).toBe('in-use');
+      yield* Scope.close(scope, Exit.void);
+
+      // ...but does not count as use once released.
+      expect(residency.idleSinceMs('s')).toBe(0);
+      expect(yield* residency.retire('s', { minIdleMs: 20 * 60_000 })).toBe('retired');
+    })
+  );
+
+  it.effect('restarts the idle clock when a use overlaps an observation', () =>
+    Effect.gen(function* () {
+      const { residency } = harness();
+      yield* withLease(residency, 's', () => Effect.void);
+      yield* TestClock.adjust('21 minutes');
+      const observing = yield* Scope.make();
+      yield* Scope.provide(residency.acquire('s', undefined, 'observe'), observing);
+      yield* withLease(residency, 's', () => Effect.void);
+      yield* Scope.close(observing, Exit.void);
+      expect(yield* residency.retire('s', { minIdleMs: 20 * 60_000 })).toBe('recently-used');
+    })
+  );
+
+  it.effect('keeps a value opened only for observation immediately retirable', () =>
+    Effect.gen(function* () {
+      const { residency, log } = harness();
+      yield* Effect.scoped(residency.acquire('s', undefined, 'observe'));
+      expect(residency.idleSinceMs('s')).toBeUndefined();
+      expect(yield* residency.retire('s', { minIdleMs: 20 * 60_000 })).toBe('retired');
+      expect(log).toEqual(['open s#1', 'close s#1']);
+    })
+  );
 });

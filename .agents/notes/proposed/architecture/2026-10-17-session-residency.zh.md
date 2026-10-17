@@ -41,6 +41,7 @@ lease 不是 teardown。释放最后一个 lease 只启动空闲计时，别的�
 - **使用自定义的门，而不是 `RcMap`。** 在 Effect 4.0.2（`RcMap.ts`）中，空闲到期和 `invalidate` 都是先同步把条目移出 map，之后才关闭它的 scope。这个窗口里的 `get` 会和旧的关闭并行启动新的 lookup，重现 `replaced this replica` 背后的两个 replica 重叠。对使用中的 key 调 `invalidate`，同样会让第二代与第一代并存；而且没有供内存压力使用的"只驱逐空闲条目"操作。所以内核为每个 Session 使用一个 `Semaphore(1)` 加显式引用计数。
 - **GC sweep 仍然是计时器。** 现有的 sweep 已经拥有配置（`LODY_SESSION_GC_*`）、生命周期和内存压力策略。residency 只增加原子的准入（带 `minIdleMs`、否决条件和 teardown 的 `retire`），不新增自己的后台 fiber。
 - **teardown 在门内执行。** 进程终止、预览和模拟器的关闭与文档关闭在同一把门内进行，新到的 turn 不会在拆了一半的 Session 上开始。
+- **观察用的 lease 不算使用。** `observe` lease 在持有期间照常保护值，但释放时空闲计时保持原样。没有这一点的话，GC 自己的 goal 检查会在回收前借用每个候选文档、重新开始它的空闲计时，空闲 sweep 和内存压力驱逐就都回收不了任何东西。这是在 review 接入 PR 时发现的。
 - **归档使用推迟回收。** `deferWhileInUse` 在最后一次释放后再关闭被持有的 Session，而不是在持有者手下销毁它。
 
 ## 交付

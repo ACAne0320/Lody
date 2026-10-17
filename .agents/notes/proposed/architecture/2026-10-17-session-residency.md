@@ -75,6 +75,12 @@ next turn reuses them. Only these end them:
 - **Teardown runs inside the gate.** Process termination, preview and
   simulator closes happen under the same gate as the document close, so an
   arriving turn cannot start against a half-torn-down Session.
+- **Observation leases do not count as use.** An `observe` lease protects the
+  value while it is held, but its release leaves the idle clock where it was.
+  Without this, GC's own goal check borrowed every candidate document and
+  restarted its idle clock just before retiring it, so neither the idle sweep
+  nor memory-pressure eviction ever retired anything. This was found in review
+  of the wiring PR.
 - **Deferred retirement for archive.** `deferWhileInUse` closes a leased
   Session after its last release instead of destroying it under the holder.
 

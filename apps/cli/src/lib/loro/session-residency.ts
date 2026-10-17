@@ -74,9 +74,21 @@ export class SessionResidencyClosed extends Data.TaggedError('SessionResidencyCl
   }
 }
 
+/**
+ * `use` (default) counts as activity: the last release restarts the idle clock.
+ * `observe` is for reads that must not keep a Session resident, such as GC's own
+ * eligibility checks: the lease still protects the value while held, but its
+ * release leaves the idle clock where it was before the lease.
+ */
+export type SessionLeaseMode = 'use' | 'observe';
+
 export interface SessionResidency<K, A, O = undefined, C = undefined> {
   /** Lease the resident value for the current Scope, opening it if needed. */
-  readonly acquire: (key: K, options?: O) => Effect.Effect<A, unknown, Scope.Scope>;
+  readonly acquire: (
+    key: K,
+    options?: O,
+    mode?: SessionLeaseMode
+  ) => Effect.Effect<A, unknown, Scope.Scope>;
   readonly retire: (
     key: K,
     options?: SessionRetireOptions<C, A>
@@ -103,6 +115,9 @@ type Entry<A, C> = {
   value: A | undefined;
   refCount: number;
   idleSinceMs: number | undefined;
+  /** Idle clock when the current run of leases began, restored if none was a use. */
+  idleBeforeLeases: number | undefined;
+  usedWhileLeased: boolean;
   /** Gate held by an open or a retirement; leases must wait for it. */
   busy: boolean;
   deferredRetire: SessionRetireOptions<C, A> | undefined;
@@ -123,6 +138,8 @@ export const makeSessionResidency = <K, A, O = undefined, C = undefined>(
       value: undefined,
       refCount: 0,
       idleSinceMs: undefined,
+      idleBeforeLeases: undefined,
+      usedWhileLeased: false,
       busy: false,
       deferredRetire: undefined,
     };
@@ -145,8 +162,11 @@ export const makeSessionResidency = <K, A, O = undefined, C = undefined>(
   const releaseLease = Effect.fnUntraced(function* (key: K, entry: Entry<A, C>) {
     entry.refCount -= 1;
     if (entry.refCount > 0) return;
-    // Only the idle clock starts here; nothing is torn down.
-    entry.idleSinceMs = yield* Clock.currentTimeMillis;
+    // Only the idle clock moves here; nothing is torn down. Observation-only
+    // leases leave it where it was, so GC's own checks never postpone GC.
+    entry.idleSinceMs = entry.usedWhileLeased
+      ? yield* Clock.currentTimeMillis
+      : entry.idleBeforeLeases;
     const deferred = entry.deferredRetire;
     if (!deferred || entries.get(key) !== entry) return;
     entry.deferredRetire = undefined;
@@ -157,7 +177,16 @@ export const makeSessionResidency = <K, A, O = undefined, C = undefined>(
     );
   });
 
-  const lease = (key: K, entry: Entry<A, C>): Effect.Effect<void, never, Scope.Scope> => {
+  const lease = (
+    key: K,
+    entry: Entry<A, C>,
+    mode: SessionLeaseMode
+  ): Effect.Effect<void, never, Scope.Scope> => {
+    if (entry.refCount === 0) {
+      entry.idleBeforeLeases = entry.idleSinceMs;
+      entry.usedWhileLeased = false;
+    }
+    if (mode === 'use') entry.usedWhileLeased = true;
     entry.refCount += 1;
     entry.idleSinceMs = undefined;
     return Effect.addFinalizer(() => releaseLease(key, entry));
@@ -166,13 +195,17 @@ export const makeSessionResidency = <K, A, O = undefined, C = undefined>(
   // Uninterruptible as a whole, waiting included: an interrupt between taking
   // the reference and registering its finalizer would leak the lease and pin
   // the Session forever. Every gate holder is bounded, so the wait is too.
-  const acquire = (key: K, openOptions?: O): Effect.Effect<A, unknown, Scope.Scope> =>
+  const acquire = (
+    key: K,
+    openOptions?: O,
+    mode: SessionLeaseMode = 'use'
+  ): Effect.Effect<A, unknown, Scope.Scope> =>
     Effect.suspend(() => {
       if (closed) return Effect.fail(new SessionResidencyClosed({ key }));
       const entry = entryFor(key);
       if (entry.status === 'ready' && !entry.busy && entry.value !== undefined) {
         const value = entry.value;
-        return Effect.as(lease(key, entry), value);
+        return Effect.as(lease(key, entry, mode), value);
       }
       return entry.gate
         .withPermit(
@@ -196,13 +229,13 @@ export const makeSessionResidency = <K, A, O = undefined, C = undefined>(
             }
             // Take the reference before the gate opens, so no retirement can
             // slip in between this open and the caller's lease.
-            yield* lease(key, entry);
+            yield* lease(key, entry, mode);
             return { value: entry.value };
           })
         )
         .pipe(
           Effect.flatMap((leased) =>
-            leased ? Effect.succeed(leased.value) : acquire(key, openOptions)
+            leased ? Effect.succeed(leased.value) : acquire(key, openOptions, mode)
           )
         );
     }).pipe(Effect.uninterruptible);
