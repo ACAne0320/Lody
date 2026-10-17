@@ -704,10 +704,11 @@ describe('native file locks', () => {
           Deferred.succeed(deadline, undefined).pipe(Effect.andThen(clock.sleep(duration)))
         );
         const lockPath = path.join(locksDir, 'disposed.lock');
+        // Both deletions stay pending through disposal, so both must be reported.
         const stalled = FileSystem.FileSystem.of({
           ...filesystem,
           remove: (file, options) =>
-            file === lockPath
+            file === lockPath || path.basename(file).startsWith('.lody-lock-')
               ? Deferred.succeed(started, undefined).pipe(
                   Effect.andThen(Deferred.await(gate)),
                   Effect.andThen(filesystem.remove(file, options))
@@ -745,10 +746,18 @@ describe('native file locks', () => {
           : undefined;
         expect(failed).toBeInstanceOf(FileLockCleanupFailed);
         const retained = failed?.releases.find((release) => release.path === lockPath)?.cleanup;
-        if (!retained) throw new Error('disposal discarded cleanup owner');
+        if (!failed || !retained) throw new Error('disposal discarded cleanup owner');
         expect(fs.existsSync(lockPath)).toBe(true);
         yield* Deferred.succeed(gate, undefined);
-        yield* retained.retryCleanup;
+        expect(failed.releases.map((release) => path.basename(release.path)).sort()).toEqual([
+          expect.stringMatching(/^\.lody-lock-/),
+          'disposed.lock',
+        ]);
+        // Every reported lease joins its original, still-pending deletion.
+        for (const release of failed.releases) {
+          if (!release.cleanup) throw new Error('disposal discarded cleanup owner');
+          yield* release.cleanup.retryCleanup;
+        }
         expect(fs.readdirSync(locksDir)).toEqual([]);
       })
   );
