@@ -33,6 +33,12 @@ that verifies dependency closure, not native builds or the full test suite.
 - Workspace roots own one native Repo over existing SQLite or renderer IndexedDB.
   Consumers borrow Doc, Flock and room leases in child Scopes. Opening absence
   and creating business identity remain distinct; local mode performs no cloud I/O.
+- Session readers wait for catalog metadata on that Repo before backend selection.
+  Runtime retirement aborts those waits; Session retirement removes reader
+  observations before releasing its borrowed Doc, including construction failure.
+  Main's incremental-history wakeups coexist with the retryable native teardown.
+  Restoration consumes the selected native room's baseline state, not an upload
+  receipt. Native observer tests fake deadlines while leaving worker scheduling live.
 - Native Streams transports reuse the token service and replica-bound checkpoints.
   Foreground roots explicitly reuse same-store Doc cursors; eager workers own
   isolated replicas and volatile cursors. Peer baseline, server confirmation and

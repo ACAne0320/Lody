@@ -1,7 +1,7 @@
 # apps/cli/src/session
 
 Session lifecycle on the daemon side: watching for user turns, running them through an ACP
-agent, and the sagas around them (fork, edit-and-resend, preparation, worktrees). Binding
+agent, and the sagas around them (fork, edit-and-resend, worktrees). Binding
 rules live in [AGENTS.md](AGENTS.md) and [worktree/AGENTS.md](worktree/AGENTS.md); this file
 is the responsibility index and background.
 
@@ -31,6 +31,8 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
   application data, independent of login credentials and the system credential store.
 - `roost-history-generation.ts` — stages structural replacements privately and
   atomically activates them, fencing writes through superseded handles.
+- `roost-history-changes.ts` — durable semantic receipts over verified native event intervals;
+  owner-scoped checkpoints recover missed logical edits without rereading unchanged bodies.
 - `roost-history-diagnostics.ts` — correlates local Worker causes and runtime details
   with the safe error reference returned by history RPC.
 - `session-history-owner.ts` — native Effect readiness barrier for history RPC; waits
@@ -54,7 +56,6 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
   session and process lifecycle, workdirs, worktrees, sandboxed spawning, ACP terminals.
   Managed GitHub credential preparation excludes local projects and their worktrees;
   each managed runtime owns a scoped credential lease, retained across adoption.
-- `session-preparation-service.ts` — process-local speculative ACP lease/state owner.
 - `session-fork-service.ts` / `session-fork-operation-store.ts` — the fork saga and its
   machine-local marker store.
 - `session-edit-and-resend-service.ts` — same-session replacement of the last normal User turn.
@@ -285,18 +286,13 @@ checkout. Managed credential helpers also cover checkout filters and LFS; non-ow
 host children scrub inherited GitHub tokens. `session-credentials.ts` bridges the
 broker's Effect-scoped acquisition into the existing Promise Session lifecycle.
 Each acquisition has its own token and pinned file; neither enrollment nor release
-uses a Session ID lookup. `SessionConfig` carries no credential policy. Preparation
-owns the lease until adoption transfers it to the same Session; failures before
-Session creation release it too. Validation on create, continue, recovery and steer
-checks that runtime's lease and trusted owner. Owner changes revoke it and retire
-the old runtime, since children retain their old environments. Operations are not replayed.
+uses a Session ID lookup. `SessionConfig` carries no credential policy. Session
+creation owns the lease and a failed creation releases it. Validation on create,
+continue, recovery and steer checks that runtime's lease and trusted owner. Owner
+changes revoke it and retire the old runtime, since children retain their old
+environments. Operations are not replayed.
 
-`preparation-control.ts` owns the Effect TTL fiber separately from runtime resources.
-Claim closes this control scope without closing the adopted runtime's credentials.
-The synchronous admission/claim facade remains; raw ACP/worktree creation is still
-owned by the existing Promise lifecycle, not treated as automatically interruptible
-by Effect. Retirement stays visible until cleanup succeeds; a failed cleanup blocks
-same-session replacement rather than pretending resources were released. See [the contract](../../../../specs/github-identity-fallback.md) and
+See [the contract](../../../../specs/github-identity-fallback.md) and
 [worktree rules](worktree/AGENTS.md) for ownership, write non-replay and isolation.
 
 ### Commit identity
@@ -316,20 +312,24 @@ Lody/GitHub identity and can never inherit the machine owner's Git config; if no
 identity exists, the neutral LodyAI identity is used. The cloud composition root owns hosted
 user resolution because the daemon does not own an end-user browser session; the local access
 port resolves only its synthetic owner and never performs network I/O. PR and push identity
-itself comes from the conversation-owner GitHub credential, not from git config. Identity changes update the host Session environment without restarting ACP or its sandbox,
-including adopted preparations. Existing ACP children retain their launch environment; live
+itself comes from the conversation-owner GitHub credential, not from git config. Identity
+changes update the host Session environment without restarting ACP or its sandbox.
+Existing ACP children retain their launch environment; live
 identity propagation into adapter-owned Git commands remains unresolved.
 
-### Speculative preparation
+### No draft preparation
 
-Peek and claim are synchronous published-resource snapshots. A prepared resource may reuse its
-open target-machine Flock to synchronously resolve launch config, but dispatch and claim
-rescan the current row. Durable creation claims the marker only when repo, source, and base
-branch target identity match, runs setup, then permits the first prompt. A missed claim returns
-any retiring cleanup barrier even after its lease has disappeared. Cold creation, discard,
-replacement preparation and shutdown join that barrier, including resources returned after
-cancellation. This can delay cold startup until cleanup finishes; otherwise a retired
-preparation could delete the newly reused directory. Unrelated Sessions remain independent.
+Every Session starts its ACP process and worktree when its first turn is dispatched.
+Draft preparation, which started both while the user typed, was removed: its runtime was
+almost never adopted, and discarding it cost more than a cold start
+([decision](../../../../.agents/notes/implemented/simplification/2026-10-16-remove-draft-session-preparation.md)).
+`session/prepare` and `session/prepare-cancel` still parse, because older desktops send
+them. The daemon answers both at once without work; prepare reports an accepted duplicate
+so an older desktop holds one lease per draft instead of re-asking after every pause.
+`worktree/legacy-speculative-worktrees.ts` handles worktrees an older daemon prepared:
+creation claims the Session's marker and reruns setup on its worktree. Only a worktree no
+Session adopted is rebuilt for a target mismatch: an adopted one keeps its branch, which
+resume restores by name. A sweep removes orphans whose Session never became durable.
 
 Memory identity references travel with turn configuration. `Session.createAgent` maps
 them through `../lib/memory-providers.ts` at spawn; the execution service restarts a
@@ -344,6 +344,51 @@ The shared renderer uses the existing local IPC or remote history RPC bridge;
 Web/iOS clients need no Node addon. The owning machine must be available for RPC
 reads; browser-local IndexedDB replicas and offline sync are separate work.
 Runtime packaging and verification: [native runtime note](../../../../.agents/notes/proposed/architecture/2026-10-09-roost-native-runtime.md).
+
+### Incremental replica recovery
+
+`sessionHistoryIncremental` v1 is negotiated separately from existing history paging.
+Checkpoint-bearing pages opt in with `withCheckpoint`; legacy page replies remain unchanged.
+`readChanges` verifies the previous checkpoint and returns complete changed identities plus
+any affected structural suffix, or an explicit reset. The native owner's local index records
+semantic change receipts after verifying the corresponding raw event interval. Receipts
+contain no history body, signing material or executable command, and emit no outgoing event.
+A crash or foreign mutation that leaves an uncovered interval requires reset. A checkpoint
+cannot claim acceptance or execution, and must not be copied between unrelated owner views.
+
+Normal repairs request affected bodies with the change interval in one reply, bounded at
+500 changed/suffix bodies. Larger repairs use checkpoint-protected ranges. The renderer
+atomically commits bodies, positions, revision and checkpoint. Coherent replies may advance
+behind newer control hints and immediately catch up again, so streaming does not need to
+stop for a stable observation. Body-only edits retain cached directory cursor validity.
+A successful delta repair finishes even for a partial tail cache, without rereading
+the unchanged latest page.
+The previous coherent projection remains readable on failure. Supersession retries immediately; storage and transport
+failures retain recovery backoff. Initial population, legacy targets and unknown coverage
+retain staged rebuilding. Local control reads have a separate bounded pool from writes;
+remote RPC reserves write/control pools and rejects excess ordinary work without blocking
+send intake. Detailed decision and verification:
+[Roost incremental recovery](../../../../.agents/notes/implemented/bug-fix/2026-10-16-roost-incremental-history.md).
+
+An explicit checkpoint reset forces replacement in the other cache slot even when
+its control revision is equal or consecutive. Last-change hints cannot repair unknown
+coverage. Replacement pages share one checkpoint, and the old snapshot remains readable
+until every replacement page is durable; failed staging retains that recovery mode.
+
+Cold readers observe backend metadata before composition; provisional absence remains
+pending until explicit identity or the session's selected metadata source restores.
+An empty history list is not legacy evidence. Owner capabilities remain live.
+Restoration is a finite identity barrier; a still-missing owner or a known Roost
+cursor waits for metadata changes rather than selecting legacy history.
+Independently negotiated `sessionHistoryWatch` v1 observes the committed checkpoint
+through local `watchChanges` or encrypted remote `session/history-watch`. Publication
+wakes the wait immediately; a 15-second deadline bounds idle waits without occupying
+the native Worker or writer queue. Actual body reads acquire bounded read capacity after
+waking, and idle replies transfer no history bodies. Active readers therefore recover
+without relying only on control-cursor hints. Each bridge owns one refresh; release and
+hidden/offline remote views stop new observations. Local IPC remains usable offline.
+[Peer-reader readiness and observation](../../../../.agents/notes/implemented/bug-fix/2026-10-16-roost-peer-reader-readiness.md)
+records the lifecycle, protocol limits and verification.
 
 ### Immutable input acceptance
 
@@ -455,6 +500,19 @@ Content changes refresh only affected primary bodies. Sealed-turn corrections
 use mutable SDK state records anchored to their primary; permission responses
 remain independent SDK records projected onto the matching tool. Responding does
 not seal the assistant or interrupt its output.
+Existing eligible unsealed primary/state records use guarded native field/text edits,
+with compact publication digests in `lody_agent_operation_receipts_v1`, committed in
+the same `writeBatch`. This owner-local journal has no command/body/baseline snapshots;
+lookup retains previous SDK receipts and generation ancestors. Creation, stitched or
+sealed targets, permissions, immutable human input and branch contracts retain their
+SDK path. A failed native write never falls through to a second write path.
+Native inserted items/fields use the same JSON encoding as SDK content: absent object
+fields are omitted and absent array values become `null`. Normalize only changed
+subtrees; unchanged message bodies are not serialized for each delta. The semantic
+change receipt starts at the command's initial cursor, even when its bounded ACP
+batches advance the native write guard between chunks.
+The [write-amplification repair](../../../../.agents/notes/implemented/bug-fix/2026-10-16-roost-storage-write-amplification.md)
+records storage budgets and the unchanged existing-data/outbox retention limits.
 Ordinary Edit & Resend reuses the sealed prefix through the SDK's branch activation
 inside the same stream/view. The Lody session id and owner saga do not change.
 An application-owned signed epoch commits in that native transaction and fences

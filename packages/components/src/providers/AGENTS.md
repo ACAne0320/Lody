@@ -17,12 +17,11 @@ Replacement contract: [shared rules](../../../shared/AGENTS.md#session-history).
   subscription per config/request. Connections stay bounded by workspace/machine
   topology; more configs add serialized RPCs only. Release unowned one-shot handles
   and subscriptions.
-- Startup capability discovery is once per agent config per runtime, recorded in the
-  runtime-owned `refreshedConfigKeys` set. A pass aborted by presence leaving `synced` is
-  re-armed, so a pass-level flag is not the gate: reconnecting must never re-probe a config that
-  already answered, because each probe starts and kills a real agent process. Refresh requests
-  default to the machine's cache; only a user action or a setup/authentication workflow sets
-  `force`. Intent: [capability refresh cache](../../../../specs/acp-capability-refresh-cache.md).
+- Discover startup capabilities once per config/runtime, tracked in `refreshedConfigKeys`.
+  Re-arm passes aborted when presence leaves `synced`; reconnect must not re-probe answered
+  configs or use a pass-level gate. Probes launch real agents. Refresh defaults to machine
+  cache; only user or setup/authentication actions set `force`.
+  Intent: [capability refresh cache](../../../../specs/acp-capability-refresh-cache.md).
 
 ## Workspace switching
 
@@ -30,17 +29,20 @@ Replacement contract: [shared rules](../../../shared/AGENTS.md#session-history).
   Render-time fencing covers account/workspace, platform, cloud and retry changes.
   Failed workspace/database close stays retryable and gates only its storage.
   Cleanup diagnostics must exclude private payloads.
-- The `$workspaceName` route owns the render-time target slug. Workspace-scoped UI must
-  require that target, the active runtime, and the runtime-owned doc-meta snapshot to agree
-  before reading singleton caches. Shared visibility and sharing hooks enforce this gate by
-  default when mounted under `WorkspaceRouteTargetProvider`; scope mismatch returns an empty
-  projection and disables queries, Machine Flock, sharing, and eager-sync inputs. Provider-
-  external consumers such as `RuntimeProvider` retain their existing default behavior. Explicit
-  `workspaceId` / `enabled` options remain fenced by the route scope and cannot reopen stale work.
+- `$workspaceName` owns the render-time target slug. Before reading singleton caches,
+  workspace UI requires agreement with the active runtime and its doc-meta snapshot.
+  Under `WorkspaceRouteTargetProvider`, visibility/sharing hooks return empty and disable
+  queries, Machine Flock, sharing and eager-sync on mismatch; explicit `workspaceId` /
+  `enabled` cannot bypass this gate or reopen stale work. External consumers such as
+  `RuntimeProvider` keep their existing defaults.
 - Each `resolveWorkspaceDataScope` wait names its `blocker`; keep scan failures on the scope.
   [Stuck report](../../../../.agents/notes/implemented/feature/2026-09-26-workspace-sync-stuck-telemetry.md).
 
 ## Workspace runtime
+
+- Readers require backend identity and their Meta plane. Provisional absence/empty
+  history is not legacy evidence; release waits on resolve/retire. Keep Roost
+  capabilities live and wake its bridge on arrival.
 
 - A neutral local warm spare may initialize the implicit workspace runtime without
   publishing route context. A matching claim must retain that runtime or its in-flight

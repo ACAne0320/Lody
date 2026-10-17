@@ -27,7 +27,7 @@ import type { ProjectRef } from './project';
 import { MAX_MESSAGE_TEXT_SPAN_MARK_LENGTH, MESSAGE_TEXT_SPAN_KINDS } from './message-text-spans';
 import { RpcSecretPublicKeySchema } from './rpc-secret';
 import { LodyOperationIdSchema, LodyOperationCompletionSchema } from './session-orchestration';
-import { isSensitiveAcpConfigOptionId } from './session-preparation';
+import { isSensitiveAcpConfigOptionId } from './acp-config-option-sensitivity';
 import { normalizeMcpServerIdSelection } from './workspace-mcp';
 import {
   ACP_AUTH_FORM_FIELD_MAX_COUNT,
@@ -959,8 +959,10 @@ export const SessionPreparationRunConfigSchema = z
   .strict();
 
 /**
- * Ephemeral ACP preparation for a draft session. Draft text, launch secrets,
- * and secret-shaped ACP option values stay out of the RPC request stream.
+ * Draft session preparation request from desktops that predate its removal.
+ * Daemons decline it without doing any work; the schemas remain only so those
+ * requests still parse. Draft text, launch secrets, and secret-shaped ACP
+ * option values were never part of the request.
  */
 export const SessionPreparationSpecSchema = z
   .object({
@@ -2064,13 +2066,28 @@ export const SESSION_HISTORY_READ_MAX_PAGE = 500;
 
 export const SessionHistoryReadQuerySchema = z
   .discriminatedUnion('kind', [
+    z
+      .object({
+        kind: z.literal('watchChanges'),
+        checkpoint: z.string().min(1).max(1024),
+        includeBodiesFrom: z.number().int().nonnegative().optional(),
+        waitMs: z.number().int().nonnegative().max(15_000),
+      })
+      .strict(),
     z.object({ kind: z.literal('count') }).strict(),
     z.object({ kind: z.literal('readAt'), position: z.number().int().nonnegative() }).strict(),
-    z.object({ kind: z.literal('readTurn'), turnId: z.string().trim().min(1) }).strict(),
+    z
+      .object({
+        kind: z.literal('readTurn'),
+        turnId: z.string().trim().min(1),
+        atCheckpoint: z.string().min(1).max(1024).optional(),
+      })
+      .strict(),
     z.object({ kind: z.literal('inputAcceptance'), entry: z.unknown() }).strict(),
     z
       .object({
         kind: z.literal('readRange'),
+        atCheckpoint: z.string().min(1).max(1024).optional(),
         from: z.number().int().nonnegative(),
         to: z.number().int().nonnegative(),
       })
@@ -2086,6 +2103,7 @@ export const SessionHistoryReadQuerySchema = z
       .object({
         kind: z.literal('readLatestPage'),
         limit: z.number().int().positive().max(SESSION_HISTORY_READ_MAX_PAGE),
+        withCheckpoint: z.boolean().optional(),
       })
       .strict(),
     z
@@ -2093,6 +2111,14 @@ export const SessionHistoryReadQuerySchema = z
         kind: z.literal('readOlderPage'),
         cursor: z.string().min(1),
         limit: z.number().int().positive().max(SESSION_HISTORY_READ_MAX_PAGE),
+        withCheckpoint: z.boolean().optional(),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('readChanges'),
+        checkpoint: z.string().min(1).max(1024),
+        includeBodiesFrom: z.number().int().nonnegative().optional(),
       })
       .strict(),
     z.object({ kind: z.literal('readAll') }).strict(),
@@ -2156,9 +2182,30 @@ export const SessionHistoryChangeSchema = z
     }
   });
 
+export const SessionHistoryChangesSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('ready'),
+      checkpoint: z.string().min(1).max(1024),
+      from: z.number().int().nonnegative().optional(),
+      ids: z.array(z.string().trim().min(1)),
+      bodies: z
+        .object({
+          changed: z.array(z.unknown()),
+          from: z.number().int().nonnegative().optional(),
+          suffix: z.array(z.unknown()),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  z.object({ state: z.literal('reset'), checkpoint: z.string().min(1).max(1024) }).strict(),
+]);
+
 export const SessionHistoryReadResponseSchema = z
   .object({
     type: z.literal('session/history-read_response'),
+    retryReason: z.literal('superseded').optional(),
     sessionId: SessionIdSchema,
     success: z.boolean(),
     result: z.unknown().optional(),

@@ -20,10 +20,6 @@ import type {
   SessionCancelResponse,
   SessionChatResponse,
   SessionDispatchTurnResponse,
-  SessionPreparationCancelSpec,
-  SessionPreparationSpec,
-  SessionPrepareCancelResponse,
-  SessionPrepareResponse,
   SessionSteerResponse,
   SessionGoalAction,
   SessionGoalResponse,
@@ -379,16 +375,6 @@ export type WorkspaceRuntime = {
     },
     options?: { timeoutMs?: number }
   ) => Promise<SessionDispatchTurnResponse | null>;
-  requestSessionPrepare: (
-    machineId: MachineId,
-    spec: SessionPreparationSpec,
-    options?: { timeoutMs?: number }
-  ) => Promise<SessionPrepareResponse | null>;
-  requestSessionPrepareCancel: (
-    machineId: MachineId,
-    args: SessionPreparationCancelSpec,
-    options?: { timeoutMs?: number }
-  ) => Promise<SessionPrepareCancelResponse | null>;
   requestSessionPreviewCreate: (
     machineId: MachineId,
     sessionId: SessionId,

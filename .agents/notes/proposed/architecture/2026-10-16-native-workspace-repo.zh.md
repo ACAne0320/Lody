@@ -29,6 +29,12 @@ snapshot，workspace catalog 仍选择 Client 0.12.0 和 CRDT 0.19.0。
 
 ## 释放、恢复与因果交接
 
+Session reader 先通过同一 Repo 等待 catalog 元数据，再选择后端。Runtime 退休会取消这些等待；
+Session 退休和构造失败会先清理 reader 观察，再释放借用的 Doc。保留 main 的增量历史唤醒，
+并同时保留本 PR 可重试的 native 清理路径。
+恢复等待消费所选 native 房间的 baseline 状态，不使用上传回执。原生 observer 测试只模拟期限计时器，
+保留 worker 调度。
+
 上游副本释放在取消订阅前提交并保存文档和元数据。失败会保留 `RepoReleaseFailed.retry` 及已接受的 I/O；再次获取有可能必须先成功完成旧释放，才能构建副本。SDK close 停止网络准入并等待已接受的工作，不代表发起一次新的服务端上传确认；单纯离线不能证明快捷指令 close 必然失败。
 
 关闭先结束借用者再关闭 Repo，但一个 store 失败不能跳过其他 store、transport 清理、join 收尾或 Repo 关闭。Runtime 尝试这些独立步骤后统一报告错误；再次 dispose 会重试保留的 owner，且不重新允许新工作。RuntimeProvider 按 workspace 保留可重试关闭；一个关闭失败不阻塞其他 workspace，重开同一存储前先重试旧 owner。快捷指令根按数据库执行相同约束；runtime、远端、index 或 store 的失败不会跳过其他清理及 Repo 关闭，已经 disposed 的 runtime 仍能重试未完成的退休。Session lease 释放失败后仍使本机房间失效，私有保留重试 handle。cache/shortcut 下次 acquire 自动重试退休中的 owner。本次没有采纳“重试仍失败也重建”：这可能遗留 SDK producer，原生 Repo 本身也可能还需完成旧释放。持续的存储故障仍会明确失败，但恢复不再依赖外部显式解锁。
