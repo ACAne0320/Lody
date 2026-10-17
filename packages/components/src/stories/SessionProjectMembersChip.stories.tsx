@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import type { ProjectMemberId } from '@lody/shared';
+import { SessionInfoBar } from '@/components/sessions/session-info-bar';
 import { SessionProjectMembersChip } from '@/components/sessions/session-project-members-chip';
 import type { SessionProjectMemberRow } from '@/lib/session-project-members';
 
@@ -42,13 +43,20 @@ const meta = {
   title: 'Sessions/SessionProjectMembersChip',
   component: SessionProjectMembersChip,
   args: { groupName: 'Shop', rows, onOpenPullRequest: () => undefined, defaultOpen: true },
-  decorators: [
-    (Story) => (
-      <div className="flex h-[360px] items-end p-6">
-        <Story />
-      </div>
-    ),
-  ],
+  // The popover takes the width of the info bar it opens from, so the story
+  // renders the real bar rather than the chip alone.
+  render: (args) => (
+    <div className="flex max-w-full flex-col p-6" style={{ width: 720 }}>
+      <div className="h-64" />
+      <SessionInfoBar
+        status={null}
+        projectName="acme/web"
+        branch="lody/export-report"
+        diffStat={{ add: 212, del: 40 }}
+        projectMembers={<SessionProjectMembersChip {...args} />}
+      />
+    </div>
+  ),
 } satisfies Meta<typeof SessionProjectMembersChip>;
 
 export default meta;

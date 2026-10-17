@@ -1,7 +1,15 @@
 import { useId, useMemo, type FormEvent, type ReactNode } from 'react';
 import * as stylex from '@stylexjs/stylex';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Folder, GitBranch, Github, MoreHorizontal, Sparkles } from 'lucide-react';
+import {
+  AlertTriangle,
+  Folder,
+  GitBranch,
+  Github,
+  MoreHorizontal,
+  Plus,
+  Sparkles,
+} from 'lucide-react';
 import type { ProjectMemberId } from '@lody/shared';
 import type { ProjectMemberSourceOption } from '@/hooks/use-project-member-sources';
 import {
@@ -71,6 +79,12 @@ const styles = stylex.create({
   stateWarning: { color: colors.warning },
   stateError: { color: colors.destructive },
   addRow: { paddingBlock: space[2], paddingInline: space[3] },
+  addFace: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: space[1.5],
+    color: colors.secondaryLabel,
+  },
   errors: { margin: 0, paddingInlineStart: space[4], listStyleType: 'disc' },
 });
 
@@ -236,11 +250,16 @@ export function ProjectGroupForm({
                     if (option) onChange(addProjectGroupMember(value, option.source, option.label));
                   }}
                 >
-                  <Combobox.Button
-                    size="small"
-                    aria-label={t('settings.projectGroups.form.add')}
-                    placeholder={t('settings.projectGroups.form.add')}
-                  />
+                  <Combobox.Button size="small" aria-label={t('settings.projectGroups.form.add')}>
+                    {/* The picker never keeps a value: it adds and resets, so its
+                        face always reads as the action. */}
+                    {() => (
+                      <span {...stylex.props(styles.addFace)}>
+                        <Plus aria-hidden="true" {...stylex.props(catalog.icon)} />
+                        {t('settings.projectGroups.form.add')}
+                      </span>
+                    )}
+                  </Combobox.Button>
                   <Combobox.Content
                     search={
                       <Combobox.Search
@@ -393,7 +412,11 @@ function MemberRow({
           aria-invalid={memberError ? true : undefined}
           disabled={readOnly}
           leading={prefix ? <span {...stylex.props(styles.pathPrefix)}>{prefix}</span> : undefined}
-          inputClassName={stylex.props(styles.pathInput).className}
+          // The class lands on the shell once there is a `leading`; keep the
+          // value monospace in both shapes.
+          {...(prefix
+            ? { inputClassName: stylex.props(styles.pathInput).className }
+            : { className: stylex.props(styles.pathInput).className })}
           value={pathValue}
           onChange={(event) => {
             const next = event.target.value;
