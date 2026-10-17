@@ -239,4 +239,24 @@ describe('project group form', () => {
     // Its parent left, so the submodule becomes a top-level directory.
     expect(next.members[1]!.placement).toEqual({ kind: 'root', dir: 'proto' });
   });
+
+  it('rejects local members on a machine other than the first local member', () => {
+    const createId = ids();
+    let value: ProjectGroupFormValue = { ...EMPTY_PROJECT_GROUP_FORM_VALUE, name: 'Shop' };
+    value = addProjectGroupMember(value, local('web'), 'web', createId);
+    value = addProjectGroupMember(value, github('acme/api'), 'acme/api', createId);
+    value = addProjectGroupMember(
+      value,
+      {
+        kind: 'local',
+        machineId: 'machine-2' as MachineId,
+        localProjectId: 'ios' as LocalProjectId,
+      },
+      'ios',
+      createId
+    );
+    const result = validateProjectGroupForm(value);
+    expect(result.valid).toBe(false);
+    expect([...result.memberErrors]).toEqual([[value.members[2]!.id, 'machine_mismatch']]);
+  });
 });

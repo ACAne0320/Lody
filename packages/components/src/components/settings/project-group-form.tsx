@@ -14,6 +14,7 @@ import type { ProjectMemberId } from '@lody/shared';
 import type { ProjectMemberSourceOption } from '@/hooks/use-project-member-sources';
 import {
   applySourceSelection,
+  getProjectGroupLocalMachineId,
   getProjectMemberSourceKey,
   removeProjectGroupMember,
   updateProjectGroupMemberPlacement,
@@ -102,7 +103,7 @@ const styles = stylex.create({
   },
   stateWarning: { color: colors.warning },
   stateError: { color: colors.destructive },
-  addRow: { paddingBlock: space[2], paddingInline: space[3] },
+  addRow: { minWidth: 0 },
   addFace: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -192,6 +193,20 @@ export function ProjectGroupForm({
     () => new Set(value.members.map((member) => getProjectMemberSourceKey(member.source))),
     [value.members]
   );
+  // Local projects on another machine cannot join: a conversation runs on one
+  // machine. They stay listed, disabled, saying why — unless already a member,
+  // so an old mixed group can still be fixed by unticking.
+  const lockedMachineId = getProjectGroupLocalMachineId(value);
+  const lockedMachineName = lockedMachineId
+    ? sources.find(
+        (option) => option.source.kind === 'local' && option.source.machineId === lockedMachineId
+      )?.detail
+    : undefined;
+  const isOtherMachine = (option: ProjectMemberSourceOption) =>
+    option.source.kind === 'local' &&
+    lockedMachineId !== null &&
+    option.source.machineId !== lockedMachineId &&
+    !addedKeys.has(option.key);
   const selectedSources = useMemo(
     () => sources.filter((option) => addedKeys.has(option.key)),
     [addedKeys, sources]
@@ -225,96 +240,109 @@ export function ProjectGroupForm({
           title={t('settings.projectGroups.form.members')}
           hint={t('settings.projectGroups.form.membersHint')}
         >
-          <div {...stylex.props(settingsRecordsCard)}>
-            {rows.map(({ member, depth, prefix }, index) => (
-              <div key={member.id} {...stylex.props(surface.line, index > 0 && surface.lineRuled)}>
-                <MemberRow
-                  member={member}
-                  depth={depth}
-                  prefix={prefix}
-                  label={labelOf(member)}
-                  detail={detailOf(member)}
-                  status={statusOf(member.id)}
-                  memberError={validation.memberErrors.get(member.id)}
-                  parentLabel={(() => {
-                    const placement = member.placement;
-                    if (placement.kind !== 'submodule') return undefined;
-                    const parent = value.members.find((m) => m.id === placement.parent);
-                    return parent ? labelOf(parent) : undefined;
-                  })()}
-                  parents={value.members.filter(
-                    (candidate) => candidate.id !== member.id && candidate.placement.kind === 'root'
-                  )}
-                  labelOf={labelOf}
-                  readOnly={readOnly}
-                  onPlacement={(placement) =>
-                    onChange(updateProjectGroupMemberPlacement(value, member.id, placement))
-                  }
-                  onRemove={() => onChange(removeProjectGroupMember(value, member.id, labelOf))}
-                />
-              </div>
-            ))}
-            {readOnly ? null : (
-              <div
-                {...stylex.props(
-                  styles.addRow,
-                  surface.line,
-                  value.members.length > 0 && surface.lineRuled
-                )}
+          {/* The picker sits above the members, so ticking a project grows the
+              list below it and never moves the control being used. */}
+          {readOnly ? null : (
+            <div {...stylex.props(styles.addRow)}>
+              {/* One multi-select over every project: ticked rows are members,
+                  ticking adds, unticking removes, and the list stays open so
+                  several repositories go in at once. */}
+              <Combobox.Root
+                multiple
+                items={sources}
+                value={selectedSources}
+                itemToStringLabel={(option: ProjectMemberSourceOption) => option.label}
+                isItemEqualToValue={(
+                  left: ProjectMemberSourceOption,
+                  right: ProjectMemberSourceOption
+                ) => left.key === right.key}
+                onValueChange={(next: ProjectMemberSourceOption[]) =>
+                  onChange(applySourceSelection(value, selectedSources, next, labelOf))
+                }
               >
-                {/* One multi-select over every project: ticked rows are members,
-                    ticking adds, unticking removes, and the list stays open so
-                    several repositories go in at once. */}
-                <Combobox.Root
-                  multiple
-                  items={sources}
-                  value={selectedSources}
-                  itemToStringLabel={(option: ProjectMemberSourceOption) => option.label}
-                  isItemEqualToValue={(
-                    left: ProjectMemberSourceOption,
-                    right: ProjectMemberSourceOption
-                  ) => left.key === right.key}
-                  onValueChange={(next: ProjectMemberSourceOption[]) =>
-                    onChange(applySourceSelection(value, selectedSources, next, labelOf))
+                <Combobox.Button size="small" aria-label={t('settings.projectGroups.form.add')}>
+                  {/* The face always reads as the action; the ticks inside say
+                      what is already in the group. */}
+                  {() => (
+                    <span {...stylex.props(styles.addFace)}>
+                      <Plus aria-hidden="true" {...stylex.props(catalog.icon)} />
+                      {t('settings.projectGroups.form.add')}
+                    </span>
+                  )}
+                </Combobox.Button>
+                <Combobox.Content
+                  search={
+                    <Combobox.Search
+                      aria-label={t('settings.projectGroups.form.search')}
+                      placeholder={t('settings.projectGroups.form.search')}
+                    />
+                  }
+                  empty={
+                    <Combobox.Empty>{t('settings.projectGroups.form.noSources')}</Combobox.Empty>
                   }
                 >
-                  <Combobox.Button size="small" aria-label={t('settings.projectGroups.form.add')}>
-                    {/* The face always reads as the action; the ticks inside say
-                        what is already in the group. */}
-                    {() => (
-                      <span {...stylex.props(styles.addFace)}>
-                        <Plus aria-hidden="true" {...stylex.props(catalog.icon)} />
-                        {t('settings.projectGroups.form.add')}
+                  {(option: ProjectMemberSourceOption) => (
+                    <Combobox.Item
+                      key={option.key}
+                      value={option}
+                      disabled={isOtherMachine(option)}
+                    >
+                      <span {...stylex.props(styles.option)}>
+                        <SourceIcon kind={option.source.kind} />
+                        <span {...stylex.props(catalog.truncate)}>{option.label}</span>
+                        {isOtherMachine(option) ? (
+                          <span {...stylex.props(styles.optionDetail)}>
+                            {t('settings.projectGroups.form.otherMachine', {
+                              machine: option.detail ?? '',
+                              current: lockedMachineName ?? '',
+                            })}
+                          </span>
+                        ) : option.detail ? (
+                          <span {...stylex.props(styles.optionDetail)}>{option.detail}</span>
+                        ) : null}
                       </span>
+                    </Combobox.Item>
+                  )}
+                </Combobox.Content>
+              </Combobox.Root>
+            </div>
+          )}
+          {rows.length > 0 ? (
+            <div {...stylex.props(settingsRecordsCard)}>
+              {rows.map(({ member, depth, prefix }, index) => (
+                <div
+                  key={member.id}
+                  {...stylex.props(surface.line, index > 0 && surface.lineRuled)}
+                >
+                  <MemberRow
+                    member={member}
+                    depth={depth}
+                    prefix={prefix}
+                    label={labelOf(member)}
+                    detail={detailOf(member)}
+                    status={statusOf(member.id)}
+                    memberError={validation.memberErrors.get(member.id)}
+                    parentLabel={(() => {
+                      const placement = member.placement;
+                      if (placement.kind !== 'submodule') return undefined;
+                      const parent = value.members.find((m) => m.id === placement.parent);
+                      return parent ? labelOf(parent) : undefined;
+                    })()}
+                    parents={value.members.filter(
+                      (candidate) =>
+                        candidate.id !== member.id && candidate.placement.kind === 'root'
                     )}
-                  </Combobox.Button>
-                  <Combobox.Content
-                    search={
-                      <Combobox.Search
-                        aria-label={t('settings.projectGroups.form.search')}
-                        placeholder={t('settings.projectGroups.form.search')}
-                      />
+                    labelOf={labelOf}
+                    readOnly={readOnly}
+                    onPlacement={(placement) =>
+                      onChange(updateProjectGroupMemberPlacement(value, member.id, placement))
                     }
-                    empty={
-                      <Combobox.Empty>{t('settings.projectGroups.form.noSources')}</Combobox.Empty>
-                    }
-                  >
-                    {(option: ProjectMemberSourceOption) => (
-                      <Combobox.Item key={option.key} value={option}>
-                        <span {...stylex.props(styles.option)}>
-                          <SourceIcon kind={option.source.kind} />
-                          <span {...stylex.props(catalog.truncate)}>{option.label}</span>
-                          {option.detail ? (
-                            <span {...stylex.props(styles.optionDetail)}>{option.detail}</span>
-                          ) : null}
-                        </span>
-                      </Combobox.Item>
-                    )}
-                  </Combobox.Content>
-                </Combobox.Root>
-              </div>
-            )}
-          </div>
+                    onRemove={() => onChange(removeProjectGroupMember(value, member.id, labelOf))}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
           {validation.memberErrors.size > 0 ? (
             <FormMessage tone="error">
               <ul {...stylex.props(styles.errors)}>

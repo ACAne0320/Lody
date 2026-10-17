@@ -5074,5 +5074,7 @@
   "sessions.projectMembers.dirty": "Uncommitted changes",
   "sessions.projectMembers.unpushed": "Commits not pushed yet",
   "sessions.projectMembers.openPr": "Open pull request #{{number}}",
-  "sessions.projectMembers.noPr": "No PR"
+  "sessions.projectMembers.noPr": "No PR",
+  "settings.projectGroups.form.otherMachine": "On {{machine}} · a group's local projects must all be on {{current}}",
+  "settings.projectGroups.memberErrors.machine_mismatch": "it is on a different machine from the group's other local projects"
 }

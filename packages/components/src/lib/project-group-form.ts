@@ -1,5 +1,6 @@
 import {
   deduplicateProjectMembers,
+  type MachineId,
   isSafeProjectPath,
   normalizeWorkspaceProject,
   resolveProjectMemberPaths,
@@ -55,7 +56,8 @@ export type ProjectGroupMemberError =
   | 'submodule_path_invalid'
   | 'submodule_parent_missing'
   | 'path_overlap'
-  | 'duplicate_repository';
+  | 'duplicate_repository'
+  | 'machine_mismatch';
 
 export type ProjectGroupFormValidation = {
   errors: ProjectGroupFormError[];
@@ -67,6 +69,20 @@ export type ProjectGroupFormValidation = {
 export type ResolveLocalMemberRepository = (
   source: Extract<ProjectMemberSource, { kind: 'local' }>
 ) => { repoFullName: string; repoId?: number } | undefined;
+
+/**
+ * The machine a group's local members live on. A conversation runs on one
+ * machine, so every local member of a group must share it; GitHub members can
+ * be cloned anywhere. The first local member decides.
+ */
+export function getProjectGroupLocalMachineId(
+  value: Pick<ProjectGroupFormValue, 'members'>
+): MachineId | null {
+  for (const member of value.members) {
+    if (member.source.kind === 'local') return member.source.machineId;
+  }
+  return null;
+}
 
 export const createProjectMemberId = (): ProjectMemberId =>
   crypto.randomUUID().replace(/-/g, '').slice(0, 12) as ProjectMemberId;
@@ -312,6 +328,17 @@ export function validateProjectGroupForm(
       if (!isSafeProjectPath(placement.path)) memberErrors.set(member.id, 'submodule_path_invalid');
       else if (!ids.has(placement.parent) || placement.parent === member.id)
         memberErrors.set(member.id, 'submodule_parent_missing');
+    }
+  }
+
+  const machineId = getProjectGroupLocalMachineId(value);
+  for (const member of value.members) {
+    if (
+      member.source.kind === 'local' &&
+      member.source.machineId !== machineId &&
+      !memberErrors.has(member.id)
+    ) {
+      memberErrors.set(member.id, 'machine_mismatch');
     }
   }
 

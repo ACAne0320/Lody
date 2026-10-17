@@ -40,6 +40,17 @@ const sources: ProjectMemberSourceOption[] = [
     detail: 'Shared interface definitions',
   },
   {
+    key: 'local:machine-2:ios',
+    source: {
+      kind: 'local',
+      machineId: 'machine-2' as MachineId,
+      localProjectId: 'ios' as LocalProjectId,
+    },
+    label: 'ios',
+    detail: 'Build box',
+    online: true,
+  },
+  {
     key: 'github:acme/docs',
     source: { kind: 'github', repoFullName: 'acme/docs' },
     label: 'acme/docs',
@@ -182,7 +193,7 @@ export const NestedSubmodules: Story = {
         ),
         member(
           'docs',
-          3,
+          4,
           {
             kind: 'submodule',
             parent: 'proto' as ProjectMemberId,
