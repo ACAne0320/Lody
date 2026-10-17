@@ -122,16 +122,18 @@ removal rules live in [../AGENTS.md](../AGENTS.md).
 
 ## Streams recovery has TWO signals and they must not be recombined
 
-`connection-recovery.ts` has TWO signals. `onStreamsOnline` is cheap, unthrottled, and
-fires on every health rising edge — it RELEASES work parked while offline (dirty
-Machine Flock docs, which arm no timer of their own, plus the scheduled automation
-queues). `onMetaRoomSynced` is the EXPENSIVE "rescan the workspace index" signal whose
-listeners do O(rooms) work: it waits for meta catch-up and is rate-limited to one
-fan-out per `LODY_LORO_META_SYNCED_MIN_INTERVAL_MS` (30s), deferred and never dropped,
-because the dispatch bootstrap scan is the only retry path for a session whose
-reconcile threw. A fan-out after a real meta-room outage skips that floor; a
-transport-only flap does not. Recombining them turned a single stuck room into ~3400
-session reconciles/minute. Backoff is flap-aware for the same reason: health that does
-not survive `LODY_LORO_HEALTH_STABILITY_WINDOW_MS` (5s) counts as a failed recovery and
-charges the attempt counter instead of resetting it, and `force` must not clear that
-history. Regression: `tests/reconnect-storm-repro.test.ts`.
+In `connection-recovery.ts`, `onStreamsOnline` fires unthrottled on every health
+rising edge, releasing dirty Machine Flock docs (no timer) and automation queues.
+`onMetaRoomSynced` waits for meta catch-up before O(rooms) rescans. Defer, never
+drop, fan-out within `LODY_LORO_META_SYNCED_MIN_INTERVAL_MS` (30s): dispatch bootstrap
+is the retry path after reconcile throws. A real meta outage skips that floor;
+a transport-only flap does not.
+
+Health shorter than `LODY_LORO_HEALTH_STABILITY_WINDOW_MS` (5s) charges a failed
+recovery attempt; `force` must not clear flap history. Regression:
+`tests/reconnect-storm-repro.test.ts`.
+
+Session history retries only its room's native sync/reconcile, with the Doc-sync
+deadline and borrower cancellation. Only the connection controller resets the
+shared transport, including terminal SDK generations (Repo 0.23 has no binding
+reset). A pending Session must not restart sibling rooms or presence.

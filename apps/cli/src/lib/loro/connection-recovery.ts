@@ -858,10 +858,10 @@ export class LoroConnectionRecoveryController {
   }
 
   /**
-   * Healthy-path room sweep. `repo.reconnect()` rejoins exactly the rooms in a
-   * recoverable bad state (`error`/`disconnected`/incomplete join) and is a
-   * pure per-room status read — no network — when everything is healthy, so
-   * the 30s watchdog can afford to run it unconditionally. Deliberately skips
+   * Connection-owned recovery sweep. Repo 0.23 resets the whole transport when
+   * any member is failed/offline; healthy transports only reconcile routes.
+   * Keep that reset here under the controller's watchdog/backoff, rather than
+   * issuing it independently from each pending Session history waiter. Skips
    * the meta-ready ceremony (`ensureMetaRoomJoined`/`waitForMetaRoomReady`) so
    * a healthy sweep never re-fires meta-synced listeners.
    */

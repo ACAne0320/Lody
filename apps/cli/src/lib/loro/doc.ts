@@ -1,4 +1,4 @@
-import { RepoIOError, RepoUnsupported } from 'loro-repo/effect';
+import { RepoIOError, RepoSyncFailed, RepoUnsupported } from 'loro-repo/effect';
 import { Effect, Exit } from 'effect';
 import {
   WorkspaceRepoLegacy,
@@ -2308,9 +2308,21 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
 
     if (streamsRoomBinding(room).status === 'detached')
       throw new RepoUnsupported(`transport ${STREAMS_TRANSPORT_ID}`);
-    await this.repo.reconnect({ transportIds: [STREAMS_TRANSPORT_ID] });
-    if (this.destroyed || this.docSub !== room) return;
-    await this.repo.runLegacy(room.native.awaitSynced(STREAMS_TRANSPORT_ID), room.signal);
+    // A history waiter owns this room's attempt, not the shared transport.
+    // Terminal SDK generations are reset by connection-recovery's watchdog.
+    await this.repo.runLegacy(
+      room.native.sync(STREAMS_TRANSPORT_ID).pipe(
+        Effect.flatMap((report) =>
+          report.transports.some(
+            (route) => route.id === STREAMS_TRANSPORT_ID && route.outcome === 'confirmed'
+          )
+            ? Effect.void
+            : Effect.fail(new RepoSyncFailed(report))
+        ),
+        Effect.timeout(readTimeoutEnv('LODY_LORO_SYNC_DOC_TIMEOUT_MS', 8_000))
+      ),
+      room.signal
+    );
   }
 
   /**

@@ -1,7 +1,7 @@
-import { LoroMap } from 'loro-crdt';
+import { LoroDoc, LoroMap } from 'loro-crdt';
 import { updateTestHistory } from './history-port-fixture';
 import { describe, expect, it, vi } from 'vitest';
-import { Effect, SubscriptionRef } from 'effect';
+import { Effect, Stream, SubscriptionRef } from 'effect';
 import type { RoomStatus } from 'loro-repo/effect';
 
 import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
@@ -25,6 +25,102 @@ const createUserEntry = (id: string, text: string): SessionHistoryInput => ({
 });
 
 describe('SessionDocument auto read', () => {
+  it('repairs pending Session rooms without taking a healthy sibling offline', async () => {
+    const repo = await WorkspaceRepoLegacy.create({});
+    const remote = new LoroDoc();
+    remote.getText('incoming').insert(0, 'history delivery');
+    remote.commit();
+    const sessions = ['healthy', 'pending-a', 'pending-b'].map(
+      (id) => new SessionDocument(repo, id as SessionId, async () => {})
+    );
+    const [healthy, ...pending] = sessions;
+    if (!healthy) throw new Error('Missing healthy fixture');
+    const statuses = new Map<string, SubscriptionRef.SubscriptionRef<RoomStatus>>();
+    const resetting = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    let attempts: Promise<void[]> | undefined;
+    await repo.addTransport('streams', {
+      kind: 'native-workspace-transport',
+      make: (id) =>
+        Effect.succeed({
+          id,
+          authority: 'server',
+          connect: Effect.void,
+          disconnect: Effect.void,
+          reconnect: Effect.gen(function* () {
+            for (const status of statuses.values()) yield* SubscriptionRef.set(status, 'offline');
+            resetting.resolve();
+            yield* Effect.promise(() => resume.promise);
+            for (const status of statuses.values()) yield* SubscriptionRef.set(status, 'synced');
+          }),
+          join: (target, replica) =>
+            Effect.gen(function* () {
+              const status = yield* SubscriptionRef.make<RoomStatus>('synced');
+              if (target.kind === 'doc') statuses.set(target.id, status);
+              return {
+                status,
+                close: Effect.void,
+                sync: Effect.gen(function* () {
+                  if (replica.kind === 'doc') {
+                    yield* replica.lease.importUpdates([remote.export({ mode: 'snapshot' })]);
+                    yield* SubscriptionRef.set(status, 'synced');
+                  }
+                  return 'confirmed' as const;
+                }),
+              };
+            }),
+        }),
+    });
+    try {
+      for (const session of sessions) {
+        await session.initOffline(undefined, { historyBackend: 'loro' });
+        const room = await repo.joinDocRoom(session.roomId);
+        session.docSub = room;
+        await repo.runLegacy(room.native.awaitSynced('streams'));
+      }
+      const room = healthy.docSub;
+      if (!room) throw new Error('Missing healthy room');
+      for (const session of pending) {
+        const status = statuses.get(session.roomId);
+        if (!status) throw new Error('Missing pending transport room');
+        await repo.runLegacy(SubscriptionRef.set(status, 'offline'));
+        const pendingRoom = session.docSub;
+        if (!pendingRoom) throw new Error('Missing pending room');
+        await repo.runLegacy(
+          pendingRoom.native.status('streams').pipe(
+            Stream.filter((next) => next === 'offline'),
+            Stream.runHead
+          )
+        );
+      }
+      attempts = Promise.all(pending.map((session) => session.rejoinDocRoom()));
+      // Both outcomes have explicit signals. Hold a connection reset long
+      // enough to observe its effect on the sibling, without scheduler races.
+      const first = await Promise.race([
+        attempts.then(() => 'rooms' as const),
+        resetting.promise.then(() => 'connection' as const),
+      ]);
+      if (first === 'connection')
+        await repo.runLegacy(
+          room.native.status('streams').pipe(
+            Stream.filter((status) => status === 'offline'),
+            Stream.runHead
+          )
+        );
+      expect(await repo.runLegacy(room.native.statusSnapshot('streams'))).toBe('synced');
+      await attempts;
+      for (const session of pending)
+        expect(session.handle?.doc.getText('incoming').toString()).toBe('history delivery');
+      healthy.handle?.doc.getText('outgoing').insert(0, 'still writable');
+      expect(healthy.handle?.doc.getText('outgoing').toString()).toBe('still writable');
+    } finally {
+      resume.resolve();
+      await attempts?.catch(() => undefined);
+      for (const session of sessions) await session.destroy({ preserveStatus: true });
+      await repo.destroy();
+      remote.free();
+    }
+  });
   it('rejects an explicit room rejoin without a route instead of parking readiness', async () => {
     const repo = await WorkspaceRepoLegacy.create({});
     const session = new SessionDocument(repo, uuidv4() as SessionId, async () => {});
@@ -37,7 +133,7 @@ describe('SessionDocument auto read', () => {
       await repo.destroy();
     }
   });
-  it.each(['reconnect', 'readiness'] as const)(
+  it.each(['reconcile', 'sync'] as const)(
     'retires its own room during %s while another borrower survives',
     async (phase) => {
       const repo = await WorkspaceRepoLegacy.create({});
@@ -55,10 +151,20 @@ describe('SessionDocument auto read', () => {
             disconnect: Effect.void,
             join: () =>
               Effect.gen(function* () {
+                if (phase === 'reconcile') {
+                  entered.resolve();
+                  yield* Effect.promise(() => reconnect.promise);
+                }
                 return {
                   status: yield* SubscriptionRef.make<RoomStatus>('joining'),
                   close: Effect.void,
-                  sync: Effect.succeed('confirmed' as const),
+                  sync: Effect.gen(function* () {
+                    if (phase === 'sync') {
+                      entered.resolve();
+                      yield* Effect.promise(() => reconnect.promise);
+                    }
+                    return 'confirmed' as const;
+                  }),
                 };
               }),
           }),
@@ -66,22 +172,6 @@ describe('SessionDocument auto read', () => {
       const room = await repo.joinDocRoom(session.roomId);
       const other = await repo.joinDocRoom(session.roomId);
       session.docSub = room;
-      vi.spyOn(repo, 'reconnect').mockImplementation(async () => {
-        if (phase === 'reconnect') {
-          entered.resolve();
-          await reconnect.promise;
-        }
-        return { ok: true, rooms: [], failed: [] };
-      });
-      if (phase === 'readiness') {
-        const awaitSynced = room.native.awaitSynced;
-        vi.spyOn(room.native, 'awaitSynced').mockImplementation((id) =>
-          Effect.gen(function* () {
-            entered.resolve();
-            yield* awaitSynced(id);
-          })
-        );
-      }
       const rejoining = session.rejoinDocRoom();
       const settled = rejoining.then(
         () => undefined,
@@ -92,8 +182,7 @@ describe('SessionDocument auto read', () => {
         await session.destroy({ preserveStatus: true });
         reconnect.resolve();
         const result = await settled;
-        if (phase === 'readiness') expect(result).toBeInstanceOf(Error);
-        else expect(result).toBeUndefined();
+        expect(result).toBeInstanceOf(Error);
         expect(session.isDestroyed).toBe(true);
         expect(session.docSub).toBeNull();
         expect(room.signal.aborted).toBe(true);
@@ -107,6 +196,68 @@ describe('SessionDocument auto read', () => {
         }
       } finally {
         reconnect.resolve();
+        other.unsubscribe();
+        await session.destroy({ preserveStatus: true });
+        await repo.destroy();
+      }
+    }
+  );
+  it.each(['joining', 'offline'] as const)(
+    'bounds a %s room attempt and permits a later retry',
+    async (initialStatus) => {
+      const repo = await WorkspaceRepoLegacy.create({});
+      const session = new SessionDocument(repo, uuidv4() as SessionId, async () => {});
+      const entered = Promise.withResolvers<void>();
+      let stalled = true;
+      await session.initOffline({ history: [] });
+      await repo.addTransport('streams', {
+        kind: 'native-workspace-transport',
+        make: (id) =>
+          Effect.succeed({
+            id,
+            authority: 'server',
+            connect: Effect.void,
+            disconnect: Effect.void,
+            join: () =>
+              Effect.gen(function* () {
+                const status = yield* SubscriptionRef.make<RoomStatus>(initialStatus);
+                return {
+                  status,
+                  close: Effect.void,
+                  sync: Effect.suspend(() => {
+                    if (stalled) {
+                      entered.resolve();
+                      return Effect.never;
+                    }
+                    return SubscriptionRef.set(status, 'synced').pipe(
+                      Effect.as('confirmed' as const)
+                    );
+                  }),
+                };
+              }),
+          }),
+      });
+      session.docSub = await repo.joinDocRoom(session.roomId);
+      const other = await repo.joinDocRoom(session.roomId);
+      vi.stubEnv('LODY_LORO_SYNC_DOC_TIMEOUT_MS', '8000');
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const attempt = session.rejoinDocRoom();
+        const timedOut = expect(attempt).rejects.toMatchObject({ _tag: 'TimeoutError' });
+        await entered.promise;
+        await vi.advanceTimersByTimeAsync(8000);
+        await timedOut;
+        expect(other.signal.aborted).toBe(false);
+        if (other.native.replica.kind !== 'doc') throw new Error('Expected Doc');
+        other.native.replica.lease.doc.getText('survivor').insert(0, 'writable after timeout');
+        expect(other.native.replica.lease.doc.getText('survivor').toString()).toBe(
+          'writable after timeout'
+        );
+        stalled = false;
+        await session.rejoinDocRoom();
+      } finally {
+        vi.useRealTimers();
+        vi.unstubAllEnvs();
         other.unsubscribe();
         await session.destroy({ preserveStatus: true });
         await repo.destroy();

@@ -187,7 +187,40 @@ edges share the outstanding repair, completed tasks leave the map, and existing
 room lifecycle serialization still joins recovery before close. Explicit reconnect
 continues to await retirement; a retired transport ignores queued status edges.
 
+## Session repair and remaining failure spread
+
+Repo 0.23.0 exposes selected-room sync/reconcile, but no selected-binding reset.
+Session history retries therefore use only their existing room's `sync('streams')`,
+with the existing Doc-sync deadline (8 seconds by default) and borrower signal.
+An offline/unconfirmed result rejects that attempt; it is not success or an
+unbounded readiness wait. Native reconciliation can retry a failed attach. A
+terminal SDK generation still needs transport reset, which belongs to the existing
+connection-recovery controller and its watchdog/backoff, rather than every pending
+Session. This removes K independent N-room resets; it does not claim an unsupported
+per-room SDK reset. Healthy sibling SDK generations and presence stay connected
+during a Session attempt. The controller's actual transport reset still affects
+all its members.
+
+The following design limits remain outside this repair; they are not containment
+guarantees or claims of completed terminal shutdown:
+
+| Trigger | Spread and retained owner | Recovery / remaining limit |
+| --- | --- | --- |
+| Repeated private shortcut `sync()` | Each `connect` adds an SDK lease/finalizer to the room Scope; retention grows with calls until room close | Room disposal releases them. Joining once per room remains follow-up work; there is no independent call-count bound. |
+| Borrower Scope close fails | `destroy()` stops before native Repo close; native room/background-stop steps, including autopersist, are not reached | The retained workspace owner retries close; unrelated workspaces remain independent. Background activity persists meanwhile. Bypassing this dependency can strand a private SDK producer with accepted I/O. |
+| Persistent IndexedDB quota failure during workspace retirement | RuntimeProvider's same-workspace close gate rejects reopening in this window and can consume a release deadline on each retry | Storage recovery permits retirement. Same-key adoption, bounded terminal shutdown/reporting and a terminal SDK/raw-writer termination contract are not implemented here; this remains a product-level availability limit. |
+
 ## Verification and limits
+
+The Session isolation regression fails at `11f89018` with the healthy sibling's
+native status observed as `offline`; it passes after the selected-room change.
+The real Repo with an injected transport gates connection reset explicitly and
+checks imported Doc bytes for both pending Sessions. Joining/offline waits use
+fake deadlines, remain retryable after timeout and preserve another borrower.
+Cancellation covers both native reconcile and sync. The four owning CLI suites
+pass 90 cases, including existing SDK checkpoint and dispatch/recovery coverage.
+CLI types, changed-file lint, Effect and boundary checks pass. The root run reaches its local ten-minute
+budget during component typechecking; no current complete root pass is claimed.
 
 At `6c5fca07`, the two supplied deep-review regressions fail while the prior 19 cases
 pass. After repair, the expanded suites pass 22 cases. Real SDK HTTP remains held
@@ -203,7 +236,7 @@ that still constructed the old Promise Repo for the migrated SessionDocument.
 Their fixture now constructs the same WorkspaceRepoLegacy used by the consumer;
 proposal persistence, idempotency and ownership assertions remain unchanged.
 
-This repair passes all 1,543 Shared cases, 93 affected renderer cases, four Role
+`11f89018` passes all 1,543 Shared cases, 93 affected renderer cases, four Role
 history cases, repository types/static checks, 58 script cases, formatting and
 documentation/boundary checks. The local root run was stopped during full CLI and
 component tests after types/lint/scripts passed; it is not a full-suite pass.

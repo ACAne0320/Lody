@@ -84,7 +84,33 @@ transport Scope 的 FiberMap 中按对象身份保留一个恢复任务。反复
 任务完成即移出集合；房间原有 lifecycle 串行约束仍使 close 等待恢复。
 显式 reconnect 仍等待退休完成；已退休 transport 忽略队列中晚到的状态边。
 
+## Session 修复与剩余失败影响
+
+Repo 0.23.0 提供所选房间的 sync／reconcile，没有单 binding reset。Session history 重试
+因此仅执行现有房间的 `sync('streams')`，沿用 Doc 同步期限（默认 8 秒）和借用者信号。
+offline／未确认结果使本次尝试失败，不算成功，也不再无限等待 readiness。原生 reconcile
+可重试失败的 attach；终止的 SDK generation 仍需 transport reset，统一交给现有
+connection-recovery 控制器及其 watchdog／退避，而不是每个 pending Session 各自重连。
+这消除了 K 次 N 房间重建，没有声称实现上游尚未支持的单房间 SDK reset。Session 尝试期间，
+健康兄弟房间与 presence 保持连接；控制器实际执行的整连接 reset 仍影响全部成员。
+
+以下设计限制不在本次修复范围内，不能算作已满足失败隔离或终止关闭的保证：
+
+| 触发 | 影响与保留 owner | 恢复／剩余限制 |
+| --- | --- | --- |
+| 私有快捷指令反复 `sync()` | 每次 connect 向房间 Scope 增加 SDK lease／finalizer，数量随调用增长，直到房间关闭 | 房间 dispose 会释放；每房间只 join 一次仍待后续处理，目前没有独立调用次数上限。 |
+| borrower Scope 关闭失败 | destroy 在 native Repo close 前停止，未到达关闭房间与停止 autopersist 等后台步骤 | 保留的 workspace owner 重试关闭；其他工作区独立，但期间仍有后台活动。绕过依赖可能遗留仍持有已接受 I/O 的私有 SDK producer。 |
+| workspace 退休时 IndexedDB 持续配额失败 | RuntimeProvider 的同工作区关闭门禁会在本窗口拒绝重开，每次重试还可能消耗释放期限 | 存储恢复后才可完成退休；尚未实现同 key 接管、有界终止关闭／用户报告及 SDK／原始 writer 终止合同。这仍是产品可用性限制。 |
+
 ## 验证与限制
+
+Session 隔离回归在 `11f89018` 明确观察到健康兄弟房间为 `offline` 而失败，改为所选房间
+操作后通过。真实 Repo 配合注入的 transport，用显式门闸控制整连接 reset，并核对两个
+pending Session 实际导入的 Doc 字节。joining／offline 的假时钟用例验证等待超时后仍可
+重试，另一借用者仍可用；取消覆盖原生 reconcile 和 sync 两个阶段。含既有 SDK checkpoint、
+dispatch／recovery 覆盖的四组 CLI 套件共 90 项通过。
+CLI 类型、修改文件 lint、Effect 与边界检查通过；根检查在组件类型检查阶段达到本地十分钟预算，不能算作
+当前版本完整根检查通过。
 
 在 `6c5fca07`，提供的两项深审复现失败，原有 19 项通过。修复后扩展套件 22 项通过。
 真实 SDK HTTP 在 connect/sync 和 join 两条路径中被保持到 abort 和释放预算之后；请求完成后，
@@ -96,7 +122,7 @@ online 仍保持 closed。这些是注入边界，不代表生产网络验收。
 SessionDocument 构造旧 Promise Repo。夹具现改用消费者实际使用的 WorkspaceRepoLegacy，
 提案持久化、幂等性和权限断言保持不变。
 
-本次修复通过完整 Shared 1,543 项、受影响 renderer 93 项、Role 历史四项，以及全仓类型／
+`11f89018` 通过完整 Shared 1,543 项、受影响 renderer 93 项、Role 历史四项，以及全仓类型／
 静态检查、脚本 58 项、格式、文档与边界检查。本地根检查在类型、lint 和脚本通过后，
 于完整 CLI／组件测试阶段停止，不能算作全套通过；仍需最终合并结果上的 CI。
 
