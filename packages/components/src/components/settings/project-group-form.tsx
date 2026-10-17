@@ -62,6 +62,8 @@ const styles = stylex.create({
     color: colors.tertiaryLabel,
     fontFamily: 'var(--font-mono, ui-monospace, monospace)',
     paddingInlineStart: space[2],
+    // The input starts flush after a leading; keep the slash off the value.
+    paddingInlineEnd: '2px',
     whiteSpace: 'nowrap',
   },
   pathInput: { fontFamily: 'var(--font-mono, ui-monospace, monospace)' },
