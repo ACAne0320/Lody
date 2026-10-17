@@ -150,3 +150,85 @@ a fixed, Session/user-bound batch without new work. Pages are bounded to 128 KiB
 individual members return ordered `member-json` fragments. This reader does not grant
 submission permission. Human recovery provenance comes from fixed UI/CLI producers,
 never model tool fields, role or userId.
+
+## Agent Role proposals
+
+`lody_agent_role_create` and `lody_agent_role_update` publish a durable review card
+in the invoking conversation; neither writes the Role catalog. Both use the active
+Turn's human identity and the daemon Session tool route in both compositions. Save is a renderer
+catalog write by that user. Updating requires Role ownership and patches only name,
+description and promptPrefix against the latest row. There is no revision precondition:
+concurrent replicas use the existing Flock merge behavior. Deleted Roles are not recreated.
+New Roles are private, bind explicit machineId + agentConfigId, and use Agent defaults.
+
+Reuse requestId for retries. The same request returns the stored pending/saved/dismissed
+outcome; changed input under that id fails. The generated Role id lives in the card, so
+retrying a create confirmation does not create another Role. An upload failure does not
+roll back a locally durable save. Accepted Operations retain their frozen configurations.
+
+CLI uses the same tools and confirmation flow. It needs an active conversation via
+`--session` or `LODY_SESSION_ID`; `--workspace` selects the workspace when ambiguous.
+
+All writable fields can be passed directly:
+
+```sh
+lody agent-role create --name "Reviewer" --description "Review code" \
+  --prompt-prefix "Find actionable bugs" --machine-id MACHINE_ID --agent-config-id CONFIG_ID
+lody agent-role update ROLE_ID --name "Reviewer" --description "" \
+  --prompt-prefix "Focus on correctness"
+```
+
+Creation requires `--name`, `--machine-id`, and `--agent-config-id`; description and
+prompt prefix are optional. Updates accept `--name`, `--description`, and
+`--prompt-prefix`, and require at least one field. Omitted fields stay unchanged;
+`--description ""` and `--prompt-prefix ""` clear the corresponding text.
+For multiline instructions, the shell can supply `--prompt-prefix "$(cat reviewer.md)"`.
+
+JSON file input remains available, but cannot be combined with direct Role field
+options. Session, workspace, request-id, and output options work with either mode.
+
+```sh
+lody agent-role create --file role.json --request-id reviewer-create
+lody agent-role update ROLE_ID --file patch.json --request-id reviewer-update
+```
+
+A create file contains `name`, `machineId`, `agentConfigId`, and optional `description`
+and `promptPrefix`. An update file contains only the changed `name`, `description`,
+or `promptPrefix`; an empty string clears description/instructions. Neither accepts
+credentials, MCP selections, ownership, visibility, or run configuration. The command
+prints the requestId and pending result; it does not claim the Role was saved.
+
+
+`role.json`:
+
+```json
+{
+  "name": "Reviewer",
+  "machineId": "MACHINE_ID",
+  "agentConfigId": "CONFIG_ID",
+  "description": "Review code",
+  "promptPrefix": "Check correctness.\nReport actionable bugs."
+}
+```
+
+`patch.json`:
+
+```json
+{
+  "description": "",
+  "promptPrefix": "Focus on correctness.\nExplain each finding."
+}
+```
+
+Files must contain a single UTF-8 JSON object, using the camelCase keys shown above.
+The update file is the patch itself: do not wrap it in `patch`; pass the Role ID as the
+command argument. Pass retry IDs with `--request-id`. JSON strings use `\n` for line
+breaks; comments and trailing commas are not valid JSON.
+
+All field values are strings. Creation requires `name`, `machineId`, and `agentConfigId`.
+Updates require at least one supported field. Omitted update fields stay unchanged;
+`""` clears description or instructions, while `null` is rejected. Names must be nonempty,
+mention-compatible and at most 60 characters after trimming; descriptions allow up to
+140 Unicode code points; instructions allow up to 32,768 characters before trimming.
+Machine/config IDs must be nonempty and at most 128 characters after trimming.
+Unsupported fields are rejected.

@@ -1,3 +1,5 @@
+import { AgentRoleProposalNotice } from './agent-role-proposal-notice';
+import type { AgentRoleProposalMeta } from '@lody/shared';
 import { MessageAuthorIdentity } from './message-author-identity';
 import * as stylex from '@stylexjs/stylex';
 import { space, text as textScale } from '@lody/ui/tokens/scales.stylex';
@@ -2842,7 +2844,15 @@ const SystemMessageRowView = ({
   return (
     <div className="flex flex-col gap-2">
       {systemItems.map(({ item, itemIndex }) =>
-        item.type === 'system_notice' && item.name === 'schedule_proposal' && item.meta ? (
+        item.type === 'system_notice' && item.name === 'agent_role_proposal' && item.meta ? (
+          <AgentRoleProposalNotice
+            key={`role-proposal-${itemIndex}`}
+            meta={item.meta as AgentRoleProposalMeta}
+            sessionId={sessionId}
+            entryId={message.id}
+            itemIndex={itemIndex}
+          />
+        ) : item.type === 'system_notice' && item.name === 'schedule_proposal' && item.meta ? (
           <ScheduleProposalNotice
             key={`schedule-proposal-${itemIndex}`}
             meta={item.meta as ScheduleProposalMeta}

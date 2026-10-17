@@ -40,10 +40,11 @@ Parent instructions apply. Background: [README.md](README.md).
   Freeze `requesterUserId` and `sourceTurnId` at Operation acceptance; requester Session id
   already identifies the Session. Authors are presentation/provenance only. Recovery uses
   the owner Machine and current authorization.
-- Direct Role creation stays on the ordinary `lody_session_create` and
-  `lody_session_create_many` tools. When `agentRoleId` is present, tolerate manual Machine, Agent,
-  and run-config fields but remove them before resolution: the current Role row is authoritative
-  and those fields must not influence validation, canonical identity, recovery, or dispatch.
+- With `agentRoleId`, `lody_session_create` / `lody_session_create_many` tolerate then
+  strip manual target/run-config before resolution, validation, identity, recovery
+  or dispatch; the Role is authoritative.
+- Role create/update only propose. Save checks ownership, patches latest text;
+  replicas may overwrite. CLI shares [flow](README.md#agent-role-proposals).
 
 ## Session tool contracts
 
