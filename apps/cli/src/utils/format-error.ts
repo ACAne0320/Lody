@@ -28,7 +28,7 @@ const readStructuredErrorDetail = (error: Error): string | undefined => {
 
 /**
  * A tagged error without a message (Effect's `Data.TaggedError` default) still
- * names its type and cause, so a failure is never reported as an empty string.
+ * names its type and cause, so a reported failure is never an empty string.
  */
 const describeMessagelessError = (error: Error, seen: ReadonlySet<unknown>): string => {
   const tag = (error as { _tag?: unknown })._tag;
@@ -52,9 +52,6 @@ export const formatErrorMessage = (error: unknown, options: FormatErrorOptions =
   const syncError = formatLoroSyncError(error);
   if (syncError) return syncError;
   if (error instanceof Error) {
-    if (!error.message && !options.includeStack && !readStructuredErrorDetail(error)) {
-      return describeMessagelessError(error, new Set([error]));
-    }
     const base = options.includeStack ? (error.stack ?? error.message) : error.message;
     const detail = readStructuredErrorDetail(error);
     if (!detail || base.includes(detail)) {
@@ -73,6 +70,16 @@ export const formatErrorMessage = (error: unknown, options: FormatErrorOptions =
     breakLength: 120,
   });
 };
+
+/**
+ * Failure text for people (chat notices, error logs). Unlike `formatErrorMessage`,
+ * which classifiers substring-match and which therefore keeps its exact output,
+ * this never returns an empty string for a message-less error.
+ */
+export const formatReportedError = (error: unknown): string =>
+  error instanceof Error && !error.message && !readStructuredErrorDetail(error)
+    ? describeMessagelessError(error, new Set([error]))
+    : formatErrorMessage(error);
 
 const formatErrorWithCausesInternal = (error: unknown, seen: ReadonlySet<unknown>): string => {
   const syncError = formatLoroSyncError(error);

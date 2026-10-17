@@ -21,7 +21,7 @@ Translation: current
 
 - `SessionConfig.onStartStage` 会在每一步开始时依次收到 `credentials`、`workdir`、`worktree`、`git-identity`、`agent-runtime` 和 `agent-start`，每一步也会记一条 debug 日志。执行服务把最后一步记在 turn 的运行时状态上，只对发起这次启动的那个 turn 生效，并在会话绑定后清除。这样，之后发生的 prompt 前失败不会被算到启动头上。
 - `session_restore_failed`、它的历史回放兜底和 `turn_pre_prompt_failed` 都记录为 `<步骤> failed: <message>`。认证失败保留原有 message，因为客户端靠它提供登录入口。恢复路径的日志现在也会带上错误对象，因此会记录堆栈。
-- `formatErrorMessage` 遇到 message 为空的错误时，用它的 `_tag` 或 `name` 加上 cause 来描述。带有结构化 `data` 详情的错误保持原来的格式。
+- 失败信息使用新增的 `formatReportedError`。遇到 message 为空的错误时，它用错误的 `_tag` 或 `name` 加上 cause 来描述；因为这段文字会写进同步的聊天历史，所以 cause 只在是 Error 或字符串时才会展开。`formatErrorMessage` 本身不变：worktree 恢复逻辑和恢复路径对 `acp_resume_failed` 的检测都会对它的输出做子串匹配，如果让它永远不为空，cause 的文本就可能改变这些判断。
 - 失败启动的清理总是执行到底，每个清理失败都会连同 cause 一起记日志，然后重新抛出原始错误。这与现有的 `createAgent` 失败分支做法一致。
 
 ## 备选方案

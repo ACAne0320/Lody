@@ -6414,6 +6414,21 @@ describe('SessionExecutionService', () => {
       expectedCreateSessionCalls: 2,
     },
     {
+      // Classification reads `formatErrorMessage`, which a message-less wrapper leaves
+      // empty; its cause's text must not switch the restore to the replay fallback.
+      name: 'does not classify a message-less wrapper by its cause text',
+      errors: [
+        new MessagelessStartFailure({ cause: new Error('acp_resume_failed: session unavailable') }),
+      ],
+      stage: 'agent-start',
+      expectedReason: 'session_restore_failed',
+      expectedMessage:
+        'Starting the agent failed: MessagelessStartFailure: acp_resume_failed: session unavailable',
+      resumeSessionId: 'acp-existing' as ACPSessionId,
+      history: PRIOR_CONVERSATION_HISTORY,
+      expectedCreateSessionCalls: 1,
+    },
+    {
       // Failure text reaches synced history, so an object cause is never dumped into it.
       name: 'names only the type of a message-less failure with an object cause',
       errors: [new MessagelessStartFailure({ cause: { headers: { authorization: 'secret' } } })],

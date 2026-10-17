@@ -48,7 +48,7 @@ import {
   type InboxInput,
 } from '@/orchestration/inbox/model';
 import { sessionExecutionResource } from '@/orchestration/platform/session-resources';
-import { formatErrorMessage } from '@/utils/format-error';
+import { formatErrorMessage, formatReportedError } from '@/utils/format-error';
 import { describeSessionStartFailure, type SessionStartStage } from './session-start-stage';
 import type { Logger } from '@/utils/logger';
 import { startTraceSpan, traceAsync } from '@/utils/trace-span';
@@ -3244,7 +3244,7 @@ export class SessionExecutionService {
       return;
     }
     runtime.prePromptFailureRecorded = true;
-    const message = describeSessionStartFailure(runtime.startStage, formatErrorMessage(error));
+    const message = describeSessionStartFailure(runtime.startStage, formatReportedError(error));
     if (isGitExecutableNotFoundError(error)) {
       await this.deps.recordChatFailure(
         sessionDoc,
@@ -5586,10 +5586,10 @@ export class SessionExecutionService {
                       fallbackError instanceof AcpAuthenticationRequiredError ||
                       isAuthenticationRequiredACPError(fallbackError);
                     const fallbackErrMessage = fallbackNeedsAuthentication
-                      ? formatErrorMessage(fallbackError)
+                      ? formatReportedError(fallbackError)
                       : describeSessionStartFailure(
                           ctx.runtime.startStage,
-                          formatErrorMessage(fallbackError)
+                          formatReportedError(fallbackError)
                         );
                     self.deps.logger.error(
                       `[${sessionId}] Fallback restore also failed: ${fallbackErrMessage}`,
@@ -5612,7 +5612,7 @@ export class SessionExecutionService {
             yield* acpReplaySuppression.release;
             const failureMessage = needsAuthentication
               ? errMessage
-              : describeSessionStartFailure(ctx.runtime.startStage, errMessage);
+              : describeSessionStartFailure(ctx.runtime.startStage, formatReportedError(error));
             self.deps.logger.error(
               `[${sessionId}] Failed to restore session for chat: ${failureMessage}`,
               error

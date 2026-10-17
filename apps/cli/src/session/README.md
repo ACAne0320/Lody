@@ -331,9 +331,12 @@ is bound. A failure is recorded as `<step> failed: <message>`, using
 keep their own message. The error itself is never wrapped: the restore and create paths
 classify it by identity to choose sign-in, the history-replay fallback or a generic failure.
 When a start fails, cleanup terminates the partial Session and releases its credentials.
-Each cleanup failure is logged, and the original error is rethrown. `formatErrorMessage`
-names the type and cause of an error whose message is empty, which a `Data.TaggedError`
-without a message getter produces. See the
+Each cleanup failure is logged, and the original error is rethrown. These are rules:
+never wrap the start error, and never let cleanup replace it. Failure text uses
+`formatReportedError`, which names the type and cause of an error whose message is empty,
+which a `Data.TaggedError` without a message getter produces. Only Error and string causes
+are described. Classifiers keep using `formatErrorMessage`, whose output does not change.
+See the
 [decision](../../../../.agents/notes/implemented/bug-fix/2026-10-16-session-start-failure-attribution.md).
 
 ### No draft preparation

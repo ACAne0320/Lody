@@ -49,9 +49,12 @@ fixes that particular cause. This note covers why the cause was invisible.
   record `<step> failed: <message>`. Authentication failures keep their own message,
   because the client uses it to offer sign-in. The restore log line now also carries
   the error object, so its stack is logged.
-- `formatErrorMessage` describes an error with an empty message as its `_tag` or
-  `name`, followed by its cause. Errors that carry structured `data` detail keep
-  their previous formatting.
+- Failure text uses the new `formatReportedError`. It describes an error with an
+  empty message as its `_tag` or `name`, followed by its cause, and only an Error or
+  string cause is described, because the text reaches synced chat history.
+  `formatErrorMessage` itself is unchanged: worktree recovery and the restore path's
+  `acp_resume_failed` detection substring-match its output, and making it never empty
+  would let a cause's text change those decisions.
 - Failed-start cleanup always runs to the end and logs each failure with its causes.
   The original error is rethrown. This follows the existing `createAgent` failure
   branch.

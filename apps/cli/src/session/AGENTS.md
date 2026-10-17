@@ -76,11 +76,12 @@
 - `Session.createAgent` gates each ACP spawn; failed spawns reject JSON-RPC. Terminals use protocol argv (`sh -c` for unsplit commands only). Managed Codex reused-refresh startup
   retries once after process cleanup, delay, and live Provider recheck; other auth errors do not.
 - Child tabs reuse parent workspace. No per-session paths in `MachineMeta`:
-  machines publish `['dotlodyPath']` for frontends to derive them.
+  machines publish `['dotlodyPath']`; frontends derive them.
 - `sandbox.spawn` returning OUTPUT requires `captureOutput: true` and a 4 MiB buffer cap;
   ACP stdio does not capture.
-- Start failures keep their original error and name the step ([why](README.md#start-failures)).
-- Shutdown: `cleanUp({ keepWorkspaceDocumentOpen: true })`, final flush, then `cleanUp()`.
+- Session start failures: [rules](README.md#start-failures).
+- Shutdown: `cleanUp({ keepWorkspaceDocumentOpen: true })`, MessageHandler's final flush,
+  then `cleanUp()`; never close the doc first.
 
 ## Sagas
 
