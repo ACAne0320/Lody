@@ -31,7 +31,8 @@ Performance comparisons must use the current full-Mirror baseline.
 ## Lightweight hosted entries
 
 - `lib/client-build-info.ts` owns build provenance for About and reports. Bug report
-  metadata contains only build constants, distinct from remote machine logs.
+  diagnostics use `lib/client-diagnostics.ts`'s environment allowlist and a bounded
+  tail from `lib/client-log.ts`, distinct from remote machine logs.
 
 - Public/auth entry points that bypass the full product router import route-agnostic
   surfaces. Keep host navigation behind callback props so those surfaces do not import

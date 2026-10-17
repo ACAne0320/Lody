@@ -128,6 +128,12 @@ bounded Machine RPC reads. Indexing and saving still require the daemon. See the
   thumbnails, direct page entry, quarter-turn rotation, zoom modes and percentages,
   and expandable search. Thumbnail rendering follows the visible sidebar range;
   file actions remain in the existing side-panel menu.
+  Keep the project-owned, bundled Worker entry and its `WorkerMessageHandler`
+  export for the main-thread fallback. Clear the viewer document before aborting
+  its lifetime. The PDF.js patch makes global selection listeners belong to all
+  live text layers, so closing one viewer cannot disable another; removing the
+  final layer releases them. Preserve these responsibilities on dependency
+  upgrades. See [PDF Worker and listener ownership](../notes/implemented/bug-fix/2026-10-17-pdf-worker-build-compatibility.md).
 - Markdown file viewers copy the latest complete source text (including unsaved
   editor changes) from the top toolbar. On mobile, source mode uses the native
   text surface instead of Monaco so long-press keeps the OS selection menu;
