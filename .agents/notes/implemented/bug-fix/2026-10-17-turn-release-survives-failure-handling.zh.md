@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1652](https://github.com/LodyAI/Lody/pull/1652)
 
 [English](2026-10-17-turn-release-survives-failure-handling.md)
 
