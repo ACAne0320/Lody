@@ -19,8 +19,9 @@
   survive deliberate absence and settle only on a routed baseline or failure.
 - Read inventory and transport snapshots from native leases. Keep local room
   records only for ownership release. On an online transport, retry only failed/
-  offline rooms through native sync/reconcile; a room failure never requests a
-  shared reset. Reserve transport reconnect for transport failure or explicit
+  offline rooms and SDK-proven failed initialization still projected as joining,
+  through native sync/reconcile. Pending/retrying baselines stay owned; a room
+  failure never requests a shared reset. Reserve reconnect for transport failure or explicit
   reset. Do not rebuild the full Promise Repo subscription or query APIs.
 - Pass the room borrow's signal to native waits at Promise boundaries; retiring
   one borrower must cancel its wait without retiring another borrower's replica.

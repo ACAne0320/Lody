@@ -381,7 +381,7 @@ flowchart TD
 在包含刷新 main 的基础上组合 FileLocks 和 WorktreeGit，不代表变更、setup 或 GC 所有权完成。
 #1385 已合并，仅提供运行实例凭据租约和预热 TTL/控制（该控制后来随草稿预热一并移除）；底层 ACP/worktree 启动及完整会话所有权仍未完成。
 有限[本地源准备单元](../../implemented/architecture/2026-10-10-effect-local-worktree-preparation.zh.md) 依赖文件系统/Git，借用既有变更租约。评审 base 包含观察单元，因为管理器边界共享；原生内核并不互相依赖。
-库侧前置核对：[正式版本接入](../../implemented/architecture/2026-10-16-streams-repo-release-adoption.zh.md) 消费官方 streams-crdt 0.19.0、streams-client 0.12.0 和 loro-repo 0.23.0，保留 Effect 4.0.2 及 Flock WASM 0.4.4。新增原生 Repo 入口和 SDK 上传/read-epoch API 已正式发布。同一个 #1607 的[原生消费者接入](2026-10-16-native-workspace-repo.zh.md)已接通 CLI/renderer durable 所有权、CLI 目录直接读取与元数据确认、native 房间清单和恢复、Session 与在线 watchdog 仅修复失败房间、连接自身故障或显式 force 才整连接重置、本机 v7 客户端、预取 worker 和快捷指令 SDK room。应用 Promise API 经 WorkspaceRepoLegacy 访问同一个原生 Repo；host server、Session/Turn、grant、RPC 和 host 存储迁移仍是独立单元。每个迁移单元仍需核对上游规则和合同。
+库侧前置核对：[正式版本接入](../../implemented/architecture/2026-10-16-streams-repo-release-adoption.zh.md) 消费官方 streams-crdt 0.19.0、streams-client 0.12.0 和 loro-repo 0.23.0，保留 Effect 4.0.2 及 Flock WASM 0.4.4。新增原生 Repo 入口和 SDK 上传/read-epoch API 已正式发布。同一个 #1607 的[原生消费者接入](2026-10-16-native-workspace-repo.zh.md)已接通 CLI/renderer durable 所有权、CLI 目录直接读取与元数据确认、native 房间清单和恢复、Session 与在线 watchdog 仅修复失败房间及 SDK health 确认失败但仍投影 joining 的初始化、连接自身故障或显式 force 才整连接重置、本机 v7 客户端、预取 worker 和快捷指令 SDK room。应用 Promise API 经 WorkspaceRepoLegacy 访问同一个原生 Repo；host server、Session/Turn、grant、RPC 和 host 存储迁移仍是独立单元。每个迁移单元仍需核对上游规则和合同。
 下文的七单元基础 stack 已于 2026-10-11 合入 main。Worktree 变更/setup/GC、runtime
 安装、ACP 和 Loro 内核仍未完成。
 

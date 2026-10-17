@@ -135,5 +135,6 @@ recovery attempt; `force` must not clear flap history. Regression:
 
 Session history retries only its room's native sync/reconcile, with the Doc-sync
 deadline and borrower cancellation. Healthy watchdog sweeps repair failed rooms
-without resetting siblings or presence. Only transport failure or explicit force
-resets the shared transport; a terminal SDK room stays failed until then.
+and SDK-proven failed initialization even if Repo still says joining. Pending
+baselines stay owned; live 4xx uses SDK backoff. Only transport failure or explicit
+force resets siblings and presence; an HTTP error alone never justifies it.

@@ -813,8 +813,8 @@ export class LoroConnectionRecoveryController {
 
     if (!options.force && this.isStreamsHealthy()) {
       // Healthy transport + meta says nothing about individual room attaches.
-      // Sweep only failed/offline rooms; a terminal SDK generation must not
-      // turn this fixed-period watchdog into repeated connection-wide resets.
+      // Repair failed rooms, including failed SDK initialization still projected
+      // as joining. An HTTP error must not trigger connection-wide resets.
       await this.sweepRooms(reason);
       return;
     }
@@ -856,8 +856,9 @@ export class LoroConnectionRecoveryController {
 
   /**
    * On an online transport, the facade syncs/reconciles only failed/offline
-   * rooms. This fixed-period path has no exponential backoff and must never
-   * promote a room failure into a shared transport reset. Skip the meta-ready
+   * rooms and SDK-proven failed initialization. This fixed-period controller
+   * path has no reset backoff and must never promote a room failure into a
+   * shared transport reset. Skip the meta-ready
    * ceremony so a healthy sweep never re-fires meta-synced listeners.
    */
   private async sweepRooms(reason: string): Promise<void> {

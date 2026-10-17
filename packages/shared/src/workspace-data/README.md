@@ -30,11 +30,13 @@ Successful retirement clears the retained failure; a closed Scope is not replaye
 Room handles retain the native `RoomLease` and the small UI status view still in
 use. Inventory and transport snapshots come from native leases; the local owner
 registry exists only to release borrows during purge. On an online transport,
-recovery syncs/reconciles only failed or offline rooms, collecting independent
-failures. A persistent room error never resets healthy siblings or presence.
-Transport failure or an explicit reset can restart the shared connection. A
-terminal SDK room generation that selected sync cannot repair remains failed
-until that boundary; Repo 0.23 has no per-binding reset. Native ownership keeps
+recovery syncs/reconciles failed or offline rooms, collecting independent failures.
+Failed SDK initialization can still project as joining: consult the native health
+for an unready, non-retryable initialization error with no pending accepted I/O.
+Selected sync can restart that SDK generation while ordinary baselines stay owned.
+Live 4xx failures already use SDK backoff; an HTTP error does not prove a terminal
+generation. A persistent room error never resets healthy siblings or presence.
+Transport failure or explicit reset can restart the shared connection. Native ownership keeps
 pending SDK work and scopes, without a second set of application rejoin jobs.
 The local v7 client keeps its 1,024-event and default 64 MiB queue bounds.
 After overflow, reconnect (including a physical online edge) drains the failed

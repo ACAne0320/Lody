@@ -672,7 +672,7 @@ export class WorkspaceRepoLegacy {
     const results = await Promise.allSettled(
       [...this.attachments]
         .filter(([id]) => !options?.transportIds || options.transportIds.includes(id))
-        .map(([id, { value }]) =>
+        .map(([id, { value, transport }]) =>
           value
             ? this.runLegacy(
                 Effect.gen(function* () {
@@ -687,8 +687,31 @@ export class WorkspaceRepoLegacy {
                   // presence because one room fails. Pending baselines stay owned.
                   const rooms = yield* value.rooms;
                   const roomResults = yield* Effect.forEach(
-                    rooms.filter((room) => room.status === 'failed' || room.status === 'offline'),
-                    ({ target }) => native.syncOnce(target, id).pipe(Effect.exit),
+                    rooms.filter(
+                      (room) =>
+                        room.status === 'failed' ||
+                        room.status === 'offline' ||
+                        room.status === 'joining'
+                    ),
+                    ({ target, status: bindingStatus }) =>
+                      Effect.gen(function* () {
+                        if (bindingStatus === 'joining') {
+                          // SDK initialization may have failed while Repo still says
+                          // joining. Inspect its owned health, not a parallel status.
+                          const health = transport?.health
+                            ? yield* transport.health(target)
+                            : undefined;
+                          if (
+                            !health ||
+                            health.ready ||
+                            health.lastError?.retryable !== false ||
+                            health.releasePending > 0
+                          )
+                            return undefined;
+                        }
+                        yield* native.syncOnce(target, id);
+                        return undefined;
+                      }).pipe(Effect.exit),
                     { concurrency: 'unbounded' }
                   );
                   const cause = roomResults.reduce<Cause.Cause<RepoError>>(

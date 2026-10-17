@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceId } from '@lody/shared';
-import { Effect, Scope, Stream, SubscriptionRef } from 'effect';
-import { RepoIOError, type RoomStatus } from 'loro-repo/effect';
+import { Clock, Effect, Exit, Scope, Stream, SubscriptionRef } from 'effect';
+import { TestClock } from 'effect/testing';
+import { LoroDoc } from 'loro-crdt';
+import type { StreamsTransport } from 'loro-repo/effect/streams';
+import { workspaceStreamsTransport } from '@lody/shared/workspace-data/streams';
+import { RepoIOError, type NativeTransportRoom, type RoomStatus } from 'loro-repo/effect';
 import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import type {
   LoroRepo,
@@ -235,6 +239,269 @@ describe('LoroConnectionRecoveryController watchdog room sweep', () => {
       controller = null;
       await repo.runLegacy(owner.close);
       await repo.destroy();
+    }
+  });
+
+  it.each([
+    'bootstrap',
+    'live-read',
+    'append',
+    'persistent-bootstrap',
+    'pending-bootstrap',
+  ] as const)('preserves real SDK %s behavior without resetting healthy rooms', async (phase) => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const repo = await WorkspaceRepoLegacy.create({});
+    const owner = await repo.acquireScopeLegacy('SDK permission recovery fixture');
+    const clock = await repo.runLegacy(
+      TestClock.make().pipe(Effect.provideService(Scope.Scope, owner.scope))
+    );
+    const server = new LoroDoc();
+    const tail = '00000000000000000100';
+    let rejected = false;
+    let denied = true;
+    const baselineStarted = Promise.withResolvers<void>();
+    const baselineReleased = Promise.withResolvers<void>();
+    const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const sdkRoom = Promise.withResolvers<NativeTransportRoom>();
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const recovering = url.pathname.includes('/recovering');
+      const bootstrap = url.pathname.endsWith('/bootstrap');
+      const live = url.searchParams.get('live') === 'sse';
+      const append = init?.method === 'POST';
+      if (recovering && bootstrap && phase === 'pending-bootstrap') {
+        baselineStarted.resolve();
+        await baselineReleased.promise;
+      }
+      if (
+        recovering &&
+        denied &&
+        (((phase === 'bootstrap' || phase === 'persistent-bootstrap') && bootstrap) ||
+          (phase === 'live-read' && live) ||
+          (phase === 'append' && append))
+      ) {
+        rejected = true;
+        return new Response(null, { status: 403 });
+      }
+      if (append) {
+        const bytes = new Uint8Array(await new Response(init?.body).arrayBuffer());
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        for (let offset = 0; offset < bytes.length;) {
+          const size = view.getUint32(offset, false);
+          offset += 4;
+          if (recovering) server.import(bytes.slice(offset, offset + size));
+          offset += size;
+        }
+        const headers = new Headers(init?.headers);
+        return new Response(null, {
+          headers: {
+            'Producer-Epoch': headers.get('Producer-Epoch') ?? '0',
+            'Producer-Seq': headers.get('Producer-Seq') ?? '0',
+            'Stream-Next-Offset': tail,
+            'Stream-Up-To-Date': 'true',
+          },
+        });
+      }
+      if (bootstrap)
+        return new Response(
+          new Blob([
+            '--sdk\r\nContent-Type: application/octet-stream\r\n\r\n',
+            new LoroDoc().export({ mode: 'snapshot' }).slice().buffer as ArrayBuffer,
+            '\r\n--sdk--\r\n',
+          ]),
+          {
+            headers: {
+              'Content-Type': 'multipart/mixed; boundary=sdk',
+              'Stream-Snapshot-Offset': tail,
+              'Stream-Next-Offset': tail,
+              'Stream-Up-To-Date': 'true',
+            },
+          }
+        );
+      if (live)
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(output) {
+              streams.push(output);
+              output.enqueue(
+                new TextEncoder().encode(
+                  `event: control\ndata: ${JSON.stringify({ streamNextOffset: tail, upToDate: true })}\n\n`
+                )
+              );
+              init?.signal?.addEventListener(
+                'abort',
+                () => {
+                  try {
+                    output.close();
+                  } catch {
+                    /* Reader already cancelled. */
+                  }
+                },
+                { once: true }
+              );
+            },
+          }),
+          {
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Stream-SSE-Data-Encoding': 'base64',
+            },
+          }
+        );
+      return new Response(null, {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Stream-Next-Offset': tail,
+          'Stream-Up-To-Date': 'true',
+        },
+      });
+    };
+    const specification = workspaceStreamsTransport(
+      {
+        bucketId: 'permission-recovery',
+        baseUrl: 'https://streams.recovery.invalid',
+        routes: (target) => target.kind === 'doc',
+        persistence: 'volatile',
+        fetch,
+        snapshotUpload: { enabled: false },
+        reconnectConfig: { delays: [60_000], jitterFraction: 0, liveInactivityTimeoutMs: 0 },
+      },
+      () => Effect.succeed('synthetic-token')
+    );
+    let transport: StreamsTransport | undefined;
+    let completed = Promise.withResolvers<void>();
+    const reconnect = repo.reconnect.bind(repo);
+    vi.spyOn(repo, 'reconnect').mockImplementation(async (options) => {
+      try {
+        return await reconnect(options);
+      } finally {
+        completed.resolve();
+      }
+    });
+    try {
+      await repo.addTransport('streams', {
+        kind: 'native-workspace-transport',
+        make: (id) =>
+          specification.make(id).pipe(
+            Effect.map((value) => {
+              transport = value;
+              return {
+                ...value,
+                join: (target, replica) =>
+                  value.join(target, replica).pipe(
+                    Effect.provideService(Clock.Clock, clock),
+                    Effect.tap((joined) =>
+                      Effect.sync(() => {
+                        if (target.kind === 'doc' && target.id === 'recovering')
+                          sdkRoom.resolve(joined);
+                      })
+                    )
+                  ),
+              };
+            })
+          ),
+      });
+      const healthy = await repo.joinDocRoom('healthy');
+      await repo.runLegacy(healthy.native.awaitSynced('streams'));
+      const sdk = transport;
+      if (!sdk) throw new Error('Missing SDK transport');
+      const generation = (await repo.runLegacy(sdk.health({ kind: 'doc', id: 'healthy' })))
+        ?.generation;
+      const doc = (await repo.openPersistedDoc('recovering')).doc;
+      const room = await repo.joinDocRoom('recovering');
+      if (phase === 'append') {
+        await repo.runLegacy(room.native.awaitSynced('streams'));
+        doc.getText('body').insert(0, 'uploaded after permission recovery');
+        doc.commit();
+      }
+      await sdkRoom.promise;
+      if (phase === 'pending-bootstrap') await baselineStarted.promise;
+      if (phase === 'live-read')
+        await repo.runLegacy(
+          room.native.status('streams').pipe(
+            Stream.filter((status) => status === 'failed'),
+            Stream.runHead
+          )
+        );
+      if (phase !== 'pending-bootstrap') {
+        expect(Exit.isFailure(await repo.runLegacy(Effect.exit(room.native.sync('streams'))))).toBe(
+          phase !== 'live-read'
+        );
+        expect(rejected).toBe(true);
+      }
+      denied = phase === 'persistent-bootstrap';
+      if (phase !== 'append') {
+        doc.getText('body').insert(0, 'uploaded after permission recovery');
+        doc.commit();
+      }
+      controller = new LoroConnectionRecoveryController({
+        repo,
+        workspaceId: 'ws-sdk-recovery' as WorkspaceId,
+        logger: createLogger(),
+        initialMetaSub: createMetaSub('joined'),
+        initialTransportStatus: 'connected',
+        initialMetaSyncPromise: Promise.resolve(true),
+        initialMetaSyncCompleted: true,
+        onMetaRoomReady: vi.fn(),
+      });
+      let failedGeneration =
+        (await repo.runLegacy(sdk.health({ kind: 'doc', id: 'recovering' })))?.generation ?? 0;
+      for (let period = 0; period < (phase === 'persistent-bootstrap' ? 3 : 1); period++) {
+        completed = Promise.withResolvers<void>();
+        await vi.advanceTimersByTimeAsync(30_000);
+        await completed.promise;
+        if (phase === 'persistent-bootstrap') {
+          const health = await repo.runLegacy(sdk.health({ kind: 'doc', id: 'recovering' }));
+          expect(health?.generation).toBeGreaterThan(failedGeneration);
+          failedGeneration = health?.generation ?? failedGeneration;
+          expect(health?.lastError?.code).toBe('auth_failed');
+          expect(doc.getText('body').toString()).toBe('uploaded after permission recovery');
+          expect(server.getText('body').toString()).toBe('');
+          expect(await repo.runLegacy(healthy.native.statusSnapshot('streams'))).toBe('synced');
+          expect(
+            (await repo.runLegacy(sdk.health({ kind: 'doc', id: 'healthy' })))?.generation
+          ).toBe(generation);
+        }
+      }
+      // A live read failure owns its SDK backoff; advance that clock, not
+      // a connection reset. Bootstrap and append recover in selected sync.
+      if (phase === 'pending-bootstrap') {
+        const health = await repo.runLegacy(sdk.health({ kind: 'doc', id: 'recovering' }));
+        expect(health?.generation).toBe(failedGeneration);
+        expect(health?.releasePending).toBeGreaterThan(0);
+        expect(server.getText('body').toString()).toBe('');
+        expect(rejected).toBe(false);
+        baselineReleased.resolve();
+        await repo.runLegacy(room.native.sync('streams'));
+      }
+      if (phase !== 'persistent-bootstrap') {
+        if (phase === 'live-read') await repo.runLegacy(clock.adjust(60_000));
+        expect(server.getText('body').toString()).toBe('uploaded after permission recovery');
+        await repo.runLegacy(
+          room.native.status('streams').pipe(
+            Stream.filter((status) => status === 'synced'),
+            Stream.runHead
+          )
+        );
+      }
+      expect(await repo.runLegacy(healthy.native.statusSnapshot('streams'))).toBe('synced');
+      expect((await repo.runLegacy(sdk.health({ kind: 'doc', id: 'healthy' })))?.generation).toBe(
+        generation
+      );
+    } finally {
+      baselineReleased.resolve();
+      for (const output of streams) {
+        try {
+          output.close();
+        } catch {
+          /* Already cancelled. */
+        }
+      }
+      await controller?.cleanUp();
+      controller = null;
+      await repo.destroy();
+      await repo.runLegacy(owner.close);
     }
   });
 

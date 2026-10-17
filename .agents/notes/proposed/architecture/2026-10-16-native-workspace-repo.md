@@ -193,17 +193,30 @@ Repo 0.23.0 exposes selected-room sync/reconcile, but no selected-binding reset.
 Session history retries therefore use only their existing room's `sync('streams')`,
 with the existing Doc-sync deadline (8 seconds by default) and borrower signal.
 An offline/unconfirmed result rejects that attempt; it is not success or an
-unbounded readiness wait. Native reconciliation can retry a failed attach. A
-terminal SDK generation still needs transport reset; this is reserved for an
-actual transport failure or an explicit reset, rather than every pending Session
-or a healthy watchdog sweep. Online sweeps sync/reconcile only failed/offline
-rooms concurrently and collect their failures before reporting. They leave healthy
-rooms, presence and pending baselines alone. This corrects the earlier claim that
+unbounded readiness wait. Native reconciliation can retry a failed attach.
+Online sweeps sync/reconcile failed/offline rooms and SDK-proven failed initialization,
+collecting independent failures. They leave healthy rooms, presence and ordinary
+pending baselines alone. This corrects the earlier claim that
 moving N-room resets into the controller put them under backoff: its healthy 30s
 sweep bypasses that backoff. A persistent room-level 403 must not reset all members
-every period. Transport-wide failure still resets all members, and terminal SDK
-generations remain failed until that boundary or explicit reset; no unsupported
-per-binding SDK reset or new global recovery loop is claimed.
+every period. Only transport-wide failure or explicit reset restarts all members.
+
+Correction after reviewing `ebf906f9`: the earlier claim that non-retryable HTTP
+errors imply a terminal SDK generation needing transport reset was too broad.
+Published CRDT 0.19.0 retries live 4xx with its own capped backoff and default
+unlimited attempts. Selected SDK sync retries failed initialization and runs a
+fresh catch-up/append barrier. However, failed initialization can leave Repo's
+room projection at joining: filtering only failed/offline misses it indefinitely.
+The facade now reads the transport's native health for joining rooms. It invokes
+selected sync only when initialization is unready, has a non-retryable error and
+has no pending accepted SDK I/O. A genuine pending/retrying baseline keeps its
+owner; no second state registry or connection-reset cooldown is added. SDK release
+receipts remain separate from HTTP failure classification and retain their existing
+retry owner. The absence of a per-binding reset does not prevent these HTTP repairs.
+
+CLI composition has no mutable transport route predicate; lazy acquire reconciles
+its target. No CLI reliance on periodic route refresh was found. Renderer route
+changes continue to call the explicit `refreshTransportRoutes` entry.
 
 The trigger is the existing controller watchdog or reconnect request. Native Repo
 owns selected-room reconcile/sync, its deadlines and accepted work; the facade
@@ -222,7 +235,25 @@ guarantees or claims of completed terminal shutdown:
 
 ## Verification and limits
 
-The watchdog regression fails against `c57f9ec8` with the healthy sibling observed
+Five new real-SDK cases cover bootstrap, live-read, append, persistent bootstrap
+403 and a held valid initialization. Temporary failures recover to synced and the server imports the authored Doc
+bytes. Across three persistent-denial watchdog periods, the failed SDK generation
+is retried and local bytes remain, while the healthy sibling's status and actual
+SDK generation stay unchanged. A held baseline's accepted I/O and generation remain
+owned across a watchdog period, then its original generation uploads after release.
+The bootstrap regression fails against `ebf906f9`
+with no authored bytes reaching the server, then passes with the health check.
+SDK backoff uses TestClock; the controller interval uses fake timers. These use
+the published SDK and Repo over a synthetic HTTP boundary; the controller's Meta
+status is injected and production-service acceptance is not claimed.
+The five affected CLI/renderer suites pass 126 cases. Repository types, full Effect checks,
+changed-file type-aware lint, all eight boundary/translation guards, formatting
+and documentation checks pass.
+The required root check passes repository types, then reaches its ten-minute
+budget during full-repository lint (exit 124). Changed-file lint and standalone
+full Effect checks pass; a complete current root run is not claimed.
+
+At `ebf906f9`, the watchdog regression fails against `c57f9ec8` with the healthy sibling observed
 as `offline`; the same real-Repo/controller fixture passes after narrowing the
 facade repair. Three fake interval periods keep a persistent permission failure
 visible while another offline room repeatedly syncs and writes Doc bytes, and
@@ -235,7 +266,7 @@ boundary, not a live-service permission test.
 The root check passes types, lint and Effect, then stops at the unchanged
 `effect-lint.test.mjs` nested-process fixture under the sandbox. All 58 script
 cases pass outside the sandbox; the full application test stage was not
-reached, so no complete current root pass is claimed.
+reached, so no complete root pass was claimed at that revision.
 
 The Session isolation regression fails at `11f89018` with the healthy sibling's
 native status observed as `offline`; it passes after the selected-room change.

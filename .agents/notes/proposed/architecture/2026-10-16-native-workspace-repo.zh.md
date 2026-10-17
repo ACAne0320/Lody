@@ -89,13 +89,23 @@ transport Scope 的 FiberMap 中按对象身份保留一个恢复任务。反复
 Repo 0.23.0 提供所选房间的 sync／reconcile，没有单 binding reset。Session history 重试
 因此仅执行现有房间的 `sync('streams')`，沿用 Doc 同步期限（默认 8 秒）和借用者信号。
 offline／未确认结果使本次尝试失败，不算成功，也不再无限等待 readiness。原生 reconcile
-可重试失败的 attach；终止的 SDK generation 仍需 transport reset，但仅在 transport 本身
-故障或显式 reset 时进行，而不是由每个 pending Session 或健康 watchdog 触发。在线 sweep
-并行 sync／reconcile failed／offline 房间，等独立修复完成后汇总失败，不触碰健康房间、
-presence 或正在建立 baseline 的房间。这纠正了此前“集中到控制器就受退避控制”的表述：
+可重试失败的 attach。在线 sweep 并行 sync／reconcile failed／offline 房间和 SDK 已确认
+失败的初始化，等独立修复完成后汇总失败，不触碰健康房间、presence 或普通的 pending baseline。
+这纠正了此前“集中到控制器就受退避控制”的表述：
 健康时的 30s sweep 绕过了 backoff。持续的单房间 403 不得每个周期重置全部成员。整连接
-故障仍会重置成员；无法通过所选 sync 修复的 terminal SDK generation 保持失败，直到连接
-故障恢复或显式 reset。没有声称实现不受上游支持的单 binding reset，也没有新增全局重试循环。
+故障或显式 reset 才重启全部成员。
+
+复核 `ebf906f9` 后纠正此前过宽的论断：不可重试 HTTP 错误不等于需要整连接 reset 的终止
+generation。正式 CRDT 0.19.0 的 live 4xx 使用 SDK 自身封顶退避，默认无限重试；所选 sync
+会重试失败的初始化，并重新执行 catch-up／append 屏障。但失败的初始化可能仍被 Repo 投影
+为 joining，仅过滤 failed／offline 会永久漏掉它。facade 现在直接读取 joining 房间的原生
+transport health，仅在初始化未 ready、有不可重试错误、且无待完成的 SDK 已接受 I/O 时执行
+所选 sync。正常等待或退避中的 baseline 保持原 owner，不新增状态表或整连接 reset 冷却器。
+SDK release receipt 与 HTTP 错误分类分开，仍由既有 retry owner 持有。没有单 binding reset
+并不妨碍上述 HTTP 恢复。
+
+CLI composition 没有可变的 transport 路由谓词，lazy acquire 会调和所选 target；未找到 CLI
+依赖周期性 refresh 的调用。renderer 路由变更继续显式调用 `refreshTransportRoutes`。
 
 触发者仍是控制器 watchdog 或已有 reconnect 请求。原生 Repo 持有所选房间的 reconcile／sync、
 截止时间及已接受工作；facade 传递调用方取消信号，私下汇总独立失败的 Cause。不新增 owner
@@ -111,14 +121,26 @@ presence 或正在建立 baseline 的房间。这纠正了此前“集中到控�
 
 ## 验证与限制
 
-watchdog 回归在 `c57f9ec8` 观察到健康兄弟房间变为 `offline` 而失败，缩小 facade 修复
+新增五项真实 SDK 用例覆盖 bootstrap、live read、append、持续 bootstrap 403 及保持中的正常初始化。临时失败后
+恢复到 synced，模拟服务端实际导入本地编写的 Doc 字节。持续拒绝的三个 watchdog 周期内，
+失败的 SDK generation 被重试，本地字节保留，健康兄弟房间状态和真实 SDK generation 不变。
+正常 baseline 在 watchdog 周期内保留已接受 I/O 和原 generation，释放后仍由原 generation 上传。
+bootstrap 回归在 `ebf906f9` 上因没有编写字节到达服务端而失败，加入 health 判断后通过。
+SDK 退避使用 TestClock，控制器 interval 用假时钟。这里使用正式 SDK／Repo 和模拟 HTTP
+边界，控制器 Meta 状态为注入值，不代表线上服务验收。
+五个相关 CLI／renderer 套件通过 126 项；全仓类型、完整 Effect、修改文件类型感知 lint、八项
+边界／翻译检查、格式与文档检查通过。
+本次根检查通过全仓类型后，在全仓 lint 阶段达到十分钟预算（退出 124）。修改文件 lint
+与单独执行的完整 Effect 检查通过，不声称当前根检查完整通过。
+
+在 `ebf906f9`，watchdog 回归在 `c57f9ec8` 观察到健康兄弟房间变为 `offline` 而失败，缩小 facade 修复
 范围后同一个真实 Repo／控制器夹具通过。三个假 interval 周期中，持续权限失败保持可见，
 另一处离线房间反复同步并写入 Doc 字节，健康房间状态和实际 presence 发布持续可用。
 连接本身 offline／closed／failed 以及显式 force 用例仍重置连接并保留原副本。五个相关
 CLI／renderer 套件通过 121 项。全仓类型与类型感知 lint、完整 Effect、八项边界／
 翻译检查、格式和文档检查通过。这是注入原生 transport 边界的验证，不是线上权限服务测试。
 根检查通过类型、lint 和 Effect 后，在沙箱内未修改的 `effect-lint.test.mjs` 嵌套进程
-夹具处停止；全部脚本 58 项移出沙箱后通过。未进入完整应用测试阶段，不声称当前根检查全绿。
+夹具处停止；全部脚本 58 项移出沙箱后通过。未进入完整应用测试阶段，不声称当时根检查全绿。
 
 Session 隔离回归在 `11f89018` 明确观察到健康兄弟房间为 `offline` 而失败，改为所选房间
 操作后通过。真实 Repo 配合注入的 transport，用显式门闸控制整连接 reset，并核对两个
