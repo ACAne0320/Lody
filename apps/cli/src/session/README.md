@@ -37,8 +37,10 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
   with the safe error reference returned by history RPC.
 - `session-history-owner.ts` — native Effect readiness barrier for history RPC; waits
   for this session's owner/backend metadata and releases its observer on every exit.
-- `roost-rpc-session.ts` — one-shot Cloud CLI history services backed by owner RPC;
-  `lib/command-runtime.ts` supplies the same composition for sessions, export and MCP.
+- `roost-rpc-session.ts` — Cloud CLI history services backed by owner RPC;
+  `lib/command-runtime.ts` supplies the same composition for standalone commands and,
+  through `routeRemoteOwnedSessionHistory`, for Sessions the cloud daemon touches on
+  other machines.
 - `turn-history-gate.ts` — ordering barrier for RPC fast-path turns. Created in
   message-handler's `beginConversationTurn`, stored/disposed via `SessionTransientStore` turn
   state; it creates the assistant entry when it opens.
@@ -537,7 +539,9 @@ it never retries an indeterminate history action.
 External cursor refreshes share the local write queue so an earlier branch read
 cannot overwrite a later mutation's projection; disposal rejects pending reads.
 Cloud one-shot managers inject owner RPC services and never open a caller-local
-Roost database. Open-ended directory reads clip to the owner count and use at most
+Roost database. The cloud daemon routes per Session: another machine's Sessions use
+owner RPC, its own (or not-yet-known owners) use the installed local owner, and the
+routing leaves its execution documents' auto-read policy unchanged. Open-ended directory reads clip to the owner count and use at most
 500 rows per RPC, restarting when the durable revision moves. Fork and Edit & Resend
 retain their owner sagas; process-local snapshot/rollback handles do not cross RPC.
 The production SQLite regressions live in

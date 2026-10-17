@@ -338,6 +338,8 @@ export interface LoroDocumentManagerOptions {
   cloudBilling?: CloudBillingPort | null;
   /** One-shot clients route history to the owner; daemons use installed local factories. */
   sessionHistoryFactory?: SessionBackendFactory;
+  /** Daemon-only Roost routing that leaves this machine's execution policies unchanged. */
+  ownerHistoryRouter?: SessionBackendFactory;
 }
 
 export type LoroRepoPersistReason =
@@ -381,6 +383,7 @@ export class LoroDocumentManager {
   private readonly streamsTokens: CloudStreamsTokenPort | null;
   public readonly cloudBilling: CloudBillingPort | null;
   private readonly sessionHistoryFactory?: SessionBackendFactory;
+  private readonly ownerHistoryRouter?: SessionBackendFactory;
 
   static async create(
     workspaceId: WorkspaceId,
@@ -396,6 +399,7 @@ export class LoroDocumentManager {
       streamsTokens?: CloudStreamsTokenPort | null;
       cloudBilling?: CloudBillingPort | null;
       sessionHistoryFactory?: SessionBackendFactory;
+      ownerHistoryRouter?: SessionBackendFactory;
     } = {}
   ): Promise<LoroDocumentManager> {
     // Configure the CLI's global HTTP dispatcher once (proxy/H2/diagnostics). This
@@ -494,6 +498,7 @@ export class LoroDocumentManager {
         streamsTokens: options.streamsTokens ?? null,
         cloudBilling: options.cloudBilling ?? null,
         sessionHistoryFactory: options.sessionHistoryFactory,
+        ownerHistoryRouter: options.ownerHistoryRouter,
       });
     } catch (error) {
       const failures: unknown[] = [error];
@@ -572,6 +577,7 @@ export class LoroDocumentManager {
     this.streamsTokens = options.streamsTokens ?? null;
     this.cloudBilling = options.cloudBilling ?? null;
     this.sessionHistoryFactory = options.sessionHistoryFactory;
+    this.ownerHistoryRouter = options.ownerHistoryRouter;
     this.remoteStreamsGeneration = this.remoteStreamsAttached ? 1 : 0;
     this.presenceRuntime = options.presenceRuntime ?? null;
     this.machineMonitorRuntime = options.machineMonitorRuntime ?? null;
@@ -1373,7 +1379,7 @@ export class LoroDocumentManager {
         sessionId,
         (sessionDocId) => this.unloadDocRoom(sessionDocId),
         this.logger,
-        this.sessionHistoryFactory
+        this.sessionHistoryFactory ?? this.ownerHistoryRouter
       );
       const meta = options.historyBackend ? undefined : await this.repo.getDocMeta(docId);
       const historyBackend =
@@ -1427,7 +1433,7 @@ export class LoroDocumentManager {
         sessionId,
         (snapshotDocId) => this.unloadDocRoom(snapshotDocId),
         this.logger,
-        this.sessionHistoryFactory
+        this.sessionHistoryFactory ?? this.ownerHistoryRouter
       );
       const meta = await this.repo.getDocMeta(docId);
       const historyBackend = !isLoroRepoDocDeleted(meta)
@@ -1760,11 +1766,6 @@ export class LoroDocumentManager {
     this.logger.debug(`Started watching document existence for machine ${machineId}`);
   }
 
-  /** Cleanup errors elsewhere must not fence a workspace whose presence already ended. */
-  isPresenceReleased(): boolean {
-    return this.presenceRuntime?.isReleased() ?? true;
-  }
-
   async cleanUp(options: { fast?: boolean; preserveSessionStatus?: boolean } = {}) {
     this.cleaningUp = true;
     let presenceCleanupFailure: unknown;
@@ -1772,7 +1773,14 @@ export class LoroDocumentManager {
     for (const docId of [...this.localDocRoomBridges.keys()]) {
       this.cancelLocalDocRoomBridge(docId);
     }
-    await this.localLoroDataPlaneServer?.disposeLegacy();
+    try {
+      await this.localLoroDataPlaneServer?.disposeLegacy();
+    } catch (error) {
+      // Still stop presence: a live owner left behind would refuse every later
+      // owner of this workspace, while a stopped one can be retired.
+      await this.presenceRuntime?.stop().catch(() => undefined);
+      throw error;
+    }
     try {
       await this.machineMonitorRuntime?.stop();
     } catch (error) {

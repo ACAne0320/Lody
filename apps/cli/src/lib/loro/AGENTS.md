@@ -88,8 +88,9 @@ cannot retire a Turn. Its Legacy entry owns execution/analytics. Intent:
 
 `workspace-presence.ts` owns Scopes; `presence-replica.ts` is synchronous.
 Only Legacy entries execute. No kernel Promise/timers,
-extra runtime or POST/SSE queue. Failed release retains work/Cause/owner
-and fences replacement; close joins completion. Revoke preserves local
+extra runtime or POST/SSE queue. Failed release retains work/Cause/owner and
+fences its generations; the registry retires it, never blocking the workspace.
+Close joins completion. Revoke preserves local
 production. CLI owns registry/token Scopes; durable/presence share one provider.
 `platform/presence.ts` consumes the published SDK native entry.
 

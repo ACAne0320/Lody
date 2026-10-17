@@ -28,7 +28,11 @@ import {
 } from '../src/session/session-history-owner';
 import { SessionDocument } from '../src/lib/loro/doc';
 import { installRoostNodeSessionBackend } from '../src/session/roost-node-session';
-import { createSessionBackend, type SessionBackendFactory } from '../src/session/session-backend';
+import {
+  createSessionBackend,
+  routeRemoteOwnedSessionHistory,
+  type SessionBackendFactory,
+} from '../src/session/session-backend';
 import { NodeLodyHistory } from '@loro-dev/roost/lody-history';
 import {
   CURRENT_MACHINE_PROTOCOL_CAPABILITIES,
@@ -899,6 +903,41 @@ describe('Production Roost history semantics', () => {
       );
     }
     expect(await owner.backend.readHistory()).toEqual(before);
+  });
+
+  it('routes daemon history by Session owner: another machine through RPC, its own locally', async () => {
+    const owned = await nativeFixture();
+    await owned.backend.appendHistoryTurn(nativeUser('owned-u'));
+    await owned.repo.upsertDocMeta(getMachineRoomId('test-machine'), {
+      id: 'test-machine',
+      protocolCapabilities: CURRENT_MACHINE_PROTOCOL_CAPABILITIES,
+    });
+    const refusedOwner = createCommandSessionHistoryFactory(
+      () => ({ repo: owned.repo, waitUntilMetaSynced: async () => true }) as LoroDocumentManager,
+      { userId: 'test-user', machineId: 'daemon-machine', token: 'synthetic' } as AuthContext,
+      'test-workspace',
+      async (target) => {
+        throw new Error(`Owner route reached ${target.machineId}`);
+      }
+    );
+    // This daemon is the Session's machine: history stays with its local owner.
+    const local = await nativeFixture(
+      owned.doc.sessionId,
+      false,
+      routeRemoteOwnedSessionHistory('test-machine', refusedOwner)
+    );
+    expect(await local.backend.readHistory()).toMatchObject([{ id: 'owned-u' }]);
+    // Another machine owns the Session: a daemon never serves it from its own database.
+    const foreign = await nativeFixture(
+      `${owned.doc.sessionId}-foreign`,
+      false,
+      routeRemoteOwnedSessionHistory('daemon-machine', refusedOwner)
+    );
+    await expect(foreign.backend.readHistory()).rejects.toThrow('Owner route reached test-machine');
+    await expect(foreign.backend.appendHistoryTurn(nativeUser('foreign-u'))).rejects.toThrow(
+      'Owner route reached test-machine'
+    );
+    expect(await owned.backend.readHistory()).toMatchObject([{ id: 'owned-u' }]);
   });
 
   it('binds real owner RPC bodies to checkpoints and treats supersession as retryable', async () => {

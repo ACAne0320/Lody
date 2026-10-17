@@ -198,7 +198,7 @@ import {
   publishCodeCollabFileIndexFlock,
   publishCodeCollabFileIndexSignalFlock,
 } from './code-collab/code-collab-flock-publish';
-import type { ModelInfo } from '@lody/shared';
+import type { ModelInfo, SessionActiveInvocationContextResult } from '@lody/shared';
 import type {
   CloudNotificationsPort,
   CloudPort,
@@ -307,6 +307,7 @@ import { LodyOperationCoordinator } from '@/orchestration/operation-coordinator'
 import {
   createLocalSessionCommandEnvironment,
   getSessionCommandEnvironment,
+  runWithDaemonWorkspace,
   runWithSessionCommandEnvironment,
 } from './session-command-environment';
 import { getLodyOperationStorePath, LodyOperationStore } from '@/orchestration/operation-store';
@@ -3516,7 +3517,7 @@ export class MessageHandler {
           }
         : {}),
       materializeTarget: async (operation, item, index) =>
-        await this.withSessionCommandEnvironment(() =>
+        await this.withDaemonCommandScope(() =>
           this.materializeOperationTarget(operation, item, index)
         ),
     });
@@ -6399,8 +6400,29 @@ export class MessageHandler {
     return requester === ownerUserId || requester === this.userId;
   }
 
-  private withSessionCommandEnvironment<T>(run: () => T): T {
-    if (this.cloudPort.kind !== 'local') return run();
+  private readActiveInvocation(sessionId: SessionId): SessionActiveInvocationContextResult {
+    const invocation = this.executionService.getActiveInvocationContext(sessionId);
+    return invocation
+      ? { type: 'session/active-invocation-context', sessionId, active: true, ...invocation }
+      : { type: 'session/active-invocation-context', sessionId, active: false };
+  }
+
+  /**
+   * Commands the daemon executes always borrow its workspace replica. Cloud keeps
+   * its authenticated command behavior; only the local platform adds the local host.
+   */
+  private withDaemonCommandScope<T>(run: () => T): T {
+    if (this.cloudPort.kind !== 'local')
+      return runWithDaemonWorkspace(
+        {
+          workspaceId: this.workspaceId,
+          userId: this.userId,
+          machineId: this.machineId,
+          manager: this.workspaceDocument,
+          readInvocation: (sessionId) => this.readActiveInvocation(sessionId),
+        },
+        run
+      );
     return runWithSessionCommandEnvironment(
       createLocalSessionCommandEnvironment({
         manager: this.workspaceDocument,
@@ -6409,17 +6431,7 @@ export class MessageHandler {
         machineName: this.machineName,
         userId: this.userId,
         host: {
-          readInvocation: (sessionId) => {
-            const invocation = this.executionService.getActiveInvocationContext(sessionId);
-            return invocation
-              ? {
-                  type: 'session/active-invocation-context',
-                  sessionId,
-                  active: true,
-                  ...invocation,
-                }
-              : { type: 'session/active-invocation-context', sessionId, active: false };
-          },
+          readInvocation: (sessionId) => this.readActiveInvocation(sessionId),
           readLiveStatus: async (sessionId) => {
             const live = resolveSessionLiveStatus({
               presence: this.sessionActivePresence.getStatus(sessionId),
@@ -6500,8 +6512,6 @@ export class MessageHandler {
       case 'mcp/list-tools':
         return await listMcpTools(request.params.server);
       case 'session/call-tool': {
-        if (this.cloudPort.kind !== 'local')
-          throw new Error('Daemon Session tools require a local workspace');
         const { sessionId, name, arguments: args } = request.params;
         if (
           request.workspaceId !== this.workspaceId ||
@@ -6514,7 +6524,7 @@ export class MessageHandler {
         if (!sourceWorkdir && args && typeof args === 'object' && 'attachments' in args)
           throw new Error('Requester Session workspace is unavailable');
 
-        return this.withSessionCommandEnvironment(() =>
+        return this.withDaemonCommandScope(() =>
           executeDaemonSessionTool(
             {
               machineId: this.machineId,

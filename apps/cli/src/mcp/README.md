@@ -101,15 +101,20 @@ See the [decision and verification](../../../../.agents/notes/implemented/bug-fi
   incompatible inherited selectors; fill builtin mode only when still empty.
   ([note](../../../../.agents/notes/implemented/bug-fix/2026-09-17-chat-follow-up-inherits-target-run-config.md))
 
-## Local routing
+## Daemon routing
 
-- Local Session/catalog tools route through `session/call-tool` to the daemon's
-  existing repo. `session-tool-router.ts` reuses SDK-parsed MCP arguments and
-  parses daemon inputs; `session-command-environment.ts` scopes identity and
-  host operations with AsyncLocalStorage. Require an active local user Turn and
-  exact workspace/machine scope; never open a second local writer replica.
-  Cloud keeps its authenticated command runtime and remote recovery confirmation.
-
+- Session/catalog tools route through `session/call-tool` to the daemon's
+  existing repo in both compositions. `session-tool-router.ts` reuses SDK-parsed
+  MCP arguments and parses daemon inputs; `session-command-environment.ts` lends
+  the daemon replica (`runWithDaemonWorkspace`) and, on the local platform, also
+  scopes identity and host operations with AsyncLocalStorage. Require exact
+  workspace/machine scope and an active invoking Turn (the local user's on the
+  local platform); never open a second replica. Cloud keeps its authenticated command behavior and
+  remote recovery confirmation; only the replica changes. Schedule tools use the
+  daemon's schedule control, and cancel/archive run in-process rather than through
+  a child `lody` CLI. Calls keep a ten-minute IPC bound; legacy `wait: true` adds
+  its maximum wait. See
+  the [decision](../../../../.agents/notes/implemented/architecture/2026-10-16-daemon-hosted-mcp-workspace-commands.md).
 
 ## Bounded collaboration
 

@@ -5,7 +5,6 @@ import { getMachineRoomId } from '@lody/shared';
 import { machineSupportsProtocolCapability, MACHINE_PROTOCOL_CAPABILITIES } from '@lody/shared';
 import { prepareSessionInputAttachments } from '@/lib/session-input-attachments';
 import { createCommandAttachmentTransfer } from '@/lib/cloud-cli-port';
-import { toShared } from '@/platform/process-options';
 import { snapshotAgentRole, readMessageAuthor, type AgentMessageAuthor } from '@lody/shared';
 import { resolveSessionMessageAuthor } from '@/session/message-author';
 import { resolveSessionLinkId } from '@lody/shared/session-link';
@@ -16,9 +15,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
 import { z } from 'zod';
 import { requestSessionShare } from '@/lib/session-share-delivery';
-import { startProcessLegacy } from '@lody/shared/node/process';
 
-import { formatErrorMessage } from '@/utils/format-error';
 import {
   ACP_CAPABILITY_ROW_FAMILIES,
   getAcpCapabilityCacheKey,
@@ -98,11 +95,13 @@ import type { LoroDocumentManager } from '@/lib/loro/doc';
 import { readMachineLocalProjects } from '@/lib/local-project-meta';
 import { listWorkspaceGitHubRepositoriesForCliToken } from '@/lib/workspace';
 import {
+  cancelSessionTurn,
   createSessionResult,
   MachineFlockReadUnavailableError,
   readLocalProjectGitStateOnMachine,
   readSessionLiveStatusesMany,
   readSessionMachineAccess,
+  runSessionOperationWithSyncedMetadata,
   selectDefaultAgentConfigForCreate,
   resolveTurnDispatchConfig,
   sendSessionChatResult,
@@ -140,14 +139,16 @@ import { captureSessionCommandEvent } from '@/commands/analytics-events';
 import { captureCli, initCliAnalytics } from '@/lib/analytics/posthog';
 import { registerDiscoveryTools } from './discovery-tools';
 import { createResourceDiscovery } from '@/lib/resource-discovery-runtime';
-import { getCliPlatformKind } from '@/lib/cli-platform';
 import { summarizeDiscoveryAgent as summarizeAgentConfig } from '@/lib/resource-discovery';
 import {
   SessionDiscoveryFilterShape,
   matchesSessionDiscovery,
   discoveryCursor,
 } from '@/lib/discovery-query';
-import { getSessionCommandEnvironment } from '@/lib/session-command-environment';
+import {
+  getDaemonWorkspace,
+  getSessionCommandEnvironment,
+} from '@/lib/session-command-environment';
 import { createSessionToolRegistrar, type SessionToolHandlers } from './session-tool-router';
 
 import { registerIosSimulatorPreviewTool } from './ios-simulator-tool';
@@ -173,8 +174,12 @@ const OPERATION_GET_TOOL_NAME = 'lody_operation_get';
 const OPERATION_CANCEL_TOOL_NAME = 'lody_operation_cancel';
 const SESSION_FILE_MAX_SIZE_MB = Math.floor(SESSION_FILE_MAX_SIZE_BYTES / (1024 * 1024));
 const SESSION_CONTROL_TIMEOUT_MS = 30_000;
-const LODY_CLI_DEFAULT_TIMEOUT_MS = 10 * 60_000;
 const MAX_MCP_SESSION_WAIT_TIMEOUT_SECONDS = 3_600;
+// Daemon-executed Session tools keep the bound the child-CLI path had; only a
+// legacy reply wait gets enough time to outlast its own maximum.
+const DAEMON_SESSION_TOOL_TIMEOUT_MS = 10 * 60_000;
+const DAEMON_SESSION_TOOL_WAIT_TIMEOUT_MS =
+  MAX_MCP_SESSION_WAIT_TIMEOUT_SECONDS * 1000 + DAEMON_SESSION_TOOL_TIMEOUT_MS;
 const MAX_MCP_COMMAND_BATCH_SIZE = 20;
 const MAX_MCP_STATUS_BATCH_SIZE = 50;
 const MAX_MCP_CREATE_OPTION_MATCHES = 20;
@@ -1076,8 +1081,8 @@ const postSessionControl = async (
 const readActiveInvocationContext = async (
   ctx: McpSessionContext
 ): Promise<SessionActiveInvocationContextResult> => {
-  const environment = getSessionCommandEnvironment();
-  if (environment) return environment.host.readInvocation(ctx.sessionId);
+  const daemon = getDaemonWorkspace();
+  if (daemon) return daemon.readInvocation(ctx.sessionId);
   const response = await Effect.runPromise(
     makeLocalControlClientAuto({ socketPath: ctx.localControlSocketPath })
       .machineRpc(
@@ -1163,96 +1168,6 @@ const resolveUploadPath = (filePath: string, workdir: string): string => {
   const trimmed = filePath.trim();
   return path.isAbsolute(trimmed) ? trimmed : path.resolve(workdir, trimmed);
 };
-
-const resolveCliEntrypoint = (): string => {
-  const entrypoint = process.argv[1];
-  if (!entrypoint) {
-    throw new Error('Cannot resolve current lody CLI entrypoint.');
-  }
-  return entrypoint;
-};
-
-/** A timed-out `lody` subcommand gets SIGTERM, then SIGKILL if it lingers. */
-const LODY_CLI_TIMEOUT_TERMINATION = { graceMs: 2_000, killWaitMs: 2_000 };
-
-const runLodyCli = async (
-  args: string[],
-  timeoutMs = LODY_CLI_DEFAULT_TIMEOUT_MS
-): Promise<{ stdout: string; stderr: string }> => {
-  const stdout: Buffer[] = [];
-  const stderr: Buffer[] = [];
-  const cli = startProcessLegacy(
-    {
-      command: process.execPath,
-      args: [resolveCliEntrypoint(), ...args],
-      options: {
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-      },
-      // Stays in this server's process group: ending the agent tree that runs
-      // the MCP server must end its in-flight `lody` subcommands too.
-      processGroup: false,
-      onSpawned: (child) => {
-        child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk));
-        child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
-      },
-    },
-    toShared()
-  );
-  return await new Promise((resolve, reject) => {
-    let timedOut = false;
-    const timeout = setTimeout(() => {
-      // The timeout owns the outcome: the exit it causes is not a CLI failure.
-      timedOut = true;
-      void cli.terminate(LODY_CLI_TIMEOUT_TERMINATION).then(
-        () => reject(new Error(`lody ${args.join(' ')} timed out after ${timeoutMs}ms`)),
-        (error: unknown) =>
-          reject(
-            new Error(
-              `lody ${args.join(' ')} timed out after ${timeoutMs}ms and could not be stopped: ${formatErrorMessage(error)}`
-            )
-          )
-      );
-    }, timeoutMs);
-
-    cli.child.on('error', (error) => {
-      if (timedOut) return;
-      clearTimeout(timeout);
-      reject(error);
-    });
-    cli.child.on('close', (code, signal) => {
-      if (timedOut) return;
-      clearTimeout(timeout);
-      const stdoutText = Buffer.concat(stdout).toString('utf8');
-      const stderrText = Buffer.concat(stderr).toString('utf8');
-      if (code !== 0) {
-        reject(
-          new Error(
-            `lody ${args.join(' ')} failed${signal ? ` (${signal})` : code !== null ? ` (${code})` : ''}: ${stderrText.trim() || stdoutText.trim()}`
-          )
-        );
-        return;
-      }
-      resolve({ stdout: stdoutText, stderr: stderrText });
-    });
-  });
-};
-
-const parseJsonCliOutput = (stdout: string): unknown => {
-  const line = stdout
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .at(-1);
-  if (!line) {
-    throw new Error('lody CLI returned empty JSON output.');
-  }
-  return JSON.parse(line);
-};
-
-const runLodyCliJson = async (args: string[], timeoutMs?: number): Promise<unknown> =>
-  parseJsonCliOutput((await runLodyCli(args, timeoutMs)).stdout);
 
 const resolveMcpSessionId = (
   sessionId: string | undefined,
@@ -3143,20 +3058,22 @@ const renameSessionItems = async (
   });
 };
 
-const buildOperationTargetCancelArgs = (
-  workspaceId: string,
-  item: Extract<LodyOperationItemResult, { status: 'active' }>
-): string[] => [
-  'session',
-  'cancel',
-  '--operation-cancel',
-  '--workspace',
-  workspaceId,
-  '--json',
-  '--turn-id',
-  `assistant:${item.target.userTurnId}`,
-  item.target.sessionId,
-];
+/** Cancel through the daemon's workspace replica, never a child CLI with its own. */
+const cancelSessionTurnForMcp = async (sessionId: SessionId, turnId?: string) => {
+  const ctx = getSessionContext();
+  const auth = getCliAuthContextOrThrow('mcp');
+  const workspace = await resolveWorkspaceOrThrow(auth, getMcpWorkspaceId(ctx));
+  return await withWorkspaceManager(auth, workspace, 'mcp', (manager) =>
+    cancelSessionTurn({
+      auth,
+      workspaceId: workspace.id as WorkspaceId,
+      manager,
+      sessionId,
+      turnId,
+      operationCancel: true,
+    })
+  );
+};
 
 const batchFailure = (
   code: string,
@@ -3729,7 +3646,6 @@ export const __lodyMcpServerInternals = {
   applySessionRenameItems,
   persistSessionRenameItems,
   buildInvocationIdentity,
-  buildOperationTargetCancelArgs,
   summarizeProjectRefForMcp,
   resolveSessionExecutionSnapshot,
   readSessionExecutionSnapshot,
@@ -3785,10 +3701,12 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
   registerScheduleTools(server, {
     execute: async (command) => {
       const ctx = getSessionContext();
-      const { sendScheduleCommand } = await import('@/lib/schedules/schedule-command-client');
-      return sendScheduleCommand(command, {
-        workspace: getMcpWorkspaceId(ctx),
-        requesterSessionId: ctx.sessionId,
+      const { sendDaemonScheduleCommand } = await import('@/lib/schedules/schedule-command-client');
+      return sendDaemonScheduleCommand(command, {
+        machineId: ctx.machineId,
+        workspaceId: ctx.workspaceId,
+        requesterSessionId: ctx.sessionId as SessionId,
+        socketPath: ctx.localControlSocketPath,
       });
     },
   });
@@ -3796,7 +3714,9 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
   const registerSessionTool = createSessionToolRegistrar(
     server,
     async (name, args, execute) => {
-      if (getCliPlatformKind() !== 'local' || getSessionCommandEnvironment()) return execute();
+      // Session tools run against the daemon's workspace replica in every
+      // composition; an MCP process never opens a second one.
+      if (getDaemonWorkspace()) return execute();
       try {
         const ctx = getSessionContext();
         const outcome = await Effect.runPromise(
@@ -3813,7 +3733,12 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
                   arguments: z.record(z.string(), z.json()).parse(args),
                 },
               },
-              { timeoutMs: SESSION_CONTROL_TIMEOUT_MS }
+              {
+                timeoutMs:
+                  typeof args === 'object' && args !== null && 'wait' in args && args.wait === true
+                    ? DAEMON_SESSION_TOOL_WAIT_TIMEOUT_MS
+                    : DAEMON_SESSION_TOOL_TIMEOUT_MS,
+              }
             )
             .pipe(Effect.result)
         );
@@ -3919,7 +3844,7 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
     }
   );
 
-  server.registerTool(
+  registerSessionTool(
     MCP_CONFIGURE_TOOL_NAME,
     {
       title: 'Configure a workspace MCP server',
@@ -4365,25 +4290,15 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
         const ctx = getSessionContext();
         const auth = getCliAuthContextOrThrow('mcp');
         await resolveWorkspaceOrThrow(auth, getMcpWorkspaceId(ctx));
+        const sessionId = resolveMcpSessionId(args.sessionId, ctx) as SessionId;
         const environment = getSessionCommandEnvironment();
         if (environment) {
-          const sessionId = resolveMcpSessionId(args.sessionId, ctx) as SessionId;
           const session = await readCurrentSessionMeta(environment.manager, sessionId);
           if (!session || session.machineId !== auth.machineId)
             throw new Error('Session not found on this machine');
           return jsonTextResult(await environment.host.cancelSession(sessionId));
         }
-        return jsonTextResult(
-          await runLodyCliJson([
-            'session',
-            'cancel',
-            '--operation-cancel',
-            '--workspace',
-            getMcpWorkspaceId(ctx),
-            '--json',
-            args.sessionId,
-          ])
-        );
+        return jsonTextResult(await cancelSessionTurnForMcp(sessionId));
       } catch (error) {
         return mcpErrorResult(error);
       }
@@ -4529,7 +4444,10 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
               item.status === 'active'
                 ? environment
                   ? environment.host.cancelSession(item.target.sessionId, item.target.userTurnId)
-                  : runLodyCliJson(buildOperationTargetCancelArgs(getMcpWorkspaceId(ctx), item))
+                  : cancelSessionTurnForMcp(
+                      item.target.sessionId,
+                      `assistant:${item.target.userTurnId}`
+                    )
                 : Promise.resolve()
             )
           );
@@ -4583,7 +4501,7 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
     }
   );
 
-  server.registerTool(
+  registerSessionTool(
     SESSION_ARCHIVE_TOOL_NAME,
     {
       title: 'Archive a Lody session',
@@ -4592,24 +4510,24 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
       inputSchema: SessionArchiveToolInputSchema,
     },
     async (args: SessionArchiveToolInput) => {
+      let sessionId = args.sessionId;
       try {
         const ctx = getSessionContext();
         const auth = getCliAuthContextOrThrow('mcp');
-        await resolveWorkspaceOrThrow(auth, getMcpWorkspaceId(ctx));
-        return jsonTextResult(
-          await runLodyCliJson([
-            'session',
-            'archive',
-            '--workspace',
-            getMcpWorkspaceId(ctx),
-            '--json',
-            args.sessionId,
-          ])
+        const workspace = await resolveWorkspaceOrThrow(auth, getMcpWorkspaceId(ctx));
+        sessionId = resolveMcpSessionId(args.sessionId, ctx);
+        const archivedChildSessionIds = await withWorkspaceManager(
+          auth,
+          workspace,
+          'mcp',
+          (manager) =>
+            runSessionOperationWithSyncedMetadata(manager, sessionId as SessionId, 'archive')
         );
+        return jsonTextResult({ ok: true, sessionId, archivedChildSessionIds });
       } catch (error) {
         const message = formatMcpErrorMessage(error);
         if (message.includes('already archived')) {
-          return jsonTextResult({ ok: true, sessionId: args.sessionId });
+          return jsonTextResult({ ok: true, sessionId });
         }
         return mcpErrorResult(error);
       }
