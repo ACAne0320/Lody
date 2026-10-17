@@ -3231,7 +3231,7 @@ export class MessageHandler {
             },
             { onAcpBinaryProgress }
           ),
-        submitBugReport: async ({ description, reporterUserId, requestToken }) => {
+        submitBugReport: async ({ description, reporterUserId, requestToken, clientLog }) => {
           if (!this.cloudPort.bugReports) {
             return {
               type: 'machine/bug-report_response' as const,
@@ -3247,6 +3247,7 @@ export class MessageHandler {
             reporterUserId,
             requestToken,
             machineUserId: this.userId,
+            ...(clientLog ? { clientLog } : {}),
           });
         },
         cancelSession: async ({ sessionId, turnId, subagentTaskId, cancelId, pauseInbox }) => {

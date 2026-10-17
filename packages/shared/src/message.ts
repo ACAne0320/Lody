@@ -33,6 +33,7 @@ import type {
 } from './preview';
 import type { ProjectSkillsResult } from './acp/skills';
 import type { RpcSecretPublicKey } from './rpc-secret';
+import type { BugReportClientLog } from './bug-report';
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk';
 
 export type PermissionOutcome = RequestPermissionResponse['outcome'] & {
@@ -649,6 +650,11 @@ export interface MachineBugReportRequest {
   reporterUserId: string;
   /** Signed requester proof minted by the backend for this workspace+machine. */
   requestToken: string;
+  /**
+   * The reporter's client log, merged into the uploaded logs. Sent only to a
+   * machine advertising `bugReportClientLog`.
+   */
+  clientLog?: BugReportClientLog;
 }
 
 export interface MachineBugReportResponse {

@@ -899,6 +899,66 @@ describe('LoroStreamsMachineRpcServer', () => {
       server.stop();
     }
   });
+  it('forwards the reporter client log of a bug report to the daemon', async () => {
+    const fake = createFakeStreamClient();
+    const clientLog = {
+      encoding: 'gzip-base64' as const,
+      data: 'H4sIAAAAAAAAA8vJLC4BAQAA//8DAOKaL3oEAAAA',
+      rawBytes: 4,
+      compressedBytes: 28,
+    };
+    const submitBugReport = vi.fn(async () => ({
+      type: 'machine/bug-report_response' as const,
+      machineId: 'machine-1' as MachineId,
+      success: true,
+      bugReportId: 'bug-1',
+    }));
+    const server = new LoroStreamsMachineRpcServer({
+      logger: createSilentLogger(),
+      workspaceId: 'workspace-1' as WorkspaceId,
+      machineId: 'machine-1' as MachineId,
+      streamClient: fake.streamClient,
+      getMachineStatus: vi.fn(),
+      refreshMachineAcpCapabilities: vi.fn(),
+      submitBugReport,
+    });
+    fake.pushBatch({
+      messages: [
+        {
+          jsonrpc: '2.0',
+          id: 'bug-report',
+          method: 'machine/bug-report',
+          rpcVersion: '1',
+          machineId: 'machine-1',
+          workspaceId: 'workspace-1',
+          replyTo: 'workspace-1:rpc:res:client-1',
+          sentAt: 1,
+          expiresAt: Number.MAX_SAFE_INTEGER,
+          params: {
+            description: 'diff sheet reloads the app',
+            reporterUserId: 'owner',
+            requestToken: 'proof',
+            clientLog,
+          },
+        },
+      ],
+      nextOffset: '1',
+      cursor: 'cursor-1',
+      upToDate: true,
+    });
+    await server.start();
+    try {
+      await fake.waitForAppendedCount(1);
+      expect(fake.appended[0]?.value).toMatchObject({
+        id: 'bug-report',
+        result: { success: true, bugReportId: 'bug-1' },
+      });
+      expect(submitBugReport).toHaveBeenCalledWith(expect.objectContaining({ clientLog }));
+    } finally {
+      server.stop();
+    }
+  });
+
   it('redacts invalid authorization-code requests from warning logs', async () => {
     const fake = createFakeStreamClient();
     const logger = {
