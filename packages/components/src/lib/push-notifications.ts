@@ -4,6 +4,7 @@ export type PushRegistration = {
   installationId: string;
   platform: 'web' | 'ios' | 'android';
   token: string;
+  bundleId?: string;
   p256dh?: string;
   auth?: string;
   language: string;

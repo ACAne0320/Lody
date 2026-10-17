@@ -35,10 +35,10 @@ async function setup() {
     },
   });
   const module = await import('../src/lib/push-notifications');
-  const records = new Map<string, string>();
+  const records = new Map<string, {token: string; bundleId?: string}>();
   const remove = module.installPushPort({
     register: async (input) => {
-      records.set(input.installationId, input.token);
+      records.set(input.installationId, {token: input.token, bundleId: input.bundleId});
     },
     unregister: async ({ installationId }) => {
       records.delete(installationId);
@@ -50,7 +50,7 @@ async function setup() {
     client,
     records,
     remove,
-    deliver: () => deliver!({ platform: 'ios', purpose: 'notification', token: 'token' }),
+    deliver: () => deliver!({ platform: 'ios', purpose: 'notification', token: 'token', bundleId: 'app.test' }),
     stopped: () => stopped,
   };
 }
@@ -59,7 +59,7 @@ describe('push client ownership', () => {
     const t = await setup();
     await t.client.login('alice');
     await t.deliver();
-    expect([...t.records.values()]).toEqual(['token']);
+    expect([...t.records.values()]).toEqual([{token: 'token', bundleId: 'app.test'}]);
     await t.module.logoutPush();
     expect(t.records.size).toBe(0);
     expect(t.stopped()).toBe(true);

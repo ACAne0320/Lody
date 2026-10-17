@@ -16,7 +16,9 @@ Translation: current
 `lib/push-notifications.ts` 管理订阅生命周期、语言、权限和安装身份。
 `cloud-api-operations.ts` 定义可移植的注册 DTO，认证路由注入 mutation。
 本地桌面不会安装或使用托管推送传输。原生壳实现 `window.__LODY_PUSH__`，
-共享组件不导入 Capacitor 运行时代码。
+共享组件不导入 Capacitor 运行时代码。iOS 注册通过可移植 DTO 传递原生应用的实际 `bundleId`，
+使宿主能够路由多个应用，而无需在共享代码中放置供应商凭证或配置。
+宿主必须校验应用身份白名单；客户端字段不构成应用真实性证明。
 
 切换账号会使旧回调失效；退出先停止本地注册，并在认证消失前尝试有时限的服务端清理。
 Web 订阅使用独立 worker scope；托管 worker 校验接收账号后才显示通知和处理点击。

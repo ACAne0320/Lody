@@ -23,7 +23,10 @@ verification boundaries.
 installation identity. `cloud-api-operations.ts` declares portable registration
 DTOs; the authenticated route injects mutations. Local desktop never installs or
 uses a hosted push transport. The native host implements `window.__LODY_PUSH__`;
-no Capacitor runtime import enters shared components.
+no Capacitor runtime import enters shared components. iOS registration carries
+the actual native `bundleId` through the portable DTO so a host can route multiple
+apps without putting provider credentials or configuration in shared code. The
+host must allowlist app identities; the client field is not app attestation.
 
 Account changes invalidate old callbacks; sign-out stops local registration and
 attempts bounded server cleanup before auth state disappears. Web subscriptions
