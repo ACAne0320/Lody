@@ -4589,6 +4589,7 @@
   "settings.promptShortcuts.name": "名称",
   "settings.promptShortcuts.command": "斜杠命令",
   "settings.promptShortcuts.commandPlaceholder": "review-pr",
+  "settings.promptShortcuts.commandRule": "以小写字母或数字开头，只能包含小写字母、数字和连字符。",
   "settings.promptShortcuts.description": "描述（可选）",
   "settings.promptShortcuts.descriptionPlaceholder": "描述 - 显示在 / 菜单中",
   "settings.promptShortcuts.scope": "适用范围",

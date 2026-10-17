@@ -4589,6 +4589,7 @@
   "settings.promptShortcuts.name": "Name",
   "settings.promptShortcuts.command": "Slash command",
   "settings.promptShortcuts.commandPlaceholder": "review-pr",
+  "settings.promptShortcuts.commandRule": "Lowercase letters, numbers and dashes, starting with a letter or number.",
   "settings.promptShortcuts.description": "Description (optional)",
   "settings.promptShortcuts.descriptionPlaceholder": "Description — shown in the / menu",
   "settings.promptShortcuts.scope": "Applies to",
