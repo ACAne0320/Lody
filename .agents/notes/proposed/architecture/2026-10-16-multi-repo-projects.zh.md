@@ -291,3 +291,5 @@ WorktreeGit 已拥有命令取消和清理；现有 manager/setup/GC 编排仍�
 整个 manager 迁移会拉入未完成的依赖，因此暂缓。新增原生子模块叶子函数不代表该迁移
 完成。测试验证本地 Git 的检出、备份与恢复；托管凭据、重试记录、多 Member 观测和
 先恢复父 Member 的编排仍待验证。
+
+Worktree 基础能力 PR：[ #1642](https://github.com/LodyAI/Lody/pull/1642)。

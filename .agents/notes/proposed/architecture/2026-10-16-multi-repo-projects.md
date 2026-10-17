@@ -375,3 +375,5 @@ Promise-based. A whole-manager migration pulls in unfinished dependencies and is
 The new native submodule leaf does not claim that migration is complete. Tests verify
 local Git checkout, backup and restore; managed credentials, retry receipts, multi-Member
 observation and parent-first restore orchestration remain unverified.
+
+Worktree primitives PR: [#1642](https://github.com/LodyAI/Lody/pull/1642).
