@@ -191,10 +191,7 @@ export function applyDetectedProjectSubmodules(
     const repo = repositoryOf(member)?.toLowerCase();
     if (repo && !byRepository.has(repo)) byRepository.set(repo, member.id);
   }
-  const next = new Map<
-    ProjectMemberId,
-    Extract<ProjectMemberPlacement, { kind: 'submodule' }>
-  >();
+  const next = new Map<ProjectMemberId, Extract<ProjectMemberPlacement, { kind: 'submodule' }>>();
   for (const [parentId, submodules] of detected) {
     for (const submodule of submodules) {
       const childId = submodule.repoFullName
@@ -230,7 +227,11 @@ export function applyDetectedProjectSubmodules(
       changed = true;
       const dir = uniqueDir(suggestProjectMemberDir(labelOf(member)), taken);
       taken.add(dir.toLowerCase());
-      return { ...member, placement: { kind: 'root', dir } as const, placementOrigin: 'default' as const };
+      return {
+        ...member,
+        placement: { kind: 'root', dir } as const,
+        placementOrigin: 'default' as const,
+      };
     }
     return member;
   });

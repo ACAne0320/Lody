@@ -67,7 +67,7 @@ const ROOMS = new WeakMap<WorkspaceRuntime, SharedCatalogRoom>();
  * (and vice versa). Rows are identity-stable across
  * `applyWorkspaceFlockRowEvents`, so element identity is the whole comparison.
  */
-const reuseUnchanged = <T,>(previous: T[], next: T[]): T[] =>
+const reuseUnchanged = <T>(previous: T[], next: T[]): T[] =>
   previous.length === next.length && previous.every((item, index) => item === next[index])
     ? previous
     : next;

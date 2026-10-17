@@ -5056,5 +5056,17 @@
   "settings.projectGroups.detection.unavailable": "Could not read this repository's submodules; set them by hand if needed",
   "settings.projectGroups.detection.detected": "Detected from .gitmodules",
   "settings.projectGroups.errors.invalid": "This group cannot be saved. Check the repositories and their directories.",
-  "settings.projectGroups.memberSummary": "{{count}} repositories · {{names}}"
+  "settings.projectGroups.memberSummary": "{{count}} repositories · {{names}}",
+  "sidebar.projectGroups": "Project groups",
+  "chat.projectPicker.groupMembers": "{{count}} repositories",
+  "chat.projectPicker.groupMembers_one": "{{count}} repository",
+  "chat.projectPicker.groupMembers_other": "{{count}} repositories",
+  "chat.projectPicker.removedGroup": "Removed project group",
+  "chat.projectGroup.membersLabel": "Repositories in this conversation",
+  "chat.projectGroup.membersCount": "{{selected}}/{{total}} repositories",
+  "chat.projectGroup.machinesConflict": "Its local repositories are on different machines",
+  "chat.projectGroup.machinesConflictStatus": "This group has local repositories on different machines, so they cannot share one conversation.",
+  "chat.projectGroup.missing": "This project group no longer exists",
+  "chat.projectGroup.empty": "Choose at least one repository",
+  "chat.projectGroup.unsupportedMachine": "Update Lody on this machine to start project group conversations."
 }

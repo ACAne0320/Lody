@@ -5056,5 +5056,17 @@
   "settings.projectGroups.detection.unavailable": "无法读取这个仓库的子模块；如有需要请手动设置",
   "settings.projectGroups.detection.detected": "根据 .gitmodules 自动识别",
   "settings.projectGroups.errors.invalid": "无法保存这个项目组，请检查仓库和目录设置。",
-  "settings.projectGroups.memberSummary": "{{count}} 个仓库 · {{names}}"
+  "settings.projectGroups.memberSummary": "{{count}} 个仓库 · {{names}}",
+  "sidebar.projectGroups": "项目组",
+  "chat.projectPicker.groupMembers": "{{count}} 个仓库",
+  "chat.projectPicker.groupMembers_one": "{{count}} 个仓库",
+  "chat.projectPicker.groupMembers_other": "{{count}} 个仓库",
+  "chat.projectPicker.removedGroup": "已删除的项目组",
+  "chat.projectGroup.membersLabel": "本次对话使用的仓库",
+  "chat.projectGroup.membersCount": "{{selected}}/{{total}} 个仓库",
+  "chat.projectGroup.machinesConflict": "它的本地仓库分布在不同机器上",
+  "chat.projectGroup.machinesConflictStatus": "这个项目组的本地仓库分布在不同机器上，无法在同一个对话中使用。",
+  "chat.projectGroup.missing": "这个项目组已不存在",
+  "chat.projectGroup.empty": "至少选择一个仓库",
+  "chat.projectGroup.unsupportedMachine": "请更新这台机器上的 Lody，才能开始项目组对话。"
 }

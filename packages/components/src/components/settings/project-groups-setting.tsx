@@ -174,7 +174,9 @@ export function ProjectGroupRow({
         <span {...stylex.props(catalog.body)}>
           <span {...stylex.props(catalog.titleLine)}>
             <span {...stylex.props(catalog.name)}>{project.name}</span>
-            {project.instructions ? <Badge>{t('settings.projectGroups.hasInstructions')}</Badge> : null}
+            {project.instructions ? (
+              <Badge>{t('settings.projectGroups.hasInstructions')}</Badge>
+            ) : null}
           </span>
           <span {...stylex.props(catalog.meta)}>
             <span {...stylex.props(catalog.truncate)}>

@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { useTranslation } from 'react-i18next';
-import { getServerNow, type ProjectId, type ProjectMemberId, type WorkspaceProject } from '@lody/shared';
+import {
+  getServerNow,
+  type ProjectId,
+  type ProjectMemberId,
+  type WorkspaceProject,
+} from '@lody/shared';
 import { userAtom } from '@/atoms';
 import { useDialogExitSnapshot } from '@/hooks/use-dialog-exit-snapshot';
 import { useProjectMemberSources } from '@/hooks/use-project-member-sources';
@@ -88,7 +93,8 @@ export function ProjectGroupEditorDialog({
     [byKey, t]
   );
   const detailOf = useCallback(
-    (member: ProjectGroupMemberDraft) => byKey.get(getProjectMemberSourceKey(member.source))?.detail,
+    (member: ProjectGroupMemberDraft) =>
+      byKey.get(getProjectMemberSourceKey(member.source))?.detail,
     [byKey]
   );
   const repositoryOf = useCallback(

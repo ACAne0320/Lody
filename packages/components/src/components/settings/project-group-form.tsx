@@ -205,8 +205,7 @@ export function ProjectGroupForm({
                     return parent ? labelOf(parent) : undefined;
                   })()}
                   parents={value.members.filter(
-                    (candidate) =>
-                      candidate.id !== member.id && candidate.placement.kind === 'root'
+                    (candidate) => candidate.id !== member.id && candidate.placement.kind === 'root'
                   )}
                   labelOf={labelOf}
                   readOnly={readOnly}
@@ -249,7 +248,9 @@ export function ProjectGroupForm({
                         placeholder={t('settings.projectGroups.form.search')}
                       />
                     }
-                    empty={<Combobox.Empty>{t('settings.projectGroups.form.noSources')}</Combobox.Empty>}
+                    empty={
+                      <Combobox.Empty>{t('settings.projectGroups.form.noSources')}</Combobox.Empty>
+                    }
                   >
                     {(option: ProjectMemberSourceOption) => (
                       <Combobox.Item key={option.key} value={option}>
@@ -404,7 +405,11 @@ function MemberRow({
           }}
         />
       </span>
-      <MemberState status={status} detected={member.placementOrigin === 'detected'} error={memberError} />
+      <MemberState
+        status={status}
+        detected={member.placementOrigin === 'detected'}
+        error={memberError}
+      />
       {readOnly ? null : (
         <Menu.Root>
           <Menu.Trigger
@@ -432,7 +437,9 @@ function MemberRow({
             ) : null}
             {parents.length > 0 ? (
               <Menu.Submenu>
-                <Menu.SubmenuTrigger>{t('settings.projectGroups.form.makeSubmodule')}</Menu.SubmenuTrigger>
+                <Menu.SubmenuTrigger>
+                  {t('settings.projectGroups.form.makeSubmodule')}
+                </Menu.SubmenuTrigger>
                 <Menu.Content>
                   {parents.map((parent) => (
                     <Menu.Item
