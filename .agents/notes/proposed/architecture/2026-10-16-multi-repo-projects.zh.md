@@ -379,3 +379,14 @@ root HEAD 回执保留命名基线引用，避免 PR 基线变成 SHA；本地 d
 验证覆盖 shared 37 项、Streams 124 项、RPC 范围 13 项、Git/owner 12 项，以及远端基线
 2 项（含默认分支变化）。全工作区类型检查、check:quick、format、docs check 已通过；
 全仓测试另行记录。
+
+
+shared `withProjectGroupPrScope(prompt)` 将创建 PR 或 Commit & Push 操作应用到成员仓库，
+保留请求的操作及 draft 状态，先发布子模块再发布父仓库 gitlink，取得所有 URL 后在各 PR 正文
+互相链接。单独 Commit & Push 不开 PR；子模块发布失败时，不发布指向未发布提交的父仓库指针。
+成员目录使用首轮清单，项目组主目录本身不是 Git 仓库。
+本地成员身份观测字段最终仍为 `SessionProjectMember.repoFullName?: string`；
+UI 中读取 `repo` 的代码须改为 `repoFullName`，不新增同义存储字段。
+
+初始 GitHub `project` 投影须用 `branch: baseBranch ?? 'HEAD'`，既有 `ProjectRefSchema`
+不接受空字符串 branch。本地投影继续使用 `useWorktree: true`。

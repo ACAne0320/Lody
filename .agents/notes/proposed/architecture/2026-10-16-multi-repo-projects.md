@@ -478,3 +478,15 @@ the current remote symbolic HEAD rather than preferring main or a stale cached d
 Validation includes 37 shared, 124 Streams, 13 RPC-scope and 12 Git/owner tests, plus
 two remote base tests including a changed default branch. Full workspace typecheck,
 `check:quick`, format and docs check passed; full repository tests remain separate.
+
+
+Shared `withProjectGroupPrScope(prompt)` scopes either PR creation or Commit & Push to
+member repositories. It preserves the requested action and draft status, publishes children
+before parent gitlinks, and cross-links all related PR bodies after URLs are known. Commit &
+Push alone does not create PRs; a failed child publication blocks publishing its parent pointer.
+The member inventory supplies directories because the Project group root is not a Git repository.
+The final local-member observation field remains `SessionProjectMember.repoFullName?: string`;
+UI code using `repo` must switch to `repoFullName`. No synonymous storage field is introduced.
+
+The initial GitHub `project` projection uses `branch: baseBranch ?? 'HEAD'`; an empty
+branch is rejected by the existing `ProjectRefSchema`. Local projections retain `useWorktree: true`.
