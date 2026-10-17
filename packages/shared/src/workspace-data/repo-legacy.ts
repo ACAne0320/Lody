@@ -697,14 +697,16 @@ export class WorkspaceRepoLegacy {
                       Effect.gen(function* () {
                         if (bindingStatus === 'joining') {
                           // SDK initialization may have failed while Repo still says
-                          // joining. Inspect its owned health, not a parallel status.
+                          // joining. The hard initial-sync deadline ends initialization
+                          // even though its error is retryable. Keep active retries owned.
                           const health = transport?.health
                             ? yield* transport.health(target)
                             : undefined;
                           if (
                             !health ||
                             health.ready ||
-                            health.lastError?.retryable !== false ||
+                            (health.lastError?.retryable !== false &&
+                              health.lastError?.code !== 'initial_sync_timeout') ||
                             health.releasePending > 0
                           )
                             return undefined;

@@ -32,7 +32,9 @@ use. Inventory and transport snapshots come from native leases; the local owner
 registry exists only to release borrows during purge. On an online transport,
 recovery syncs/reconciles failed or offline rooms, collecting independent failures.
 Failed SDK initialization can still project as joining: consult the native health
-for an unready, non-retryable initialization error with no pending accepted I/O.
+for an unready initialization with a non-retryable error or an expired initial-sync
+hard deadline, and no pending accepted I/O. The hard deadline ends initialization
+even though `initial_sync_timeout` is retryable.
 Selected sync can restart that SDK generation while ordinary baselines stay owned.
 Live 4xx failures already use SDK backoff; an HTTP error does not prove a terminal
 generation. A persistent room error never resets healthy siblings or presence.

@@ -248,6 +248,7 @@ describe('LoroConnectionRecoveryController watchdog room sweep', () => {
     'append',
     'persistent-bootstrap',
     'pending-bootstrap',
+    'hard-timeout-bootstrap',
   ] as const)('preserves real SDK %s behavior without resetting healthy rooms', async (phase) => {
     vi.useRealTimers();
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
@@ -277,12 +278,15 @@ describe('LoroConnectionRecoveryController watchdog room sweep', () => {
       if (
         recovering &&
         denied &&
-        (((phase === 'bootstrap' || phase === 'persistent-bootstrap') && bootstrap) ||
+        (((phase === 'bootstrap' ||
+          phase === 'persistent-bootstrap' ||
+          phase === 'hard-timeout-bootstrap') &&
+          bootstrap) ||
           (phase === 'live-read' && live) ||
           (phase === 'append' && append))
       ) {
         rejected = true;
-        return new Response(null, { status: 403 });
+        return new Response(null, { status: phase === 'hard-timeout-bootstrap' ? 503 : 403 });
       }
       if (append) {
         const bytes = new Uint8Array(await new Response(init?.body).arrayBuffer());
@@ -424,7 +428,17 @@ describe('LoroConnectionRecoveryController watchdog room sweep', () => {
             Stream.runHead
           )
         );
-      if (phase !== 'pending-bootstrap') {
+      if (phase === 'hard-timeout-bootstrap') {
+        // The SDK's default total initialization deadline ends its retry loop.
+        await repo.runLegacy(clock.adjust(120_000));
+        const expired = await repo.runLegacy(sdk.health({ kind: 'doc', id: 'recovering' }));
+        expect(expired?.lastError?.code).toBe('initial_sync_timeout');
+        expect(expired?.lastError?.retryable).toBe(true);
+        expect(expired?.ready).toBe(false);
+        expect(expired?.releasePending).toBe(0);
+        expect(await repo.runLegacy(room.native.statusSnapshot('streams'))).toBe('joining');
+      }
+      if (phase !== 'pending-bootstrap' && phase !== 'hard-timeout-bootstrap') {
         expect(Exit.isFailure(await repo.runLegacy(Effect.exit(room.native.sync('streams'))))).toBe(
           phase !== 'live-read'
         );
@@ -447,7 +461,11 @@ describe('LoroConnectionRecoveryController watchdog room sweep', () => {
       });
       let failedGeneration =
         (await repo.runLegacy(sdk.health({ kind: 'doc', id: 'recovering' })))?.generation ?? 0;
-      for (let period = 0; period < (phase === 'persistent-bootstrap' ? 3 : 1); period++) {
+      for (
+        let period = 0;
+        period < (phase === 'persistent-bootstrap' || phase === 'hard-timeout-bootstrap' ? 3 : 1);
+        period++
+      ) {
         completed = Promise.withResolvers<void>();
         await vi.advanceTimersByTimeAsync(30_000);
         await completed.promise;
@@ -464,6 +482,8 @@ describe('LoroConnectionRecoveryController watchdog room sweep', () => {
           ).toBe(generation);
         }
       }
+      if (phase === 'hard-timeout-bootstrap')
+        expect(doc.getText('body').toString()).toBe('uploaded after permission recovery');
       // A live read failure owns its SDK backoff; advance that clock, not
       // a connection reset. Bootstrap and append recover in selected sync.
       if (phase === 'pending-bootstrap') {

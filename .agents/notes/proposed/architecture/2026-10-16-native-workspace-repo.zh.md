@@ -99,8 +99,11 @@ offline／未确认结果使本次尝试失败，不算成功，也不再无限�
 generation。正式 CRDT 0.19.0 的 live 4xx 使用 SDK 自身封顶退避，默认无限重试；所选 sync
 会重试失败的初始化，并重新执行 catch-up／append 屏障。但失败的初始化可能仍被 Repo 投影
 为 joining，仅过滤 failed／offline 会永久漏掉它。facade 现在直接读取 joining 房间的原生
-transport health，仅在初始化未 ready、有不可重试错误、且无待完成的 SDK 已接受 I/O 时执行
-所选 sync。正常等待或退避中的 baseline 保持原 owner，不新增状态表或整连接 reset 冷却器。
+transport health，仅在初始化未 ready、有不可重试错误或首次同步总期限已结束、且无待完成的
+SDK 已接受 I/O 时执行所选 sync。默认 120s 总期限会终止初始化，尽管 `initial_sync_timeout`
+仍标为可重试；把它误当作活跃重试会导致服务恢复后房间仍卡住。其他可重试的初始化错误
+继续由 SDK 重试循环持有。正常等待或退避中的 baseline 保持原 owner，不新增状态表或整连接
+reset 冷却器。
 SDK release receipt 与 HTTP 错误分类分开，仍由既有 retry owner 持有。没有单 binding reset
 并不妨碍上述 HTTP 恢复。
 
@@ -121,17 +124,22 @@ CLI composition 没有可变的 transport 路由谓词，lazy acquire 会调和�
 
 ## 验证与限制
 
-新增五项真实 SDK 用例覆盖 bootstrap、live read、append、持续 bootstrap 403 及保持中的正常初始化。临时失败后
-恢复到 synced，模拟服务端实际导入本地编写的 Doc 字节。持续拒绝的三个 watchdog 周期内，
+六项真实 SDK 用例覆盖 bootstrap、live read、append、持续 bootstrap 403、保持中的正常初始化
+及首次同步总期限已结束。临时失败后恢复到 synced，模拟服务端实际导入本地编写的 Doc 字节。持续拒绝的三个 watchdog 周期内，
 失败的 SDK generation 被重试，本地字节保留，健康兄弟房间状态和真实 SDK generation 不变。
 正常 baseline 在 watchdog 周期内保留已接受 I/O 和原 generation，释放后仍由原 generation 上传。
+总期限用例持续返回 bootstrap 503，推进默认 120s 期限，断言已结束的可重试超时和无待完成
+I/O，再恢复服务并观察原有字节上传、健康兄弟房间 generation 不变。它在 `84416154`
+上经过三个 watchdog 周期后仍失败。
 bootstrap 回归在 `ebf906f9` 上因没有编写字节到达服务端而失败，加入 health 判断后通过。
-SDK 退避使用 TestClock，控制器 interval 用假时钟。这里使用正式 SDK／Repo 和模拟 HTTP
-边界，控制器 Meta 状态为注入值，不代表线上服务验收。
-五个相关 CLI／renderer 套件通过 126 项；全仓类型、完整 Effect、修改文件类型感知 lint、八项
-边界／翻译检查、格式与文档检查通过。
-本次根检查通过全仓类型后，在全仓 lint 阶段达到十分钟预算（退出 124）。修改文件 lint
-与单独执行的完整 Effect 检查通过，不声称当前根检查完整通过。
+总期限修复通过五个相关 CLI／renderer 套件 127 项、全仓类型、完整类型感知 lint 与 Effect、
+格式、文档和八项边界／翻译检查；脚本 58 项通过。SDK 退避使用 TestClock，控制器 interval
+用假时钟。这里使用正式 SDK／Repo
+和模拟 HTTP 边界，控制器 Meta 状态为注入值，不代表线上服务验收。
+必需的根检查在完整 CLI／renderer 测试阶段达到十五分钟预算（退出 124），不声称完整通过。
+运行中出现此前已复现的 SSH 凭据 fixture 失败及 UI／Roost 超时。三个未改动 UI 套件串行
+复跑 95 项全部通过。独立 Roost active-goal 用例在本次版本仍超时，而 `84416154` 快照
+接近既有 30s 期限通过；该耗时失败的原因尚未确定，不能报告为通过。
 
 在 `ebf906f9`，watchdog 回归在 `c57f9ec8` 观察到健康兄弟房间变为 `offline` 而失败，缩小 facade 修复
 范围后同一个真实 Repo／控制器夹具通过。三个假 interval 周期中，持续权限失败保持可见，

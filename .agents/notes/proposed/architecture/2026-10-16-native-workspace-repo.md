@@ -208,9 +208,12 @@ unlimited attempts. Selected SDK sync retries failed initialization and runs a
 fresh catch-up/append barrier. However, failed initialization can leave Repo's
 room projection at joining: filtering only failed/offline misses it indefinitely.
 The facade now reads the transport's native health for joining rooms. It invokes
-selected sync only when initialization is unready, has a non-retryable error and
-has no pending accepted SDK I/O. A genuine pending/retrying baseline keeps its
-owner; no second state registry or connection-reset cooldown is added. SDK release
+selected sync only when initialization is unready, has a non-retryable error or
+an expired initial-sync hard deadline, and has no pending accepted SDK I/O. The
+default 120s deadline terminates initialization even though `initial_sync_timeout`
+is retryable; treating that error as an active retry leaves the room stuck after
+service recovery. Other retryable initialization errors retain the SDK retry loop.
+A genuine pending/retrying baseline keeps its owner; no second state registry or connection-reset cooldown is added. SDK release
 receipts remain separate from HTTP failure classification and retain their existing
 retry owner. The absence of a per-binding reset does not prevent these HTTP repairs.
 
@@ -235,23 +238,30 @@ guarantees or claims of completed terminal shutdown:
 
 ## Verification and limits
 
-Five new real-SDK cases cover bootstrap, live-read, append, persistent bootstrap
-403 and a held valid initialization. Temporary failures recover to synced and the server imports the authored Doc
-bytes. Across three persistent-denial watchdog periods, the failed SDK generation
+Six real-SDK cases cover bootstrap, live-read, append, persistent bootstrap
+403, a held valid initialization and an expired initial-sync hard deadline.
+Temporary failures recover to synced and the server imports the authored Doc bytes. Across three persistent-denial watchdog periods, the failed SDK generation
 is retried and local bytes remain, while the healthy sibling's status and actual
 SDK generation stay unchanged. A held baseline's accepted I/O and generation remain
 owned across a watchdog period, then its original generation uploads after release.
+The hard-deadline case returns bootstrap 503 until the default 120s deadline,
+asserts the settled retryable timeout and absence of pending I/O, then restores the
+service and observes the original bytes uploaded without restarting the healthy
+sibling. It fails against `84416154` after three watchdog periods.
 The bootstrap regression fails against `ebf906f9`
 with no authored bytes reaching the server, then passes with the health check.
+This fix passes the five affected CLI/renderer suites (127 cases),
+repository types, full type-aware lint and Effect checks, formatting, documentation
+and all eight boundary/translation guards. Script tests pass 58 cases.
 SDK backoff uses TestClock; the controller interval uses fake timers. These use
 the published SDK and Repo over a synthetic HTTP boundary; the controller's Meta
 status is injected and production-service acceptance is not claimed.
-The five affected CLI/renderer suites pass 126 cases. Repository types, full Effect checks,
-changed-file type-aware lint, all eight boundary/translation guards, formatting
-and documentation checks pass.
-The required root check passes repository types, then reaches its ten-minute
-budget during full-repository lint (exit 124). Changed-file lint and standalone
-full Effect checks pass; a complete current root run is not claimed.
+The required root check reaches its fifteen-minute budget during full CLI/renderer
+tests (exit 124); a complete root pass is not claimed. It observes the previously
+reproduced SSH credential fixture failure and UI/Roost timeouts. The three unchanged
+UI suites pass all 95 cases when rerun serially. The isolated Roost active-goal
+case still times out on this tree; the `84416154` snapshot passes near its existing
+30s deadline. That timing failure remains unresolved and is not reported as passing.
 
 At `ebf906f9`, the watchdog regression fails against `c57f9ec8` with the healthy sibling observed
 as `offline`; the same real-Repo/controller fixture passes after narrowing the
