@@ -68,9 +68,9 @@ export type SubmitWebBugReportResult =
   | { ok: false; error: string };
 
 /**
- * Description-only bug report filed directly from the Web client (no machine
- * selected, so there are no logs to attach). Machine-backed reports go through
- * the machine RPC instead so the CLI can bundle its local logs.
+ * Report filed directly from the app without machine logs. Client diagnostics
+ * are attached separately after the report ID is returned. Machine-backed reports
+ * go through machine RPC so the CLI can bundle its local logs.
  */
 export async function submitWebBugReport({
   workspaceId,
@@ -109,6 +109,48 @@ export async function submitWebBugReport({
       return { ok: false, error: 'Bug report upload returned an invalid response.' };
     }
     return { ok: true, bugReportId: parsed.data.bugReportId };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Session-authenticated client attachment; independent of the selected daemon's version. */
+export async function attachClientDiagnostics({
+  workspaceId,
+  bugReportId,
+  diagnostics,
+  sessionToken,
+  authBaseUrl,
+}: {
+  workspaceId: string;
+  bugReportId: string;
+  diagnostics: string;
+  sessionToken: string;
+  authBaseUrl?: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  authBaseUrl = requireCloudAuthBaseUrl('bugReport', authBaseUrl);
+  if (!sessionToken.trim()) return { ok: false, error: 'not_authenticated' };
+  try {
+    const response = await fetch(
+      `${authBaseUrl.replace(/\/+$/, '')}/api/bug-reports/client-diagnostics`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionToken.trim()}`,
+        },
+        body: JSON.stringify({ workspaceId, bugReportId, diagnostics }),
+      }
+    );
+    if (!response.ok)
+      return {
+        ok: false,
+        error: `Client diagnostics upload failed with status ${response.status}.`,
+      };
+    const data = z.object({ attached: z.literal(true) }).safeParse(await response.json());
+    return data.success
+      ? { ok: true }
+      : { ok: false, error: 'Invalid client diagnostics response.' };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

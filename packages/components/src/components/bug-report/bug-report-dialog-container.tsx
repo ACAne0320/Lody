@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { collectClientDiagnostics } from '@/lib/client-diagnostics';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
 import { useTranslation } from 'react-i18next';
 import type { MachineId } from '@lody/shared';
@@ -8,7 +9,11 @@ import { useVisibleMachineMetas } from '@/hooks/use-visible-machine-metas';
 import { useOnlineMachineIds } from '@/hooks/use-machine-online-status';
 import { readStoredAuthToken } from '@/lib/auth-bootstrap';
 import { readChatLandingDefaults } from '@/lib/chat-landing-defaults';
-import { mintBugReportRequestToken, submitWebBugReport } from '@/lib/bug-report-api';
+import {
+  attachClientDiagnostics,
+  mintBugReportRequestToken,
+  submitWebBugReport,
+} from '@/lib/bug-report-api';
 import { appendClientBuildInfo } from '@/lib/client-build-info';
 import { buildClientLogUploadWithin, recordClientLog } from '@/lib/client-log';
 import {
@@ -31,6 +36,13 @@ export function BugReportDialogContainer() {
   const workspaceId = useAtomValue(currentWorkspaceIdAtom);
   const runtime = useAtomValue(runtimeAtom);
   const [state, setState] = useState<BugReportSubmitState>({ status: 'idle' });
+  const pendingReport = useRef<{
+    key: string;
+    bugReportId: string;
+    diagnostics: string;
+    withLogs: boolean;
+  } | null>(null);
+  const submitting = useRef(false);
 
   // Offline machines cannot answer the log-upload RPC, so they are not listed.
   const machines = useMemo<BugReportMachineOption[]>(() => {
@@ -45,7 +57,7 @@ export function BugReportDialogContainer() {
   // Preselect the user's most recently used machine (the chat-landing default
   // persisted per workspace) when it is online; otherwise fall back to any
   // online machine. With no online machine the report defaults to
-  // description-only.
+  // client diagnostics only.
   const initialMachineId = useMemo<MachineId | null>(() => {
     if (machines.length === 0) {
       return null;
@@ -65,65 +77,108 @@ export function BugReportDialogContainer() {
         });
         return;
       }
+      if (submitting.current) return;
+      submitting.current = true;
       setState({ status: 'submitting' });
-      const reportDescription = appendClientBuildInfo(description);
-
-      if (machineId == null) {
-        const result = await submitWebBugReport({
+      const key = JSON.stringify([workspaceId, reporterUserId, machineId, description]);
+      const finish = async (report: NonNullable<typeof pendingReport.current>) => {
+        pendingReport.current = report;
+        const attached = await attachClientDiagnostics({
           workspaceId,
-          description: reportDescription,
+          bugReportId: report.bugReportId,
+          diagnostics: report.diagnostics,
           sessionToken: readStoredAuthToken() ?? '',
         });
-        if (result.ok) {
-          setState({ status: 'success', bugReportId: result.bugReportId, withLogs: false });
+        if (attached.ok) {
+          pendingReport.current = null;
+          setState({
+            status: 'success',
+            bugReportId: report.bugReportId,
+            withLogs: report.withLogs,
+          });
         } else {
-          setState({ status: 'error', message: result.error });
+          setState({
+            status: 'error',
+            message: t('bugReport.clientDiagnosticsFailed', {
+              defaultValue:
+                'Report {{id}} was created, but client diagnostics could not be attached. Retry to upload them. {{error}}',
+              id: report.bugReportId,
+              error: attached.error,
+            }),
+          });
         }
-        return;
-      }
+      };
+      try {
+        if (pendingReport.current?.key === key) {
+          await finish(pendingReport.current);
+          return;
+        }
+        const diagnostics = await collectClientDiagnostics();
+        const reportDescription = appendClientBuildInfo(description);
 
-      if (!runtime) {
+        if (machineId == null) {
+          const result = await submitWebBugReport({
+            workspaceId,
+            description: reportDescription,
+            sessionToken: readStoredAuthToken() ?? '',
+          });
+          if (result.ok) {
+            await finish({ key, bugReportId: result.bugReportId, diagnostics, withLogs: false });
+          } else {
+            setState({ status: 'error', message: result.error });
+          }
+          return;
+        }
+
+        if (!runtime) {
+          setState({
+            status: 'error',
+            message: t('bugReport.notReady', 'Workspace connection is not ready yet.'),
+          });
+          return;
+        }
+        const minted = await mintBugReportRequestToken({
+          workspaceId,
+          machineId,
+          sessionToken: readStoredAuthToken() ?? '',
+        });
+        if (!minted.ok) {
+          setState({ status: 'error', message: minted.error });
+          return;
+        }
+        recordClientLog('info', 'bug_report.submitting', undefined, { machineId });
+        const clientLog = await buildClientLogUploadWithin(CLIENT_LOG_UPLOAD_WAIT_MS);
+        const response = await runtime.requestMachineBugReport(
+          machineId,
+          {
+            description: reportDescription,
+            reporterUserId,
+            requestToken: minted.requestToken,
+            ...(clientLog ? { clientLog } : {}),
+          },
+          { timeoutMs: 120_000 }
+        );
+        if (response?.success && response.bugReportId) {
+          await finish({ key, bugReportId: response.bugReportId, diagnostics, withLogs: true });
+          return;
+        }
         setState({
           status: 'error',
-          message: t('bugReport.notReady', 'Workspace connection is not ready yet.'),
+          message:
+            response?.error ??
+            t(
+              'bugReport.timeoutError',
+              'The machine did not respond. Make sure it is online and try again.'
+            ),
         });
-        return;
+      } catch (error) {
+        setState({
+          status: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        submitting.current = false;
       }
-      const minted = await mintBugReportRequestToken({
-        workspaceId,
-        machineId,
-        sessionToken: readStoredAuthToken() ?? '',
-      });
-      if (!minted.ok) {
-        setState({ status: 'error', message: minted.error });
-        return;
-      }
-      recordClientLog('info', 'bug_report.submitting', undefined, { machineId });
-      // Storage must not hold the report hostage: past this, file it without the log.
-      const clientLog = await buildClientLogUploadWithin(CLIENT_LOG_UPLOAD_WAIT_MS);
-      const response = await runtime.requestMachineBugReport(
-        machineId,
-        {
-          description: reportDescription,
-          reporterUserId,
-          requestToken: minted.requestToken,
-          ...(clientLog ? { clientLog } : {}),
-        },
-        { timeoutMs: 120_000 }
-      );
-      if (response?.success && response.bugReportId) {
-        setState({ status: 'success', bugReportId: response.bugReportId, withLogs: true });
-        return;
-      }
-      setState({
-        status: 'error',
-        message:
-          response?.error ??
-          t(
-            'bugReport.timeoutError',
-            'The machine did not respond. Make sure it is online and try again.'
-          ),
-      });
     },
     [runtime, t, user?.id, workspaceId]
   );

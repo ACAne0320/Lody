@@ -31,7 +31,7 @@ export type BugReportDialogProps = {
   /** Machine preselected when the dialog opens (e.g. the user's most recently used online machine). */
   initialMachineId?: MachineId | null;
   state: BugReportSubmitState;
-  /** `machineId: null` files a description-only report without machine logs. */
+  /** `machineId: null` files a report with client diagnostics and no machine logs. */
   onSubmit: (args: { machineId: MachineId | null; description: string }) => void;
   onClose: () => void;
 };
@@ -132,7 +132,7 @@ export function BugReportDialog({
           <span {...stylex.props(styles.option)}>
             <span {...stylex.props(styles.dot, styles.dotNone)} />
             <span {...stylex.props(styles.optionLabel)}>
-              {t('bugReport.noMachineOption', 'No machine (description only)')}
+              {t('bugReport.noMachineOption', 'No machine (client diagnostics only)')}
             </span>
           </span>
         ),
@@ -200,7 +200,7 @@ export function BugReportDialog({
               <Dialog.Description>
                 {t(
                   'bugReport.dialogDescription',
-                  "Describe the bug and pick the machine where it happened. Lody uploads that machine's logs from today and yesterday along with your description."
+                  "Your report includes this client's version, system, device/browser information and recent errors. Select a machine to also include its recent CLI logs."
                 )}
               </Dialog.Description>
               <p {...stylex.props(styles.hint)}>
@@ -235,7 +235,7 @@ export function BugReportDialog({
                   <p {...stylex.props(styles.hint)}>
                     {t(
                       'bugReport.noMachines',
-                      'No machines are online — only your description will be uploaded.'
+                      'No machines are online. Client diagnostics will still be uploaded.'
                     )}
                   </p>
                 ) : (
@@ -267,7 +267,7 @@ export function BugReportDialog({
                       <p {...stylex.props(styles.hint)}>
                         {t(
                           'bugReport.noMachineHint',
-                          'No machine selected — only your description will be uploaded.'
+                          'Client diagnostics will be uploaded without machine logs.'
                         )}
                       </p>
                     ) : null}
