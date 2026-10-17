@@ -339,3 +339,5 @@ owner 队列物化并发布，客户端不得在创建后替换快照。真实�
 验证：CLI 类型检查和 `check:quick` 通过；PR 调和套件 101 项通过。最终
 session/owner/prompt/Git transport 回归 74 项通过，含全部三种项目组生命周期布局；
 一个原生 SSH 凭据测试报 `context_unreadable`。全仓检查未全绿，UI 与真实凭据验收仍待完成。
+
+运行时接入 PR：[#1644](https://github.com/LodyAI/Lody/pull/1644)。

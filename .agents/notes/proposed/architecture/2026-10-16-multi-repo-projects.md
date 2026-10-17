@@ -432,3 +432,5 @@ Validation: CLI typecheck and `check:quick` passed; PR reconciliation suites pas
 The final session/owner/prompt/Git transport run passed 74 tests, including all three group
 lifecycle layouts, with one native SSH credential fixture failing `context_unreadable`.
 The full repository check is not green; UI and live credential acceptance remain outstanding.
+
+Runtime integration PR: [#1644](https://github.com/LodyAI/Lody/pull/1644)。
