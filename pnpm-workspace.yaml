@@ -57,7 +57,7 @@ catalog:
   loro-mirror-jotai: 2.3.2
   loro-mirror-react: 2.3.2
   loro-protocol: ^0.3.0
-  loro-repo: 0.23.0
+  loro-repo: 0.23.1
   loro-websocket: ^0.6.2
   lucide-react: ^0.523.0
   react: 19.2.0
@@ -158,8 +158,9 @@ minimumReleaseAgeExclude:
   # Native lifecycle/upload contracts reviewed in loro-streams#425; exact releases approved.
   - '@loro-dev/streams-crdt@0.16.2 || 0.17.0 || 0.19.0'
   - '@loro-dev/streams-client@0.9.0 || 0.10.0 || 0.12.0'
-  # Reviewed Repo native capabilities and fixes (loro-dev/loro-repo#150-#153).
-  - 'loro-repo@0.22.0 || 0.23.0'
+  # Reviewed Repo native capabilities and fixes (loro-dev/loro-repo#150-#153);
+  # 0.23.1 stops Flock persistence queue amplification (loro-dev/loro-repo#154).
+  - 'loro-repo@0.22.0 || 0.23.0 || 0.23.1'
   # Reviewed upgrade; 0.4.4 was published today once the release pipeline was fixed.
   - '@loro-dev/flock-wasm@0.4.4'
   # Adds the `remend` option the streaming Markdown renderer passes (lobehub/streamdown#5).
