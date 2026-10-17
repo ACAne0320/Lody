@@ -37,7 +37,7 @@ import {
 } from '@lody/shared';
 import { Logger } from '@/utils/logger';
 import { SessionConfig, SessionOutputEvent, SessionErrorEvent, SessionExitEvent } from './types';
-import type { SessionStartStage } from './session-start-stage';
+import { recordIncompleteStartCleanup, type SessionStartStage } from './session-start-stage';
 import { LoroDocumentManager } from '../lib/loro/doc';
 import {
   AgentClient,
@@ -934,12 +934,14 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       if (session) {
         this.detachSession(session);
         await session.terminate(true).catch((terminateError: unknown) => {
+          recordIncompleteStartCleanup(error);
           this.logger.error(
             `[${config.sessionId}] Failed to terminate session after start failure: ${formatErrorWithCauses(terminateError)}`
           );
         });
       }
       await credentials.release().catch((releaseError: unknown) => {
+        recordIncompleteStartCleanup(error);
         this.logger.error(
           `[${config.sessionId}] Failed to release credentials after start failure: ${formatErrorWithCauses(releaseError)}`
         );
@@ -1118,6 +1120,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       return credentials;
     } catch (error) {
       await credentials.release().catch((releaseError: unknown) => {
+        recordIncompleteStartCleanup(error);
         this.logger.error(
           `[${config.sessionId}] Failed to release credentials after preparation failure: ${formatErrorWithCauses(releaseError)}`
         );
@@ -1569,6 +1572,14 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
           `[${config.sessionId}] Skipping worktree setup for restored session because the worktree already exists`
         );
       } else {
+        const setupHistory = createWorktreeScriptHistoryRecorder({
+          sessionDoc,
+          sessionId: config.sessionId!,
+          phase: 'setup',
+          logger: this.logger,
+          backend: await createSessionBackend(sessionDoc, await sessionDoc.getMetaState()),
+          insertBeforeEntryId: config.worktreeScriptHistoryInsertBeforeEntryId,
+        });
         await runWorktreeSetup({
           config: await this.resolveWorktreeSetupConfig(config),
           sessionId: config.sessionId!,
@@ -1579,14 +1590,17 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
           localProjectId:
             config.project?.kind === 'local' ? config.project.localProjectId : undefined,
           logger: this.logger,
-          events: createWorktreeScriptHistoryRecorder({
-            sessionDoc,
-            sessionId: config.sessionId!,
-            phase: 'setup',
-            logger: this.logger,
-            backend: await createSessionBackend(sessionDoc, await sessionDoc.getMetaState()),
-            insertBeforeEntryId: config.worktreeScriptHistoryInsertBeforeEntryId,
-          }),
+          events: {
+            // Only a script that actually starts makes this start unsafe to repeat.
+            onStart: async (event) => {
+              this.reportStartStage(config, 'worktree-setup');
+              await setupHistory.onStart?.(event);
+            },
+            onStepStart: (event) => setupHistory.onStepStart?.(event),
+            onOutput: (event) => setupHistory.onOutput?.(event),
+            onStepEnd: (event) => setupHistory.onStepEnd?.(event),
+            onEnd: (event) => setupHistory.onEnd?.(event),
+          },
         });
         if (legacySetupPending) {
           await completeLegacySpeculativeWorktreeSetup({
@@ -1609,6 +1623,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       );
     }
 
+    this.reportStartStage(config, 'sandbox');
     const sandbox = await this.sessionSandboxFactory(config.sessionId!);
     this.logger.debug(`[${config.sessionId}] Session sandbox: ${sandbox.description}`);
     const session = new Session(config, this.logger, workdir, sandbox, credentials);
@@ -1620,6 +1635,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
     } catch (error) {
       this.detachSession(session);
       await session.terminate(true).catch((terminateError: unknown) => {
+        recordIncompleteStartCleanup(error);
         this.logger.error(
           `[${config.sessionId}] Failed to terminate session after sandbox rebalance failure: ${formatErrorWithCauses(terminateError)}`
         );

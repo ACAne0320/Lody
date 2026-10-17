@@ -39,3 +39,5 @@ Translation: current
 ## 验证
 
 `tests/session-execution-service.test.ts` 覆盖了真实的恢复和创建边界。被 mock 的 `createSession` 先上报 `worktree`，然后抛出一个 message 为空的 tagged error，两条路径都记录为 `Preparing the worktree failed: MessagelessStartFailure: <cause>`。在 `agent-start` 期间上报的认证失败仍记录为 `Authentication required`。去掉格式化函数的兜底后，恢复用例记录的内容与生产环境的症状完全一致：`Preparing the worktree failed: ` 后面什么都没有。没有上报步骤的现有用例，失败信息保持不变。
+
+后续变更：重试决策新增了 `worktree-setup` 步骤，在 setup 脚本开始时上报。见[临时性失败重试](../feature/2026-10-16-session-start-transient-retry.zh.md)。

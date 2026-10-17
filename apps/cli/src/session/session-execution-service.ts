@@ -49,7 +49,16 @@ import {
 } from '@/orchestration/inbox/model';
 import { sessionExecutionResource } from '@/orchestration/platform/session-resources';
 import { formatErrorMessage, formatReportedError } from '@/utils/format-error';
-import { describeSessionStartFailure, type SessionStartStage } from './session-start-stage';
+import {
+  describeSessionStartFailure,
+  hadIncompleteStartCleanup,
+  isTransientSessionStartError,
+  jitterSessionStartRetryDelay,
+  SESSION_START_RETRY_DELAYS_MS,
+  sessionStartRetryMode,
+  takeSessionStartRetry,
+  type SessionStartStage,
+} from './session-start-stage';
 import type { Logger } from '@/utils/logger';
 import { startTraceSpan, traceAsync } from '@/utils/trace-span';
 import type { ContentBlock } from '@agentclientprotocol/sdk';
@@ -128,7 +137,7 @@ import {
   localProjectsLegacy,
 } from '@lody/shared/node/local-project';
 import { findProgressMessageId } from '@lody/shared/session-data';
-import { Cause, Data, Effect, Exit, Fiber, Scope } from 'effect';
+import { Cause, Clock, Data, Effect, Exit, Fiber, Random, Scope } from 'effect';
 import { createHash, randomUUID } from 'node:crypto';
 import { getCodexProfileStore, type ResolvedCodexProfile } from '../agent/codex-profile-store';
 import {
@@ -939,6 +948,8 @@ export class SessionExecutionService {
   private readonly canceledTurnBySession = new Map<SessionId, string>();
   private readonly currentTurnBySession = new Map<SessionId, string>();
   private readonly turnRuntimeBySession = new Map<SessionId, TurnRuntimeState>();
+  /** Start times of recent start retries, shared by every Session this service runs. */
+  private readonly startRetryStartedAt: number[] = [];
   private readonly rewriteBarrierSessions = new Set<SessionId>();
   private readonly rewriteConflictLeaseSessions = new Set<SessionId>();
   private readonly turnReleaseWaiters = new Map<SessionId, Map<string, Set<() => void>>>();
@@ -3395,6 +3406,74 @@ export class SessionExecutionService {
     );
   }
 
+  /**
+   * Runs one Session start and repeats it after a temporary system failure, before
+   * any agent output exists. Each repeat is a new start (the failed one already
+   * released its process and credentials); a start that already finished the
+   * worktree setup script repeats as a resume so the script never runs twice.
+   */
+  private startWithTransientRetry(options: {
+    sessionId: SessionId;
+    runtime: TurnRuntimeState;
+    config: SessionConfig;
+    abortIfCancelled: () => Effect.Effect<void, unknown, never>;
+    start: () => Effect.Effect<ISession, unknown, never>;
+  }): Effect.Effect<ISession, unknown, never> {
+    const self = this;
+    const { sessionId, runtime, config } = options;
+    const attempts = SESSION_START_RETRY_DELAYS_MS.length + 1;
+    const attempt = (index: number): Effect.Effect<ISession, unknown, never> =>
+      Effect.suspend(() => {
+        // Each attempt reports its own steps; a stale one would misname a failure
+        // that happens before the next report and choose the wrong retry mode.
+        runtime.startStage = undefined;
+        return options.start();
+      }).pipe(
+        Effect.catch((error) => {
+          const delayMs = SESSION_START_RETRY_DELAYS_MS[index];
+          const mode = sessionStartRetryMode(runtime.startStage, config.resume === true);
+          if (
+            delayMs === undefined ||
+            mode === 'none' ||
+            runtime.cancelRequested ||
+            runtime.initializationStalled ||
+            !isTransientSessionStartError(error) ||
+            hadIncompleteStartCleanup(error)
+          ) {
+            return Effect.fail(error);
+          }
+          return Effect.gen(function* () {
+            const failure = describeSessionStartFailure(
+              runtime.startStage,
+              formatReportedError(error)
+            );
+            if (!takeSessionStartRetry(self.startRetryStartedAt, yield* Clock.currentTimeMillis)) {
+              self.deps.logger.warn(
+                `[${sessionId}] Session start hit a temporary system error (${failure}); not retrying because this daemon's start retry budget is spent`
+              );
+              return yield* Effect.fail(error);
+            }
+            const waitMs = jitterSessionStartRetryDelay(delayMs, yield* Random.next);
+            self.deps.logger.warn(
+              `[${sessionId}] Session start hit a temporary system error (${failure}); starting attempt ${index + 2} of ${attempts} in ${waitMs}ms`
+            );
+            if (self.turnRuntimeBySession.get(sessionId) === runtime) {
+              self.deps.setSessionActivePresencePhase(
+                sessionId,
+                'initializing',
+                'Retrying after a temporary system error'
+              );
+            }
+            yield* Effect.sleep(waitMs);
+            yield* options.abortIfCancelled();
+            if (mode === 'resume') config.resume = true;
+            return yield* attempt(index + 1);
+          });
+        })
+      );
+    return attempt(0);
+  }
+
   private recordKnownChatFailureAndHaltEffect(options: {
     sessionId: SessionId;
     sessionDoc: SessionDocument;
@@ -5442,13 +5521,20 @@ export class SessionExecutionService {
         self.deps.logger.debug(
           `[${sessionId}] Session restore createSession started (resumeSessionId=${resumeSessionId ?? 'none'})`
         );
-        const restoredSession = yield* ctx.trackPendingSession(
-          () =>
-            self.deps.sessionManager.createSession(restoreConfig, {
-              resumeSessionId,
-            }),
-          { terminateOnCancel: true }
-        );
+        const restoredSession = yield* self.startWithTransientRetry({
+          sessionId,
+          runtime: ctx.runtime,
+          config: restoreConfig,
+          abortIfCancelled: ctx.abortIfCancelled,
+          start: () =>
+            ctx.trackPendingSession(
+              () =>
+                self.deps.sessionManager.createSession(restoreConfig, {
+                  resumeSessionId,
+                }),
+              { terminateOnCancel: true }
+            ),
+        });
         self.deps.logger.debug(
           `[${sessionId}] Session restore createSession returned (acpSessionId=${restoredSession.acpSessionId ?? 'null'})`
         );
@@ -6503,10 +6589,16 @@ export class SessionExecutionService {
             if (self.turnRuntimeBySession.get(sessionId) === runtime) runtime.startStage = stage;
           };
           sessionConfig.worktreeScriptHistoryInsertBeforeEntryId = turnId;
-          const session = yield* trackPendingSession(
-            () => self.deps.sessionManager.createSession(sessionConfig),
-            { terminateOnCancel: true }
-          );
+          const session = yield* self.startWithTransientRetry({
+            sessionId,
+            runtime,
+            config: sessionConfig,
+            abortIfCancelled,
+            start: () =>
+              trackPendingSession(() => self.deps.sessionManager.createSession(sessionConfig), {
+                terminateOnCancel: true,
+              }),
+          });
           bindSession(session);
           self.scheduleCreatedSessionCapabilityUpdate(session, sessionConfig);
           yield* abortIfCancelled({ terminateSession: true });
