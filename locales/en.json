@@ -5068,5 +5068,11 @@
   "chat.projectGroup.machinesConflictStatus": "This group has local repositories on different machines, so they cannot share one conversation.",
   "chat.projectGroup.missing": "This project group no longer exists",
   "chat.projectGroup.empty": "Choose at least one repository",
-  "chat.projectGroup.unsupportedMachine": "Update Lody on this machine to start project group conversations."
+  "chat.projectGroup.unsupportedMachine": "Update Lody on this machine to start project group conversations.",
+  "sessions.projectMembers.label": "Repositories",
+  "sessions.projectMembers.summary": "{{repos}} repositories · {{prs}} PRs",
+  "sessions.projectMembers.dirty": "Uncommitted changes",
+  "sessions.projectMembers.unpushed": "Commits not pushed yet",
+  "sessions.projectMembers.openPr": "Open pull request #{{number}}",
+  "sessions.projectMembers.noPr": "No PR"
 }
