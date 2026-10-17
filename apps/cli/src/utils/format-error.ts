@@ -35,10 +35,16 @@ const describeMessagelessError = (error: Error, seen: ReadonlySet<unknown>): str
   const label = typeof tag === 'string' && tag.length > 0 ? tag : error.name || 'Error';
   const cause = (error as { cause?: unknown }).cause;
   if (cause === undefined || cause === null || seen.has(cause)) return label;
+  // Only an Error or a string cause is described: these messages reach synced chat
+  // history, so an arbitrary object (headers, env, options) is never dumped into it.
   const detail =
-    cause instanceof Error && !cause.message
-      ? describeMessagelessError(cause, new Set([...seen, cause]))
-      : formatErrorMessage(cause);
+    cause instanceof Error
+      ? cause.message
+        ? formatErrorMessage(cause)
+        : describeMessagelessError(cause, new Set([...seen, cause]))
+      : typeof cause === 'string'
+        ? cause
+        : '';
   return detail ? `${label}: ${detail}` : label;
 };
 

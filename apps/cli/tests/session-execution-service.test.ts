@@ -6400,6 +6400,31 @@ describe('SessionExecutionService', () => {
       expectedCreateSessionCalls: 2,
     },
     {
+      name: 'reports a wrapped authentication failure from fallback restore',
+      errors: [
+        new Error('acp_resume_failed: session unavailable'),
+        new Error('[ACP_RESUME_FAILED] newSession: Internal error', {
+          cause: new RequestError(-32603, 'Internal error', { details: 'OAuth session expired' }),
+        }),
+      ],
+      expectedReason: 'acp_auth_required',
+      expectedMessage: '[ACP_RESUME_FAILED] newSession: Internal error',
+      resumeSessionId: 'acp-existing' as ACPSessionId,
+      history: PRIOR_CONVERSATION_HISTORY,
+      expectedCreateSessionCalls: 2,
+    },
+    {
+      // Failure text reaches synced history, so an object cause is never dumped into it.
+      name: 'names only the type of a message-less failure with an object cause',
+      errors: [new MessagelessStartFailure({ cause: { headers: { authorization: 'secret' } } })],
+      stage: 'worktree',
+      expectedReason: 'session_restore_failed',
+      expectedMessage: 'Preparing the worktree failed: MessagelessStartFailure',
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 1,
+    },
+    {
       name: 'refuses a context-free fallback when history has not synced',
       errors: [new Error('acp_resume_failed: session unavailable')],
       expectedReason: 'session_restore_failed',

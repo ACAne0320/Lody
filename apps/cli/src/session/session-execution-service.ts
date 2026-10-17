@@ -5583,7 +5583,8 @@ export class SessionExecutionService {
                   Effect.gen(function* () {
                     yield* ctx.abortIfCancelled();
                     const fallbackNeedsAuthentication =
-                      fallbackError instanceof AcpAuthenticationRequiredError;
+                      fallbackError instanceof AcpAuthenticationRequiredError ||
+                      isAuthenticationRequiredACPError(fallbackError);
                     const fallbackErrMessage = fallbackNeedsAuthentication
                       ? formatErrorMessage(fallbackError)
                       : describeSessionStartFailure(
