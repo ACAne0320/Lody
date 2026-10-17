@@ -152,7 +152,17 @@ const parseLock = (raw: string): { pid: number; timestamp: number; token?: strin
 
 /** A lease plus a wait with a caller-chosen bound; both join the same raw operation. */
 interface OwnedCleanup<A> extends FileLockCleanupLease {
-  readonly join: (boundMs: number) => Effect.Effect<A, LockReleaseFailed>;
+  /** `charged` waits are successors' deadlines; they set and honor `wedged`. */
+  readonly join: (
+    boundMs: number,
+    options?: { readonly charged?: boolean }
+  ) => Effect.Effect<A, LockReleaseFailed>;
+  /**
+   * A successor already waited a full acquisition deadline for this attempt. Later
+   * successors only poll it, so one wedged deletion costs the queue one deadline,
+   * not one per queued holder. A new raw attempt clears it.
+   */
+  wedged: boolean;
 }
 type QueueEntry = {
   waiters: Array<Deferred.Deferred<void>>;
@@ -266,7 +276,10 @@ export const FileLocksLive = Layer.effect(
     ) {
       const serial = yield* Semaphore.make(1);
       const running = yield* Ref.make<Fiber.Fiber<A, unknown> | undefined>(undefined);
-      const join = (boundMs: number): Effect.Effect<A, LockReleaseFailed> =>
+      const join = (
+        boundMs: number,
+        options?: { readonly charged?: boolean }
+      ): Effect.Effect<A, LockReleaseFailed> =>
         Effect.suspend(() =>
           serial
             .withPermit(
@@ -275,6 +288,7 @@ export const FileLocksLive = Layer.effect(
                 const previousExit = previous?.pollUnsafe();
                 if (previous && (!previousExit || Exit.isSuccess(previousExit))) return previous;
                 entry.cleanups.add(cleanup);
+                cleanup.wedged = false;
                 // Detached from the bounded waiter, explicitly owned by this lease and
                 // the service registry. Local interruption cannot stop an OS unlink.
                 const fiber = yield* Effect.forkDetach(
@@ -298,19 +312,27 @@ export const FileLocksLive = Layer.effect(
             .pipe(
               Effect.uninterruptible,
               Effect.flatMap((fiber) => {
+                const charged = options?.charged === true;
+                const bound = charged && cleanup.wedged && !fiber.pollUnsafe() ? 0 : boundMs;
                 // An exhausted bound observes the current state without a timer.
-                if (boundMs <= 0) {
+                if (bound <= 0) {
                   const exit = fiber.pollUnsafe();
                   return exit ?? Effect.fail('cleanup still pending at the deadline');
                 }
                 return Effect.acquireUseRelease(
                   // A finalizer can already carry an interruption. Give its bounded
                   // waiter a fresh fiber instead of restoring that interruption here.
-                  Effect.forkDetach(
-                    Fiber.await(fiber).pipe(Effect.flatten, Effect.timeout(boundMs))
-                  ),
+                  Effect.forkDetach(Fiber.await(fiber).pipe(Effect.flatten, Effect.timeout(bound))),
                   Fiber.join,
                   (waiter) => Fiber.interrupt(waiter).pipe(Effect.asVoid)
+                ).pipe(
+                  // Only a deletion still pending after a full charged wait is wedged;
+                  // a settled failure stays retryable by the next holder.
+                  Effect.tapError(() =>
+                    Effect.sync(() => {
+                      if (charged && !fiber.pollUnsafe()) cleanup.wedged = true;
+                    })
+                  )
                 );
               }),
               Effect.provideService(Clock.Clock, ownerClock),
@@ -327,17 +349,21 @@ export const FileLocksLive = Layer.effect(
         path: file,
         join,
         retryCleanup: Effect.asVoid(join(FILE_LOCK_CLEANUP_MS)),
+        wedged: false,
       };
       return cleanup;
     });
     // A successor joins retained cleanup within its own acquisition deadline: a
     // deletion that is merely slow delays the next holder instead of failing it.
+    // The wait is charged to the deletion, not to each successor: after one
+    // successor has waited its whole deadline, the rest fail fast until a new
+    // attempt starts, instead of each waiting a full deadline in FIFO order.
     const recover = (entry: QueueEntry, deadline: number) =>
       Effect.forEach(
         [...entry.cleanups],
         (cleanup) =>
           Clock.currentTimeMillis.pipe(
-            Effect.flatMap((now) => cleanup.join(Math.max(0, deadline - now)))
+            Effect.flatMap((now) => cleanup.join(Math.max(0, deadline - now), { charged: true }))
           ),
         { discard: true }
       );

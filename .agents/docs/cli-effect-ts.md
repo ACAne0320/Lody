@@ -312,7 +312,9 @@ candidate and acquired file. The releasing holder waits once, within a 5-second 
 bound, for its lock file and scratch directory. The body's result stands: a slow or
 failed deletion stays registered with the service instead of failing the holder.
 The next local holder joins it within its own acquisition deadline, and a settled
-failure is retried before that body runs. Disposal reports anything still
+failure is retried before that body runs. That wait is charged once per deletion attempt:
+once one successor has waited its whole deadline, later successors fail fast until a new
+attempt starts. Disposal reports anything still
 unresolved. `LockReleaseFailed.cleanup` retains the original OS deletion for awaited
 retry. Only a replaced lock generation (`LockOwnershipLost`) fails the holder, because
 then the body did not run exclusively; that lease is not retried. Body and release run

@@ -100,7 +100,8 @@ record: [process tree layer](../../../../.agents/notes/implemented/architecture/
 
 - The holder waits once (5 seconds) for its file and scratch. A slow or failed
   deletion never fails that holder: the service retains it, and successors join
-  it within their acquisition deadline. Only `LockOwnershipLost` fails the holder.
+  it within their acquisition deadline, charged once per attempt (later ones fail fast).
+  Only `LockOwnershipLost` fails the holder.
   Only settled failures permit a new deletion attempt.
 - Retry acquisition only. Use `squashFileLockFailure` at Legacy boundaries
   ([holder release](../../../../.agents/notes/implemented/architecture/2026-10-16-file-lock-holder-release.md)).

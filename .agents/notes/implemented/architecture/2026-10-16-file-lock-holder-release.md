@@ -57,6 +57,12 @@ running a body. Other processes saw a lock owned by a live pid and backed off.
   settled failure is retried once before the body runs. The successor fails with
   `LockReleaseFailed` only if the deletion is still unresolved at its deadline or the
   retry fails again.
+- **One wait per wedged deletion.** That deadline is charged to the deletion attempt, not to
+  each successor. FIFO admission would otherwise make a wedged unlink cost every queued
+  holder (all Session starts for a repository) a full deadline in turn, and blame
+  unrelated Sessions for it. After one successor has waited its whole deadline for a
+  still-pending deletion, later successors only poll it and fail fast until a new attempt
+  starts. A settled failure is not wedged and stays retryable.
 - **Lost ownership.** Release reads the lock file before deleting it. If another
   generation replaced ours, nothing of ours remains to delete. The holder fails with
   `LockOwnershipLost`, because its body did not run exclusively. The lease completes,

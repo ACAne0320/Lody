@@ -590,7 +590,6 @@ describe('native file locks', () => {
         const ready = yield* Deferred.make<void>();
         const firstDeadline = yield* Deferred.make<void>();
         const nextDeadline = yield* Deferred.make<void>();
-        const cancelledDeadline = yield* Deferred.make<void>();
         let deadline = firstDeadline;
         const clock = yield* Clock.Clock;
         const cleanupClock = clockWithSleep(clock, (duration) =>
@@ -654,19 +653,15 @@ describe('native file locks', () => {
           );
           expect(successorRan).toBe(false);
           expect(fs.existsSync(lockPath)).toBe(true);
-          deadline = cancelledDeadline;
-          const cancelled = yield* withFileLock(
+          // The queue pays for a wedged deletion once: the next successor fails at
+          // once instead of waiting its own full deadline behind the first.
+          const fastFail = yield* withFileLock(
             'bounded',
             Effect.sync(() => {
               successorRan = true;
             })
-          ).pipe(Effect.forkChild);
-          yield* Deferred.await(cancelledDeadline);
-          yield* Fiber.interrupt(cancelled);
-          const cancelledExit = yield* Fiber.await(cancelled);
-          expect(
-            Exit.isFailure(cancelledExit) && Cause.hasInterruptsOnly(cancelledExit.cause)
-          ).toBe(true);
+          ).pipe(Effect.exit);
+          expect(errorOf(fastFail)).toBeInstanceOf(LockReleaseFailed);
           expect(successorRan).toBe(false);
           expect(fs.existsSync(lockPath)).toBe(true);
           yield* Deferred.succeed(deletion, undefined);
