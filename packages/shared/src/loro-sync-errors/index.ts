@@ -18,6 +18,8 @@ type LoroSyncFailure = {
   roomId: string | undefined;
   failureKind: NonNullable<RepoTransportError['failureKind']>;
   streamsCode: string | undefined;
+  // Public alias. Indexing RepoTransportError['streamsContext'] expands through
+  // unexported TransportErrorContext and fails declaration emit with TS4023.
   streamsContext: RepoStreamsErrorContext | undefined;
 };
 
