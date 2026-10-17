@@ -257,6 +257,38 @@ lody agent-role update ROLE_ID --file patch.json --session SESSION_ID
 `--file` 不能与角色字段参数混用。如果指令保存在 Markdown 中，可以直接传
 `--prompt-prefix "$(cat reviewer.md)"`。
 
+
+`role.json`:
+
+```json
+{
+  "name": "Reviewer",
+  "machineId": "MACHINE_ID",
+  "agentConfigId": "CONFIG_ID",
+  "description": "Review code",
+  "promptPrefix": "Check correctness.\nReport actionable bugs."
+}
+```
+
+`patch.json`:
+
+```json
+{
+  "description": "",
+  "promptPrefix": "Focus on correctness.\nExplain each finding."
+}
+```
+
+文件必须是 UTF-8 编码的单个 JSON 对象，字段名使用示例中的 camelCase。
+更新文件本身就是补丁，**不要再包一层 `patch`**；角色 ID 放在命令的位置参数中，
+重试 ID 通过 `--request-id` 传入。JSON 字符串中的换行写作 `\n`，不支持注释或尾逗号。
+
+所有字段值都是字符串。创建必填 `name`、`machineId` 和 `agentConfigId`；更新至少包含
+一个支持的字段。更新时省略字段表示保持原值，`""` 清空描述或默认指令，`null` 不合法。
+名称去除首尾空白后不能为空、最多 60 个字符，且须能生成有效的提及名称；描述最多
+140 个 Unicode 码点；默认指令最多 32,768 个字符（去除首尾空白前）。机器和配置 ID
+去除首尾空白后不能为空、最多 128 个字符。不支持的字段会被拒绝。
+
 MCP 的 `lody_agent_role_create` 和 `lody_agent_role_update` 使用同一确认流程。
 创建工具接收 `requestId` 和上述创建字段；更新工具接收 `requestId`、`roleId`，
 以及包含修改字段的 `patch`。角色的使用方式见 [Agent 角色](/zh/docs/agent-roles)。

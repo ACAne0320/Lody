@@ -197,3 +197,39 @@ and `promptPrefix`. An update file contains only the changed `name`, `descriptio
 or `promptPrefix`; an empty string clears description/instructions. Neither accepts
 credentials, MCP selections, ownership, visibility, or run configuration. The command
 prints the requestId and pending result; it does not claim the Role was saved.
+
+
+`role.json`:
+
+```json
+{
+  "name": "Reviewer",
+  "machineId": "MACHINE_ID",
+  "agentConfigId": "CONFIG_ID",
+  "description": "Review code",
+  "promptPrefix": "Check correctness.\nReport actionable bugs."
+}
+```
+
+`patch.json`:
+
+```json
+{
+  "description": "",
+  "promptPrefix": "Focus on correctness.\nExplain each finding."
+}
+```
+
+Files must contain a single UTF-8 JSON object, using the camelCase keys shown above.
+The update file is the patch itself: do not wrap it in `patch`; pass the Role ID as the
+command argument. Pass retry IDs with `--request-id`. JSON strings use `\n` for line
+breaks; comments and trailing commas are not valid JSON.
+
+All field values are strings. Creation requires `name`, `machineId`, and `agentConfigId`.
+Updates require at least one supported field. Omitted update fields stay unchanged;
+`""` clears description or instructions, while `null` is rejected. Names must be nonempty,
+mention-compatible and at most 60 characters after trimming; descriptions allow up to
+140 Unicode code points; instructions allow up to 32,768 characters before trimming.
+Machine/config IDs must be nonempty and at most 128 characters after trimming.
+Unsupported fields are rejected.
+
