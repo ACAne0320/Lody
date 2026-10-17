@@ -14,6 +14,7 @@ import {
 import { createLoroSyncErrorTools, getLoroSnapshotDiagnostic } from '@lody/shared/loro-sync-errors';
 import { RepoSyncError, RepoTransportError } from 'loro-repo';
 import { createManagedStoreCache } from '../src/providers/store-ref-tracker';
+import { createRoomSyncTracker } from '../src/providers/room-sync-tracker';
 
 let sequence = 0;
 const storage = () =>
@@ -857,6 +858,11 @@ describe('retained native release ownership', () => {
 
   it('native reconnect retries a failed room attach and retains the shared replica', async () => {
     const repo = await WorkspaceRepoLegacy.create({});
+    const tracker = createRoomSyncTracker('retry');
+    const synced = Promise.withResolvers<void>();
+    const stop = tracker.subscribeSyncState((state) => {
+      if (state === 'synced') synced.resolve();
+    });
     let unavailable = true;
     try {
       await repo.addTransport('cloud', {
@@ -876,6 +882,13 @@ describe('retained native release ownership', () => {
                   replica.lease.doc.commit();
                 }
                 return {
+                  state: yield* SubscriptionRef.make<RoomState>({
+                    connection: 'joined',
+                    baseline: true,
+                    current: true,
+                    uploadPending: false,
+                    epoch: 1,
+                  }),
                   status: yield* SubscriptionRef.make<RoomStatus>('synced'),
                   close: Effect.void,
                   sync: Effect.succeed('confirmed' as const),
@@ -885,14 +898,28 @@ describe('retained native release ownership', () => {
       });
       const doc = (await repo.openPersistedDoc('retry')).doc;
       const room = await repo.joinDocRoom('retry');
-      await expect(room.subscription('cloud').firstSyncedWithRemote).rejects.toBeInstanceOf(
-        RepoIOError
+      const binding = room.subscription('cloud');
+      tracker.attach(binding);
+      const originalWait = binding.firstSyncedWithRemote;
+      const originalFailure = await originalWait.then(
+        () => {
+          throw new Error('Expected the initial join to fail');
+        },
+        (error: unknown) => error
       );
+      expect(originalFailure).toBeInstanceOf(RepoIOError);
+      tracker.markFirstSyncFailed();
       expect(doc.getText('body').toString()).toBe('');
       unavailable = false;
       const report = await repo.reconnect({ transportIds: ['cloud'], resetBackoff: false });
       expect(report.ok).toBe(true);
       await repo.runLegacy(room.native.awaitSynced('cloud'));
+      await expect(binding.firstSyncedWithRemote).resolves.toBeUndefined();
+      await synced.promise;
+      expect(tracker.getSyncState()).toBe('synced');
+      expect(tracker.needsReconnect()).toBe(false);
+      expect(room.subscription('cloud')).toBe(binding);
+      await expect(originalWait).rejects.toBe(originalFailure);
       expect(doc.getText('body').toString()).toBe('recovered');
       expect((await repo.openPersistedDoc('retry')).doc).toBe(doc);
       await repo.runLegacy(
@@ -909,6 +936,8 @@ describe('retained native release ownership', () => {
       );
       room.unsubscribe();
     } finally {
+      stop();
+      tracker.dispose();
       await repo.destroy();
     }
   });

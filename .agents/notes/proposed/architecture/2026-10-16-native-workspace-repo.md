@@ -104,7 +104,13 @@ runtime/remote/index/store failures do not skip independent cleanup or Repo clos
 A disposed shortcut runtime can finish its failed retirement on retry. Session
 cleanup keeps actual failed borrow releases retryable. Once its borrow is released,
 a failed eviction remains reported but does not fence reinitialization on the
-still-active cached Doc. The next successful eviction invalidates its local room.
+still-active cached Doc. The next successful eviction invalidates its local room. Manager lookups also
+rebuild a destroyed Session view retained after failed eviction, rather than
+returning its disposed Mirror/SessionData. Cleanup and reinitialization use the
+existing per-doc ownership chain; concurrent opens share the existing pending
+initialization. Genuine failed borrow release stays on that same wrapper and is
+retried before reinitialization. Late joins check the captured handle identity so
+an old initialization cannot replace the recovered lifetime's room.
 Cache/shortcut acquisition still retries genuinely retiring owners: replacing one
 after another failed retry can strand an SDK producer, and native Repo itself may
 need to finish that release. This necessary exclusion does not apply to a failed
@@ -194,6 +200,13 @@ continues to await retirement; a retired transport ignores queued status edges.
 
 ## Session repair and remaining failure spread
 
+A room binding's first-sync property starts a wait against current native state
+on each read. Initial protocol failure rejects that caller's Promise permanently,
+but does not memoize failure for later reads. Once the same binding has a joined,
+current baseline, a new wait and RoomSyncTracker recovery succeed. The closed
+borrow's signal still cancels waiters; no new deadline, producer, retry loop or
+status cache is introduced.
+
 Repo 0.23.0 exposes selected-room sync/reconcile, but no selected-binding reset.
 Session history retries therefore use only their existing room's `sync('streams')`,
 with the existing Doc-sync deadline (8 seconds by default) and borrower signal.
@@ -252,7 +265,31 @@ guarantees or claims of completed terminal shutdown:
 
 ## Verification and limits
 
-Online server repair is exercised through real Repo leases and injected native
+Readiness and Session recovery use real Repo boundaries. A failed attach is
+retried on the same binding; native joined/baseline/current and recovered Doc
+bytes are observed before the UI tracker reaches synced. The original wait
+still rejects with its original error. Real filesystem saves pause and fail
+while a manager reopens a Session: same-key concurrent callers join one
+initialization, an unrelated Session remains available, and persisted bytes,
+Mirror and history writer survive repeated failures and storage recovery. A late
+join from the previous handle must release itself without replacing the new room.
+The five component suites pass 111 cases. Four CLI suites pass 125 cases, with the
+Roost active-goal case timing out; the Session suite also passes all 17 cases
+separately. The isolated `fd0f4ee8` snapshot passes that Roost case near its 30s
+case deadline, and a final isolated run on this tree also passes within the
+unchanged deadline. Earlier parallel and isolated timeouts remain a timing-related
+validation limit, not a proven baseline failure or a complete parallel suite pass.
+The changed code is outside that fixture's manual handle/control composition.
+The CLI controller's 17 cases, including published-SDK recovery, also pass. The original facade fails the same-binding
+readiness recovery regression, and both original-manager cases return retired
+views; removing only the handle identity check lets an old join replace the new
+room in both cases. Original wait/cleanup errors remain observable.
+Shared/components types pass in the required root check, which reaches its
+ten-minute budget during CLI typechecking (exit 124); standalone CLI types pass.
+Changed-file type-aware/Effect checks, formatting, documentation and all eight
+boundary/translation guards pass. A complete root test pass is not claimed.
+
+Online server repair at `fd0f4ee8` is exercised through real Repo leases and injected native
 transport boundaries: Web and dual visible-wake paths retain healthy generations;
 a dual-homed failed room survives three reconnect-loop periods without disturbing
 its sibling, then uploads its original Doc bytes after the injected failure clears.

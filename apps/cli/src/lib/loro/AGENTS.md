@@ -15,8 +15,8 @@ Replacement rules: [shared](../../../../../packages/shared/AGENTS.md#session-his
 
 ## Opening a doc pulls its stream
 
-`getOrCreateSessionDoc()` immediately joins/pulls through `SessionDocument.init()`
-and stays cached until `cleanSessionDoc`. Each open costs a subscription and full sync.
+`getOrCreateSessionDoc()` joins/pulls via `SessionDocument.init()` and stays cached
+until `cleanSessionDoc`; each open subscribes and fully syncs.
 
 Rules:
 
@@ -55,7 +55,8 @@ Daemon/commands share `repo.sqlite3`, never replicas. Native leases own Meta/Flo
 checkpoints. Daemon Doc cursors use `createDocumentRemoteCursorStore`; no shared
 `remoteCursorStore` or schedule `onPersist*`. Test: `tests/cli-streams-replica-checkpoints.test.ts`.
 
-Repo uses `WorkspaceRepoLegacy`; failed eviction keeps its cached Doc borrowable.
+`WorkspaceRepoLegacy` retains Docs after failed eviction. Reopen destroyed views
+in the same-key owner; share init and retain release ownership. Reject stale joins.
 
 ## Shared ACP runtime config contains no secrets
 
@@ -133,8 +134,7 @@ Health shorter than `LODY_LORO_HEALTH_STABILITY_WINDOW_MS` (5s) charges a failed
 recovery attempt; `force` must not clear flap history. Regression:
 `tests/reconnect-storm-repro.test.ts`.
 
-Session history retries only its room's native sync/reconcile, with the Doc-sync
-deadline and borrower cancellation. Healthy watchdog sweeps repair failed rooms
-and SDK-proven failed initialization even if Repo still says joining. Pending
-baselines stay owned; live 4xx uses SDK backoff. Only transport failure or explicit
-force resets siblings and presence; an HTTP error alone never justifies it.
+Session retries and online sweeps use native per-room sync/reconcile with borrower
+cancellation and existing deadlines. SDK health may prove failed initialization
+while Repo still says joining; ordinary baselines/live 4xx keep SDK retry ownership.
+Server force stays per-room; reset only a failed transport. Keep local peer recovery.

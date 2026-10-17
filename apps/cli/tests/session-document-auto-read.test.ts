@@ -11,8 +11,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { SessionDocument } from '../src/lib/loro/doc';
-import type { MessageContent, SessionHistoryInput, SessionId } from '@lody/shared';
+import { LoroDocumentManager, SessionDocument } from '../src/lib/loro/doc';
+import {
+  getSessionRoomId,
+  type MessageContent,
+  type SessionHistoryInput,
+  type SessionId,
+  type WorkspaceId,
+} from '@lody/shared';
+import type { Logger } from '../src/utils/logger';
 
 const createUserEntry = (id: string, text: string): SessionHistoryInput => ({
   id,
@@ -25,6 +32,149 @@ const createUserEntry = (id: string, text: string): SessionHistoryInput => ({
 });
 
 describe('SessionDocument auto read', () => {
+  it.each([false, true])(
+    'reopens a retired manager wrapper after save failure, storage recovered=%s',
+    async (recovered) => {
+      const baseDir = await mkdtemp(join(tmpdir(), 'manager-session-recovery-'));
+      const adapter = new FileSystemStorageAdaptor({ baseDir });
+      const save = adapter.save.bind(adapter);
+      const sessionId = 'retained-session' as SessionId;
+      const roomId = getSessionRoomId(sessionId);
+      const entered = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const saveFailure = new Error('synthetic ENOSPC');
+      let blocked = false;
+      adapter.save = async (payload) => {
+        if (
+          blocked &&
+          (payload.type === 'doc-update' || payload.type === 'doc-snapshot') &&
+          payload.docId === roomId
+        ) {
+          entered.resolve();
+          await resume.promise;
+          throw saveFailure;
+        }
+        await save(payload);
+      };
+      const repo = await WorkspaceRepoLegacy.create({ storageAdapter: adapter });
+      const joinEntered = Promise.withResolvers<void>();
+      const resumeJoin = Promise.withResolvers<void>();
+      const joinRoom = repo.joinDocRoom.bind(repo);
+      let oldRoom: Awaited<ReturnType<typeof repo.joinDocRoom>> | undefined;
+      let oldSync: Promise<void> | undefined;
+      vi.spyOn(repo, 'joinDocRoom').mockImplementationOnce(async (id) => {
+        oldRoom = await joinRoom(id);
+        joinEntered.resolve();
+        await resumeJoin.promise;
+        return oldRoom;
+      });
+      const noop = () => {};
+      const logger: Logger = {
+        info: noop,
+        warn: noop,
+        error: noop,
+        success: noop,
+        debug: noop,
+        trace: noop,
+        setLevel: noop,
+        child: () => logger,
+        close: async () => {},
+      };
+      const manager = new LoroDocumentManager({
+        repo,
+        workspaceId: 'synthetic-workspace' as WorkspaceId,
+        userId: 'synthetic-user',
+        metaSub: null,
+        logger,
+      });
+      let cleanupTask: Promise<void> | undefined;
+      let openingTask: Promise<SessionDocument[]> | undefined;
+      try {
+        const first = await manager.getOrCreateSessionDoc(sessionId, {
+          historyBackend: 'loro',
+          skipAutoRead: true,
+        });
+        oldSync = first.waitForRemoteSync();
+        await joinEntered.promise;
+        const replica = first.handle?.doc;
+        if (!replica) throw new Error('Missing initial replica');
+        replica.getText('synthetic').insert(0, 'retained bytes');
+        replica.commit();
+        blocked = true;
+        const cleanup = manager.cleanSessionDoc(sessionId, { preserveStatus: true });
+        cleanupTask = cleanup;
+        const cleanupFailure = cleanup.then(
+          () => {
+            throw new Error('Expected failed eviction');
+          },
+          (error: unknown) => error
+        );
+        void cleanupFailure.catch(() => undefined);
+        await entered.promise;
+        let opened = false;
+        const reopen = () => {
+          openingTask = Promise.all([
+            manager.getOrCreateSessionDoc(sessionId, { skipAutoRead: true }),
+            manager.getOrCreateSessionDoc(sessionId, { skipAutoRead: true }),
+          ]).then((sessions) => {
+            opened = true;
+            return sessions;
+          });
+          void openingTask.catch(() => undefined);
+          return openingTask;
+        };
+        const reopening = recovered ? undefined : reopen();
+        const other = await manager.getOrCreateSessionDoc('independent-session' as SessionId, {
+          skipAutoRead: true,
+        });
+        await expect(other.getDocState()).resolves.toBeDefined();
+        expect(opened).toBe(false);
+        resume.resolve();
+        const failure = await cleanupFailure;
+        expect(failure).toBeInstanceOf(Error);
+        if (recovered) blocked = false;
+        const [left, right] = await (reopening ?? reopen());
+        if (!left || !right) throw new Error('Missing reopened Session');
+        expect(left).toBe(right);
+        expect(left.isDestroyed).toBe(false);
+        expect(left.handle?.doc).toBe(replica);
+        await left.waitForRemoteSync();
+        const currentRoom = left.docSub;
+        resumeJoin.resolve();
+        await oldSync;
+        expect(left.docSub === currentRoom).toBe(true);
+        expect(oldRoom?.signal.aborted).toBe(true);
+        await expect(left.getDocState()).resolves.toBeDefined();
+        await expect(cleanup).rejects.toBe(failure);
+        await updateTestHistory(left, () => [createUserEntry('reopened-turn', 'usable writer')]);
+        expect((await left.sessionData.history.readAll())[0]?.id).toBe('reopened-turn');
+        if (!recovered) {
+          await expect(
+            manager.cleanSessionDoc(sessionId, { preserveStatus: true })
+          ).rejects.toThrow();
+          expect((await manager.getSessionHistorySnapshot(sessionId))[0]?.id).toBe('reopened-turn');
+          const next = await manager.getOrCreateSessionDoc(sessionId, { skipAutoRead: true });
+          expect(next.handle?.doc).toBe(replica);
+          await expect(next.getDocState()).resolves.toBeDefined();
+        }
+        blocked = false;
+        await manager.cleanSessionDoc(sessionId, { preserveStatus: true });
+        expect((await adapter.loadDoc(roomId))?.getText('synthetic').toString()).toBe(
+          'retained bytes'
+        );
+        const next = await manager.getOrCreateSessionDoc(sessionId, { skipAutoRead: true });
+        expect((await next.sessionData.history.readAll())[0]?.id).toBe('reopened-turn');
+      } finally {
+        blocked = false;
+        resume.resolve();
+        resumeJoin.resolve();
+        await Promise.allSettled([cleanupTask, openingTask, oldSync]);
+        await manager.cleanUp({ preserveSessionStatus: true });
+        await rm(baseDir, { recursive: true, force: true });
+      }
+    }
+  );
+
   it('repairs pending Session rooms without taking a healthy sibling offline', async () => {
     const repo = await WorkspaceRepoLegacy.create({});
     const remote = new LoroDoc();

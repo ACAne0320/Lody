@@ -28,7 +28,9 @@ Scope recovery recognizes both Repo release receipts and the SDK's
 Successful retirement clears the retained failure; a closed Scope is not replayed.
 
 Room handles retain the native `RoomLease` and the small UI status view still in
-use. Inventory and transport snapshots come from native leases; the local owner
+use. Each first-sync read waits on current native state. A caller keeps its failed
+wait, while later reads can succeed after the same binding recovers. The room
+borrow's cancellation still ends all its waits. Inventory and transport snapshots come from native leases; the local owner
 registry exists only to release borrows during purge. On an online transport,
 recovery syncs/reconciles failed or offline rooms, collecting independent failures.
 Failed SDK initialization can still project as joining: consult the native health

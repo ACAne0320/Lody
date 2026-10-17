@@ -17,6 +17,8 @@
 - Legacy room status includes actual attachment/routing: an absent route is
   detached even if its native detail ref starts joining. First-sync waiters
   survive deliberate absence and settle only on a routed baseline or failure.
+  A failed readiness wait stays failed; later reads wait on current native state,
+  so recovery of the same binding never replays a cached rejection.
 - Read inventory and transport snapshots from native leases. Keep local room
   records only for ownership release. On an online transport, retry only failed/
   offline rooms and SDK-proven failed initialization still projected as joining,

@@ -53,7 +53,11 @@ CLI 重新初始化也将已释放的借用与卸载结果分开，保留同样�
 
 关闭先结束借用者再关闭 Repo，但一个 store 失败不能跳过其他 store、transport 清理、join 收尾或 Repo 关闭。Runtime 尝试这些独立步骤后统一报告错误；再次 dispose 会重试保留的 owner，且不重新允许新工作。RuntimeProvider 按 workspace 保留可重试关闭；一个关闭失败不阻塞其他 workspace，重开同一存储前先重试旧 owner。快捷指令根按数据库执行相同约束；runtime、远端、index 或 store 的失败不会跳过其他清理及 Repo 关闭，已经 disposed 的 runtime 仍能重试未完成的退休。
 Session 清理保留真正失败的 borrow release 重试 handle；借用一旦成功释放，卸载失败仍会报告，
-但不能阻止在仍活跃的缓存 Doc 上重新初始化。后来成功卸载才使本机房间失效。
+但不能阻止在仍活跃的缓存 Doc 上重新初始化。后来成功卸载才使本机房间失效。manager 查找
+会重建驱逐失败后保留的已销毁 Session 视图，不再返回其已释放的 Mirror／SessionData。
+清理和重新初始化共用既有每 Doc 所有权链，并发打开加入同一次 pending 初始化。真正失败
+的借用释放仍由原 wrapper 持有，重新初始化前重试。晚到的 join 检查捕获的 handle 身份，
+不能替换恢复后生命周期的房间。
 cache/shortcut 获取仍重试真正退休中的 owner；直接替换它可能遗留 SDK producer，原生 Repo 本身
 也可能需要先完成旧释放。这项必要互斥不适用于保存失败后仍活跃的缓存副本。
 
@@ -89,6 +93,11 @@ transport Scope 的 FiberMap 中按对象身份保留一个恢复任务。反复
 显式 reconnect 仍等待退休完成；已退休 transport 忽略队列中晚到的状态边。
 
 ## Session 修复与剩余失败影响
+
+房间 binding 的首次同步属性每次读取都等待当前 native 状态。协议首次失败仍使原调用方
+的 Promise 永久拒绝，但不把失败缓存给后续读取。同一个 binding 恢复为 joined、baseline、
+current 后，新等待和 RoomSyncTracker 恢复都能成功。关闭借用的信号仍取消等待者；不新增
+期限、producer、重试循环或状态缓存。
 
 Repo 0.23.0 提供所选房间的 sync／reconcile，没有单 binding reset。Session history 重试
 因此仅执行现有房间的 `sync('streams')`，沿用 Doc 同步期限（默认 8 秒）和借用者信号。
@@ -134,7 +143,22 @@ CLI composition 没有可变的 transport 路由谓词，lazy acquire 会调和�
 
 ## 验证与限制
 
-在线 server 修复使用真实 Repo lease 和注入的原生 transport 边界验证：Web 和 dual 的
+readiness 和 Session 恢复在真实 Repo 边界验证。失败的 attach 在同一 binding 重试，观察
+native joined／baseline／current 和恢复的 Doc 字节，再确认 UI tracker 回到 synced；原等待
+仍以原错误拒绝。真实文件存储的保存被保持并失败时，manager 同 key 的并发 Session 打开
+共享一次初始化，其他 Session 仍可用；反复失败和存储恢复后，原字节、Mirror、历史 writer
+都能使用。旧 handle 晚到的 join 必须释放自身，不能替换新房间。组件五个套件 111 项通过；CLI 四个
+套件 125 项通过，Roost active-goal 用例超时；Session 套件单独复跑 17 项也全部通过。
+隔离的 `fd0f4ee8` 快照在接近 30s 用例期限时通过该 Roost 用例，当前版本最后一次隔离
+复跑也在原期限内通过。此前并行和隔离运行的超时仍作为耗时相关的验证限制，不能称作
+已知基线失败，也不能据此声称完整并行套件通过。该夹具手动组合 handle／控制面，不执行
+本次改动路径。CLI controller 的 17 项（含正式 SDK 恢复）也通过。原 facade 的同 binding readiness 恢复用例失败，原 manager 的两个用例均返回
+退休视图；仅移除 handle 身份检查，旧 join 就在两个用例中替换新房间。原等待／清理错误
+仍然可观察。必需的根检查通过 Shared／components 类型后，在 CLI 类型阶段达到十分钟
+预算（退出 124）；CLI 单独类型检查通过。改动文件的类型感知／Effect 检查、格式、文档和
+八项边界／翻译检查通过，不声称完整根测试通过。
+
+`fd0f4ee8` 的在线 server 修复使用真实 Repo lease 和注入的原生 transport 边界验证：Web 和 dual 的
 visible-wake 路径保留健康 generation；双路由失败房间经过三个重连循环周期仍不干扰
 兄弟房间，解除注入故障后会上传原 Doc 字节。detached 路由保持空闲。transport 本身
 处于 offline／closed／failed、peer 强制重连、已接受 reconnect I/O 的 drain 和关闭也继续

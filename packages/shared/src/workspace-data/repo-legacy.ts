@@ -844,28 +844,36 @@ export class WorkspaceRepoLegacy {
           : roomStatus(state);
       };
       const status = () => project(this.syncLegacy(lease.stateSnapshot(id)));
-      const firstSyncedWithRemote = this.runLegacy(
-        lease.state(id).pipe(
-          Stream.mapEffect((state) =>
-            state.connection === 'failed' && project(state) !== 'detached'
-              ? Effect.fail(new RepoIOError('room readiness', state.connection))
-              : Effect.succeed(state)
+      const firstSyncedWithRemote = () => {
+        const wait = this.runLegacy(
+          lease.state(id).pipe(
+            Stream.mapEffect((state) =>
+              state.connection === 'failed' && project(state) !== 'detached'
+                ? Effect.fail(new RepoIOError('room readiness', state.connection))
+                : Effect.succeed(state)
+            ),
+            Stream.filter(
+              (state) => state.baseline && state.current && project(state) === 'joined'
+            ),
+            Stream.runHead,
+            Effect.flatMap((state) =>
+              Option.isSome(state) ? Effect.void : Effect.fail(new RepoClosed())
+            )
           ),
-          Stream.filter((state) => state.baseline && state.current && project(state) === 'joined'),
-          Stream.runHead,
-          Effect.flatMap((state) =>
-            Option.isSome(state) ? Effect.void : Effect.fail(new RepoClosed())
-          )
-        ),
-        closed.signal
-      );
-      // Old consumers sometimes only observe statuses; retain rejection for actual waiters.
-      void firstSyncedWithRemote.catch(() => undefined);
+          closed.signal
+        );
+        // Status-only consumers need no waiter. Preserve each caller's failure,
+        // while later callers can observe a recovered native binding.
+        void wait.catch(() => undefined);
+        return wait;
+      };
       const value: WorkspaceRoomBinding = {
         get status() {
           return status();
         },
-        firstSyncedWithRemote,
+        get firstSyncedWithRemote() {
+          return firstSyncedWithRemote();
+        },
         onStatusChange: (listener) => {
           const scope = this.syncLegacy(Scope.fork(owned.scope));
           this.fork(

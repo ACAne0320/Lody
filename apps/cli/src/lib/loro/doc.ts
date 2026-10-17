@@ -1370,7 +1370,7 @@ export class LoroDocumentManager {
     // any one-shot renderer reconciliation without unloading the shared doc.
     this.cancelLocalDocRoomBridge(docId);
     const existing = this.sessions.get(sessionId);
-    if (existing) {
+    if (existing && !existing.isDestroyed && !this.localDocOwnershipChains.has(docId)) {
       if (options.historyBackend) {
         await createSessionBackend(existing, { historyBackend: options.historyBackend });
       }
@@ -1392,13 +1392,24 @@ export class LoroDocumentManager {
     // open a fresh handle; otherwise the unload could evict the document that
     // the newly activated SessionDocument is about to retain.
     const initPromise = this.withLocalDocOwnership(docId, async () => {
-      const sessionDoc = new SessionDocument(
-        this.repo,
-        sessionId,
-        (sessionDocId) => this.unloadDocRoom(sessionDocId),
-        this.logger,
-        this.sessionHistoryFactory ?? this.ownerHistoryRouter
-      );
+      const cached = this.sessions.get(sessionId);
+      if (cached && !cached.isDestroyed) {
+        if (options.historyBackend) {
+          await createSessionBackend(cached, { historyBackend: options.historyBackend });
+        }
+        return cached;
+      }
+      // Failed eviction retains the replica and this wrapper's cleanup owner,
+      // not a usable Mirror. Reinitialize under the same per-doc ownership chain.
+      const sessionDoc =
+        cached ??
+        new SessionDocument(
+          this.repo,
+          sessionId,
+          (sessionDocId) => this.unloadDocRoom(sessionDocId),
+          this.logger,
+          this.sessionHistoryFactory ?? this.ownerHistoryRouter
+        );
       const meta = options.historyBackend ? undefined : await this.repo.getDocMeta(docId);
       const historyBackend =
         options.historyBackend ??
@@ -1425,14 +1436,16 @@ export class LoroDocumentManager {
     try {
       return await initPromise;
     } finally {
-      this.pendingSessionDocs.delete(sessionId);
+      if (this.pendingSessionDocs.get(sessionId) === initPromise)
+        this.pendingSessionDocs.delete(sessionId);
     }
   }
 
   async getSessionHistorySnapshot(sessionId: SessionId): Promise<SessionHistoryInput[]> {
     const active = this.sessions.get(sessionId);
     if (active) {
-      return await (await createSessionBackend(active)).readHistory();
+      const ready = await this.getOrCreateSessionDoc(sessionId, { skipAutoRead: true });
+      return await (await createSessionBackend(ready)).readHistory();
     }
 
     const pending = this.pendingSessionDocs.get(sessionId);
@@ -1880,20 +1893,19 @@ export class LoroDocumentManager {
     const pending = this.pendingSessionDocs.get(sessionId);
     if (pending) {
       try {
-        const doc = await pending;
-        await doc.destroy({ preserveStatus: options.preserveStatus });
-        this.sessions.delete(sessionId);
+        await pending;
       } catch {
-        // Init failed — nothing to clean up
+        // Initialization reports its own failure; retained wrappers still need cleanup.
       }
-      this.pendingSessionDocs.delete(sessionId);
     }
 
-    const sessionDoc = this.sessions.get(sessionId);
-    if (sessionDoc) {
-      await sessionDoc.destroy({ preserveStatus: options.preserveStatus });
-      this.sessions.delete(sessionId);
-    }
+    await this.withLocalDocOwnership(getSessionRoomId(sessionId), async () => {
+      const sessionDoc = this.sessions.get(sessionId);
+      if (sessionDoc) {
+        await sessionDoc.destroy({ preserveStatus: options.preserveStatus });
+        if (this.sessions.get(sessionId) === sessionDoc) this.sessions.delete(sessionId);
+      }
+    });
   }
 }
 
@@ -2417,6 +2429,9 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
   }
 
   private async startDocRoomSync(): Promise<void> {
+    // A retained wrapper may reopen while the previous join is still arriving.
+    const handle = this.handle;
+    const isActive = () => !this.destroyed && this.handle === handle;
     // Join failures (typically stream_not_found while the web client is still
     // pre-creating the session doc stream in the background) retry with capped
     // exponential backoff instead of giving up after ~3s. Web-side stream
@@ -2427,14 +2442,14 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     const RETRY_MAX_DELAY_MS = 30_000;
 
     for (let attempt = 0; attempt < MAX_JOIN_RETRIES; attempt++) {
-      if (this.destroyed) {
+      if (!isActive()) {
         return;
       }
 
       let joinedSub: RepoRoomSubscription | null = null;
       try {
         joinedSub = await this.repo.joinDocRoom(this.roomId);
-        if (this.destroyed) {
+        if (!isActive()) {
           joinedSub.unsubscribe();
           return;
         }
@@ -2458,6 +2473,10 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
         await withTimeout(binding.firstSyncedWithRemote, syncDocTimeoutMs, timeoutMessage);
         return; // Success
       } catch (error) {
+        if (!isActive()) {
+          joinedSub?.unsubscribe();
+          return;
+        }
         const errMsg = formatErrorMessage(error);
         const timedOut =
           error instanceof Error &&
@@ -2484,7 +2503,7 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
               timer.unref();
             }
           });
-          if (this.destroyed) {
+          if (!isActive()) {
             return;
           }
           continue;
