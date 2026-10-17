@@ -1594,6 +1594,7 @@ const engineRowOf = (row: ChatVirtualRow): EngineRow => {
     return {
       ...base,
       turnId: row.item.type === 'message' ? row.item.message.id : null,
+      groupTurnIds: row.groupedItems?.slice(1).map((entry) => entry.message.id),
       estimate: ENGINE_ROW_ESTIMATE_PX.standard,
     };
   }
