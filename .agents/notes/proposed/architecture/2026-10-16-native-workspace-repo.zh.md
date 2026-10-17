@@ -25,7 +25,7 @@ snapshot，workspace catalog 仍选择 Client 0.12.0 和 CRDT 0.19.0。
 - CLI 目录读取和元数据确认在既有业务入口组合原生 Repo 操作，删除只有一个消费者的目录与权威对象、未使用的查询选项和兼容方法；保留身份规范化、删除过滤、排序与每次新的服务端确认。
 - 本机 v7 客户端拥有 worker、期限和有界队列，含约 64 MiB 的字符串保留预算。分块输入必须完整且版本覆盖公告 frontier；普通写入不增加 join epoch。旧客户端仅作为测试 fixture 保留 host 协议兼容覆盖，没有产品导出或应用导入；原生客户端测试连接真实 v7 host。
 - Legacy 房间投影包含实际路由与 attachment：缺席路由为 detached，即使新原生 detail ref 初始为 joining。首次同步等待跨越主动缺席，但实际已挂载路由失败会拒绝等待。
-  房间句柄保留原生 RoomLease 及仍有消费者的 UI 状态视图；清单和 transport 快照直接读取原生 lease，本地房间记录只负责 purge 时释放借用 owner。删除未使用的聚合/等待结果 API 与平行 adapter/status 表。原生 reconnect 重试失败的 attach 并保留 SDK producer，替代应用层逐房间 rejoin 扫描；继续复刻完整旧订阅协议会重复这些 owner 和状态。
+  房间句柄保留原生 RoomLease 及仍有消费者的 UI 状态视图；清单和 transport 快照直接读取原生 lease，本地房间记录只负责 purge 时释放借用 owner。删除未使用的聚合/等待结果 API 与平行 adapter/status 表。原生 sync／reconcile 重试失败的 attach 并保留 SDK producer，替代应用层逐房间 rejoin 任务；继续复刻完整旧订阅协议会重复这些 owner 和状态。
 
 ## 释放、恢复与因果交接
 
@@ -89,10 +89,17 @@ transport Scope 的 FiberMap 中按对象身份保留一个恢复任务。反复
 Repo 0.23.0 提供所选房间的 sync／reconcile，没有单 binding reset。Session history 重试
 因此仅执行现有房间的 `sync('streams')`，沿用 Doc 同步期限（默认 8 秒）和借用者信号。
 offline／未确认结果使本次尝试失败，不算成功，也不再无限等待 readiness。原生 reconcile
-可重试失败的 attach；终止的 SDK generation 仍需 transport reset，统一交给现有
-connection-recovery 控制器及其 watchdog／退避，而不是每个 pending Session 各自重连。
-这消除了 K 次 N 房间重建，没有声称实现上游尚未支持的单房间 SDK reset。Session 尝试期间，
-健康兄弟房间与 presence 保持连接；控制器实际执行的整连接 reset 仍影响全部成员。
+可重试失败的 attach；终止的 SDK generation 仍需 transport reset，但仅在 transport 本身
+故障或显式 reset 时进行，而不是由每个 pending Session 或健康 watchdog 触发。在线 sweep
+并行 sync／reconcile failed／offline 房间，等独立修复完成后汇总失败，不触碰健康房间、
+presence 或正在建立 baseline 的房间。这纠正了此前“集中到控制器就受退避控制”的表述：
+健康时的 30s sweep 绕过了 backoff。持续的单房间 403 不得每个周期重置全部成员。整连接
+故障仍会重置成员；无法通过所选 sync 修复的 terminal SDK generation 保持失败，直到连接
+故障恢复或显式 reset。没有声称实现不受上游支持的单 binding reset，也没有新增全局重试循环。
+
+触发者仍是控制器 watchdog 或已有 reconnect 请求。原生 Repo 持有所选房间的 reconcile／sync、
+截止时间及已接受工作；facade 传递调用方取消信号，私下汇总独立失败的 Cause。不新增 owner
+交接或保留任务表。失败修复继续可见、可重试，不中断其他房间的修复。
 
 以下设计限制不在本次修复范围内，不能算作已满足失败隔离或终止关闭的保证：
 
@@ -104,13 +111,22 @@ connection-recovery 控制器及其 watchdog／退避，而不是每个 pending 
 
 ## 验证与限制
 
+watchdog 回归在 `c57f9ec8` 观察到健康兄弟房间变为 `offline` 而失败，缩小 facade 修复
+范围后同一个真实 Repo／控制器夹具通过。三个假 interval 周期中，持续权限失败保持可见，
+另一处离线房间反复同步并写入 Doc 字节，健康房间状态和实际 presence 发布持续可用。
+连接本身 offline／closed／failed 以及显式 force 用例仍重置连接并保留原副本。五个相关
+CLI／renderer 套件通过 121 项。全仓类型与类型感知 lint、完整 Effect、八项边界／
+翻译检查、格式和文档检查通过。这是注入原生 transport 边界的验证，不是线上权限服务测试。
+根检查通过类型、lint 和 Effect 后，在沙箱内未修改的 `effect-lint.test.mjs` 嵌套进程
+夹具处停止；全部脚本 58 项移出沙箱后通过。未进入完整应用测试阶段，不声称当前根检查全绿。
+
 Session 隔离回归在 `11f89018` 明确观察到健康兄弟房间为 `offline` 而失败，改为所选房间
 操作后通过。真实 Repo 配合注入的 transport，用显式门闸控制整连接 reset，并核对两个
 pending Session 实际导入的 Doc 字节。joining／offline 的假时钟用例验证等待超时后仍可
 重试，另一借用者仍可用；取消覆盖原生 reconcile 和 sync 两个阶段。含既有 SDK checkpoint、
-dispatch／recovery 覆盖的四组 CLI 套件共 90 项通过。
-CLI 类型、修改文件 lint、Effect 与边界检查通过；根检查在组件类型检查阶段达到本地十分钟预算，不能算作
-当前版本完整根检查通过。
+dispatch／recovery 覆盖的四组 CLI 套件在 `c57f9ec8` 共 90 项通过。
+该修订的 CLI 类型、修改文件 lint、Effect 与边界检查通过；当时的根检查在组件类型检查
+阶段达到本地十分钟预算，不算完整根检查通过。
 
 在 `6c5fca07`，提供的两项深审复现失败，原有 19 项通过。修复后扩展套件 22 项通过。
 真实 SDK HTTP 在 connect/sync 和 join 两条路径中被保持到 abort 和释放预算之后；请求完成后，

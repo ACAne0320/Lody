@@ -668,22 +668,36 @@ export class WorkspaceRepoLegacy {
     return this.attachmentReport();
   }
   async reconnect(options?: RepoReconnectOptions): Promise<RepoAttachmentReport> {
+    const native = this.native;
     const results = await Promise.allSettled(
       [...this.attachments]
         .filter(([id]) => !options?.transportIds || options.transportIds.includes(id))
-        .map(([, { value }]) =>
+        .map(([id, { value }]) =>
           value
             ? this.runLegacy(
                 Effect.gen(function* () {
                   const status = yield* value.statusSnapshot;
-                  const rooms = yield* value.rooms;
-                  // Repair must not retire a generation still establishing its baseline.
                   const reset =
                     options?.resetBackoff === true ||
                     status === 'offline' ||
                     status === 'closed' ||
-                    rooms.some((room) => room.status === 'failed' || room.status === 'offline');
-                  yield* reset ? value.reconnect : value.refreshRoutes;
+                    status === 'failed';
+                  if (reset) return yield* value.reconnect;
+                  // A periodic sweep must not restart healthy SDK generations or
+                  // presence because one room fails. Pending baselines stay owned.
+                  const rooms = yield* value.rooms;
+                  const roomResults = yield* Effect.forEach(
+                    rooms.filter((room) => room.status === 'failed' || room.status === 'offline'),
+                    ({ target }) => native.syncOnce(target, id).pipe(Effect.exit),
+                    { concurrency: 'unbounded' }
+                  );
+                  const cause = roomResults.reduce<Cause.Cause<RepoError>>(
+                    (failure, result) =>
+                      Exit.isFailure(result) ? Cause.combine(failure, result.cause) : failure,
+                    Cause.empty
+                  );
+                  if (cause.reasons.length) return yield* Effect.failCause(cause);
+                  return undefined;
                 }),
                 options?.signal
               )

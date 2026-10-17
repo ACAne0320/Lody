@@ -675,6 +675,55 @@ describe('retained native release ownership', () => {
       await repo.destroy();
     }
   });
+  it.each([
+    { status: 'online' as const, force: true },
+    { status: 'offline' as const, force: false },
+    { status: 'closed' as const, force: false },
+    { status: 'failed' as const, force: false },
+  ])('resets the connection for transport $status, force=$force', async ({ status, force }) => {
+    const repo = await WorkspaceRepoLegacy.create({});
+    try {
+      const doc = (await repo.openPersistedDoc('transport-recovery')).doc;
+      await repo.addTransport('cloud', {
+        kind: 'native-workspace-transport',
+        make: (id) =>
+          Effect.gen(function* () {
+            const physical = yield* SubscriptionRef.make<TransportStatus>(status);
+            return {
+              id,
+              status: physical,
+              authority: 'server',
+              connect: Effect.void,
+              disconnect: Effect.void,
+              reconnect: Effect.gen(function* () {
+                doc.getText('body').insert(0, 'connection recovered');
+                doc.commit();
+                yield* SubscriptionRef.set(physical, 'online');
+              }),
+              join: () =>
+                Effect.gen(function* () {
+                  return {
+                    status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                    close: Effect.void,
+                    sync: Effect.succeed('confirmed' as const),
+                  };
+                }),
+            };
+          }),
+      });
+      const room = await repo.joinDocRoom('transport-recovery');
+      await repo.runLegacy(room.native.awaitSynced('cloud'));
+      expect(doc.getText('body').toString()).toBe('');
+      const report = await repo.reconnect({ transportIds: ['cloud'], resetBackoff: force });
+      expect(report.ok).toBe(true);
+      expect(doc.getText('body').toString()).toBe('connection recovered');
+      expect((await repo.openPersistedDoc('transport-recovery')).doc).toBe(doc);
+      room.unsubscribe();
+    } finally {
+      await repo.destroy();
+    }
+  });
+
   it('native reconnect retries a failed room attach and retains the shared replica', async () => {
     const repo = await WorkspaceRepoLegacy.create({});
     let unavailable = true;
@@ -710,7 +759,7 @@ describe('retained native release ownership', () => {
       );
       expect(doc.getText('body').toString()).toBe('');
       unavailable = false;
-      const report = await repo.reconnect({ transportIds: ['cloud'], resetBackoff: true });
+      const report = await repo.reconnect({ transportIds: ['cloud'], resetBackoff: false });
       expect(report.ok).toBe(true);
       await repo.runLegacy(room.native.awaitSynced('cloud'));
       expect(doc.getText('body').toString()).toBe('recovered');

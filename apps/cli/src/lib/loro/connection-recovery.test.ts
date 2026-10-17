@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceId } from '@lody/shared';
+import { Effect, Scope, Stream, SubscriptionRef } from 'effect';
+import { RepoIOError, type RoomStatus } from 'loro-repo/effect';
+import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import type {
   LoroRepo,
   TransportConnectionStatus,
@@ -95,29 +98,144 @@ describe('LoroConnectionRecoveryController watchdog room sweep', () => {
     return controller;
   };
 
-  it('sweeps rooms via repo.reconnect() even while transport and meta are healthy', async () => {
-    // Regression guard for the "stuck until daemon restart" bug class: a
-    // doc/flock room can sit in 'error' after a non-retriable stream failure
-    // while transport + meta stay healthy. The watchdog previously early-
-    // returned on isStreamsHealthy() and never rejoined such rooms.
-    let resolveReconnectCalled: () => void = () => {};
-    const reconnectCalled = new Promise<void>((resolve) => {
-      resolveReconnectCalled = resolve;
+  it('keeps healthy rooms and presence online across watchdog sweeps of a persistently failed room', async () => {
+    // Advance only the controller's interval; native workers use their own scheduler.
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const repo = await WorkspaceRepoLegacy.create({});
+    const owner = await repo.acquireScopeLegacy('watchdog presence fixture');
+    const healthy = await repo.runLegacy(SubscriptionRef.make<RoomStatus>('synced'));
+    const broken = await repo.runLegacy(SubscriptionRef.make<RoomStatus>('failed'));
+    const retryable = await repo.runLegacy(SubscriptionRef.make<RoomStatus>('synced'));
+    const resetting = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    let presenceOnline = true;
+    const published: Uint8Array[] = [];
+    let completed = Promise.withResolvers<void>();
+    const reconnect = repo.reconnect.bind(repo);
+    vi.spyOn(repo, 'reconnect').mockImplementation(async (options) => {
+      try {
+        return await reconnect(options);
+      } finally {
+        completed.resolve();
+      }
     });
-    const reconnect = vi.fn(async () => {
-      resolveReconnectCalled();
-    });
-    const metaSub = createMetaSub('joined');
-    createController({ reconnect, joinMetaRoom: vi.fn() }, metaSub);
-
-    expect(reconnect).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(30_000);
-    await reconnectCalled;
-    expect(reconnect).toHaveBeenCalledTimes(1);
-    expect(reconnect).toHaveBeenCalledWith({ resetBackoff: false, timeout: 10_000 });
-
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(reconnect).toHaveBeenCalledTimes(2);
+    try {
+      await repo.addTransport('streams', {
+        kind: 'native-workspace-transport',
+        make: (id) =>
+          Effect.succeed({
+            id,
+            authority: 'server',
+            connect: Effect.void,
+            disconnect: Effect.void,
+            reconnect: Effect.gen(function* () {
+              presenceOnline = false;
+              yield* SubscriptionRef.set(healthy, 'offline');
+              resetting.resolve();
+              yield* Effect.promise(() => resume.promise);
+              presenceOnline = true;
+              yield* SubscriptionRef.set(healthy, 'synced');
+            }),
+            openEphemeral: () =>
+              Effect.succeed({
+                messages: Stream.never,
+                close: Effect.void,
+                publish: (message) =>
+                  Effect.suspend(() => {
+                    if (!presenceOnline)
+                      return Effect.fail(new RepoIOError('presence offline', undefined));
+                    published.push(message.slice());
+                    return Effect.void;
+                  }),
+              }),
+            join: (target, replica) =>
+              Effect.gen(function* () {
+                return {
+                  status:
+                    target.kind !== 'doc'
+                      ? yield* SubscriptionRef.make<RoomStatus>('synced')
+                      : target.id === 'broken'
+                        ? broken
+                        : target.id === 'retryable'
+                          ? retryable
+                          : healthy,
+                  close: Effect.void,
+                  sync: Effect.gen(function* () {
+                    if (target.kind === 'doc' && target.id === 'broken')
+                      return yield* Effect.fail(
+                        new RepoIOError('synthetic permission denied', { status: 403 })
+                      );
+                    if (
+                      target.kind === 'doc' &&
+                      target.id === 'retryable' &&
+                      replica.kind === 'doc'
+                    ) {
+                      replica.lease.doc.getText('body').insert(0, 'recovered;');
+                      replica.lease.doc.commit();
+                      yield* SubscriptionRef.set(retryable, 'synced');
+                    }
+                    return 'confirmed' as const;
+                  }),
+                };
+              }),
+          }),
+      });
+      const healthyRoom = await repo.joinDocRoom('healthy');
+      const brokenRoom = await repo.joinDocRoom('broken');
+      const retryableRoom = await repo.joinDocRoom('retryable');
+      await repo.runLegacy(healthyRoom.native.awaitSynced('streams'));
+      await repo.runLegacy(retryableRoom.native.awaitSynced('streams'));
+      await repo.runLegacy(
+        brokenRoom.native.status('streams').pipe(
+          Stream.filter((status) => status === 'failed'),
+          Stream.runHead
+        )
+      );
+      const doc = (await repo.openPersistedDoc('retryable')).doc;
+      const presence = await repo.runLegacy(
+        repo.native
+          .acquirePresence('streams', 'watchdog')
+          .pipe(Effect.provideService(Scope.Scope, owner.scope))
+      );
+      const metaRoom = await repo.joinMetaRoom();
+      await repo.runLegacy(metaRoom.native.awaitSynced('streams'));
+      controller = new LoroConnectionRecoveryController({
+        repo,
+        workspaceId: 'ws-recovery-test' as WorkspaceId,
+        logger: createLogger(),
+        initialMetaSub: metaRoom,
+        initialTransportStatus: 'connected',
+        initialMetaSyncPromise: Promise.resolve(true),
+        initialMetaSyncCompleted: true,
+        onMetaRoomReady: vi.fn(),
+      });
+      for (let round = 1; round <= 3; round++) {
+        completed = Promise.withResolvers<void>();
+        await repo.runLegacy(SubscriptionRef.set(retryable, 'offline'));
+        await repo.runLegacy(
+          retryableRoom.native.status('streams').pipe(
+            Stream.filter((status) => status === 'offline'),
+            Stream.runHead
+          )
+        );
+        await vi.advanceTimersByTimeAsync(30_000);
+        await Promise.race([completed.promise, resetting.promise]);
+        expect(await repo.runLegacy(healthyRoom.native.statusSnapshot('streams'))).toBe('synced');
+        expect(await repo.runLegacy(brokenRoom.native.statusSnapshot('streams'))).toBe('failed');
+        expect(await repo.runLegacy(retryableRoom.native.statusSnapshot('streams'))).toBe('synced');
+        expect(doc.getText('body').toString()).toBe('recovered;'.repeat(round));
+        await repo.runLegacy(presence.set('round', round));
+        await repo.runLegacy(presence.sync);
+        expect(JSON.parse(new TextDecoder().decode(published.at(-1))).values.round).toBe(round);
+      }
+    } finally {
+      resume.resolve();
+      await controller?.cleanUp();
+      controller = null;
+      await repo.runLegacy(owner.close);
+      await repo.destroy();
+    }
   });
 
   it('does not re-fire meta-synced listeners or rejoin meta on a healthy sweep', async () => {

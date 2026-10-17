@@ -134,6 +134,6 @@ recovery attempt; `force` must not clear flap history. Regression:
 `tests/reconnect-storm-repro.test.ts`.
 
 Session history retries only its room's native sync/reconcile, with the Doc-sync
-deadline and borrower cancellation. Only the connection controller resets the
-shared transport, including terminal SDK generations (Repo 0.23 has no binding
-reset). A pending Session must not restart sibling rooms or presence.
+deadline and borrower cancellation. Healthy watchdog sweeps repair failed rooms
+without resetting siblings or presence. Only transport failure or explicit force
+resets the shared transport; a terminal SDK room stays failed until then.

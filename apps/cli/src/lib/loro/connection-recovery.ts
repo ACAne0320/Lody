@@ -812,12 +812,9 @@ export class LoroConnectionRecoveryController {
     }
 
     if (!options.force && this.isStreamsHealthy()) {
-      // Healthy transport + meta says nothing about per-doc/flock rooms: a
-      // room whose stream session hit a non-retriable failure (e.g. a token
-      // refresh hiccup answered with a 4xx) sits in 'error' forever —
-      // streams-crdt exits that room's loops permanently and nothing else
-      // supervises it, so CLI-authored ops for the room never reach the cloud
-      // until a daemon restart. Sweep instead of returning early.
+      // Healthy transport + meta says nothing about individual room attaches.
+      // Sweep only failed/offline rooms; a terminal SDK generation must not
+      // turn this fixed-period watchdog into repeated connection-wide resets.
       await this.sweepRooms(reason);
       return;
     }
@@ -858,12 +855,10 @@ export class LoroConnectionRecoveryController {
   }
 
   /**
-   * Connection-owned recovery sweep. Repo 0.23 resets the whole transport when
-   * any member is failed/offline; healthy transports only reconcile routes.
-   * Keep that reset here under the controller's watchdog/backoff, rather than
-   * issuing it independently from each pending Session history waiter. Skips
-   * the meta-ready ceremony (`ensureMetaRoomJoined`/`waitForMetaRoomReady`) so
-   * a healthy sweep never re-fires meta-synced listeners.
+   * On an online transport, the facade syncs/reconciles only failed/offline
+   * rooms. This fixed-period path has no exponential backoff and must never
+   * promote a room failure into a shared transport reset. Skip the meta-ready
+   * ceremony so a healthy sweep never re-fires meta-synced listeners.
    */
   private async sweepRooms(reason: string): Promise<void> {
     const timeoutMs = readTimeoutEnv('LODY_LORO_RECONNECT_TIMEOUT_MS', 10_000);

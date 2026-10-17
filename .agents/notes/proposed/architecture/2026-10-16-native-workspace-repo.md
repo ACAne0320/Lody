@@ -58,8 +58,8 @@ that verifies dependency closure, not native builds or the full test suite.
   Handles retain the native RoomLease and only the UI status view still consumed.
   Inventory and transport snapshots read native leases; local room records only
   retain borrow owners for purge. Remove unused aggregate/wait-result APIs and
-  parallel adapter/status maps. Native reconnect retries failed attaches and
-  retains SDK producers, replacing application per-room rejoin sweeps. Keeping
+  parallel adapter/status maps. Native sync/reconcile retries failed attaches and
+  retains SDK producers, replacing application per-room rejoin jobs. Keeping
   the full old subscription contract would duplicate these owners and statuses.
 
 ## Release, recovery and causal handoff
@@ -194,12 +194,22 @@ Session history retries therefore use only their existing room's `sync('streams'
 with the existing Doc-sync deadline (8 seconds by default) and borrower signal.
 An offline/unconfirmed result rejects that attempt; it is not success or an
 unbounded readiness wait. Native reconciliation can retry a failed attach. A
-terminal SDK generation still needs transport reset, which belongs to the existing
-connection-recovery controller and its watchdog/backoff, rather than every pending
-Session. This removes K independent N-room resets; it does not claim an unsupported
-per-room SDK reset. Healthy sibling SDK generations and presence stay connected
-during a Session attempt. The controller's actual transport reset still affects
-all its members.
+terminal SDK generation still needs transport reset; this is reserved for an
+actual transport failure or an explicit reset, rather than every pending Session
+or a healthy watchdog sweep. Online sweeps sync/reconcile only failed/offline
+rooms concurrently and collect their failures before reporting. They leave healthy
+rooms, presence and pending baselines alone. This corrects the earlier claim that
+moving N-room resets into the controller put them under backoff: its healthy 30s
+sweep bypasses that backoff. A persistent room-level 403 must not reset all members
+every period. Transport-wide failure still resets all members, and terminal SDK
+generations remain failed until that boundary or explicit reset; no unsupported
+per-binding SDK reset or new global recovery loop is claimed.
+
+The trigger is the existing controller watchdog or reconnect request. Native Repo
+owns selected-room reconcile/sync, its deadlines and accepted work; the facade
+passes the caller's cancellation and combines independent failure Causes privately.
+There is no owner handoff or new retained job map. A failed repair remains visible
+and retryable, without interrupting a different room's repair.
 
 The following design limits remain outside this repair; they are not containment
 guarantees or claims of completed terminal shutdown:
@@ -212,15 +222,31 @@ guarantees or claims of completed terminal shutdown:
 
 ## Verification and limits
 
+The watchdog regression fails against `c57f9ec8` with the healthy sibling observed
+as `offline`; the same real-Repo/controller fixture passes after narrowing the
+facade repair. Three fake interval periods keep a persistent permission failure
+visible while another offline room repeatedly syncs and writes Doc bytes, and
+healthy room status and actual presence publishing remain usable. Connection-level
+offline/closed/failed and explicit-force cases still reset and preserve the replica.
+The five owning CLI/renderer suites pass 121 cases. Repository types and
+type-aware lint, full Effect checks, all eight boundary/translation guards,
+formatting and documentation checks pass. This is an injected native transport
+boundary, not a live-service permission test.
+The root check passes types, lint and Effect, then stops at the unchanged
+`effect-lint.test.mjs` nested-process fixture under the sandbox. All 58 script
+cases pass outside the sandbox; the full application test stage was not
+reached, so no complete current root pass is claimed.
+
 The Session isolation regression fails at `11f89018` with the healthy sibling's
 native status observed as `offline`; it passes after the selected-room change.
 The real Repo with an injected transport gates connection reset explicitly and
 checks imported Doc bytes for both pending Sessions. Joining/offline waits use
 fake deadlines, remain retryable after timeout and preserve another borrower.
-Cancellation covers both native reconcile and sync. The four owning CLI suites
+Cancellation covers both native reconcile and sync. At `c57f9ec8`, the four owning CLI suites
 pass 90 cases, including existing SDK checkpoint and dispatch/recovery coverage.
-CLI types, changed-file lint, Effect and boundary checks pass. The root run reaches its local ten-minute
-budget during component typechecking; no current complete root pass is claimed.
+CLI types, changed-file lint, Effect and boundary checks pass at that revision.
+That root run reached its local ten-minute budget during component typechecking;
+it was not a complete root pass.
 
 At `6c5fca07`, the two supplied deep-review regressions fail while the prior 19 cases
 pass. After repair, the expanded suites pass 22 cases. Real SDK HTTP remains held
