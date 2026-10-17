@@ -12,7 +12,7 @@ Peer convergence, server upload confirmation and local durability remain separat
 Same-store Doc cursors are reused explicitly; Meta/Flock checkpoints stay bound
 to their replica, and isolated eager workers use volatile checkpoints.
 
-Existing Promise consumers enter through `WorkspaceRepoLegacy`. Legacy Doc
+Existing Promise consumers enter through `WorkspaceRepoLegacy`. Legacy Doc/Flock
 handles borrow a cached native replica. Store disposal stops projections and
 releases its borrow; the cache then attempts eviction, persisting before closing
 the cached hold. A failed save retains the same borrowable replica, so another

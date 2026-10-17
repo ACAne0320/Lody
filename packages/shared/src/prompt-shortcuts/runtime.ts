@@ -213,7 +213,7 @@ export class PromptShortcutRuntime {
       let unsubscribe: (() => void) | undefined;
       let retained = false;
       try {
-        const lease = await this.store.repo.acquireFlockDoc(id);
+        const lease = await this.store.repo.acquireFlockDocHandleLegacy(id);
         releaseReplica = () => lease.release();
         const catalog = new PromptShortcutCatalog(lease.flock);
         unsubscribe = lease.flock.subscribe(() => this.refreshIndexes());
@@ -501,7 +501,7 @@ export class PromptShortcutRuntime {
       await sync.sync();
       this.assertActive();
       const id = getShortcutIndexStreamId(domain);
-      const lease = await this.store.repo.acquireFlockDoc(id);
+      const lease = await this.store.repo.acquireFlockDocHandleLegacy(id);
       try {
         mutate(new PromptShortcutCatalog(lease.flock));
         await this.store.repo.persistFlockDocNow(id, lease.flock);

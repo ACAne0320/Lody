@@ -37,13 +37,17 @@ Session 退休和构造失败会先清理 reader 观察，再释放借用的 Doc
 
 上游副本释放在取消订阅前提交并保存文档和元数据。失败会保留 `RepoReleaseFailed.retry` 及已接受的 I/O；再次获取有可能必须先成功完成旧释放，才能构建副本。SDK close 停止网络准入并等待已接受的工作，不代表发起一次新的服务端上传确认；单纯离线不能证明快捷指令 close 必然失败。
 
-Legacy Doc handle 将已有文档缓存的持有与每个视图的借用分开。Session、预览和 schedule cache
-先停止投影、释放借用，再尝试卸载文档。卸载先保存，再关闭缓存持有；普通配额故障使原副本保持
+Legacy Doc/Flock handle 将已有副本缓存的持有与每个视图的借用分开。Session、预览、schedule
+cache、Code Collab 文件索引和快捷指令索引在驱逐或工作区关闭前释放各自借用。卸载先保存，再关闭缓存持有；普通配额故障使原副本保持
 活跃和可借用，持续故障期间反复、并发重开仍使用同一副本。后来成功卸载才释放原副本并允许新一代。
 真正的 native release 失败仍需先恢复，不能直接吞错：已安装 SDK 在最终释放开始时就标记 retiring，
 再次 acquire 会要求完成旧释放。缓存持有属于 Legacy 已有的所有权，成功卸载或工作区关闭时释放，
-没有增加后台重试循环或第二个 Repo。纯 native 借用仍按 Scope 释放。卸载警告不输出原始错误、Cause 或用户正文。
-卸载等待使用 SDK release 的期限，默认 30 秒；不会取消或重复已接受的 adapter 工作。
+没有增加后台重试循环或第二个 Repo。纯 native 借用仍按 Scope 释放。Flock 读者使用
+`acquireFlockDocHandleLegacy`，最后一个视图释放不会在保存成功前退休缓存副本。驱逐失败仍
+拒绝并保留原始错误，后续借用者仍可复用活跃副本。Code Collab 经 `unloadFlockDoc` 驱逐；
+快捷指令索引同 Promise 基线一样，保留缓存持有至显式驱逐或 Repo 关闭。卸载警告不输出
+原始错误、Cause 或用户正文。
+Doc/Flock 卸载等待使用 SDK release 的期限，默认 30 秒；不会取消或重复已接受的 adapter 工作。
 挂起保存可以超过等待期限，视图仍借用同一副本；后续持久化和关闭仍等待原写入。
 CLI 重新初始化也将已释放的借用与卸载结果分开，保留同样的可用性。
 
@@ -124,6 +128,17 @@ CLI composition 没有可变的 transport 路由谓词，lazy acquire 会调和�
 
 ## 验证与限制
 
+Flock 复用用例在真实 IndexedDB 批量保存和文件存储保存边界注入故障。远端导入的索引在
+持续故障期间反复释放、重新借用后仍为同一个 Flock，字节保留；其他 Flock/Doc 视图仍可
+打开。存储恢复后可成功驱逐并从磁盘加载新副本。保持中的批量保存超过驱逐期限后仍由
+原 owner 持有，另一个视图在同一 Flock 写入的字节也会在之后保存。这些用例覆盖 Code Collab
+和快捷指令 runtime 消费者，而非只测试 facade。五个相关套件共 130 项通过。对照中仅移除
+Flock 缓存持有，两个消费者的回归用例都因 `RepoReleaseFailed` 失败；快捷指令 runtime
+在目录错误状态中暴露该失败。前一提交 `7d35b3ff` 的 GitHub CI 和 Desktop E2E 已通过，
+这是本次 Flock 修改的基线，不代表新修改验收。Shared／components 类型、改动文件类型感知
+lint、完整 Effect 检查、全仓格式、文档和八项边界／翻译检查通过。必需的根检查在 Electron web 类型检查阶段
+达到十分钟本地预算（退出 124），不能声称完整通过。
+
 六项真实 SDK 用例覆盖 bootstrap、live read、append、持续 bootstrap 403、保持中的正常初始化
 及首次同步总期限已结束。临时失败后恢复到 synced，模拟服务端实际导入本地编写的 Doc 字节。持续拒绝的三个 watchdog 周期内，
 失败的 SDK generation 被重试，本地字节保留，健康兄弟房间状态和真实 SDK generation 不变。
@@ -132,7 +147,7 @@ CLI composition 没有可变的 transport 路由谓词，lazy acquire 会调和�
 I/O，再恢复服务并观察原有字节上传、健康兄弟房间 generation 不变。它在 `84416154`
 上经过三个 watchdog 周期后仍失败。
 bootstrap 回归在 `ebf906f9` 上因没有编写字节到达服务端而失败，加入 health 判断后通过。
-总期限修复通过五个相关 CLI／renderer 套件 127 项、全仓类型、完整类型感知 lint 与 Effect、
+`7d35b3ff` 的总期限修复通过五个相关 CLI／renderer 套件 127 项、全仓类型、完整类型感知 lint 与 Effect、
 格式、文档和八项边界／翻译检查；脚本 58 项通过。SDK 退避使用 TestClock，控制器 interval
 用假时钟。这里使用正式 SDK／Repo
 和模拟 HTTP 边界，控制器 Meta 状态为注入值，不代表线上服务验收。

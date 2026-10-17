@@ -51,7 +51,7 @@ export type CodeCollabFileIndexCache = {
 };
 
 export type CodeCollabFileIndexRuntimeRepo = {
-  acquireFlockDoc: (flockDocId: string) => Promise<{
+  acquireFlockDocHandleLegacy: (flockDocId: string) => Promise<{
     readonly flock: Flock;
     readonly release: () => Promise<void>;
   }>;
@@ -69,7 +69,7 @@ async function openCodeCollabFileIndexResource(
   onSyncFailure: () => void
 ): Promise<MutableFileIndexResource> {
   logCodeCollabInfo('file-index flock open', { flockDocId });
-  const repoLease = await runtimeRepo.acquireFlockDoc(flockDocId);
+  const repoLease = await runtimeRepo.acquireFlockDocHandleLegacy(flockDocId);
   const listeners = new Set<() => void>();
   const resourceKey = {};
   let state: CodeCollabFileIndexLoadState = { status: 'loading' };

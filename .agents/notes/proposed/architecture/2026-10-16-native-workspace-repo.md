@@ -71,9 +71,9 @@ SDK close stops network admission and drains accepted work; it is not an implici
 fresh server-upload receipt. An offline connection alone does not establish that
 shortcut close must fail.
 
-Legacy Doc handles keep the existing cached replica hold separate from each view's
-borrow. Session, preview and schedule caches stop projections and release their
-borrow, then attempt eviction. Eviction persists before closing the cached hold:
+Legacy Doc/Flock handles keep the existing cached replica hold separate from each
+view's borrow. Session, preview and schedule caches, Code Collab file indexes and
+shortcut indexes release their borrow before eviction or workspace close. Eviction persists before closing the cached hold:
 an ordinary quota failure leaves the original native replica active and borrowable.
 Repeated and concurrent reopens reuse that replica while storage is still failing;
 the next successful eviction saves it and permits a fresh generation. Genuine
@@ -82,8 +82,13 @@ such failures would not work: the installed SDK marks the last replica retiring
 before persisting, and its acquire must finish that release. The extra cached hold
 is the Legacy cache's existing ownership, removed by successful eviction or workspace
 close, not a new retry loop or a second Repo. Native-only borrowers keep scoped release.
+Flock readers use `acquireFlockDocHandleLegacy` so the last view release never
+retires the cached replica before a successful save. A failed eviction still rejects
+and retains its original error; a later borrower can reuse that active replica.
+Code Collab still evicts through `unloadFlockDoc`; private shortcut indexes retain
+their cached hold until explicit eviction or Repo close, as on the Promise base.
 Eviction warnings contain no raw error/Cause or user payload.
-The eviction waiter uses the SDK release deadline (30 seconds by default). It
+Doc and Flock eviction waiters use the SDK release deadline (30 seconds by default). It
 does not cancel or duplicate accepted adapter work. A hung save can outlive that
 wait while another view borrows the same replica; later durability and close
 still join the original write. CLI reinitialization clears a successfully released
@@ -238,6 +243,23 @@ guarantees or claims of completed terminal shutdown:
 
 ## Verification and limits
 
+Flock reuse is tested at the real IndexedDB batch-save and filesystem save
+boundaries. Remote-imported indexes survive repeated release/reacquire during
+persistent failure with the same Flock identity and bytes; unrelated Flock/Doc
+views still open. Recovery permits eviction and a fresh replica loaded from disk.
+A held batch save outlives the eviction deadline without losing ownership; another
+view writes to the same Flock and the later save includes those bytes. These tests
+exercise the Code Collab and shortcut runtime consumers, not only the facade.
+All five affected suites pass (130 cases). Removing only the cached Flock hold
+makes both consumer regressions fail with `RepoReleaseFailed`; the shortcut
+runtime exposes that failure in its directory error state. The preceding head
+`7d35b3ff` passed GitHub CI and Desktop E2E; those results are the baseline, not
+acceptance of this Flock change. Shared/components types, changed-file type-aware
+lint, full Effect checks, repository formatting, documentation and all eight
+boundary/translation guards pass. The
+required root check reaches its ten-minute local budget during Electron web
+typechecking (exit 124), so a complete root pass is not claimed.
+
 Six real-SDK cases cover bootstrap, live-read, append, persistent bootstrap
 403, a held valid initialization and an expired initial-sync hard deadline.
 Temporary failures recover to synced and the server imports the authored Doc bytes. Across three persistent-denial watchdog periods, the failed SDK generation
@@ -250,7 +272,7 @@ service and observes the original bytes uploaded without restarting the healthy
 sibling. It fails against `84416154` after three watchdog periods.
 The bootstrap regression fails against `ebf906f9`
 with no authored bytes reaching the server, then passes with the health check.
-This fix passes the five affected CLI/renderer suites (127 cases),
+The initialization-deadline fix at `7d35b3ff` passes the five affected CLI/renderer suites (127 cases),
 repository types, full type-aware lint and Effect checks, formatting, documentation
 and all eight boundary/translation guards. Script tests pass 58 cases.
 SDK backoff uses TestClock; the controller interval uses fake timers. These use

@@ -368,6 +368,20 @@ export class WorkspaceRepoLegacy {
       joinRoom: () => this.joinFlockDocRoom(id),
     };
   }
+  async acquireFlockDocHandleLegacy(
+    id: string
+  ): Promise<WorkspaceFlockDocHandle & { release(): Promise<void> }> {
+    // Match cached Doc handles: a failed eviction must leave this replica
+    // active and borrowable, rather than retiring the native last lease.
+    await this.flock(id);
+    const lease = await this.acquireFlockDoc(id);
+    return {
+      flock: lease.flock,
+      release: lease.release,
+      syncOnce: () => this.sync({ scope: 'doc', flockDocIds: [id] }),
+      joinRoom: () => this.joinFlockDocRoom(id),
+    };
+  }
   async acquireDoc(id: string): Promise<RepoDocLease> {
     const owned = await this.own(this.native.acquireDoc(id));
     return {
@@ -398,7 +412,10 @@ export class WorkspaceRepoLegacy {
   async unloadFlockDoc(id: string, _options?: EvictDocOptions) {
     const owned = await this.flocks.get(id);
     if (owned) {
-      if (this.native.hasStorage) await this.runLegacy(owned.value.persist);
+      if (this.native.hasStorage)
+        await this.runLegacy(
+          owned.value.persist.pipe(Effect.timeout(this.options.releaseTimeoutMs ?? 30_000))
+        );
       await this.runLegacy(owned.close);
       this.flocks.delete(id);
     }

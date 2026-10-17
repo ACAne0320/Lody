@@ -318,6 +318,58 @@ describe('retained native release ownership', () => {
     }
   });
 
+  it('bounds Flock eviction without abandoning accepted storage I/O or retiring the replica', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const adapter = storage();
+    const saveMany = adapter.saveMany.bind(adapter);
+    const entered = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    let saving = false;
+    adapter.saveMany = async (payloads) => {
+      if (payloads.some((payload) => 'flockDocId' in payload && payload.flockDocId === 'slow')) {
+        saving = true;
+        entered.resolve();
+        await finish.promise;
+        await saveMany(payloads);
+        saving = false;
+        return;
+      }
+      await saveMany(payloads);
+    };
+    const repo = await WorkspaceRepoLegacy.create({
+      storageAdapter: adapter,
+      releaseTimeoutMs: 50,
+    });
+    try {
+      const first = await repo.acquireFlockDocHandleLegacy('slow');
+      first.flock.set(['body'], 'accepted');
+      first.flock.commit();
+      await first.release();
+      const eviction = repo.unloadFlockDoc('slow').then(
+        () => ({ status: 'fulfilled' as const }),
+        (error: unknown) => ({ status: 'rejected' as const, error })
+      );
+      await entered.promise;
+      await vi.advanceTimersByTimeAsync(50);
+      expect((await eviction).status).toBe('rejected');
+      expect(saving).toBe(true);
+      const reopened = await repo.acquireFlockDocHandleLegacy('slow');
+      expect(reopened.flock).toBe(first.flock);
+      expect(reopened.flock.get(['body'])).toBe('accepted');
+      reopened.flock.set(['body'], 'accepted and retained');
+      reopened.flock.commit();
+      finish.resolve();
+      await reopened.release();
+      await repo.unloadFlockDoc('slow');
+      expect(saving).toBe(false);
+      expect((await adapter.loadFlockDoc('slow'))?.get(['body'])).toBe('accepted and retained');
+    } finally {
+      finish.resolve();
+      await repo.destroy();
+      vi.useRealTimers();
+    }
+  });
+
   it.each(['make', 'connect'] as const)(
     'removes a transport during %s and keeps a same-name successor alive after late completion',
     async (stage) => {

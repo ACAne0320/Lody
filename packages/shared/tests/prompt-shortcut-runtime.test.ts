@@ -6,9 +6,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileSystemStorageAdaptor } from 'loro-repo/storage/filesystem';
-import { getShortcutBodyStreamId, type ShortcutResource } from '../src/prompt-shortcuts/access';
+import {
+  getShortcutBodyStreamId,
+  getShortcutIndexStreamId,
+  type ShortcutResource,
+} from '../src/prompt-shortcuts/access';
 import {
   projectShortcutIndex,
+  PromptShortcutCatalog,
   type PromptShortcutIndexEntry,
 } from '../src/prompt-shortcuts/catalog';
 import { PromptShortcutDocument } from '../src/prompt-shortcuts/document';
@@ -347,6 +352,84 @@ describe('PromptShortcutSync native SDK ownership', () => {
 });
 
 describe('PromptShortcutRuntime body warming', () => {
+  it('reopens a remote index during persistent save failure and evicts it after recovery', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'lody-shortcut-flock-reuse-'));
+    directories.push(directory);
+    const adapter = new FileSystemStorageAdaptor({ baseDir: directory });
+    const save = adapter.save.bind(adapter);
+    const value = shortcut('retained-index');
+    const entry = projectShortcutIndex(value, 'body-retained-index');
+    const domain = { workspaceId, ownerUserId: userId, visibility: 'workspace' as const };
+    const id = getShortcutIndexStreamId(domain);
+    let blocked = false;
+    adapter.save = async (payload) => {
+      if (blocked && 'flockDocId' in payload && payload.flockDocId === id)
+        throw new Error('synthetic index save failure');
+      await save(payload);
+    };
+    const repo = await LoroRepo.create({ storageAdapter: adapter });
+    const store = await LocalShortcutStore.open({ repo, workspaceId, userId });
+    const source = await repo.acquireFlockDoc('remote-shortcut-index');
+    const replicas: Array<typeof source.flock> = [];
+    const remote = source.flock;
+    new PromptShortcutCatalog(remote).put(entry);
+    const runtime = new PromptShortcutRuntime(
+      store,
+      noopPublicationPort(async (resource) => {
+        if (resource.kind !== 'index') throw new Error('Expected an index');
+        const lease = await repo.acquireFlockDoc(id);
+        replicas.push(lease.flock);
+        return {
+          sync: async () => {
+            lease.flock.importJson(remote.exportJson({}));
+            lease.flock.commit();
+          },
+          join: async () => {},
+          release: () => lease.release(),
+        };
+      })
+    );
+    const rows = [
+      { shortcutId: entry.id, bodyDocId: entry.bodyDocId, ...domain, revision: entry.revision },
+    ];
+    try {
+      await runtime.setDirectory(rows);
+      const original = replicas[0];
+      if (!original) throw new Error('Missing remote index');
+      blocked = true;
+      const received = {
+        ...entry,
+        name: 'Received while storage fails',
+        revision: 'received-revision',
+      };
+      new PromptShortcutCatalog(remote).put(received);
+      original.importJson(remote.exportJson({}));
+      original.commit();
+      const receivedRows = rows.map((row) => ({ ...row, revision: received.revision }));
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await runtime.setDirectory([]);
+        expect(runtime.getSnapshot().errors.directory).toBeUndefined();
+        await expect(repo.unloadFlockDoc(id)).rejects.toThrow();
+        await runtime.setDirectory(receivedRows);
+        expect(runtime.getSnapshot().errors.directory).toBeUndefined();
+        expect(replicas.at(-1)).toBe(original);
+        expect(runtime.getSnapshot().entries).toContainEqual(received);
+      }
+      blocked = false;
+      await runtime.setDirectory([]);
+      await repo.unloadFlockDoc(id);
+      const next = await repo.acquireFlockDocHandleLegacy(id);
+      expect(next.flock).not.toBe(original);
+      expect(new PromptShortcutCatalog(next.flock).list()).toEqual([received]);
+      await next.release();
+    } finally {
+      blocked = false;
+      await runtime.dispose();
+      await source.release();
+      await repo.destroy();
+    }
+  });
+
   it('coalesces a foreground read with the same in-flight body fetch', async () => {
     const value = shortcut('review');
     const gate = Promise.withResolvers<void>();
