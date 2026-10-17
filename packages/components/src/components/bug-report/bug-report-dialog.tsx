@@ -21,7 +21,12 @@ export type BugReportMachineOption = {
 export type BugReportSubmitState =
   | { status: 'idle' }
   | { status: 'submitting' }
-  | { status: 'success'; bugReportId: string; withLogs: boolean }
+  | {
+      status: 'success';
+      bugReportId: string;
+      withLogs: boolean;
+      clientDiagnostics: 'uploading' | 'uploaded' | 'failed';
+    }
   | { status: 'error'; message: string };
 
 export type BugReportDialogProps = {
@@ -34,6 +39,7 @@ export type BugReportDialogProps = {
   /** `machineId: null` files a report with client diagnostics and no machine logs. */
   onSubmit: (args: { machineId: MachineId | null; description: string }) => void;
   onClose: () => void;
+  onRetryClientDiagnostics?: () => void;
 };
 
 const NO_MACHINE_VALUE = '__no_machine__';
@@ -102,6 +108,7 @@ export function BugReportDialog({
   state,
   onSubmit,
   onClose,
+  onRetryClientDiagnostics,
 }: BugReportDialogProps) {
   const { t } = useTranslation();
   const [description, setDescription] = useState('');
@@ -155,7 +162,7 @@ export function BugReportDialog({
 
   const handleOpenChange = (nextOpen: boolean) => {
     // Closing is always an explicit user action; the success panel stays up
-    // until then. Only block dismissal while logs are still uploading.
+    // until then. Optional client diagnostics never block dismissal.
     if (!nextOpen && !submitting) {
       onClose();
     }
@@ -189,7 +196,28 @@ export function BugReportDialog({
               <code {...stylex.props(styles.reportIdText)}>{state.bugReportId}</code>
               <CopyButton value={state.bugReportId} />
             </div>
+            <p
+              role="status"
+              {...stylex.props(state.clientDiagnostics === 'failed' ? styles.error : styles.hint)}
+            >
+              {state.clientDiagnostics === 'uploading'
+                ? t(
+                    'bugReport.clientDiagnosticsUploading',
+                    'Client diagnostics are uploading. You can close this window.'
+                  )
+                : state.clientDiagnostics === 'failed'
+                  ? t(
+                      'bugReport.clientDiagnosticsFailed',
+                      'Your report is saved, but client diagnostics could not be attached. Retry to upload them.'
+                    )
+                  : t('bugReport.clientDiagnosticsUploaded', 'Client diagnostics were uploaded.')}
+            </p>
             <Dialog.Footer>
+              {state.clientDiagnostics === 'failed' && onRetryClientDiagnostics ? (
+                <Button variant="secondary" onClick={onRetryClientDiagnostics}>
+                  {t('bugReport.retryClientDiagnostics', 'Retry diagnostics')}
+                </Button>
+              ) : null}
               <Button onClick={onClose}>{t('bugReport.close', 'Close')}</Button>
             </Dialog.Footer>
           </>

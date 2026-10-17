@@ -1,5 +1,5 @@
 import { collectClientDiagnostics } from '@/lib/client-diagnostics';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
 import { useTranslation } from 'react-i18next';
 import type { MachineId } from '@lody/shared';
@@ -24,6 +24,14 @@ import {
 
 const CLIENT_LOG_UPLOAD_WAIT_MS = 5000;
 
+type PendingReport = {
+  workspaceId: string;
+  reporterUserId: string;
+  bugReportId: string;
+  diagnostics: string;
+  withLogs: boolean;
+};
+
 export function BugReportDialogContainer() {
   const { t } = useTranslation();
   const [open, setOpen] = useAtom(bugReportDialogOpenAtom);
@@ -36,13 +44,57 @@ export function BugReportDialogContainer() {
   const workspaceId = useAtomValue(currentWorkspaceIdAtom);
   const runtime = useAtomValue(runtimeAtom);
   const [state, setState] = useState<BugReportSubmitState>({ status: 'idle' });
-  const pendingReport = useRef<{
-    key: string;
-    bugReportId: string;
-    diagnostics: string;
-    withLogs: boolean;
-  } | null>(null);
+  const pendingReport = useRef<PendingReport | null>(null);
   const submitting = useRef(false);
+  const submissionGeneration = useRef(0);
+  const attachment = useRef<AbortController | null>(null);
+
+  const cancelSubmission = useCallback(() => {
+    submissionGeneration.current += 1;
+    submitting.current = false;
+    const active = attachment.current;
+    attachment.current = null;
+    active?.abort();
+    pendingReport.current = null;
+  }, []);
+
+  useEffect(() => {
+    setState({ status: 'idle' });
+    return cancelSubmission;
+  }, [workspaceId, user?.id, cancelSubmission]);
+
+  const uploadDiagnostics = useCallback(async (report: PendingReport) => {
+    attachment.current?.abort();
+    const controller = new AbortController();
+    attachment.current = controller;
+    pendingReport.current = report;
+    const saved = {
+      status: 'success' as const,
+      bugReportId: report.bugReportId,
+      withLogs: report.withLogs,
+    };
+    // The report is already durable. Optional diagnostics must never hold its ID
+    // or dismissal hostage, including during a retry.
+    setState({ ...saved, clientDiagnostics: 'uploading' });
+    let attached = false;
+    try {
+      attached = (
+        await attachClientDiagnostics({
+          workspaceId: report.workspaceId,
+          bugReportId: report.bugReportId,
+          diagnostics: report.diagnostics,
+          sessionToken: readStoredAuthToken() ?? '',
+          signal: controller.signal,
+        })
+      ).ok;
+    } catch {
+      // A missing host capability must not undo an already-created report either.
+    }
+    if (attachment.current !== controller) return;
+    attachment.current = null;
+    if (attached) pendingReport.current = null;
+    setState({ ...saved, clientDiagnostics: attached ? 'uploaded' : 'failed' });
+  }, []);
 
   // Offline machines cannot answer the log-upload RPC, so they are not listed.
   const machines = useMemo<BugReportMachineOption[]>(() => {
@@ -79,41 +131,23 @@ export function BugReportDialogContainer() {
       }
       if (submitting.current) return;
       submitting.current = true;
+      const generation = ++submissionGeneration.current;
+      const isCurrent = () => submissionGeneration.current === generation;
       setState({ status: 'submitting' });
-      const key = JSON.stringify([workspaceId, reporterUserId, machineId, description]);
-      const finish = async (report: NonNullable<typeof pendingReport.current>) => {
-        pendingReport.current = report;
-        const attached = await attachClientDiagnostics({
-          workspaceId,
-          bugReportId: report.bugReportId,
-          diagnostics: report.diagnostics,
-          sessionToken: readStoredAuthToken() ?? '',
-        });
-        if (attached.ok) {
-          pendingReport.current = null;
-          setState({
-            status: 'success',
-            bugReportId: report.bugReportId,
-            withLogs: report.withLogs,
+      const finish = (bugReportId: string, withLogs: boolean) => {
+        if (isCurrent())
+          void uploadDiagnostics({
+            workspaceId,
+            reporterUserId,
+            bugReportId,
+            diagnostics,
+            withLogs,
           });
-        } else {
-          setState({
-            status: 'error',
-            message: t('bugReport.clientDiagnosticsFailed', {
-              defaultValue:
-                'Report {{id}} was created, but client diagnostics could not be attached. Retry to upload them. {{error}}',
-              id: report.bugReportId,
-              error: attached.error,
-            }),
-          });
-        }
       };
+      let diagnostics: string;
       try {
-        if (pendingReport.current?.key === key) {
-          await finish(pendingReport.current);
-          return;
-        }
-        const diagnostics = await collectClientDiagnostics();
+        diagnostics = await collectClientDiagnostics();
+        if (!isCurrent()) return;
         const reportDescription = appendClientBuildInfo(description);
 
         if (machineId == null) {
@@ -122,8 +156,9 @@ export function BugReportDialogContainer() {
             description: reportDescription,
             sessionToken: readStoredAuthToken() ?? '',
           });
+          if (!isCurrent()) return;
           if (result.ok) {
-            await finish({ key, bugReportId: result.bugReportId, diagnostics, withLogs: false });
+            finish(result.bugReportId, false);
           } else {
             setState({ status: 'error', message: result.error });
           }
@@ -142,12 +177,14 @@ export function BugReportDialogContainer() {
           machineId,
           sessionToken: readStoredAuthToken() ?? '',
         });
+        if (!isCurrent()) return;
         if (!minted.ok) {
           setState({ status: 'error', message: minted.error });
           return;
         }
         recordClientLog('info', 'bug_report.submitting', undefined, { machineId });
         const clientLog = await buildClientLogUploadWithin(CLIENT_LOG_UPLOAD_WAIT_MS);
+        if (!isCurrent()) return;
         const response = await runtime.requestMachineBugReport(
           machineId,
           {
@@ -158,8 +195,9 @@ export function BugReportDialogContainer() {
           },
           { timeoutMs: 120_000 }
         );
+        if (!isCurrent()) return;
         if (response?.success && response.bugReportId) {
-          await finish({ key, bugReportId: response.bugReportId, diagnostics, withLogs: true });
+          finish(response.bugReportId, true);
           return;
         }
         setState({
@@ -172,21 +210,23 @@ export function BugReportDialogContainer() {
             ),
         });
       } catch (error) {
-        setState({
-          status: 'error',
-          message: error instanceof Error ? error.message : String(error),
-        });
+        if (isCurrent())
+          setState({
+            status: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          });
       } finally {
-        submitting.current = false;
+        if (isCurrent()) submitting.current = false;
       }
     },
-    [runtime, t, user?.id, workspaceId]
+    [runtime, t, user?.id, workspaceId, uploadDiagnostics]
   );
 
   const handleClose = useCallback(() => {
+    cancelSubmission();
     setOpen(false);
     setState({ status: 'idle' });
-  }, [setOpen]);
+  }, [setOpen, cancelSubmission]);
 
   return (
     <BugReportDialog
@@ -198,6 +238,16 @@ export function BugReportDialogContainer() {
         void handleSubmit(args);
       }}
       onClose={handleClose}
+      onRetryClientDiagnostics={() => {
+        const report = pendingReport.current;
+        if (
+          report &&
+          !attachment.current &&
+          report.workspaceId === workspaceId &&
+          report.reporterUserId === user?.id
+        )
+          void uploadDiagnostics(report);
+      }}
     />
   );
 }

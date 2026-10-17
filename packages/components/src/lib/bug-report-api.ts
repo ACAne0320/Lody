@@ -114,44 +114,73 @@ export async function submitWebBugReport({
   }
 }
 
-/** Session-authenticated client attachment; independent of the selected daemon's version. */
+export const CLIENT_DIAGNOSTICS_UPLOAD_TIMEOUT_MS = 15_000;
+
+/** Session-authenticated, bounded attachment; independent of the selected daemon's version. */
 export async function attachClientDiagnostics({
   workspaceId,
   bugReportId,
   diagnostics,
   sessionToken,
   authBaseUrl,
+  signal,
 }: {
   workspaceId: string;
   bugReportId: string;
   diagnostics: string;
   sessionToken: string;
   authBaseUrl?: string;
+  signal?: AbortSignal;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   authBaseUrl = requireCloudAuthBaseUrl('bugReport', authBaseUrl);
   if (!sessionToken.trim()) return { ok: false, error: 'not_authenticated' };
+  if (signal?.aborted) return { ok: false, error: 'Client diagnostics upload cancelled.' };
+  const controller = new AbortController();
+  let cancel = () => {};
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  // Bound headers AND response-body reads, even when an adapter ignores abort.
+  const interrupted = new Promise<{ ok: false; error: string }>((resolve) => {
+    cancel = () => {
+      controller.abort();
+      resolve({ ok: false, error: 'Client diagnostics upload cancelled.' });
+    };
+    signal?.addEventListener('abort', cancel, { once: true });
+    timeout = setTimeout(() => {
+      controller.abort();
+      resolve({ ok: false, error: 'Client diagnostics upload timed out.' });
+    }, CLIENT_DIAGNOSTICS_UPLOAD_TIMEOUT_MS);
+  });
   try {
-    const response = await fetch(
-      `${authBaseUrl.replace(/\/+$/, '')}/api/bug-reports/client-diagnostics`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionToken.trim()}`,
-        },
-        body: JSON.stringify({ workspaceId, bugReportId, diagnostics }),
-      }
-    );
-    if (!response.ok)
-      return {
-        ok: false,
-        error: `Client diagnostics upload failed with status ${response.status}.`,
-      };
-    const data = z.object({ attached: z.literal(true) }).safeParse(await response.json());
-    return data.success
-      ? { ok: true }
-      : { ok: false, error: 'Invalid client diagnostics response.' };
+    return await Promise.race([
+      interrupted,
+      (async () => {
+        const response = await fetch(
+          `${authBaseUrl.replace(/\/+$/, '')}/api/bug-reports/client-diagnostics`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${sessionToken.trim()}`,
+            },
+            body: JSON.stringify({ workspaceId, bugReportId, diagnostics }),
+            signal: controller.signal,
+          }
+        );
+        if (!response.ok)
+          return {
+            ok: false as const,
+            error: `Client diagnostics upload failed with status ${response.status}.`,
+          };
+        const data = z.object({ attached: z.literal(true) }).safeParse(await response.json());
+        return data.success
+          ? { ok: true as const }
+          : { ok: false as const, error: 'Invalid client diagnostics response.' };
+      })(),
+    ]);
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', cancel);
   }
 }
