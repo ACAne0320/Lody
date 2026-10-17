@@ -308,11 +308,19 @@ fixes pid and resolves the default lock directory on each operation; tests may
 inject a fixed directory.
 `fileLockLayer` supplies Node implementations at composition. One service instance
 owns local Ref/Deferred admission and unresolved releases; each operation owns its
-candidate and acquired file. Release waits have their own 5-second Clock bound;
-`LockReleaseFailed.cleanup` retains the original OS deletion for awaited retry.
-A still-pending deletion blocks replacement. Body and release run outside acquisition
-retry; `squashFileLockFailure` preserves their full Cause, file cleanup owners and
-process recovery leases at compatibility boundaries. See the [decision and preserved lock policy](../notes/implemented/architecture/2026-10-10-effect-file-lock-lifecycle.md).
+candidate and acquired file. The releasing holder waits once, within a 5-second Clock
+bound, for its lock file and scratch directory. The body's result stands: a slow or
+failed deletion stays registered with the service instead of failing the holder.
+The next local holder joins it within its own acquisition deadline, and a settled
+failure is retried before that body runs. That wait is charged once per deletion attempt:
+once one successor has waited its whole deadline, later successors fail fast until a new
+attempt starts. Disposal reports anything still
+unresolved. `LockReleaseFailed.cleanup` retains the original OS deletion for awaited
+retry. Only a replaced lock generation (`LockOwnershipLost`) fails the holder, because
+then the body did not run exclusively; that lease is not retried. Body and release run
+outside acquisition retry; `squashFileLockFailure` preserves file cleanup owners and
+process recovery leases at compatibility boundaries. See the [decision and preserved lock policy](../notes/implemented/architecture/2026-10-10-effect-file-lock-lifecycle.md)
+and the [holder release decision](../notes/implemented/architecture/2026-10-16-file-lock-holder-release.md).
 
 Catalog mutations compose the native API and require FileLocks. Existing Promise
 application entrypoints execute them through `fileLocksLegacy.runPromise`; worktree,
