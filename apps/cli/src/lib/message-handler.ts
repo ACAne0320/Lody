@@ -10207,12 +10207,19 @@ export class MessageHandler {
    * ACP process would discard that resumable session state.
    */
   async hasActiveGoal(sessionId: SessionId): Promise<boolean> {
-    const sessionDoc = await this.workspaceDocument.getOrCreateSessionDoc(sessionId);
-    const meta = await sessionDoc.getMetaState();
-    const legacyMeta = meta as SessionLegacyMetaFields | null | undefined;
-    const backend = await this.getSessionBackend(sessionDoc);
-    const historyGoal = resolveLatestSessionGoalFromHistory(await backend.readHistory());
-    return isSessionGoalActive(historyGoal ?? legacyMeta?.latestGoal);
+    // GC asks this right before retiring the session. An observation lease
+    // keeps the document safe during the read without restarting its idle
+    // clock; a plain borrow would make every retirement see a just-used session.
+    const lease = await this.workspaceDocument.acquireSessionDocLegacy(sessionId, {}, 'observe');
+    try {
+      const meta = await lease.doc.getMetaState();
+      const legacyMeta = meta as SessionLegacyMetaFields | null | undefined;
+      const backend = await this.getSessionBackend(lease.doc);
+      const historyGoal = resolveLatestSessionGoalFromHistory(await backend.readHistory());
+      return isSessionGoalActive(historyGoal ?? legacyMeta?.latestGoal);
+    } finally {
+      await lease.release();
+    }
   }
 
   /**

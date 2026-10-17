@@ -116,6 +116,8 @@ The second step wires the residency into the daemon:
     60 s for memory pressure, so Legacy one-shot borrows are not evicted under
     their callers.
   - The in-memory eligibility checks run again as a veto under the gate.
+  - GC's goal check and read-only history snapshots take `observe` leases, so
+    reading a candidate never restarts its idle clock.
   - Presence, simulator, preview and process teardown run under the gate. A
     teardown failure keeps the Session and its tracking for the next sweep.
   - `cleanSession` reports whether the Session was retired, so a kept Session
@@ -152,6 +154,11 @@ Integration tests use a real `LoroDocumentManager` over an in-memory Repo. They 
   receives a fresh, writable document, while the teardown writes through the
   doomed one;
 - cleanup deferred to the last release.
+
+A regression test runs the real `SessionGCManager` sweep with the real
+MessageHandler goal check and `cleanSessionForGC` over a real manager. A Session
+idle for 21 minutes is retired. Reverting the goal check to a plain borrow makes
+the test fail with the review's P1: the retirement reports `recently-used`.
 
 The existing retained-replica test from the native Repo adoption still passes.
 Execution tests show a turn holding its lease through the prompt and keeping the

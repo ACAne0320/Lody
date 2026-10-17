@@ -12,6 +12,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { LoroDocumentManager, SessionDocument } from '../src/lib/loro/doc';
+import { MessageHandler } from '../src/lib/message-handler';
+import { SessionGCManager } from '../src/lib/session-gc-manager';
+import { createSessionBackend } from '../src/session/session-backend';
 import {
   getSessionRoomId,
   type MessageContent,
@@ -808,5 +811,74 @@ describe('LoroDocumentManager Session residency', () => {
       expect(lease.doc.isDestroyed).toBe(true);
       expect(manager.sessions.has(sessionId)).toBe(false);
     });
+  });
+
+  it('lets the real GC sweep retire a session idle past the timeout after its goal check', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      await withManager(async (manager) => {
+        const sessionId = 'idle-past-timeout' as SessionId;
+        const startedAt = Date.parse('2026-10-17T08:26:48.000Z');
+        vi.setSystemTime(startedAt);
+        // The last turn used the document, then ended.
+        const used = await manager.getOrCreateSessionDoc(sessionId, { skipAutoRead: true });
+        vi.setSystemTime(startedAt + 21 * 60_000);
+
+        const deleted: SessionId[] = [];
+        // The real MessageHandler methods GC runs, over the collaborators they read.
+        const handler = {
+          workspaceDocument: manager,
+          logger,
+          getSessionBackend: (sessionDoc: SessionDocument) => createSessionBackend(sessionDoc),
+          hasActiveTurn: () => false,
+          executionService: { getExecutionSnapshot: () => ({ hasActiveTurn: false }) },
+          hasPendingUpdates: () => false,
+          isArchiveInFlight: () => false,
+          gcRetiringSessions: new Set<SessionId>(),
+          clearSessionActivePresence: () => {},
+          iosSimulatorService: { closeSession: async () => {} },
+          previewService: { closeSessionPreviewForCleanup: async () => {} },
+          sessionManager: { hasSession: () => false },
+          store: { deleteSession: (id: SessionId) => deleted.push(id) },
+        } as unknown as MessageHandler;
+        const gc = new SessionGCManager(
+          {
+            idleTimeoutMs: 20 * 60_000,
+            sweepIntervalMs: 60_000,
+            enabled: true,
+            memoryThresholdBytes: 0,
+            maxEvictionsPerCall: 1,
+            pressureRecheckAttempts: 0,
+            pressureRecheckDelayMs: 0,
+          },
+          {
+            getSessionLastActivity: () => startedAt,
+            getSessionIds: () => [sessionId],
+            hasActiveTurn: () => false,
+            hasActiveGoal: (id) => MessageHandler.prototype.hasActiveGoal.call(handler, id),
+            hasPendingUpdates: () => false,
+            hasPendingUserWork: async () => false,
+            isArchiveInFlight: () => false,
+            cleanSession: (id, options) =>
+              MessageHandler.prototype.cleanSessionForGC.call(handler, id, options),
+            memoryPressure: {
+              getLatest: async () => ({ availableMemoryBytes: 1, effectiveMemoryLimitBytes: 1 }),
+              refresh: async () => ({ availableMemoryBytes: 1, effectiveMemoryLimitBytes: 1 }),
+            },
+            logger,
+            sleep: async () => {},
+          },
+          'linux'
+        );
+
+        await gc.sweep();
+
+        expect(used.isDestroyed).toBe(true);
+        expect(manager.sessions.has(sessionId)).toBe(false);
+        expect(deleted).toEqual([sessionId]);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

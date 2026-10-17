@@ -63,6 +63,7 @@ lease 不是 teardown。释放最后一个 lease 只启动空闲计时，别的�
 - **GC。** `cleanSessionForGC` 经由 `retireSessionLegacy` 回收。
   - `minIdleMs` 由 GC 策略给出：sweep 用空闲超时，内存压力用 60 秒，避免 Legacy 一次性借用在调用方手下被驱逐。
   - 内存中的可清理性检查在门内作为否决条件再执行一次。
+  - GC 的 goal 检查和只读的历史快照使用 `observe` lease，读取候选会话不会重新开始它的空闲计时。
   - presence、模拟器、预览和进程的 teardown 都在门内执行。teardown 失败时保留 Session 及其跟踪，交给下一次 sweep。
   - `cleanSession` 返回是否真的回收，被保留的 Session 不会被算作已驱逐。
 - **teardown 不得重入。** 预览清理原先会重新获取文档来标记连接已关闭；现在它通过回收交给它的文档写入，没有打开的文档时只写元数据。GC teardown 引发的进程 `exit` 和 `terminated` 事件会被忽略，因为对它们做 finalize 会重新打开刚回收的文档。
@@ -88,6 +89,8 @@ lease 不是 teardown。释放最后一个 lease 只启动空闲计时，别的�
 - 被持有的文档拒绝回收，释放后保持常驻，只在超过最小空闲时间后才回收；
 - 事故的时序：GC teardown 被阻塞期间到来的 turn 会等待，并拿到全新、可写的文档，而 teardown 通过即将关闭的文档完成写入；
 - 推迟到最后一次释放的清理。
+
+一个回归测试在真实 manager 之上，运行真实的 `SessionGCManager` sweep、真实的 MessageHandler goal 检查和 `cleanSessionForGC`：空闲 21 分钟的 Session 会被回收。把 goal 检查改回普通借用后，测试失败，复现 review 中的 P1：回收返回 `recently-used`。
 
 native Repo 接入中已有的 retained replica 测试依然通过。执行测试表明 turn 在整个 prompt 期间持有 lease，结束后保留 agent 进程。
 

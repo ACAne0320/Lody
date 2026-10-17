@@ -305,6 +305,7 @@ class ProxiedWebSocket extends WebSocketOriginal {
 import { FlockSyncTimeoutError, readTimeoutEnv, withTimeout } from './timeout-utils';
 import {
   makeSessionResidency,
+  type SessionLeaseMode,
   type SessionRetireOptions,
   type SessionRetireOutcome,
 } from './session-residency';
@@ -1438,10 +1439,13 @@ export class LoroDocumentManager {
    *
    * The document is not retired while the lease is held. `release` is
    * idempotent; it destroys nothing and leaves the agent process running.
+   * Pass `observe` for reads that must not count as use (GC checks, read-only
+   * snapshots): the release then leaves the idle clock where it was.
    */
   async acquireSessionDocLegacy(
     sessionId: SessionId,
-    options: SessionDocOpenOptions = {}
+    options: SessionDocOpenOptions = {},
+    mode: SessionLeaseMode = 'use'
   ): Promise<SessionDocLeaseLegacy> {
     // An activated SessionDocument owns the live cloud room from here on. Stop
     // any one-shot renderer reconciliation without unloading the shared doc.
@@ -1451,7 +1455,7 @@ export class LoroDocumentManager {
     const release = () => (released ??= runResidencyLegacy(Scope.close(scope, Exit.void)));
     try {
       const sessionDoc = await runResidencyLegacy(
-        Scope.provide(this.sessionResidency.acquire(sessionId, options), scope)
+        Scope.provide(this.sessionResidency.acquire(sessionId, options, mode), scope)
       );
       if (options.historyBackend) {
         await createSessionBackend(sessionDoc, { historyBackend: options.historyBackend });
@@ -1536,7 +1540,12 @@ export class LoroDocumentManager {
 
   async getSessionHistorySnapshot(sessionId: SessionId): Promise<SessionHistoryInput[]> {
     if (this.sessionResidency.isResident(sessionId)) {
-      const lease = await this.acquireSessionDocLegacy(sessionId, { skipAutoRead: true });
+      // A read-only snapshot must not keep the session resident.
+      const lease = await this.acquireSessionDocLegacy(
+        sessionId,
+        { skipAutoRead: true },
+        'observe'
+      );
       try {
         return await (await createSessionBackend(lease.doc)).readHistory();
       } finally {
