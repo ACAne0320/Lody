@@ -215,6 +215,52 @@ lody project list --help
 lody project delete --help
 ```
 
+## 创建和更新 Agent 角色
+
+CLI 和 MCP 可以提出新建角色，或修改你拥有的角色。提案会显示在活跃会话的确认卡片中，
+在 Lody 点击**保存**后才生效；忽略卡片不会修改角色。命令成功表示提案已生成，
+不表示角色已经保存。
+
+```bash
+lody agent-role create --name "代码审查" --description "检查代码问题" \
+  --prompt-prefix "关注正确性和安全问题" \
+  --machine-id MACHINE_ID --agent-config-id CONFIG_ID --session SESSION_ID
+
+lody agent-role update ROLE_ID --name "代码审查员" \
+  --description "" --prompt-prefix "新的默认指令" --session SESSION_ID
+```
+
+| 参数 | 创建 | 更新 |
+| --- | --- | --- |
+| `--name <name>` | 必填 | 可选 |
+| `--description <text>` | 可选 | 可选；`""` 表示清空 |
+| `--prompt-prefix <text>` | 可选 | 可选；`""` 表示清空 |
+| `--machine-id <id>` | 必填 | 不支持 |
+| `--agent-config-id <id>` | 必填 | 不支持 |
+
+更新至少传一个字段，省略的字段保持不变。新角色默认私有，使用所绑定 Agent 的默认运行配置。
+模型、权限、共享及其他设置仍可在角色编辑器中修改。
+
+通过 `--session` 或环境变量 `LODY_SESSION_ID` 指定活跃会话；工作区不明确时，
+使用 `--workspace <id或slug>`。重试时用相同输入和 `--request-id <id>`，
+命令会返回已有提案的状态。
+
+也可以继续使用 JSON 文件：
+
+```bash
+lody agent-role create --file role.json --session SESSION_ID
+lody agent-role update ROLE_ID --file patch.json --session SESSION_ID
+```
+
+创建文件包含 `name`、`machineId`、`agentConfigId`，以及可选的 `description` 和
+`promptPrefix`。更新文件只包含要修改的 `name`、`description` 或 `promptPrefix`。
+`--file` 不能与角色字段参数混用。如果指令保存在 Markdown 中，可以直接传
+`--prompt-prefix "$(cat reviewer.md)"`。
+
+MCP 的 `lody_agent_role_create` 和 `lody_agent_role_update` 使用同一确认流程。
+创建工具接收 `requestId` 和上述创建字段；更新工具接收 `requestId`、`roleId`，
+以及包含修改字段的 `patch`。角色的使用方式见 [Agent 角色](/zh/docs/agent-roles)。
+
 ## 桌面端命令
 
 | 命令                   | 作用                                 | 帮助命令                      |
