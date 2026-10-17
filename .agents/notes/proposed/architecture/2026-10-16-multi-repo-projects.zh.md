@@ -262,3 +262,5 @@ list/write/delete 函数。定义与运行快照 schema 拒绝不安全的跨平
 已定义并可协商 `multiRepoProject: 1`，但物化与生命周期实现完成前，不加入 daemon 的
 当前能力广告。此契约部分不会让现有 daemon 开启多仓库创建。运行时实现、按 Member
 并发写入元数据和生命周期行为仍待验证。
+
+契约 PR：[#1641](https://github.com/LodyAI/Lody/pull/1641)。

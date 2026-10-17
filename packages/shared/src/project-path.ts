@@ -3,7 +3,7 @@ export type SessionFileRoot = { id: string; absolutePath: string };
 export type SessionFilePath = { rootId: string; relativePath: string };
 
 function normalizeAbsolutePath(input: string): string | undefined {
-  if (/[\x00-\x1f]/.test(input)) return undefined;
+  if (Array.from(input).some((char) => char.charCodeAt(0) < 32)) return undefined;
   const value = input.replace(/\\/g, '/');
   const prefix = value.match(/^(?:[a-zA-Z]:\/|\/\/[^/]+\/[^/]+\/|\/)/)?.[0];
   if (!prefix) return undefined;

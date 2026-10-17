@@ -337,3 +337,5 @@ realpaths to reject symlink escapes. Absolute roots remain machine-local.
 current daemon advertisement until materialization and lifecycle support are implemented.
 This contract slice does not enable creation on existing daemons. Runtime implementation,
 per-Member concurrent metadata writes and lifecycle behavior remain to be verified.
+
+Contract PR: [#1641](https://github.com/LodyAI/Lody/pull/1641).

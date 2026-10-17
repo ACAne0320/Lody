@@ -57,7 +57,8 @@ export function isSafeProjectPath(value: string): boolean {
           part.length > 0 &&
           part !== '.' &&
           part !== '..' &&
-          !/[\\\x00-\x1f<>:"|?*]/.test(part) &&
+          !Array.from(part).some((char) => char.charCodeAt(0) < 32) &&
+          !/[\\<>:"|?*]/.test(part) &&
           !/[. ]$/.test(part) &&
           !/^(?:\.git|con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part)
       )
