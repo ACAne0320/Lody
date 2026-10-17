@@ -203,6 +203,9 @@ patchedDependencies:
   mdast-util-gfm-autolink-literal@2.0.1:
     hash: b03e2c531618296b99e716d479b68761f6ebc6c81dcd1e9359e80b71e6b5ee8e
     path: patches/mdast-util-gfm-autolink-literal@2.0.1.patch
+  pdfjs-dist@6.3.289:
+    hash: 58ba9bd9f128950c089b87f6fabc0d9d74013e7b3d023983303d48cf1b8c4c19
+    path: patches/pdfjs-dist@6.3.289.patch
   react-photo-view@1.2.7:
     hash: 4ce33a84c4b7ec187b3cdd636a84064e6f7621f214bdbcf51946074d24322f59
     path: patches/react-photo-view@1.2.7.patch
@@ -1348,7 +1351,7 @@ importers:
         version: 5.5.3
       pdfjs-dist:
         specifier: 6.3.289
-        version: 6.3.289
+        version: 6.3.289(patch_hash=58ba9bd9f128950c089b87f6fabc0d9d74013e7b3d023983303d48cf1b8c4c19)
       posthog-js:
         specifier: ^1.396.6
         version: 1.396.6
@@ -26320,7 +26323,7 @@ snapshots:
 
   pathval@2.0.1: {}
 
-  pdfjs-dist@6.3.289:
+  pdfjs-dist@6.3.289(patch_hash=58ba9bd9f128950c089b87f6fabc0d9d74013e7b3d023983303d48cf1b8c4c19):
     optionalDependencies:
       '@napi-rs/canvas': 1.0.9
 
