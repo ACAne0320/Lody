@@ -1,4 +1,4 @@
-import type { RepoTransportError, RepoDiagnosticEvent } from 'loro-repo';
+import type { RepoTransportError, RepoDiagnosticEvent, RepoStreamsErrorContext } from 'loro-repo';
 import type { SnapshotDiagnosticEvent } from '@loro-dev/streams-crdt';
 
 type RepoErrorRuntime = Pick<typeof import('loro-repo'), 'RepoTransportError' | 'RepoSyncError'> & {
@@ -18,13 +18,13 @@ type LoroSyncFailure = {
   roomId: string | undefined;
   failureKind: NonNullable<RepoTransportError['failureKind']>;
   streamsCode: string | undefined;
-  streamsContext: RepoTransportError['streamsContext'];
+  streamsContext: RepoStreamsErrorContext | undefined;
 };
 
 // Select approved fields; never serialize an exception or its legacy payload.
 const projectFailure = (error: RepoTransportError, transportId?: string): LoroSyncFailure => {
   const context = error.streamsContext;
-  const streamsContext: RepoTransportError['streamsContext'] = context && {
+  const streamsContext: RepoStreamsErrorContext | undefined = context && {
     source: context.source,
     operation: context.operation,
     stage: context.stage,
@@ -71,7 +71,7 @@ type SnapshotErrorDiagnostic = Pick<
   | 'requestId'
   | 'networkCode'
 > &
-  Partial<Pick<NonNullable<RepoTransportError['streamsContext']>, 'stage' | 'requestOperation'>>;
+  Partial<Pick<RepoStreamsErrorContext, 'stage' | 'requestOperation'>>;
 
 /** Only SDK diagnostic DTOs enter here. Never pass errors or request/response objects to logs. */
 export const getLoroSnapshotDiagnostic = (
