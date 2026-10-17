@@ -55,6 +55,13 @@ cache/shortcut 获取仍重试真正退休中的 owner；直接替换它可能�
 
 后台 stream 失败只输出不带 payload 的诊断，不再无限保留历史 Cause，也不会让后来成功的 destroy 报失败。Scope finalizer 只运行一次；小型 ownership helper 保留原生 retry owner，而不是假装重新关闭失败 Scope 能重试。日志不包含私有 Cause 或 grant。
 
+私有快捷指令的构造、connect 和 join finalizer 已共用 workspace owner Scope，但 SDK
+退休失败的类型是 `DurableReleaseFailure`，不是 `RepoReleaseFailed`。把这项有类型的回执
+当作未知 Cause，会在已接受的 HTTP 请求完成后仍永久重放旧失败。现有 Scope 恢复边界现在
+调用真实的 `retryRelease`，与 Repo 回执一样在成功后清除保留的失败；其他未知失败仍然可见。
+不增加第二个 SDK owner、不重放已关闭 Scope 的 finalizer、不丢弃写入，仍保留 producer
+未完成时的依赖关闭顺序。
+
 借用者 Scope 失败不能证明 Repo close 是独立步骤：私有 shortcut SDK producer 也在
 consumer Scope 下，可能仍持有已接受的 I/O。因此保留依赖关闭顺序，不跨过任意失败强行关闭 native Repo。
 其他工作区仍然独立；再次关闭先重试保留的 owner，再释放 Repo 和存储。
@@ -72,7 +79,26 @@ Transport owner 在 adapter 构造或 native connect 前同步登记。移除会
 
 本机 v7 拥塞恢复保留 1,024 个事件、默认 64 MiB 的队列上限。溢出只使该房间当前的屏障失败，包括已接受但尚未消费的 sync 事件。显式 reconnect 或物理连接 online 边会中断并等待旧消费者及其已接受的 Flock I/O，停止期限任务，再在同一个房间 Scope 中创建新队列和 worker。重置不完整分块、请求 id 和服务端 frontier 后，从保留的副本版本重新追赶。CRDT/lease 与状态引用不变，完成追赶才增加 epoch。等待被取消时移除自身回执，不退休共享副本。每个房间的原生 semaphore 将重启与 close 串行化，避免新消费者超越旧任务；关闭后不再准入恢复。这是局部生命周期边界，不是工作区 readiness 或写入 gate。各房间分别恢复，一个房间等待已接受的导入不延迟其他房间的追赶 worker。
 
+物理连接状态分发也不能等待这项 drain。健康房间直接收到状态事件；溢出的 member 在
+transport Scope 的 FiberMap 中按对象身份保留一个恢复任务。反复 online 边合并到现有修复，
+任务完成即移出集合；房间原有 lifecycle 串行约束仍使 close 等待恢复。
+显式 reconnect 仍等待退休完成；已退休 transport 忽略队列中晚到的状态边。
+
 ## 验证与限制
+
+在 `6c5fca07`，提供的两项深审复现失败，原有 19 项通过。修复后扩展套件 22 项通过。
+真实 SDK HTTP 在 connect/sync 和 join 两条路径中被保持到 abort 和释放预算之后；请求完成后，
+Scope 退休与同一数据库重开成功。另一个用例保持真实 Flock import 并使 Meta 溢出，兄弟房间
+仍处理后续反复 offline/online；释放 import 后在同一 Meta 副本上恢复，disconnect 后再到达
+online 仍保持 closed。这些是注入边界，不代表生产网络验收。
+
+`6c5fca07` 的 CI CLI 分组还发现 main 新增的三项 Role 历史测试仍为迁移后的
+SessionDocument 构造旧 Promise Repo。夹具现改用消费者实际使用的 WorkspaceRepoLegacy，
+提案持久化、幂等性和权限断言保持不变。
+
+本次修复通过完整 Shared 1,543 项、受影响 renderer 93 项、Role 历史四项，以及全仓类型／
+静态检查、脚本 58 项、格式、文档与边界检查。本地根检查在类型、lint 和脚本通过后，
+于完整 CLI／组件测试阶段停止，不能算作全套通过；仍需最终合并结果上的 CI。
 
 真实 IndexedDB 持续保存失败的回归在 `c2dc8435` 失败、修复后通过。它验证反复及并发重开、
 原 Doc 身份与字节、兄弟文档独立写入和持久化、后来成功卸载和新一代副本。

@@ -1,15 +1,20 @@
 import { Cause, Effect, Exit, Scope, Semaphore } from 'effect';
 import { RepoReleaseFailed } from 'loro-repo/effect';
+import { DurableReleaseFailure } from '@loro-dev/streams-crdt/effect';
 
-/** A failed Scope is already closed. Retry the retained native owners, never its finalizers. */
-export const recoverRepoRelease = (cause: Cause.Cause<unknown>): Effect.Effect<void, unknown> => {
-  const releases = cause.reasons.map((reason) => {
+/** Retry the Repo/SDK receipt retained by a failed finalizer, never the closed Scope. */
+const recoverWorkspaceRelease = (cause: Cause.Cause<unknown>): Effect.Effect<void, unknown> => {
+  const releases = cause.reasons.map((reason): Effect.Effect<void, unknown> | undefined => {
     const error = Cause.isFailReason(reason)
       ? reason.error
       : Cause.isDieReason(reason)
         ? reason.defect
         : undefined;
-    return error instanceof RepoReleaseFailed ? error.retry : undefined;
+    return error instanceof RepoReleaseFailed
+      ? error.retry
+      : error instanceof DurableReleaseFailure
+        ? error.retryRelease
+        : undefined;
   });
   if (!releases.length || releases.some((release) => release === undefined))
     return Effect.failCause(cause);
@@ -37,7 +42,7 @@ export const acquireWorkspaceScope = (resource: string) =>
           Effect.gen(function* () {
             if (released) return;
             const result = yield* (
-              failure ? recoverRepoRelease(failure) : Scope.close(scope, Exit.void)
+              failure ? recoverWorkspaceRelease(failure) : Scope.close(scope, Exit.void)
             ).pipe(Effect.exit);
             if (Exit.isFailure(result)) {
               const original = failure;

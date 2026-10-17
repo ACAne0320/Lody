@@ -22,10 +22,10 @@ import {
 const workspaceId = 'workspace-a';
 const userId = 'user-a';
 const directories: string[] = [];
-async function createRepo() {
-  const baseDir = await mkdtemp(join(tmpdir(), 'lody-shortcut-native-'));
-  directories.push(baseDir);
-  return LoroRepo.create({ storageAdapter: new FileSystemStorageAdaptor({ baseDir }) });
+async function createRepo(baseDir?: string) {
+  const directory = baseDir ?? (await mkdtemp(join(tmpdir(), 'lody-shortcut-native-')));
+  if (!baseDir) directories.push(directory);
+  return LoroRepo.create({ storageAdapter: new FileSystemStorageAdaptor({ baseDir: directory }) });
 }
 
 function shortcut(id: string): PromptShortcut {
@@ -108,6 +108,84 @@ afterEach(async () => {
 });
 
 describe('PromptShortcutSync native SDK ownership', () => {
+  it.each(['sync', 'join'] as const)(
+    'reopens the same database after accepted SDK %s I/O finishes retirement',
+    async (operation) => {
+      const baseDir = await mkdtemp(join(tmpdir(), 'lody-shortcut-retirement-'));
+      directories.push(baseDir);
+      const repo = await createRepo(baseDir);
+      const entered = Promise.withResolvers<void>();
+      const finish = Promise.withResolvers<void>();
+      const aborted = Promise.withResolvers<void>();
+      vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+        const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+        signal?.addEventListener('abort', () => aborted.resolve(), { once: true });
+        entered.resolve();
+        await finish.promise;
+        return new Response(null, {
+          headers: { 'Stream-Next-Offset': '0', 'Stream-Up-To-Date': 'true' },
+        });
+      });
+      const streamId = getShortcutBodyStreamId('review-retirement');
+      const sync = new PromptShortcutSync({
+        repo,
+        now: () => 0,
+        grant: async () => ({
+          token: 'synthetic',
+          expiresIn: 3600,
+          gatewayBaseUrl: 'https://shortcut.invalid',
+          streamId,
+        }),
+      });
+      const lease = await sync.acquire({ kind: 'body', bodyDocId: 'review-retirement' }, false);
+      const working = lease[operation]().catch(() => undefined);
+      await entered.promise;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const closing = lease.release();
+        const firstFailure = expect(closing).rejects.toThrow();
+        await aborted.promise;
+        await vi.advanceTimersByTimeAsync(10_001);
+        await firstFailure;
+        const disposing = repo.destroy();
+        const ownerFailure = expect(disposing).rejects.toThrow();
+        await vi.advanceTimersByTimeAsync(5_001);
+        await ownerFailure;
+        finish.resolve();
+        await working;
+        await sync.dispose();
+        await repo.destroy();
+        const replacement = await createRepo(baseDir);
+        const next = new PromptShortcutSync({
+          repo: replacement,
+          now: () => 0,
+          grant: async () => ({
+            token: 'synthetic',
+            expiresIn: 3600,
+            gatewayBaseUrl: 'https://shortcut.invalid',
+            streamId,
+          }),
+        });
+        try {
+          const reopened = await next.acquire(
+            { kind: 'body', bodyDocId: 'review-retirement' },
+            false
+          );
+          await reopened.release();
+        } finally {
+          await next.dispose();
+          await replacement.destroy();
+        }
+      } finally {
+        finish.resolve();
+        await working;
+        await sync.dispose().catch(() => undefined);
+        await repo.destroy().catch(() => undefined);
+        vi.useRealTimers();
+      }
+    }
+  );
+
   it('closes local shortcut storage after remote close fails and retries retirement', async () => {
     const repo = await createRepo();
     const store = await LocalShortcutStore.open({ repo, workspaceId, userId });

@@ -23,6 +23,9 @@ Genuine native release failures remain retryable and exclude unsafe replacement.
 Workspace shutdown continues independent cleanup; Repo/storage close still
 depends on retiring native borrowers and private SDK producers. Calling dispose again retries
 unresolved owners while new work stays fenced; unsettled writes keep their storage.
+Scope recovery recognizes both Repo release receipts and the SDK's
+`DurableReleaseFailure.retryRelease`, including constructor/connect/join finalizers.
+Successful retirement clears the retained failure; a closed Scope is not replayed.
 
 Room handles retain the native `RoomLease` and the small UI status view still in
 use. Inventory and transport snapshots come from native leases; the local owner
@@ -34,6 +37,9 @@ After overflow, reconnect (including a physical online edge) drains the failed
 worker and replaces its queue, clears incomplete protocol state, then catches up
 from the retained replica. Pending barriers fail; new barriers can succeed after
 recovery. The Doc/Meta/Flock leases and other rooms remain owned by their Scopes.
+Physical connection events dispatch without waiting for a room to drain. A scoped
+FiberMap coalesces overflow recovery by member identity; healthy rooms keep receiving
+later offline/online edges. Room close and recovery still share their lifecycle gate.
 Native waits at Promise entries use the room borrow's signal so retiring one
 Session cancels only its wait while independent borrowers remain writable.
 First-sync readiness stays separate from `waitUntilSynced`: the latter captures

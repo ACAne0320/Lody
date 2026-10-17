@@ -33,6 +33,8 @@
   Saves stay local-first; peer handoff never proves server authority.
 - Close borrower Scopes before Repo close. A failed finalizer retains its full
   Cause and native retry owner; closing an already closed Scope cannot retry it.
+  Private SDK constructor/connect/join finalizers share that boundary: SDK
+  `DurableReleaseFailure` retries its actual `retryRelease` receipt.
   The next acquire retries a failed owner. Independent workspace cleanup must
   continue after failure, then report errors; a failed dispose remains retryable
   without reopening admission. Do not dispose storage while accepted I/O is pending.
@@ -44,7 +46,9 @@
   Electron callbacks only enqueue events. After overflow, reconnect drains the old
   worker and rebuilds its bounded queue before catching up from the retained
   replica. Recover rooms independently. Keep recovery and close serialized per
-  room; settle unconsumed sync waits too. Overflow must not permanently fence the
+  room. Connection status dispatch never waits for recovery; a scoped task per
+  room coalesces physical online edges while healthy rooms keep receiving status.
+  Settle unconsumed sync waits too. Overflow must not permanently fence the
   room or retire its lease.
 - Never log private Causes, grants, cursor URLs or request bodies. Project only
   upstream validated diagnostic scalars.

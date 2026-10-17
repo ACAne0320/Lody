@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Effect, Fiber, Layer, Stream } from 'effect';
+import { TestClock } from 'effect/testing';
+import { it as effectIt } from '@effect/vitest';
+import { Effect, Fiber, Layer, Stream, SubscriptionRef } from 'effect';
 import { LoroDoc } from 'loro-crdt';
 import { make as makeWorkspaceRepo } from 'loro-repo/effect';
 import { WorkspaceRepoLegacy } from '../src/workspace-data/repo-legacy';
@@ -44,6 +46,7 @@ function wire(
     },
   });
   let dropped = false;
+  let connected = true;
   const pending = new Set<Promise<void>>();
   const peer = {
     id: 'connection-a',
@@ -55,6 +58,10 @@ function wire(
     server,
     listeners,
     statuses,
+    setConnected: (value: boolean) => {
+      connected = value;
+      for (const listener of statuses) listener(value);
+    },
     connection: {
       send: (message: LocalLoroDataPlaneClientMessage) => {
         if (message.type === 'ping' || message.type === 'machine-monitor') return;
@@ -78,7 +85,7 @@ function wire(
           statuses.delete(listener);
         };
       },
-      isConnected: () => true,
+      isConnected: () => connected,
     },
     close: async () => {
       await Promise.all([...pending]);
@@ -180,6 +187,119 @@ describe('native local v7 transport', () => {
       remote.free();
     }
   });
+  effectIt.effect('delivers later connection edges while another room drains', () =>
+    Effect.gen(function* () {
+      const remote = new LoroDoc();
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      try {
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const host = yield* makeWorkspaceRepo();
+            const hostMeta = yield* host.acquireRoom({ kind: 'meta' });
+            if (hostMeta.replica.kind !== 'meta') throw new Error('Expected Meta replica');
+            const remoteMeta = hostMeta.replica.lease.flock;
+            remoteMeta.set(['remote'], 'accepted import');
+            remoteMeta.commit();
+            const harness = yield* Effect.acquireRelease(
+              Effect.sync(() => wire(remote, { serverFlock: remoteMeta })),
+              (owned) => Effect.promise(owned.close)
+            );
+            const repo = yield* makeWorkspaceRepo();
+            const room = yield* repo.acquireRoom({ kind: 'meta' });
+            if (room.replica.kind !== 'meta') throw new Error('Expected Meta replica');
+            const flock = room.replica.lease.flock;
+            const importJson = flock.importJson.bind(flock);
+            let importing = false;
+            let firstImport = true;
+            const spy = vi.spyOn(flock, 'importJson').mockImplementation(async (bundle) => {
+              if (!firstImport) return importJson(bundle);
+              firstImport = false;
+              importing = true;
+              entered.resolve();
+              await release.promise;
+              try {
+                return await importJson(bundle);
+              } finally {
+                importing = false;
+              }
+            });
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                release.resolve();
+                spy.mockRestore();
+              })
+            );
+            const transport = yield* makeLocalWorkspaceTransport('local', {
+              workspaceId: 'ws',
+              peerId: 'peer-a',
+              connection: harness.connection,
+            });
+            const attachment = yield* repo.attachTransport(transport);
+            yield* Effect.promise(() => entered.promise);
+            const sibling = yield* repo.acquireRoom({ kind: 'doc', id: 'sibling' });
+            yield* sibling.sync('local');
+            const siblingEpoch = (yield* sibling.stateSnapshot('local')).epoch;
+            const burst = LocalLoroDataPlaneServerMessageSchema.parse({
+              type: 'room-status',
+              protocolVersion: 7,
+              workspaceId: 'ws',
+              peerId: 'peer-a',
+              room: { scope: 'meta' },
+              status: 'joined',
+            });
+            yield* Effect.sync(() => {
+              for (let index = 0; index < 1100; index++)
+                for (const listener of harness.listeners) listener(burst);
+            });
+            harness.setConnected(true);
+            try {
+              yield* sibling.state('local').pipe(
+                Stream.filter((state) => state.epoch > siblingEpoch && state.current),
+                Stream.runHead
+              );
+              expect(importing).toBe(true);
+              harness.setConnected(false);
+              // Advance only the injected clock; the slow room remains explicitly held.
+              yield* TestClock.adjust(1000);
+              expect(yield* SubscriptionRef.get(transport.status)).toBe('offline');
+              expect((yield* sibling.stateSnapshot('local')).connection).toBe('offline');
+              for (let edge = 0; edge < 2; edge++) {
+                const previous = (yield* sibling.stateSnapshot('local')).epoch;
+                harness.setConnected(true);
+                yield* sibling.state('local').pipe(
+                  Stream.filter((state) => state.epoch > previous && state.current),
+                  Stream.runHead
+                );
+                expect(importing).toBe(true);
+                harness.setConnected(false);
+                yield* sibling.state('local').pipe(
+                  Stream.filter((state) => state.connection === 'offline'),
+                  Stream.runHead
+                );
+                expect(yield* SubscriptionRef.get(transport.status)).toBe('offline');
+              }
+            } finally {
+              harness.setConnected(true);
+              release.resolve();
+            }
+
+            yield* attachment.reconnect;
+            expect(importing).toBe(false);
+            expect((yield* room.sync('local')).outcome).toBe('confirmed');
+            expect(flock.get(['remote'])).toBe('accepted import');
+            yield* transport.disconnect;
+            harness.setConnected(true);
+            yield* TestClock.adjust(1000);
+            expect(yield* SubscriptionRef.get(transport.status)).toBe('closed');
+          })
+        );
+      } finally {
+        release.resolve();
+        remote.free();
+      }
+    })
+  );
   it.each([
     { kind: 'doc', limit: 'events', recovery: 'reconnect' },
     { kind: 'doc', limit: 'bytes', recovery: 'reconnect' },

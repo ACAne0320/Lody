@@ -109,6 +109,15 @@ Cause history or making a later successful destroy fail. Scope finalizers run on
 the small ownership helper retains native retry owners rather than re-closing a
 failed Scope. Private Causes/grants never enter diagnostic logs.
 
+Private shortcut constructor/connect/join finalizers already share the workspace
+owner Scope, but SDK retirement failures use `DurableReleaseFailure`, not
+`RepoReleaseFailed`. Treating that typed receipt as an unknown Cause permanently
+replayed it after the accepted HTTP request finished. The existing Scope recovery
+boundary now invokes its actual `retryRelease`, just as it invokes Repo receipts;
+success clears the retained failure. Other unknown failures remain visible. This
+adds no second SDK owner, replayed finalizer or discarded write, and preserves
+the dependency order for producers that still have accepted work.
+
 Borrower Scope failure does not establish that Repo close is independent: private
 shortcut SDK producers also live under consumer Scopes and can retain accepted I/O.
 Keep the existing dependency order rather than forcing native close past any failure.
@@ -171,8 +180,34 @@ overtake the previous consumer and close prevents later recovery admission. This
 is a local lifecycle boundary, not a workspace readiness or write gate.
 Room recovery runs independently: waiting for one accepted import does not delay
 another room's catch-up worker.
+Physical connection status dispatch also must remain independent of that drain.
+Healthy rooms receive status events directly; overflowed members schedule one
+recovery fiber per member identity in a transport-scoped FiberMap. Repeated online
+edges share the outstanding repair, completed tasks leave the map, and existing
+room lifecycle serialization still joins recovery before close. Explicit reconnect
+continues to await retirement; a retired transport ignores queued status edges.
 
 ## Verification and limits
+
+At `6c5fca07`, the two supplied deep-review regressions fail while the prior 19 cases
+pass. After repair, the expanded suites pass 22 cases. Real SDK HTTP remains held
+past its abort and release budgets for both `connect`/sync and `join`; after it
+finishes, Scope retirement and the same database reopen succeed. A held real Flock
+import overflows Meta while a sibling processes repeated later offline/online
+edges; releasing the import recovers the same Meta replica, and disconnect remains
+closed despite another queued online edge. These are injected boundaries, not
+production-network acceptance.
+
+The `6c5fca07` CI CLI group also exposed three Role-history tests added on main
+that still constructed the old Promise Repo for the migrated SessionDocument.
+Their fixture now constructs the same WorkspaceRepoLegacy used by the consumer;
+proposal persistence, idempotency and ownership assertions remain unchanged.
+
+This repair passes all 1,543 Shared cases, 93 affected renderer cases, four Role
+history cases, repository types/static checks, 58 script cases, formatting and
+documentation/boundary checks. The local root run was stopped during full CLI and
+component tests after types/lint/scripts passed; it is not a full-suite pass.
+Final merged-head CI remains required.
 
 The persistent IndexedDB save regression fails on `c2dc8435` and passes with this
 repair. It checks repeated/concurrent reopens, original Doc identity/bytes, an

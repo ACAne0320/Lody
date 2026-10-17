@@ -4,6 +4,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  FiberMap,
   Queue,
   Scope,
   Semaphore,
@@ -98,6 +99,7 @@ type Event =
 type Member = {
   readonly room: LocalLoroDataPlaneRoom;
   readonly offer: (event: Event) => void;
+  readonly needsRecovery: () => boolean;
   readonly reconnect: Effect.Effect<void>;
 };
 
@@ -116,6 +118,7 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
   options: LocalWorkspaceTransportOptions
 ): Effect.fn.Return<NativeTransport, RepoError, Scope.Scope> {
   const members = new Map<string, Member>();
+  const recoveries = yield* FiberMap.make<Member, void, never>();
   const transportStatus = yield* SubscriptionRef.make<TransportStatus>('offline');
   const connection = options.connection;
   const maxPayloadBytes = options.maxPayloadBytes ?? LOCAL_LORO_DATA_PLANE_MAX_PAYLOAD_BYTES;
@@ -175,13 +178,15 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
     yield* Stream.fromQueue(events).pipe(
       Stream.runForEach((online) =>
         Effect.gen(function* () {
+          if (retired) return;
           yield* SubscriptionRef.set(transportStatus, online ? 'online' : 'offline');
-          if (online)
-            yield* Effect.forEach(members.values(), (member) => member.reconnect, {
-              concurrency: 'unbounded',
-              discard: true,
-            });
-          else for (const member of members.values()) member.offer({ kind: 'connection', online });
+          for (const member of members.values()) {
+            // Recovery may drain accepted I/O. Supervise one task per member
+            // without holding up this connection's later status edges.
+            if (online && member.needsRecovery())
+              yield* FiberMap.run(recoveries, member, member.reconnect, { onlyIfMissing: true });
+            else member.offer({ kind: 'connection', online });
+          }
         })
       ),
       Effect.forkScoped
@@ -530,7 +535,7 @@ export const makeLocalWorkspaceTransport = Effect.fnUntraced(function* (
       }
       if (!closed && !retired) offer({ kind: 'refresh' });
     }).pipe(lifecycle.withPermits(1), Effect.uninterruptible);
-    members.set(key, { room, offer, reconnect });
+    members.set(key, { room, offer, reconnect, needsRecovery: () => overflow });
     worker = yield* startWorker(queue);
     offer({ kind: 'refresh' });
     return {
