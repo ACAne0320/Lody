@@ -38,7 +38,9 @@ even though `initial_sync_timeout` is retryable.
 Selected sync can restart that SDK generation while ordinary baselines stay owned.
 Live 4xx failures already use SDK backoff; an HTTP error does not prove a terminal
 generation. A persistent room error never resets healthy siblings or presence.
-Transport failure or explicit reset can restart the shared connection. Native ownership keeps
+Only transport failure restarts a shared server connection; wake/auth/force requests
+while online use selected-room repair too. Forced peer reconnect still drains and
+rebuilds failed local v7 workers. Native ownership keeps
 pending SDK work and scopes, without a second set of application rejoin jobs.
 The local v7 client keeps its 1,024-event and default 64 MiB queue bounds.
 After overflow, reconnect (including a physical online edge) drains the failed

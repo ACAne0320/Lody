@@ -97,7 +97,13 @@ offline／未确认结果使本次尝试失败，不算成功，也不再无限�
 失败的初始化，等独立修复完成后汇总失败，不触碰健康房间、presence 或普通的 pending baseline。
 这纠正了此前“集中到控制器就受退避控制”的表述：
 健康时的 30s sweep 绕过了 backoff。持续的单房间 403 不得每个周期重置全部成员。整连接
-故障或显式 reset 才重启全部成员。
+自身处于 offline／closed／failed 时，server transport 才可重启全部成员。复核 `177e5bcb`
+后纠正此前只保护周期 sweep 的遗漏：renderer 唤醒、online、auth 都传入 `resetBackoff: true`，
+每次强制尝试仍会重置健康 SDK generation。在线 server transport 现在不论该标志都走
+同一条所选房间修复路径。原生 Streams reset 在 join／create 共用的 admission permit 下串行
+重启全部成员和 presence，避免调用它才能保护无关房间和新操作的准入。本地 peer 的强制
+reconnect 保持原行为，因为溢出恢复必须 drain 失败的队列／worker，单独 `room.sync` 无法
+重建它们。不新增状态、重试循环、期限或恢复 owner。
 
 复核 `ebf906f9` 后纠正此前过宽的论断：不可重试 HTTP 错误不等于需要整连接 reset 的终止
 generation。正式 CRDT 0.19.0 的 live 4xx 使用 SDK 自身封顶退避，默认无限重试；所选 sync
@@ -127,6 +133,20 @@ CLI composition 没有可变的 transport 路由谓词，lazy acquire 会调和�
 | workspace 退休时 IndexedDB 持续配额失败 | RuntimeProvider 的同工作区关闭门禁会在本窗口拒绝重开，每次重试还可能消耗释放期限 | 存储恢复后才可完成退休；尚未实现同 key 接管、有界终止关闭／用户报告及 SDK／原始 writer 终止合同。这仍是产品可用性限制。 |
 
 ## 验证与限制
+
+在线 server 修复使用真实 Repo lease 和注入的原生 transport 边界验证：Web 和 dual 的
+visible-wake 路径保留健康 generation；双路由失败房间经过三个重连循环周期仍不干扰
+兄弟房间，解除注入故障后会上传原 Doc 字节。detached 路由保持空闲。transport 本身
+处于 offline／closed／failed、peer 强制重连、已接受 reconnect I/O 的 drain 和关闭也继续
+覆盖。这些 renderer 夹具模拟 transport 边界，不是完整 Streams HTTP 协议；后者由既有
+正式 SDK 的 CLI controller 用例覆盖。五个相关套件共 133 项通过：facade 32、runtime 64、
+重连循环 8、本地 v7 12、CLI 恢复 17。visibility 用例等待真实 cloud reconnect 调用结束，
+不依赖固定次数的微任务排空。`177e5bcb` 对照保留原 facade，四项强制修复回归均失败：
+facade force、Web 唤醒、dual 唤醒和 dual 持续房间失败；非强制房间修复仍通过。
+前一提交的 GitHub CI 和 Desktop E2E 通过。改动文件的类型感知 lint 与 Effect lint、全仓
+格式、文档和八项边界／翻译检查通过。完整 Effect lint 尝试被 SIGTERM 终止；相关文件检查
+通过，不能声称完整静态检查通过。Shared／components 类型检查通过；必需的根检查在
+Electron web 类型检查阶段达到十分钟本地预算（退出 124），不报告完整根检查链通过。
 
 Flock 复用用例在真实 IndexedDB 批量保存和文件存储保存边界注入故障。远端导入的索引在
 持续故障期间反复释放、重新借用后仍为同一个 Flock，字节保留；其他 Flock/Doc 视图仍可
@@ -159,7 +179,7 @@ bootstrap 回归在 `ebf906f9` 上因没有编写字节到达服务端而失败�
 在 `ebf906f9`，watchdog 回归在 `c57f9ec8` 观察到健康兄弟房间变为 `offline` 而失败，缩小 facade 修复
 范围后同一个真实 Repo／控制器夹具通过。三个假 interval 周期中，持续权限失败保持可见，
 另一处离线房间反复同步并写入 Doc 字节，健康房间状态和实际 presence 发布持续可用。
-连接本身 offline／closed／failed 以及显式 force 用例仍重置连接并保留原副本。五个相关
+连接本身 offline／closed／failed 以及 peer 强制重连用例仍重置连接并保留原副本。五个相关
 CLI／renderer 套件通过 121 项。全仓类型与类型感知 lint、完整 Effect、八项边界／
 翻译检查、格式和文档检查通过。这是注入原生 transport 边界的验证，不是线上权限服务测试。
 根检查通过类型、lint 和 Effect 后，在沙箱内未修改的 `effect-lint.test.mjs` 嵌套进程

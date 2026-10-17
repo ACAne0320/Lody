@@ -728,53 +728,132 @@ describe('retained native release ownership', () => {
     }
   });
   it.each([
-    { status: 'online' as const, force: true },
-    { status: 'offline' as const, force: false },
-    { status: 'closed' as const, force: false },
-    { status: 'failed' as const, force: false },
-  ])('resets the connection for transport $status, force=$force', async ({ status, force }) => {
-    const repo = await WorkspaceRepoLegacy.create({});
-    try {
-      const doc = (await repo.openPersistedDoc('transport-recovery')).doc;
-      await repo.addTransport('cloud', {
-        kind: 'native-workspace-transport',
-        make: (id) =>
-          Effect.gen(function* () {
-            const physical = yield* SubscriptionRef.make<TransportStatus>(status);
-            return {
+    { status: 'online', force: true, authority: 'peer' },
+    { status: 'offline', force: false, authority: 'server' },
+    { status: 'closed', force: false, authority: 'server' },
+    { status: 'failed', force: false, authority: 'server' },
+  ] as const)(
+    'resets the $authority connection for transport $status, force=$force',
+    async ({ status, force, authority }) => {
+      const repo = await WorkspaceRepoLegacy.create({});
+      try {
+        const doc = (await repo.openPersistedDoc('transport-recovery')).doc;
+        await repo.addTransport('cloud', {
+          kind: 'native-workspace-transport',
+          make: (id) =>
+            Effect.gen(function* () {
+              const physical = yield* SubscriptionRef.make<TransportStatus>(status);
+              return {
+                id,
+                status: physical,
+                authority,
+                connect: Effect.void,
+                disconnect: Effect.void,
+                reconnect: Effect.gen(function* () {
+                  doc.getText('body').insert(0, 'connection recovered');
+                  doc.commit();
+                  yield* SubscriptionRef.set(physical, 'online');
+                }),
+                join: () =>
+                  Effect.gen(function* () {
+                    return {
+                      status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                      close: Effect.void,
+                      sync: Effect.succeed('confirmed' as const),
+                    };
+                  }),
+              };
+            }),
+        });
+        const room = await repo.joinDocRoom('transport-recovery');
+        await repo.runLegacy(room.native.awaitSynced('cloud'));
+        expect(doc.getText('body').toString()).toBe('');
+        const report = await repo.reconnect({ transportIds: ['cloud'], resetBackoff: force });
+        expect(report.ok).toBe(true);
+        expect(doc.getText('body').toString()).toBe('connection recovered');
+        expect((await repo.openPersistedDoc('transport-recovery')).doc).toBe(doc);
+        room.unsubscribe();
+      } finally {
+        await repo.destroy();
+      }
+    }
+  );
+
+  it.each([false, true])(
+    'isolates online server room repair, resetBackoff=%s',
+    async (resetBackoff) => {
+      const repo = await WorkspaceRepoLegacy.create({});
+      const healthy = await repo.runLegacy(SubscriptionRef.make<RoomStatus>('synced'));
+      const broken = await repo.runLegacy(SubscriptionRef.make<RoomStatus>('synced'));
+      const connection = await repo.runLegacy(SubscriptionRef.make<TransportStatus>('online'));
+      let unavailable = false;
+      let generation = 1;
+      let uploaded = '';
+      try {
+        await repo.addTransport('cloud', {
+          kind: 'native-workspace-transport',
+          make: (id) =>
+            Effect.succeed({
               id,
-              status: physical,
               authority: 'server',
               connect: Effect.void,
               disconnect: Effect.void,
+              status: connection,
               reconnect: Effect.gen(function* () {
-                doc.getText('body').insert(0, 'connection recovered');
-                doc.commit();
-                yield* SubscriptionRef.set(physical, 'online');
+                generation++;
+                yield* SubscriptionRef.set(healthy, 'offline');
               }),
-              join: () =>
-                Effect.gen(function* () {
+              join: (target, replica) =>
+                Effect.sync(() => {
+                  const problem = target.kind === 'doc' && target.id === 'problem';
                   return {
-                    status: yield* SubscriptionRef.make<RoomStatus>('synced'),
+                    status: problem ? broken : healthy,
                     close: Effect.void,
-                    sync: Effect.succeed('confirmed' as const),
+                    sync: Effect.gen(function* () {
+                      if (problem && unavailable)
+                        return yield* Effect.fail(new RepoIOError('synthetic room 403', undefined));
+                      if (problem && replica.kind === 'doc') {
+                        uploaded = replica.lease.doc.getText('body').toString();
+                        yield* SubscriptionRef.set(broken, 'synced');
+                      }
+                      return 'confirmed' as const;
+                    }),
                   };
                 }),
-            };
-          }),
-      });
-      const room = await repo.joinDocRoom('transport-recovery');
-      await repo.runLegacy(room.native.awaitSynced('cloud'));
-      expect(doc.getText('body').toString()).toBe('');
-      const report = await repo.reconnect({ transportIds: ['cloud'], resetBackoff: force });
-      expect(report.ok).toBe(true);
-      expect(doc.getText('body').toString()).toBe('connection recovered');
-      expect((await repo.openPersistedDoc('transport-recovery')).doc).toBe(doc);
-      room.unsubscribe();
-    } finally {
-      await repo.destroy();
+            }),
+        });
+        const sibling = await repo.joinDocRoom('healthy');
+        const room = await repo.joinDocRoom('problem');
+        await repo.runLegacy(sibling.native.awaitSynced('cloud'));
+        await repo.runLegacy(room.native.awaitSynced('cloud'));
+        const doc = (await repo.openPersistedDoc('problem')).doc;
+        doc.getText('body').insert(0, 'pending upload');
+        doc.commit();
+        unavailable = true;
+        await repo.runLegacy(SubscriptionRef.set(broken, 'failed'));
+        await repo.runLegacy(
+          room.native.status('cloud').pipe(
+            Stream.filter((status) => status === 'failed'),
+            Stream.take(1),
+            Stream.runDrain
+          )
+        );
+        await repo.reconnect({ transportIds: ['cloud'], resetBackoff });
+        expect(uploaded).toBe('');
+        expect(await repo.runLegacy(sibling.native.statusSnapshot('cloud'))).toBe('synced');
+        expect(generation).toBe(1);
+        unavailable = false;
+        await repo.reconnect({ transportIds: ['cloud'], resetBackoff });
+        expect(uploaded).toBe('pending upload');
+        expect(await repo.runLegacy(room.native.statusSnapshot('cloud'))).toBe('synced');
+        expect(generation).toBe(1);
+        room.unsubscribe();
+        sibling.unsubscribe();
+      } finally {
+        await repo.destroy();
+      }
     }
-  });
+  );
 
   it('native reconnect retries a failed room attach and retains the shared replica', async () => {
     const repo = await WorkspaceRepoLegacy.create({});

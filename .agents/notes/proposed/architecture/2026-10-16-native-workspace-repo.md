@@ -204,7 +204,16 @@ collecting independent failures. They leave healthy rooms, presence and ordinary
 pending baselines alone. This corrects the earlier claim that
 moving N-room resets into the controller put them under backoff: its healthy 30s
 sweep bypasses that backoff. A persistent room-level 403 must not reset all members
-every period. Only transport-wide failure or explicit reset restarts all members.
+every period. Only a server transport's own offline/closed/failed status permits
+restarting all its members. Correction after reviewing `177e5bcb`: renderer
+wake/online/auth triggers pass `resetBackoff: true`, so excluding only periodic
+sweeps still reset healthy SDK generations on every forced attempt. Online server
+transports now use the same selected-room path regardless of that flag. Native
+Streams reset serializes all members and presence under the join/create admission
+permit; avoiding it preserves unrelated room availability and admission. Local
+peer force reconnect remains unchanged because overflow recovery must drain the
+failed queue/worker; its `room.sync` alone cannot rebuild them. No new state,
+retry loop, deadline, or recovery owner is introduced.
 
 Correction after reviewing `ebf906f9`: the earlier claim that non-retryable HTTP
 errors imply a terminal SDK generation needing transport reset was too broad.
@@ -242,6 +251,27 @@ guarantees or claims of completed terminal shutdown:
 | Persistent IndexedDB quota failure during workspace retirement | RuntimeProvider's same-workspace close gate rejects reopening in this window and can consume a release deadline on each retry | Storage recovery permits retirement. Same-key adoption, bounded terminal shutdown/reporting and a terminal SDK/raw-writer termination contract are not implemented here; this remains a product-level availability limit. |
 
 ## Verification and limits
+
+Online server repair is exercised through real Repo leases and injected native
+transport boundaries: Web and dual visible-wake paths retain healthy generations;
+a dual-homed failed room survives three reconnect-loop periods without disturbing
+its sibling, then uploads its original Doc bytes after the injected failure clears.
+Detached routes stay idle. Offline/closed/failed transport recovery and forced
+peer reconnect remain covered, as do accepted reconnect I/O drain and close.
+These renderer fixtures model the transport boundary, not the full Streams HTTP
+protocol; the existing published-SDK CLI controller cases provide that coverage.
+The five affected suites pass 133 cases (32 facade, 64 runtime, 8 reconnect-loop,
+12 local v7 and 17 CLI recovery). Visibility tests await completion of the real
+cloud reconnect call instead of relying on a fixed number of microtask turns.
+The `177e5bcb` comparison retains its original facade and fails all four forced
+repair regressions: direct facade force, Web wake, dual wake and persistent dual
+room failure; non-forced room repair still passes. The preceding head's GitHub
+CI and Desktop E2E pass. Changed-file type-aware and Effect lint, repository format,
+documentation and all eight boundary/translation guards pass. A full Effect lint
+attempt terminates with SIGTERM; scoped Effect checks pass, so a complete full
+static pass is not claimed. Shared/components types pass before the required root
+check reaches its ten-minute local budget during Electron web typechecking
+(exit 124); the complete root chain is not reported as passing.
 
 Flock reuse is tested at the real IndexedDB batch-save and filesystem save
 boundaries. Remote-imported indexes survive repeated release/reacquire during
@@ -290,7 +320,7 @@ as `offline`; the same real-Repo/controller fixture passes after narrowing the
 facade repair. Three fake interval periods keep a persistent permission failure
 visible while another offline room repeatedly syncs and writes Doc bytes, and
 healthy room status and actual presence publishing remain usable. Connection-level
-offline/closed/failed and explicit-force cases still reset and preserve the replica.
+offline/closed/failed and forced-peer cases still reset and preserve the replica.
 The five owning CLI/renderer suites pass 121 cases. Repository types and
 type-aware lint, full Effect checks, all eight boundary/translation guards,
 formatting and documentation checks pass. This is an injected native transport

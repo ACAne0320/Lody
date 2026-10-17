@@ -2095,6 +2095,9 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       const cloudRoomState = await Effect.runPromise(
         SubscriptionRef.make<import('loro-repo/effect').RoomStatus>('synced')
       );
+      const cloudConnection = await repo.runLegacy(
+        SubscriptionRef.make<import('loro-repo/effect').TransportStatus>('online')
+      );
       let destroyed = false;
       const activeAtDestroy: number[] = [];
       const subscription = (
@@ -2127,6 +2130,7 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
           Effect.succeed({
             id,
             authority: cloud ? 'server' : 'peer',
+            ...(cloud ? { status: cloudConnection } : {}),
             connect: Effect.void,
             disconnect: Effect.void,
             reconnect: Effect.uninterruptible(
@@ -2176,6 +2180,7 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       try {
         cloudStatus = 'error';
         await Effect.runPromise(SubscriptionRef.set(cloudRoomState, 'failed'));
+        await repo.runLegacy(SubscriptionRef.set(cloudConnection, 'offline'));
         dispatchWindowEvent('online');
         await entered[0].promise;
         if (retry) {
@@ -2218,53 +2223,159 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     }
   );
 
-  it('repairs a dual-homed room whose cloud binding failed (invisible to trackers)', async () => {
-    // The regression this pins: a dual-homed room's cloud subscription failing
-    // while the local plane stays healthy produced no signal anywhere and the
-    // pending renderer-authored ops sat local-only. The repair loop must
-    // discover it via repo.transportRooms('cloud') and reconnect that plane.
-    mocks.joinMetaRoom.mockResolvedValueOnce(createMetaSub(Promise.resolve()));
-    enableElectronLocalDataPlane();
-    Object.assign(navigator, { onLine: true });
-
-    const runtime = await createWorkspaceRuntime({
-      workspaceSlug: 'workspace',
-      workspaceId: 'workspace-1' as WorkspaceId,
-      apiBaseUrl: 'https://api.example.test',
-      token: 'auth-token',
-    });
-    // A dual-homed room needs resolved LOCAL ownership: the scan deliberately
-    // skips cloud-readiness rooms (their binding is already registry-tracked).
-    runtime.setLocalMachineId('local-machine' as MachineId);
-    await runtime.setAuthToken('auth-token');
-    await flushPromises();
-    expect(mocks.streamsTransportConstructors).toHaveBeenCalledTimes(1);
-    mocks.reconnect.mockClear();
-
-    // A detached binding is deliberate absence — never a repair trigger.
-    mocks.transportRooms.mockReturnValue([
-      {
-        target: { kind: 'doc', id: 'machine-local-machine' },
-        status: 'detached',
-      },
-    ]);
-    await vi.advanceTimersByTimeAsync(120_000);
-    await flushPromises();
-    expect(mocks.reconnect).not.toHaveBeenCalled();
-
-    mocks.transportRooms.mockReturnValue([
-      {
-        target: { kind: 'doc', id: 'machine-local-machine' },
-        status: 'failed',
-      },
-    ]);
-    await vi.advanceTimersByTimeAsync(120_000);
-    await flushPromises();
-    expect(mocks.reconnect).toHaveBeenCalledWith({ transportIds: ['cloud'], resetBackoff: true });
-
-    mocks.transportRooms.mockReturnValue([]);
-    await runtime.dispose();
-  });
+  it.each(['web-wake', 'dual-wake', 'dual-room-failure'] as const)(
+    'keeps healthy cloud generations on visible wake and isolated repair (%s)',
+    async (scenario) => {
+      const mode = scenario === 'web-wake' ? 'web' : 'dual';
+      const { WorkspaceRepoLegacy: RealRepo } = await vi.importActual<
+        typeof import('@lody/shared/workspace-data/repo-legacy')
+      >('@lody/shared/workspace-data/repo-legacy');
+      const { Effect, SubscriptionRef } = await import('effect');
+      const { RepoIOError } = await import('loro-repo/effect');
+      const repo = await RealRepo.create({
+        resolveRoomTransports: () => ({
+          transportIds: mode === 'dual' ? ['local', 'cloud'] : ['cloud'],
+          readinessTransportId: mode === 'dual' ? 'local' : 'cloud',
+        }),
+      });
+      const healthy = await repo.runLegacy(
+        SubscriptionRef.make<import('loro-repo/effect').RoomStatus>('synced')
+      );
+      const broken = await repo.runLegacy(
+        SubscriptionRef.make<import('loro-repo/effect').RoomStatus>('synced')
+      );
+      const connection = await repo.runLegacy(
+        SubscriptionRef.make<import('loro-repo/effect').TransportStatus>('online')
+      );
+      let generation = 1;
+      let unavailable = false;
+      let uploaded = '';
+      let observeWake = false;
+      const wakeRepairDone = Promise.withResolvers<void>();
+      const reconnect = repo.reconnect.bind(repo);
+      vi.spyOn(repo, 'reconnect').mockImplementation(async (options) => {
+        const wake =
+          observeWake && (!options?.transportIds || options.transportIds.includes('cloud'));
+        try {
+          return await reconnect(options);
+        } finally {
+          if (wake) wakeRepairDone.resolve();
+        }
+      });
+      const add = repo.addTransport.bind(repo);
+      vi.spyOn(repo, 'addTransport').mockImplementation((id, _adapter, options) =>
+        add(
+          id,
+          {
+            kind: 'native-workspace-transport',
+            make: () =>
+              Effect.succeed({
+                id,
+                authority: id === 'cloud' ? 'server' : 'peer',
+                status: connection,
+                connect: Effect.void,
+                disconnect: Effect.void,
+                reconnect: Effect.gen(function* () {
+                  if (id !== 'cloud') return;
+                  generation++;
+                  yield* SubscriptionRef.set(healthy, 'offline');
+                }),
+                join: (target, replica) =>
+                  Effect.gen(function* () {
+                    const problem =
+                      id === 'cloud' &&
+                      target.kind === 'doc' &&
+                      target.id === 'machine-local-machine';
+                    return {
+                      status:
+                        id === 'local'
+                          ? yield* SubscriptionRef.make<import('loro-repo/effect').RoomStatus>(
+                              'synced'
+                            )
+                          : problem
+                            ? broken
+                            : healthy,
+                      close: Effect.void,
+                      sync: Effect.gen(function* () {
+                        if (problem && unavailable)
+                          return yield* Effect.fail(
+                            new RepoIOError('synthetic room 403', undefined)
+                          );
+                        if (problem && replica.kind === 'doc') {
+                          uploaded = replica.lease.doc.getText('body').toString();
+                          yield* SubscriptionRef.set(broken, 'synced');
+                        }
+                        return 'confirmed' as const;
+                      }),
+                    };
+                  }),
+              }),
+          },
+          options
+        )
+      );
+      mocks.repoOverride = repo;
+      if (mode === 'dual') enableElectronLocalDataPlane();
+      const runtime = await createWorkspaceRuntime({
+        workspaceSlug: 'workspace',
+        workspaceId: 'workspace-1' as WorkspaceId,
+        apiBaseUrl: 'https://api.example.test',
+        ...(mode === 'dual' ? { syncMode: 'dual' as const } : {}),
+      });
+      runtime.setLocalMachineId('local-machine' as MachineId);
+      await runtime.setAuthToken('token');
+      const sibling = await repo.joinDocRoom('healthy');
+      const room = await repo.joinDocRoom('machine-local-machine');
+      try {
+        await repo.runLegacy(room.native.awaitSynced('cloud'));
+        await repo.runLegacy(sibling.native.awaitSynced('cloud'));
+        publishPresenceSyncState('synced');
+        await flushPromises();
+        if (scenario !== 'dual-room-failure') {
+          (document as unknown as { visibilityState: DocumentVisibilityState }).visibilityState =
+            'hidden';
+          dispatchDocumentEvent('visibilitychange');
+          await flushPromises();
+          observeWake = true;
+          (document as unknown as { visibilityState: DocumentVisibilityState }).visibilityState =
+            'visible';
+          dispatchDocumentEvent('visibilitychange');
+          await wakeRepairDone.promise;
+        }
+        expect(await repo.runLegacy(sibling.native.statusSnapshot('cloud'))).toBe('synced');
+        expect(generation).toBe(1);
+        if (scenario === 'dual-room-failure') {
+          // Detached cloud routes are idle, even when the local readiness plane is live.
+          await repo.runLegacy(SubscriptionRef.set(broken, 'detached'));
+          await vi.advanceTimersByTimeAsync(120_000);
+          expect(await repo.runLegacy(room.native.statusSnapshot('cloud'))).toBe('detached');
+          const doc = (await repo.openPersistedDoc('machine-local-machine')).doc;
+          doc.getText('body').insert(0, 'pending cloud bytes');
+          doc.commit();
+          unavailable = true;
+          await repo.runLegacy(SubscriptionRef.set(broken, 'failed'));
+          dispatchWindowEvent('online');
+          for (let period = 0; period < 3; period++) {
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(await repo.runLegacy(room.native.statusSnapshot('cloud'))).toBe('failed');
+            expect(await repo.runLegacy(sibling.native.statusSnapshot('cloud'))).toBe('synced');
+            expect(uploaded).toBe('');
+            expect(generation).toBe(1);
+          }
+          unavailable = false;
+          await vi.advanceTimersByTimeAsync(60_000);
+          expect(uploaded).toBe('pending cloud bytes');
+          expect(await repo.runLegacy(room.native.statusSnapshot('cloud'))).toBe('synced');
+          expect(generation).toBe(1);
+        }
+      } finally {
+        unavailable = false;
+        room.unsubscribe();
+        sibling.unsubscribe();
+        await runtime.dispose();
+      }
+    }
+  );
 
   it('does not restart presence during durable meta sync recovery', async () => {
     const neverSynced = new Promise<void>(() => {});

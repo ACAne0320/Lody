@@ -695,13 +695,14 @@ export class WorkspaceRepoLegacy {
                 Effect.gen(function* () {
                   const status = yield* value.statusSnapshot;
                   const reset =
-                    options?.resetBackoff === true ||
                     status === 'offline' ||
                     status === 'closed' ||
-                    status === 'failed';
+                    status === 'failed' ||
+                    (options?.resetBackoff === true && transport?.authority !== 'server');
                   if (reset) return yield* value.reconnect;
-                  // A periodic sweep must not restart healthy SDK generations or
-                  // presence because one room fails. Pending baselines stay owned.
+                  // Online server repair stays per-room even on wake/auth triggers:
+                  // native Streams reconnect restarts every SDK generation/presence.
+                  // Peer reconnect still rebuilds overflowed local v7 workers.
                   const rooms = yield* value.rooms;
                   const roomResults = yield* Effect.forEach(
                     rooms.filter(
