@@ -105,6 +105,9 @@ Performance comparisons must use the current full-Mirror baseline.
   and the mobile workspace stack do not start early. The workspace identity's
   syncing state follows that same scoped readiness, not the coarser connection
   state; an online transport does not imply that workspace data is ready.
+  A cold start (no workspace ready yet in this page) has no layout to keep: it
+  continues the boot shell, and only a real switch says "Switching workspace"
+  ([decision](../../../.agents/notes/implemented/bug-fix/2026-10-16-cold-start-workspace-wait.md)).
 
 ## Billing data
 

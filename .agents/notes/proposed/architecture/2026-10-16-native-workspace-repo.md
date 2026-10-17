@@ -186,11 +186,14 @@ to happen before another view opens.
 A fake-clock case holds an actual adapter save beyond the eviction deadline,
 reopens the same Doc while that write is still accepted, then finishes and verifies
 the bytes on disk. The timeout never becomes a durability acknowledgement.
-Validation covers 127 affected renderer ownership/cache/Provider cases, 145 CLI
-cases and all 1,521 Shared cases. Type, static, formatting and documentation checks
-pass; real-process/IPC and Git-based guards run outside the restrictive sandbox.
-The complete local root test chain was not rerun to completion; it does not replace
-CI on the final PR merge.
+After integration with main `7246f783`, validation covers 143 affected renderer
+cases, 175 CLI cases including daemon/MCP and 48 Shared protocol/shortcut/lock cases.
+Before that integration, all 1,521 Shared cases passed. Affected-package types,
+changed-file lint, formatting, native boundary and documentation checks pass;
+real-process/IPC and Git-based guards run outside the restrictive sandbox.
+The complete local root test chain was not rerun to completion; these results do
+not replace CI on the final PR merge. RuntimeProvider keeps main's bounded client
+log event but records only operation/error type, never the private Repo error.
 
 Real v7 host tests exercise two consecutive overflows at the default event cap,
 default byte cap, and an injected small byte cap. Schema-valid bursts, including

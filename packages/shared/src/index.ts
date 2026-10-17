@@ -121,6 +121,7 @@ export * from './file-preview';
 export * from './machine-flock';
 export * from './workspace-mcp';
 export * from './agent-role';
+export * from './agent-role-proposal';
 export * from './workspace-flock';
 export * from './local-machine-rpc';
 export * from './local-loro-data-plane';

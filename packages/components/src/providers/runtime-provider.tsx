@@ -29,6 +29,7 @@ import {
 } from '@/atoms/control-connection';
 import { API_BASE_URL } from '@/lib';
 import { getCachedWorkspaceId } from '@/lib/local-storage-cache';
+import { recordClientLog } from '@/lib/client-log';
 import { usePostHog } from '@posthog/react';
 import { createWorkspaceRuntime } from './create-workspace-runtime';
 import { resolveCloudPlatformRuntimePolicy } from './cloud-platform-runtime-policy';
@@ -57,7 +58,9 @@ const logRuntimeOperationError = (operation: string, error: unknown): void => {
     console.info(`RuntimeProvider: ${operation} skipped during shutdown`);
     return;
   }
-  console.error(`RuntimeProvider: ${operation} failed`, { errorType: describeErrorType(error) });
+  const errorType = describeErrorType(error);
+  console.error(`RuntimeProvider: ${operation} failed`, { errorType });
+  recordClientLog('error', 'runtime.operation_failed', undefined, { operation, errorType });
 };
 
 const resolveRuntimeEagerSyncSurface = (): EagerSyncSurface => {

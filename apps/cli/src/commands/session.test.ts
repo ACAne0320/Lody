@@ -2893,7 +2893,6 @@ describe('session command output boundary', () => {
             cleanUp: async () => {
               logger.info('transport detached');
             },
-            isPresenceReleased: () => true,
           }),
           async () => {
             if (fail) throw new Error('synthetic failure');

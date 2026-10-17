@@ -42,6 +42,7 @@ import type {
   MachineAcpBinaryStatusResponse,
   MachineAcpBinaryInstallResponse,
   MachineAcpBinaryProgressMessage,
+  BugReportClientLog,
   MachineBugReportResponse,
   SessionPreviewCreateResponse,
   SessionPreviewEndpointAcquireResponse,
@@ -505,7 +506,13 @@ export type WorkspaceRuntime = {
   ) => Promise<McpToolListResult>;
   requestMachineBugReport: (
     machineId: MachineId,
-    args: { description: string; reporterUserId: string; requestToken: string },
+    args: {
+      description: string;
+      reporterUserId: string;
+      requestToken: string;
+      /** Dropped for a machine that does not advertise `bugReportClientLog`. */
+      clientLog?: BugReportClientLog;
+    },
     options?: { timeoutMs?: number }
   ) => Promise<MachineBugReportResponse | null>;
   requestMemoryProvider: (

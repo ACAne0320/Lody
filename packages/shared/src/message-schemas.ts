@@ -1,7 +1,9 @@
+import { AgentRoleProposalMetaSchema } from './agent-role-proposal';
 import { isMagpieGatewayUrl } from './magpie-import';
 import { MemoryBindingSchema } from './memory-provider';
 import { AgentRoleSnapshotSchema } from './message-author';
 import { z } from 'zod';
+import { BugReportClientLogSchema } from './bug-report';
 import { SubagentTaskPayloadSchema } from './acp/claude-subagent-task';
 import {
   isLodySubagentSnapshot,
@@ -1689,6 +1691,7 @@ export const MachineBugReportRequestSchema = z
     description: z.string().trim().min(1),
     reporterUserId: z.string().trim().min(1),
     requestToken: z.string().trim().min(1),
+    clientLog: BugReportClientLogSchema.optional(),
   })
   .strict();
 
@@ -3746,6 +3749,11 @@ export const SystemNoticeSchema = z.discriminatedUnion('name', [
     type: z.literal('system_notice'),
     name: z.literal('task_proposal'),
     meta: TaskProposalMetaSchema.optional(),
+  }),
+  z.object({
+    type: z.literal('system_notice'),
+    name: z.literal('agent_role_proposal'),
+    meta: AgentRoleProposalMetaSchema.optional(),
   }),
   z.object({
     type: z.literal('system_notice'),

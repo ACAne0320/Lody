@@ -82,9 +82,11 @@ Transport owner 在 adapter 构造或 native connect 前同步登记。移除会
 无需等存储恢复才能重开视图。
 假时钟用例将真实 adapter 保存保持到卸载期限之后，在原写入仍被持有时重开同一 Doc，
 最后完成写入并核对磁盘字节。超时不会变成持久化确认。
-验证覆盖受影响的 renderer 所有权/cache/Provider 127 项、CLI 145 项及 Shared 全量 1,521 项。
-类型、静态、格式和文档检查通过；真实进程/IPC 与依赖 Git 的检查在限制性沙箱外执行。
-没有从头完整跑完本地 root 测试链；这些结果不替代最终 PR 合并结果上的 CI。
+整合 main `7246f783` 后，验证覆盖受影响 renderer 143 项、含 daemon/MCP 的 CLI 175 项，
+以及 Shared 协议/快捷指令/锁 48 项。整合前 Shared 全量 1,521 项通过。
+受影响包的类型、修改文件 lint、格式、native 边界和文档检查通过；真实进程/IPC 与依赖 Git
+的检查在限制性沙箱外执行。没有从头完整跑完本地 root 测试链；这些结果不替代最终 PR 合并结果上的 CI。
+RuntimeProvider 保留 main 的有界客户端日志事件，只记录 operation/error type，不传入私有 Repo 错误。
 
 真实 v7 host 测试分别在默认事件数上限、默认字节预算和注入的小字节预算下连续触发两次拥塞。经过 schema 校验的消息突发包含真实 Loro update 字节，当前等待会失败，独立房间仍可同步，随后原 Doc/Meta 副本恢复上下行写入。另用显式 gate 阻塞真实 Meta import，证明恢复会先等待已接受的不可中断 I/O，再替换消费者；期间兄弟房间仍能完成追赶 epoch。所属原生套件 11 项通过。本次修复的 Shared 全量 1,522 项、受影响 renderer 四组套件 89 项通过。在独立的 `a2f0911d` 工作树上，新增五项拥塞回归针对修复前实现均失败。根检查另有未改动的 SubagentTaskPanel 命令详情用例超时，所属套件单独复跑 19 项全部通过；将此结果与已知 SSH 凭据 fixture 失败分别记录，不把根检查报告为全绿。
 

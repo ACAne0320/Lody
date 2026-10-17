@@ -15,10 +15,8 @@ Replacement rules: [shared](../../../../../packages/shared/AGENTS.md#session-his
 
 ## Opening a doc pulls its stream
 
-`LoroDocumentManager.getOrCreateSessionDoc()` is not a cheap read.
-`SessionDocument.init()` joins and pulls the room immediately. It stays joined
-in the manager cache until `cleanSessionDoc`; each open costs a subscription and
-full initial sync.
+`getOrCreateSessionDoc()` immediately joins/pulls through `SessionDocument.init()`
+and stays cached until `cleanSessionDoc`. Each open costs a subscription and full sync.
 
 Rules:
 
@@ -53,10 +51,9 @@ see [observe scopes](../../commands/session-observe-runtime.ts).
 
 ## Streams cursors are replica-bound
 
-Daemon/commands share `repo.sqlite3`, not replicas: native leases own Meta/Flock checkpoints; Doc cursors use
-`createDocumentRemoteCursorStore` (shared rows: daemon only). No shared
-`remoteCursorStore` or schedule-only `onPersist*`. Test:
-`tests/cli-streams-replica-checkpoints.test.ts`.
+Daemon/commands share `repo.sqlite3`, never replicas. Native leases own Meta/Flock
+checkpoints. Daemon Doc cursors use `createDocumentRemoteCursorStore`; no shared
+`remoteCursorStore` or schedule `onPersist*`. Test: `tests/cli-streams-replica-checkpoints.test.ts`.
 
 Repo uses `WorkspaceRepoLegacy`; failed eviction keeps its cached Doc borrowable.
 
@@ -89,11 +86,11 @@ cannot retire a Turn. Its Legacy entry owns execution/analytics. Intent:
 `specs/session-initialization-deadline.md`.
 
 `workspace-presence.ts` owns Scopes; `presence-replica.ts` is synchronous.
-Only Legacy entries execute. No kernel Promise/timers,
-extra runtime or POST/SSE queue. Failed release retains work/Cause/owner
-and fences replacement; close joins completion. Revoke preserves local
-production. CLI owns registry/token Scopes; durable/presence share one provider.
-`platform/presence.ts` consumes the published SDK native entry.
+Only Legacy executes; no kernel Promise/timers, runtimes or POST/SSE queues.
+Failed release retains work/Cause/owner and fences its generations, not the workspace.
+Registry retires failed owners. Close joins; revoke preserves local production.
+CLI owns registry/token Scopes; durable/presence share one provider.
+`platform/presence.ts` consumes the native SDK.
 
 ## Device resources use `machine-monitor.ts`
 

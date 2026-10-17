@@ -82,3 +82,10 @@
   Persist repaired bodies, membership and checkpoint atomically; the cache grants no write receipt.
   Independently negotiated checkpoint observation covers admission gaps and missed hints.
   Park bounded waits outside foreground/native execution; resume the same catch-up flow.
+
+- Coordinator `operation-progress` uses the writer's operation-local command, never
+  `readStored`/whole-history `update`. Read each selected card at most once; unrelated
+  transcript bodies stay unread. Preserve duplicate/legacy cards, validate before
+  mutation, and compare content independent of object key order for no-op writes.
+  Keep canonical metadata when merging aliases; repair an alias-only card's id in
+  place even when its content is unchanged. Stored extensions must remain no-ops.

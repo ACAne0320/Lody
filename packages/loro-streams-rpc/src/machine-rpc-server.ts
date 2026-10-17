@@ -1,4 +1,8 @@
-import type { MemoryProviderRequest, MemoryProviderResponse } from '@lody/shared';
+import type {
+  BugReportClientLog,
+  MemoryProviderRequest,
+  MemoryProviderResponse,
+} from '@lody/shared';
 import {
   IosSimulatorRemoteResponseSchema,
   type RpcSecretPublicKey,
@@ -411,6 +415,7 @@ type RpcServerDeps = {
     description: string;
     reporterUserId: string;
     requestToken: string;
+    clientLog?: BugReportClientLog;
   }) => Promise<MachineBugReportResponse>;
   cancelSession?: (args: {
     sessionId: SessionId;
@@ -1330,6 +1335,7 @@ export class LoroStreamsMachineRpcServer {
             description: request.params.description,
             reporterUserId: request.params.reporterUserId,
             requestToken: request.params.requestToken,
+            ...(request.params.clientLog ? { clientLog: request.params.clientLog } : {}),
           });
           await this.appendResultResponse(request.replyTo, request.id, request.method, response);
           return;

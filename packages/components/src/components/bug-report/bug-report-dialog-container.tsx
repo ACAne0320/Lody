@@ -10,11 +10,14 @@ import { readStoredAuthToken } from '@/lib/auth-bootstrap';
 import { readChatLandingDefaults } from '@/lib/chat-landing-defaults';
 import { mintBugReportRequestToken, submitWebBugReport } from '@/lib/bug-report-api';
 import { appendClientBuildInfo } from '@/lib/client-build-info';
+import { buildClientLogUploadWithin, recordClientLog } from '@/lib/client-log';
 import {
   BugReportDialog,
   type BugReportMachineOption,
   type BugReportSubmitState,
 } from './bug-report-dialog';
+
+const CLIENT_LOG_UPLOAD_WAIT_MS = 5000;
 
 export function BugReportDialogContainer() {
   const { t } = useTranslation();
@@ -95,9 +98,17 @@ export function BugReportDialogContainer() {
         setState({ status: 'error', message: minted.error });
         return;
       }
+      recordClientLog('info', 'bug_report.submitting', undefined, { machineId });
+      // Storage must not hold the report hostage: past this, file it without the log.
+      const clientLog = await buildClientLogUploadWithin(CLIENT_LOG_UPLOAD_WAIT_MS);
       const response = await runtime.requestMachineBugReport(
         machineId,
-        { description: reportDescription, reporterUserId, requestToken: minted.requestToken },
+        {
+          description: reportDescription,
+          reporterUserId,
+          requestToken: minted.requestToken,
+          ...(clientLog ? { clientLog } : {}),
+        },
         { timeoutMs: 120_000 }
       );
       if (response?.success && response.bugReportId) {

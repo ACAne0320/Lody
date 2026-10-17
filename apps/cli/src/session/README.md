@@ -37,8 +37,10 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
   with the safe error reference returned by history RPC.
 - `session-history-owner.ts` — native Effect readiness barrier for history RPC; waits
   for this session's owner/backend metadata and releases its observer on every exit.
-- `roost-rpc-session.ts` — one-shot Cloud CLI history services backed by owner RPC;
-  `lib/command-runtime.ts` supplies the same composition for sessions, export and MCP.
+- `roost-rpc-session.ts` — Cloud CLI history services backed by owner RPC;
+  `lib/command-runtime.ts` supplies the same composition for standalone commands and,
+  through `routeRemoteOwnedSessionHistory`, for Sessions the cloud daemon touches on
+  other machines.
 - `turn-history-gate.ts` — ordering barrier for RPC fast-path turns. Created in
   message-handler's `beginConversationTurn`, stored/disposed via `SessionTransientStore` turn
   state; it creates the assistant entry when it opens.
@@ -56,6 +58,8 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
   session and process lifecycle, workdirs, worktrees, sandboxed spawning, ACP terminals.
   Managed GitHub credential preparation excludes local projects and their worktrees;
   each managed runtime owns a scoped credential lease, retained across adoption.
+- `session-start-stage.ts` — start step names and the user-visible failure text
+  ([start failures](#start-failures)).
 - `session-fork-service.ts` / `session-fork-operation-store.ts` — the fork saga and its
   machine-local marker store.
 - `session-edit-and-resend-service.ts` — same-session replacement of the last normal User turn.
@@ -317,6 +321,40 @@ changes update the host Session environment without restarting ACP or its sandbo
 Existing ACP children retain their launch environment; live
 identity propagation into adapter-owned Git commands remains unresolved.
 
+### Start failures
+
+`SessionManager.createSession` reports each start step through `onStartStage` as it
+begins: credentials, working directory, worktree, worktree setup script (reported only when a
+script actually starts), agent sandbox, Git identity, agent runtime, then agent start. The execution service keeps the last step on the turn and clears it once a Session
+is bound. A failure is recorded as `<step> failed: <message>`, using
+`session-start-stage.ts`, so the user sees where start-up stopped. Authentication failures
+keep their own message. The error itself is never wrapped: the restore and create paths
+classify it by identity to choose sign-in, the history-replay fallback or a generic failure.
+When a start fails, cleanup terminates the partial Session and releases its credentials.
+Each cleanup failure is logged, and the original error is rethrown. These are rules:
+never wrap the start error, and never let cleanup replace it. Failure text uses
+`formatReportedError`, which names the type and cause of an error whose message is empty,
+which a `Data.TaggedError` without a message getter produces. Only Error and string causes
+are described. Classifiers keep using `formatErrorMessage`, whose output does not change.
+See the
+[decision](../../../../.agents/notes/implemented/bug-fix/2026-10-16-session-start-failure-attribution.md).
+
+`startWithTransientRetry` in the execution service starts again after a temporary OS
+failure (`EAGAIN`, `EMFILE`, `ENFILE` or `ENOMEM` anywhere in the cause chain), up to three
+attempts with 1- and 3-second delays from `SESSION_START_RETRY_DELAYS_MS`, each jittered
+over its upper half. Before each delay it publishes `Retrying after a temporary system error`
+as presence detail, and after the delay it checks for Stop. Each attempt is a fresh
+`createSession`. A failed attempt whose cleanup could not terminate its agent or release its
+credentials is marked (`recordIncompleteStartCleanup`) and never retried. The whole
+service shares `SESSION_START_RETRY_BUDGET` (6 retries per minute), because a temporary OS
+failure usually hits every Session at once. `sessionStartRetryMode` decides how to repeat.
+A new Session repeats unchanged if it failed before its worktree setup script. If it got past
+the script, it repeats as a resume, which skips the script. It never repeats if it failed
+while the script was running. A restore always repeats unchanged, because its existing
+worktree already skips setup. Authentication, resume and every other error fail on the first
+attempt. See the
+[retry decision](../../../../.agents/notes/implemented/feature/2026-10-16-session-start-transient-retry.md).
+
 ### No draft preparation
 
 Every Session starts its ACP process and worktree when its first turn is dispatched.
@@ -537,7 +575,9 @@ it never retries an indeterminate history action.
 External cursor refreshes share the local write queue so an earlier branch read
 cannot overwrite a later mutation's projection; disposal rejects pending reads.
 Cloud one-shot managers inject owner RPC services and never open a caller-local
-Roost database. Open-ended directory reads clip to the owner count and use at most
+Roost database. The cloud daemon routes per Session: another machine's Sessions use
+owner RPC, its own (or not-yet-known owners) use the installed local owner, and the
+routing leaves its execution documents' auto-read policy unchanged. Open-ended directory reads clip to the owner count and use at most
 500 rows per RPC, restarting when the durable revision moves. Fork and Edit & Resend
 retain their owner sagas; process-local snapshot/rollback handles do not cross RPC.
 The production SQLite regressions live in

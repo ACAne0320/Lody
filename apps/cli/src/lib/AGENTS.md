@@ -9,7 +9,7 @@
 
 ## Composition and transports
 
-- Cloud commands share workspace managers.
+- Daemon commands borrow its replica; command cleanup failures never fence.
 
 - GitHub auth: conversation-owner personal → matching-owner machine → repo App,
   once per source. Failures advance without a policy RPC; local context grants
