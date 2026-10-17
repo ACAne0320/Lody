@@ -232,4 +232,3 @@ mention-compatible and at most 60 characters after trimming; descriptions allow 
 140 Unicode code points; instructions allow up to 32,768 characters before trimming.
 Machine/config IDs must be nonempty and at most 128 characters after trimming.
 Unsupported fields are rejected.
-
