@@ -687,3 +687,126 @@ describe('SessionDocument auto read', () => {
     }
   });
 });
+
+describe('LoroDocumentManager Session residency', () => {
+  const noop = () => {};
+  const logger: Logger = {
+    info: noop,
+    warn: noop,
+    error: noop,
+    success: noop,
+    debug: noop,
+    trace: noop,
+    setLevel: noop,
+    child: () => logger,
+    close: async () => {},
+  };
+  const withManager = async (
+    run: (manager: LoroDocumentManager) => Promise<void>
+  ): Promise<void> => {
+    const repo = await WorkspaceRepoLegacy.create({});
+    const manager = new LoroDocumentManager({
+      repo,
+      workspaceId: 'synthetic-workspace' as WorkspaceId,
+      userId: 'synthetic-user',
+      metaSub: null,
+      logger,
+    });
+    try {
+      await run(manager);
+    } finally {
+      await manager.cleanUp({ preserveSessionStatus: true });
+    }
+  };
+  const idle = { minIdleMs: 0, veto: () => false };
+
+  it('never retires a leased document and keeps it resident after the lease ends', async () => {
+    await withManager(async (manager) => {
+      const sessionId = 'leased-session' as SessionId;
+      const lease = await manager.acquireSessionDocLegacy(sessionId, { skipAutoRead: true });
+      let tornDown = false;
+      await expect(
+        manager.retireSessionLegacy(sessionId, {
+          ...idle,
+          teardown: async () => {
+            tornDown = true;
+          },
+        })
+      ).resolves.toBe('in-use');
+      expect(tornDown).toBe(false);
+      expect(lease.doc.isDestroyed).toBe(false);
+
+      await lease.release();
+      // Releasing destroys nothing; only a later idle retirement does.
+      expect(lease.doc.isDestroyed).toBe(false);
+      expect(manager.sessions.get(sessionId)).toBe(lease.doc);
+      await expect(
+        manager.retireSessionLegacy(sessionId, {
+          ...idle,
+          minIdleMs: 20 * 60_000,
+          teardown: async () => {},
+        })
+      ).resolves.toBe('recently-used');
+      await expect(
+        manager.retireSessionLegacy(sessionId, { ...idle, teardown: async () => {} })
+      ).resolves.toBe('retired');
+      expect(lease.doc.isDestroyed).toBe(true);
+    });
+  });
+
+  it('gives a turn that arrives during GC teardown a fresh document, not the doomed one', async () => {
+    await withManager(async (manager) => {
+      const sessionId = 'retiring-session' as SessionId;
+      const doomed = await manager.getOrCreateSessionDoc(sessionId, { skipAutoRead: true });
+      const teardownEntered = Promise.withResolvers<SessionDocument | undefined>();
+      const finishTeardown = Promise.withResolvers<void>();
+      const retirement = manager.retireSessionLegacy(sessionId, {
+        ...idle,
+        teardown: async (sessionDoc) => {
+          teardownEntered.resolve(sessionDoc);
+          await finishTeardown.promise;
+          // The teardown writes through the document it was handed, without
+          // acquiring the Session whose gate it holds.
+          await sessionDoc?.setPreviewState({});
+        },
+      });
+      await expect(teardownEntered.promise).resolves.toBe(doomed);
+
+      // Like the Inbox turn that started 2 ms into GC.
+      let leased = false;
+      const turn = manager
+        .acquireSessionDocLegacy(sessionId, { skipAutoRead: true })
+        .then((lease) => {
+          leased = true;
+          return lease;
+        });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(leased).toBe(false);
+
+      finishTeardown.resolve();
+      await expect(retirement).resolves.toBe('retired');
+      const lease = await turn;
+      try {
+        expect(doomed.isDestroyed).toBe(true);
+        expect(lease.doc).not.toBe(doomed);
+        expect(lease.doc.isDestroyed).toBe(false);
+        await updateTestHistory(lease.doc, () => [createUserEntry('after-gc', 'still writable')]);
+        expect((await lease.doc.sessionData.history.readAll())[0]?.id).toBe('after-gc');
+      } finally {
+        await lease.release();
+      }
+    });
+  });
+
+  it('defers cleanup of a leased document until its last lease ends', async () => {
+    await withManager(async (manager) => {
+      const sessionId = 'archived-while-leased' as SessionId;
+      const lease = await manager.acquireSessionDocLegacy(sessionId, { skipAutoRead: true });
+      await manager.cleanSessionDoc(sessionId, { preserveStatus: true });
+      expect(lease.doc.isDestroyed).toBe(false);
+      await lease.release();
+      expect(lease.doc.isDestroyed).toBe(true);
+      expect(manager.sessions.has(sessionId)).toBe(false);
+    });
+  });
+});

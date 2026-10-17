@@ -7,7 +7,7 @@ Translation: current
 
 ## 摘要
 
-空闲 GC 曾经销毁了一个 Inbox turn 两毫秒前刚拿到的 Session 文档，turn 随之以一种让 Session 直到 daemon 重启都无法使用的方式失败。根因在所有权：CLI 的 Session 文档缓存没有引用计数，GC 又按"先检查后执行"做决定，并发的 turn 总能挤进这个窗口。本 Note 提议为每个 Session 设一个 residency owner：所有使用方都持有 lease，回收只在没有 lease 时、在每个 Session 自己的门内执行；回收期间到来的 acquire 会等待并拿到全新的一代。释放 lease 从不终止 agent 进程，进程照旧在空闲 20 分钟后才回收。内核已实现；接入使用方、删除无引用计数的缓存是后续堆叠的 PR，尚未在生产中验证。
+空闲 GC 曾经销毁了一个 Inbox turn 两毫秒前刚拿到的 Session 文档，turn 随之以一种让 Session 直到 daemon 重启都无法使用的方式失败。根因在所有权：CLI 的 Session 文档缓存没有引用计数，GC 又按"先检查后执行"做决定，并发的 turn 总能挤进这个窗口。本 Note 提议为每个 Session 设一个 residency owner：所有使用方都持有 lease，回收只在没有 lease 时、在每个 Session 自己的门内执行；回收期间到来的 acquire 会等待并拿到全新的一代。释放 lease 从不终止 agent 进程，进程照旧在空闲 20 分钟后才回收。内核、文档缓存、GC 和 turn 的 lease 都已接入；把其余一次性借用改为持有的 lease 是后续堆叠的 PR，这些都尚未在生产中验证。
 
 ## 问题
 
@@ -50,6 +50,24 @@ lease 不是 teardown。释放最后一个 lease 只启动空闲计时，别的�
 2. 让 `LoroDocumentManager` 的 Session 文档、GC sweep、内存压力驱逐和 turn 执行都通过 lease。旧的一次性 `getOrCreateSessionDoc` 调用方 acquire 后立即释放，这会刷新空闲计时，保留今天 20 分钟的安全余量。
 3. 把其余一次性调用方改为 scoped borrow，删除无引用计数的缓存、`pendingSessionDocs` 和 `isDestroyed` 检查。
 
+## 接入
+
+第二步把 residency 接入 daemon：
+
+- **文档缓存。** `LoroDocumentManager` 只在 residency 中保存 Session 文档。`sessions` 变为只读视图，`pendingSessionDocs` 被删除。
+  - `acquireSessionDocLegacy` 返回一个 lease。
+  - `getOrCreateSessionDoc` 取得 lease 后立即释放。
+  - `cleanSessionDoc` 立即回收，或推迟到最后一次释放。
+  - `cleanUp` 最后调用 `shutdown`。打开和关闭仍在与渲染进程 room bridge 共用的按文档 ownership 链内执行。
+- **turn。** 每个 visible turn 通过可选依赖 `leaseSessionDoc` 持有 lease，从登记之前一直到释放之后。这覆盖了 prompt 之前的启动阶段，原先基于 store phase 的检查看不到这一段。
+- **GC。** `cleanSessionForGC` 经由 `retireSessionLegacy` 回收。
+  - `minIdleMs` 由 GC 策略给出：sweep 用空闲超时，内存压力用 60 秒，避免 Legacy 一次性借用在调用方手下被驱逐。
+  - 内存中的可清理性检查在门内作为否决条件再执行一次。
+  - presence、模拟器、预览和进程的 teardown 都在门内执行。teardown 失败时保留 Session 及其跟踪，交给下一次 sweep。
+  - `cleanSession` 返回是否真的回收，被保留的 Session 不会被算作已驱逐。
+- **teardown 不得重入。** 预览清理原先会重新获取文档来标记连接已关闭；现在它通过回收交给它的文档写入，没有打开的文档时只写元数据。GC teardown 引发的进程 `exit` 和 `terminated` 事件会被忽略，因为对它们做 finalize 会重新打开刚回收的文档。
+- **尚未持有 lease。** dispatch watch 不持有 lease。GC 本来就会否决有待处理用户输入的 Session，而那正是 watch 被持有的唯一时机。
+
 ## 验证
 
 `session-residency.test.ts` 使用 `TestClock` 和显式 deferred，覆盖：
@@ -65,4 +83,12 @@ lease 不是 teardown。释放最后一个 lease 只启动空闲计时，别的�
 
 一次临时消融让快速路径忽略门，回收中途到来的那个测试随之失败。
 
-限制：第 2、3 步的使用方接入尚未完成。与真实 `SessionDocument` init/destroy 的交互要等第 2 步落地才会被覆盖。
+集成测试在内存 Repo 之上使用真实的 `LoroDocumentManager`，覆盖：
+
+- 被持有的文档拒绝回收，释放后保持常驻，只在超过最小空闲时间后才回收；
+- 事故的时序：GC teardown 被阻塞期间到来的 turn 会等待，并拿到全新、可写的文档，而 teardown 通过即将关闭的文档完成写入；
+- 推迟到最后一次释放的清理。
+
+native Repo 接入中已有的 retained replica 测试依然通过。执行测试表明 turn 在整个 prompt 期间持有 lease，结束后保留 agent 进程。
+
+限制：一次性调用方仍依赖被刷新的空闲计时，而不是持有的 lease（第 3 步）。dispatch watch 尚未持有 lease。MessageHandler 的否决条件和事件抑制没有专门的测试，因为 MessageHandler 没有轻量的测试夹具。
