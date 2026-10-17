@@ -267,6 +267,7 @@ import {
   CREATE_PR_ORIGIN_PROMPT,
   PR_BRANCH_UPKEEP_PROMPT,
   withPrBranchUpkeep,
+  withProjectGroupPrScope,
   withQuickActionOrigin,
 } from './create-pr-prompt';
 import { WorktreeIcon } from '@/components/icons/worktree-icon';
@@ -5051,18 +5052,28 @@ export const SessionChatInterface = memo(
     const prBranchUpkeep = t('sessions.prompts.prBranchUpkeep', PR_BRANCH_UPKEEP_PROMPT);
     // The origin line tells the user, reading back, that this message came from
     // the button rather than from something they typed.
+    // A Project group conversation publishes every repository it changed, the
+    // submodules before their parents, so the same actions carry that scope.
+    const scopeToProjectGroup = (prompt: string) =>
+      session.projectRun ? withProjectGroupPrScope(prompt) : prompt;
     const createPrPrompt = withQuickActionOrigin(
       t('sessions.prompts.createPrOrigin', CREATE_PR_ORIGIN_PROMPT),
-      withPrBranchUpkeep(t('sessions.prompts.createPr', CREATE_PR_BASE_PROMPT), prBranchUpkeep)
+      scopeToProjectGroup(
+        withPrBranchUpkeep(t('sessions.prompts.createPr', CREATE_PR_BASE_PROMPT), prBranchUpkeep)
+      )
     );
     const createDraftPrPrompt = withQuickActionOrigin(
       t('sessions.prompts.createDraftPrOrigin', CREATE_DRAFT_PR_ORIGIN_PROMPT),
-      withPrBranchUpkeep(
-        t('sessions.prompts.createDraftPr', CREATE_DRAFT_PR_BASE_PROMPT),
-        prBranchUpkeep
+      scopeToProjectGroup(
+        withPrBranchUpkeep(
+          t('sessions.prompts.createDraftPr', CREATE_DRAFT_PR_BASE_PROMPT),
+          prBranchUpkeep
+        )
       )
     );
-    const commitAndPushPrompt = t('sessions.prompts.commitAndPush', COMMIT_AND_PUSH_PROMPT);
+    const commitAndPushPrompt = scopeToProjectGroup(
+      t('sessions.prompts.commitAndPush', COMMIT_AND_PUSH_PROMPT)
+    );
 
     const handleCreatePr = useCallback(() => {
       captureSessionEvent('session/quick_action_selected', {

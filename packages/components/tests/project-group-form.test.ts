@@ -8,6 +8,7 @@ import type {
 } from '@lody/shared';
 import {
   addProjectGroupMember,
+  applySourceSelection,
   applyDetectedProjectSubmodules,
   buildProjectGroupFormValue,
   buildWorkspaceProjectFromForm,
@@ -206,5 +207,36 @@ describe('project group form', () => {
       'b',
       'c',
     ]);
+  });
+
+  it('adds ticked sources and removes unticked ones from one multi-select change', () => {
+    const value = threeRepos();
+    const option = (repo: string) => ({
+      key: `github:${repo}`,
+      source: github(repo),
+      label: repo,
+    });
+    const previous = ['acme/web', 'acme/api', 'acme/proto'].map(option);
+    const api = value.members[1]!;
+    const proto = value.members[2]!;
+    const nested = updateProjectGroupMemberPlacement(value, proto.id, {
+      kind: 'submodule',
+      parent: api.id,
+      path: 'proto',
+    });
+    const next = applySourceSelection(
+      nested,
+      previous,
+      [option('acme/web'), option('acme/proto'), option('acme/docs')],
+      labelOf,
+      ids()
+    );
+    expect(next.members.map((member) => labelOf(member))).toEqual([
+      'acme/web',
+      'acme/proto',
+      'acme/docs',
+    ]);
+    // Its parent left, so the submodule becomes a top-level directory.
+    expect(next.members[1]!.placement).toEqual({ kind: 'root', dir: 'proto' });
   });
 });

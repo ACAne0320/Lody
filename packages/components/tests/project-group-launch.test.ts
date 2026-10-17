@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSessionProjectRun,
+  PROJECT_SUBMODULE_BASE,
   SessionProjectRunSchema,
   type LocalProjectId,
   type MachineId,
@@ -9,8 +11,6 @@ import {
 } from '@lody/shared';
 import {
   buildProjectGroupProjectRef,
-  buildSessionProjectRun,
-  PROJECT_RUN_GITLINK_BASE,
   resolveProjectGroupLaunchTarget,
   selectProjectGroupMembers,
 } from '@/lib/project-group-launch';
@@ -88,8 +88,13 @@ describe('project group launch', () => {
     );
   });
 
+  // The snapshot itself is the shared contract's; this pins the shape the
+  // landing relies on.
   it('freezes a snapshot the shared contract accepts', () => {
-    const run = buildSessionProjectRun(project, project.members);
+    const run = buildSessionProjectRun(
+      project,
+      project.members.map((member) => member.id)
+    );
     expect(SessionProjectRunSchema.safeParse(run).success).toBe(true);
     expect(run).toMatchObject({
       id: project.id,
@@ -100,13 +105,13 @@ describe('project group launch', () => {
     expect(run!.members[id('proto')]).toMatchObject({
       o: 2,
       path: 'api/proto',
-      base: PROJECT_RUN_GITLINK_BASE,
+      base: PROJECT_SUBMODULE_BASE,
     });
     expect(run!.members[id('api')]!.base).toBe('develop');
   });
 
   it('leaves one remaining member to an ordinary single-project conversation', () => {
-    expect(buildSessionProjectRun(project, [project.members[0]!])).toBeUndefined();
+    expect(buildSessionProjectRun(project, [project.members[0]!.id])).toBeUndefined();
     expect(buildProjectGroupProjectRef(project.members[0]!)).toEqual({
       kind: 'local',
       localProjectId: 'web',
@@ -117,5 +122,8 @@ describe('project group launch', () => {
       repoFullName: 'acme/api',
       branch: 'develop',
     });
+    // The legacy ProjectRef rejects an empty branch; HEAD is the placeholder
+    // the daemon resolves to the default branch.
+    expect(buildProjectGroupProjectRef(project.members[2]!)).toMatchObject({ branch: 'HEAD' });
   });
 });

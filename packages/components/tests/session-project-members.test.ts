@@ -24,7 +24,7 @@ const projectRun = {
       base: 'HEAD',
       branch: 'lody/export',
       dirty: true,
-      repo: 'acme/web',
+      repoFullName: 'acme/web',
     },
     api: {
       o: 1,

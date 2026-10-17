@@ -29,9 +29,9 @@ export type SessionProjectMemberRow = {
  * which the daemon publishes beside the other runtime fields.
  */
 export function getSessionProjectMemberRepository(
-  member: SessionProjectMember & { repo?: string }
+  member: SessionProjectMember
 ): string | undefined {
-  return member.src.kind === 'github' ? member.src.repoFullName : member.repo;
+  return member.src.kind === 'github' ? member.src.repoFullName : member.repoFullName;
 }
 
 /**

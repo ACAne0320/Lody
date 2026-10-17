@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { useTranslation } from 'react-i18next';
 import {
+  getProjectRepositoryFullName,
   getServerNow,
   type ProjectId,
   type ProjectMemberId,
   type WorkspaceProject,
 } from '@lody/shared';
 import { userAtom } from '@/atoms';
+import { onlineMachineIdsAtom } from '@/atoms/presence';
+import { activeWorkspaceRuntimeAtom } from '@/atoms/runtime';
 import { useDialogExitSnapshot } from '@/hooks/use-dialog-exit-snapshot';
 import { useProjectMemberSources } from '@/hooks/use-project-member-sources';
 import {
@@ -63,13 +66,13 @@ export function ProjectGroupEditorDialog({
   onChange,
   onClose,
   onSaved,
-  probeLocal,
+  probeLocal: probeLocalOverride,
 }: {
   editor: ProjectGroupEditorState | null;
   onChange: (editor: ProjectGroupEditorState) => void;
   onClose: () => void;
   onSaved?: (project: WorkspaceProject, meta: { created: boolean }) => void;
-  /** Reads a local member's `.gitmodules` on its machine, when that machine offers it. */
+  /** Overrides the machine RPC probe of a local member's `.gitmodules` (tests). */
   probeLocal?: ProjectSubmoduleProbe;
 }) {
   const { t } = useTranslation();
@@ -97,16 +100,47 @@ export function ProjectGroupEditorDialog({
       byKey.get(getProjectMemberSourceKey(member.source))?.detail,
     [byKey]
   );
-  const repositoryOf = useCallback(
-    (member: ProjectGroupMemberDraft) =>
-      member.source.kind === 'github' ? member.source.repoFullName : undefined,
-    []
-  );
+  const runtime = useAtomValue(activeWorkspaceRuntimeAtom);
+  const onlineMachineIds = useAtomValue(onlineMachineIdsAtom);
+  // A local member's `.gitmodules` lives on its machine. An offline machine is
+  // not asked at all (and nothing is reported), rather than failing a probe.
+  const probeLocal = useMemo<ProjectSubmoduleProbe | undefined>(() => {
+    if (probeLocalOverride) return probeLocalOverride;
+    if (!runtime || !currentUserId) return undefined;
+    return async (source) => {
+      if (source.kind !== 'local') return undefined;
+      if (!onlineMachineIds.has(source.machineId)) return null;
+      const result = await runtime.requestProjectProbeLocalMember(
+        source.machineId,
+        source.localProjectId,
+        currentUserId
+      );
+      if (!result) return undefined;
+      return {
+        repoFullName: result.repoFullName,
+        submodules: result.submodules.map((submodule) => ({
+          path: submodule.path,
+          repoFullName:
+            submodule.repoFullName ??
+            getProjectRepositoryFullName(submodule.url, result.repoFullName),
+        })),
+      };
+    };
+  }, [currentUserId, onlineMachineIds, probeLocalOverride, runtime]);
 
   const detection = useProjectSubmoduleDetection(value.members, {
     enabled: openEditor !== null && !readOnly,
     probeLocal,
   });
+  // GitHub members name their repository; local members are what their
+  // machine reported, so a folder and a GitHub entry of one repo match.
+  const repositoryOf = useCallback(
+    (member: ProjectGroupMemberDraft) =>
+      member.source.kind === 'github'
+        ? member.source.repoFullName
+        : detection.repositories.get(member.id),
+    [detection.repositories]
+  );
 
   // Fold detection into the draft as answers arrive. The helper returns the
   // same value when nothing moves, so this settles after one pass.
@@ -121,7 +155,20 @@ export function ProjectGroupEditorDialog({
     if (next !== openEditor.value) onChange({ ...openEditor, value: next });
   }, [detection.detected, labelOf, onChange, openEditor, readOnly, repositoryOf]);
 
-  const validation = useMemo(() => validateProjectGroupForm(value), [value]);
+  const validation = useMemo(
+    () =>
+      validateProjectGroupForm(value, (source) => {
+        const member = value.members.find(
+          (candidate) =>
+            candidate.source.kind === 'local' &&
+            candidate.source.machineId === source.machineId &&
+            candidate.source.localProjectId === source.localProjectId
+        );
+        const repoFullName = member ? detection.repositories.get(member.id) : undefined;
+        return repoFullName ? { repoFullName } : undefined;
+      }),
+    [detection.repositories, value]
+  );
   const statusOf = useCallback(
     (memberId: ProjectMemberId): ProjectGroupMemberStatus =>
       detection.pending.has(memberId)

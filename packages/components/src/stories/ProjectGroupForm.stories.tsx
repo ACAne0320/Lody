@@ -165,3 +165,33 @@ export const WithInstructions: Story = {
 
 /** Someone else's group: visible, not editable. */
 export const ReadOnly: Story = { args: { readOnly: true, isEditing: true } };
+
+/** Submodules of submodules step in once per level, as they will on disk. */
+export const NestedSubmodules: Story = {
+  args: {
+    value: {
+      name: 'Lody',
+      instructions: '',
+      members: [
+        member('api', 1, { kind: 'root', dir: 'api' }),
+        member(
+          'proto',
+          2,
+          { kind: 'submodule', parent: 'api' as ProjectMemberId, path: 'proto' },
+          'detected'
+        ),
+        member(
+          'docs',
+          3,
+          {
+            kind: 'submodule',
+            parent: 'proto' as ProjectMemberId,
+            path: 'packages/acp-extension-docs',
+          },
+          'detected'
+        ),
+        member('web', 0, { kind: 'root', dir: 'web' }),
+      ],
+    },
+  },
+};

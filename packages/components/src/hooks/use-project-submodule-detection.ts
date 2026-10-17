@@ -14,17 +14,26 @@ import { useResolvedWorkspaceScope } from '@/hooks/use-resolved-workspace-scope'
 
 const GITMODULES_MAX_BYTES = 64 * 1024;
 
+/** What one member's repository declares, and which GitHub repository it is. */
+export type ProjectSubmoduleProbeResult = {
+  repoFullName?: string;
+  submodules: DetectedProjectSubmodule[];
+};
+
 /**
- * Reads one member's declared submodules. `undefined` means this source cannot
- * be probed here (for example a local project before its machine offers the
- * probe), which the editor reports as "not checked" rather than "none".
+ * Reads one member's declared submodules.
+ * - `undefined`: this source cannot be read here; the editor marks it "not checked".
+ * - `null`: deliberately not asked (its machine is offline); no mark, no error —
+ *   an offline remote is not something the editor should report.
  */
 export type ProjectSubmoduleProbe = (
   source: ProjectMemberSource
-) => Promise<DetectedProjectSubmodule[] | undefined>;
+) => Promise<ProjectSubmoduleProbeResult | undefined | null>;
 
 export type ProjectSubmoduleDetection = {
   detected: ReadonlyMap<ProjectMemberId, readonly DetectedProjectSubmodule[]>;
+  /** The GitHub repository each member was found to be, local members included. */
+  repositories: ReadonlyMap<ProjectMemberId, string>;
   /** Members still being read. */
   pending: ReadonlySet<ProjectMemberId>;
   /** Members whose repository could not be read; their placement stays manual. */
@@ -33,7 +42,7 @@ export type ProjectSubmoduleDetection = {
 
 // Per source and base branch, for the life of the page: reopening the editor
 // or adding a member must not re-read every other member's `.gitmodules`.
-const probeCache = new Map<string, Promise<DetectedProjectSubmodule[] | undefined>>();
+const probeCache = new Map<string, Promise<ProjectSubmoduleProbeResult | undefined | null>>();
 
 const probeKey = (source: ProjectMemberSource) =>
   `${getProjectMemberSourceKey(source)}@${source.baseBranch ?? ''}`;
@@ -50,13 +59,16 @@ export function createGitHubSubmoduleProbe(workspaceId: string): ProjectSubmodul
           maxBytes: GITMODULES_MAX_BYTES,
         });
       } catch (error) {
-        if (error instanceof GitHubFileNotFoundError) return [];
+        if (error instanceof GitHubFileNotFoundError) return { repoFullName: repo, submodules: [] };
         throw error;
       }
-      return parseGitmodules(text).map((entry) => ({
-        path: entry.path,
-        repoFullName: resolveSubmoduleRepo(entry.url, repo),
-      }));
+      return {
+        repoFullName: repo,
+        submodules: parseGitmodules(text).map((entry) => ({
+          path: entry.path,
+          repoFullName: resolveSubmoduleRepo(entry.url, repo),
+        })),
+      };
     });
   };
 }
@@ -82,7 +94,7 @@ export function useProjectSubmoduleDetection(
   // Only the sources matter; a placement edit must not restart detection.
   const sourcesKey = members.map((member) => `${member.id}=${probeKey(member.source)}`).join('\n');
   const [results, setResults] = useState<
-    ReadonlyMap<ProjectMemberId, DetectedProjectSubmodule[] | undefined | 'error'>
+    ReadonlyMap<ProjectMemberId, ProjectSubmoduleProbeResult | undefined | null | 'error'>
   >(new Map());
 
   useEffect(() => {
@@ -103,7 +115,7 @@ export function useProjectSubmoduleDetection(
         // A failure is not an answer worth keeping: the next open retries.
         request.catch(() => probeCache.delete(key));
       }
-      request.then(
+      void request.then(
         (value) => {
           if (!cancelled) setResults((previous) => new Map(previous).set(id, value));
         },
@@ -121,6 +133,7 @@ export function useProjectSubmoduleDetection(
 
   return useMemo(() => {
     const detected = new Map<ProjectMemberId, readonly DetectedProjectSubmodule[]>();
+    const repositories = new Map<ProjectMemberId, string>();
     const pending = new Set<ProjectMemberId>();
     const unavailable = new Set<ProjectMemberId>();
     for (const member of members) {
@@ -129,9 +142,14 @@ export function useProjectSubmoduleDetection(
         continue;
       }
       const value = results.get(member.id);
-      if (value === 'error' || value === undefined) unavailable.add(member.id);
-      else detected.set(member.id, value);
+      if (value === null) continue;
+      if (value === 'error' || value === undefined) {
+        unavailable.add(member.id);
+        continue;
+      }
+      detected.set(member.id, value.submodules);
+      if (value.repoFullName) repositories.set(member.id, value.repoFullName);
     }
-    return { detected, pending, unavailable };
+    return { detected, repositories, pending, unavailable };
   }, [enabled, members, results]);
 }

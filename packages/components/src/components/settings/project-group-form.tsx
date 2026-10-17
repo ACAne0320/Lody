@@ -13,7 +13,7 @@ import {
 import type { ProjectMemberId } from '@lody/shared';
 import type { ProjectMemberSourceOption } from '@/hooks/use-project-member-sources';
 import {
-  addProjectGroupMember,
+  applySourceSelection,
   getProjectMemberSourceKey,
   removeProjectGroupMember,
   updateProjectGroupMemberPlacement,
@@ -32,7 +32,7 @@ import { Spinner } from '@lody/ui/spinner';
 import { Textarea } from '@lody/ui/textarea';
 import { Tooltip } from '@lody/ui/tooltip';
 import { colors } from '@lody/ui/tokens/colors.stylex';
-import { space } from '@lody/ui/tokens/scales.stylex';
+import { space, text } from '@lody/ui/tokens/scales.stylex';
 import { FormMessage, Section } from './form-primitives';
 import { settingsRecordsCard } from './compact-layout';
 import { settingsCatalog as catalog, settingsSurface as surface } from './surface';
@@ -46,9 +46,30 @@ const styles = stylex.create({
     paddingBlock: space[1.5],
     paddingInline: space[3],
   },
-  // Submodules sit under their parent the way they will sit on disk: the list
-  // is the layout of the conversation's directory, not a list beside it.
-  memberNested: { paddingInlineStart: space[8] },
+  // Submodules sit under their parent the way they will sit on disk, one step
+  // further in per level: the list is the layout of the conversation's
+  // directory, not a list beside it.
+  memberIndent: (depth: number) => ({ paddingInlineStart: `${12 + depth * 20}px` }),
+  memberName: {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: text.subheadlineSize,
+    color: colors.label,
+  },
+  memberDetail: {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: text.footnoteSize,
+    color: colors.secondaryLabel,
+  },
+  memberDetailPath: {
+    color: colors.tertiaryLabel,
+    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+  },
   memberBody: {
     display: 'flex',
     flexDirection: 'column',
@@ -58,15 +79,16 @@ const styles = stylex.create({
     minWidth: 0,
   },
   memberPath: { flexShrink: 0, width: '200px' },
-  pathPrefix: {
-    color: colors.tertiaryLabel,
-    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-    paddingInlineStart: space[2],
-    // The input starts flush after a leading; keep the slash off the value.
-    paddingInlineEnd: '2px',
+  // A picker row: the source mark, its name, then its machine or description.
+  option: { display: 'flex', alignItems: 'center', gap: space[2], minWidth: 0 },
+  optionDetail: {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+    fontSize: text.footnoteSize,
+    color: colors.secondaryLabel,
   },
-  pathInput: { fontFamily: 'var(--font-mono, ui-monospace, monospace)' },
   // One fixed slot for the member's state, so rows never change height or
   // shift sideways as detection settles.
   state: {
@@ -170,8 +192,8 @@ export function ProjectGroupForm({
     () => new Set(value.members.map((member) => getProjectMemberSourceKey(member.source))),
     [value.members]
   );
-  const addable = useMemo(
-    () => sources.filter((option) => !addedKeys.has(option.key)),
+  const selectedSources = useMemo(
+    () => sources.filter((option) => addedKeys.has(option.key)),
     [addedKeys, sources]
   );
 
@@ -208,7 +230,7 @@ export function ProjectGroupForm({
               <div key={member.id} {...stylex.props(surface.line, index > 0 && surface.lineRuled)}>
                 <MemberRow
                   member={member}
-                  nested={depth > 0}
+                  depth={depth}
                   prefix={prefix}
                   label={labelOf(member)}
                   detail={detailOf(member)}
@@ -240,21 +262,25 @@ export function ProjectGroupForm({
                   value.members.length > 0 && surface.lineRuled
                 )}
               >
+                {/* One multi-select over every project: ticked rows are members,
+                    ticking adds, unticking removes, and the list stays open so
+                    several repositories go in at once. */}
                 <Combobox.Root
-                  items={addable}
-                  value={null}
+                  multiple
+                  items={sources}
+                  value={selectedSources}
                   itemToStringLabel={(option: ProjectMemberSourceOption) => option.label}
                   isItemEqualToValue={(
                     left: ProjectMemberSourceOption,
                     right: ProjectMemberSourceOption
                   ) => left.key === right.key}
-                  onValueChange={(option: ProjectMemberSourceOption | null) => {
-                    if (option) onChange(addProjectGroupMember(value, option.source, option.label));
-                  }}
+                  onValueChange={(next: ProjectMemberSourceOption[]) =>
+                    onChange(applySourceSelection(value, selectedSources, next, labelOf))
+                  }
                 >
                   <Combobox.Button size="small" aria-label={t('settings.projectGroups.form.add')}>
-                    {/* The picker never keeps a value: it adds and resets, so its
-                        face always reads as the action. */}
+                    {/* The face always reads as the action; the ticks inside say
+                        what is already in the group. */}
                     {() => (
                       <span {...stylex.props(styles.addFace)}>
                         <Plus aria-hidden="true" {...stylex.props(catalog.icon)} />
@@ -275,14 +301,11 @@ export function ProjectGroupForm({
                   >
                     {(option: ProjectMemberSourceOption) => (
                       <Combobox.Item key={option.key} value={option}>
-                        <span {...stylex.props(catalog.row)}>
+                        <span {...stylex.props(styles.option)}>
                           <SourceIcon kind={option.source.kind} />
                           <span {...stylex.props(catalog.truncate)}>{option.label}</span>
                           {option.detail ? (
-                            <span {...stylex.props(catalog.meta, catalog.truncate)}>
-                              {' · '}
-                              {option.detail}
-                            </span>
+                            <span {...stylex.props(styles.optionDetail)}>{option.detail}</span>
                           ) : null}
                         </span>
                       </Combobox.Item>
@@ -354,7 +377,7 @@ function SourceIcon({ kind }: { kind: 'github' | 'local' }) {
 
 function MemberRow({
   member,
-  nested,
+  depth,
   prefix,
   label,
   detail,
@@ -369,8 +392,8 @@ function MemberRow({
 }: {
   parentLabel?: string;
   member: ProjectGroupMemberDraft;
-  nested: boolean;
-  /** The parent's path, shown before a submodule's own path. */
+  depth: number;
+  /** The parent's path; the description line shows where a submodule sits. */
   prefix: string;
   label: string;
   detail?: string;
@@ -391,20 +414,24 @@ function MemberRow({
       : t('settings.projectGroups.form.submodulePath');
 
   return (
-    <div {...stylex.props(styles.member, nested && styles.memberNested)}>
+    <div {...stylex.props(styles.member, styles.memberIndent(depth))}>
       {placement.kind === 'submodule' ? (
         <GitBranch aria-hidden="true" {...stylex.props(catalog.icon)} />
       ) : (
         <SourceIcon kind={member.source.kind} />
       )}
       <span {...stylex.props(styles.memberBody)}>
-        <span {...stylex.props(catalog.name, catalog.truncate)}>{label}</span>
-        <span {...stylex.props(catalog.meta)}>
-          <span {...stylex.props(catalog.truncate)}>
-            {placement.kind === 'submodule'
-              ? t('settings.projectGroups.form.submoduleOf', { parent: parentLabel ?? '' })
-              : (detail ?? t(`settings.projectGroups.source.${member.source.kind}`))}
-          </span>
+        <span {...stylex.props(styles.memberName)}>{label}</span>
+        <span {...stylex.props(styles.memberDetail)}>
+          {placement.kind === 'submodule' ? (
+            <>
+              {t('settings.projectGroups.form.submoduleOf', { parent: parentLabel ?? '' })}
+              {' · '}
+              <span {...stylex.props(styles.memberDetailPath)}>{prefix}</span>
+            </>
+          ) : (
+            (detail ?? t(`settings.projectGroups.source.${member.source.kind}`))
+          )}
         </span>
       </span>
       <span {...stylex.props(styles.memberPath)}>
@@ -413,12 +440,7 @@ function MemberRow({
           aria-label={pathLabel}
           aria-invalid={memberError ? true : undefined}
           disabled={readOnly}
-          leading={prefix ? <span {...stylex.props(styles.pathPrefix)}>{prefix}</span> : undefined}
-          // The class lands on the shell once there is a `leading`; keep the
-          // value monospace in both shapes.
-          {...(prefix
-            ? { inputClassName: stylex.props(styles.pathInput).className }
-            : { className: stylex.props(styles.pathInput).className })}
+          title={`${prefix}${pathValue}`}
           value={pathValue}
           onChange={(event) => {
             const next = event.target.value;

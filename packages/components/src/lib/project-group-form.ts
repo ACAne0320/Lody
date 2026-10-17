@@ -156,6 +156,36 @@ export function removeProjectGroupMember(
   return { ...value, members };
 }
 
+/**
+ * Apply a multi-select change: sources newly ticked are added, sources
+ * unticked are removed (their submodules become top-level). Members whose
+ * project is no longer listed are not in the picker, so they are untouched.
+ */
+export function applySourceSelection(
+  value: ProjectGroupFormValue,
+  previous: readonly { key: string }[],
+  next: readonly { key: string; source: ProjectMemberSource; label: string }[],
+  labelOf: (member: ProjectGroupMemberDraft) => string,
+  createId: () => ProjectMemberId = createProjectMemberId
+): ProjectGroupFormValue {
+  const nextKeys = new Set(next.map((option) => option.key));
+  const previousKeys = new Set(previous.map((option) => option.key));
+  let result = value;
+  for (const option of previous) {
+    if (nextKeys.has(option.key)) continue;
+    const member = result.members.find(
+      (candidate) => getProjectMemberSourceKey(candidate.source) === option.key
+    );
+    if (member) result = removeProjectGroupMember(result, member.id, labelOf);
+  }
+  for (const option of next) {
+    if (!previousKeys.has(option.key)) {
+      result = addProjectGroupMember(result, option.source, option.label, createId);
+    }
+  }
+  return result;
+}
+
 export function updateProjectGroupMemberPlacement(
   value: ProjectGroupFormValue,
   memberId: ProjectMemberId,

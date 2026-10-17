@@ -50,6 +50,7 @@ import {
   type SessionProjectRun,
   type SessionStatus,
   machineSupportsMultiRepoProject,
+  buildSessionProjectRun,
   type WorktreeSetupScriptConfig,
   type WorktreeCleanupScriptConfig,
   type WorkspaceId,
@@ -279,7 +280,6 @@ import { ProjectGroupMemberPicker } from './project-group-member-picker';
 import { useWorkspaceProjects } from '@/hooks/use-workspace-projects';
 import {
   buildProjectGroupProjectRef,
-  buildSessionProjectRun,
   resolveProjectGroupLaunchTarget,
 } from '@/lib/project-group-launch';
 
@@ -3053,7 +3053,10 @@ function WorkspaceChatLanding({
           return;
         }
         const groupMembers = projectGroupLaunchTarget.members;
-        projectRun = buildSessionProjectRun(selectedProjectGroup, groupMembers);
+        projectRun = buildSessionProjectRun(
+          selectedProjectGroup,
+          groupMembers.map((member) => member.id)
+        );
         if (projectRun && !machineSupportsMultiRepoProject(machine)) {
           captureSessionInputBlocked('missing_machine');
           setComposerError(
