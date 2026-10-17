@@ -25,10 +25,10 @@ and the `file/preview` namespace are in
   methods are on `LoroStreamsMachineRpcClient`.
 - `createLoroStreamsJsonStreamClient` append must select its shard **stably** per stream
   id (`selectStableShardUrl`), never randomly.
-- `readJsonLive` must keep its idle watchdog (`liveIdleTimeoutMs`, default
-  `DEFAULT_LIVE_IDLE_TIMEOUT_MS` = 120s; `0` disables) and must abort with a plain
-  `AbortError`, so the caller's `while (!this.stopped)` loop (`runResponseLoop` /
-  server `runLoop`) reconnects from the saved offset.
+- JSON append timeout: `uploadTimeoutMs ?? connectTimeoutMs ?? 10000`; keep
+  RPC deadlines independent of bulk uploads.
+- `readJsonLive` keeps `liveIdleTimeoutMs` (default 120s; `0` disables) and aborts
+  with plain `AbortError`, so `runResponseLoop` / `runLoop` resume saved offsets.
 - Web Machine RPC responses are **SSE-first with a bounded long-poll fallback**, owned by
   `LoroStreamsLiveModePolicy` (`src/live-mode-policy.ts`) and passed to
   `LoroStreamsRpcResponseDispatcher` as `liveModePolicy`; it picks the mode per read, so do

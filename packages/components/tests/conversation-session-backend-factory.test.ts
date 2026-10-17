@@ -138,13 +138,26 @@ describe('createConversationSession backend seam', () => {
   );
 
   it.each([
-    ['en', 'append'],
-    ['zh_CN', 'append'],
-    ['en', 'response'],
-    ['zh_CN', 'response'],
+    { locale: 'en', phase: 'append', deadlineMs: 10_000 },
+    { locale: 'zh_CN', phase: 'append', deadlineMs: 10_000 },
+    { locale: 'en', phase: 'response', deadlineMs: 30_000 },
+    { locale: 'zh_CN', phase: 'response', deadlineMs: 30_000 },
+    {
+      locale: 'en',
+      phase: 'append',
+      deadlineMs: 1_500,
+      timeout: { connectTimeoutMs: 1_500 },
+    },
+    {
+      locale: 'en',
+      phase: 'append',
+      deadlineMs: 2_500,
+      timeout: { connectTimeoutMs: 1_500, uploadTimeoutMs: 2_500 },
+    },
   ] as const)(
-    'distinguishes a %s %s transport timeout from Roost storage',
-    async (locale, phase) => {
+    'distinguishes a $locale $phase transport timeout after $deadlineMs ms from Roost storage',
+    async (testCase) => {
+      const { locale, phase, deadlineMs } = testCase;
       await initI18n(locale);
       vi.useFakeTimers();
       let entered!: () => void;
@@ -155,6 +168,7 @@ describe('createConversationSession backend seam', () => {
         bucketId: 'synthetic-bucket',
         getToken: async () => 'synthetic-token',
         baseUrl: 'https://streams.example.com',
+        timeout: 'timeout' in testCase ? testCase.timeout : undefined,
         fetchImpl: async (_url, init) => {
           entered();
           return new Promise<Response>((_resolve, reject) => {
@@ -206,6 +220,7 @@ describe('createConversationSession backend seam', () => {
         backendKind: 'roost',
       });
       try {
+        let settled = false;
         const writing = session.commands
           .appendTurn({
             id: 'synthetic-turn',
@@ -213,9 +228,14 @@ describe('createConversationSession backend seam', () => {
             timestamp: '2026-10-12T00:00:00Z',
             items: [{ type: 'text', text: 'synthetic input' }],
           })
-          .catch((error: unknown) => error);
+          .catch((error: unknown) => error)
+          .finally(() => {
+            settled = true;
+          });
         await fetching;
-        await vi.advanceTimersByTimeAsync(phase === 'append' ? 10_000 : 30_000);
+        await vi.advanceTimersByTimeAsync(deadlineMs - 1);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
         const error = await writing;
         expect(error).toBeInstanceOf(SessionHistoryRequestError);
         expect(error).toMatchObject({

@@ -1193,7 +1193,15 @@ export function createLoroStreamsJsonStreamClient(options: {
         url,
         auth: async () => await options.getToken(),
         fetch: fetchImpl as typeof fetch,
-        timeout: options.timeout,
+        // RPC appends retain their request deadline; SDK bulk uploads default to 60s.
+        timeout:
+          operation === 'append'
+            ? {
+                ...options.timeout,
+                uploadTimeoutMs:
+                  options.timeout?.uploadTimeoutMs ?? options.timeout?.connectTimeoutMs ?? 10_000,
+              }
+            : options.timeout,
       }),
       context: {
         operation: `json.${operation}`,
