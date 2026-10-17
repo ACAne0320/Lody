@@ -2379,11 +2379,14 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     const failures: unknown[] = [];
     try {
       await this.retiringHandle?.release();
+      // This view's borrow is gone. An eviction failure below leaves the
+      // cached native replica active; it must not fence reinitialization.
+      this.retiringHandle = null;
     } catch (error) {
       failures.push(error);
     }
-    // Invalidate the local data plane even if persistence failed. The retryable
-    // borrower owner still holds the original replica and its accepted writes.
+    // Eviction and local-room invalidation remain coupled by the manager.
+    // Failed persistence keeps the cached replica; future views borrow it.
     try {
       await this.unloadDocRoom(this.roomId);
     } catch (error) {
@@ -2391,7 +2394,6 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     }
     if (failures.length === 1) throw failures[0];
     if (failures.length) throw new AggregateError(failures, 'Session release failed');
-    this.retiringHandle = null;
   }
 
   private async startDocRoomSync(): Promise<void> {

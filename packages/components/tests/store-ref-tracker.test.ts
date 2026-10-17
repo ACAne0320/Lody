@@ -421,8 +421,7 @@ describe('createManagedStoreCache', () => {
       await cache.get('x');
       await expect(cache.release('x')).resolves.toBeUndefined();
       expect(warnSpy).toHaveBeenCalledWith(
-        'Failed to unload doc for released store',
-        expect.objectContaining({ key: 'x', error: expect.any(Error) })
+        'Failed to unload doc for released store; replica retained'
       );
 
       // The next acquire→release cycle retries the unload.

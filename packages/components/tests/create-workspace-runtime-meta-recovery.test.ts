@@ -637,6 +637,59 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     }
   });
 
+  it('reopens a renderer preview on its original Doc while storage keeps rejecting saves', async () => {
+    const { indexedDB, IDBKeyRange } = await import('fake-indexeddb');
+    vi.stubGlobal('indexedDB', indexedDB);
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+    const { IndexedDBStorageAdaptor: RealStorage } = await vi.importActual<
+      typeof import('loro-repo/storage/indexeddb')
+    >('loro-repo/storage/indexeddb');
+    const { WorkspaceRepoLegacy: RealRepo } = await vi.importActual<
+      typeof import('@lody/shared/workspace-data/repo-legacy')
+    >('@lody/shared/workspace-data/repo-legacy');
+    const { getPreviewCommentRoomId } = await import('@lody/shared');
+    const sessionId = 'quota-preview' as SessionId;
+    const roomId = getPreviewCommentRoomId(sessionId);
+    const adapter = new RealStorage({ dbName: 'renderer-persistent-quota-preview' });
+    const save = adapter.save.bind(adapter);
+    let blocked = true;
+    adapter.save = async (payload) => {
+      if (blocked && 'docId' in payload && payload.docId === roomId)
+        throw new DOMException('synthetic private quota detail', 'QuotaExceededError');
+      await save(payload);
+    };
+    const repo = await RealRepo.create({ storageAdapter: adapter });
+    mocks.repoOverride = repo;
+    const runtime = await createWorkspaceRuntime({
+      workspaceSlug: 'workspace',
+      workspaceId: 'workspace-1' as WorkspaceId,
+      apiBaseUrl: 'https://api.example.test',
+      syncMode: 'cloud',
+    });
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const first = await runtime.acquirePreviewVisualCommentStore(sessionId);
+      const original = first.doc;
+      original.getText('synthetic').insert(0, 'unsaved');
+      original.commit();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await runtime.releasePreviewVisualCommentStore(sessionId);
+        const reopened = await runtime.acquirePreviewVisualCommentStore(sessionId);
+        expect(reopened.doc).toBe(original);
+        expect(reopened.doc.getText('synthetic').toString()).toBe('unsaved');
+      }
+      blocked = false;
+      await runtime.releasePreviewVisualCommentStore(sessionId);
+      const fresh = await runtime.acquirePreviewVisualCommentStore(sessionId);
+      expect(fresh.doc).not.toBe(original);
+      expect(fresh.doc.getText('synthetic').toString()).toBe('unsaved');
+    } finally {
+      blocked = false;
+      await runtime.dispose();
+      warning.mockRestore();
+    }
+  });
+
   it('aborts the real token provider fetch when startup is cancelled', async () => {
     mocks.realTokenProvider = true;
     const entered = Promise.withResolvers<AbortSignal>();

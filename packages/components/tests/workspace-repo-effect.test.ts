@@ -13,6 +13,7 @@ import {
 } from '@lody/shared/workspace-data/repo-legacy';
 import { createLoroSyncErrorTools, getLoroSnapshotDiagnostic } from '@lody/shared/loro-sync-errors';
 import { RepoSyncError, RepoTransportError } from 'loro-repo';
+import { createManagedStoreCache } from '../src/providers/store-ref-tracker';
 
 let sequence = 0;
 const storage = () =>
@@ -143,6 +144,180 @@ describe('native workspace Repo ownership', () => {
 });
 
 describe('retained native release ownership', () => {
+  it.each(['document', 'storage'] as const)(
+    'reopens a Legacy store throughout a persistent %s save failure',
+    async (failureScope) => {
+      const adapter = storage();
+      const save = adapter.save.bind(adapter);
+      let blocked = false;
+      adapter.save = async (payload) => {
+        if (
+          blocked &&
+          (failureScope === 'storage' || ('docId' in payload && payload.docId === 'quota'))
+        )
+          throw new DOMException('synthetic quota', 'QuotaExceededError');
+        await save(payload);
+      };
+      const repo = await WorkspaceRepoLegacy.create({ storageAdapter: adapter });
+      const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const cache = createManagedStoreCache({
+        releaseDelayMs: 0,
+        create: async (id: string) => {
+          const handle = await repo.acquireDocHandleLegacy(id);
+          return { doc: handle.doc, dispose: handle.release };
+        },
+        unload: (id) => repo.unloadDoc(id),
+      });
+      try {
+        let store = await cache.acquire('quota');
+        const original = store.doc;
+        blocked = true;
+        for (const text of ['one', ' two', ' three']) {
+          store.doc.getText('body').insert(store.doc.getText('body').length, text);
+          store.doc.commit();
+          await cache.release('quota');
+          const [left, right] = await Promise.all([cache.acquire('quota'), cache.acquire('quota')]);
+          expect(left).toBe(right);
+          expect(left.doc).toBe(original);
+          store = left;
+          const sibling = await cache.acquire('healthy');
+          sibling.doc.getMap('state').set('available', true);
+          sibling.doc.commit();
+          await cache.release('healthy');
+          if (failureScope === 'document')
+            expect((await adapter.loadDoc('healthy'))?.getMap('state').get('available')).toBe(true);
+          else
+            expect((await cache.acquire('healthy')).doc.getMap('state').get('available')).toBe(
+              true
+            );
+        }
+        expect(store.doc.getText('body').toString()).toBe('one two three');
+        blocked = false;
+        await cache.release('healthy');
+        await repo.unloadDoc('healthy');
+        await cache.release('quota');
+        expect((await adapter.loadDoc('quota'))?.getText('body').toString()).toBe('one two three');
+        expect((await cache.acquire('quota')).doc).not.toBe(original);
+      } finally {
+        blocked = false;
+        await cache.disposeAll();
+        await repo.destroy();
+        warnings.mockRestore();
+      }
+    }
+  );
+
+  it('keeps SDK recovery dependencies alive while another workspace remains usable', async () => {
+    const adapter = storage();
+    let blocked = true;
+    let producerOpen = true;
+    let closed = false;
+    const close = adapter.close.bind(adapter);
+    adapter.close = async () => {
+      await close();
+      closed = true;
+    };
+    const repo = await WorkspaceRepoLegacy.create({ storageAdapter: adapter });
+    const closeProducer: Effect.Effect<void, RepoReleaseFailed> = Effect.suspend(() =>
+      blocked
+        ? Effect.fail(
+            new RepoReleaseFailed(
+              'private SDK producer',
+              Cause.fail(new RepoIOError('unfinished stream', undefined)),
+              closeProducer
+            )
+          )
+        : Effect.sync(() => {
+            producerOpen = false;
+          })
+    );
+    const owner = await repo.acquireScopeLegacy('private SDK room');
+    await repo.runLegacy(
+      Effect.addFinalizer(() => closeProducer.pipe(Effect.orDie)).pipe(
+        Effect.provideService(Scope.Scope, owner.scope)
+      )
+    );
+    try {
+      await expect(repo.destroy()).rejects.toBeInstanceOf(RepoReleaseFailed);
+      expect({ producerOpen, closed }).toEqual({ producerOpen: true, closed: false });
+      const otherStorage = storage();
+      const other = await WorkspaceRepoLegacy.create({ storageAdapter: otherStorage });
+      try {
+        const handle = await other.acquireDocHandleLegacy('independent');
+        handle.doc.getText('body').insert(0, 'available');
+        handle.doc.commit();
+        await handle.release();
+        await other.unloadDoc('independent');
+        expect((await otherStorage.loadDoc('independent'))?.getText('body').toString()).toBe(
+          'available'
+        );
+      } finally {
+        await other.destroy();
+      }
+      blocked = false;
+      await repo.destroy();
+      expect({ producerOpen, closed }).toEqual({ producerOpen: false, closed: true });
+    } finally {
+      blocked = false;
+      await repo.destroy();
+    }
+  });
+
+  it('bounds Legacy eviction waits without abandoning a hung save or fencing another view', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const adapter = storage();
+    const save = adapter.save.bind(adapter);
+    const entered = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    let saving = false;
+    adapter.save = async (payload) => {
+      if ('docId' in payload && payload.docId === 'slow') {
+        saving = true;
+        entered.resolve();
+        await finish.promise;
+        await save(payload);
+        saving = false;
+        return;
+      }
+      await save(payload);
+    };
+    const repo = await WorkspaceRepoLegacy.create({
+      storageAdapter: adapter,
+      releaseTimeoutMs: 50,
+    });
+    const cache = createManagedStoreCache({
+      releaseDelayMs: 0,
+      create: async (id: string) => {
+        const handle = await repo.acquireDocHandleLegacy(id);
+        return { doc: handle.doc, dispose: handle.release };
+      },
+      unload: (id) => repo.unloadDoc(id),
+    });
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const first = await cache.acquire('slow');
+      first.doc.getText('body').insert(0, 'accepted');
+      first.doc.commit();
+      const releasing = cache.release('slow');
+      await entered.promise;
+      await vi.advanceTimersByTimeAsync(50);
+      await releasing;
+      expect(saving).toBe(true);
+      const reopened = await cache.acquire('slow');
+      expect(reopened.doc).toBe(first.doc);
+      expect(reopened.doc.getText('body').toString()).toBe('accepted');
+      finish.resolve();
+      await cache.release('slow');
+      expect((await adapter.loadDoc('slow'))?.getText('body').toString()).toBe('accepted');
+    } finally {
+      finish.resolve();
+      await cache.disposeAll();
+      await repo.destroy();
+      warning.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it.each(['make', 'connect'] as const)(
     'removes a transport during %s and keeps a same-name successor alive after late completion',
     async (stage) => {

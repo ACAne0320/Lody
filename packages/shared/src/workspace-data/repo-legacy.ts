@@ -110,7 +110,10 @@ export type WorkspaceRepoLegacyOptions = Pick<
   LoroRepoOptions,
   'storageAdapter' | 'resolveRoomTransports' | 'flockDocRetentionMs'
 > &
-  Pick<MakeOptions, 'authority' | 'documentCursorPolicy' | 'documentRemoteCursorStore'> & {
+  Pick<
+    MakeOptions,
+    'authority' | 'documentCursorPolicy' | 'documentRemoteCursorStore' | 'releaseTimeoutMs'
+  > & {
     readonly acquisitionTimeoutMs?: number;
   };
 
@@ -204,6 +207,7 @@ export class WorkspaceRepoLegacy {
         documentCursorPolicy: options.documentCursorPolicy,
         authority: options.authority,
         documentRemoteCursorStore: options.documentRemoteCursorStore,
+        releaseTimeoutMs: options.releaseTimeoutMs,
       });
       const consumers = yield* acquireWorkspaceScope('workspace consumers');
       const meta = yield* repo.acquireMetaReplica.pipe(
@@ -338,6 +342,10 @@ export class WorkspaceRepoLegacy {
   async acquireDocHandleLegacy(
     id: string
   ): Promise<WorkspaceDocHandle & { release(): Promise<void> }> {
+    // Legacy stores dispose their projections before attempting eviction. Keep
+    // the cached replica alive until unloadDoc has persisted it successfully;
+    // an ordinary save failure must not retire the only borrowable replica.
+    await this.document(id);
     const lease = await this.acquireDoc(id);
     return {
       doc: lease.doc,
@@ -379,7 +387,10 @@ export class WorkspaceRepoLegacy {
   async unloadDoc(id: string, _options?: EvictDocOptions) {
     const owned = await this.documents.get(id);
     if (owned) {
-      if (this.native.hasStorage) await this.runLegacy(owned.value.persist);
+      if (this.native.hasStorage)
+        await this.runLegacy(
+          owned.value.persist.pipe(Effect.timeout(this.options.releaseTimeoutMs ?? 30_000))
+        );
       await this.runLegacy(owned.close);
       this.documents.delete(id);
     }

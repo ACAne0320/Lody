@@ -4594,8 +4594,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
       }
     },
     releaseDelayMs: STORE_RELEASE_DELAY_MS,
-    // Stop projections, then await the native lease Scope. The next acquire
-    // retries a failed release; independent borrowers retain the shared replica.
+    unload: (sessionId) => repo.unloadDoc(getSessionRoomId(sessionId)),
   });
 
   const initializeBorrowedStore = async <A>(
@@ -4707,11 +4706,12 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
   >({
     create: createPreviewVisualCommentStore,
     releaseDelayMs: STORE_RELEASE_DELAY_MS,
-    // The cache serializes asynchronous lease release and replacement per key.
+    unload: (sessionId) => repo.unloadDoc(getPreviewCommentRoomId(sessionId)),
   });
 
   const scheduleStoreCache = createManagedStoreCache<string, ScheduleDocStore>({
     releaseDelayMs: STORE_RELEASE_DELAY_MS,
+    unload: (id) => repo.unloadDoc(getScheduleRoomId(id)),
     create: async (id) => {
       const roomId = getScheduleRoomId(id);
       const handle = await repo.acquireDocHandleLegacy(roomId);

@@ -58,7 +58,7 @@ Daemon/commands share `repo.sqlite3`, not replicas: native leases own Meta/Flock
 `remoteCursorStore` or schedule-only `onPersist*`. Test:
 `tests/cli-streams-replica-checkpoints.test.ts`.
 
-Repo uses `WorkspaceRepoLegacy`: stop projections, release lease, then invalidate room.
+Repo uses `WorkspaceRepoLegacy`; failed eviction keeps its cached Doc borrowable.
 
 ## Shared ACP runtime config contains no secrets
 

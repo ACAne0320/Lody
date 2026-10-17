@@ -114,7 +114,7 @@ describe('SessionDocument auto read', () => {
     }
   );
   it.each(['destroy', 'reinitialize'] as const)(
-    'invalidates its local room after a failed save and retries on %s',
+    'retains its original local replica after a failed eviction and retries on %s',
     async (retry) => {
       const baseDir = await mkdtemp(join(tmpdir(), 'lody-session-close-'));
       const adapter = new FileSystemStorageAdaptor({ baseDir });
@@ -128,6 +128,7 @@ describe('SessionDocument auto read', () => {
       const repo = await WorkspaceRepoLegacy.create({ storageAdapter: adapter });
       const boundRooms = new Set<string>();
       const session = new SessionDocument(repo, uuidv4() as SessionId, async (id) => {
+        await repo.unloadDoc(id);
         boundRooms.delete(id);
       });
       try {
@@ -137,14 +138,16 @@ describe('SessionDocument auto read', () => {
         session.handle!.doc.commit();
         blocked = true;
         await expect(session.destroy({ preserveStatus: true })).rejects.toThrow();
-        expect(boundRooms.size).toBe(0);
+        expect(boundRooms.size).toBe(1);
         expect(session.isDestroyed).toBe(true);
         expect(session.handle).toBeNull();
-        blocked = false;
         if (retry === 'reinitialize') {
+          const original = (await repo.openPersistedDoc(session.roomId)).doc;
           await session.initOffline();
+          expect(session.handle?.doc).toBe(original);
           expect(session.handle?.doc.getText('synthetic').toString()).toBe('kept');
         }
+        blocked = false;
         await session.destroy({ preserveStatus: true });
         const reopened = await repo.acquireDoc(session.roomId);
         expect(reopened.doc.getText('synthetic').toString()).toBe('kept');

@@ -8,6 +8,9 @@
   `repo-legacy.ts` is the sole deprecated execution door for current CLI managers,
   renderer stores, shortcut grants and snapshot migration readers. Delete it as
   those consumers accept native Repo and caller Scopes directly.
+- Legacy Doc handles borrow the cached replica. Store disposal releases its
+  borrow; cache eviction persists before releasing the cached hold. A failed
+  save leaves that replica borrowable, without reviving a retiring native lease.
 - Open absence is distinct from explicit business identity creation. A peer
   baseline never proves server absence, upload ACK or local durability. Keep
   server, peer and local authority separate and require fresh confirmation.

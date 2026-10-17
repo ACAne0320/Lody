@@ -189,11 +189,11 @@ export function createManagedStoreCache<K, V extends { dispose(): void | Promise
       }
       try {
         if (unload) await opts.unload?.(key);
-      } catch (error) {
+      } catch {
         // Do not reject callers: an unload failure leaves the dirty doc in
         // loro-repo's map, so nothing is lost; the retry happens implicitly
         // on the next acquire→release cycle.
-        console.warn('Failed to unload doc for released store', { key, error });
+        console.warn('Failed to unload doc for released store; replica retained');
       }
     })();
     // Registered synchronously so a concurrent get() observes the disposal
@@ -225,8 +225,8 @@ export function createManagedStoreCache<K, V extends { dispose(): void | Promise
     }
     // Serialize behind an in-flight disposal: the new store must be created
     // only after the old doc was unloaded, or it would be yanked from under us.
-    const pending = pendingDisposals.get(key) ??
-      (retainedDisposals.has(key) ? release(key) : undefined);
+    const pending =
+      pendingDisposals.get(key) ?? (retainedDisposals.has(key) ? release(key) : undefined);
     const created = pending ? pending.then(() => opts.create(key)) : opts.create(key);
     const promise = created.then(
       (store) => {

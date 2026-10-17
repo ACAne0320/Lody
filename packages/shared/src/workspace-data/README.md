@@ -12,11 +12,17 @@ Peer convergence, server upload confirmation and local durability remain separat
 Same-store Doc cursors are reused explicitly; Meta/Flock checkpoints stay bound
 to their replica, and isolated eager workers use volatile checkpoints.
 
-Existing Promise consumers enter through `WorkspaceRepoLegacy`. Store disposal
-stops projections, then releases the native lease; failed release is automatically
-retried by the next acquire. Workspace shutdown continues independent cleanup and
-reports failures afterwards. Calling dispose again retries retained owners while
-new work stays fenced; unsettled writes keep their storage owner.
+Existing Promise consumers enter through `WorkspaceRepoLegacy`. Legacy Doc
+handles borrow a cached native replica. Store disposal stops projections and
+releases its borrow; the cache then attempts eviction, persisting before closing
+the cached hold. A failed save retains the same borrowable replica, so another
+view can open while storage remains unavailable. The eviction wait uses the
+native release deadline; a timeout leaves accepted
+adapter work owned and the same replica available, without confirming persistence.
+Genuine native release failures remain retryable and exclude unsafe replacement.
+Workspace shutdown continues independent cleanup; Repo/storage close still
+depends on retiring native borrowers and private SDK producers. Calling dispose again retries
+unresolved owners while new work stays fenced; unsettled writes keep their storage.
 
 Room handles retain the native `RoomLease` and the small UI status view still in
 use. Inventory and transport snapshots come from native leases; the local owner

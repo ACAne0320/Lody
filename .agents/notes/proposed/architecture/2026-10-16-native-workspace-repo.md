@@ -71,6 +71,24 @@ SDK close stops network admission and drains accepted work; it is not an implici
 fresh server-upload receipt. An offline connection alone does not establish that
 shortcut close must fail.
 
+Legacy Doc handles keep the existing cached replica hold separate from each view's
+borrow. Session, preview and schedule caches stop projections and release their
+borrow, then attempt eviction. Eviction persists before closing the cached hold:
+an ordinary quota failure leaves the original native replica active and borrowable.
+Repeated and concurrent reopens reuse that replica while storage is still failing;
+the next successful eviction saves it and permits a fresh generation. Genuine
+native release failures still require recovery before replacement. Simply ignoring
+such failures would not work: the installed SDK marks the last replica retiring
+before persisting, and its acquire must finish that release. The extra cached hold
+is the Legacy cache's existing ownership, removed by successful eviction or workspace
+close, not a new retry loop or a second Repo. Native-only borrowers keep scoped release.
+Eviction warnings contain no raw error/Cause or user payload.
+The eviction waiter uses the SDK release deadline (30 seconds by default). It
+does not cancel or duplicate accepted adapter work. A hung save can outlive that
+wait while another view borrows the same replica; later durability and close
+still join the original write. CLI reinitialization clears a successfully released
+borrow separately from the eviction result, preserving this same availability.
+
 Shutdown closes borrowers before Repo, but one failed store must not skip other
 stores, transport teardown, joins or Repo close. Runtime disposal attempts these
 independent steps and reports errors afterwards. A later dispose retries retained
@@ -78,16 +96,27 @@ owners without reopening admission. RuntimeProvider retains retryable closes per
 workspace: a failed close cannot poison another workspace, while reopening the
 same storage retries its old owner first. Shortcut roots do the same per database;
 runtime/remote/index/store failures do not skip independent cleanup or Repo close.
-A disposed shortcut runtime can finish its failed retirement on retry. Session cleanup also invalidates the local
-room when lease release fails and privately retains its retry handle. The next
-cache/shortcut acquire automatically retries its retiring owner. Rebuilding after
-another failed retry was rejected: it can strand an SDK producer and native Repo
-itself may still need to finish the previous release. A persistent storage failure
-remains visible and recoverable; it no longer requires an explicit external unlock.
+A disposed shortcut runtime can finish its failed retirement on retry. Session
+cleanup keeps actual failed borrow releases retryable. Once its borrow is released,
+a failed eviction remains reported but does not fence reinitialization on the
+still-active cached Doc. The next successful eviction invalidates its local room.
+Cache/shortcut acquisition still retries genuinely retiring owners: replacing one
+after another failed retry can strand an SDK producer, and native Repo itself may
+need to finish that release. This necessary exclusion does not apply to a failed
+save that left the cached replica active.
 Background stream failures emit a payload-free diagnostic, without an unbounded
 Cause history or making a later successful destroy fail. Scope finalizers run once;
 the small ownership helper retains native retry owners rather than re-closing a
 failed Scope. Private Causes/grants never enter diagnostic logs.
+
+Borrower Scope failure does not establish that Repo close is independent: private
+shortcut SDK producers also live under consumer Scopes and can retain accepted I/O.
+Keep the existing dependency order rather than forcing native close past any failure.
+Another workspace remains independent, and retry closes the retained owner before
+releasing its Repo/storage. No new global gate or background retry loop is added.
+The installed SDK exposes no terminal discard/termination API. A permanently failing
+or hung raw writer still needs confirmed retirement before a second writer may open
+the same storage; bounded lossy termination is not claimed by this repair.
 
 CLI and renderer register the SDK snapshot diagnostic observer at their transport
 composition entries. The shared explicit scalar projection preserves snapshot and
@@ -144,6 +173,24 @@ Room recovery runs independently: waiting for one accepted import does not delay
 another room's catch-up worker.
 
 ## Verification and limits
+
+The persistent IndexedDB save regression fails on `c2dc8435` and passes with this
+repair. It checks repeated/concurrent reopens, original Doc identity/bytes, an
+independently writable/persisted sibling, successful later eviction and a fresh
+durable generation. A separate real Scope/IndexedDB case protects a failed private
+SDK producer's storage, proves another workspace can still persist, and closes both
+producer and storage after recovery.
+The real renderer preview entry and CLI Session reinitialization also reuse the
+original replica while persistence remains unavailable; they do not need recovery
+to happen before another view opens.
+A fake-clock case holds an actual adapter save beyond the eviction deadline,
+reopens the same Doc while that write is still accepted, then finishes and verifies
+the bytes on disk. The timeout never becomes a durability acknowledgement.
+Validation covers 127 affected renderer ownership/cache/Provider cases, 145 CLI
+cases and all 1,521 Shared cases. Type, static, formatting and documentation checks
+pass; real-process/IPC and Git-based guards run outside the restrictive sandbox.
+The complete local root test chain was not rerun to completion; it does not replace
+CI on the final PR merge.
 
 Real v7 host tests exercise two consecutive overflows at the default event cap,
 default byte cap, and an injected small byte cap. Schema-valid bursts, including

@@ -37,9 +37,30 @@ Session 退休和构造失败会先清理 reader 观察，再释放借用的 Doc
 
 上游副本释放在取消订阅前提交并保存文档和元数据。失败会保留 `RepoReleaseFailed.retry` 及已接受的 I/O；再次获取有可能必须先成功完成旧释放，才能构建副本。SDK close 停止网络准入并等待已接受的工作，不代表发起一次新的服务端上传确认；单纯离线不能证明快捷指令 close 必然失败。
 
-关闭先结束借用者再关闭 Repo，但一个 store 失败不能跳过其他 store、transport 清理、join 收尾或 Repo 关闭。Runtime 尝试这些独立步骤后统一报告错误；再次 dispose 会重试保留的 owner，且不重新允许新工作。RuntimeProvider 按 workspace 保留可重试关闭；一个关闭失败不阻塞其他 workspace，重开同一存储前先重试旧 owner。快捷指令根按数据库执行相同约束；runtime、远端、index 或 store 的失败不会跳过其他清理及 Repo 关闭，已经 disposed 的 runtime 仍能重试未完成的退休。Session lease 释放失败后仍使本机房间失效，私有保留重试 handle。cache/shortcut 下次 acquire 自动重试退休中的 owner。本次没有采纳“重试仍失败也重建”：这可能遗留 SDK producer，原生 Repo 本身也可能还需完成旧释放。持续的存储故障仍会明确失败，但恢复不再依赖外部显式解锁。
+Legacy Doc handle 将已有文档缓存的持有与每个视图的借用分开。Session、预览和 schedule cache
+先停止投影、释放借用，再尝试卸载文档。卸载先保存，再关闭缓存持有；普通配额故障使原副本保持
+活跃和可借用，持续故障期间反复、并发重开仍使用同一副本。后来成功卸载才释放原副本并允许新一代。
+真正的 native release 失败仍需先恢复，不能直接吞错：已安装 SDK 在最终释放开始时就标记 retiring，
+再次 acquire 会要求完成旧释放。缓存持有属于 Legacy 已有的所有权，成功卸载或工作区关闭时释放，
+没有增加后台重试循环或第二个 Repo。纯 native 借用仍按 Scope 释放。卸载警告不输出原始错误、Cause 或用户正文。
+卸载等待使用 SDK release 的期限，默认 30 秒；不会取消或重复已接受的 adapter 工作。
+挂起保存可以超过等待期限，视图仍借用同一副本；后续持久化和关闭仍等待原写入。
+CLI 重新初始化也将已释放的借用与卸载结果分开，保留同样的可用性。
+
+关闭先结束借用者再关闭 Repo，但一个 store 失败不能跳过其他 store、transport 清理、join 收尾或 Repo 关闭。Runtime 尝试这些独立步骤后统一报告错误；再次 dispose 会重试保留的 owner，且不重新允许新工作。RuntimeProvider 按 workspace 保留可重试关闭；一个关闭失败不阻塞其他 workspace，重开同一存储前先重试旧 owner。快捷指令根按数据库执行相同约束；runtime、远端、index 或 store 的失败不会跳过其他清理及 Repo 关闭，已经 disposed 的 runtime 仍能重试未完成的退休。
+Session 清理保留真正失败的 borrow release 重试 handle；借用一旦成功释放，卸载失败仍会报告，
+但不能阻止在仍活跃的缓存 Doc 上重新初始化。后来成功卸载才使本机房间失效。
+cache/shortcut 获取仍重试真正退休中的 owner；直接替换它可能遗留 SDK producer，原生 Repo 本身
+也可能需要先完成旧释放。这项必要互斥不适用于保存失败后仍活跃的缓存副本。
 
 后台 stream 失败只输出不带 payload 的诊断，不再无限保留历史 Cause，也不会让后来成功的 destroy 报失败。Scope finalizer 只运行一次；小型 ownership helper 保留原生 retry owner，而不是假装重新关闭失败 Scope 能重试。日志不包含私有 Cause 或 grant。
+
+借用者 Scope 失败不能证明 Repo close 是独立步骤：私有 shortcut SDK producer 也在
+consumer Scope 下，可能仍持有已接受的 I/O。因此保留依赖关闭顺序，不跨过任意失败强行关闭 native Repo。
+其他工作区仍然独立；再次关闭先重试保留的 owner，再释放 Repo 和存储。
+不增加全局 gate 或后台重试循环。
+已安装 SDK 没有终止并丢弃未保存工作的接口。持续失败或挂起的原始 writer 仍需确认退休后，
+才能对同一存储开启第二个 writer；本次修复不声称实现有界的有损终止。
 
 CLI 与 renderer 在 transport 组合入口注册 SDK 快照诊断 observer。共享显式标量投影保留快照与请求关联、permission/auth/HEAD/export/encode/PUT 阶段、编码后正文长度、结果和单调时钟测得的阶段/工作流实际耗时。Native Repo 错误格式化同时保留 `abortKind`、`timeoutKind`、`uploadStage`，不转发私有 Cause、任意错误文本、正文、token、headers 或敏感 URL。普通 fetch 仍为 `total-only`：没有传输子阶段就保留未知，不把超时预算当作实际耗时。快照阶段使用 debug，失败使用 warn。保护内容已有 observer 继续组合，异步失败也隔离；日志或 observer 失败不改变上传、重试、授权及 local-only 组合。
 
@@ -52,6 +73,18 @@ Transport owner 在 adapter 构造或 native connect 前同步登记。移除会
 本机 v7 拥塞恢复保留 1,024 个事件、默认 64 MiB 的队列上限。溢出只使该房间当前的屏障失败，包括已接受但尚未消费的 sync 事件。显式 reconnect 或物理连接 online 边会中断并等待旧消费者及其已接受的 Flock I/O，停止期限任务，再在同一个房间 Scope 中创建新队列和 worker。重置不完整分块、请求 id 和服务端 frontier 后，从保留的副本版本重新追赶。CRDT/lease 与状态引用不变，完成追赶才增加 epoch。等待被取消时移除自身回执，不退休共享副本。每个房间的原生 semaphore 将重启与 close 串行化，避免新消费者超越旧任务；关闭后不再准入恢复。这是局部生命周期边界，不是工作区 readiness 或写入 gate。各房间分别恢复，一个房间等待已接受的导入不延迟其他房间的追赶 worker。
 
 ## 验证与限制
+
+真实 IndexedDB 持续保存失败的回归在 `c2dc8435` 失败、修复后通过。它验证反复及并发重开、
+原 Doc 身份与字节、兄弟文档独立写入和持久化、后来成功卸载和新一代副本。
+另一个真实 Scope/IndexedDB 用例保护关闭失败的私有 SDK producer 的存储，验证另一个工作区
+仍可持久化，并在恢复后关闭 producer 和存储。
+真实 renderer 预览入口和 CLI Session 重新初始化也验证了持续故障期间复用原副本，
+无需等存储恢复才能重开视图。
+假时钟用例将真实 adapter 保存保持到卸载期限之后，在原写入仍被持有时重开同一 Doc，
+最后完成写入并核对磁盘字节。超时不会变成持久化确认。
+验证覆盖受影响的 renderer 所有权/cache/Provider 127 项、CLI 145 项及 Shared 全量 1,521 项。
+类型、静态、格式和文档检查通过；真实进程/IPC 与依赖 Git 的检查在限制性沙箱外执行。
+没有从头完整跑完本地 root 测试链；这些结果不替代最终 PR 合并结果上的 CI。
 
 真实 v7 host 测试分别在默认事件数上限、默认字节预算和注入的小字节预算下连续触发两次拥塞。经过 schema 校验的消息突发包含真实 Loro update 字节，当前等待会失败，独立房间仍可同步，随后原 Doc/Meta 副本恢复上下行写入。另用显式 gate 阻塞真实 Meta import，证明恢复会先等待已接受的不可中断 I/O，再替换消费者；期间兄弟房间仍能完成追赶 epoch。所属原生套件 11 项通过。本次修复的 Shared 全量 1,522 项、受影响 renderer 四组套件 89 项通过。在独立的 `a2f0911d` 工作树上，新增五项拥塞回归针对修复前实现均失败。根检查另有未改动的 SubagentTaskPanel 命令详情用例超时，所属套件单独复跑 19 项全部通过；将此结果与已知 SSH 凭据 fixture 失败分别记录，不把根检查报告为全绿。
 
