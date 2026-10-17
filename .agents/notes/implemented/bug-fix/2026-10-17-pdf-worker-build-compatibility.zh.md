@@ -12,8 +12,8 @@ PDF.js 的 legacy Worker 仍然调用 Safari 16.4 缺少的 `Promise.withResolve
 无法保护 PDF 加载。查看器现在使用经过 Vite 构建的项目自有 Worker 入口，同时保留
 PDF.js 在无法使用独立 Worker 时所需的导出。产物测试在缺少原生 API 的独立环境中
 打开并重新打开 PDF，也验证了主线程回退；这些检查不能替代旧系统真机验收。
-关闭预览时还会清空查看器文档并取消其生命周期 signal，释放文档、编辑器和全局文本
-选择监听器。
+关闭一个预览时还会清空其文档并取消生命周期 signal，释放对应的文档、编辑器监听器。
+全局文本选择监听器直到最后一个文本层关闭才释放，避免关闭一个 PDF 后破坏其他已打开 PDF。
 
 ## 决定与证据
 
@@ -39,10 +39,20 @@ Vite 7 会把 `worker.rollupOptions.preserveEntrySignatures` 强制覆盖为 `fa
 再取消这个 signal，最后销毁加载任务。`cleanup()` 只重置尚未完成的页面渲染，
 不会取消文档事件 owner，也不会销毁批注编辑器管理器。普通只读 PDF 也会创建该管理器
 及其键盘、文本层监听器。清空文档负责释放这些 owner；生命周期 signal 负责释放滚动
-监听、ResizeObserver 和全局文本选择监听器。同时清空 link service 持有的文档。
+监听和 ResizeObserver。同时清空 link service 持有的文档。
 这对需要保留 PDF 组合 signal 直到其 owner 取消的兼容实现尤为必要。
 PDF.js 6.3.289 自带类型遗漏了构造参数 `abortSignal`，以及 `PDFViewer.setDocument`
 允许传入 `null` 的情况。类型扩展只放在当前组件内，与已验证的运行时行为保持一致。
+
+PDF.js 6.3.289 把静态文本选择 controller 和首个查看器的生命周期 signal 组合在一起。
+关闭首个查看器时，全局监听被移除，但其他文本层仍在注册表中；非空的静态 controller
+又阻止了重新注册。`pdfjs-dist` 的 pnpm patch 让全局监听仅由
+`TextLayerBuilder.#selectionChangeAC` 管理：现有逻辑会在最后一个文本层移除时取消并
+重置它。查看器和单个文本层的 signal 保持原有归属。legacy 和 modern 查看器入口应用
+同样的小补丁。不要通过移除查看器 signal 或把 `setDocument(null)` 改回 `cleanup()`
+来绕过这个共享状态问题，那会让其他监听器继续存活。
+
+PR：[#1643](https://github.com/LodyAI/Lody/pull/1643)。
 
 ## 验证与限制
 
@@ -55,5 +65,8 @@ PDF.js 6.3.289 自带类型遗漏了构造参数 `abortSignal`，以及 `PDFView
   测试观察 PDF.js 实际生成的组合 signal 以及键盘、文本选择和指针监听器注册；关闭后
   signal 全部取消，绑定它们的原生 DOM 监听器不再响应。仅在测试构建中恢复旧 `cleanup()`
   的对照会留下仍然活跃的文档 signal。
+- 确定性的双预览测试依次渲染 A、渲染 B、在 B 中选中文字、关闭 A，再在 B 中选择。
+  随后关闭 B 并重新打开 C，检查选择行为和最后的监听器释放。应用依赖补丁之前，
+  关闭 A 后，B 无法再进入 `selecting` 状态。
 - 原有 PDF 范围读取和解析测试全部通过，共三项。
 - 以上属于构建和运行时行为验证，尚不代表 iOS 真机验收。

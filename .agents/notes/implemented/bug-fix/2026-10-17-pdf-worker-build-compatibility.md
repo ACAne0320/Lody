@@ -14,8 +14,9 @@ uses a project-owned Worker entry built through Vite, while preserving the expor
 PDF.js needs when dedicated Workers are unavailable. A built-asset test opens and
 reopens a PDF in a separate realm without the native API and also exercises the
 main-thread fallback; this does not replace validation on an older physical device.
-Closing the preview also clears the viewer's document and aborts its lifetime,
-releasing the document/editor and global text-selection listeners.
+Closing a preview also clears its document and aborts its lifetime, releasing its
+document/editor listeners. Global text-selection listeners remain active until
+the final text layer closes, so closing one PDF does not break another open PDF.
 
 ## Decision and evidence
 
@@ -46,13 +47,25 @@ Pass the component's lifetime signal to `PDFViewer`. On disposal, call
 `cleanup()` only resets unfinished page rendering; it does not abort the document
 event owner or destroy the annotation-editor manager. Even a normal read-only PDF
 creates that manager and its keyboard/text-layer listeners. Clearing the document
-releases these owners, while the lifetime signal releases scrolling, the resize
-observer and global text-selection listeners. Clear the link service's document
+releases these owners, while the lifetime signal releases scrolling and the resize
+observer. Clear the link service's document
 as part of the same teardown. This is required for hosts whose compatibility
 implementation retains PDF composite signals until their owners abort.
 PDF.js 6.3.289's shipped types omit both the constructor's `abortSignal` and the
 nullable `PDFViewer.setDocument` argument. Keep their type extensions local to
 this component, matching the verified runtime behavior.
+
+PDF.js 6.3.289 combines its static text-selection controller with the first
+viewer's lifetime signal. Closing that viewer removes global listeners while
+other text layers remain registered, and their non-null static controller prevents
+re-registration. The `pdfjs-dist` pnpm patch makes global listeners depend only on
+`TextLayerBuilder.#selectionChangeAC`; removing the last text layer already aborts
+and resets it. Per-viewer and per-layer signals retain their existing ownership.
+Apply the same small patch to legacy and modern viewer entries. Do not remove the
+viewer signal or replace `setDocument(null)` with `cleanup()` to work around this
+shared-state bug: that would leave other listeners alive.
+
+PR: [#1643](https://github.com/LodyAI/Lody/pull/1643).
 
 ## Verification and limits
 
@@ -67,5 +80,9 @@ this component, matching the verified runtime behavior.
   signals and keyboard, selection and pointer listener registrations; all signals
   abort on close and their native DOM listeners stop responding. A build-only
   regression probe with the old `cleanup()` leaves document signals active.
+- A deterministic two-preview sequence renders A, renders B, selects text in B,
+  closes A, and selects text in B again. It then closes B and reopens C, checking
+  both selection behavior and final listener disposal. Before the dependency
+  patch, B stops entering its `selecting` state after A closes.
 - The existing PDF range/parser suite passes all three tests.
 - These are build and runtime-behavior checks, not physical iOS device acceptance.
