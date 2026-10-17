@@ -6469,6 +6469,29 @@ describe('SessionExecutionService', () => {
     });
   });
 
+  it('does not carry a start step into the next attempt', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const { notices, start } = createRetryFixture(async (config) => {
+      calls += 1;
+      if (calls === 1) {
+        config.onStartStage?.('agent-start');
+        throw temporarySpawnFailure();
+      }
+      // Fails before reporting any step of its own.
+      throw new Error('pending create was replaced');
+    });
+    const execution = start();
+    await vi.advanceTimersByTimeAsync(16000);
+    await execution;
+    vi.useRealTimers();
+
+    expect(notices()[0]?.meta).toMatchObject({
+      reason: 'turn_pre_prompt_failed',
+      message: 'pending create was replaced',
+    });
+  });
+
   it('makes no further start attempt after Stop during the retry delay', async () => {
     vi.useFakeTimers();
     const { service, sessionManager, backoff, start, notices } = createRetryFixture(

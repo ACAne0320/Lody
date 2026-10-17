@@ -324,8 +324,8 @@ identity propagation into adapter-owned Git commands remains unresolved.
 ### Start failures
 
 `SessionManager.createSession` reports each start step through `onStartStage` as it
-begins: credentials, working directory, worktree, worktree setup script, Git identity,
-agent runtime, then agent start. The execution service keeps the last step on the turn and clears it once a Session
+begins: credentials, working directory, worktree, worktree setup script (reported only when a
+script actually starts), agent sandbox, Git identity, agent runtime, then agent start. The execution service keeps the last step on the turn and clears it once a Session
 is bound. A failure is recorded as `<step> failed: <message>`, using
 `session-start-stage.ts`, so the user sees where start-up stopped. Authentication failures
 keep their own message. The error itself is never wrapped: the restore and create paths

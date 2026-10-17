@@ -40,7 +40,9 @@ provides the stage this policy reads.
   to let go within the retry window, and another full wait would approach the
   initialization budget.
 - **How it repeats.** `sessionStartRetryMode` reads the failed start's stage:
-  - `worktree-setup` never repeats.
+  - `worktree-setup` never repeats. It is reported only when a setup script actually
+    starts, and the following `sandbox` step repeats as a resume. A start with no
+    script is therefore never mistaken for one that ran a script.
   - A restore repeats unchanged, because its worktree already exists and setup is
     skipped.
   - A new Session that failed before setup repeats unchanged.

@@ -3418,7 +3418,12 @@ export class SessionExecutionService {
     const { sessionId, runtime, config } = options;
     const attempts = SESSION_START_RETRY_DELAYS_MS.length + 1;
     const attempt = (index: number): Effect.Effect<ISession, unknown, never> =>
-      options.start().pipe(
+      Effect.suspend(() => {
+        // Each attempt reports its own steps; a stale one would misname a failure
+        // that happens before the next report and choose the wrong retry mode.
+        runtime.startStage = undefined;
+        return options.start();
+      }).pipe(
         Effect.catch((error) => {
           const delayMs = SESSION_START_RETRY_DELAYS_MS[index];
           const mode = sessionStartRetryMode(runtime.startStage, config.resume === true);

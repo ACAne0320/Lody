@@ -17,7 +17,7 @@ Translation: current
 
 - **什么会重试。** 只有在 `cause` 或 `AggregateError` 链中任何位置的 `code` 为 `EAGAIN`、`EMFILE`、`ENFILE` 或 `ENOMEM` 的错误。它们表示系统暂时用尽了进程、文件描述符或内存，资源释放后同样的请求可以成功。锁竞争超时不在其中：一个持有锁超过时限（worktree 是 120 秒）的持有者，不太可能在重试窗口内释放，再等一个完整时限也会逼近初始化预算。
 - **怎样重试。** `sessionStartRetryMode` 读取失败启动所处的步骤：
-  - `worktree-setup` 永不重试。
+  - `worktree-setup` 永不重试。只有 setup 脚本真正开始运行时才会上报这一步，之后的 `sandbox` 步骤以 resume 方式重试。因此，没有配置脚本的启动不会被误当成运行过脚本。
   - 恢复原样重试，因为它的 worktree 已经存在，setup 会被跳过。
   - 新会话如果在 setup 之前失败，原样重试。
   - 新会话如果在 setup 之后失败，以 `resume = true` 重试，这只会跳过 setup 脚本。worktree、分支和凭据与任何一次 resume 一样，重新创建或复用。

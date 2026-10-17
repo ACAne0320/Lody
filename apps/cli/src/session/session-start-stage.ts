@@ -8,6 +8,7 @@ export type SessionStartStage =
   | 'workdir'
   | 'worktree'
   | 'worktree-setup'
+  | 'sandbox'
   | 'git-identity'
   | 'agent-runtime'
   | 'agent-start';
@@ -17,6 +18,7 @@ const STAGE_LABELS: Record<SessionStartStage, string> = {
   workdir: 'Preparing the working directory',
   worktree: 'Preparing the worktree',
   'worktree-setup': 'Running the worktree setup script',
+  sandbox: 'Preparing the agent sandbox',
   'git-identity': 'Resolving the Git identity',
   'agent-runtime': 'Resolving the agent runtime',
   'agent-start': 'Starting the agent',
@@ -62,6 +64,7 @@ const RETRY_MODE_BY_STAGE: Record<SessionStartStage, 'repeat' | 'resume' | 'none
   workdir: 'repeat',
   worktree: 'repeat',
   'worktree-setup': 'none',
+  sandbox: 'resume',
   'git-identity': 'resume',
   'agent-runtime': 'resume',
   'agent-start': 'resume',
@@ -71,8 +74,8 @@ export const sessionStartRetryMode = (
   stage: SessionStartStage | undefined,
   resume: boolean
 ): 'repeat' | 'resume' | 'none' => {
-  if (stage === 'worktree-setup') return 'none';
+  if (stage === undefined) return 'repeat';
+  const mode = RETRY_MODE_BY_STAGE[stage];
   // A resumed start skips the script whenever its worktree already exists.
-  if (resume || stage === undefined) return 'repeat';
-  return RETRY_MODE_BY_STAGE[stage];
+  return resume && mode === 'resume' ? 'repeat' : mode;
 };

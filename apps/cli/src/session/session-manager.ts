@@ -1569,7 +1569,14 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
           `[${config.sessionId}] Skipping worktree setup for restored session because the worktree already exists`
         );
       } else {
-        this.reportStartStage(config, 'worktree-setup');
+        const setupHistory = createWorktreeScriptHistoryRecorder({
+          sessionDoc,
+          sessionId: config.sessionId!,
+          phase: 'setup',
+          logger: this.logger,
+          backend: await createSessionBackend(sessionDoc, await sessionDoc.getMetaState()),
+          insertBeforeEntryId: config.worktreeScriptHistoryInsertBeforeEntryId,
+        });
         await runWorktreeSetup({
           config: await this.resolveWorktreeSetupConfig(config),
           sessionId: config.sessionId!,
@@ -1580,14 +1587,17 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
           localProjectId:
             config.project?.kind === 'local' ? config.project.localProjectId : undefined,
           logger: this.logger,
-          events: createWorktreeScriptHistoryRecorder({
-            sessionDoc,
-            sessionId: config.sessionId!,
-            phase: 'setup',
-            logger: this.logger,
-            backend: await createSessionBackend(sessionDoc, await sessionDoc.getMetaState()),
-            insertBeforeEntryId: config.worktreeScriptHistoryInsertBeforeEntryId,
-          }),
+          events: {
+            // Only a script that actually starts makes this start unsafe to repeat.
+            onStart: async (event) => {
+              this.reportStartStage(config, 'worktree-setup');
+              await setupHistory.onStart?.(event);
+            },
+            onStepStart: (event) => setupHistory.onStepStart?.(event),
+            onOutput: (event) => setupHistory.onOutput?.(event),
+            onStepEnd: (event) => setupHistory.onStepEnd?.(event),
+            onEnd: (event) => setupHistory.onEnd?.(event),
+          },
         });
         if (legacySetupPending) {
           await completeLegacySpeculativeWorktreeSetup({
@@ -1610,6 +1620,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       );
     }
 
+    this.reportStartStage(config, 'sandbox');
     const sandbox = await this.sessionSandboxFactory(config.sessionId!);
     this.logger.debug(`[${config.sessionId}] Session sandbox: ${sandbox.description}`);
     const session = new Session(config, this.logger, workdir, sandbox, credentials);
