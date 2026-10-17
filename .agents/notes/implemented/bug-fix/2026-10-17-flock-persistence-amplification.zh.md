@@ -52,4 +52,4 @@ Translation: current
 - 重复投递虽然不再写盘，每次仍要导入一遍（大 Meta 约几十毫秒）。只读调查没有在 Lody 中找到周期为两秒的调用方。当某个 Streams API 分片返回落后的 next offset、而 SDK 不做单调性检查就采用时，可以复现这个节奏；但这一点没有在真实服务上验证。
 - 对于存储永久拒绝的原样字节，原生 Repo 没有整本文件兜底：payload 会一直留在队列里，游标一直被挡住，但不会丢数据。
 
-相关：[原生工作区 Repo](../../proposed/architecture/2026-10-16-native-workspace-repo.zh.md)。
+Lody 升级：[#1672](https://github.com/LodyAI/Lody/pull/1672)。相关：[原生工作区 Repo](../../proposed/architecture/2026-10-16-native-workspace-repo.zh.md)。

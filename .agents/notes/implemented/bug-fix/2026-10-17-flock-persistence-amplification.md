@@ -97,4 +97,4 @@ Alternatives considered:
   permanently. The payload stays queued and the cursor stays blocked; no data is
   lost.
 
-Related: [native workspace Repo](../../proposed/architecture/2026-10-16-native-workspace-repo.md).
+Lody upgrade: [#1672](https://github.com/LodyAI/Lody/pull/1672). Related: [native workspace Repo](../../proposed/architecture/2026-10-16-native-workspace-repo.md).
