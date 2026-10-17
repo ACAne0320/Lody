@@ -341,10 +341,13 @@ See the
 
 `startWithTransientRetry` in the execution service starts again after a temporary OS
 failure (`EAGAIN`, `EMFILE`, `ENFILE` or `ENOMEM` anywhere in the cause chain), up to three
-attempts with 1- and 3-second delays from `SESSION_START_RETRY_DELAYS_MS`. Before each delay
-it publishes `Retrying after a temporary system error` as presence detail, and after the
-delay it checks for Stop. Each attempt is a fresh `createSession`, because the failed one
-already released its process and credentials. `sessionStartRetryMode` decides how to repeat.
+attempts with 1- and 3-second delays from `SESSION_START_RETRY_DELAYS_MS`, each jittered
+over its upper half. Before each delay it publishes `Retrying after a temporary system error`
+as presence detail, and after the delay it checks for Stop. Each attempt is a fresh
+`createSession`. A failed attempt whose cleanup could not terminate its agent or release its
+credentials is marked (`recordIncompleteStartCleanup`) and never retried. The whole
+service shares `SESSION_START_RETRY_BUDGET` (6 retries per minute), because a temporary OS
+failure usually hits every Session at once. `sessionStartRetryMode` decides how to repeat.
 A new Session repeats unchanged if it failed before its worktree setup script. If it got past
 the script, it repeats as a resume, which skips the script. It never repeats if it failed
 while the script was running. A restore always repeats unchanged, because its existing

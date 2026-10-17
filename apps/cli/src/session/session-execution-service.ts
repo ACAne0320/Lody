@@ -51,9 +51,12 @@ import { sessionExecutionResource } from '@/orchestration/platform/session-resou
 import { formatErrorMessage, formatReportedError } from '@/utils/format-error';
 import {
   describeSessionStartFailure,
+  hadIncompleteStartCleanup,
   isTransientSessionStartError,
+  jitterSessionStartRetryDelay,
   SESSION_START_RETRY_DELAYS_MS,
   sessionStartRetryMode,
+  takeSessionStartRetry,
   type SessionStartStage,
 } from './session-start-stage';
 import type { Logger } from '@/utils/logger';
@@ -134,7 +137,7 @@ import {
   localProjectsLegacy,
 } from '@lody/shared/node/local-project';
 import { findProgressMessageId } from '@lody/shared/session-data';
-import { Cause, Data, Effect, Exit, Fiber, Scope } from 'effect';
+import { Cause, Clock, Data, Effect, Exit, Fiber, Random, Scope } from 'effect';
 import { createHash, randomUUID } from 'node:crypto';
 import { getCodexProfileStore, type ResolvedCodexProfile } from '../agent/codex-profile-store';
 import {
@@ -945,6 +948,8 @@ export class SessionExecutionService {
   private readonly canceledTurnBySession = new Map<SessionId, string>();
   private readonly currentTurnBySession = new Map<SessionId, string>();
   private readonly turnRuntimeBySession = new Map<SessionId, TurnRuntimeState>();
+  /** Start times of recent start retries, shared by every Session this service runs. */
+  private readonly startRetryStartedAt: number[] = [];
   private readonly rewriteBarrierSessions = new Set<SessionId>();
   private readonly rewriteConflictLeaseSessions = new Set<SessionId>();
   private readonly turnReleaseWaiters = new Map<SessionId, Map<string, Set<() => void>>>();
@@ -3432,16 +3437,25 @@ export class SessionExecutionService {
             mode === 'none' ||
             runtime.cancelRequested ||
             runtime.initializationStalled ||
-            !isTransientSessionStartError(error)
+            !isTransientSessionStartError(error) ||
+            hadIncompleteStartCleanup(error)
           ) {
             return Effect.fail(error);
           }
           return Effect.gen(function* () {
+            const failure = describeSessionStartFailure(
+              runtime.startStage,
+              formatReportedError(error)
+            );
+            if (!takeSessionStartRetry(self.startRetryStartedAt, yield* Clock.currentTimeMillis)) {
+              self.deps.logger.warn(
+                `[${sessionId}] Session start hit a temporary system error (${failure}); not retrying because this daemon's start retry budget is spent`
+              );
+              return yield* Effect.fail(error);
+            }
+            const waitMs = jitterSessionStartRetryDelay(delayMs, yield* Random.next);
             self.deps.logger.warn(
-              `[${sessionId}] Session start hit a temporary system error (${describeSessionStartFailure(
-                runtime.startStage,
-                formatErrorMessage(error)
-              )}); starting attempt ${index + 2} of ${attempts} in ${delayMs}ms`
+              `[${sessionId}] Session start hit a temporary system error (${failure}); starting attempt ${index + 2} of ${attempts} in ${waitMs}ms`
             );
             if (self.turnRuntimeBySession.get(sessionId) === runtime) {
               self.deps.setSessionActivePresencePhase(
@@ -3450,7 +3464,7 @@ export class SessionExecutionService {
                 'Retrying after a temporary system error'
               );
             }
-            yield* Effect.sleep(delayMs);
+            yield* Effect.sleep(waitMs);
             yield* options.abortIfCancelled();
             if (mode === 'resume') config.resume = true;
             return yield* attempt(index + 1);

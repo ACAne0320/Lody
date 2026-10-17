@@ -50,9 +50,17 @@ provides the stage this policy reads.
     skips the setup script. The worktree, branch and credentials are recreated or
     reused as on any resume.
 - **Bounds.** Three attempts, with delays of 1 and 3 seconds
-  (`SESSION_START_RETRY_DELAYS_MS`). Each attempt calls `createSession` again.
-  The failed attempt has already released its process and credentials, and its
-  dedupe entry is gone, so the attempt is genuinely new work. The initialization
+  (`SESSION_START_RETRY_DELAYS_MS`), each jittered over its upper half. Each attempt
+  calls `createSession` again, and its dedupe entry is gone, so the attempt is new work.
+- **Whole-daemon stability over per-turn persistence.** A temporary OS failure is
+  usually machine-wide. Fixed, synchronized delays would make every failed turn retry at
+  the same instants and triple spawn pressure exactly when the machine is exhausted. So
+  the delays are jittered, and one service-wide budget allows 6 retries per minute
+  across all Sessions; beyond that, starts fail on the first error.
+- **Retry only after confirmed cleanup.** If a failed attempt's cleanup could not
+  terminate its agent or release its credentials, `SessionManager` marks the original
+  error (a WeakSet, so the error object is unchanged) and the start is not retried.
+  Each retry would otherwise stack a fresh attempt on leaked resources. The initialization
   stall watchdog still applies, and publishing
   `Retrying after a temporary system error` counts as progress.
 - **Stop and stalls.** No retry once the turn is cancelled or stalled. Stop

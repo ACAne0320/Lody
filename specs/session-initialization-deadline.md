@@ -86,12 +86,13 @@ performance budget, and a step that trips it is a defect somewhere else.
 A start can also fail outright because the machine is briefly out of a system
 resource: it cannot fork another process, open another file, or allocate memory.
 Sending the same message moments later usually succeeds, so Lody makes that
-attempt itself. Lody starts again at most twice, with a short wait before each
-attempt, and keeps the Session visibly initializing meanwhile. This happens only
+attempt itself. Lody starts again at most twice, with a short randomized wait before
+each attempt and fewer retries when many Sessions fail at once, and keeps the Session visibly initializing meanwhile. This happens only
 before the agent has produced anything for the turn. Every attempt begins
 genuinely new initialization work. A worktree setup script never runs twice for
 one start: a start that failed while its script ran is not repeated, and a later
-attempt does not repeat a script that already finished. Stop ends the waiting
+attempt does not repeat a script that already finished. A start whose failed attempt could not release its agent or credentials is not
+repeated either. Stop ends the waiting
 and makes no further attempt. Any other failure, including authentication and
 agent resume errors, still fails the turn on its first occurrence. A start that
 fails on its last attempt reports that failure the same way as any other.

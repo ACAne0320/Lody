@@ -64,7 +64,12 @@ import {
   type SessionExecutionServiceDeps,
 } from '../src/session/session-execution-service';
 import type { SessionManager } from '../src/session/session-manager';
-import type { SessionStartStage } from '../src/session/session-start-stage';
+import {
+  jitterSessionStartRetryDelay,
+  recordIncompleteStartCleanup,
+  takeSessionStartRetry,
+  type SessionStartStage,
+} from '../src/session/session-start-stage';
 import type { SessionConfig } from '../src/session/types';
 import { GitExecutableNotFoundError } from '../src/session/worktree/git-process-error';
 import type { Logger } from '../src/utils/logger';
@@ -6492,6 +6497,27 @@ describe('SessionExecutionService', () => {
     });
   });
 
+  it('does not retry a start whose cleanup left resources unreleased', async () => {
+    vi.useFakeTimers();
+    const { sessionManager, notices, start } = createRetryFixture(async (config) => {
+      config.onStartStage?.('agent-start');
+      const failure = temporarySpawnFailure();
+      // SessionManager marks this when terminate or credential release fails.
+      recordIncompleteStartCleanup(failure);
+      throw failure;
+    });
+    const execution = start();
+    await vi.advanceTimersByTimeAsync(16000);
+    await execution;
+    vi.useRealTimers();
+
+    expect(sessionManager.createSession).toHaveBeenCalledTimes(1);
+    expect(notices()[0]?.meta).toMatchObject({
+      reason: 'turn_pre_prompt_failed',
+      message: 'Starting the agent failed: spawnSync /usr/bin/git EAGAIN',
+    });
+  });
+
   it('makes no further start attempt after Stop during the retry delay', async () => {
     vi.useFakeTimers();
     const { service, sessionManager, backoff, start, notices } = createRetryFixture(
@@ -11507,5 +11533,24 @@ describe('Provider quota refresh', () => {
     ).resolves.toBe(false);
     await expect(cache.run('a', 'new', async () => true)).resolves.toBe(false);
     await expect(cache.run('b', 'other', async () => true)).resolves.toBe(true);
+  });
+});
+
+describe('session start retry pacing', () => {
+  it('caps retries per window across Sessions and frees them as the window passes', () => {
+    const startedAt: number[] = [];
+    const budget = { limit: 2, windowMs: 60_000 };
+    expect(takeSessionStartRetry(startedAt, 0, budget)).toBe(true);
+    expect(takeSessionStartRetry(startedAt, 1_000, budget)).toBe(true);
+    // A machine-wide failure must not turn every turn's retries into more load.
+    expect(takeSessionStartRetry(startedAt, 2_000, budget)).toBe(false);
+    expect(takeSessionStartRetry(startedAt, 60_000, budget)).toBe(true);
+    expect(startedAt).toEqual([1_000, 60_000]);
+  });
+
+  it('spreads retry delays over the upper half of the base delay', () => {
+    expect(jitterSessionStartRetryDelay(1_000, 0)).toBe(500);
+    expect(jitterSessionStartRetryDelay(1_000, 0.999)).toBe(1_000);
+    expect(jitterSessionStartRetryDelay(3_000, 0.5)).toBe(2_250);
   });
 });

@@ -37,7 +37,7 @@ import {
 } from '@lody/shared';
 import { Logger } from '@/utils/logger';
 import { SessionConfig, SessionOutputEvent, SessionErrorEvent, SessionExitEvent } from './types';
-import type { SessionStartStage } from './session-start-stage';
+import { recordIncompleteStartCleanup, type SessionStartStage } from './session-start-stage';
 import { LoroDocumentManager } from '../lib/loro/doc';
 import {
   AgentClient,
@@ -934,12 +934,14 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       if (session) {
         this.detachSession(session);
         await session.terminate(true).catch((terminateError: unknown) => {
+          recordIncompleteStartCleanup(error);
           this.logger.error(
             `[${config.sessionId}] Failed to terminate session after start failure: ${formatErrorWithCauses(terminateError)}`
           );
         });
       }
       await credentials.release().catch((releaseError: unknown) => {
+        recordIncompleteStartCleanup(error);
         this.logger.error(
           `[${config.sessionId}] Failed to release credentials after start failure: ${formatErrorWithCauses(releaseError)}`
         );
@@ -1118,6 +1120,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       return credentials;
     } catch (error) {
       await credentials.release().catch((releaseError: unknown) => {
+        recordIncompleteStartCleanup(error);
         this.logger.error(
           `[${config.sessionId}] Failed to release credentials after preparation failure: ${formatErrorWithCauses(releaseError)}`
         );
@@ -1632,6 +1635,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
     } catch (error) {
       this.detachSession(session);
       await session.terminate(true).catch((terminateError: unknown) => {
+        recordIncompleteStartCleanup(error);
         this.logger.error(
           `[${config.sessionId}] Failed to terminate session after sandbox rebalance failure: ${formatErrorWithCauses(terminateError)}`
         );

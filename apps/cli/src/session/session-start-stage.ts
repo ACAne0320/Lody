@@ -79,3 +79,44 @@ export const sessionStartRetryMode = (
   // A resumed start skips the script whenever its worktree already exists.
   return resume && mode === 'resume' ? 'repeat' : mode;
 };
+
+/**
+ * A failed start whose cleanup could not confirm it terminated the partial agent or
+ * released its credentials. Retrying it would stack a fresh attempt on leaked
+ * resources, exactly when the machine is short of them, so it fails instead.
+ * Keyed by the original error object, which is never wrapped.
+ */
+const incompleteStartCleanup = new WeakSet<object>();
+
+export const recordIncompleteStartCleanup = (error: unknown): void => {
+  if (typeof error === 'object' && error !== null) incompleteStartCleanup.add(error);
+};
+
+export const hadIncompleteStartCleanup = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && incompleteStartCleanup.has(error);
+
+/**
+ * Retries a daemon may start per window across all of its Sessions. A temporary OS
+ * failure usually hits the whole machine, so per-turn retries alone would multiply
+ * load exactly when it is exhausted.
+ */
+export const SESSION_START_RETRY_BUDGET = { limit: 6, windowMs: 60_000 } as const;
+
+/** Takes one retry from `startedAt` (pruned in place) if the window allows it. */
+export const takeSessionStartRetry = (
+  startedAt: number[],
+  now: number,
+  budget: { readonly limit: number; readonly windowMs: number } = SESSION_START_RETRY_BUDGET
+): boolean => {
+  for (let oldest = startedAt[0]; oldest !== undefined && now - oldest >= budget.windowMs;) {
+    startedAt.shift();
+    oldest = startedAt[0];
+  }
+  if (startedAt.length >= budget.limit) return false;
+  startedAt.push(now);
+  return true;
+};
+
+/** Equal jitter: half the delay is fixed, half random, so failed turns spread out. */
+export const jitterSessionStartRetryDelay = (delayMs: number, random: number): number =>
+  Math.round(delayMs / 2 + (delayMs / 2) * random);
