@@ -723,7 +723,6 @@ in local-only mode), extending the prompt inventory and PR observation to the co
 credentials, and advertising the capability. The UI session implements the picker,
 editor migration and composer filtering. The contract branch verified the shared contracts; daemon verification is described below.
 
-
 **Daemon integration** ([PR #1682](https://github.com/LodyAI/Lody/pull/1682)). Add/startup publication preserves `githubRepoFullName` across
 other row writers. Materialization re-observes ranked local copies, rejects duplicate
 identities, and uses native auth; missing copies use managed cloning or fail with
@@ -835,3 +834,20 @@ with a native Git execution path (27 tests). An earlier broker test also exceede
 its 30-second test timeout with that wrapper and passes with it cleared. The full
 workspace sweep was not rerun after these corrections; later package test stages
 and desktop E2E remain unverified. No unrelated component source was changed.
+
+**UI implementation.** `lib/project-member-sources.ts` builds the picker rows:
+local projects are merged by the remote their machine publishes, one copy per
+machine (the one the daemon would pick), and every merged folder's old source key
+is kept so groups saved earlier still resolve. `groupProjectMemberSourceOptions`
+lays out the groups, the filters and the disabled folders.
+`ProjectGroupSourcePicker` renders them with a controlled query, so GitHub-only
+repositories appear once the user types. When the editor opens a saved group, it
+converts local members whose machine publishes a remote and saves the result
+with the group. A repository Member's submodules are read from a copy on an
+online machine when there is one, so detection works without GitHub integration.
+In the composer, `getProjectGroupMachineAvailability` hides groups bound to
+another machine, appends "N cloned on start" or "N not on this machine" to the
+others, and in local-only mode leaves missing members unticked. Starting a group
+with repository Members requires `projectRepositoryMembers` on the machine. The
+picker was checked in Storybook (Chinese, both filters). Pure helpers have unit
+tests. Nothing has run end to end against the daemon from #1682 yet.

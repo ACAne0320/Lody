@@ -11,6 +11,8 @@ import {
 } from '@lody/shared';
 import {
   buildProjectGroupProjectRef,
+  buildProjectRepositoryCopyIndex,
+  getProjectGroupMachineAvailability,
   resolveProjectGroupLaunchTarget,
   selectProjectGroupMembers,
 } from '@/lib/project-group-launch';
@@ -125,5 +127,58 @@ describe('project group launch', () => {
     // The legacy ProjectRef rejects an empty branch; HEAD is the placeholder
     // the daemon resolves to the default branch.
     expect(buildProjectGroupProjectRef(project.members[2]!)).toMatchObject({ branch: 'HEAD' });
+  });
+
+  it('offers a group on the machines it can run on and names what each lacks', () => {
+    const m1 = 'machine-1' as MachineId;
+    const m2 = 'machine-2' as MachineId;
+    const copies = buildProjectRepositoryCopyIndex([
+      { machineId: m1, project: { githubRepoFullName: 'Acme/Web' } },
+      { machineId: m2, project: { githubRepoFullName: 'acme/web' } },
+      { machineId: m2, project: { githubRepoFullName: 'acme/api' } },
+      { machineId: m1, project: {} },
+    ]);
+    const portable: WorkspaceProject = {
+      ...project,
+      members: [
+        {
+          id: id('web'),
+          source: { kind: 'github', repoFullName: 'acme/web', preferLocal: true },
+          placement: { kind: 'root', dir: 'web' },
+        },
+        {
+          id: id('api'),
+          source: { kind: 'github', repoFullName: 'acme/api', preferLocal: true },
+          placement: { kind: 'root', dir: 'api' },
+        },
+        // A plain GitHub member is always cloned; it is never "missing".
+        {
+          id: id('docs'),
+          source: { kind: 'github', repoFullName: 'acme/docs' },
+          placement: { kind: 'root', dir: 'docs' },
+        },
+      ],
+    };
+    const on = (machineId: MachineId | null, group = portable) =>
+      getProjectGroupMachineAvailability(group, machineId, copies);
+    expect(on(m2)).toEqual({ kind: 'available', missing: new Set() });
+    expect(on(m1)).toEqual({ kind: 'available', missing: new Set([id('api')]) });
+    expect(on(null)).toEqual({ kind: 'available', missing: new Set() });
+
+    // The local web folder binds the original group to machine-1.
+    expect(on(m2, project)).toEqual({ kind: 'elsewhere', machineId: m1 });
+    expect(on(m1, project).kind).toBe('available');
+    const split: WorkspaceProject = {
+      ...project,
+      members: [
+        ...project.members,
+        {
+          id: id('ios'),
+          source: { kind: 'local', machineId: m2, localProjectId: 'ios' as LocalProjectId },
+          placement: { kind: 'root', dir: 'ios' },
+        },
+      ],
+    };
+    expect(on(m1, split)).toEqual({ kind: 'conflict' });
   });
 });

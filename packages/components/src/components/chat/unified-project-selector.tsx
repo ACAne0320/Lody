@@ -72,6 +72,8 @@ export type UnifiedProjectGroupOption = {
   lastUsedAt?: number;
   /** Why this group cannot start a conversation on the selected machine. */
   disabledReason?: string;
+  /** What the selected machine lacks, e.g. "2 cloned on start". */
+  availability?: string;
 };
 
 type UnifiedProjectOption = {
@@ -426,9 +428,14 @@ export function UnifiedProjectSelectorView({
         label: group.name,
         description:
           group.disabledReason ??
-          t('chat.projectPicker.groupMembers', '{{count}} repositories', {
-            count: group.memberCount,
-          }),
+          [
+            t('chat.projectPicker.groupMembers', '{{count}} repositories', {
+              count: group.memberCount,
+            }),
+            group.availability,
+          ]
+            .filter(Boolean)
+            .join(' · '),
         icon: <Boxes className="h-4 w-4 shrink-0 opacity-70" />,
         selection: { kind: 'group', projectId: group.projectId },
         lastUsedAt: group.lastUsedAt,

@@ -6,7 +6,10 @@ import {
   type ProjectGroupFormProps,
   type ProjectGroupMemberStatus,
 } from '@/components/settings/project-group-form';
-import type { ProjectMemberSourceOption } from '@/hooks/use-project-member-sources';
+import {
+  buildProjectMemberSourceOptions,
+  type ProjectMemberSourceOption,
+} from '@/lib/project-member-sources';
 import {
   EMPTY_PROJECT_GROUP_FORM_VALUE,
   getProjectMemberSourceKey,
@@ -15,56 +18,59 @@ import {
   type ProjectGroupMemberDraft,
 } from '@/lib/project-group-form';
 
-const sources: ProjectMemberSourceOption[] = [
-  {
-    key: 'local:machine-1:web',
-    source: {
-      kind: 'local',
-      machineId: 'machine-1' as MachineId,
-      localProjectId: 'web' as LocalProjectId,
-    },
-    label: 'web',
-    detail: 'Studio',
-    online: true,
+const here = 'machine-1' as MachineId;
+const studio = 'machine-2' as MachineId;
+const mini = 'machine-3' as MachineId;
+const local = (
+  machineId: MachineId,
+  machineName: string,
+  id: string,
+  githubRepoFullName?: string
+) => ({
+  machineId,
+  machineName,
+  online: true,
+  project: {
+    id: id as LocalProjectId,
+    name: id,
+    createdAtMs: 1,
+    ...(githubRepoFullName ? { githubRepoFullName } : {}),
   },
-  {
-    key: 'github:acme/api',
-    source: { kind: 'github', repoFullName: 'acme/api' },
-    label: 'acme/api',
-    detail: 'Go backend',
-  },
-  {
-    key: 'github:acme/proto',
-    source: { kind: 'github', repoFullName: 'acme/proto' },
-    label: 'acme/proto',
-    detail: 'Shared interface definitions',
-  },
-  {
-    key: 'local:machine-2:ios',
-    source: {
-      kind: 'local',
-      machineId: 'machine-2' as MachineId,
-      localProjectId: 'ios' as LocalProjectId,
-    },
-    label: 'ios',
-    detail: 'Build box',
-    online: true,
-  },
-  {
-    key: 'github:acme/docs',
-    source: { kind: 'github', repoFullName: 'acme/docs' },
-    label: 'acme/docs',
-  },
-];
+});
+
+// `web` has copies on two machines and `api` on one; `notes` and `ios` have
+// no GitHub remote, so each binds a group to its machine.
+const sources: ProjectMemberSourceOption[] = buildProjectMemberSourceOptions({
+  localProjects: [
+    local(here, 'MacBook Pro', 'web', 'acme/web'),
+    local(studio, 'Studio', 'web', 'acme/web'),
+    local(studio, 'Studio', 'api', 'acme/api'),
+    local(mini, 'Mac mini', 'api', 'acme/api'),
+    local(here, 'MacBook Pro', 'notes'),
+    local(studio, 'Studio', 'ios'),
+  ],
+  githubRepositories: [
+    { fullName: 'acme/web', description: 'Next.js frontend' },
+    { fullName: 'acme/api', description: 'Go backend' },
+    { fullName: 'acme/proto', description: 'Shared interface definitions' },
+    { fullName: 'acme/docs' },
+    ...Array.from({ length: 40 }, (_, index) => ({ fullName: `acme/service-${index + 1}` })),
+  ],
+});
+const source = (key: string) => {
+  const option = sources.find((candidate) => candidate.key === key);
+  if (!option) throw new Error(`No story source ${key}`);
+  return option.source;
+};
 
 const member = (
   id: string,
-  sourceIndex: number,
+  sourceKey: string,
   placement: ProjectGroupMemberDraft['placement'],
   placementOrigin: ProjectGroupMemberDraft['placementOrigin'] = 'default'
 ): ProjectGroupMemberDraft => ({
   id: id as ProjectMemberId,
-  source: sources[sourceIndex]!.source,
+  source: source(sourceKey),
   placement,
   placementOrigin,
 });
@@ -73,11 +79,11 @@ const shop: ProjectGroupFormValue = {
   name: 'Shop',
   instructions: '',
   members: [
-    member('web', 0, { kind: 'root', dir: 'web' }),
-    member('api', 1, { kind: 'root', dir: 'api' }),
+    member('web', 'github:acme/web', { kind: 'root', dir: 'web' }),
+    member('api', 'github:acme/api', { kind: 'root', dir: 'api' }),
     member(
       'proto',
-      2,
+      'github:acme/proto',
       { kind: 'submodule', parent: 'api' as ProjectMemberId, path: 'proto' },
       'detected'
     ),
@@ -102,7 +108,7 @@ function StatefulProjectGroupForm(
       onChange={setValue}
       validation={validation}
       labelOf={(m) => byKey.get(getProjectMemberSourceKey(m.source))?.label ?? 'Unknown'}
-      detailOf={(m) => byKey.get(getProjectMemberSourceKey(m.source))?.detail}
+      detailOf={(m) => byKey.get(getProjectMemberSourceKey(m.source))?.description}
       statusOf={(id) => props.statuses?.[id]}
       isNonGit={(id) => props.nonGitIds?.includes(id) ?? false}
     />
@@ -116,6 +122,7 @@ const meta = {
     value: shop,
     onChange: () => undefined,
     sources,
+    currentMachineId: here,
     onSubmit: () => undefined,
     onCancel: () => undefined,
   },
@@ -143,9 +150,9 @@ export const DetectionStates: Story = {
     value: {
       ...shop,
       members: [
-        member('web', 0, { kind: 'root', dir: 'web' }),
-        member('api', 1, { kind: 'root', dir: 'api' }),
-        member('proto', 2, { kind: 'root', dir: 'proto' }),
+        member('web', 'github:acme/web', { kind: 'root', dir: 'web' }),
+        member('api', 'github:acme/api', { kind: 'root', dir: 'api' }),
+        member('proto', 'github:acme/proto', { kind: 'root', dir: 'proto' }),
       ],
     },
     statuses: { web: 'unavailable', api: 'pending' },
@@ -158,8 +165,8 @@ export const DuplicateDirectory: Story = {
     value: {
       ...shop,
       members: [
-        member('web', 0, { kind: 'root', dir: 'app' }),
-        member('api', 1, { kind: 'root', dir: 'app' }),
+        member('web', 'github:acme/web', { kind: 'root', dir: 'app' }),
+        member('api', 'github:acme/api', { kind: 'root', dir: 'app' }),
       ],
     },
   },
@@ -186,16 +193,16 @@ export const NestedSubmodules: Story = {
       name: 'Lody',
       instructions: '',
       members: [
-        member('api', 1, { kind: 'root', dir: 'api' }),
+        member('api', 'github:acme/api', { kind: 'root', dir: 'api' }),
         member(
           'proto',
-          2,
+          'github:acme/proto',
           { kind: 'submodule', parent: 'api' as ProjectMemberId, path: 'proto' },
           'detected'
         ),
         member(
           'docs',
-          4,
+          'github:acme/docs',
           {
             kind: 'submodule',
             parent: 'proto' as ProjectMemberId,
@@ -203,7 +210,7 @@ export const NestedSubmodules: Story = {
           },
           'detected'
         ),
-        member('web', 0, { kind: 'root', dir: 'web' }),
+        member('web', 'github:acme/web', { kind: 'root', dir: 'web' }),
       ],
     },
   },
@@ -215,10 +222,30 @@ export const NonGitDirectory: Story = {
     value: {
       ...shop,
       members: [
-        member('web', 0, { kind: 'root', dir: 'web' }),
-        member('api', 1, { kind: 'root', dir: 'api' }),
+        member('web', 'github:acme/web', { kind: 'root', dir: 'web' }),
+        member('notes', `local:${here}:notes`, { kind: 'root', dir: 'notes' }),
       ],
     },
-    nonGitIds: ['web'],
+    nonGitIds: ['notes'],
+  },
+};
+
+/**
+ * The picker, open. `notes` binds the group to this machine, so folders on
+ * other machines are disabled with the reason said once; repositories stay
+ * open on any machine, and GitHub-only ones wait for a search.
+ */
+export const Picker: Story = {
+  args: {
+    value: {
+      ...shop,
+      members: [
+        member('web', 'github:acme/web', { kind: 'root', dir: 'web' }),
+        member('notes', `local:${here}:notes`, { kind: 'root', dir: 'notes' }),
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    canvasElement.querySelector<HTMLButtonElement>('button[aria-haspopup]')?.click();
   },
 };

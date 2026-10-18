@@ -50,6 +50,7 @@ import {
   type SessionProjectRun,
   type SessionStatus,
   machineSupportsMultiRepoProject,
+  machineSupportsProjectRepositoryMembers,
   buildSessionProjectRun,
   type WorktreeSetupScriptConfig,
   type WorktreeCleanupScriptConfig,
@@ -280,6 +281,8 @@ import { ProjectGroupMemberPicker } from './project-group-member-picker';
 import { useWorkspaceProjects } from '@/hooks/use-workspace-projects';
 import {
   buildProjectGroupProjectRef,
+  buildProjectRepositoryCopyIndex,
+  getProjectGroupMachineAvailability,
   resolveProjectGroupLaunchTarget,
 } from '@/lib/project-group-launch';
 
@@ -1003,17 +1006,6 @@ function WorkspaceChatLanding({
         : null,
     [selectedProjectGroupId, workspaceProjects]
   );
-  const projectGroupLaunchTarget = useMemo(
-    () =>
-      selectedProjectGroup
-        ? resolveProjectGroupLaunchTarget(selectedProjectGroup, excludedProjectMemberIds)
-        : null,
-    [excludedProjectMemberIds, selectedProjectGroup]
-  );
-  const projectGroupPinnedMachineId =
-    projectGroupLaunchTarget?.kind === 'ready' ? projectGroupLaunchTarget.machineId : null;
-  const projectGroupPinnedMachineIdRef = useRef(projectGroupPinnedMachineId);
-  projectGroupPinnedMachineIdRef.current = projectGroupPinnedMachineId;
 
   // ── Prompt state (shared across contexts) ──
   const chatLandingStateOwnerKey = userId ?? null;
@@ -1095,6 +1087,55 @@ function WorkspaceChatLanding({
 
   // ── Machine & Agent selection ──
   const [selectedMachineId, setSelectedMachineId] = useState<MachineId | null>(null);
+
+  // ── Project group availability on the selected machine ──
+  // Which machines hold a copy of each repository, as their daemons publish it.
+  const projectRepositoryCopies = useMemo(
+    () => buildProjectRepositoryCopyIndex(visibleLocalProjectMap.values()),
+    [visibleLocalProjectMap]
+  );
+  // Without GitHub integration (local-only) a repository Member the machine
+  // has no copy of cannot be cloned, so it starts unticked and stays so.
+  const canCloneProjectRepositories = useAppCapability('githubIntegration');
+  const selectedProjectGroupAvailability = useMemo(
+    () =>
+      selectedProjectGroup
+        ? getProjectGroupMachineAvailability(
+            selectedProjectGroup,
+            selectedMachineId,
+            projectRepositoryCopies
+          )
+        : null,
+    [projectRepositoryCopies, selectedMachineId, selectedProjectGroup]
+  );
+  const projectGroupMissingMemberIds =
+    selectedProjectGroupAvailability?.kind === 'available'
+      ? selectedProjectGroupAvailability.missing
+      : EMPTY_PROJECT_MEMBER_IDS;
+  const projectGroupUnavailableMemberIds = canCloneProjectRepositories
+    ? EMPTY_PROJECT_MEMBER_IDS
+    : projectGroupMissingMemberIds;
+  const projectGroupLaunchTarget = useMemo(
+    () =>
+      selectedProjectGroup
+        ? resolveProjectGroupLaunchTarget(
+            selectedProjectGroup,
+            projectGroupUnavailableMemberIds.size > 0
+              ? new Set([...excludedProjectMemberIds, ...projectGroupUnavailableMemberIds])
+              : excludedProjectMemberIds
+          )
+        : null,
+    [excludedProjectMemberIds, projectGroupUnavailableMemberIds, selectedProjectGroup]
+  );
+  const projectGroupUsesRepositoryMembers =
+    projectGroupLaunchTarget?.kind === 'ready' &&
+    projectGroupLaunchTarget.members.some(
+      (member) => member.source.kind === 'github' && member.source.preferLocal === true
+    );
+  const projectGroupPinnedMachineId =
+    projectGroupLaunchTarget?.kind === 'ready' ? projectGroupLaunchTarget.machineId : null;
+  const projectGroupPinnedMachineIdRef = useRef(projectGroupPinnedMachineId);
+  projectGroupPinnedMachineIdRef.current = projectGroupPinnedMachineId;
   const [selectedAgent, setSelectedAgent] = useState<AgentSelection | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const mcpSelection = useSessionMcpSelection(undefined, { disabled: submitting });
@@ -3053,6 +3094,7 @@ function WorkspaceChatLanding({
           return;
         }
         const groupMembers = projectGroupLaunchTarget.members;
+        const projectUsesRepositoryMembers = projectGroupUsesRepositoryMembers;
         projectRun = buildSessionProjectRun(
           selectedProjectGroup,
           groupMembers.map((member) => member.id)
@@ -3063,6 +3105,18 @@ function WorkspaceChatLanding({
             t(
               'chat.projectGroup.unsupportedMachine',
               'Update Lody on this machine to start project group conversations.'
+            )
+          );
+          return;
+        }
+        // An older daemon would clone a repository Member instead of using
+        // this machine's copy.
+        if (projectUsesRepositoryMembers && !machineSupportsProjectRepositoryMembers(machine)) {
+          captureSessionInputBlocked('missing_machine');
+          setComposerError(
+            t(
+              'chat.projectGroup.unsupportedRepositoryMembers',
+              'Update Lody on this machine to use its copies of these repositories.'
             )
           );
           return;
@@ -3554,6 +3608,8 @@ function WorkspaceChatLanding({
     <ProjectGroupMemberPicker
       members={selectedProjectGroup.members}
       excluded={excludedProjectMemberIds}
+      missing={projectGroupMissingMemberIds}
+      canClone={canCloneProjectRepositories}
       onExcludedChange={setExcludedProjectMemberIds}
       labelOf={projectMemberLabel}
       disabled={submitting}
@@ -3610,22 +3666,43 @@ function WorkspaceChatLanding({
   );
   const desktopProjectGroupOptions = useMemo<UnifiedProjectGroupOption[]>(
     () =>
-      workspaceProjects.map((project) => {
-        const target = resolveProjectGroupLaunchTarget(project, EMPTY_PROJECT_MEMBER_IDS);
-        return {
-          projectId: project.id,
-          name: project.name,
-          memberCount: project.members.length,
-          disabledReason:
-            target.kind === 'machines_conflict'
-              ? t(
-                  'chat.projectGroup.machinesConflict',
-                  'Its local repositories are on different machines'
-                )
-              : undefined,
-        };
+      workspaceProjects.flatMap((project) => {
+        // Machine first, as for single local projects: a group whose folders
+        // live on another machine is not offered here.
+        const availability = getProjectGroupMachineAvailability(
+          project,
+          selectedMachineId,
+          projectRepositoryCopies
+        );
+        if (availability.kind === 'elsewhere') return [];
+        const missing = availability.kind === 'available' ? availability.missing.size : 0;
+        return [
+          {
+            projectId: project.id,
+            name: project.name,
+            memberCount: project.members.length,
+            ...(missing > 0
+              ? {
+                  availability: canCloneProjectRepositories
+                    ? t('chat.projectGroup.missingClone', '{{count}} cloned on start', {
+                        count: missing,
+                      })
+                    : t('chat.projectGroup.missingLocal', '{{count}} not on this machine', {
+                        count: missing,
+                      }),
+                }
+              : {}),
+            disabledReason:
+              availability.kind === 'conflict'
+                ? t(
+                    'chat.projectGroup.machinesConflict',
+                    'Its local repositories are on different machines'
+                  )
+                : undefined,
+          },
+        ];
       }),
-    [t, workspaceProjects]
+    [canCloneProjectRepositories, projectRepositoryCopies, selectedMachineId, t, workspaceProjects]
   );
   const desktopAgentMachineIds = useMemo(
     () => (scopedMachineId ? [scopedMachineId] : []),
@@ -4516,7 +4593,14 @@ function WorkspaceChatLanding({
                 'chat.projectGroup.unsupportedMachine',
                 'Update Lody on this machine to start project group conversations.'
               )
-            : null;
+            : projectGroupUsesRepositoryMembers &&
+                scopedMachineMeta &&
+                !machineSupportsProjectRepositoryMembers(scopedMachineMeta)
+              ? t(
+                  'chat.projectGroup.unsupportedRepositoryMembers',
+                  'Update Lody on this machine to use its copies of these repositories.'
+                )
+              : null;
   const visibleComposerStatus = projectGroupStatusMessage
     ? { message: projectGroupStatusMessage, tone: 'warning' as const }
     : getChatLandingVisibleComposerStatus({

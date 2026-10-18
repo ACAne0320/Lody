@@ -128,8 +128,8 @@ Daemon 在执行机器上为每个 Git Member 创建一个 worktree 和新分支
   模式，从不 clone，所以这个 Member 在这台机器上显示为不可用，开始对话前必须取消勾选。
   仓库 Member 用创建其 worktree 时的同一套凭证观测 PR。
 - 和单个项目一样，先选在哪台机器运行：新对话的选择器只列出能在所选机器上运行的
-  Project。绑定机器的 Member 在另一台机器上的 Project 不在这里列出；选择 Project
-  从不切换机器。每个列出的 Project 会说明所选机器缺少哪些仓库 Member。
+  Project。绑定机器的 Member 在另一台机器上的 Project 不在这里列出，因此在这个
+  选择器里选择 Project 从不切换机器。每个列出的 Project 会说明所选机器缺少哪些仓库 Member。
 - 多 Member 对话中，Git 成员始终使用 worktree，非 Git 成员按「成员接入方式」接入。
   单 Member 对话保持现有行为，包括直接使用原始目录的模式。
 

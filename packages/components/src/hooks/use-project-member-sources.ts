@@ -1,25 +1,18 @@
 import { useMemo } from 'react';
 import { useAtomValue } from 'jotai';
-import type { MachineId, ProjectMemberSource } from '@lody/shared';
+import type { MachineId } from '@lody/shared';
 import { workspaceReposCacheAtomFamily } from '@/atoms/local-storage-cache';
 import { onlineMachineIdsAtom } from '@/atoms/presence';
 import { useAppCapability } from '@/lib/app-platform';
-import { getProjectMemberSourceKey } from '@/lib/project-group-form';
+import {
+  buildProjectMemberSourceOptions,
+  type ProjectMemberSourceOption,
+} from '@/lib/project-member-sources';
 import { useResolvedWorkspaceScope } from '@/hooks/use-resolved-workspace-scope';
 import { usePendingLocalProjectRemovals } from '@/hooks/use-remove-local-project';
 import { useVisibleLocalProjects } from '@/hooks/use-visible-local-projects';
 
-/** One project that can join a Project group, with how the editor names it. */
-export type ProjectMemberSourceOption = {
-  key: string;
-  source: ProjectMemberSource;
-  /** Local project name, or `owner/repo`. */
-  label: string;
-  /** The machine for a local project; the repository description for GitHub. */
-  detail?: string;
-  /** Local projects only: whether the owning machine is online. */
-  online?: boolean;
-};
+export type { ProjectMemberSourceOption } from '@/lib/project-member-sources';
 
 export type ProjectMemberSources = {
   options: ProjectMemberSourceOption[];
@@ -28,8 +21,10 @@ export type ProjectMemberSources = {
 };
 
 /**
- * Everything a Project group may contain: the visible local projects, then
- * the workspace's GitHub repositories when GitHub integration exists.
+ * Everything a Project group may contain, one row per repository: the
+ * visible local projects merged by the GitHub remote their machine publishes,
+ * the workspace's GitHub repositories when GitHub integration exists, and the
+ * folders without a remote.
  *
  * GitHub rows paint from the repository cache, the same source the chat
  * landing uses; local projects awaiting removal are not offered.
@@ -47,37 +42,23 @@ export function useProjectMemberSources(): ProjectMemberSources {
   const pendingRemovals = usePendingLocalProjectRemovals(machineIds);
 
   return useMemo(() => {
-    const local: ProjectMemberSourceOption[] = [];
-    for (const entry of projects.values()) {
-      if (pendingRemovals.has(entry.key)) continue;
-      const source: ProjectMemberSource = {
-        kind: 'local',
-        machineId: entry.machineId as MachineId,
-        localProjectId: entry.project.id,
-      };
-      local.push({
-        key: getProjectMemberSourceKey(source),
-        source,
-        label: entry.project.name,
-        detail: entry.machine.name || entry.machineId,
-        online: onlineMachineIds.has(entry.machineId),
-      });
+    const options = buildProjectMemberSourceOptions({
+      localProjects: [...projects.values()]
+        .filter((entry) => !pendingRemovals.has(entry.key))
+        .map((entry) => ({
+          machineId: entry.machineId as MachineId,
+          machineName: entry.machine.name || entry.machineId,
+          online: onlineMachineIds.has(entry.machineId),
+          project: entry.project,
+        })),
+      githubRepositories: githubAvailable ? (cachedRepositories ?? []) : [],
+    });
+    const byKey = new Map(options.map((option) => [option.key, option]));
+    // A group saved before repository Members names a copy by its machine;
+    // that key still finds the repository the copy now belongs to.
+    for (const option of options) {
+      for (const key of option.localKeys) if (!byKey.has(key)) byKey.set(key, option);
     }
-    local.sort((left, right) => left.label.localeCompare(right.label));
-
-    const github: ProjectMemberSourceOption[] = githubAvailable
-      ? (cachedRepositories ?? []).map((repo) => {
-          const source: ProjectMemberSource = { kind: 'github', repoFullName: repo.fullName };
-          return {
-            key: getProjectMemberSourceKey(source),
-            source,
-            label: repo.fullName,
-            detail: repo.description ?? undefined,
-          };
-        })
-      : [];
-
-    const options = [...local, ...github];
-    return { options, byKey: new Map(options.map((option) => [option.key, option])) };
+    return { options, byKey };
   }, [cachedRepositories, githubAvailable, onlineMachineIds, pendingRemovals, projects]);
 }

@@ -556,7 +556,6 @@ UI 只在快照记录了 `access: 'additional' | 'link'` 时挂载根目录，�
 托管 clone，纯本地模式报告不可用）；把提示词清单和 PR 观测扩展到副本使用的凭证；声明
 该能力。UI session 实现选择器、编辑器迁移和 composer 过滤。契约分支验证了 shared 契约；daemon 验证见下文。
 
-
 **Daemon 集成**（[PR #1682](https://github.com/LodyAI/Lody/pull/1682)）。添加项目及启动时发布 `githubRepoFullName`，其他行写入保留该字段。
 物化时按排序重新观测本机副本、拒绝重复身份并使用原生认证；缺少副本时通过托管克隆回退，
 否则报 `project_repository_not_on_machine`。新增由所有者写入的
@@ -643,3 +642,16 @@ Git 阶段仍存活、成员里程碑变化延长截止时间，以及最终因�
 测试均通过。此前一个 broker 测试也在继承该包装器时超过自身 30 秒测试上限，清除
 后通过。修正后未重新运行完整工作区扫描，后续包的测试阶段及桌面 E2E 仍未验证。
 未修改无关的组件源码。
+
+**UI 实现。** `lib/project-member-sources.ts` 构建选择器的行：本地项目按其所在机器
+发布的远端合并，每台机器保留一份副本（即 daemon 会选的那份），并保留每个被合并文件夹
+原来的来源键，让之前保存的项目组仍能找到对应项。`groupProjectMemberSourceOptions`
+负责分组、筛选和置灰的目录。`ProjectGroupSourcePicker` 用受控的搜索词渲染它们，所以
+只在 GitHub 上的仓库要等用户输入才出现。编辑器打开已保存的项目组时，会把所在机器
+发布了远端的本地成员转换为仓库 Member，并随项目组一起保存。仓库 Member 的子模块
+优先从在线机器上的副本读取，因此没有 GitHub 集成也能探测。Composer 中，
+`getProjectGroupMachineAvailability` 隐藏绑定到其他机器的项目组，为其余项目组附上
+「N 个开始时 clone」或「本机缺 N 个」，并在纯本地模式下让缺少的成员保持未勾选。含
+仓库 Member 的项目组需要机器声明 `projectRepositoryMembers` 才能开始。选择器已在
+Storybook 中检查（中文，两种筛选）；纯函数有单元测试。尚未与 #1682 的
+daemon 端到端运行。

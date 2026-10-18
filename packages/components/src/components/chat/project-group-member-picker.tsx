@@ -36,13 +36,24 @@ const styles = stylex.create({
     color: colors.tertiaryLabel,
     fontFamily: 'var(--font-mono, ui-monospace, monospace)',
   },
+  // What this machine lacks, after the path: one quiet phrase, never a badge.
+  note: { flexShrink: 0, color: colors.tertiaryLabel, fontSize: '0.9em' },
 });
+
+const NO_MEMBERS: ReadonlySet<ProjectMemberId> = new Set();
 
 export type ProjectGroupMemberPickerProps = {
   members: readonly ProjectMember[];
   excluded: ReadonlySet<ProjectMemberId>;
   onExcludedChange: (excluded: ReadonlySet<ProjectMemberId>) => void;
   labelOf: (member: ProjectMember) => string;
+  /** Repository members the selected machine holds no copy of. */
+  missing?: ReadonlySet<ProjectMemberId>;
+  /**
+   * Whether a missing member can be cloned instead. Without it (local-only)
+   * a missing member stays unticked and cannot be ticked.
+   */
+  canClone?: boolean;
   disabled?: boolean;
 };
 
@@ -58,13 +69,22 @@ export function ProjectGroupMemberPicker({
   excluded,
   onExcludedChange,
   labelOf,
+  missing = NO_MEMBERS,
+  canClone = true,
   disabled = false,
 }: ProjectGroupMemberPickerProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const unavailable = canClone ? NO_MEMBERS : missing;
   const selected = useMemo(
-    () => new Set(selectProjectGroupMembers({ members: [...members] }, excluded).map((m) => m.id)),
-    [excluded, members]
+    () =>
+      new Set(
+        selectProjectGroupMembers(
+          { members: [...members] },
+          unavailable.size > 0 ? new Set([...excluded, ...unavailable]) : excluded
+        ).map((m) => m.id)
+      ),
+    [excluded, members, unavailable]
   );
   const ordered = useMemo(() => {
     const ids = new Set(members.map((member) => member.id));
@@ -140,10 +160,16 @@ export function ProjectGroupMemberPicker({
                 : Folder;
           const path =
             member.placement.kind === 'root' ? `${member.placement.dir}/` : member.placement.path;
+          const note = missing.has(member.id)
+            ? canClone
+              ? t('chat.projectGroup.memberClone', 'Cloned on start')
+              : t('chat.projectGroup.memberMissing', 'Not on this machine')
+            : null;
           return (
             <Menu.CheckboxItem
               key={member.id}
               checked={selected.has(member.id)}
+              disabled={unavailable.has(member.id)}
               closeOnClick={false}
               onCheckedChange={(checked) => toggle(member, checked)}
             >
@@ -151,6 +177,7 @@ export function ProjectGroupMemberPicker({
                 <Icon aria-hidden="true" {...stylex.props(composerSurface.glyph14)} />
                 <span {...stylex.props(styles.label)}>{labelOf(member)}</span>
                 <span {...stylex.props(styles.path)}>{path}</span>
+                {note ? <span {...stylex.props(styles.note)}>{note}</span> : null}
               </span>
             </Menu.CheckboxItem>
           );

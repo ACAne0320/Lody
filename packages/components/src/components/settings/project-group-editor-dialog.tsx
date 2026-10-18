@@ -4,11 +4,14 @@ import { useTranslation } from 'react-i18next';
 import {
   getProjectRepositoryFullName,
   getServerNow,
+  type MachineId,
   type ProjectId,
+  type ProjectMemberSource,
   type ProjectMemberId,
   type WorkspaceProject,
 } from '@lody/shared';
 import { userAtom } from '@/atoms';
+import { localMachineIdAtom } from '@/atoms/local-probe';
 import { onlineMachineIdsAtom } from '@/atoms/presence';
 import { activeWorkspaceRuntimeAtom } from '@/atoms/runtime';
 import { useDialogExitSnapshot } from '@/hooks/use-dialog-exit-snapshot';
@@ -24,12 +27,14 @@ import {
   buildWorkspaceProjectFromForm,
   EMPTY_PROJECT_GROUP_FORM_VALUE,
   getProjectMemberSourceKey,
+  upgradeProjectGroupRepositoryMembers,
   validateProjectGroupForm,
   type ProjectGroupFormValue,
   type ProjectGroupMemberDraft,
 } from '@/lib/project-group-form';
 import { Dialog } from '@/ui/dialog';
 import { ProjectGroupForm, type ProjectGroupMemberStatus } from './project-group-form';
+import { useProjectMemberSourceNames } from './project-group-source-picker';
 import { useSettingsPane } from './settings-page-header';
 import { SETTINGS_EDITOR_DIALOG_LAYOUT, SETTINGS_EDITOR_DIALOG_WIDTH } from './surface';
 
@@ -95,13 +100,50 @@ export function ProjectGroupEditorDialog({
         : t('settings.projectGroups.source.missingLocal')),
     [byKey, t]
   );
+  const currentMachineId = useAtomValue(localMachineIdAtom);
+  const { machineName, machinesOf } = useProjectMemberSourceNames(options, currentMachineId);
   const detailOf = useCallback(
-    (member: ProjectGroupMemberDraft) =>
-      byKey.get(getProjectMemberSourceKey(member.source))?.detail,
-    [byKey]
+    (member: ProjectGroupMemberDraft) => {
+      const option = byKey.get(getProjectMemberSourceKey(member.source));
+      if (member.source.kind === 'local') return machineName(member.source.machineId);
+      // A repository Member runs wherever there is a copy; a plain GitHub
+      // Member is always cloned, so its copies are beside the point.
+      return member.source.preferLocal ? machinesOf(option ?? { copies: [] }) : option?.description;
+    },
+    [byKey, machineName, machinesOf]
   );
+  // Where each machine's local project went: a project with a GitHub remote
+  // is listed under its repository, not on its own.
+  const remoteByLocalKey = useMemo(() => {
+    const remotes = new Map<string, string>();
+    for (const option of options) {
+      for (const key of option.localKeys) remotes.set(key, option.label);
+    }
+    return remotes;
+  }, [options]);
   const runtime = useAtomValue(activeWorkspaceRuntimeAtom);
   const onlineMachineIds = useAtomValue(onlineMachineIdsAtom);
+  // A repository Member's submodules are read from a copy on an online
+  // machine when there is one, this machine first.
+  const localCopyOf = useCallback(
+    (
+      source: Extract<ProjectMemberSource, { kind: 'github' }>
+    ): Extract<ProjectMemberSource, { kind: 'local' }> | undefined => {
+      if (!source.preferLocal) return undefined;
+      const copies = byKey.get(getProjectMemberSourceKey(source))?.copies ?? [];
+      const copy =
+        copies.find((candidate) => candidate.machineId === currentMachineId && candidate.online) ??
+        copies.find((candidate) => candidate.online);
+      return copy
+        ? {
+            kind: 'local',
+            machineId: copy.machineId as MachineId,
+            localProjectId: copy.localProjectId,
+          }
+        : undefined;
+    },
+    [byKey, currentMachineId]
+  );
   // A local member's `.gitmodules` lives on its machine. An offline machine is
   // not asked at all (and nothing is reported), rather than failing a probe.
   const probeLocal = useMemo<ProjectSubmoduleProbe | undefined>(() => {
@@ -132,6 +174,7 @@ export function ProjectGroupEditorDialog({
   const detection = useProjectSubmoduleDetection(value.members, {
     enabled: openEditor !== null && !readOnly,
     probeLocal,
+    localCopyOf,
   });
   // GitHub members name their repository; local members are what their
   // machine reported, so a folder and a GitHub entry of one repo match.
@@ -143,18 +186,22 @@ export function ProjectGroupEditorDialog({
     [detection.repositories]
   );
 
-  // Fold detection into the draft as answers arrive. The helper returns the
-  // same value when nothing moves, so this settles after one pass.
+  // Fold detection into the draft as answers arrive, and turn local members
+  // whose machine now publishes a GitHub remote into repository Members. Both
+  // helpers return the same value when nothing moves, so this settles.
   useEffect(() => {
     if (!openEditor || readOnly) return;
+    const upgraded = upgradeProjectGroupRepositoryMembers(openEditor.value, (source) =>
+      remoteByLocalKey.get(getProjectMemberSourceKey(source))
+    );
     const next = applyDetectedProjectSubmodules(
-      openEditor.value,
+      upgraded,
       detection.detected,
       repositoryOf,
       labelOf
     );
     if (next !== openEditor.value) onChange({ ...openEditor, value: next });
-  }, [detection.detected, labelOf, onChange, openEditor, readOnly, repositoryOf]);
+  }, [detection.detected, labelOf, onChange, openEditor, readOnly, remoteByLocalKey, repositoryOf]);
 
   const validation = useMemo(
     () =>
@@ -251,6 +298,7 @@ export function ProjectGroupEditorDialog({
             detailOf={detailOf}
             statusOf={statusOf}
             isNonGit={(memberId) => detection.nonGit.has(memberId)}
+            currentMachineId={currentMachineId}
             validation={validation}
             readOnly={readOnly}
             submitting={submitting}

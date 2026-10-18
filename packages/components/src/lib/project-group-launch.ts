@@ -1,4 +1,5 @@
 import {
+  getProjectBoundMachineId,
   selectProjectMembers,
   type MachineId,
   type ProjectMember,
@@ -66,4 +67,55 @@ export function buildProjectGroupProjectRef(member: ProjectMember): ProjectRef {
         ...(member.source.baseBranch ? { branch: member.source.baseBranch } : {}),
         useWorktree: true,
       };
+}
+
+/** Machines holding a copy of each repository, from what machines publish. */
+export type ProjectRepositoryCopyIndex = ReadonlyMap<string, ReadonlySet<MachineId>>;
+
+export function buildProjectRepositoryCopyIndex(
+  localProjects: Iterable<{ machineId: MachineId; project: { githubRepoFullName?: string } }>
+): ProjectRepositoryCopyIndex {
+  const index = new Map<string, Set<MachineId>>();
+  for (const entry of localProjects) {
+    const repo = entry.project.githubRepoFullName?.toLowerCase();
+    if (!repo) continue;
+    const machines = index.get(repo) ?? new Set<MachineId>();
+    machines.add(entry.machineId);
+    index.set(repo, machines);
+  }
+  return index;
+}
+
+/**
+ * What a group can do on one machine.
+ * - `elsewhere`: its folders without a remote are on another machine; the
+ *   composer does not list it there, as for a single local project.
+ * - `conflict`: those folders are on several machines (saved before the
+ *   editor forbade it); listed, never startable.
+ * - `available`: `missing` are the repository Members this machine has no
+ *   copy of. A managed deployment clones them; local-only mode cannot, so
+ *   they start unticked and cannot be ticked.
+ */
+export type ProjectGroupMachineAvailability =
+  | { kind: 'elsewhere'; machineId: MachineId }
+  | { kind: 'conflict' }
+  | { kind: 'available'; missing: ReadonlySet<ProjectMemberId> };
+
+export function getProjectGroupMachineAvailability(
+  project: Pick<WorkspaceProject, 'members'>,
+  machineId: MachineId | null,
+  copies: ProjectRepositoryCopyIndex
+): ProjectGroupMachineAvailability {
+  const bound = getProjectBoundMachineId(project.members);
+  if (bound === 'conflict') return { kind: 'conflict' };
+  if (bound && machineId && bound !== machineId) return { kind: 'elsewhere', machineId: bound };
+  const missing = new Set<ProjectMemberId>();
+  if (machineId) {
+    for (const member of project.members) {
+      const source = member.source;
+      if (source.kind !== 'github' || !source.preferLocal) continue;
+      if (!copies.get(source.repoFullName.toLowerCase())?.has(machineId)) missing.add(member.id);
+    }
+  }
+  return { kind: 'available', missing };
 }

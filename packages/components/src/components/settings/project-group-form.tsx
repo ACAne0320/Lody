@@ -4,18 +4,15 @@ import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle,
   Folder,
+  FolderGit2,
   GitBranch,
   Github,
   MoreHorizontal,
-  Plus,
   Sparkles,
 } from 'lucide-react';
-import type { ProjectMemberId } from '@lody/shared';
-import type { ProjectMemberSourceOption } from '@/hooks/use-project-member-sources';
+import type { MachineId, ProjectMemberId } from '@lody/shared';
+import type { ProjectMemberSourceOption } from '@/lib/project-member-sources';
 import {
-  applySourceSelection,
-  getProjectGroupLocalMachineId,
-  getProjectMemberSourceKey,
   removeProjectGroupMember,
   updateProjectGroupMemberPlacement,
   type ProjectGroupFormValidation,
@@ -25,7 +22,6 @@ import {
 } from '@/lib/project-group-form';
 import { withClassName } from '@/lib/stylex';
 import { Button } from '@lody/ui/button';
-import { Combobox } from '@lody/ui/combobox';
 import { Dialog } from '@lody/ui/dialog';
 import { Input } from '@lody/ui/input';
 import { Menu } from '@lody/ui/menu';
@@ -35,6 +31,7 @@ import { Tooltip } from '@lody/ui/tooltip';
 import { colors } from '@lody/ui/tokens/colors.stylex';
 import { space, text } from '@lody/ui/tokens/scales.stylex';
 import { FormMessage, Section } from './form-primitives';
+import { ProjectGroupSourcePicker } from './project-group-source-picker';
 import { settingsRecordsCard } from './compact-layout';
 import { settingsCatalog as catalog, settingsSurface as surface } from './surface';
 
@@ -80,16 +77,6 @@ const styles = stylex.create({
     minWidth: 0,
   },
   memberPath: { flexShrink: 0, width: '200px' },
-  // A picker row: the source mark, its name, then its machine or description.
-  option: { display: 'flex', alignItems: 'center', gap: space[2], minWidth: 0 },
-  optionDetail: {
-    minWidth: 0,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    fontSize: text.footnoteSize,
-    color: colors.secondaryLabel,
-  },
   // One fixed slot for the member's state, so rows never change height or
   // shift sideways as detection settles.
   state: {
@@ -104,12 +91,6 @@ const styles = stylex.create({
   stateWarning: { color: colors.warning },
   stateError: { color: colors.destructive },
   addRow: { minWidth: 0 },
-  addFace: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: space[1.5],
-    color: colors.secondaryLabel,
-  },
   errors: { margin: 0, paddingInlineStart: space[4], listStyleType: 'disc' },
 });
 
@@ -118,7 +99,7 @@ export type ProjectGroupMemberStatus = 'pending' | 'unavailable' | undefined;
 export type ProjectGroupFormProps = {
   value: ProjectGroupFormValue;
   onChange: (value: ProjectGroupFormValue) => void;
-  /** Everything that may be added; already-added sources are filtered out here. */
+  /** Everything that may be added, one row per repository; ticked rows are members. */
   sources: readonly ProjectMemberSourceOption[];
   /** Names a member, including one whose project is no longer listed. */
   labelOf: (member: ProjectGroupMemberDraft) => string;
@@ -130,6 +111,8 @@ export type ProjectGroupFormProps = {
    */
   isNonGit?: (memberId: ProjectMemberId) => boolean;
   validation: ProjectGroupFormValidation;
+  /** The machine this device runs, so the picker can call it "This machine". */
+  currentMachineId?: MachineId | null;
   /** A non-owner sees the group as it is and cannot change it. */
   readOnly?: boolean;
   submitting?: boolean;
@@ -185,6 +168,7 @@ export function ProjectGroupForm({
   statusOf,
   isNonGit = () => false,
   validation,
+  currentMachineId = null,
   readOnly = false,
   submitting = false,
   error,
@@ -195,29 +179,6 @@ export function ProjectGroupForm({
   const { t } = useTranslation();
   const fieldId = useId();
   const rows = useMemo(() => orderAsTree(value.members), [value.members]);
-  const addedKeys = useMemo(
-    () => new Set(value.members.map((member) => getProjectMemberSourceKey(member.source))),
-    [value.members]
-  );
-  // Local projects on another machine cannot join: a conversation runs on one
-  // machine. They stay listed, disabled, saying why — unless already a member,
-  // so an old mixed group can still be fixed by unticking.
-  const lockedMachineId = getProjectGroupLocalMachineId(value);
-  const lockedMachineName = lockedMachineId
-    ? sources.find(
-        (option) => option.source.kind === 'local' && option.source.machineId === lockedMachineId
-      )?.detail
-    : undefined;
-  const isOtherMachine = (option: ProjectMemberSourceOption) =>
-    option.source.kind === 'local' &&
-    lockedMachineId !== null &&
-    option.source.machineId !== lockedMachineId &&
-    !addedKeys.has(option.key);
-  const selectedSources = useMemo(
-    () => sources.filter((option) => addedKeys.has(option.key)),
-    [addedKeys, sources]
-  );
-
   const submit = (event: FormEvent) => {
     event.preventDefault();
     onSubmit();
@@ -250,67 +211,13 @@ export function ProjectGroupForm({
               list below it and never moves the control being used. */}
           {readOnly ? null : (
             <div {...stylex.props(styles.addRow)}>
-              {/* One multi-select over every project: ticked rows are members,
-                  ticking adds, unticking removes, and the list stays open so
-                  several repositories go in at once. */}
-              <Combobox.Root
-                multiple
-                items={sources}
-                value={selectedSources}
-                itemToStringLabel={(option: ProjectMemberSourceOption) => option.label}
-                isItemEqualToValue={(
-                  left: ProjectMemberSourceOption,
-                  right: ProjectMemberSourceOption
-                ) => left.key === right.key}
-                onValueChange={(next: ProjectMemberSourceOption[]) =>
-                  onChange(applySourceSelection(value, selectedSources, next, labelOf))
-                }
-              >
-                <Combobox.Button size="small" aria-label={t('settings.projectGroups.form.add')}>
-                  {/* The face always reads as the action; the ticks inside say
-                      what is already in the group. */}
-                  {() => (
-                    <span {...stylex.props(styles.addFace)}>
-                      <Plus aria-hidden="true" {...stylex.props(catalog.icon)} />
-                      {t('settings.projectGroups.form.add')}
-                    </span>
-                  )}
-                </Combobox.Button>
-                <Combobox.Content
-                  search={
-                    <Combobox.Search
-                      aria-label={t('settings.projectGroups.form.search')}
-                      placeholder={t('settings.projectGroups.form.search')}
-                    />
-                  }
-                  empty={
-                    <Combobox.Empty>{t('settings.projectGroups.form.noSources')}</Combobox.Empty>
-                  }
-                >
-                  {(option: ProjectMemberSourceOption) => (
-                    <Combobox.Item
-                      key={option.key}
-                      value={option}
-                      disabled={isOtherMachine(option)}
-                    >
-                      <span {...stylex.props(styles.option)}>
-                        <SourceIcon kind={option.source.kind} />
-                        <span {...stylex.props(catalog.truncate)}>{option.label}</span>
-                        {isOtherMachine(option) ? (
-                          <span {...stylex.props(styles.optionDetail)}>
-                            {t('settings.projectGroups.form.otherMachine', {
-                              machine: option.detail ?? '',
-                              current: lockedMachineName ?? '',
-                            })}
-                          </span>
-                        ) : option.detail ? (
-                          <span {...stylex.props(styles.optionDetail)}>{option.detail}</span>
-                        ) : null}
-                      </span>
-                    </Combobox.Item>
-                  )}
-                </Combobox.Content>
-              </Combobox.Root>
+              <ProjectGroupSourcePicker
+                value={value}
+                onChange={onChange}
+                sources={sources}
+                labelOf={labelOf}
+                currentMachineId={currentMachineId}
+              />
             </div>
           )}
           {rows.length > 0 ? (
@@ -411,8 +318,9 @@ export function ProjectGroupForm({
   );
 }
 
-function SourceIcon({ kind }: { kind: 'github' | 'local' }) {
-  const Icon = kind === 'github' ? Github : Folder;
+/** A repository with local copies, a GitHub-only repository, or a folder on one machine. */
+function SourceIcon({ source }: { source: ProjectGroupMemberDraft['source'] }) {
+  const Icon = source.kind === 'local' ? Folder : source.preferLocal ? FolderGit2 : Github;
   return <Icon aria-hidden="true" {...stylex.props(catalog.icon)} />;
 }
 
@@ -461,7 +369,7 @@ function MemberRow({
       {placement.kind === 'submodule' ? (
         <GitBranch aria-hidden="true" {...stylex.props(catalog.icon)} />
       ) : (
-        <SourceIcon kind={member.source.kind} />
+        <SourceIcon source={member.source} />
       )}
       <span {...stylex.props(styles.memberBody)}>
         <span {...stylex.props(styles.memberName)}>{label}</span>

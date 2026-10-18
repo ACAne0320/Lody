@@ -169,8 +169,8 @@ conversation is not fetched. Every Member is editable; there is no read-only mod
   credentials that created their worktree.
 - Choosing where to run comes first, as for single projects: the new-conversation
   picker lists the Projects that can run on the selected machine. A Project whose
-  machine-bound Members are on another machine is not listed there; selecting a
-  Project never switches the machine. For each listed Project the picker says which
+  machine-bound Members are on another machine is not listed there, so choosing a
+  Project in that picker never switches the machine. For each listed Project the picker says which
   repository Members the selected machine lacks.
 - In multi-Member conversations Git Members always use worktrees, and non-Git
   Members follow Member access. Single-Member conversations keep today's behavior,

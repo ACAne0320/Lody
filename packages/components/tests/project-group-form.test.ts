@@ -17,6 +17,7 @@ import {
   removeProjectGroupMember,
   suggestProjectMemberDir,
   updateProjectGroupMemberPlacement,
+  upgradeProjectGroupRepositoryMembers,
   validateProjectGroupForm,
   type ProjectGroupFormValue,
   type ProjectGroupMemberDraft,
@@ -258,5 +259,35 @@ describe('project group form', () => {
     const result = validateProjectGroupForm(value);
     expect(result.valid).toBe(false);
     expect([...result.memberErrors]).toEqual([[value.members[2]!.id, 'machine_mismatch']]);
+  });
+
+  it('turns local members with a published remote into repository members in place', () => {
+    const createId = ids();
+    let value: ProjectGroupFormValue = { ...EMPTY_PROJECT_GROUP_FORM_VALUE, name: 'Shop' };
+    value = addProjectGroupMember(value, local('web'), 'web', createId);
+    value = addProjectGroupMember(value, local('notes'), 'notes', createId);
+    value = addProjectGroupMember(value, local('api'), 'api', createId);
+    value = addProjectGroupMember(value, github('acme/api'), 'acme/api', createId);
+    value = updateProjectGroupMemberPlacement(value, value.members[0]!.id, {
+      kind: 'root',
+      dir: 'frontend',
+    });
+    const remotes: Record<string, string> = { web: 'acme/web', api: 'Acme/API' };
+    const next = upgradeProjectGroupRepositoryMembers(
+      value,
+      (source) => remotes[source.localProjectId]
+    );
+    // web keeps its id and the directory the user chose.
+    expect(next.members[0]).toEqual({
+      ...value.members[0]!,
+      source: { kind: 'github', repoFullName: 'acme/web', preferLocal: true },
+    });
+    // notes has no remote; api is already in the group from GitHub, so the
+    // folder stays and validation reports the duplicate.
+    expect(next.members.slice(1)).toEqual(value.members.slice(1));
+    expect(
+      upgradeProjectGroupRepositoryMembers(next, (source) => remotes[source.localProjectId])
+    ).toBe(next);
+    expect(upgradeProjectGroupRepositoryMembers(value, () => undefined)).toBe(value);
   });
 });

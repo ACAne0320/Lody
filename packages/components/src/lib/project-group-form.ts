@@ -71,9 +71,10 @@ export type ResolveLocalMemberRepository = (
 ) => { repoFullName: string; repoId?: number } | undefined;
 
 /**
- * The machine a group's local members live on. A conversation runs on one
- * machine, so every local member of a group must share it; GitHub members can
- * be cloned anywhere. The first local member decides.
+ * The machine a group's machine-bound members (folders without a GitHub
+ * remote) live on. A conversation runs on one machine, so they must all share
+ * it; repository members run wherever there is a copy or a clone. The first
+ * machine-bound member decides.
  */
 export function getProjectGroupLocalMachineId(
   value: Pick<ProjectGroupFormValue, 'members'>
@@ -377,6 +378,41 @@ export function buildProjectGroupFormValue(project: WorkspaceProject): ProjectGr
       placementOrigin: 'user',
     })),
   };
+}
+
+/**
+ * Turns local members whose machine now publishes a GitHub remote into
+ * repository Members, keeping each member's id, directory, submodule
+ * placement and base branch, so a group saved before repository Members runs
+ * on any machine once it is saved again. A member whose repository is already
+ * in the group stays as it is; validation reports the duplicate. Returns the
+ * same value when nothing changes.
+ */
+export function upgradeProjectGroupRepositoryMembers(
+  value: ProjectGroupFormValue,
+  remoteOf: (source: Extract<ProjectMemberSource, { kind: 'local' }>) => string | undefined
+): ProjectGroupFormValue {
+  const taken = new Set(
+    value.members.flatMap((member) =>
+      member.source.kind === 'github' ? [member.source.repoFullName.toLowerCase()] : []
+    )
+  );
+  let changed = false;
+  const members = value.members.map((member) => {
+    if (member.source.kind !== 'local') return member;
+    const repoFullName = remoteOf(member.source);
+    if (!repoFullName || taken.has(repoFullName.toLowerCase())) return member;
+    taken.add(repoFullName.toLowerCase());
+    changed = true;
+    const source: ProjectMemberSource = {
+      kind: 'github',
+      repoFullName,
+      preferLocal: true,
+      ...(member.source.baseBranch ? { baseBranch: member.source.baseBranch } : {}),
+    };
+    return { ...member, source };
+  });
+  return changed ? { ...value, members } : value;
 }
 
 const sameContent = (left: WorkspaceProject, right: WorkspaceProject): boolean =>

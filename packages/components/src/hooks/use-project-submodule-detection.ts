@@ -86,14 +86,25 @@ export function createGitHubSubmoduleProbe(workspaceId: string): ProjectSubmodul
  */
 export function useProjectSubmoduleDetection(
   members: readonly ProjectGroupMemberDraft[],
-  options: { enabled: boolean; probeLocal?: ProjectSubmoduleProbe }
+  options: {
+    enabled: boolean;
+    probeLocal?: ProjectSubmoduleProbe;
+    /**
+     * A local copy to read a repository Member from instead of GitHub: the
+     * same `.gitmodules`, without a GitHub token, so it also works where GitHub
+     * integration does not exist.
+     */
+    localCopyOf?: (
+      source: Extract<ProjectMemberSource, { kind: 'github' }>
+    ) => Extract<ProjectMemberSource, { kind: 'local' }> | undefined;
+  }
 ): ProjectSubmoduleDetection {
   const { workspaceId } = useResolvedWorkspaceScope();
   const githubProbe = useMemo(
     () => (workspaceId ? createGitHubSubmoduleProbe(workspaceId) : undefined),
     [workspaceId]
   );
-  const { enabled, probeLocal } = options;
+  const { enabled, probeLocal, localCopyOf } = options;
 
   // Only the sources matter; a placement edit must not restart detection.
   const sourcesKey = members.map((member) => `${member.id}=${probeKey(member.source)}`).join('\n');
@@ -106,12 +117,25 @@ export function useProjectSubmoduleDetection(
     let cancelled = false;
     const targets = members.map((member) => ({ id: member.id, source: member.source }));
     for (const { id, source } of targets) {
-      const probe = source.kind === 'github' ? githubProbe : probeLocal;
+      const repoFullName = source.kind === 'github' ? source.repoFullName : undefined;
+      const copy = source.kind === 'github' && probeLocal ? localCopyOf?.(source) : undefined;
+      const probe: ProjectSubmoduleProbe | undefined =
+        copy && probeLocal
+          ? async () => {
+              const result = await probeLocal(copy);
+              // The member is the repository, whatever the copy's remote says.
+              return result ? { ...result, repoFullName } : result;
+            }
+          : source.kind === 'github'
+            ? githubProbe
+            : probeLocal;
       if (!probe) {
         setResults((previous) => new Map(previous).set(id, undefined));
         continue;
       }
-      const key = probeKey(source);
+      const key = copy
+        ? `${probeKey(source)}@${getProjectMemberSourceKey(copy)}`
+        : probeKey(source);
       let request = probeCache.get(key);
       if (!request) {
         request = probe(source);
@@ -133,7 +157,7 @@ export function useProjectSubmoduleDetection(
     };
     // `sourcesKey` stands for `members`' sources.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, githubProbe, probeLocal, sourcesKey]);
+  }, [enabled, githubProbe, localCopyOf, probeLocal, sourcesKey]);
 
   return useMemo(() => {
     const detected = new Map<ProjectMemberId, readonly DetectedProjectSubmodule[]>();
