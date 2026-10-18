@@ -16,6 +16,18 @@
 - `turnOutcomeKey` is the actual cloud provider logical tuple (`turn`, workspace,
   recipient, session, input turn). Preserve its bytes across copy/outcome changes;
   changing it changes provider deduplication. It is not an authorization grant.
+- `presentation.ts` owns bounded display context, pure formatting and the shared
+  en/zh catalog (registered with desktop i18next and used by native push).
+  The title is always the conversation title (localized untitled fallback); body
+  contains status, project, PR and distinct scheduled task name. Keep conversationTitle
+  and scheduleName separate. Success omits status; absent body context gets an
+  open-conversation hint so push content remains nonempty. Display never affects eligibility, destination or provider identity.
+  Preserve associated PR numbers in copy: latest open/draft, otherwise latest
+  closed/merged; canonical URL supplies the number, legacy number/reportedAt remain
+  readable. PR context stays optional and uses existing metadata, never a fetch.
+  Schedule names come from exact `scheduleRun.turnId`-bound input history, not
+  Session schedule metadata or prompt text; copied inputs and mixed origins fall back
+  to conversation copy. Only completed origins name a successful summary.
 - `AttentionItem` retains the future Inbox concept but has no separate store.
   Do not recreate unused revision reducers, generic intents/routes/delivery ports
   or speculative schedule source variants. Add contracts when real callers need them.

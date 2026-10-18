@@ -1,3 +1,7 @@
+import {
+  resolveNotificationPresentation,
+  type NotificationPresentation,
+} from '@lody/shared/notifications';
 import type { SessionActivePresencePhase } from './loro/session-active-presence';
 import { projectTurnAttention, type TerminalOutcome } from '@lody/shared/notifications';
 import { turnNotificationAudience } from './notifications/turn-notification-audience';
@@ -2945,6 +2949,10 @@ export class MessageHandler {
           const attention = projectTurnAttention(fact);
           if (!attention) return;
           const { scope, source, outcome } = attention;
+          const presentation = await this.buildNotificationPresentation(
+            source.sessionId,
+            source.originTurnIds ?? [source.turnId]
+          );
           // Independent channels: a local projection failure cannot block mobile,
           // and cloud latency/failure cannot prevent desktop publication.
           const attempts = await Promise.allSettled([
@@ -2957,13 +2965,20 @@ export class MessageHandler {
                   recipientId: scope.recipientId,
                   turnId: source.turnId,
                   outcome,
+                  presentation,
                   createdAt: getServerNow(),
                 });
               } finally {
                 await lease.release();
               }
             })(),
-            this.notifyTurnOutcome(source.sessionId, scope.recipientId, source.turnId, outcome),
+            this.notifyTurnOutcome(
+              source.sessionId,
+              scope.recipientId,
+              source.turnId,
+              outcome,
+              presentation
+            ),
           ]);
           for (const attempt of attempts) {
             if (attempt.status === 'rejected')
@@ -8912,7 +8927,21 @@ export class MessageHandler {
       // Ordinary push owns the alert. Live Activity remains a silent projection;
       // provider acceptance is not proof that the user saw a permission request.
       void this.runTurnCloudSideEffect(sessionId, 'permission notification', async () => {
-        if (!resolved) await notificationService.notifyPermissionRequested(notificationInput);
+        const invocation = this.executionService.getActiveInvocationContext(sessionId);
+        const presentation =
+          invocation && invocation.requesterUserId === permissionUserId
+            ? await this.buildNotificationPresentation(
+                sessionId,
+                invocation.notificationOriginTurnIds.length
+                  ? invocation.notificationOriginTurnIds
+                  : [invocation.sourceTurnId]
+              )
+            : undefined;
+        if (!resolved)
+          await notificationService.notifyPermissionRequested({
+            ...notificationInput,
+            presentation,
+          });
       });
       void this.syncLiveActivitySummary(permissionUserId);
     }
@@ -10032,11 +10061,55 @@ export class MessageHandler {
     await this.sessionManager.cleanUp();
   }
 
+  private async buildNotificationPresentation(
+    sessionId: SessionId,
+    originTurnIds: readonly string[]
+  ): Promise<NotificationPresentation | undefined> {
+    // Presentation is optional. Read only exact originating inputs, never the transcript.
+    // Mixed/large batches fall back to the conversation name.
+    try {
+      const lease = await this.workspaceDocument.acquireSessionDocLegacy(sessionId);
+      try {
+        const meta = await lease.doc.getMetaState();
+        if (!meta) return undefined;
+        const backend = await this.getSessionBackend(lease.doc);
+        const inputs: { id: string; scheduleRun?: unknown }[] = [];
+        if (originTurnIds.length <= 32) {
+          for (const id of originTurnIds) {
+            const read = await backend.history.readTurn(id);
+            inputs.push(read.state === 'ready' ? read.turn : { id });
+          }
+        }
+        let projectName: string | undefined;
+        if (meta.project?.kind === 'local') {
+          try {
+            projectName = (
+              await resolveWorkspaceLocalProject(
+                this.workspaceDocument.repo,
+                this.workspaceId,
+                meta.machineId,
+                meta.project.localProjectId
+              )
+            )?.name;
+          } catch {
+            /* The repository name remains a useful fallback. */
+          }
+        }
+        return resolveNotificationPresentation(meta, inputs, projectName);
+      } finally {
+        await lease.release();
+      }
+    } catch {
+      return undefined;
+    }
+  }
+
   private async notifyTurnOutcome(
     sessionId: SessionId,
     userId: string,
     occurrenceId: string,
-    outcome: TerminalOutcome
+    outcome: TerminalOutcome,
+    presentation?: NotificationPresentation
   ): Promise<void> {
     if (!this.notificationService) {
       return;
@@ -10050,6 +10123,7 @@ export class MessageHandler {
         sessionId,
         occurrenceId,
         outcome,
+        presentation,
         sessionTitle: meta?.title,
         pullRequests: meta?.pullRequests,
         workspaceId: this.workspaceId,

@@ -1,3 +1,4 @@
+import type { NotificationPresentation } from '@lody/shared/notifications';
 import type { TerminalOutcome } from '@lody/shared/notifications';
 import {
   type LiveActivityConversationItem,
@@ -16,6 +17,7 @@ export type TurnOutcomeNotificationInput = {
   sessionId: SessionId;
   occurrenceId: string;
   outcome?: TerminalOutcome;
+  presentation?: NotificationPresentation;
   sessionTitle: string | null | undefined;
   pullRequests?: SessionPullRequestMeta[];
   workspaceId: WorkspaceId;
@@ -34,6 +36,7 @@ export type PermissionRequestNotificationInput = {
   toolTitle: string | null | undefined;
   toolKind: string | null | undefined;
   requestKind?: PermissionRequestKind;
+  presentation?: NotificationPresentation;
 };
 
 export type LiveActivitySummaryNotificationInput = {
@@ -89,6 +92,7 @@ export class NotificationService {
         sessionId: input.sessionId,
         occurrenceId: input.occurrenceId,
         outcome: input.outcome ?? 'succeeded',
+        ...(input.presentation ? { presentation: input.presentation } : {}),
         workspaceId: input.workspaceId,
         workspaceSlug: input.workspaceSlug,
         userId: input.userId,
@@ -107,6 +111,7 @@ export class NotificationService {
       await this.client.action(api.notifications.notifyPermissionRequested, {
         cliToken: this.cliToken,
         deliveryVersion: 1,
+        ...(input.presentation ? { presentation: input.presentation } : {}),
         sessionId: input.sessionId,
         requestId: input.requestId,
         toolCallId: input.toolCallId,

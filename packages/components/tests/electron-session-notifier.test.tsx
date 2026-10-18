@@ -83,7 +83,7 @@ describe('desktop legacy compatibility observer', () => {
       vi.advanceTimersByTime(5_000);
     });
     expect(bridge.shown.map(({ sessionId, title }) => ({ sessionId, title }))).toEqual(
-      modern ? [] : [{ sessionId: 'session', title: 'notifications.desktopCompletion.title' }]
+      modern ? [] : [{ sessionId: 'session', title: 'Synthetic' }]
     );
   });
   it('drops a pending old-account notification during a scope switch', () => {
@@ -117,8 +117,8 @@ describe('desktop legacy compatibility observer', () => {
         sessions={[{ ...session, status: { type: 'requestPermission' } }]}
       />
     );
-    expect(bridge.shown.map(({ title }) => title)).toEqual([
-      'notifications.desktopPermissionRequest.title',
+    expect(bridge.shown.map(({ title, body }) => ({ title, body }))).toEqual([
+      { title: 'Synthetic', body: 'notifications.copy.conversation.attention' },
     ]);
   });
 });

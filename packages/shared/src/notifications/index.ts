@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { notificationPresentationSchema } from './presentation';
+export * from './presentation';
 import type { SessionId, WorkspaceId } from '../ids';
 
 export { projectTurnAttention, turnOutcomeKey } from './turn';
@@ -20,6 +22,7 @@ export const terminalNotificationSchema = z.object({
   recipientId: z.string().min(1).max(256),
   turnId: z.string().min(1).max(256),
   outcome: terminalOutcomeSchema,
+  presentation: notificationPresentationSchema.optional(),
   createdAt: z.number().finite(),
 });
 export type TerminalNotification = z.infer<typeof terminalNotificationSchema>;
@@ -35,6 +38,7 @@ export type AttentionItem = {
     readonly kind: 'session';
     readonly sessionId: SessionId;
     readonly turnId: string;
+    readonly originTurnIds?: readonly string[];
   };
   readonly outcome: TerminalOutcome;
 };

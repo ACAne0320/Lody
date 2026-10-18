@@ -2733,6 +2733,7 @@ describe('SessionExecutionService', () => {
         {
           scope: { workspaceId: 'workspace-1', recipientId: 'user-1' },
           sessionId: 'notification-source',
+          originTurnIds: ['turn-user-1'],
           turnId: 'turn-user-1',
           audience: { kind: 'user' },
           outcome,
@@ -2757,6 +2758,7 @@ describe('SessionExecutionService', () => {
       {
         scope: { workspaceId: 'workspace-1', recipientId: 'user-1' },
         sessionId: 'notification-child',
+        originTurnIds: [],
         turnId: 'turn-user-1',
         audience,
         outcome: { kind: 'succeeded' },
@@ -2774,6 +2776,7 @@ describe('SessionExecutionService', () => {
       {
         scope: { workspaceId: 'workspace-1', recipientId: 'user-1' },
         sessionId: 'notification-failure',
+        originTurnIds: ['turn-user-1'],
         turnId: 'turn-user-1',
         audience: { kind: 'user' },
         outcome: { kind: 'failed', code: 'session_chat_failed' },
@@ -11030,6 +11033,7 @@ describe('Operation Inbox execution boundary', () => {
         expect.objectContaining({ audience: { kind: 'user' }, outcome: { kind: 'succeeded' } }),
       ]);
       expect(facts[0]!.turnId).not.toBe('human-input');
+      expect(facts[0]!.originTurnIds).toEqual(['human-input']);
     } finally {
       await f.close();
     }
@@ -11729,6 +11733,7 @@ describe('Operation Inbox execution boundary', () => {
           scope: { workspaceId: 'workspace-1', recipientId: 'user-1' },
           sessionId: f.message.sessionId,
           turnId: 'human-input',
+          originTurnIds: audience.kind === 'user' ? ['human-input'] : [],
           audience,
           outcome: { kind: 'succeeded' },
         },

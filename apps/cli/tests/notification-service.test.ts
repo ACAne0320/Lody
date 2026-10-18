@@ -56,6 +56,27 @@ describe('notification transport', () => {
     expect(submitted.every((r) => r.path === 'notifications:notifySessionCompleted')).toBe(true);
     expect(submitted.every((r) => !('sessionTitle' in r.args[0]!))).toBe(true);
   });
+  it('carries bounded display context for both result and request notifications', async () => {
+    const { service, submitted } = setup();
+    const presentation = {
+      kind: 'schedule' as const,
+      conversationTitle: 'Dependency review',
+      scheduleName: 'Daily check',
+      projectName: 'lody',
+      pullRequestNumber: 1555,
+    };
+    await service.notifySessionCompleted({ ...input, presentation, outcome: 'failed' });
+    await service.notifyPermissionRequested({
+      ...input,
+      presentation,
+      requestId: 'request',
+      toolCallId: 'tool',
+      toolTitle: '/private/path',
+      toolKind: 'execute',
+    });
+    expect(submitted.map((r) => r.args[0]?.presentation)).toEqual([presentation, presentation]);
+    expect(JSON.stringify(submitted)).not.toContain('/private/path');
+  });
   it('sends generic versioned permission alerts without private titles', async () => {
     const { service, submitted } = setup();
     await service.notifyPermissionRequested({

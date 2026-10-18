@@ -1,3 +1,4 @@
+import { formatNotification, resolveNotificationPresentation } from '@lody/shared/notifications';
 import { useContext, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -41,10 +42,6 @@ function isWorkingStatusType(statusType: SessionStatusType): boolean {
   return statusType !== 'idle';
 }
 
-function isNonEmptyString(value: string | undefined | null): value is string {
-  return value != null && value !== '';
-}
-
 /** Compatibility observer. Completion is only for pre-terminalNotifications peers.
  * Permission status observation remains for all peers until a typed request source
  * replaces it. Remove these paths independently when their last caller is retired.
@@ -83,11 +80,11 @@ export function LegacyElectronSessionNotifier({
     }
 
     const showCompletionNotification = (session: SessionListEntry): void => {
-      const sessionTitle = typeof session.title === 'string' ? session.title.trim() : '';
-      const title = t('notifications.desktopCompletion.title');
-      const body = sessionTitle
-        ? t('notifications.desktopCompletion.bodyWithTitle', { title: sessionTitle })
-        : t('notifications.desktopCompletion.body');
+      const { title, body } = formatNotification(
+        'succeeded',
+        resolveNotificationPresentation(session, []),
+        (key) => t(key)
+      );
       void getIpcServices()?.notifications.showSessionCompletion({
         sessionId: session.id,
         workspaceSlug: workspaceSlug ?? undefined,
@@ -97,11 +94,11 @@ export function LegacyElectronSessionNotifier({
     };
 
     const showPermissionRequestNotification = (session: SessionListEntry): void => {
-      const sessionTitle = typeof session.title === 'string' ? session.title.trim() : '';
-      const title = t('notifications.desktopPermissionRequest.title');
-      const body = isNonEmptyString(sessionTitle)
-        ? t('notifications.desktopPermissionRequest.bodyWithSession', { sessionTitle })
-        : t('notifications.desktopPermissionRequest.body');
+      const { title, body } = formatNotification(
+        'attention',
+        resolveNotificationPresentation(session, []),
+        (key) => t(key)
+      );
       void getIpcServices()?.notifications.showSessionCompletion({
         sessionId: session.id,
         workspaceSlug: workspaceSlug ?? undefined,

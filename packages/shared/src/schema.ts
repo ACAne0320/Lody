@@ -692,6 +692,14 @@ export const sessionHistorySchema = schema.LoroMap({
   permissionWaitMs: schema.Number({ required: false }),
   role: schema.String<Role>(),
   status: schema.String<SessionHistoryStatus>({ required: false }),
+  scheduleRun: schema.LoroMap(
+    {
+      scheduleId: schema.String(),
+      turnId: schema.String(),
+      title: schema.String(),
+    },
+    { required: false }
+  ),
   cancellationReason: schema.String<'user_stop'>({ required: false }),
   inputConfig: acpSessionConfigSchema,
   /**
@@ -1374,6 +1382,16 @@ export const sessionDocSchema = schema({
       recipientId: schema.String(),
       turnId: schema.String(),
       outcome: schema.String(),
+      presentation: schema.LoroMap(
+        {
+          kind: schema.String<'conversation' | 'schedule'>(),
+          conversationTitle: schema.String({ required: false }),
+          scheduleName: schema.String({ required: false }),
+          projectName: schema.String({ required: false }),
+          pullRequestNumber: schema.Number({ required: false }),
+        },
+        { required: false }
+      ),
       createdAt: schema.Number(),
     },
     { required: false }

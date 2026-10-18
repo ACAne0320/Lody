@@ -18,7 +18,7 @@
 - `terminalNotifications: 1` selects the desktop terminal consumer. Older CLI
   peers retain the legacy idle observer; never run both for the same peer.
 - New producers require the outcome/versioned-permission protocol and always send
-  generic payloads. No capability probe, private legacy fallback, or transport retry.
+  bounded display context. No capability probe, legacy fallback, or transport retry.
   Deploy the compatible backend first; old server actions remain for old clients.
 - User result origins travel through the Host invocation and frozen Operation config.
   Execution inherits the full scoped Inbox membership, not the inline preview or
@@ -37,6 +37,10 @@
 - Tests: `../../../tests/turn-notification-audience.test.ts` and the owning
   session-execution suite cover provenance, outcomes and failed one-shot submission.
 
+- Presentation reads at most 32 exact originating inputs after execution release,
+  under a document lease; larger/mixed batches use the conversation name. Resolve
+  project display names locally, never GitHub or full filesystem paths. Mobile
+  display names cross the cloud/provider boundary; raw tool inputs/errors do not.
 - Scheduled prepared user turns use ordinary result policy; do not special-case
   `SessionMeta.scheduleId` or parse prompt text to choose whether to notify.
 - Public `notifySessionCompleted` cloud/IPC names remain compatibility boundaries.

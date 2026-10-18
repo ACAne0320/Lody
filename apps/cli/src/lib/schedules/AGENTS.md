@@ -11,6 +11,8 @@
   an IMMEDIATE transaction. Preserve cursor/run ids across restarts.
 - Session history goes through `sessionData` (`readSessionHistory` reads,
   `commands.appendTurn` appends missing entries); there is no whole-list rewrite.
+- Freeze the task name in `userTurn.scheduleRun`, bound to the exact input id,
+  for notification presentation; never infer scheduled execution from Session metadata.
 - Freeze JSON `PreparedSessionInput` before Session mutation. Its fixed user turn
   uses `prepared`, inert until `latestUserMsgId` is committed. After this pointer,
   the ordinary watcher owns execution. Never retry with another Session or Turn,

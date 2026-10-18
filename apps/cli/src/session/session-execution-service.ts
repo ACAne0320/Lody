@@ -4975,11 +4975,13 @@ export class SessionExecutionService {
       userId: invocation.requesterUserId,
     };
     const origins = this.notificationOrigins(runtime);
+    let completedOrigins = origins;
     // Failures need attention now. Success requires at least one original
     // human request to have no pending Operations or unconsumed results.
     if (runtime.notificationOutcome.kind === 'succeeded' && origins.length) {
       try {
         const pending = this.notificationWork?.pendingOrigins(scope, origins);
+        if (pending) completedOrigins = origins.filter((origin) => !pending.has(origin));
         if ((hasInbox && !pending) || (pending && origins.every((origin) => pending.has(origin))))
           return undefined;
       } catch (error) {
@@ -4997,6 +4999,7 @@ export class SessionExecutionService {
         ? { kind: 'user' }
         : (invocation.notificationAudience ?? { kind: 'unknown' }),
       outcome: { ...runtime.notificationOutcome },
+      originTurnIds: completedOrigins,
     };
   }
 

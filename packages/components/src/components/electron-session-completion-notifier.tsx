@@ -1,3 +1,4 @@
+import { formatNotification, resolveNotificationPresentation } from '@lody/shared/notifications';
 import { LegacyElectronSessionNotifier } from './legacy-electron-session-notifier';
 import { activeWorkspaceRuntimeAtom } from '@/atoms/runtime';
 import { machineMetaCacheAtom } from '@/atoms/doc-meta';
@@ -87,8 +88,11 @@ export function ElectronSessionCompletionNotifier() {
         await getIpcServices()?.notifications.showSessionCompletion({
           sessionId,
           workspaceSlug: latest.workspaceSlug ?? undefined,
-          title: t(`notifications.terminal.${notification.outcome}.title`),
-          body: session.title?.trim() || t(`notifications.terminal.${notification.outcome}.body`),
+          ...formatNotification(
+            notification.outcome,
+            notification.presentation ?? resolveNotificationPresentation(session, []),
+            (key) => t(key)
+          ),
           allowWhileForeground: true,
         });
       },

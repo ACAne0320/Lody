@@ -3225,7 +3225,21 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     terminalNotificationSchema.parse(notification);
     const current = await this.repo.getDocMeta(this.roomId);
     if (!current || isLoroRepoDocDeleted(current)) return;
-    this.mirror.setState((prev) => ({ ...prev, notification }));
+    this.mirror.setState((prev) => ({
+      ...prev,
+      notification: {
+        ...notification,
+        presentation: notification.presentation
+          ? {
+              kind: notification.presentation.kind,
+              conversationTitle: notification.presentation.conversationTitle,
+              scheduleName: notification.presentation.scheduleName,
+              projectName: notification.presentation.projectName,
+              pullRequestNumber: notification.presentation.pullRequestNumber,
+            }
+          : undefined,
+      },
+    }));
     // Commit the control document before exposing its activation index. This is
     // best effort across independently synced documents, not a delivery barrier.
     this.handle?.doc.commit();

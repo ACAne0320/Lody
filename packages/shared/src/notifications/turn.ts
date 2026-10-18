@@ -24,6 +24,7 @@ export type TurnOutcomeFact = {
   readonly turnId: string;
   readonly audience: TurnResultAudience;
   readonly outcome: TurnOutcome;
+  readonly originTurnIds?: readonly string[];
 };
 
 /** Keep the deployed provider tuple stable across refactors and copy changes. */
@@ -51,7 +52,12 @@ export function projectTurnAttention(fact: TurnOutcomeFact): AttentionItem | nul
   return {
     id: turnOutcomeKey(fact),
     scope: { ...fact.scope },
-    source: { kind: 'session', sessionId: fact.sessionId, turnId: fact.turnId },
+    source: {
+      kind: 'session',
+      sessionId: fact.sessionId,
+      turnId: fact.turnId,
+      ...(fact.originTurnIds ? { originTurnIds: [...fact.originTurnIds] } : {}),
+    },
     outcome: fact.outcome.kind,
   };
 }
