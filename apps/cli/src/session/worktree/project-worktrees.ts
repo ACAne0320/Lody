@@ -221,7 +221,20 @@ export async function materializeProjectGroup(
     }
     await publish(run);
     const pending = new Set(Object.keys(run.members));
-    const newlyCreated: SessionProjectMember[] = [];
+    const newlyCreated = new Set<SessionProjectMember>();
+    // Preserve the old serial traversal for setup: a child can be ordered before
+    // its parent in the snapshot, but its setup must still follow that parent.
+    const setupOrder: SessionProjectMember[] = [];
+    const setupPending = new Set(pending);
+    while (setupPending.size) {
+      for (const id of setupPending) {
+        const member = run.members[id as keyof typeof run.members]!;
+        if (member.placement.kind === 'submodule' && setupPending.has(member.placement.parent))
+          continue;
+        setupOrder.push(member);
+        setupPending.delete(id);
+      }
+    }
     // Keep the owner lease until ALL started mutations settle, including on failure.
     // Siblings share their parent's Git config/module storage and run separately.
     let publications = Promise.resolve();
@@ -333,7 +346,7 @@ export async function materializeProjectGroup(
             throw new Error('Project group member escaped its directory');
           // Serialize immutable receipts even while independent Git work runs in parallel.
           await checkpoint();
-          if (!existed) newlyCreated.push(member);
+          if (!existed) newlyCreated.add(member);
           pending.delete(id);
           completed++;
           options.onProgress?.(`Prepared ${member.path} (${completed}/${resolved.size} ready)`);
@@ -359,8 +372,9 @@ export async function materializeProjectGroup(
         })
       );
     }
-    // Scripts may depend on other members' output; retain their declared ordering.
-    for (const member of newlyCreated.sort((a, b) => a.o - b.o)) {
+    // Scripts may depend on other members' output; retain the prior serial ordering.
+    for (const member of setupOrder) {
+      if (!newlyCreated.has(member)) continue;
       options.onProgress?.(`Running setup for ${member.path}`);
       await options.setup(member, path.join(root, member.path));
     }

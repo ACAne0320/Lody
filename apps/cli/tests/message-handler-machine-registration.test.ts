@@ -187,6 +187,7 @@ describe('MessageHandler machine registration', () => {
     expect(registeredMeta.protocolCapabilities).toEqual({
       multiRepoProject: 1,
       projectFileRoots: 1,
+      projectRepositoryMembers: 1,
       operationInbox: 2,
       providerRateLimitsRefresh: 1,
       magpieImport: 1,

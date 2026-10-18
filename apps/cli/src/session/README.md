@@ -585,4 +585,4 @@ are serialized. Branch receipts publish serially, and failures drain started wor
 before releasing the Project owner. Selected members initialize non-recursively
 with their own credentials; remaining submodules initialize afterward with four Git
 fetch jobs per command. Local selected copies lend objects via `--reference` and
-`--dissociate`, so source GC cannot invalidate a checkout. Setup retains Member order.
+`--dissociate`, so source GC cannot invalidate a checkout. Setup retains the prior serial traversal order, including parents before children.

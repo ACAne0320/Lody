@@ -660,7 +660,7 @@ describe('WorkspaceGitService', () => {
       for (const [index, id] of ['web', 'api', 'core', 'docs', 'tools'].entries()) {
         const parent = id === 'api' ? 'web' : id === 'core' ? 'api' : undefined;
         run.members[id as keyof typeof run.members] = {
-          o: index,
+          o: 10 - index, // Setup must retain parent-before-child traversal despite display order.
           src: { kind: 'local', machineId: 'machine' as never, localProjectId: id as never },
           placement: parent
             ? { kind: 'submodule', parent: parent as never, path: `deps/${id}` }

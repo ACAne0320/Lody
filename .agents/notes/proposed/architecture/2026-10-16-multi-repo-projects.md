@@ -746,7 +746,7 @@ and Flock orchestration still have unfinished dependencies.
 Focused suites, production typechecks, `check:quick`, formatting and docs checks pass.
 The broad workspace test stage of `pnpm check` was stopped before completion.
 
-**Daemon startup investigation (2026-10-18).** The baseline at #1682 serializes
+**Daemon startup investigation (2026-10-18, [PR #1688](https://github.com/LodyAI/Lody/pull/1688)).** The baseline at #1682 serializes
 independent member creation, then remaining submodules, then setup. Selected
 submodule checkout also uses `--recursive`: it clones nested selected members
 before their own credential boundary, plus unselected descendants. The later pass
@@ -781,7 +781,7 @@ started tasks settle before the owner is released on failure; retries retain pin
 recursion under their own auth; local copies use `--reference` plus `--dissociate`
 to reuse objects without depending on future source retention. Remaining submodules
 initialize in bounded member batches and `git submodule update --jobs 4` batches.
-Setup stays in declared Member order because scripts can depend on one another.
+Setup stays in the prior serial traversal order because scripts can depend on one another.
 Managed empty caches are not treated as useful object references, and we do not add
 persistent alternates or broaden the existing file-transport permission policy.
 
@@ -824,3 +824,14 @@ existing `initializing` status with stage `git-clone` and its detail (for exampl
 Live GitHub transfers, large object-volume throughput, Windows and desktop E2E
 remain unverified. Existing per-command deadlines still apply to a single silent
 clone; completion milestones are not byte-level transfer progress.
+
+Verification: 150 tests across eight focused CLI suites pass; the final setup-order
+regression also passes on rerun. `check:quick`, production typechecks, formatting
+and docs checks pass. Full `pnpm check` reached 4,342 passing CLI tests and two
+failures: #1682's exhaustive registration fixture omitted the newly advertised
+capability (fixed here), and the native SSH transport fixture inherited the dev
+shell's `GIT_EXEC_PATH` wrapper (`context_unreadable`). Both affected suites pass
+with a native Git execution path (27 tests). An earlier broker test also exceeded
+its 30-second test timeout with that wrapper and passes with it cleared. The full
+workspace sweep was not rerun after these corrections; later package test stages
+and desktop E2E remain unverified. No unrelated component source was changed.
