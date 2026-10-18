@@ -23,9 +23,8 @@ Rules:
 - Renderer metadata is imported into the meta Flock with no transport; the
   metadata live monitor must start at repo init (`ready()`), or
   `getDocMeta` stays stale and dispatch misses `latestUserMsgId`.
-- Never open docs in a loop over `listAliveRoomIds` or any other workspace-wide
-  enumeration. A long-lived workspace holds thousands of historical session
-  rooms; opening them all stalls startup and floods the Streams backend.
+- Never open docs over `listAliveRoomIds` or any workspace-wide enumeration:
+  thousands of historical rooms stall startup and flood Streams.
 - Bulk/startup/recovery scans must first filter to candidates through indexes
   that do not join rooms: `repo.getDocMeta(roomId)` meta records, the `e/`
   existence index (`lib/loro/repo-existence.ts`), or a purpose-built local index
@@ -50,6 +49,9 @@ a cached execution wrapper's policy. Read-only release must preserve status;
 see [observe scopes](../../commands/session-observe-runtime.ts).
 
 ## Streams cursors are replica-bound
+
+CLI Streams keeps `createStreamIfMissing: true`: nothing pre-creates CLI/MCP
+Sessions or Code Collab Flock streams ([note](../../../../../.agents/notes/implemented/bug-fix/2026-10-18-cli-streams-create-missing.md)).
 
 Daemon/commands share `repo.sqlite3`, never replicas. Native leases own Meta/Flock
 checkpoints. Daemon Doc cursors use `createDocumentRemoteCursorStore`; no shared

@@ -63,6 +63,11 @@ export async function createCliStreamsTransport(args: {
           isCodeCollabFileIndexSignalFlockDocId(flockDocId)
             ? CODE_COLLAB_FILE_INDEX_FLOCK_TTL_MS
             : undefined,
+        // The renderer pre-creates only the Session docs it creates. Sessions the
+        // CLI or MCP creates, and Code Collab Flock docs, exist remotely only
+        // once this process's first join creates them; native loro-repo
+        // defaults to false, unlike the Legacy transport it replaced.
+        createStreamIfMissing: true,
         snapshotCodec: streamsSnapshotCodec,
         baseUrl: gatewayBaseUrl,
         shardUrls: getLoroStreamsShardUrls(gatewayBaseUrl, tokenProvider.getShardHostSuffix()),
