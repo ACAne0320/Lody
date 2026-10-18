@@ -15,6 +15,11 @@ export type SessionProjectMemberRow = {
   path: string;
   kind: 'github' | 'local';
   isSubmodule: boolean;
+  /**
+   * How the member reached the agent. `additional` and `link` are local
+   * directories used in place: no branch, no backup, no PR.
+   */
+  access?: 'worktree' | 'additional' | 'link';
   /** GitHub repository, when known; local members learn it from their remote. */
   repoFullName?: string;
   branch?: string;
@@ -66,6 +71,7 @@ export function buildSessionProjectMemberRows(
         path: member.path,
         kind: member.src.kind,
         isSubmodule: member.placement.kind === 'submodule',
+        ...(member.access ? { access: member.access } : {}),
         ...(repoFullName ? { repoFullName } : {}),
         ...(member.branch ? { branch: member.branch } : {}),
         dirty: member.dirty === true,

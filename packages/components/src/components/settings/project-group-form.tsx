@@ -124,6 +124,11 @@ export type ProjectGroupFormProps = {
   labelOf: (member: ProjectGroupMemberDraft) => string;
   detailOf: (member: ProjectGroupMemberDraft) => string | undefined;
   statusOf: (memberId: ProjectMemberId) => ProjectGroupMemberStatus;
+  /**
+   * A local directory without Git: it is used in place, with no branch, backup
+   * or PR, so it can neither be a submodule nor hold one.
+   */
+  isNonGit?: (memberId: ProjectMemberId) => boolean;
   validation: ProjectGroupFormValidation;
   /** A non-owner sees the group as it is and cannot change it. */
   readOnly?: boolean;
@@ -178,6 +183,7 @@ export function ProjectGroupForm({
   labelOf,
   detailOf,
   statusOf,
+  isNonGit = () => false,
   validation,
   readOnly = false,
   submitting = false,
@@ -328,10 +334,17 @@ export function ProjectGroupForm({
                       const parent = value.members.find((m) => m.id === placement.parent);
                       return parent ? labelOf(parent) : undefined;
                     })()}
-                    parents={value.members.filter(
-                      (candidate) =>
-                        candidate.id !== member.id && candidate.placement.kind === 'root'
-                    )}
+                    nonGit={isNonGit(member.id)}
+                    parents={
+                      isNonGit(member.id)
+                        ? []
+                        : value.members.filter(
+                            (candidate) =>
+                              candidate.id !== member.id &&
+                              candidate.placement.kind === 'root' &&
+                              !isNonGit(candidate.id)
+                          )
+                    }
                     labelOf={labelOf}
                     readOnly={readOnly}
                     onPlacement={(placement) =>
@@ -412,6 +425,7 @@ function MemberRow({
   status,
   memberError,
   parentLabel,
+  nonGit,
   parents,
   labelOf,
   readOnly,
@@ -419,6 +433,7 @@ function MemberRow({
   onRemove,
 }: {
   parentLabel?: string;
+  nonGit: boolean;
   member: ProjectGroupMemberDraft;
   depth: number;
   /** The parent's path; the description line shows where a submodule sits. */
@@ -457,6 +472,10 @@ function MemberRow({
               {' · '}
               <span {...stylex.props(styles.memberDetailPath)}>{prefix}</span>
             </>
+          ) : nonGit ? (
+            // Said where the member is listed: it is edited in place, unlike
+            // every repository beside it.
+            t('settings.projectGroups.form.nonGitDetail', { detail: detail ?? '' })
           ) : (
             (detail ?? t(`settings.projectGroups.source.${member.source.kind}`))
           )}

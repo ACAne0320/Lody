@@ -434,7 +434,6 @@ Provider 实现 `additionalDirectories`，并且 Lody 自带的 Claude、Codex �
 **分工**：根目录注册、授权、索引、监听和 diff 的 daemon 侧由逻辑 session 实现；文件树
 按根目录分组、`@` 搜索和按 `rootId` 打开文件由 UI session 实现。两侧均尚未实现或验证。
 
-
 ## 多根目录文件契约
 
 契约分支 `multi-repo-extra-roots-contracts`：`access?: 'worktree' | 'additional' | 'link'`
@@ -483,3 +482,17 @@ unlink，真实条目或未知链接保留供处理，不递归进入目标。
 或扩大 Effect 迁移；根目录工具只完成有限文件系统操作，无常驻资源。失败保留已发布状态与
 目录以便重试；单根目录读取失败不会禁止其他根目录使用。验证以临时目录、实际 Git 和假
 Provider 边界为主；真实 Provider、Windows junction 与 UI 端到端仍需跨平台验收。
+
+## 多根目录的 UI 实现
+
+UI 不新增路径格式，而是把额外根目录「挂载」在成员目录名下：文件索引和 All Changes 里的
+编码键（`\0lody-root:member:<id>/…`）在文件提供器入口被翻译成 `<成员目录>/…`，对话 diff
+面板对历史里的编码键做同样的翻译；所有文件请求在运行时适配层再拆回 `rootId` 和相对路径
+（`packages/components/src/lib/session-file-root-mounts.ts`）。因此文件树、`@` 搜索、
+打开、编辑保存和 diff 都不需要各自了解根目录。以额外目录接入时 daemon 不在主目录保留成员名，
+真实主目录条目可能与之同名；此时文件树在该路径下显示成员根目录的文件，请求也发往成员根目录。快照中不再挂载的根目录显示为 `member-<id>/…`，不会露出 NUL。
+
+带成员 `rootId` 的预览不走 Electron 本机快速路径：那条路径按主目录解析相对路径，会读到
+别的文件；这类请求一律交给机器解析。编辑器把非 Git 成员标为「直接修改原目录」，并且不允许
+它成为子模块或子模块的父成员；Info Bar 的仓库列表对这类成员显示「原目录 · 不隔离」。
+UI 与 daemon（#1674）使用同一个 `machineSupportsProjectFileRoots` 门控。以上仅在单元测试和类型检查中验证，未端到端运行。

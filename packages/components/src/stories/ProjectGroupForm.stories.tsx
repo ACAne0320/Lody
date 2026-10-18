@@ -90,6 +90,7 @@ const byKey = new Map(sources.map((option) => [option.key, option]));
 function StatefulProjectGroupForm(
   props: Omit<ProjectGroupFormProps, 'validation' | 'labelOf' | 'detailOf' | 'statusOf'> & {
     statuses?: Record<string, ProjectGroupMemberStatus>;
+    nonGitIds?: readonly string[];
   }
 ) {
   const [value, setValue] = useState(props.value);
@@ -103,6 +104,7 @@ function StatefulProjectGroupForm(
       labelOf={(m) => byKey.get(getProjectMemberSourceKey(m.source))?.label ?? 'Unknown'}
       detailOf={(m) => byKey.get(getProjectMemberSourceKey(m.source))?.detail}
       statusOf={(id) => props.statuses?.[id]}
+      isNonGit={(id) => props.nonGitIds?.includes(id) ?? false}
     />
   );
 }
@@ -204,5 +206,19 @@ export const NestedSubmodules: Story = {
         member('web', 0, { kind: 'root', dir: 'web' }),
       ],
     },
+  },
+};
+
+/** A folder without Git is used in place: it says so, and cannot be a submodule. */
+export const NonGitDirectory: Story = {
+  args: {
+    value: {
+      ...shop,
+      members: [
+        member('web', 0, { kind: 'root', dir: 'web' }),
+        member('api', 1, { kind: 'root', dir: 'api' }),
+      ],
+    },
+    nonGitIds: ['web'],
   },
 };

@@ -1,4 +1,5 @@
 import {
+  MAIN_SESSION_FILE_ROOT_ID,
   MemoryProviderResponseSchema,
   ProjectProbeLocalMemberResultSchema,
   machineSupportsMemoryProviders,
@@ -281,13 +282,18 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
       v: FILE_PREVIEW_PROTOCOL_VERSION,
       sessionId: request.sessionId,
       path: request.path,
+      ...(request.rootId === undefined ? {} : { rootId: request.rootId }),
       ...(request.knownDigest === undefined ? {} : { knownDigest: request.knownDigest }),
       ...(request.maxBytes === undefined ? {} : { maxBytes: request.maxBytes }),
     };
+    // A member root's path is relative to a directory only the machine knows;
+    // the Electron fast path resolves against the main workspace root and would
+    // read a different file. Such requests always go to the machine.
+    const memberRoot = request.rootId !== undefined && request.rootId !== MAIN_SESSION_FILE_ROOT_ID;
     try {
       const result = await (async () => {
         const isElectron = typeof window !== 'undefined' && window.__LODY_ELECTRON__;
-        if (isElectron) {
+        if (isElectron && !memberRoot) {
           const ipc = getIpcServices();
           if (!ipc) throw new Error('Local file preview is not available.');
           // Main checks persistent machine identity before touching the path. This

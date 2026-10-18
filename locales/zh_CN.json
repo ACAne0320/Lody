@@ -5076,5 +5076,7 @@
   "sessions.projectMembers.openPr": "打开 PR #{{number}}",
   "sessions.projectMembers.noPr": "无 PR",
   "settings.projectGroups.form.otherMachine": "在 {{machine}} 上 · 项目组的本地项目必须都在 {{current}} 上",
-  "settings.projectGroups.memberErrors.machine_mismatch": "它和项目组其他本地项目不在同一台机器上"
+  "settings.projectGroups.memberErrors.machine_mismatch": "它和项目组其他本地项目不在同一台机器上",
+  "settings.projectGroups.form.nonGitDetail": "{{detail}} · 非 Git 目录，直接修改原目录",
+  "sessions.projectMembers.inPlace": "原目录 · 不隔离"
 }

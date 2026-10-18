@@ -143,6 +143,7 @@ function MemberRow({
 }) {
   const { t } = useTranslation();
   const Glyph = row.isSubmodule ? GitBranch : row.kind === 'github' ? Github : Folder;
+  const inPlace = row.access === 'additional' || row.access === 'link';
   const pending = row.dirty
     ? t('sessions.projectMembers.dirty', 'Uncommitted changes')
     : row.unpushed
@@ -156,9 +157,15 @@ function MemberRow({
       <span {...stylex.props(styles.path)} title={row.repoFullName ?? row.path}>
         {row.path}
       </span>
-      <span {...stylex.props(styles.branch)} title={row.branch}>
-        {row.branch ?? ''}
-      </span>
+      {inPlace ? (
+        <span {...stylex.props(styles.branch)}>
+          {t('sessions.projectMembers.inPlace', 'Original directory · not isolated')}
+        </span>
+      ) : (
+        <span {...stylex.props(styles.branch)} title={row.branch}>
+          {row.branch ?? ''}
+        </span>
+      )}
       {pending ? (
         <Tooltip.Root>
           <Tooltip.Trigger
@@ -188,7 +195,11 @@ function MemberRow({
           ) : null}
         </button>
       ) : (
-        <span {...stylex.props(styles.noPr)}>{t('sessions.projectMembers.noPr', 'No PR')}</span>
+        // A directory used in place never has one; saying "No PR" would
+        // suggest it could.
+        <span {...stylex.props(styles.noPr)}>
+          {inPlace ? '' : t('sessions.projectMembers.noPr', 'No PR')}
+        </span>
       )}
     </div>
   );

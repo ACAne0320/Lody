@@ -37,6 +37,15 @@ const rows: SessionProjectMemberRow[] = [
     dirty: false,
     unpushed: true,
   },
+  {
+    id: 'docs' as ProjectMemberId,
+    path: 'docs',
+    kind: 'local',
+    isSubmodule: false,
+    access: 'additional',
+    dirty: true,
+    unpushed: false,
+  },
 ];
 
 const meta = {

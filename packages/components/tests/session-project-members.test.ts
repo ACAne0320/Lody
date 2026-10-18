@@ -61,4 +61,25 @@ describe('buildSessionProjectMemberRows', () => {
   it('is empty for an ordinary session', () => {
     expect(buildSessionProjectMemberRows({ pullRequests: [] })).toEqual([]);
   });
+
+  it('carries how each member reached the agent', () => {
+    const rows = buildSessionProjectMemberRows({
+      projectRun: {
+        ...projectRun,
+        members: {
+          docs: {
+            o: 0,
+            access: 'additional',
+            src: { kind: 'local', machineId: 'm1', localProjectId: 'docs' },
+            placement: { kind: 'root', dir: 'docs' },
+            path: 'docs',
+            base: 'HEAD',
+          },
+        },
+      } as unknown as NonNullable<SessionMeta['projectRun']>,
+      pullRequests: [],
+    });
+    expect(rows[0]).toMatchObject({ path: 'docs', access: 'additional' });
+    expect(rows[0]!.pr).toBeUndefined();
+  });
 });

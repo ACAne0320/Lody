@@ -479,6 +479,35 @@ describe('createWorkspaceMachineRpcFacade', () => {
     ).toMatchObject({ status: 'ok', content: { text: 'remote document' } });
   });
 
+  it('sends a member-root preview to the machine with its rootId, never to the local fast path', async () => {
+    const invoke = vi.fn(async () => {
+      throw new Error('the Electron fast path resolves against the main root');
+    });
+    vi.stubGlobal('window', { __LODY_ELECTRON__: true, ipc: { invoke } });
+    const facade = createWorkspaceMachineRpcFacade({
+      workspaceId,
+      targetRouter: {
+        getPlaneForMachine: () => 'cloud',
+        resolvePlaneForMachine: async () => 'cloud',
+      },
+      getMachineProtocolCapabilities: async () => undefined,
+      getMachineRpcClient: async () =>
+        ({
+          requestFilePreview: async (request: unknown) => {
+            expect(request).toMatchObject({ sessionId, path: 'guide.md', rootId: 'member:docs' });
+            return { status: 'ok', content: { text: 'member document' } };
+          },
+        }) as never,
+    });
+    expect(
+      await facade.requestFilePreview(remoteMachineId, {
+        sessionId,
+        path: 'guide.md',
+        rootId: 'member:docs',
+      })
+    ).toMatchObject({ status: 'ok', content: { text: 'member document' } });
+  });
+
   it('does not route a local filesystem failure to the cloud', async () => {
     vi.stubGlobal('window', {
       __LODY_ELECTRON__: true,

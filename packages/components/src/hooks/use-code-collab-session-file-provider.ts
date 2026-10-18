@@ -18,6 +18,14 @@ import {
   type WorkspaceId,
 } from '@lody/shared';
 import { activeWorkspaceRuntimeAtom } from '@/atoms/runtime';
+import {
+  buildSessionFileRootMounts,
+  EMPTY_SESSION_FILE_ROOT_MOUNTS,
+  getSessionFileRootMountsKey,
+  remapSessionFileRecord,
+  toSessionFileRequestPath,
+  type SessionFileRootMounts,
+} from '@/lib/session-file-root-mounts';
 import { sessionMetaAtomFamily } from '@/atoms/doc-meta';
 import {
   type CodeCollabFileIndexCache,
@@ -88,6 +96,8 @@ export type CodeCollabV2MaterializedSharedState = {
   readonly snapshotVersion: number;
   readonly sourceState: CodeCollabFileSourceState;
   readonly updatedAtMs?: number;
+  /** Which member mounts the display paths above were built with. */
+  readonly mountsKey?: string;
 };
 
 function entriesByPath(
@@ -108,17 +118,25 @@ export function materializeCodeCollabV2FileIndexForFileProvider(args: {
   readonly updatedAtMs?: number;
   readonly sourceState: CodeCollabFileSourceState;
   readonly previous?: CodeCollabV2MaterializedSharedState | null;
+  /** Project group members outside the main directory, shown at their directory. */
+  readonly mounts?: SessionFileRootMounts;
 }): CodeCollabV2MaterializedSharedState | null {
   if (!args.fileIndex) return null;
+  const mounts = args.mounts ?? EMPTY_SESSION_FILE_ROOT_MOUNTS;
+  const mountsKey = getSessionFileRootMountsKey(mounts);
   if (
     args.previous?.snapshotVersion === args.revision &&
     args.previous.sourceState === args.sourceState &&
-    args.previous.updatedAtMs === args.updatedAtMs
+    args.previous.updatedAtMs === args.updatedAtMs &&
+    args.previous.mountsKey === mountsKey
   ) {
     return args.previous;
   }
 
-  const { fileTree, allChanges } = codeCollabFileIndexToSharedState(args.fileIndex);
+  const shared = codeCollabFileIndexToSharedState(args.fileIndex);
+  // Member roots arrive as encoded keys; every surface below speaks display paths.
+  const fileTree = remapSessionFileRecord(shared.fileTree, mounts);
+  const allChanges = remapSessionFileRecord(shared.allChanges, mounts);
   const filesByPath = entriesByPath(
     codeCollabFileTreeToSessionFileEntries(fileTree, args.sourceState)
   );
@@ -132,6 +150,7 @@ export function materializeCodeCollabV2FileIndexForFileProvider(args: {
     snapshotVersion: args.revision,
     sourceState: args.sourceState,
     updatedAtMs: args.updatedAtMs,
+    mountsKey,
   };
 }
 
@@ -350,11 +369,17 @@ export function useCodeCollabSessionFileProvider(
             a?.parentSessionId === b?.parentSessionId &&
             a?.project === b?.project &&
             a?.isWorktree === b?.isWorktree &&
-            a?.repoFullName === b?.repoFullName
+            a?.repoFullName === b?.repoFullName &&
+            a?.projectRun === b?.projectRun
         ),
       [ownerSessionId]
     )
   );
+  // Project group members outside the main directory (additional directory or
+  // link) are separate roots; they are shown, searched and opened at their
+  // directory name and split back into `rootId` at the transport.
+  const ownerProjectRun = ownerMeta?.projectRun;
+  const mounts = useMemo(() => buildSessionFileRootMounts(ownerProjectRun), [ownerProjectRun]);
   const desktopPreview = typeof window !== 'undefined' && window.__LODY_ELECTRON__ === true;
   const workspaceRoot = useSessionWorkspacePath(desktopPreview ? ownerMeta : null);
   const workspaceId = options.workspaceId ?? runtime?.workspaceId ?? null;
@@ -416,6 +441,7 @@ export function useCodeCollabSessionFileProvider(
     updatedAtMs: fileIndexSnapshot?.updatedAtMs,
     sourceState,
     previous: previousSharedState,
+    mounts,
   });
   sharedStateRef.current = {
     key: sharedStateKey,
@@ -426,20 +452,30 @@ export function useCodeCollabSessionFileProvider(
   const rpcRuntime = useMemo<CodeCollabSessionFileProviderRuntime | undefined>(() => {
     if (!runtime || !machineId) return undefined;
     const requestedByUserId = options.requestedByUserId?.trim();
+    const at = (path: string) => {
+      const request = toSessionFileRequestPath(path, mounts);
+      return request.rootId === undefined
+        ? { path: request.path }
+        : { path: request.path, rootId: request.rootId };
+    };
     return {
       sessionId,
       previewFile: async (path, knownDigest) =>
         await runtime.requestFilePreview(
           machineId,
-          { sessionId, path, ...(knownDigest === undefined ? {} : { knownDigest }) },
+          { sessionId, ...at(path), ...(knownDigest === undefined ? {} : { knownDigest }) },
           { ownerSessionId, workspaceRoot }
         ),
       openText: async (path) =>
-        await runtime.requestCodeCollabOpenText(machineId, { sessionId, path }, { ownerSessionId }),
+        await runtime.requestCodeCollabOpenText(
+          machineId,
+          { sessionId, ...at(path) },
+          { ownerSessionId }
+        ),
       refreshText: async (path, digest) =>
         await runtime.requestCodeCollabRefreshText(
           machineId,
-          { sessionId, path, digest },
+          { sessionId, ...at(path), digest },
           { ownerSessionId }
         ),
       saveText: async (path, baseDigest, text, format) =>
@@ -449,7 +485,7 @@ export function useCodeCollabSessionFileProvider(
               {
                 sessionId,
                 requestedByUserId,
-                path,
+                ...at(path),
                 baseDigest,
                 text,
                 ...(format === undefined ? {} : { format }),
@@ -464,41 +500,61 @@ export function useCodeCollabSessionFileProvider(
       openCurrentDiff: async (path) =>
         await runtime.requestCodeCollabOpenCurrentDiff(
           machineId,
-          { sessionId, path },
+          { sessionId, ...at(path) },
           { ownerSessionId }
         ),
-      openAllChangesDiff: async (focusPath) =>
-        await runtime.requestCodeCollabOpenAllChangesDiff(
+      openAllChangesDiff: async (focusPath) => {
+        // All Changes is one root's comparison; focusing a member file asks
+        // that member's root for it.
+        const focus = focusPath === undefined ? undefined : at(focusPath);
+        return await runtime.requestCodeCollabOpenAllChangesDiff(
           machineId,
-          { sessionId, ...(focusPath === undefined ? {} : { focusPath }) },
+          {
+            sessionId,
+            ...(focus === undefined
+              ? {}
+              : {
+                  focusPath: focus.path,
+                  ...('rootId' in focus ? { rootId: focus.rootId } : {}),
+                }),
+          },
           { ownerSessionId }
-        ),
+        );
+      },
       openTurnDiff: async (path, turnId) =>
         await runtime.requestCodeCollabOpenTurnDiff(
           machineId,
-          { sessionId, turnId, path },
+          { sessionId, turnId, ...at(path) },
           { ownerSessionId }
         ),
       initDirectory: async (path) =>
         await runtime.requestCodeCollabInitDirectory(
           machineId,
-          { sessionId, path },
+          { sessionId, ...at(path) },
           { ownerSessionId }
         ),
       lspDefinition: async (path, position) =>
         await runtime.requestCodeCollabLspDefinition(
           machineId,
-          { sessionId, path, ...position },
+          { sessionId, ...at(path), ...position },
           { ownerSessionId }
         ),
       lspReferences: async (path, position) =>
         await runtime.requestCodeCollabLspReferences(
           machineId,
-          { sessionId, path, ...position },
+          { sessionId, ...at(path), ...position },
           { ownerSessionId }
         ),
     };
-  }, [machineId, options.requestedByUserId, ownerSessionId, runtime, sessionId, workspaceRoot]);
+  }, [
+    machineId,
+    mounts,
+    options.requestedByUserId,
+    ownerSessionId,
+    runtime,
+    sessionId,
+    workspaceRoot,
+  ]);
 
   const provider = useMemo<SessionFileProvider | null>(() => {
     const sharedState = materializedSharedState;

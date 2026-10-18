@@ -559,7 +559,6 @@ registration, authorization, indexing, watching and diffs. The UI session
 implements file tree grouping by root, `@` search and opening files by `rootId`.
 Neither side is implemented or verified yet.
 
-
 ## Multi-root file contract
 
 Contract branch: `multi-repo-extra-roots-contracts`. Only the daemon writes
@@ -621,3 +620,28 @@ Root helpers perform finite filesystem operations and retain no resources. Failu
 published state and directories for retry; one unavailable root does not fence others. Tests
 use temporary directories, real Git and a fake Provider boundary. Real providers, Windows
 junctions and UI end-to-end behavior still require cross-platform acceptance.
+
+## UI for multiple roots
+
+The UI adds no path format of its own. It mounts each extra root under the
+member's directory name: encoded keys in the file index and All Changes
+(`\0lody-root:member:<id>/…`) are translated to `<member dir>/…` where the file
+provider is built, and the conversation diff panel translates encoded keys from
+history the same way. Every file request is split back into `rootId` and a
+relative path in the runtime adapter
+(`packages/components/src/lib/session-file-root-mounts.ts`). The file tree, `@`
+search, opening, editing, saving and diffs therefore need no knowledge of roots.
+The daemon does not reserve the member's name in the main directory for
+additional-directory access, so a real main-directory entry with the same name
+can coexist; the file tree then shows the member root's files at that path, and
+requests for it go to the member root. A root the snapshot no longer mounts is
+shown as `member-<id>/…`, never with a visible NUL.
+
+A preview with a member `rootId` never takes the Electron same-machine fast path,
+which resolves relative paths against the main directory and would read a
+different file; such requests always go to the machine. The editor marks a
+non-Git member as edited in place and does not let it be a submodule or a
+submodule's parent. The Info Bar's repository list shows such members as
+"Original directory · not isolated". The UI is gated by the same
+`machineSupportsProjectFileRoots` capability as the daemon (#1674). All of this
+is verified only by unit tests and type checks; nothing has run end to end.

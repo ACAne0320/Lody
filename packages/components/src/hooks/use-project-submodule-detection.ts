@@ -17,6 +17,8 @@ const GITMODULES_MAX_BYTES = 64 * 1024;
 /** What one member's repository declares, and which GitHub repository it is. */
 export type ProjectSubmoduleProbeResult = {
   repoFullName?: string;
+  /** False for a local directory that is not a Git repository. */
+  isGit?: boolean;
   submodules: DetectedProjectSubmodule[];
 };
 
@@ -34,6 +36,8 @@ export type ProjectSubmoduleDetection = {
   detected: ReadonlyMap<ProjectMemberId, readonly DetectedProjectSubmodule[]>;
   /** The GitHub repository each member was found to be, local members included. */
   repositories: ReadonlyMap<ProjectMemberId, string>;
+  /** Members found to be local directories without Git. */
+  nonGit: ReadonlySet<ProjectMemberId>;
   /** Members still being read. */
   pending: ReadonlySet<ProjectMemberId>;
   /** Members whose repository could not be read; their placement stays manual. */
@@ -134,6 +138,7 @@ export function useProjectSubmoduleDetection(
   return useMemo(() => {
     const detected = new Map<ProjectMemberId, readonly DetectedProjectSubmodule[]>();
     const repositories = new Map<ProjectMemberId, string>();
+    const nonGit = new Set<ProjectMemberId>();
     const pending = new Set<ProjectMemberId>();
     const unavailable = new Set<ProjectMemberId>();
     for (const member of members) {
@@ -148,8 +153,9 @@ export function useProjectSubmoduleDetection(
         continue;
       }
       detected.set(member.id, value.submodules);
+      if (value.isGit === false) nonGit.add(member.id);
       if (value.repoFullName) repositories.set(member.id, value.repoFullName);
     }
-    return { detected, repositories, pending, unavailable };
+    return { detected, repositories, nonGit, pending, unavailable };
   }, [enabled, members, results]);
 }

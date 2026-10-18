@@ -118,6 +118,7 @@ export function ProjectGroupEditorDialog({
       if (!result) return undefined;
       return {
         repoFullName: result.repoFullName,
+        isGit: result.isGit,
         submodules: result.submodules.map((submodule) => ({
           path: submodule.path,
           repoFullName:
@@ -249,6 +250,7 @@ export function ProjectGroupEditorDialog({
             labelOf={labelOf}
             detailOf={detailOf}
             statusOf={statusOf}
+            isNonGit={(memberId) => detection.nonGit.has(memberId)}
             validation={validation}
             readOnly={readOnly}
             submitting={submitting}
