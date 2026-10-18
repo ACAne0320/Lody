@@ -8,6 +8,7 @@ import {
   isAgentDisconnectedError,
   isAcpSessionNotFoundError,
   isProviderOverloadedACPError,
+  isQuotaExhaustedACPError,
   mapACPErrorToFailureReason,
   parseACPError,
   shouldRecoverStaleACPConnectionPrompt,
@@ -26,8 +27,9 @@ describe('ACP error classification', () => {
     const parsed = parseACPError(error);
     if (!parsed) throw new Error('expected a structured quota error');
 
-    expect(mapACPErrorToFailureReason(parsed)).toBe('acp_quota_exhausted');
-    expect(shouldTerminateOnACPError(parsed, 'acp_quota_exhausted')).toBe(false);
+    expect(isQuotaExhaustedACPError(parsed)).toBe(true);
+    expect(mapACPErrorToFailureReason(parsed)).toBe('acp_internal_error');
+    expect(shouldTerminateOnACPError(parsed, 'acp_internal_error')).toBe(false);
     expect(getACPErrorUserMessage(parsed)).toBe(
       'Claude account usage limit reached. Resets at 2026-10-19T20:00:00.000Z.'
     );

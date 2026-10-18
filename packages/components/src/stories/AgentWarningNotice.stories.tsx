@@ -70,7 +70,7 @@ export const QuotaExhausted: Story = {
           type: 'system_notice',
           name: 'chat_failed',
           meta: {
-            reason: 'acp_quota_exhausted',
+            reason: 'acp_internal_error',
             message: 'Claude account usage limit reached. Resets at 2026-10-19T20:00:00.000Z.',
           },
         },

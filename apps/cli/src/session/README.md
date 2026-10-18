@@ -56,8 +56,9 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
 - `acp-error-classification.ts` — JSON-RPC/transport error classification for the above,
   including confirmed quota exhaustion. A terminal quota failure finalizes its turn
   without forcing runtime termination, preserves the provider's explanation, and
-  does not automatically replay the rejected prompt. An earlier adapter quota notice
-  is not duplicated when the terminal error arrives.
+  does not automatically replay the rejected prompt. Quota errors retain the ordinary
+  internal-error presentation. An earlier adapter error notice uses the same failure
+  card and is not duplicated when the terminal error arrives.
 - `session-manager.ts` / `session.ts` / `session-sandbox.ts` / `terminal-manager.ts` —
   session and process lifecycle, workdirs, worktrees, sandboxed spawning, ACP terminals.
   Managed GitHub credential preparation excludes local projects and their worktrees;

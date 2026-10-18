@@ -149,6 +149,49 @@ const agentChunk = (sessionId: SessionId, text: string): AcpSessionNotification 
 });
 
 describe('MessageHandler turn history gate (RPC fast path ordering)', () => {
+  it.each([undefined, 'error'] as const)(
+    'persists notice level %s without ending the active assistant turn',
+    async (level) => {
+      vi.useRealTimers();
+      const sessionId = 'quota-notice' as SessionId;
+      const { repo, doc, handler } = await createHandlerHarness(sessionId);
+      try {
+        await updateTestHistory(doc, () => [userEntry('user-quota')]);
+        const turnId = handler.beginConversationTurn(sessionId, 'user-quota', { sessionDoc: doc });
+        await handler.createAssistantEntryForTurn(sessionId, doc, turnId, undefined, 'user-quota');
+        const message = 'Claude account usage limit reached.';
+        await handler.recordAgentWarning(sessionId, { message, source: 'claude', level });
+
+        const history = await doc.sessionData.history.readAll();
+        expect(history[0]?.id).toBe('user-quota');
+        expect(history.find((entry) => entry.role === 'system')?.items).toEqual([
+          expect.objectContaining({
+            type: 'system_notice',
+            name: level === 'error' ? 'chat_failed' : 'agent_warning',
+            meta:
+              level === 'error'
+                ? { reason: 'acp_internal_error', message }
+                : { source: 'claude', message },
+          }),
+        ]);
+
+        handler.enqueueACPUpdate(sessionId, agentChunk(sessionId, 'Later native output'));
+        await handler.flushACPUpdatesNow(sessionId);
+        const updated = await doc.sessionData.history.readAll();
+        const assistant = updated.find((entry) => entry.role === 'assistant');
+        expect(assistant?.finished).not.toBe(true);
+        expect(assistant?.items).toContainEqual(
+          expect.objectContaining({
+            type: 'text',
+            text: 'Later native output',
+          })
+        );
+      } finally {
+        await destroyRepoOnRealTimers(repo);
+      }
+    }
+  );
+
   it.each(['codex', 'claude'])(
     'persists a rejected %s model as a GUI notice after the driving user turn',
     async (agentType) => {

@@ -55,13 +55,15 @@ agent's answer and the agent's own warning about it.
 
 ## Account quota exhaustion
 
-Confirmed account quota exhaustion uses `acp_quota_exhausted`, with the localized
-title "Account usage limit reached". The provider explanation,
-including a reset time when supplied, remains in the ordinary failure detail.
-This failure does not offer the model-capacity retry countdown.
-An adapter can report the restriction earlier through the neutral notice carrier.
-Its later terminal error carries `quotaNoticePublished` so the host finalizes the
+Quota failures reuse the ordinary "Agent internal error" card. The provider's
+explanation, including a reset time when supplied, remains in its detail; there is
+no quota-specific title or retry countdown. Core notices with `level: error`
+are stored through the existing `chat_failed` path, while warnings keep their
+`agent_warning` presentation. Recording a notice does not end an active turn.
+The later quota error carries `quotaNoticePublished` so the host finalizes the
 turn without appending a second copy of the already visible explanation.
+The host still identifies the structured quota error for runtime retention;
+that internal decision does not introduce another visible error category.
 
 ## Copying failures
 

@@ -9224,10 +9224,11 @@ export class MessageHandler {
   /**
    * Persists an agent-issued warning (e.g. Codex app-server `warning`/`configWarning`
    * notifications, forwarded structured via ACP session_info_update `_meta`) as a
-   * system_notice history item. Kept out of agent text so it renders as a warning
-   * and never pollutes titles or replay prompts. Runs on the per-session notice
-   * queue; dedupe happens inside the atomic updateHistory call because some
-   * runtime warnings fire once per turn.
+   * system_notice history item. Error-level notices use the existing failure card;
+   * warnings stay warnings. Neither path settles the turn or adds agent text.
+   * Runs on the per-session notice queue. The warning history action deduplicates
+   * repeated messages; error-notice duplication is handled by the provider and
+   * the terminal error's published-notice marker.
    */
   private async recordAgentWarning(
     sessionId: SessionId,
@@ -9235,6 +9236,10 @@ export class MessageHandler {
   ): Promise<void> {
     try {
       const sessionDoc = await this.workspaceDocument.getOrCreateSessionDoc(sessionId);
+      if (warning.level === 'error') {
+        await this.recordChatFailure(sessionDoc, 'acp_internal_error', warning.message);
+        return;
+      }
       // Order the notice after the user turn that triggered it (RPC fast-path turns).
       await this.awaitTurnHistoryGate(sessionId);
       type SessionHistoryItemInput = NonNullable<SessionHistoryInput['items']>[number];

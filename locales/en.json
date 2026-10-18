@@ -2604,7 +2604,6 @@
   "sessions.submitAnswer": "Submit",
   "sessions.systemNotices.chatFailed.acpAuthRequired": "Authentication required",
   "sessions.systemNotices.chatFailed.acpInternalError": "Agent internal error",
-  "sessions.systemNotices.chatFailed.acpQuotaExhausted": "Account usage limit reached",
   "sessions.systemNotices.chatFailed.acpInvalidParams": "Invalid request parameters",
   "sessions.systemNotices.chatFailed.acpInvalidRequest": "Invalid request",
   "sessions.systemNotices.chatFailed.acpMethodNotFound": "Agent protocol method not found",

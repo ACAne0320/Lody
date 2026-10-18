@@ -3511,11 +3511,6 @@ const ChatFailedNoticeView = ({
         return t('sessions.systemNotices.chatFailed.acpAuthRequired', 'Authentication required');
       case 'acp_internal_error':
         return t('sessions.systemNotices.chatFailed.acpInternalError', 'Agent internal error');
-      case 'acp_quota_exhausted':
-        return t(
-          'sessions.systemNotices.chatFailed.acpQuotaExhausted',
-          'Account usage limit reached'
-        );
       case 'acp_upstream_api_error':
         return t(
           'sessions.systemNotices.chatFailed.acpUpstreamApiError',

@@ -6198,7 +6198,7 @@ describe('SessionExecutionService', () => {
         },
         'Claude account usage limit reached.'
       ),
-      reason: 'acp_quota_exhausted',
+      reason: 'acp_internal_error',
       message: 'Claude account usage limit reached.',
       executionRemains: true,
     },
@@ -6209,7 +6209,7 @@ describe('SessionExecutionService', () => {
         details: 'Claude account usage limit reached.',
         quotaNoticePublished: true,
       }),
-      reason: 'acp_quota_exhausted',
+      reason: 'acp_internal_error',
       message: 'Claude account usage limit reached.',
       executionRemains: true,
       quotaNoticePublished: true,
@@ -6241,8 +6241,8 @@ describe('SessionExecutionService', () => {
               items: [
                 {
                   type: 'system_notice',
-                  name: 'agent_warning',
-                  meta: { source: 'claude', message: testCase.message },
+                  name: 'chat_failed',
+                  meta: { reason: 'acp_internal_error', message: testCase.message },
                 },
               ],
             } as SessionHistoryInput,
@@ -6331,9 +6331,9 @@ describe('SessionExecutionService', () => {
       );
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({
-      name: testCase.quotaNoticePublished ? 'agent_warning' : 'chat_failed',
+      name: 'chat_failed',
       meta: {
-        ...(testCase.quotaNoticePublished ? {} : { reason: testCase.reason }),
+        reason: testCase.reason,
         message: testCase.message,
       },
     });

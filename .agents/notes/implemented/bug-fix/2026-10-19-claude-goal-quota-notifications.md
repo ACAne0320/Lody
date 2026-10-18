@@ -24,8 +24,8 @@ reuse; no live account restriction was exercised.
 The SDK's `rate_limit_event` previously produced a `usage_update` only after a real
 assistant usage observation. The host consumed context size and token count,
 ignoring `_claude/rateLimit`; before that observation the adapter emitted nothing.
-Explicit quota prose could arrive, but the terminal failure was classified as an
-internal error and did not update the goal.
+Explicit quota prose could arrive, but terminal failure handling treated quota
+exhaustion as a fatal internal error and did not update the goal.
 
 A restriction event confirms a quota fact, not that the SDK process or every task
 has ended. The adapter reports the restriction and continues consuming native
@@ -63,10 +63,15 @@ boundaries rather than requiring one particular frame or adding a timer.
    queued user's input. Actual EOF reports the known quota error for its owning
    active or unstarted queued prompt, instead of returning success or a
    misleading recoverable session-disconnection error.
-4. The host finalizes the turn through its existing error path, but quota exhaustion
-   does not request process termination or automatic replay. `quotaNoticePublished`
-   on the terminal error avoids a duplicate history notice; clients without an
-   earlier notice retain the ordinary localized `acp_quota_exhausted` banner.
+4. The host retains the ordinary `acp_internal_error` classification and "Agent
+   internal error" card. The provider explanation and reset time remain in the
+   detail. It separately recognizes the structured quota marker to avoid process
+   termination or automatic replay. Core error-level notices now retain their
+   severity through AgentClient and use the existing failure-history writer;
+   ordinary warnings keep their existing path. Notification only appends history,
+   leaving an active turn able to receive later native output. `quotaNoticePublished`
+   on the terminal error avoids a second copy, with the same card as the fallback
+   when no early notice was published. No shared reason or localized title is added.
 5. A live query remains available for the next explicit prompt. Trailing idle debt,
    native task lifecycle, cancellation and real stream shutdown keep their existing
    owners. No quota event cancels queued prompts, clears tasks, evicts the session,
@@ -74,8 +79,10 @@ boundaries rather than requiring one particular frame or adding a timer.
    Actual EOF still runs the existing stream-end cleanup because that query has
    already ended; quota notification alone never initiates that cleanup.
 
-The host's existing neutral notice handler persists the notice and maps `limited`
-to durable `blocked`. The owning contracts are
+The host persists error-level neutral notices as existing `chat_failed` records
+and maps `limited` to durable `blocked`. Codex already returns its native
+`usageLimitExceeded` as an ordinary internal-error response in Lody's protocol
+path; this change reuses that presentation without changing Codex's lifecycle. The owning contracts are
 [goal responsibilities](../../../../specs/session-goal-control.md) and
 [notice presentation](../../../../packages/components/src/components/ai-gui/agent-notices.md).
 Historical task reconciliation after restart is outside this repair.
@@ -110,7 +117,9 @@ idle before the input echo, and autonomous idle/EOF without a prompt waiter.
 
 Host tests cover separate notice and later goal delivery, quota classification,
 no automatic replay, runtime retention, turn release, and one visible history
-notice with or without early notification. Package typechecks, adapter build and
+notice with or without early notification. Real history writes also verify error
+severity, unchanged warning presentation, and continued output on the same unfinished
+assistant turn. Package typechecks, adapter build and
 lint/format checks, shared history/parser tests and component notice tests provide
 additional checks. No live account, real quota reset or packaged desktop run was
 used; tests do not establish the original reporter's account timing.

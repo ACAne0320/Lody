@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ACPSessionId, SessionId } from '@lody/shared';
 import type { PromptRequest, SessionNotification } from '@agentclientprotocol/sdk';
 
-import { AgentClient } from '../src/agent/agent-client';
+import { AgentClient, type AgentSessionWarning } from '../src/agent/agent-client';
 import type { Logger } from '../src/utils/logger';
 
 const createSilentLogger = (): Logger => ({
@@ -143,7 +143,7 @@ describe('AgentClient session title updates', () => {
 
 describe('AgentClient agent warning updates', () => {
   it('delivers the Claude quota notice before the later limited goal update', async () => {
-    const warnings: string[] = [];
+    const warnings: AgentSessionWarning[] = [];
     const goalStatuses: string[] = [];
     const client = new AgentClient({
       sessionId: 'quota-session' as SessionId,
@@ -152,7 +152,7 @@ describe('AgentClient agent warning updates', () => {
       agentConfig: { cliType: 'builtin', agentType: 'claude' },
       onUpdateMessage: () => {},
       onRequestPermission: async () => ({ outcome: { outcome: 'cancelled' } }),
-      onAgentWarning: (warning) => warnings.push(warning.message),
+      onAgentWarning: (warning) => warnings.push(warning),
       onThreadGoalUpdated: (goal) => goalStatuses.push(goal.status),
     });
     const message = 'Claude account usage limit reached.';
@@ -166,7 +166,7 @@ describe('AgentClient agent warning updates', () => {
       })
     );
 
-    expect(warnings).toEqual([message]);
+    expect(warnings).toEqual([{ message, source: 'claude', level: 'error' }]);
     expect(goalStatuses).toEqual([]);
 
     await client.sessionUpdate(

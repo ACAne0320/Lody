@@ -148,6 +148,7 @@ import {
   parseACPError,
   shouldRecoverStaleACPConnectionPrompt,
   shouldTerminateOnACPError,
+  isQuotaExhaustedACPError,
 } from './acp-error-classification';
 import type { MachineAccessVerification } from './session-access-retry';
 import { createSessionBackend, getSteerOperationId, type SessionBackend } from './session-backend';
@@ -3734,7 +3735,7 @@ export class SessionExecutionService {
           true
         );
         const quotaNoticePublished =
-          failureReason === 'acp_quota_exhausted' &&
+          isQuotaExhaustedACPError(acpError) &&
           !!acpError.data &&
           typeof acpError.data === 'object' &&
           (acpError.data as Record<string, unknown>).quotaNoticePublished === true;

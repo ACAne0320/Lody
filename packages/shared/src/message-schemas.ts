@@ -3547,7 +3547,6 @@ export const ChatFailedReasonSchema = z.enum([
   'machine_access_denied',
   'acp_auth_required',
   'acp_internal_error',
-  'acp_quota_exhausted',
   'acp_upstream_api_error',
   'acp_provider_overloaded',
   'acp_session_storage_incompatible',

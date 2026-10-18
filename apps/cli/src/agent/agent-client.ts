@@ -413,6 +413,7 @@ const LodySessionTitleSchema = z.object({
 export type AgentSessionWarning = {
   message: string;
   source?: string;
+  level?: 'error';
 };
 
 export type SteerApplicationLease = {
@@ -1065,6 +1066,7 @@ export class AgentClient implements acp.Client {
         this.options.onAgentWarning?.({
           message: canonical.data.notice.message,
           ...(canonical.data.notice.source ? { source: canonical.data.notice.source } : {}),
+          ...(canonical.data.notice.level === 'error' ? { level: 'error' as const } : {}),
         });
       }
       return;
