@@ -3,10 +3,8 @@ import {
   type LiveActivityConversationItem,
   type LiveActivityPermissionAlert,
   type LiveActivityStatusCounts,
-  parseGitHubPrNumber,
   type PermissionRequestKind,
   SessionId,
-  type SessionPullRequestLegacyMetaFields,
   type SessionPullRequestMeta,
   WorkspaceId,
 } from '@lody/shared';
@@ -63,7 +61,6 @@ export class NotificationService {
   private client: ConvexHttpClient;
   private cliToken: string;
   private logger: Logger;
-  private terminalCapabilities?: Promise<boolean>;
 
   constructor(config: NotificationServiceConfig) {
     this.client = new ConvexHttpClient(config.convexUrl, {
@@ -84,44 +81,14 @@ export class NotificationService {
     return true;
   }
 
-  private supportsTerminalOutcomes(): Promise<boolean> {
-    // Cache read-only negotiation for this client lifetime. No send has happened
-    // when this fails; submitted actions never trigger a legacy retry.
-    return (this.terminalCapabilities ??= this.client
-      .query(api.notifications.getCapabilities, {})
-      .then((value) => value.terminalOutcomes === 1)
-      .catch(() => false));
-  }
-
-  // Compatibility adapter: keep the legacy cloud port/action name and argument shape.
+  // The deployed action name remains a transport boundary; this producer uses V1.
   async notifySessionCompleted(input: TurnOutcomeNotificationInput): Promise<void> {
     try {
-      const modern = input.outcome !== undefined && (await this.supportsTerminalOutcomes());
-      if (input.outcome && input.outcome !== 'succeeded' && !modern) {
-        this.logger.debug('[notifications] Old server cannot represent a failed/interrupted turn');
-        return;
-      }
-      const pullRequests = input.pullRequests?.flatMap((pr) => {
-        const legacy = pr as SessionPullRequestLegacyMetaFields;
-        const number = legacy.number ?? parseGitHubPrNumber(pr.url);
-        if (typeof number !== 'number' || !Number.isFinite(number)) {
-          return [];
-        }
-        return [
-          {
-            number,
-            status: pr.status,
-            ...(legacy.reportedAt ? { reportedAt: legacy.reportedAt } : {}),
-          },
-        ];
-      });
-
       await this.client.action(api.notifications.notifySessionCompleted, {
         cliToken: this.cliToken,
         sessionId: input.sessionId,
         occurrenceId: input.occurrenceId,
-        ...(modern ? { outcome: input.outcome } : {}),
-        ...(modern ? {} : { sessionTitle: input.sessionTitle ?? undefined, pullRequests }),
+        outcome: input.outcome ?? 'succeeded',
         workspaceId: input.workspaceId,
         workspaceSlug: input.workspaceSlug,
         userId: input.userId,
@@ -137,20 +104,12 @@ export class NotificationService {
 
   async notifyPermissionRequested(input: PermissionRequestNotificationInput): Promise<void> {
     try {
-      const modern = await this.supportsTerminalOutcomes();
       await this.client.action(api.notifications.notifyPermissionRequested, {
         cliToken: this.cliToken,
-        ...(modern ? { deliveryVersion: 1 as const } : {}),
+        deliveryVersion: 1,
         sessionId: input.sessionId,
         requestId: input.requestId,
         toolCallId: input.toolCallId,
-        ...(modern
-          ? {}
-          : {
-              toolTitle: input.toolTitle ?? undefined,
-              toolKind: input.toolKind ?? undefined,
-              sessionTitle: input.sessionTitle ?? undefined,
-            }),
         requestKind: input.requestKind,
         workspaceId: input.workspaceId,
         workspaceSlug: input.workspaceSlug,

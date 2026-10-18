@@ -156,9 +156,16 @@ export class LodyOperationCoordinator {
       },
       report: (cause) => this.options.logger.warn(`[inbox] ${String(cause)}`),
     });
-    this.options.executionService.setOperationInbox?.(this.inbox, (sessionId) => {
-      void this.options.dispatchWatcher.enqueueSessionCheck?.(sessionId);
-    });
+    this.options.executionService.setOperationInbox?.(
+      this.inbox,
+      (sessionId) => {
+        void this.options.dispatchWatcher.enqueueSessionCheck?.(sessionId);
+      },
+      {
+        originsForBatch: (batch) => this.store!.notificationOriginsForBatch(batch),
+        pendingOrigins: (scope, origins) => this.store!.pendingNotificationOrigins(scope, origins),
+      }
+    );
 
     const epoch = {};
     this.nativeEpoch = epoch;
@@ -376,9 +383,8 @@ export class LodyOperationCoordinator {
       {
         dispatchSource: 'inbox',
         inboxBatch: batch,
-        // A synthetic batch can combine several frozen Operation authors. It is
-        // never a fresh human input; do not invent one author or notify its user.
-        // Human turns carrying Inbox results retain their own invocation audience.
+        // Synthetic input is not human-authored. Execution inherits result
+        // ownership from the full, scoped Operation membership instead.
         notificationAudience: { kind: 'unknown' },
       }
     );

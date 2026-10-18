@@ -22,20 +22,10 @@ const input = {
   userId: 'user-1',
   sessionTitle: 'Private title',
 };
-function setup(modern: boolean, rejectSend = false) {
+function setup(rejectSend = false) {
   const submitted: Array<{ path: string; args: Record<string, unknown>[] }> = [];
   vi.stubGlobal('fetch', async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
-    if (request.path === 'notifications:getCapabilities') {
-      return new Response(
-        JSON.stringify(
-          modern
-            ? { status: 'success', value: { terminalOutcomes: 1 } }
-            : { status: 'error', errorMessage: 'Could not find public function' }
-        ),
-        { status: modern ? 200 : 400 }
-      );
-    }
     submitted.push(request);
     if (rejectSend) throw new Error('uncertain');
     return new Response(JSON.stringify({ status: 'success', value: null }), { status: 200 });
@@ -50,38 +40,38 @@ function setup(modern: boolean, rejectSend = false) {
   };
 }
 afterEach(() => vi.unstubAllGlobals());
-describe('notification protocol compatibility', () => {
+describe('notification transport', () => {
   it('represents failure on modern servers and never retries an uncertain send via legacy', async () => {
-    const { service, submitted } = setup(true, true);
+    const { service, submitted } = setup(true);
     await service.notifySessionCompleted({ ...input, outcome: 'failed' });
     expect(submitted.map((r) => r.args[0]?.outcome)).toEqual(['failed']);
     expect(submitted[0]?.path).toBe('notifications:notifySessionCompleted');
     expect(submitted[0]?.args[0]).not.toHaveProperty('sessionTitle');
   });
-  it('uses the original argument shape for success on old servers and never calls failure completed', async () => {
-    const { service, submitted } = setup(false);
-    await service.notifySessionCompleted({ ...input, outcome: 'succeeded' });
-    await service.notifySessionCompleted({ ...input, outcome: 'failed' });
-    await service.notifySessionCompleted({ ...input, outcome: 'unknown' });
-    expect(submitted).toHaveLength(1);
-    expect(submitted[0]?.args[0]).toMatchObject({ occurrenceId: 'turn-1', userId: 'user-1' });
-    expect(submitted[0]?.args[0]).not.toHaveProperty('outcome');
+  it('attempts each new outcome after an earlier transport failure without probing capabilities', async () => {
+    const { service, submitted } = setup(true);
+    for (const outcome of ['succeeded', 'failed', 'unknown'] as const)
+      await service.notifySessionCompleted({ ...input, outcome });
+    expect(submitted.map((r) => r.args[0]?.outcome)).toEqual(['succeeded', 'failed', 'unknown']);
+    expect(submitted.every((r) => r.path === 'notifications:notifySessionCompleted')).toBe(true);
+    expect(submitted.every((r) => !('sessionTitle' in r.args[0]!))).toBe(true);
   });
-  it.each([true, false])(
-    'negotiates permission delivery without changing old call shapes (%s)',
-    async (modern) => {
-      const { service, submitted } = setup(modern);
-      await service.notifyPermissionRequested({
-        ...input,
-        requestId: 'request-1',
-        toolCallId: 'tool-1',
-        toolTitle: 'Read',
-        toolKind: 'read',
-      });
-      expect(submitted[0]?.args[0]?.deliveryVersion).toBe(modern ? 1 : undefined);
-      expect(submitted[0]?.args[0]?.sessionTitle).toBe(modern ? undefined : 'Private title');
-      expect(submitted[0]?.args[0]?.toolTitle).toBe(modern ? undefined : 'Read');
-      expect(submitted[0]?.args[0]).toMatchObject({ requestId: 'request-1', toolCallId: 'tool-1' });
-    }
-  );
+  it('sends generic versioned permission alerts without private titles', async () => {
+    const { service, submitted } = setup();
+    await service.notifyPermissionRequested({
+      ...input,
+      requestId: 'request-1',
+      toolCallId: 'tool-1',
+      toolTitle: 'Read',
+      toolKind: 'read',
+    });
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]?.args[0]).toMatchObject({
+      deliveryVersion: 1,
+      requestId: 'request-1',
+      toolCallId: 'tool-1',
+    });
+    expect(submitted[0]?.args[0]).not.toHaveProperty('sessionTitle');
+    expect(submitted[0]?.args[0]).not.toHaveProperty('toolTitle');
+  });
 });

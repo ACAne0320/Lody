@@ -5,9 +5,10 @@
 - `turn-notification-audience.ts` interprets exact input provenance, not Session
   parent/opened-by metadata. Provenance is not authorization; requester identity
   stays frozen in the execution invocation. Missing RPC history is unknown.
-- Execution emits a typed terminal fact through `onTurnOutcome`. Mark the attempt
-  before calling the consumer: failure or uncertainty ends that notification.
-  Never retry the callback during finalization or re-run Agent work to notify.
+- Execution freezes one terminal fact after resource/Inbox settlement and the final
+  Stop check. Release the prompt slot before awaiting `onTurnOutcome`; the existing Host
+  work drain owns delivery through shutdown, independently of Inbox launch. Never retry the callback
+  or re-run Agent work to notify.
 - MessageHandler consumes the actual AttentionItem (source, scope, outcome) and
   `notifyTurnOutcome` submits mobile through the legacy-named cloud adapter. It
   projects user terminal outcomes into a latest control-document
@@ -16,10 +17,16 @@
   payload belongs in the control document, never metadata or history scans.
 - `terminalNotifications: 1` selects the desktop terminal consumer. Older CLI
   peers retain the legacy idle observer; never run both for the same peer.
-- Cloud capabilities are probed once per NotificationService lifetime. New servers
-  receive generic outcome/versioned permission requests without private titles;
-  old servers receive the old success/permission shape. Unsupported failure or
-  unknown outcomes are skipped. Never fallback after an attempted action.
+- New producers require the outcome/versioned-permission protocol and always send
+  generic payloads. No capability probe, private legacy fallback, or transport retry.
+  Deploy the compatible backend first; old server actions remain for old clients.
+- User result origins travel through the Host invocation and frozen Operation config.
+  Execution inherits the full scoped Inbox membership, not the inline preview or
+  synthetic author. Origin ids are not authorization and never leave local orchestration.
+  Success waits for related active Operations/unconsumed results; failed/unknown
+  work alerts immediately. Bind inherited origins to their recipient across steer.
+  RPC/steer can precede history sync: resolve pending provenance from the exact
+  input before accepting an Operation, or reject retryably without persisting it.
 - Permission push and silent Live Activity sync are independent. Provider
   acceptance cannot suppress an ordinary permission alert.
 - Best-effort delivery is intentional. No notification database, outbox, pending

@@ -853,7 +853,6 @@ export type CloudApi = {
     >;
   };
   notifications: {
-    getCapabilities: Query<{}, { terminalOutcomes: 1 }>;
     notifySessionCompleted: Action<
       {
         sessionTitle?: string;

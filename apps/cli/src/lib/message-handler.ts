@@ -166,11 +166,9 @@ import {
   buildLiveActivityConversationItems,
   countLiveActivityConversationCandidates,
   countLiveActivityConversationStatuses,
-  findLiveActivityPermissionAlertCandidate,
   buildLodyConversationsLiveActivityId,
   LODY_CONVERSATIONS_LIVE_ACTIVITY_SCHEMA_VERSION,
   type LiveActivityConversationItem,
-  type LiveActivityPermissionAlert,
   type LiveActivityStatusCounts,
   getCodeCollabFileIndexFlockDocId,
   shouldBypassSessionQuota,
@@ -561,7 +559,6 @@ type LiveActivitySummary = {
   statusCounts: LiveActivityStatusCounts;
   items: LiveActivityConversationItem[];
   updatedAt: number;
-  permissionAlert?: LiveActivityPermissionAlert;
 };
 
 function formatLiveActivityUpdatedAt(value: number, nowMs: number): string {
@@ -2973,8 +2970,6 @@ export class MessageHandler {
               );
           }
         },
-        notifySessionCompleted: async (sessionId, userId, occurrenceId) =>
-          await this.notifyTurnOutcome(sessionId, userId, occurrenceId, 'succeeded'),
       },
       recordChatFailure: async (sessionDoc, reason, message, code) =>
         await this.recordChatFailure(sessionDoc, reason, message, code),
@@ -9878,10 +9873,7 @@ export class MessageHandler {
     });
   }
 
-  private async buildLiveActivitySummary(
-    userId: string,
-    options: { permissionAlert?: boolean } = {}
-  ): Promise<LiveActivitySummary> {
+  private async buildLiveActivitySummary(userId: string): Promise<LiveActivitySummary> {
     const sessionMetas = (
       await Promise.all(
         [...this.workspaceDocument.sessions.values()].map(async (sessionDoc) => {
@@ -9906,14 +9898,6 @@ export class MessageHandler {
       },
       formatUpdatedAt: (updatedAt) => formatLiveActivityUpdatedAt(updatedAt, nowMs),
     });
-    const permissionAlertCandidate = options.permissionAlert
-      ? findLiveActivityPermissionAlertCandidate({
-          sessions: sessionMetas,
-          currentUserId: userId,
-          defaultTitle: 'New Task',
-        })
-      : null;
-
     const summary: LiveActivitySummary = {
       activityId: buildLodyConversationsLiveActivityId({
         workspaceId: this.workspaceId,
@@ -9931,25 +9915,16 @@ export class MessageHandler {
       items,
       updatedAt: nowMs,
     };
-    if (permissionAlertCandidate) {
-      summary.permissionAlert = {
-        title: 'Permission Required',
-        body: permissionAlertCandidate.sessionTitle,
-      };
-    }
     return summary;
   }
 
-  private async syncLiveActivitySummary(
-    userId: string,
-    options: { permissionAlert?: boolean } = {}
-  ): Promise<LiveActivitySummarySyncResult> {
+  private async syncLiveActivitySummary(userId: string): Promise<LiveActivitySummarySyncResult> {
     if (!this.notificationService) {
       return { sent: false, reason: 'notifications_disabled' };
     }
 
     try {
-      const summary = await this.buildLiveActivitySummary(userId, options);
+      const summary = await this.buildLiveActivitySummary(userId);
       return await this.notificationService.syncLiveActivitySummary({
         workspaceId: this.workspaceId,
         userId,

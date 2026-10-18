@@ -74,11 +74,12 @@ export function ElectronSessionCompletionNotifier() {
         }),
       show: async (sessionId, notification) => {
         const latest = latestRef.current;
+        const session = latest.allActiveSessions.find((s) => s.id === sessionId && !s.isArchived);
         if (
           !latest.enabled ||
           latest.runtime !== runtime ||
           latest.currentUserId !== currentUserId ||
-          !latest.allActiveSessions.some((s) => s.id === sessionId && !s.isArchived)
+          !session
         )
           return;
         const route = `/${encodeURIComponent(latest.workspaceSlug ?? '')}/sessions/${encodeURIComponent(sessionId)}`;
@@ -87,7 +88,7 @@ export function ElectronSessionCompletionNotifier() {
           sessionId,
           workspaceSlug: latest.workspaceSlug ?? undefined,
           title: t(`notifications.terminal.${notification.outcome}.title`),
-          body: t(`notifications.terminal.${notification.outcome}.body`),
+          body: session.title?.trim() || t(`notifications.terminal.${notification.outcome}.body`),
           allowWhileForeground: true,
         });
       },

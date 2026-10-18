@@ -15,7 +15,9 @@ Lody 根据可信执行终态与输入作者确定通知资格，不提供 Agent
 
 执行者从真实出口发出 succeeded、failed、cancelled 或 unknown，每轮冻结 requester 与精确输入作者。人类成功/失败/未知终态可以提醒；取消、普通委派结果及未知受众静默。RPC 来源保持 unknown，直到现有 history writer 读到该精确输入；不增加 prompt 前的历史扫描。
 
-会话包含关系不决定当前 Turn 的受众。仅由 Inbox 批量结果驱动的自动续轮可能包含多个 Operation，没有单一人类作者，显式保持 unknown 并静默；人类输入附带 Inbox 结果时，保留自身冻结的受众。沿用已有 Inbox 和取消生命周期，不因通知失败重跑 Agent。参见[会话关系](../../../../specs/session-relations.md)与[编排规则](../../../../apps/cli/src/orchestration/AGENTS.md)。
+会话包含关系不决定受众。用户请求用精确输入 ID 标识结果归属；Host 仅通过活跃执行上下文返回这些 ID，MCP 将其冻结到现有 Operation 配置。RPC/steer 可以先于输入历史同步启动；MCP 在接受委派前读取精确输入以补齐来源，未同步则返回可重试错误且不创建 Operation，不阻塞普通 prompt 启动。自动汇总继承完整且按收件人隔离的批次成员归属，不伪造人类作者。用户输入附带批次时合并自身与继承的归属。成功要求其中至少一个请求已无活跃 Operation 或未消费结果；分批汇总和继续委派保留原始归属。失败/未知汇总立即提醒；旧数据缺少归属时保持 unknown。Steer 按当前 requester 查询完成状态，不能继承另一个收件人的归属。
+
+唯一发布边界在执行资源清理与 Inbox 结算之后，再检查 Stop，冻结事实后释放 prompt 槽位。投递由既有 Host work drain 跟踪并在 shutdown 回收，与 visible execution 和自动 Inbox launch 独立；慢投递不阻塞两种后继路径。归属查询失败只让通知保守跳过，不导致 Agent 执行失败或重跑。不新增调度规则、数据库表、通知队列或轮询。用户 Goal set/resume 明确使用 user 受众；现有 provider prompt 已覆盖 Goal 内部续跑。参见[会话关系](../../../../specs/session-relations.md)与[编排规则](../../../../apps/cli/src/orchestration/AGENTS.md)。
 
 定时任务当前产生普通用户 Turn，成功/失败/未知沿用同一策略，取消静默；高频任务可能每轮提醒。条件、摘要、健康事件及交接前告警暂缓。
 
@@ -33,12 +35,12 @@ Lody 根据可信执行终态与输入作者确定通知资格，不提供 Agent
 
 `terminalNotifications` capability 为新 CLI 关闭 idle 完成推断。`LegacyElectronSessionNotifier` 单独保留旧 idle 完成与现有权限观察，共用宿主快照。只有最低支持 CLI 具备该 capability 后才移除 idle 路径；权限观察等待类型化请求投影接入后单独退出。
 
-云能力协商保留旧成功/权限参数，跳过旧服务端不支持的失败/未知终态；提交后不通过旧路径重试。内部 `notifyTurnOutcome` 不重命名已部署 cloud action、port 或 IPC。新增可选持久字段、稳定 provider 身份字节与可选 IPC 参数继续兼容旧客户端。
+新 producer 要求终态/版本化权限协议，移除能力协商，避免一次探测失败造成进程生命周期降级或回退上传私密标题。每个新事件独立尝试通用请求，不受此前传输失败影响，也不重试该事件。后端先于 CLI 发布。已有 cloud action/port 与 IPC 名字继续作为旧调用方的传输边界，内部不再保留第二条收尾路径。桌面可在结果类型旁显示本地会话标题，provider 载荷仍保持通用。
 
 手机摘要 hook 不附带权限 alert，并在权限等待期间持续刷新其他工作。权限候选只触发节流快照刷新。保留一秒输入节流、250ms bridge debounce、原生/设置门控、空摘要和作用域清理。旧 bridge alert 可选字段仍可读取；普通 Push 独立负责提醒，不依赖活动更新成功。
 
 ## 架构与验证边界
 
-普通类型和纯函数足够；不引入 XState 或新 Effect Runtime。现有 SessionDocument/CloudPort 与 React bridge 并非完整 native Effect 单元，包装未迁移生命周期不能算完成迁移。测试覆盖策略、真实执行和定时任务 preparation、共享 CRDT 兼容、挂载的桌面/活动消费者以及混合版本适配。
+普通类型和纯函数足够；不引入 XState 或新 Effect Runtime。现有 SessionDocument/CloudPort 与 React bridge 并非完整 native Effect 单元，包装未迁移生命周期不能算完成迁移。现有 Effect 执行/Inbox scope 继续拥有资源释放、取消与恢复，仅改变同步完成查询和现有 Promise 投递适配。测试覆盖策略、真实执行和定时任务 preparation、共享 CRDT 兼容、挂载的桌面/活动消费者以及版本化传输。回归场景涵盖五个子任务分批返回、继续委派、汇总失败、Goal 完成、超出预览的完整成员和收件人隔离。
 
-新增全局/来源静音、手机前台来源抑制、委派阻塞聚合、精细关注订阅与远程活动排序暂缓。来源页面保留既有错误和请求。真实展示、声音、点击跳转及混合版本设备仍需验收；本地测试和编译不证明投递。[原生通知生命周期修复](../../implemented/bug-fix/2026-09-20-notification-click-lifetime.md)继续有效。
+新增全局/来源静音、手机前台来源抑制、精细关注订阅与远程活动排序暂缓。来源页面保留既有错误和请求。真实展示、声音、点击跳转及混合版本设备仍需验收；本地测试和编译不证明投递。[原生通知生命周期修复](../../implemented/bug-fix/2026-09-20-notification-click-lifetime.md)继续有效。

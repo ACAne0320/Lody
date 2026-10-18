@@ -1,4 +1,3 @@
-import { readMessageAuthor } from '@lody/shared';
 import { type AcpLauncher, resolveAcpLauncher } from '@/agent/acp-analytics';
 import type { LodyRateLimitsCapability } from 'acp-extension-core';
 import { queryLocalAcpRateLimits, AcpQuotaCleanupError } from '@/agent/acp-runner';
@@ -47,6 +46,7 @@ import {
   batchPreview,
   type InboxBatch,
   type InboxInput,
+  type InboxScope,
 } from '@/orchestration/inbox/model';
 import { sessionExecutionResource } from '@/orchestration/platform/session-resources';
 import { formatErrorMessage } from '@/utils/format-error';
@@ -157,15 +157,12 @@ import {
 } from './worktree/git-process-error';
 
 type FinalizeTurnContext = {
-  /** Exact input owned by the completed logical invocation, including steer. */
-  inputTurnId?: string;
   sessionId: SessionId;
   session: ISession;
   sessionDoc: SessionDocument;
   turnId: string;
   baseCommitHash: string | null;
   turnStartWorkingTreeDiff?: GitWorkingTreeDiffBaseline | null;
-  userId: string;
   project?: ProjectRef;
   isTurnCancelled?: () => boolean;
   abortSignal?: AbortSignal;
@@ -240,11 +237,6 @@ type TurnFinalizationEffects = {
   syncWorkspaceGitState: (sessionId: SessionId, session: ISession) => Promise<void>;
   refreshCodeCollabSharedState?: (sessionId: SessionId) => Promise<void>;
   onTurnOutcome?: (fact: TurnOutcomeFact) => Promise<void>;
-  notifySessionCompleted: (
-    sessionId: SessionId,
-    userId: string,
-    occurrenceId: string
-  ) => Promise<void>;
 };
 
 type ApplyModeAndModelConfig = SessionTurnInputConfig & {
@@ -298,6 +290,7 @@ type TurnRuntimeState = {
   turnId: string;
   userTurnId?: string;
   invocation?: TurnInvocation;
+  inboxNotificationWork?: { userId: string; originTurnIds: string[] };
   goalControl?: GoalPromptControl;
   session?: ISession;
   project?: ProjectRef;
@@ -309,7 +302,6 @@ type TurnRuntimeState = {
   finalizeStarted: boolean;
   finalizeCompleted: boolean;
   notificationOutcome?: TurnOutcome;
-  notificationAttempted?: boolean;
   /** Publish-once latch for the workspace git-state flags; both cancel routes read it. */
   workspaceGitStateSynced: boolean;
   prePromptFailureRecorded: boolean;
@@ -824,9 +816,10 @@ type TurnAnalyticsState = {
 };
 
 export class SessionExecutionService {
-  private readonly inboxVisibleExecutions = new Set<Promise<string>>();
+  private readonly ownedWork = new Set<Promise<unknown>>();
   async drainInboxExecutions(): Promise<void> {
-    await Promise.allSettled([...this.inboxVisibleExecutions]);
+    // Completed executions can enqueue delivery while the first snapshot drains.
+    while (this.ownedWork.size) await Promise.allSettled([...this.ownedWork]);
     const failures = [...this.turnRuntimeBySession.values()].flatMap((runtime) =>
       runtime.releaseFailure ? [runtime.releaseFailure] : []
     );
@@ -836,14 +829,22 @@ export class SessionExecutionService {
     for (const runtime of this.turnRuntimeBySession.values())
       if (runtime.releaseFailure) await this.recoverInboxExecution(runtime.sessionId);
   }
+  private notificationWork:
+    | {
+        originsForBatch: (batch: InboxBatch) => string[];
+        pendingOrigins: (scope: InboxScope, origins: readonly string[]) => ReadonlySet<string>;
+      }
+    | undefined;
   private operationInbox: OperationInboxLegacy | undefined;
   private onInboxReleased: ((sessionId: SessionId) => void) | undefined;
   setOperationInbox(
     inbox: OperationInboxLegacy | undefined,
-    onReleased?: (sessionId: SessionId) => void
+    onReleased?: (sessionId: SessionId) => void,
+    notificationWork?: SessionExecutionService['notificationWork']
   ): void {
     this.operationInbox = inbox;
     this.onInboxReleased = onReleased;
+    this.notificationWork = notificationWork;
   }
   async acceptInboxHumanInput(args: {
     sessionId: SessionId;
@@ -1684,6 +1685,7 @@ export class SessionExecutionService {
       },
       {
         dispatchSource: 'goal',
+        notificationAudience: { kind: 'user' },
         goalControl: control,
         onTurnClaimed: async () => {
           claimed = this.pendingGoalTurnBySession.get(sessionId) === request;
@@ -2192,7 +2194,6 @@ export class SessionExecutionService {
         // history/finalization catches up. Switch causal identity first.
         const switchInvocation = () => {
           runtime.notificationOutcome = undefined;
-          runtime.notificationAttempted = false;
           runtime.invocation = {
             sourceTurnId: options.userTurnId,
             requesterUserId: options.userId,
@@ -3775,7 +3776,6 @@ export class SessionExecutionService {
       turnId,
       baseCommitHash,
       turnStartWorkingTreeDiff,
-      userId,
       project,
     } = ctx;
     const isTurnCancelled = ctx.isTurnCancelled ?? (() => false);
@@ -3909,46 +3909,6 @@ export class SessionExecutionService {
       );
     }
     this.deps.touchSession(sessionId);
-
-    // A manual stop during finalization interrupts the owning fiber, but this promise is
-    // orphaned and keeps running to completion. Without this guard it would reach the
-    // "session completed" push below, notifying the user that the agent finished on its own
-    // even though they stopped it. Re-check cancellation right before notifying so manual
-    // termination never sends a completion notification.
-    if (isTurnCancelled() || ctx.abortSignal?.aborted) {
-      this.deps.logger.debug(
-        `[${sessionId}] Turn ${turnId} was cancelled before completion notification; skipping session completion notification`
-      );
-      return;
-    }
-
-    // A turn that produced nothing is reported as a failure in chat, so pushing
-    // "your session finished" for it would contradict what the user sees.
-    if (ctx.producedOutput === false) {
-      this.deps.logger.debug(
-        `[${sessionId}] Turn ${turnId} produced no agent output; skipping session completion notification`
-      );
-      return;
-    }
-
-    // New consumers own all outcomes. Legacy embedders retain the old callback.
-    if (this.deps.turnFinalization.onTurnOutcome) return;
-    await this.runTurnFinalizationStage(sessionId, turnId, 'notifySessionCompleted', async () => {
-      if (ctx.inputTurnId) {
-        const input = await (
-          await createSessionBackend(sessionDoc)
-        ).history.readTurn(ctx.inputTurnId);
-        if (input.state === 'ready' && readMessageAuthor(input.turn.author)?.kind === 'agent') {
-          this.deps.logger.debug(
-            `[${sessionId}] Turn ${turnId} was Agent-initiated; skipping session completion notification`
-          );
-          return;
-        }
-      }
-      // Reading history can yield to a manual Stop during finalization.
-      if (isTurnCancelled() || ctx.abortSignal?.aborted) return;
-      await this.deps.turnFinalization.notifySessionCompleted(sessionId, userId, turnId);
-    });
   }
 
   private async runVisibleSessionTurn(
@@ -3956,11 +3916,11 @@ export class SessionExecutionService {
     body: (ctx: VisibleSessionTurnContext) => Effect.Effect<void, unknown, Scope.Scope>
   ): Promise<string> {
     const owned = this.runVisibleSessionTurnOwned(options, body);
-    this.inboxVisibleExecutions.add(owned);
+    this.ownedWork.add(owned);
     try {
       return await owned;
     } finally {
-      this.inboxVisibleExecutions.delete(owned);
+      this.ownedWork.delete(owned);
     }
   }
 
@@ -4065,6 +4025,19 @@ export class SessionExecutionService {
       if (inboxInput) {
         runtime.inboxOwner = await inbox!.openExecution(inboxInput, turnId, inboxBatch);
         inboxBatch = runtime.inboxOwner.batch;
+        if (inboxBatch) {
+          try {
+            runtime.inboxNotificationWork = {
+              userId: inboxBatch.userId,
+              originTurnIds: this.notificationWork?.originsForBatch(inboxBatch) ?? [],
+            };
+          } catch (error) {
+            // Missing notification provenance must not prevent actual work.
+            this.deps.logger.warn(
+              `[${sessionId}] Cannot read notification origins: ${formatErrorMessage(error)}`
+            );
+          }
+        }
       }
     } catch (cause) {
       try {
@@ -4531,116 +4504,129 @@ export class SessionExecutionService {
     const fiber = Effect.runFork(program);
     runtime.fiber = fiber;
     try {
-      await this.awaitTurnFiber(fiber, sessionId, turnId);
-      if (outcome === 'unknown') {
-        outcome = 'completed';
-      }
-    } catch (error) {
-      if (isSessionTurnClaimContended(error)) {
-        outcome = 'claim-contended';
-      } else if (isSessionTurnStartFenceFailed(error)) {
-        outcome = 'start-fence-failed';
-        this.deps.logger.warn(
-          `[${sessionId}] Input start fence failed before provider execution: ${formatErrorMessage(error.cause)}`
-        );
-      } else if (isSessionTurnHalted(error)) {
-        outcome = `halted-${error.reason}`;
-        runtime.notificationOutcome = { kind: 'failed', code: error.reason };
-        await this.finalizeHaltedTurn({
-          sessionId,
-          sessionDoc,
-          turnId: runtime.turnId,
-          reason: error.reason,
-        });
-      } else if (
-        isSessionTurnCancelled(error) ||
-        runtime.cancelFinalized ||
-        runtime.cancelRequested ||
-        this.isTurnCancelled(sessionId, runtime.turnId) ||
-        (await this.isUserTurnCancelled(sessionDoc, runtime.userTurnId))
-      ) {
-        outcome = 'cancelled';
-        const explicitlyCancelled =
+      try {
+        await this.awaitTurnFiber(fiber, sessionId, turnId);
+        if (outcome === 'unknown') {
+          outcome = 'completed';
+        }
+      } catch (error) {
+        if (isSessionTurnClaimContended(error)) {
+          outcome = 'claim-contended';
+        } else if (isSessionTurnStartFenceFailed(error)) {
+          outcome = 'start-fence-failed';
+          this.deps.logger.warn(
+            `[${sessionId}] Input start fence failed before provider execution: ${formatErrorMessage(error.cause)}`
+          );
+        } else if (isSessionTurnHalted(error)) {
+          outcome = `halted-${error.reason}`;
+          runtime.notificationOutcome = { kind: 'failed', code: error.reason };
+          await this.finalizeHaltedTurn({
+            sessionId,
+            sessionDoc,
+            turnId: runtime.turnId,
+            reason: error.reason,
+          });
+        } else if (
+          isSessionTurnCancelled(error) ||
+          runtime.cancelFinalized ||
           runtime.cancelRequested ||
           this.isTurnCancelled(sessionId, runtime.turnId) ||
-          (await this.isUserTurnCancelled(sessionDoc, runtime.userTurnId));
-        runtime.notificationOutcome = explicitlyCancelled
-          ? { kind: 'cancelled' }
-          : { kind: 'unknown', code: 'execution_interrupted' };
-      } else {
-        const parsedError = parseACPError(error);
-        runtime.notificationOutcome = isAgentDisconnectedError(error)
-          ? { kind: 'unknown', code: 'agent_disconnected' }
-          : {
-              kind: 'failed',
-              code: parsedError
-                ? mapACPErrorToFailureReason(parsedError)
-                : effectiveErrorContext.code,
-            };
-        await this.publishTurnNotificationOutcome(runtime);
-        await this.handleVisibleTurnUnhandledError({
-          sessionId,
-          sessionDoc,
-          userTurnId: runtime.userTurnId,
-          runtime,
-          error,
-          code: effectiveErrorContext.code,
-          describe: effectiveErrorContext.describe,
-          onUnhandledError: effectiveErrorContext.onUnhandledError,
-        });
-        outcome = 'unhandled-error-recorded';
+          (await this.isUserTurnCancelled(sessionDoc, runtime.userTurnId))
+        ) {
+          outcome = 'cancelled';
+          const explicitlyCancelled =
+            runtime.cancelRequested ||
+            this.isTurnCancelled(sessionId, runtime.turnId) ||
+            (await this.isUserTurnCancelled(sessionDoc, runtime.userTurnId));
+          runtime.notificationOutcome = explicitlyCancelled
+            ? { kind: 'cancelled' }
+            : { kind: 'unknown', code: 'execution_interrupted' };
+        } else {
+          const parsedError = parseACPError(error);
+          runtime.notificationOutcome = isAgentDisconnectedError(error)
+            ? { kind: 'unknown', code: 'agent_disconnected' }
+            : {
+                kind: 'failed',
+                code: parsedError
+                  ? mapACPErrorToFailureReason(parsedError)
+                  : effectiveErrorContext.code,
+              };
+
+          await this.handleVisibleTurnUnhandledError({
+            sessionId,
+            sessionDoc,
+            userTurnId: runtime.userTurnId,
+            runtime,
+            error,
+            code: effectiveErrorContext.code,
+            describe: effectiveErrorContext.describe,
+            onUnhandledError: effectiveErrorContext.onUnhandledError,
+          });
+          outcome = 'unhandled-error-recorded';
+        }
+      } finally {
+        if (runtime.cancelRequested && !runtime.initializationStalled)
+          runtime.notificationOutcome = { kind: 'cancelled' };
+
+        if (!runtime.promptStarted) {
+          this.deps.clearConversationTurn(sessionId, runtime.turnId);
+        }
+        span.end({ outcome, turnId });
+      }
+      if (inboxInput) {
+        if (inboxBatch)
+          await (
+            await createSessionBackend(sessionDoc)
+          )
+            .applyHistoryAction({
+              kind: 'operation-batch-status',
+              batchId: inboxBatch.batchId,
+              turnId:
+                inboxBatch.kind === 'automatic'
+                  ? inboxBatch.inputId
+                  : `operation-batch:${inboxBatch.batchId}`,
+              status: !runtime.promptStarted
+                ? 'not_submitted'
+                : outcome === 'completed' && !runtime.promptFailed
+                  ? 'settled'
+                  : 'unknown',
+            })
+            .catch((cause) =>
+              this.deps.logger.warn(
+                `Inbox history status projection failed: ${formatErrorMessage(cause)}`
+              )
+            );
+        try {
+          await runtime.inboxOwner!.finish(
+            runtime.cancelRequested || outcome === 'cancelled'
+              ? 'user_stop'
+              : outcome === 'completed' && !runtime.promptFailed && runtime.promptStarted
+                ? 'normal'
+                : 'failed',
+            runtime.releaseFailure
+          );
+          if (runtime.inboxOwner!.failure) runtime.releaseFailure = runtime.inboxOwner!.failure;
+        } catch (cause) {
+          runtime.releaseFailure = cause;
+          throw cause;
+        }
       }
     } finally {
-      if (runtime.cancelRequested && !runtime.initializationStalled)
-        runtime.notificationOutcome = { kind: 'cancelled' };
-      await this.publishTurnNotificationOutcome(runtime);
-      if (!runtime.promptStarted) {
-        this.deps.clearConversationTurn(sessionId, runtime.turnId);
-      }
-      span.end({ outcome, turnId });
-    }
-    if (inboxInput) {
-      if (inboxBatch)
-        await (
-          await createSessionBackend(sessionDoc)
-        )
-          .applyHistoryAction({
-            kind: 'operation-batch-status',
-            batchId: inboxBatch.batchId,
-            turnId:
-              inboxBatch.kind === 'automatic'
-                ? inboxBatch.inputId
-                : `operation-batch:${inboxBatch.batchId}`,
-            status: !runtime.promptStarted
-              ? 'not_submitted'
-              : outcome === 'completed' && !runtime.promptFailed
-                ? 'settled'
-                : 'unknown',
-          })
-          .catch((cause) =>
-            this.deps.logger.warn(
-              `Inbox history status projection failed: ${formatErrorMessage(cause)}`
-            )
-          );
+      // Freeze source state before allowing a successor to mutate the ledger.
+      const fact = this.resolveTurnOutcomeFact(runtime, !!inboxInput);
       try {
-        await runtime.inboxOwner!.finish(
-          runtime.cancelRequested || outcome === 'cancelled'
-            ? 'user_stop'
-            : outcome === 'completed' && !runtime.promptFailed && runtime.promptStarted
-              ? 'normal'
-              : 'failed',
-          runtime.releaseFailure
-        );
-        if (runtime.inboxOwner!.failure) runtime.releaseFailure = runtime.inboxOwner!.failure;
-      } catch (cause) {
-        runtime.releaseFailure = cause;
-        throw cause;
+        if (inboxInput && !runtime.releaseFailure) {
+          this.releaseTurnRuntime(sessionId, runtime.turnId);
+          await inbox!.wake();
+          this.onInboxReleased?.(sessionId);
+        }
+      } finally {
+        if (fact) {
+          const delivery = this.publishTurnOutcomeFact(fact);
+          this.ownedWork.add(delivery);
+          void delivery.finally(() => this.ownedWork.delete(delivery));
+        }
       }
-    }
-    if (inboxInput && !runtime.releaseFailure) {
-      this.releaseTurnRuntime(sessionId, runtime.turnId);
-      await inbox!.wake();
-      this.onInboxReleased?.(sessionId);
     }
     return outcome;
   }
@@ -4660,32 +4646,73 @@ export class SessionExecutionService {
     }
   }
 
-  private async publishTurnNotificationOutcome(runtime: TurnRuntimeState): Promise<void> {
-    const publish = this.deps.turnFinalization.onTurnOutcome;
+  private notificationOrigins(runtime: TurnRuntimeState): string[] {
+    const invocation = runtime.invocation;
+    return [
+      ...new Set([
+        ...(invocation?.notificationAudience?.kind === 'user' ? [invocation.sourceTurnId] : []),
+        ...(runtime.inboxNotificationWork?.userId === invocation?.requesterUserId
+          ? (runtime.inboxNotificationWork?.originTurnIds ?? [])
+          : []),
+      ]),
+    ];
+  }
+
+  private resolveTurnOutcomeFact(
+    runtime: TurnRuntimeState,
+    hasInbox: boolean
+  ): TurnOutcomeFact | undefined {
     const invocation = runtime.invocation;
     if (
-      !publish ||
-      runtime.notificationAttempted ||
+      !this.deps.turnFinalization.onTurnOutcome ||
       !runtime.notificationOutcome ||
       !invocation?.requesterUserId
     )
-      return;
-    const fact: TurnOutcomeFact = {
-      scope: { workspaceId: this.deps.workspaceId, recipientId: invocation.requesterUserId },
+      return undefined;
+    // Stop can arrive while history/Inbox settlement is awaiting I/O.
+    if (runtime.cancelRequested && !runtime.initializationStalled)
+      runtime.notificationOutcome = { kind: 'cancelled' };
+    else if (runtime.releaseFailure && runtime.notificationOutcome.kind !== 'cancelled')
+      runtime.notificationOutcome = { kind: 'unknown', code: 'execution_release_failed' };
+    const scope = {
+      workspaceId: this.deps.workspaceId,
+      sessionId: runtime.sessionId,
+      userId: invocation.requesterUserId,
+    };
+    const origins = this.notificationOrigins(runtime);
+    // Failures need attention now. Success requires at least one original
+    // human request to have no pending Operations or unconsumed results.
+    if (runtime.notificationOutcome.kind === 'succeeded' && origins.length) {
+      try {
+        const pending = this.notificationWork?.pendingOrigins(scope, origins);
+        if ((hasInbox && !pending) || (pending && origins.every((origin) => pending.has(origin))))
+          return undefined;
+      } catch (error) {
+        this.deps.logger.warn(
+          `[${runtime.sessionId}] Cannot establish notification completion: ${formatErrorMessage(error)}`
+        );
+        return undefined;
+      }
+    }
+    return {
+      scope: { workspaceId: scope.workspaceId, recipientId: scope.userId },
       sessionId: runtime.sessionId,
       turnId: invocation.sourceTurnId,
-      audience: invocation.notificationAudience ?? { kind: 'unknown' },
+      audience: origins.length
+        ? { kind: 'user' }
+        : (invocation.notificationAudience ?? { kind: 'unknown' }),
       outcome: { ...runtime.notificationOutcome },
     };
-    // Mark before invoking the consumer: a failed or uncertain submission ends
-    // this notification, including when finalization is entered again.
-    runtime.notificationAttempted = true;
+  }
+
+  private async publishTurnOutcomeFact(fact: TurnOutcomeFact): Promise<void> {
+    // Execution ownership is already released; a slow channel cannot hold the
+    // Session's prompt slot or Inbox launch. The host drain owns this delivery.
     try {
-      await publish(fact);
+      await this.deps.turnFinalization.onTurnOutcome?.(fact);
     } catch (error) {
-      // Notification failure must not replay provider execution or notification.
       this.deps.logger.error(
-        `[${runtime.sessionId}] Turn notification submission failed: ${formatErrorMessage(error)}`
+        `[${fact.sessionId}] Turn notification submission failed: ${formatErrorMessage(error)}`
       );
     }
   }
@@ -4835,6 +4862,8 @@ export class SessionExecutionService {
         requesterUserId: string;
         sourceTurnId: string;
         inputConfig: SessionTurnInputConfig;
+        notificationOriginTurnIds: string[];
+        notificationProvenancePending?: boolean;
       }
     | undefined {
     const runtime = this.turnRuntimeBySession.get(sessionId);
@@ -4855,6 +4884,12 @@ export class SessionExecutionService {
       requesterUserId: invocation.requesterUserId,
       sourceTurnId: invocation.sourceTurnId,
       inputConfig: invocation.inputConfig,
+      notificationOriginTurnIds: this.notificationOrigins(runtime),
+      ...((!invocation.notificationAudience ||
+        invocation.notificationAudience.kind === 'unknown') &&
+      runtime.inboxOwner?.input?.kind !== 'automatic'
+        ? { notificationProvenancePending: true }
+        : {}),
     };
   }
 
@@ -5908,7 +5943,6 @@ export class SessionExecutionService {
 
       const completedTurnId = runtime.turnId;
       const completedUserTurnId = runtime.userTurnId ?? executionUserTurnId;
-      const completedInputTurnId = runtime.invocation?.sourceTurnId ?? completedUserTurnId;
       const completedRequesterUserId = runtime.invocation?.requesterUserId ?? userId;
       // Read before finalization clears the turn's ACP update state.
       const producedOutput = self.turnProducedVisibleOutput(sessionId, completedTurnId);
@@ -5942,10 +5976,8 @@ export class SessionExecutionService {
               session: activeSession,
               sessionDoc,
               turnId: completedTurnId,
-              inputTurnId: completedInputTurnId,
               baseCommitHash,
               turnStartWorkingTreeDiff,
-              userId: completedRequesterUserId,
               project,
               producedOutput,
               isTurnCancelled: () => self.isTurnCancelled(sessionId, completedTurnId),
@@ -5956,7 +5988,6 @@ export class SessionExecutionService {
       runtime.finalizeCompleted = true;
 
       yield* abortIfCancelled();
-      yield* self.tryPromise(() => self.publishTurnNotificationOutcome(runtime));
 
       if (!producedOutput) {
         runtime.promptFailed = true;
@@ -6633,7 +6664,6 @@ export class SessionExecutionService {
 
           const completedTurnId = runtime.turnId;
           const completedUserTurnId = runtime.userTurnId ?? userTurnId;
-          const completedInputTurnId = runtime.invocation?.sourceTurnId ?? completedUserTurnId;
           const completedRequesterUserId =
             runtime.invocation?.requesterUserId ?? sessionConfig.requesterUserId;
           // Read before finalization clears the turn's ACP update state.
@@ -6668,10 +6698,8 @@ export class SessionExecutionService {
                   session,
                   sessionDoc,
                   turnId: completedTurnId,
-                  inputTurnId: completedInputTurnId,
                   baseCommitHash,
                   turnStartWorkingTreeDiff,
-                  userId: completedRequesterUserId,
                   project,
                   producedOutput,
                   isTurnCancelled: () => self.isTurnCancelled(sessionId, completedTurnId),
@@ -6682,7 +6710,6 @@ export class SessionExecutionService {
           runtime.finalizeCompleted = true;
 
           yield* abortIfCancelled();
-          yield* self.tryPromise(() => self.publishTurnNotificationOutcome(runtime));
 
           if (!producedOutput) {
             runtime.promptFailed = true;

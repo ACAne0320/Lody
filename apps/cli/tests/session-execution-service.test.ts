@@ -1,7 +1,11 @@
 import * as quotaRunner from '../src/agent/acp-runner';
 import { ProviderQuotaRefreshCache } from '../src/session/provider-quota-refresh-cache';
 import { createSessionBackend } from '@/session/session-backend';
-import type { TurnOutcomeFact, TurnResultAudience } from '@lody/shared/notifications';
+import {
+  projectTurnAttention,
+  type TurnOutcomeFact,
+  type TurnResultAudience,
+} from '@lody/shared/notifications';
 import {
   RequestError,
   type ContentBlock,
@@ -271,7 +275,7 @@ const createBaseDeps = (
       updateSessionDiffStats: vi.fn(async () => []),
       detectAndAssociatePR: vi.fn(async () => null),
       syncWorkspaceGitState: vi.fn(async () => {}),
-      notifySessionCompleted: vi.fn(async () => {}),
+      onTurnOutcome: vi.fn(async () => {}),
     },
     recordChatFailure: vi.fn(async () => {}),
     maybeGenerateAndStoreSessionTitle: vi.fn(async () => {}),
@@ -670,6 +674,8 @@ describe('SessionExecutionService', () => {
       inputConfig: frozenInput,
     });
     expect(service.getActiveInvocationContext(sessionId)).toEqual({
+      notificationOriginTurnIds: [],
+      notificationProvenancePending: true,
       requesterUserId: 'user-1',
       sourceTurnId: 'user-2',
       inputConfig: frozenInput,
@@ -972,7 +978,7 @@ describe('SessionExecutionService', () => {
       lastHandledUserMsgId: 'user-c',
       processingUserMsgId: undefined,
     });
-    expect(deps.turnFinalization.notifySessionCompleted).toHaveBeenCalledTimes(1);
+    expect(deps.turnFinalization.onTurnOutcome).toHaveBeenCalledTimes(1);
     expect(deps.processMessageQueue).toHaveBeenCalledTimes(1);
     expect(service.getExecutionSnapshot(sessionId)).toMatchObject({ hasActiveTurn: false });
   });
@@ -2407,7 +2413,7 @@ describe('SessionExecutionService', () => {
         history = updater(history);
       }),
     });
-    const notifySessionCompleted = vi.fn(async () => {});
+    const onTurnOutcome = vi.fn(async () => {});
     const deps = createBaseDeps({
       sessionManager: {
         getSession: vi.fn(() => activeSession),
@@ -2428,7 +2434,7 @@ describe('SessionExecutionService', () => {
       } as unknown as LoroDocumentManager,
       turnFinalization: {
         ...createBaseDeps({}).turnFinalization,
-        notifySessionCompleted,
+        onTurnOutcome,
       },
     });
 
@@ -2448,7 +2454,7 @@ describe('SessionExecutionService', () => {
 
     expect(agentClient.prompt).toHaveBeenCalled();
     expect(history[0]?.status).toBe('handled');
-    expect(notifySessionCompleted).toHaveBeenCalledTimes(1);
+    expect(onTurnOutcome).toHaveBeenCalledTimes(1);
   });
 
   it('restores the ACP process before prompting when the turn Git identity changed', async () => {
@@ -2550,7 +2556,6 @@ describe('SessionExecutionService', () => {
     promptFailure?: unknown;
     notificationAudience?: TurnResultAudience;
     onTurnOutcome?: (fact: TurnOutcomeFact) => Promise<void>;
-    legacyNotifications?: boolean;
     onTurnClaimed?: () => Promise<boolean>;
     onTurnStarted?: () => Promise<boolean>;
   }) => {
@@ -2609,7 +2614,10 @@ describe('SessionExecutionService', () => {
       }),
     });
     const notificationFacts: TurnOutcomeFact[] = [];
-    const notifySessionCompleted = vi.fn(async () => {});
+    const onTurnOutcome = vi.fn(async (fact: TurnOutcomeFact) => {
+      await options.onTurnOutcome?.(fact);
+      notificationFacts.push(fact);
+    });
     const finalizationOwners: boolean[] = [];
     const upsertDocMeta = vi.fn(async () => {});
     const deps = createBaseDeps({
@@ -2640,15 +2648,7 @@ describe('SessionExecutionService', () => {
       } as unknown as LoroDocumentManager,
       turnFinalization: {
         ...createBaseDeps({}).turnFinalization,
-        notifySessionCompleted,
-        ...(options.legacyNotifications
-          ? {}
-          : {
-              onTurnOutcome: async (fact: TurnOutcomeFact) => {
-                await options.onTurnOutcome?.(fact);
-                notificationFacts.push(fact);
-              },
-            }),
+        onTurnOutcome,
         finalizeACPState: vi.fn(async (_sessionId, turnId) => {
           finalizationOwners.push(
             service.getExecutionSnapshot(options.sessionId as SessionId).hasActiveTurn
@@ -2687,10 +2687,10 @@ describe('SessionExecutionService', () => {
       );
     }
 
+    await service.drainInboxExecutions();
     return withHistoryPort({
       deps,
       sessionDoc,
-      notifySessionCompleted,
       notificationFacts,
       upsertDocMeta,
       agentClient,
@@ -2792,7 +2792,7 @@ describe('SessionExecutionService', () => {
   });
 
   it('fails a turn whose prompt completed without emitting any agent output', async () => {
-    const { deps, sessionDoc, notifySessionCompleted, upsertDocMeta, agentClient, getHistory } =
+    const { deps, sessionDoc, notificationFacts, upsertDocMeta, agentClient, getHistory } =
       await runSilentPromptTurn({
         sessionId: 'session-silent-turn',
         hasPromptOutputForTurn: false,
@@ -2806,7 +2806,7 @@ describe('SessionExecutionService', () => {
     );
     expect(getHistory()[0]?.status).toBe('failed');
     // Claiming the session finished would contradict the failure shown in chat.
-    expect(notifySessionCompleted).not.toHaveBeenCalled();
+    expect(notificationFacts.some((fact) => fact.outcome.kind === 'succeeded')).toBe(false);
     // The pointer still advances: the prompt was delivered, so re-dispatching it
     // would repeat the same silent failure forever.
     expect(upsertDocMeta).toHaveBeenCalledWith(
@@ -2818,16 +2818,15 @@ describe('SessionExecutionService', () => {
     );
   });
 
-  it('publishes an output turn through the new consumer without the legacy sender', async () => {
-    const { deps, notifySessionCompleted, getHistory, notificationFacts } =
-      await runSilentPromptTurn({
-        sessionId: 'session-output-turn',
-        hasPromptOutputForTurn: true,
-      });
+  it('publishes a single successful output fact', async () => {
+    const { deps, getHistory, notificationFacts } = await runSilentPromptTurn({
+      sessionId: 'session-output-turn',
+      hasPromptOutputForTurn: true,
+    });
 
     expect(deps.recordChatFailure).not.toHaveBeenCalled();
     expect(getHistory()[0]?.status).toBe('handled');
-    expect(notifySessionCompleted).not.toHaveBeenCalled();
+    expect(notificationFacts).toHaveLength(1);
     expect(notificationFacts[0]?.outcome).toEqual({ kind: 'succeeded' });
   });
 
@@ -2841,11 +2840,14 @@ describe('SessionExecutionService', () => {
         turnId: 'sender-turn',
         name: 'Agent',
       } as const;
-      const { deps, notifySessionCompleted, getHistory, getStatus, finalizationOwners } =
+      const { deps, notificationFacts, getHistory, getStatus, finalizationOwners } =
         await runSilentPromptTurn({
           sessionId: `session-notify-${kind}`,
           hasPromptOutputForTurn: true,
-          legacyNotifications: true,
+          notificationAudience:
+            kind === 'agent'
+              ? { kind: 'agent', sessionId: 'sender-session' as SessionId, turnId: 'sender-turn' }
+              : { kind: 'user' },
           inputAuthor: kind === 'agent' ? agentAuthor : { v: 1, kind: 'human', userId: 'user-1' },
           earlierInputAuthor: kind === 'human' ? agentAuthor : undefined,
         });
@@ -2857,9 +2859,7 @@ describe('SessionExecutionService', () => {
       expect(finalizationOwners).toEqual([true]);
       expect(getStatus()).toEqual(SessionStatusFactory.idle());
       expect(deps.recordChatFailure).not.toHaveBeenCalled();
-      expect(notifySessionCompleted.mock.calls).toEqual(
-        kind === 'agent' ? [] : [[`session-notify-${kind}`, 'user-1', 'assistant:turn-user-1']]
-      );
+      expect(notificationFacts[0]?.audience.kind).toBe(kind === 'human' ? 'user' : 'agent');
     }
   );
 
@@ -3010,6 +3010,8 @@ describe('SessionExecutionService', () => {
       hasActiveTurn: true,
     });
     expect(service.getActiveInvocationContext('session-prepared-presence' as SessionId)).toEqual({
+      notificationOriginTurnIds: [],
+      notificationProvenancePending: true,
       requesterUserId: 'user-b',
       sourceTurnId: 'turn-prepared-presence',
       inputConfig: { prompt: 'fast path prompt' },
@@ -3599,7 +3601,7 @@ describe('SessionExecutionService', () => {
         refreshCodeCollabSharedState,
         detectAndAssociatePR: vi.fn(async () => ({ baseBranch: 'release/v2' })),
         syncWorkspaceGitState: vi.fn(async () => {}),
-        notifySessionCompleted: vi.fn(async () => {}),
+        onTurnOutcome: vi.fn(async () => {}),
       },
     });
 
@@ -5241,10 +5243,12 @@ describe('SessionExecutionService', () => {
       [{ type: 'text', text: 'built prompt' }],
       { signal: expect.any(AbortSignal) }
     );
-    expect(deps.turnFinalization.notifySessionCompleted).toHaveBeenCalledWith(
-      'session-2',
-      'user-2',
-      'turn-1'
+    expect(deps.turnFinalization.onTurnOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session-2',
+        scope: { workspaceId: 'workspace-1', recipientId: 'user-2' },
+        outcome: { kind: 'succeeded' },
+      })
     );
     expect(deps.startSessionActivePresence).toHaveBeenCalledTimes(1);
     expect(deps.startSessionActivePresence).toHaveBeenCalledWith('session-2', 'initializing');
@@ -8292,7 +8296,6 @@ describe('SessionExecutionService', () => {
       'session-prompt-cancel-resolved',
       'assistant-prompt-cancel-resolved'
     );
-    expect(deps.turnFinalization.notifySessionCompleted).not.toHaveBeenCalled();
     expect(deps.processMessageQueue).not.toHaveBeenCalled();
     expect(upsertDocMeta).toHaveBeenCalledWith('session-session-prompt-cancel-resolved', {
       lastHandledUserMsgId: 'turn-prompt-cancel-resolved',
@@ -8392,7 +8395,7 @@ describe('SessionExecutionService', () => {
         updateSessionDiffStats: vi.fn(async () => []),
         detectAndAssociatePR: vi.fn(async () => null),
         syncWorkspaceGitState: vi.fn(async () => {}),
-        notifySessionCompleted: vi.fn(async () => {}),
+        onTurnOutcome: vi.fn(async () => {}),
       },
       processMessageQueue: vi.fn(async () => {}),
     });
@@ -8414,7 +8417,9 @@ describe('SessionExecutionService', () => {
     });
 
     expect(agentClient.cancel).not.toHaveBeenCalled();
-    expect(deps.turnFinalization.notifySessionCompleted).not.toHaveBeenCalled();
+    expect(deps.turnFinalization.onTurnOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: { kind: 'cancelled' } })
+    );
     expect(deps.processMessageQueue).not.toHaveBeenCalled();
     expect(sessionDoc.setStatus).toHaveBeenCalledWith(SessionStatusFactory.idle());
     // The rest of finalization is skipped, but the interrupted turn may have
@@ -8491,7 +8496,9 @@ describe('SessionExecutionService', () => {
       userEmail: 'user4@example.com',
     });
 
-    expect(deps.turnFinalization.notifySessionCompleted).not.toHaveBeenCalled();
+    expect(deps.turnFinalization.onTurnOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: { kind: 'failed', code: 'session_create_failed' } })
+    );
     expect(sessionDoc.setStatus).toHaveBeenCalledWith(
       SessionStatusFactory.initializing(),
       expect.objectContaining({ latestUserMsgId: 'turn-create-4' })
@@ -9934,10 +9941,14 @@ describe('SessionExecutionService goal control', () => {
   });
 
   it('starts a Lody-owned turn for an action that resumes work', async () => {
-    const { service, submitted, completion, delivered, failures } = createGoalService({
+    const { service, deps, submitted, completion, delivered, failures } = createGoalService({
       transport: 'promptMeta',
     });
 
+    const notified = createDeferred<TurnOutcomeFact>();
+    deps.turnFinalization.onTurnOutcome = async (fact) => {
+      notified.resolve(fact);
+    };
     const response = await service.controlSessionGoal({ ...goalArgs, action: 'resume' });
 
     expect(response).toMatchObject({ accepted: true, disposition: 'queued' });
@@ -9946,8 +9957,16 @@ describe('SessionExecutionService goal control', () => {
     expect(failures).toEqual([]);
     expect(service.getExecutionSnapshot(goalSessionId).hasActiveTurn).toBe(true);
     const released = service.waitForTurnRelease(goalSessionId, 'turn-1');
+    expect(service.getActiveInvocationContext(goalSessionId)?.notificationOriginTurnIds).toEqual([
+      expect.stringMatching(/^goal:resume:/),
+    ]);
     completion.resolve();
     await released;
+    expect(await notified.promise).toMatchObject({
+      audience: { kind: 'user' },
+      outcome: { kind: 'succeeded' },
+      scope: { recipientId: 'owner-user' },
+    });
     expect(service.getExecutionSnapshot(goalSessionId).hasActiveTurn).toBe(false);
   });
 
@@ -10590,7 +10609,10 @@ describe('Operation Inbox execution boundary', () => {
       },
       report: () => {},
     });
-    service.setOperationInbox(bridge);
+    service.setOperationInbox(bridge, undefined, {
+      originsForBatch: (batch) => store.notificationOriginsForBatch(batch),
+      pendingOrigins: (scope, origins) => store.pendingNotificationOrigins(scope, origins),
+    });
     const message = {
       type: 'session/chat' as const,
       sessionId,
@@ -10602,25 +10624,32 @@ describe('Operation Inbox execution boundary', () => {
       userName: 'User',
       userEmail: 'user@example.com',
     };
-    const add = (id: string, depth = 0) => {
+    const add = (
+      id: string,
+      depth = 0,
+      origins: string[] = [],
+      finish = true,
+      userId = 'user-1'
+    ) => {
       store.accept({
         workspaceId: 'workspace-1' as WorkspaceId,
         ownerMachineId: 'machine-1' as MachineId,
         requesterSessionId: sessionId,
-        requesterUserId: 'user-1',
+        requesterUserId: userId,
         operationId: id,
         kind: 'session_chat',
         canonicalCommand: { id },
         frozenContinuationConfig: {
           inputConfig: { prompt: 'OBSOLETE_REQUEST' },
           sourceTurnId: 'older-source',
+          notificationOriginTurnIds: origins,
         },
         initiatorChainDepth: depth,
         createdAt: '2026-10-11T00:00:00Z',
         deadlineAt: '2026-10-13T00:00:00Z',
         items: [],
       });
-      store.finish(sessionId, id, { type: 'result', value: { items: [] } });
+      if (finish) store.finish(sessionId, id, { type: 'result', value: { items: [] } });
     };
     const accept = () =>
       service.acceptInboxHumanInput({
@@ -10631,6 +10660,7 @@ describe('Operation Inbox execution boundary', () => {
       });
     const close = async () => {
       await bridge.close();
+      await service.drainInboxExecutions();
       store.close();
       fs.rmSync(root, { recursive: true, force: true });
     };
@@ -10649,6 +10679,298 @@ describe('Operation Inbox execution boundary', () => {
       storePath: path.join(root, 'operations.sqlite3'),
     };
   }
+
+  it('notifies once after five children, partial summaries and a follow-up delegation finish', async () => {
+    const summaries = [createDeferred<void>(), createDeferred<void>(), createDeferred<void>()];
+    let summaryCount = 0;
+    let promptCount = 0;
+    const facts: TurnOutcomeFact[] = [];
+    const f = inboxExecutionFixture(
+      async () => {
+        promptCount++;
+        const invocation = f.service.getActiveInvocationContext(f.message.sessionId)!;
+        expect(invocation.notificationOriginTurnIds).toEqual(['human-input']);
+        if (promptCount === 1) {
+          for (let i = 0; i < 5; i++)
+            f.add(`child-${i}`, 0, invocation.notificationOriginTurnIds, false);
+        } else if (promptCount === 3) {
+          f.add('follow-up', 1, invocation.notificationOriginTurnIds, false);
+        }
+        return { stopReason: 'end_turn' };
+      },
+      undefined,
+      () => summaries[summaryCount++]!.resolve()
+    );
+    f.deps.turnFinalization.onTurnOutcome = async (fact) => {
+      // Success is published only after the consumed batch is durably settled.
+      expect(f.store.inbox.historyReceipts('workspace-1').every((b) => b.state === 'settled')).toBe(
+        true
+      );
+      facts.push(fact);
+    };
+    const finish = (id: string) =>
+      f.store.finish(f.message.sessionId, id, { type: 'result', value: { items: [] } });
+    try {
+      await f.accept();
+      await f.service.continueSession(f.message, { notificationAudience: { kind: 'user' } });
+      expect(facts).toEqual([]);
+      finish('child-0');
+      await f.wake();
+      await summaries[0]!.promise;
+      expect(facts).toEqual([]);
+      for (let i = 1; i < 5; i++) finish(`child-${i}`);
+      await f.wake();
+      await summaries[1]!.promise;
+      expect(facts).toEqual([]);
+      finish('follow-up');
+      await f.wake();
+      await summaries[2]!.promise;
+      expect(promptCount).toBe(4);
+      expect(facts).toEqual([
+        expect.objectContaining({ audience: { kind: 'user' }, outcome: { kind: 'succeeded' } }),
+      ]);
+      expect(facts[0]!.turnId).not.toBe('human-input');
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each([false, true])(
+    'keeps delegated summaries silent and surfaces user summary errors (user=%s)',
+    async (human) => {
+      const complete = createDeferred<void>();
+      let prompts = 0;
+      const facts: TurnOutcomeFact[] = [];
+      const f = inboxExecutionFixture(
+        async () => {
+          if (++prompts === 1) {
+            const origins = f.service.getActiveInvocationContext(
+              f.message.sessionId
+            )!.notificationOriginTurnIds;
+            f.add('child', 0, origins, false);
+            f.add('still-pending', 0, origins, false);
+          } else throw new Error('summary failed');
+          return { stopReason: 'end_turn' };
+        },
+        undefined,
+        () => complete.resolve()
+      );
+      f.deps.turnFinalization.onTurnOutcome = async (fact) => {
+        facts.push(fact);
+      };
+      try {
+        await f.accept();
+        await f.service.continueSession(f.message, {
+          notificationAudience: human
+            ? { kind: 'user' }
+            : { kind: 'agent', sessionId: 'caller' as SessionId, turnId: 'caller-turn' },
+        });
+        expect(facts.flatMap((fact) => projectTurnAttention(fact) ?? [])).toEqual([]);
+        f.store.finish(f.message.sessionId, 'child', { type: 'result', value: { items: [] } });
+        await f.wake();
+        await complete.promise;
+        const attention = facts.flatMap((fact) => projectTurnAttention(fact) ?? []);
+        expect(attention).toEqual(human ? [expect.objectContaining({ outcome: 'failed' })] : []);
+      } finally {
+        await f.close();
+      }
+    }
+  );
+
+  it('binds inherited origins to their recipient and checks the new requester after steer', async () => {
+    const started = createDeferred<void>();
+    const originalDone = createDeferred<unknown>();
+    const steerDone = createDeferred<unknown>();
+    const f = inboxExecutionFixture(async () => {
+      started.resolve();
+      return await originalDone.promise;
+    });
+    Object.assign(f.client, {
+      getAcknowledgedSteerCapability: () => ({
+        provider: 'claudeCode',
+        appliedNotificationMethod: 'claude/steerApplied',
+        upstreamTurn: 'handoff',
+        configPolicy: 'apply',
+      }),
+      steerPrompt: () => ({
+        completion: steerDone.promise,
+        outcome: Promise.resolve({
+          outcome: 'applied',
+          application: { steerId: 'steer', release: () => {} },
+        }),
+      }),
+    });
+    const facts: TurnOutcomeFact[] = [];
+    f.deps.turnFinalization.onTurnOutcome = async (fact) => {
+      facts.push(fact);
+    };
+    try {
+      f.add('old-user-result', 0, ['old-user-request']);
+      await f.accept();
+      const running = f.service.continueSession(f.message, {
+        notificationAudience: { kind: 'user' },
+      });
+      await started.promise;
+      const source = (await (await createSessionBackend(f.doc)).readHistory())[0]!;
+      await f.doc.sessionData.commands.applyHistoryAction({
+        kind: 'upsert-turn',
+        turn: { ...source, id: 'steer-input', userId: 'user-2', status: 'pending' },
+      });
+      expect(
+        await f.service.steerSession({
+          sessionId: f.message.sessionId,
+          expectedTurnId: 'assistant:human-input',
+          userTurnId: 'steer-input',
+          userId: 'user-2',
+          timestamp: '2026-10-12T00:00:00Z',
+          inputConfig: f.message.acpSessionConfig,
+        })
+      ).toMatchObject({ applied: true });
+      f.service.setTurnNotificationAudience(f.message.sessionId, 'steer-input', { kind: 'user' });
+      expect(f.service.getActiveInvocationContext(f.message.sessionId)).toMatchObject({
+        requesterUserId: 'user-2',
+        notificationOriginTurnIds: ['steer-input'],
+      });
+      f.add('new-user-child', 0, ['steer-input'], false, 'user-2');
+      originalDone.resolve({ stopReason: 'end_turn' });
+      steerDone.resolve({ stopReason: 'end_turn' });
+      await running;
+      expect(facts).toEqual([]);
+    } finally {
+      originalDone.resolve({});
+      steerDone.resolve({});
+      await f.close();
+    }
+  });
+
+  it('rechecks Stop after awaiting batch history settlement', async () => {
+    const settling = createDeferred<void>();
+    const settle = createDeferred<void>();
+    const f = inboxExecutionFixture(async () => ({ stopReason: 'end_turn' }));
+    const apply = f.doc.sessionData.commands.applyHistoryAction.bind(f.doc.sessionData.commands);
+    vi.spyOn(f.doc.sessionData.commands, 'applyHistoryAction').mockImplementation(
+      async (action) => {
+        if (action.kind === 'operation-batch-status' && action.status === 'settled') {
+          settling.resolve();
+          await settle.promise;
+        }
+        return await apply(action);
+      }
+    );
+    const facts: TurnOutcomeFact[] = [];
+    f.deps.turnFinalization.onTurnOutcome = async (fact) => {
+      facts.push(fact);
+    };
+    try {
+      f.add('result', 0, ['human-input']);
+      await f.accept();
+      const running = f.service.continueSession(f.message, {
+        notificationAudience: { kind: 'user' },
+      });
+      await settling.promise;
+      await f.service.cancelSession({
+        sessionId: f.message.sessionId,
+        turnId: 'assistant:human-input',
+        machineId: 'machine-1',
+        workspaceId: 'workspace-1' as WorkspaceId,
+      });
+      settle.resolve();
+      await running;
+      expect(facts.map((fact) => fact.outcome)).toEqual([{ kind: 'cancelled' }]);
+      expect(facts.flatMap((fact) => projectTurnAttention(fact) ?? [])).toEqual([]);
+    } finally {
+      settle.resolve();
+      await f.close();
+    }
+  });
+
+  it('releases the execution slot while a notification transport is still pending', async () => {
+    const sending = createDeferred<void>();
+    const delivered = createDeferred<void>();
+    const f = inboxExecutionFixture(async () => ({ stopReason: 'end_turn' }));
+    f.deps.turnFinalization.onTurnOutcome = async () => {
+      sending.resolve();
+      await delivered.promise;
+    };
+    try {
+      await f.accept();
+      const running = f.service.continueSession(f.message, {
+        notificationAudience: { kind: 'user' },
+      });
+      await sending.promise;
+      expect(f.service.getExecutionSnapshot(f.message.sessionId).hasActiveTurn).toBe(false);
+      expect(f.store.hasPendingWorkForRequester(f.message.workspaceId, f.message.sessionId)).toBe(
+        false
+      );
+      delivered.resolve();
+      await running;
+    } finally {
+      delivered.resolve();
+      await f.close();
+    }
+  });
+
+  it('runs the next automatic batch while the previous batch notification is still sending', async () => {
+    const sending = createDeferred<void>();
+    const delivered = createDeferred<void>();
+    const secondPrompt = createDeferred<void>();
+    const secondBatchDone = createDeferred<void>();
+    let prompts = 0;
+    let batches = 0;
+    const f = inboxExecutionFixture(
+      async () => {
+        if (++prompts === 2) secondPrompt.resolve();
+        return { stopReason: 'end_turn' };
+      },
+      undefined,
+      () => {
+        if (++batches === 2) secondBatchDone.resolve();
+      }
+    );
+    let sends = 0;
+    f.deps.turnFinalization.onTurnOutcome = async () => {
+      if (++sends === 1) {
+        sending.resolve();
+        await delivered.promise;
+      }
+    };
+    try {
+      f.add('first', 0, ['request-a']);
+      await f.wake();
+      await sending.promise;
+      f.add('second', 0, ['request-b']);
+      await f.wake();
+      await secondPrompt.promise;
+      await secondBatchDone.promise;
+      expect(sends).toBe(2);
+      delivered.resolve();
+      await f.service.drainInboxExecutions();
+    } finally {
+      delivered.resolve();
+      await f.close();
+    }
+  });
+
+  it('continues actual work when notification provenance cannot be read', async () => {
+    const prompt = vi.fn(async () => ({ stopReason: 'end_turn' }));
+    const f = inboxExecutionFixture(prompt);
+    vi.spyOn(f.store, 'notificationOriginsForBatch').mockImplementation(() => {
+      throw new Error('notification lookup unavailable');
+    });
+    const facts: TurnOutcomeFact[] = [];
+    f.deps.turnFinalization.onTurnOutcome = async (fact) => {
+      facts.push(fact);
+    };
+    try {
+      f.add('result', 0, ['old-request']);
+      await f.accept();
+      await f.service.continueSession(f.message);
+      expect(prompt).toHaveBeenCalledOnce();
+      expect(facts.flatMap((fact) => projectTurnAttention(fact) ?? [])).toEqual([]);
+    } finally {
+      await f.close();
+    }
+  });
 
   it('journals later resources through the active Session adapter before releasing execution', async () => {
     const started = createDeferred<void>();
@@ -11037,7 +11359,11 @@ describe('Operation Inbox execution boundary', () => {
       });
       release.resolve();
       await running;
-      expect((await (await createSessionBackend(f.doc)).readHistory()).find((turn) => turn.id === 'human-input')).toMatchObject({ status: 'canceled', cancellationReason: 'user_stop' });
+      expect(
+        (await (await createSessionBackend(f.doc)).readHistory()).find(
+          (turn) => turn.id === 'human-input'
+        )
+      ).toMatchObject({ status: 'canceled', cancellationReason: 'user_stop' });
       expect(received).toEqual([]);
       expect(
         (f.store as unknown as { db: Database.Database }).db

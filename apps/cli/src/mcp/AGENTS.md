@@ -36,11 +36,11 @@ Parent instructions apply. Background: [README.md](README.md).
   Projects default to child Sessions only for same-Machine Roles. `readDelegatedMachineAccess`
   requires access for both executing Machine owner and driving human (owned, or shared with
   shared project), never trusting synced `MachineMeta.ownerUserId`.
-- Derive orchestration identity only from the active execution runtime's dispatch payload;
-  reject absent runtime/userId, never infer from daemon credential, Session owner or history.
-  Freeze `requesterUserId` and `sourceTurnId` at Operation acceptance; requester Session id
-  already identifies the Session. Authors are presentation/provenance only. Recovery uses
-  the owner Machine and current authorization.
+- Operation identity comes only from active Host dispatch; reject absent runtime/userId.
+  Never infer identity from credentials, Session ownership or history. Freeze requesterUserId
+  and sourceTurnId. Resolve pending notification provenance from exact input before
+  acceptance; unsynced input is retryable, never empty origins.
+  Authors are provenance, not authorization. Recovery uses owner Machine/current access.
 - Direct Role creation stays on the ordinary `lody_session_create` and
   `lody_session_create_many` tools. When `agentRoleId` is present, tolerate manual Machine, Agent,
   and run-config fields but remove them before resolution: the current Role row is authoritative
