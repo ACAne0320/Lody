@@ -53,7 +53,11 @@ CLI/MCP orchestration contract is specs/session-orchestration.md.
 - `session-execution-helpers.ts` — composes first-task prompt context, with branch-naming
   guidance only after execution verifies this Session's temporary branch in an ordinary
   new independent GitHub/local worktree.
-- `acp-error-classification.ts` — JSON-RPC/transport error string matching for the above.
+- `acp-error-classification.ts` — JSON-RPC/transport error classification for the above,
+  including confirmed quota exhaustion. A terminal quota failure finalizes its turn
+  without forcing runtime termination, preserves the provider's explanation, and
+  does not automatically replay the rejected prompt. An earlier adapter quota notice
+  is not duplicated when the terminal error arrives.
 - `session-manager.ts` / `session.ts` / `session-sandbox.ts` / `terminal-manager.ts` —
   session and process lifecycle, workdirs, worktrees, sandboxed spawning, ACP terminals.
   Managed GitHub credential preparation excludes local projects and their worktrees;

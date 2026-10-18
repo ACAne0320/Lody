@@ -200,6 +200,9 @@ export const mapACPErrorToFailureReason = (error: ParsedACPError): ChatFailedRea
   }
   switch (error.code) {
     case ACP_ERROR_CODES.INTERNAL_ERROR:
+      if (getStringField(error.data, 'errorKind') === 'quota_exhausted') {
+        return 'acp_quota_exhausted';
+      }
       // Some ACP adapters wrap a stale JSON-RPC transport as "-32603 Internal error".
       // Treat known transport-disposal text as a recoverable agent disconnect instead
       // of surfacing a generic "Agent internal error" to users.
@@ -244,6 +247,9 @@ export const shouldTerminateOnACPError = (
     return false;
   }
   if (failureReason === 'acp_provider_overloaded') {
+    return false;
+  }
+  if (failureReason === 'acp_quota_exhausted') {
     return false;
   }
   return error.code === ACP_ERROR_CODES.INTERNAL_ERROR;

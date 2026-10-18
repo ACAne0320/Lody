@@ -2604,6 +2604,7 @@
   "sessions.submitAnswer": "提交",
   "sessions.systemNotices.chatFailed.acpAuthRequired": "需要身份验证",
   "sessions.systemNotices.chatFailed.acpInternalError": "Agent 内部错误",
+  "sessions.systemNotices.chatFailed.acpQuotaExhausted": "账号额度已用尽",
   "sessions.systemNotices.chatFailed.acpInvalidParams": "请求参数无效",
   "sessions.systemNotices.chatFailed.acpInvalidRequest": "请求无效",
   "sessions.systemNotices.chatFailed.acpMethodNotFound": "Agent 协议方法未找到",

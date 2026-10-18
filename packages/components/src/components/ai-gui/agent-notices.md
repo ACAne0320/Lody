@@ -53,6 +53,16 @@ agent's answer and the agent's own warning about it.
   0.5px border up to a full pixel at EVERY device pixel ratio, so the utility
   renders identically to `border` and buys nothing.
 
+## Account quota exhaustion
+
+Confirmed account quota exhaustion uses `acp_quota_exhausted`, with the localized
+title "Account usage limit reached". The provider explanation,
+including a reset time when supplied, remains in the ordinary failure detail.
+This failure does not offer the model-capacity retry countdown.
+An adapter can report the restriction earlier through the neutral notice carrier.
+Its later terminal error carries `quotaNoticePublished` so the host finalizes the
+turn without appending a second copy of the already visible explanation.
+
 ## Copying failures
 
 Every `chat_failed` banner has an always-visible Copy error button, including

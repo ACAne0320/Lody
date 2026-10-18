@@ -57,6 +57,28 @@ export const Short: Story = {
   },
 };
 
+export const QuotaExhausted: Story = {
+  args: {
+    sessionId,
+    message: {
+      id: 'quota-exhausted',
+      role: 'system',
+      timestamp: '2026-10-19T12:00:00.000Z',
+      read: true,
+      items: [
+        {
+          type: 'system_notice',
+          name: 'chat_failed',
+          meta: {
+            reason: 'acp_quota_exhausted',
+            message: 'Claude account usage limit reached. Resets at 2026-10-19T20:00:00.000Z.',
+          },
+        },
+      ],
+    },
+  },
+};
+
 /** Wraps inside the column instead of widening it. */
 export const LongSingleLine: Story = {
   args: {

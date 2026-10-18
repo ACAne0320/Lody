@@ -62,24 +62,27 @@ describe('message-schemas system_notice', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts chat_failed notice with reason meta', () => {
-    const result = MessageContentSchema.safeParse({
-      type: 'system_notice',
-      name: 'chat_failed',
-      meta: {
-        reason: 'session_not_found',
-        message: 'Session not found',
-      },
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.meta).toEqual({
-        reason: 'session_not_found',
-        message: 'Session not found',
+  it.each(['session_not_found', 'acp_quota_exhausted'])(
+    'accepts a chat_failed notice with reason %s',
+    (reason) => {
+      const result = MessageContentSchema.safeParse({
+        type: 'system_notice',
+        name: 'chat_failed',
+        meta: {
+          reason,
+          message: 'Session not found',
+        },
       });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.meta).toEqual({
+          reason,
+          message: 'Session not found',
+        });
+      }
     }
-  });
+  );
 
   it('accepts an actionable diagnostic code on a generic chat failure reason', () => {
     const result = MessageContentSchema.safeParse({

@@ -3733,7 +3733,14 @@ export class SessionExecutionService {
           failureReason,
           true
         );
-        await this.deps.recordChatFailure(sessionDoc, failureReason, recordedMessage);
+        const quotaNoticePublished =
+          failureReason === 'acp_quota_exhausted' &&
+          !!acpError.data &&
+          typeof acpError.data === 'object' &&
+          (acpError.data as Record<string, unknown>).quotaNoticePublished === true;
+        if (!quotaNoticePublished) {
+          await this.deps.recordChatFailure(sessionDoc, failureReason, recordedMessage);
+        }
 
         if (shouldTerminateOnACPError(acpError, failureReason)) {
           // Expired credentials leave a healthy agent process behind, so close

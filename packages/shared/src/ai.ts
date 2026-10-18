@@ -1362,6 +1362,7 @@ export type ChatFailedReason =
   // ACP RPC errors (from @agentclientprotocol/sdk)
   | 'acp_auth_required' // -32000: Authentication required
   | 'acp_internal_error' // -32603: Internal JSON-RPC error
+  | 'acp_quota_exhausted' // The provider ended this turn because of an account usage block.
   | 'acp_upstream_api_error' // -32603 with upstream API error (500/529) - transient, retryable
   | 'acp_provider_overloaded' // provider capacity exhausted; safe to continue in a new turn
   | 'acp_session_storage_incompatible' // -32603 from an incompatible session-persistence root

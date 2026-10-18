@@ -6174,8 +6174,49 @@ describe('SessionExecutionService', () => {
     );
   });
 
-  it('records exactly one visible chat_failed when an ACP error hits after the prompt started', async () => {
+  it.each<{
+    name: string;
+    error: RequestError;
+    reason: ChatFailedReason;
+    message: string;
+    executionRemains: boolean;
+    quotaNoticePublished?: boolean;
+  }>([
+    {
+      name: 'an internal error',
+      error: RequestError.internalError({ details: 'model exploded mid-turn' }),
+      reason: 'acp_internal_error',
+      message: 'model exploded mid-turn',
+      executionRemains: false,
+    },
+    {
+      name: 'a confirmed quota block',
+      error: RequestError.internalError(
+        {
+          errorKind: 'quota_exhausted',
+          details: 'Claude account usage limit reached.',
+        },
+        'Claude account usage limit reached.'
+      ),
+      reason: 'acp_quota_exhausted',
+      message: 'Claude account usage limit reached.',
+      executionRemains: true,
+    },
+    {
+      name: 'a quota failure already reported before its result',
+      error: RequestError.internalError({
+        errorKind: 'quota_exhausted',
+        details: 'Claude account usage limit reached.',
+        quotaNoticePublished: true,
+      }),
+      reason: 'acp_quota_exhausted',
+      message: 'Claude account usage limit reached.',
+      executionRemains: true,
+      quotaNoticePublished: true,
+    },
+  ])('settles the turn with one visible notice after $name', async (testCase) => {
     let history: SessionHistoryInput[] = [];
+    let executionAlive = true;
     const sessionDoc = withHistoryPort({
       getMetaState: vi.fn(async () => ({ isArchived: false })),
       setStatus: vi.fn(async () => {}),
@@ -6190,9 +6231,24 @@ describe('SessionExecutionService', () => {
     const agentClient = {
       isCreated: vi.fn(() => true),
       prompt: vi.fn(async () => {
-        throw new RequestError(-32603, 'Internal error', {
-          details: 'model exploded mid-turn',
-        });
+        if (testCase.quotaNoticePublished) {
+          await sessionDoc.updateHistory?.((entries: SessionHistoryInput[]) => [
+            ...entries,
+            {
+              id: 'early-quota-notice',
+              role: 'system',
+              timestamp: '2026-10-19T00:00:00.000Z',
+              items: [
+                {
+                  type: 'system_notice',
+                  name: 'agent_warning',
+                  meta: { source: 'claude', message: testCase.message },
+                },
+              ],
+            } as SessionHistoryInput,
+          ]);
+        }
+        throw testCase.error;
       }),
       currentModel: undefined,
     };
@@ -6211,11 +6267,13 @@ describe('SessionExecutionService', () => {
       applyExecutionPlaneLimits: vi.fn(async () => {}),
     };
     const sessionManager = {
-      getSession: vi.fn(() => session),
+      getSession: vi.fn(() => (executionAlive ? session : null)),
       getPendingSession: vi.fn(() => null),
       createSession: vi.fn(),
       setSessionError: vi.fn(),
-      terminateSession: vi.fn(),
+      terminateSession: async () => {
+        executionAlive = false;
+      },
       validateSessionCredentials: vi.fn(async () => {}),
     } as unknown as SessionManager;
     const deps = createBaseDeps({
@@ -6266,12 +6324,23 @@ describe('SessionExecutionService', () => {
 
     const notices = history
       .flatMap((entry) => entry.items ?? [])
-      .filter((item) => item.type === 'system_notice' && item.name === 'chat_failed');
+      .filter(
+        (item) =>
+          item.type === 'system_notice' &&
+          (item.name === 'chat_failed' || item.name === 'agent_warning')
+      );
     expect(notices).toHaveLength(1);
-    expect(notices[0]?.meta).toMatchObject({
-      reason: 'acp_internal_error',
-      message: 'model exploded mid-turn',
+    expect(notices[0]).toMatchObject({
+      name: testCase.quotaNoticePublished ? 'agent_warning' : 'chat_failed',
+      meta: {
+        ...(testCase.quotaNoticePublished ? {} : { reason: testCase.reason }),
+        message: testCase.message,
+      },
     });
+    expect(executionAlive).toBe(testCase.executionRemains);
+    expect(service.getExecutionSnapshot('session-mid-turn-acp' as SessionId).hasActiveTurn).toBe(
+      false
+    );
   });
 
   it('records no chat_failed when a pending session create is cancelled before failing', async () => {

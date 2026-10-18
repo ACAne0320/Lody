@@ -15,6 +15,31 @@ import {
 } from './acp-error-classification';
 
 describe('ACP error classification', () => {
+  it('reports a terminal quota block without terminating the session or replaying the prompt', () => {
+    const error = RequestError.internalError(
+      {
+        errorKind: 'quota_exhausted',
+        details: 'Claude account usage limit reached. Resets at 2026-10-19T20:00:00.000Z.',
+      },
+      'Claude account usage limit reached. Resets at 2026-10-19T20:00:00.000Z.'
+    );
+    const parsed = parseACPError(error);
+    if (!parsed) throw new Error('expected a structured quota error');
+
+    expect(mapACPErrorToFailureReason(parsed)).toBe('acp_quota_exhausted');
+    expect(shouldTerminateOnACPError(parsed, 'acp_quota_exhausted')).toBe(false);
+    expect(getACPErrorUserMessage(parsed)).toBe(
+      'Claude account usage limit reached. Resets at 2026-10-19T20:00:00.000Z.'
+    );
+    expect(
+      shouldRecoverStaleACPConnectionPrompt({
+        error,
+        alreadyAttempted: false,
+        hasPromptOutput: false,
+      })
+    ).toBe(false);
+  });
+
   it('parses JSON-RPC ACP errors', () => {
     expect(
       parseACPError({

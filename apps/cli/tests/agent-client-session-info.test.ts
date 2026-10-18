@@ -142,6 +142,43 @@ describe('AgentClient session title updates', () => {
 });
 
 describe('AgentClient agent warning updates', () => {
+  it('delivers the Claude quota notice before the later limited goal update', async () => {
+    const warnings: string[] = [];
+    const goalStatuses: string[] = [];
+    const client = new AgentClient({
+      sessionId: 'quota-session' as SessionId,
+      logger: createSilentLogger(),
+      terminalManager: {} as never,
+      agentConfig: { cliType: 'builtin', agentType: 'claude' },
+      onUpdateMessage: () => {},
+      onRequestPermission: async () => ({ outcome: { outcome: 'cancelled' } }),
+      onAgentWarning: (warning) => warnings.push(warning.message),
+      onThreadGoalUpdated: (goal) => goalStatuses.push(goal.status),
+    });
+    const message = 'Claude account usage limit reached.';
+    await client.sessionUpdate(
+      sessionInfoNotification({
+        _meta: {
+          lody: {
+            notice: { level: 'error', source: 'claude', message },
+          },
+        },
+      })
+    );
+
+    expect(warnings).toEqual([message]);
+    expect(goalStatuses).toEqual([]);
+
+    await client.sessionUpdate(
+      sessionInfoNotification({
+        _meta: {
+          lody: { goal: { objective: 'Finish the synthetic task', status: 'limited' } },
+        },
+      })
+    );
+    expect(goalStatuses).toEqual(['blocked']);
+  });
+
   it('forwards Codex session warnings from structured _meta', async () => {
     const { client, onUpdateMessage, onAgentWarning } = createTestClient('codex');
 
