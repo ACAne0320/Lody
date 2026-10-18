@@ -462,6 +462,12 @@ export class LoroDocumentManager {
     if (this.catalogSync) await this.repo.runLegacy(this.catalogSync.hold(flockDocId));
   }
 
+  async catalogBaselineReady(flockDocId: string | undefined, timeoutMs: number): Promise<boolean> {
+    return this.catalogSync
+      ? this.repo.runLegacy(this.catalogSync.ready(flockDocId, timeoutMs))
+      : true;
+  }
+
   static async create(
     workspaceId: WorkspaceId,
     userId: string,

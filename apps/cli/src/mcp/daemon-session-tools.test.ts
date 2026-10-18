@@ -250,6 +250,179 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
     expect(JSON.parse(result.content[0]?.text ?? '{}')).toMatchObject({ items: [] });
   });
 
+  it('returns syncing uncertainty for a detached cold catalog and reads normally after its baseline', async () => {
+    await manager.cleanUp({ fast: true });
+    manager = await LoroDocumentManager.create(workspaceId, ownerUserId, createSilentLogger(), {
+      keepWorkspaceCatalogJoined: true,
+      streamsTokens: {
+        createTokenProvider: () => Effect.die(new Error('No real cloud token in this fixture')),
+        createTokenProviderLegacy: () => {
+          throw new Error('No real cloud token in this fixture');
+        },
+      },
+    });
+    daemon = { ...daemon, manager };
+    const remoteMachineId = 'cold-machine' as MachineId;
+    const id = getMachineFlockDocId(workspaceId, remoteMachineId);
+    await manager.repo.upsertDocMeta(getMachineRoomId(remoteMachineId), {
+      id: remoteMachineId,
+      name: 'Remote',
+      ownerUserId,
+    });
+    const roleDoc = await manager.repo.openFlockDoc(getWorkspaceFlockDocId(workspaceId));
+    writeWorkspaceAgentRoleToFlock(roleDoc.flock, {
+      v: 1,
+      id: 'cold-role' as AgentRoleId,
+      name: 'Cold',
+      ownerUserId: 'synthetic-collaborator',
+      visibility: 'private',
+      machineId: remoteMachineId,
+      agentConfigId: 'cold-config' as AgentConfigId,
+      runConfig: { modelId: 'remote-model' },
+      revision: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const host = await WorkspaceRepoLegacy.create({});
+    const networkOwner = await manager.repo.acquireScopeLegacy('cold catalog network');
+    const network = await manager.repo.runLegacy(
+      Scope.provide(makeMemoryNetwork(), networkOwner.scope)
+    );
+    let unsubscribe: (() => void) | undefined;
+    try {
+      const owner = await host.acquireScopeLegacy('config publisher');
+      const remote = await host.runLegacy(
+        Scope.provide(host.native.acquireRoom({ kind: 'flock', id }), owner.scope)
+      );
+      if (remote.replica.kind !== 'flock') throw new Error('Expected Flock');
+      writeAgentConfigToFlock(remote.replica.lease.flock, {
+        id: 'cold-config' as AgentConfigId,
+        machineId: remoteMachineId,
+        name: 'Remote',
+        cliType: 'custom',
+        agentType: 'claude',
+        env: {},
+      });
+      await host.addTransport('streams', {
+        make: () =>
+          Effect.succeed({ ...network.transport('streams'), authority: 'server' as const }),
+      });
+      await host.runLegacy(remote.sync('streams'));
+      vi.spyOn(sessionCommands, 'readSessionMachineAccess').mockResolvedValue({ allowed: true });
+      const args = {
+        manager,
+        auth: createAuth(),
+        workspaceId,
+        delegatedRequester: { userId: 'synthetic-collaborator' },
+        initialCatalogWaitMs: 0,
+      };
+      const discovery = await runWithDaemonWorkspace(daemon, () => createResourceDiscovery(args));
+      expect(await discovery.list('agent_role')).toMatchObject({
+        sync: { state: 'syncing', retryable: true },
+        items: [{ availability: { state: 'unknown', reason: 'catalog_syncing' } }],
+      });
+      await expect(discovery.get('agent_config', 'cold-config')).rejects.toThrow('CATALOG_SYNCING');
+      const local = await manager.repo.openFlockDoc(id);
+      const received = Promise.withResolvers<void>();
+      unsubscribe = local.flock.subscribe(() => {
+        if (getMachineFlockAgentConfigs(readMachineFlockRowsFromFlock(local.flock))['cold-config'])
+          received.resolve();
+      });
+      await manager.repo.addTransport('streams', {
+        make: () =>
+          Effect.succeed({ ...network.transport('streams'), authority: 'server' as const }),
+      });
+      await received.promise;
+      // A new request reads the same native replica; no forced catch-up is needed.
+      vi.spyOn(manager, 'syncMetaOrThrow').mockRejectedValue(new Error('No request sync'));
+      vi.spyOn(manager, 'syncFlockDocOrThrow').mockRejectedValue(new Error('No request sync'));
+      const ready = await runWithDaemonWorkspace(daemon, () => createResourceDiscovery(args));
+      expect(await ready.get('agent_config', 'cold-config')).toMatchObject({
+        item: { id: 'cold-config', name: 'Remote' },
+      });
+    } finally {
+      unsubscribe?.();
+      await host.destroy();
+    }
+  });
+
+  it('validates Role creation against a cold remote config before publishing the review card', async () => {
+    const networkOwner = await manager.repo.acquireScopeLegacy('role validation network');
+    const network = await manager.repo.runLegacy(
+      Scope.provide(makeMemoryNetwork(), networkOwner.scope)
+    );
+    const host = await WorkspaceRepoLegacy.create({});
+    try {
+      const owner = await host.acquireScopeLegacy('config publisher');
+      const remoteMachineId = 'remote-role-target' as MachineId;
+      const id = getMachineFlockDocId(workspaceId, remoteMachineId);
+      const room = await host.runLegacy(
+        Scope.provide(host.native.acquireRoom({ kind: 'flock', id }), owner.scope)
+      );
+      if (room.replica.kind !== 'flock') throw new Error('Expected Flock');
+      writeAgentConfigToFlock(room.replica.lease.flock, {
+        id: 'remote-role-config' as AgentConfigId,
+        machineId: remoteMachineId,
+        name: 'Remote',
+        cliType: 'custom',
+        agentType: 'claude',
+        env: {},
+      });
+      await host.addTransport('memory', {
+        make: () => Effect.succeed(network.transport('memory')),
+      });
+      await host.runLegacy(room.sync('memory'));
+      await manager.repo.addTransport('memory', {
+        make: () => Effect.succeed(network.transport('memory')),
+      });
+      await manager.repo.upsertDocMeta(getMachineRoomId(remoteMachineId), {
+        id: remoteMachineId,
+        name: 'Remote',
+        ownerUserId,
+      });
+      const session = await manager.getOrCreateSessionDoc(sessionId, { historyBackend: 'loro' });
+      vi.spyOn(session, 'waitUntilSynced').mockResolvedValue(true);
+      vi.spyOn(commandRuntime, 'getAuthContextOrThrow').mockImplementation(createAuth);
+      vi.spyOn(commandRuntime, 'resolveWorkspaceOrThrow').mockResolvedValue({
+        id: workspaceId,
+        name: 'Synthetic',
+        slug: 'synthetic',
+        role: 'owner',
+      });
+      vi.spyOn(sessionCommands, 'readSessionMachineAccess').mockResolvedValue({ allowed: true });
+      const result = await runWithDaemonWorkspace(daemon, () =>
+        executeDaemonSessionTool(context(), 'lody_agent_role_create', {
+          requestId: 'cold-target',
+          name: 'Remote Role',
+          machineId: remoteMachineId,
+          agentConfigId: 'remote-role-config',
+        })
+      );
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      expect(JSON.parse(result.content[0]?.text ?? '{}')).toMatchObject({ pending: true });
+      const originalSync = manager.syncFlockDocOrThrow.bind(manager);
+      const originalFailure = new Error('Synthetic remote catalog outage');
+      vi.spyOn(manager, 'syncFlockDocOrThrow').mockImplementation((docId, options) =>
+        docId === id ? Promise.reject(originalFailure) : originalSync(docId, options)
+      );
+      const retry = await runWithDaemonWorkspace(daemon, () =>
+        executeDaemonSessionTool(context(), 'lody_agent_role_create', {
+          requestId: 'cold-retry',
+          name: 'Retry Role',
+          machineId: remoteMachineId,
+          agentConfigId: 'remote-role-config',
+        })
+      );
+      expect(retry.isError).toBe(true);
+      expect(JSON.parse(retry.content[0]?.text ?? '{}')).toMatchObject({
+        ok: false,
+        error: { code: 'SYNC_UNAVAILABLE', retryable: true },
+      });
+    } finally {
+      await host.destroy();
+    }
+  });
+
   it('hydrates a cold headless daemon and receives later Role changes without a discovery sync', async () => {
     const docId = getWorkspaceFlockDocId(workspaceId);
     const scope = await manager.repo.acquireScopeLegacy('test network');

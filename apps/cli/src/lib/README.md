@@ -26,9 +26,11 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
   List inputs are validated here against resource-specific allowlists derived from
   the shared query schema; the CLI only translates flags and resolves selectors.
 - `resource-discovery-runtime.ts` — workspace readers and caller-specific authorization.
-  Daemon calls read its current replica without forced metadata/Flock synchronization;
+  Daemon reads wait briefly for the first baseline, then return cached results with
+  `catalog_syncing` uncertainty until confirmed; later reads never force catch-up.
   `loro/workspace-catalog-sync.ts` holds the daemon workspace Flock reader room,
   including headless startup; native transport recovery keeps it current.
+  Role proposal target validation requires fresh metadata/target synchronization.
   Standalone CLI calls synchronize unless `--offline`. Authorization and cloud presence
   remain online-aware independently of the catalog read policy.
   Intent and limits: [resource discovery](../../../../specs/resource-discovery.md).

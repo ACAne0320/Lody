@@ -100,8 +100,8 @@ observer-lease driven; never start OS probes permanently or persist snapshots.
 
 ## Catalog readers
 
-`workspace-catalog-sync.ts` owns daemon workspace/queried-machine Flock readers.
-Reads never await network; native repo owns recovery/release.
+`workspace-catalog-sync.ts`: daemon readers, bounded baseline waits, uncertain reads.
+Role validation requires fresh sync. Repo owns reader release.
 
 ## Machine Flock writes for this machine are local-first
 

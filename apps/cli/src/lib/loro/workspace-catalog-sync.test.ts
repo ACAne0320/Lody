@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 import { it } from '@effect/vitest';
 import { Deferred, Effect, Exit, Fiber, Scope } from 'effect';
 import { TestClock } from 'effect/testing';
-import { make, RepoIOError } from 'loro-repo/effect';
+import { make, makeMemoryNetwork, RepoIOError } from 'loro-repo/effect';
 import { getWorkspaceFlockDocId, type WorkspaceId } from '@lody/shared';
 import type { Logger } from '@/utils/logger';
 import { makeWorkspaceCatalogSync, startWorkspaceCatalogSync } from './workspace-catalog-sync';
@@ -179,6 +179,38 @@ describe('daemon workspace catalog ownership', () => {
           const stoppedAt = loads;
           yield* TestClock.adjust(120_000);
           expect(loads).toBe(stoppedAt);
+        })
+      )
+  );
+
+  it.effect(
+    'bounds only the first-baseline waiter and keeps the reader alive across timeout and detach',
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const network = yield* makeMemoryNetwork();
+          const publisher = yield* make();
+          const id = getWorkspaceFlockDocId(workspaceId);
+          const remote = yield* publisher.acquireRoom({ kind: 'flock', id });
+          if (remote.replica.kind !== 'flock') throw new Error('Expected Flock');
+          remote.replica.lease.flock.set(['test'], 'remote');
+          remote.replica.lease.flock.commit();
+          yield* publisher.attachTransport({
+            ...network.transport('streams'),
+            authority: 'server',
+          });
+          yield* remote.sync('streams');
+          const repo = yield* make({ authority: { mode: 'remote', transports: ['streams'] } });
+          const sync = yield* makeWorkspaceCatalogSync(repo, workspaceId, logger);
+          const waiting = yield* Effect.forkChild(sync.ready(id, 1_000));
+          yield* TestClock.adjust(1_000);
+          expect(yield* Fiber.join(waiting)).toBe(false);
+          yield* repo.attachTransport({ ...network.transport('streams'), authority: 'server' });
+          expect(yield* sync.ready(id, 1_000)).toBe(true);
+          const local = yield* repo.acquireFlockDoc(id);
+          expect(local.flock.get(['test'])).toBe('remote');
+          yield* repo.removeTransport('streams');
+          expect(yield* sync.ready(id, 0)).toBe(true);
         })
       )
   );
