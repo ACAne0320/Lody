@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1696](https://github.com/LodyAI/Lody/pull/1696)
 
 [English](2026-10-18-settings-modal-redirect-tab.md)
 
