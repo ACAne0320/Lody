@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 
 import {
   BillingSettingsView,
+  formatDate,
   type BillingOverviewData,
   type BillingSettingsViewProps,
 } from '../src/components/settings/billing-setting-pure';
@@ -47,7 +48,7 @@ const freeOverview: BillingOverviewData = {
   },
 };
 
-describe('BillingSettingsView upgrade permission', () => {
+describe('BillingSettingsView', () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
 
@@ -160,6 +161,129 @@ describe('BillingSettingsView upgrade permission', () => {
       (item) => item.textContent === 'Opening…'
     );
     expect(button?.disabled).toBe(true);
+  });
+
+  it('shows the amount and reason for billing scheduled after a gift', async () => {
+    const nextBillingAt = Date.UTC(2030, 0, 25);
+    await renderView({
+      overview: {
+        ...freeOverview,
+        billingAccountId: 'billing_gift',
+        effectivePlanTier: 'plus',
+        entitlementSource: 'stripe_gift',
+        promotionalEntitlementEndsAt: nextBillingAt,
+        giftStartsAt: Date.UTC(2029, 9, 25),
+        giftEndsAt: nextBillingAt,
+        nextBillingAt,
+        autoRenewAfterGift: true,
+        scheduledBillingInterval: 'month',
+        scheduleManaged: true,
+        billingInterval: 'month',
+        currentPeriodEnd: nextBillingAt,
+        seatCount: 2,
+      },
+      invoices: [],
+      upcomingInvoice: {
+        amountDue: 2000,
+        currency: 'USD',
+        expectedAt: nextBillingAt,
+        renewal: { amount: 2000, quantity: 2 },
+        discount: null,
+        adjustment: null,
+        creditApplied: null,
+      },
+    });
+
+    expect(container?.textContent).toContain('Next charge (estimated)');
+    expect(container?.textContent).toContain('First charge after gift');
+    expect(container?.textContent).toContain(formatDate(nextBillingAt));
+    expect(container?.textContent).toContain('Estimated amount');
+    expect(container?.textContent).toContain('$20');
+    expect(container?.textContent).toContain('Plus after the gift · monthly · 2 seats');
+  });
+
+  it('shows the reliable billing date without guessing an unavailable post-gift amount', async () => {
+    const nextBillingAt = Date.UTC(2030, 0, 25);
+    await renderView({
+      overview: {
+        ...freeOverview,
+        billingAccountId: 'billing_gift',
+        effectivePlanTier: 'plus',
+        entitlementSource: 'stripe_gift',
+        promotionalEntitlementEndsAt: nextBillingAt,
+        giftStartsAt: Date.UTC(2029, 9, 25),
+        giftEndsAt: nextBillingAt,
+        nextBillingAt,
+        autoRenewAfterGift: true,
+        scheduledBillingInterval: 'month',
+        scheduleManaged: true,
+        billingInterval: 'month',
+        currentPeriodEnd: nextBillingAt,
+      },
+      invoices: [],
+      upcomingInvoice: null,
+    });
+
+    expect(container?.textContent).toContain('First charge after gift');
+    expect(container?.textContent).toContain(formatDate(nextBillingAt));
+    expect(container?.textContent).toContain('Amount pending');
+    expect(container?.textContent).toContain(
+      'The first monthly Plus charge starts after the gift period.'
+    );
+  });
+
+  it('does not present a gift-period $0 invoice as the first paid charge', async () => {
+    const nextBillingAt = Date.UTC(2030, 0, 25);
+    await renderView({
+      overview: {
+        ...freeOverview,
+        billingAccountId: 'billing_gift',
+        effectivePlanTier: 'plus',
+        entitlementSource: 'stripe_gift',
+        promotionalEntitlementEndsAt: nextBillingAt,
+        giftStartsAt: Date.UTC(2029, 9, 25),
+        giftEndsAt: nextBillingAt,
+        nextBillingAt,
+        autoRenewAfterGift: true,
+        scheduledBillingInterval: 'month',
+        scheduleManaged: true,
+      },
+      invoices: [],
+      upcomingInvoice: {
+        amountDue: 0,
+        currency: 'USD',
+        expectedAt: Date.UTC(2029, 11, 25),
+        renewal: { amount: 0, quantity: 2 },
+        discount: null,
+        adjustment: null,
+        creditApplied: null,
+      },
+    });
+
+    expect(container?.textContent).toContain('First charge after gift');
+    expect(container?.textContent).toContain(formatDate(nextBillingAt));
+    expect(container?.textContent).toContain('Amount pending');
+    expect(container?.textContent).not.toContain('Estimated amount');
+    expect(container?.textContent).not.toContain('Plus after the gift · monthly · 2 seats');
+  });
+
+  it('does not imply a future charge when post-gift billing is not scheduled', async () => {
+    await renderView({
+      overview: {
+        ...freeOverview,
+        billingAccountId: 'billing_gift',
+        effectivePlanTier: 'plus',
+        entitlementSource: 'stripe_gift',
+        promotionalEntitlementEndsAt: Date.UTC(2030, 0, 25),
+        giftStartsAt: Date.UTC(2029, 9, 25),
+        giftEndsAt: Date.UTC(2030, 0, 25),
+        scheduleManaged: true,
+      },
+      invoices: [],
+      upcomingInvoice: null,
+    });
+
+    expect(container?.textContent).not.toContain('Next charge (estimated)');
   });
 
   it('offers the upgrade action to a viewer who can manage billing', async () => {
