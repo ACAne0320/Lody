@@ -20,6 +20,8 @@ import {
   resolveProjectMemberPaths,
   getProjectBoundMachineId,
   pickProjectRepositoryLocalCopy,
+  encodeProjectPreparationProgress,
+  decodeProjectPreparationProgress,
   type ProjectMember,
   type ProjectMemberId,
 } from '../src/workspace-project';
@@ -377,6 +379,34 @@ it('preserves daemon repository checkout receipts in session snapshots', () => {
   expect(
     Object.values(SessionProjectRunSchema.parse(snapshot).members)[0]?.repositoryCheckout
   ).toEqual(member.repositoryCheckout);
+});
+
+describe('Project preparation progress', () => {
+  it('round-trips each step through the presence detail and stays bounded', () => {
+    for (const progress of [
+      { step: 'resolve' },
+      { step: 'member', done: 2, total: 5, path: 'web/deps/api' },
+      { step: 'submodules' },
+      { step: 'setup', path: 'web' },
+    ] as const) {
+      expect(decodeProjectPreparationProgress(encodeProjectPreparationProgress(progress))).toEqual(
+        progress
+      );
+    }
+    const long = encodeProjectPreparationProgress({ step: 'setup', path: 'x'.repeat(1000) });
+    // Within the presence detail bound (280).
+    expect(long.length).toBeLessThanOrEqual(280);
+    expect(decodeProjectPreparationProgress(long)).toMatchObject({ step: 'setup' });
+  });
+
+  it('ignores plain text from older daemons and malformed payloads', () => {
+    expect(decodeProjectPreparationProgress('Preparing web (0/5 ready)')).toBeUndefined();
+    expect(decodeProjectPreparationProgress(undefined)).toBeUndefined();
+    expect(decodeProjectPreparationProgress('lody-project-prep:{bad')).toBeUndefined();
+    expect(
+      decodeProjectPreparationProgress('lody-project-prep:{"step":"member","done":-1}')
+    ).toBeUndefined();
+  });
 });
 
 describe('session file root resolution', () => {

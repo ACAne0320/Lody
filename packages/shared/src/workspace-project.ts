@@ -463,3 +463,53 @@ export function pickProjectRepositoryLocalCopy<
   }
   return best;
 }
+
+/**
+ * Where a Project group's preparation is, carried as the `detail` of the
+ * `initializing` / `git-clone` presence phase so clients can say it in their
+ * own language. Presence is a liveness channel: the daemon publishes this at
+ * lifecycle steps only (start, each member done, submodules, each setup
+ * script), never per Git output line, and every field is bounded.
+ */
+export type ProjectPreparationProgress =
+  | { step: 'resolve' }
+  | { step: 'member'; done: number; total: number; path: string }
+  | { step: 'submodules' }
+  | { step: 'setup'; path: string };
+
+const PROJECT_PREPARATION_PREFIX = 'lody-project-prep:';
+const PROJECT_PREPARATION_PATH_MAX = 160;
+const ProjectPreparationProgressSchema = z.discriminatedUnion('step', [
+  z.object({ step: z.literal('resolve') }),
+  z.object({
+    step: z.literal('member'),
+    done: z.number().int().nonnegative(),
+    total: z.number().int().positive(),
+    path: z.string().max(PROJECT_PREPARATION_PATH_MAX),
+  }),
+  z.object({ step: z.literal('submodules') }),
+  z.object({ step: z.literal('setup'), path: z.string().max(PROJECT_PREPARATION_PATH_MAX) }),
+]);
+
+export function encodeProjectPreparationProgress(progress: ProjectPreparationProgress): string {
+  const bounded =
+    'path' in progress
+      ? { ...progress, path: progress.path.slice(0, PROJECT_PREPARATION_PATH_MAX) }
+      : progress;
+  return `${PROJECT_PREPARATION_PREFIX}${JSON.stringify(bounded)}`;
+}
+
+/** `undefined` for any other detail, including plain text from older daemons. */
+export function decodeProjectPreparationProgress(
+  detail: string | undefined
+): ProjectPreparationProgress | undefined {
+  if (!detail?.startsWith(PROJECT_PREPARATION_PREFIX)) return undefined;
+  try {
+    const parsed = ProjectPreparationProgressSchema.safeParse(
+      JSON.parse(detail.slice(PROJECT_PREPARATION_PREFIX.length))
+    );
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}

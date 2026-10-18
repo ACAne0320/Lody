@@ -5111,5 +5111,9 @@
   "chat.projectGroup.missingLocalStatus_other": "This machine has no copy of {{count}} of this group’s repositories. Add them as local projects here, or start on another machine.",
   "sidebar.projectGroups.newChat": "New chat in this project group",
   "sidebar.projectGroups.settings": "Edit project group",
-  "sidebar.projectGroups.reorder": "Reorder project group"
+  "sidebar.projectGroups.reorder": "Reorder project group",
+  "sessions.statusIndicator.projectPrep.resolve": "Finding the group’s repositories on this machine",
+  "sessions.statusIndicator.projectPrep.member": "Preparing repositories {{done}}/{{total}} · {{path}}",
+  "sessions.statusIndicator.projectPrep.submodules": "Checking out submodules",
+  "sessions.statusIndicator.projectPrep.setup": "Running setup for {{path}}"
 }

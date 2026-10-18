@@ -859,3 +859,16 @@ others, and in local-only mode disables a group the machine lacks a copy for. St
 with repository Members requires `projectRepositoryMembers` on the machine. The
 picker was checked in Storybook (Chinese, both filters). Pure helpers have unit
 tests. Nothing has run end to end against the daemon from #1682 yet.
+
+**Preparation progress in the UI.** #1688 reports Project group preparation under
+the existing `git-clone` initializing stage, but the composer showed that stage as a
+fixed "Cloning repo" and ignored `detail`, which was English free text. The detail
+is now a bounded structured value (`encodeProjectPreparationProgress`:
+`resolve`, `member` with done/total/path, `submodules`, `setup` with path), which the
+UI renders in the product language, e.g. "Preparing repositories 2/5 · lody-oss".
+Following the presence-channel rules, the daemon publishes it at lifecycle steps
+only: once at the start, once per finished member, once for the submodule pass and
+once per setup script (2N+2 updates for N members, each under 200 bytes, on the
+session's single presence key). Older clients ignore the detail for this stage, and
+plain text from older daemons falls back to the generic message.
+

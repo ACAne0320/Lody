@@ -60,6 +60,7 @@ import {
   type SessionLaunchConfig,
   type SessionMeta,
   type McpServerId,
+  encodeProjectPreparationProgress,
 } from '@lody/shared';
 import { Logger } from '@/utils/logger';
 import { SessionConfig, SessionOutputEvent, SessionErrorEvent, SessionExitEvent } from './types';
@@ -1913,7 +1914,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
     // Resolve each repository before enrolling a managed credential lease. The same
     // pinned receipt is used by materialization, refresh, PR observation and restore.
     if (config.projectRun) {
-      config.onPresencePhase?.('git-clone', 'Resolving Project repositories');
+      config.onPresencePhase?.('git-clone', encodeProjectPreparationProgress({ step: 'resolve' }));
       let hasManagedMember = false;
       const owner = new WorkspaceGitService({
         workspaceDocument: this.workspaceDocument,

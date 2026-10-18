@@ -5,6 +5,7 @@ import path from 'node:path';
 import { mkdir, realpath } from 'node:fs/promises';
 import {
   SessionProjectRunSchema,
+  encodeProjectPreparationProgress,
   pickProjectRepositoryLocalCopy,
   type LocalProjectMeta,
   type MachineId,
@@ -211,7 +212,7 @@ export async function materializeProjectGroup(
       `${run.root}/worktrees/${options.sessionId}`
     )
       throw new Error('Project group directory escaped its storage root');
-    options.onProgress?.('Resolving Project repositories');
+    options.onProgress?.(encodeProjectPreparationProgress({ step: 'resolve' }));
     const resolved = await resolveProjectGroupRepositories(run, options);
     // Commit the selected store before creating branches, so retries never repick a copy.
     for (const [id, target] of resolved) {
@@ -259,7 +260,6 @@ export async function materializeProjectGroup(
       await settleProjectTasks(
         ready.map(async (id) => {
           const member = run.members[id as keyof typeof run.members]!;
-          options.onProgress?.(`Preparing ${member.path} (${completed}/${resolved.size} ready)`);
           const target = resolved.get(id)!;
           if (!target.isGit) {
             if (member.placement.kind !== 'root')
@@ -349,17 +349,25 @@ export async function materializeProjectGroup(
           if (!existed) newlyCreated.add(member);
           pending.delete(id);
           completed++;
-          options.onProgress?.(`Prepared ${member.path} (${completed}/${resolved.size} ready)`);
+          // One update per finished member: a lifecycle step, never per Git line.
+          options.onProgress?.(
+            encodeProjectPreparationProgress({
+              step: 'member',
+              done: completed,
+              total: resolved.size,
+              path: member.path,
+            })
+          );
         })
       );
     }
     const members = Object.entries(run.members);
+    options.onProgress?.(encodeProjectPreparationProgress({ step: 'submodules' }));
     for (let offset = 0; offset < members.length; offset += 4) {
       await settleProjectTasks(
         members.slice(offset, offset + 4).map(async ([id, member]) => {
           const target = resolved.get(id)!;
           if (!target.isGit) return;
-          options.onProgress?.(`Initializing submodules in ${member.path}`);
           await getWorktreeManager({
             repoId: target.repoId,
             source: target.source,
@@ -368,17 +376,15 @@ export async function materializeProjectGroup(
             path.join(root, member.path),
             await options.brokerAuth(target.source)
           );
-          options.onProgress?.(`Submodules ready in ${member.path}`);
         })
       );
     }
     // Scripts may depend on other members' output; retain the prior serial ordering.
     for (const member of setupOrder) {
       if (!newlyCreated.has(member)) continue;
-      options.onProgress?.(`Running setup for ${member.path}`);
+      options.onProgress?.(encodeProjectPreparationProgress({ step: 'setup', path: member.path }));
       await options.setup(member, path.join(root, member.path));
     }
-    options.onProgress?.('Project repositories ready');
     result = { workdir: root, run };
     return run;
   });

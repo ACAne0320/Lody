@@ -29,6 +29,7 @@ import { join, resolve as resolvePath } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectRef, SessionId, SessionMeta, SessionProjectRun } from '@lody/shared';
+import { decodeProjectPreparationProgress } from '@lody/shared';
 import { projectRunMetaPatch } from './project-run-state';
 import type { LoroDocumentManager } from '@/lib/loro/doc';
 import type { Logger } from '@/utils/logger';
@@ -713,9 +714,23 @@ describe('WorkspaceGitService', () => {
       });
       const materializeMs = performance.now() - start;
       expect(setup).toEqual(['web', 'web/deps/api', 'web/deps/api/deps/core', 'docs', 'tools']);
-      expect(progress[0]).toBe('Resolving Project repositories');
-      expect(progress.at(-1)).toBe('Project repositories ready');
-      expect(progress).toContain('Prepared web/deps/api/deps/core (5/5 ready)');
+      // Lifecycle steps only: start, one per finished member, submodules, one per setup.
+      const steps = progress.map(decodeProjectPreparationProgress);
+      expect(steps[0]).toEqual({ step: 'resolve' });
+      expect(steps.filter((step) => step?.step === 'member')).toHaveLength(5);
+      expect(steps).toContainEqual({
+        step: 'member',
+        done: 5,
+        total: 5,
+        path: expect.any(String),
+      });
+      expect(steps.filter((step) => step?.step === 'submodules')).toHaveLength(1);
+      expect(
+        steps
+          .filter((step) => step?.step === 'setup')
+          .map((step) => step && 'path' in step && step.path)
+      ).toEqual(setup);
+      expect(progress.length).toBe(1 + 5 + 1 + setup.length);
       // --dissociate must leave no dependency on a source repository's object retention.
       const objects = (
         await exec('git', [

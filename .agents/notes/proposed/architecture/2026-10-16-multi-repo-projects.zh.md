@@ -660,3 +660,13 @@ Git 阶段仍存活、成员里程碑变化延长截止时间，以及最终因�
 仓库 Member 的项目组需要机器声明 `projectRepositoryMembers` 才能开始。选择器已在
 Storybook 中检查（中文，两种筛选）；纯函数有单元测试。尚未与 #1682 的
 daemon 端到端运行。
+
+**UI 中的准备进度。** #1688 把项目组的准备过程放在已有的 `git-clone` 初始化阶段上报，
+但 composer 对这个阶段只显示固定的「正在克隆仓库」，并忽略 `detail`，而 detail 原本是
+英文自由文本。现在 detail 是有长度上限的结构化值（`encodeProjectPreparationProgress`：
+`resolve`、带 done/total/path 的 `member`、`submodules`、带 path 的 `setup`），UI 按产品
+语言显示，例如「正在准备仓库 2/5 · lody-oss」。按照 presence 通道的规则，daemon 只在
+生命周期节点发布：开始时一次、每完成一个成员一次、子模块阶段一次、每个初始化脚本一次
+（N 个成员共 2N+2 次，每次不到 200 字节，写在会话唯一的 presence 键上）。旧客户端对这个
+阶段忽略 detail；旧 daemon 发来的纯文本回退为通用提示。
+

@@ -11,6 +11,7 @@ import {
   buildSessionPreparationClaimKey,
   buildSessionPreparationRequestKey,
   buildSessionLaunchConfig,
+  encodeProjectPreparationProgress,
   normalizeSessionPreparationRunConfigForDedup,
   type ACPSessionId,
   type AgentConfigId,
@@ -285,7 +286,7 @@ describe('SessionManager repository Member credentials', () => {
       const credentials = await internals.prepareGitHubRepoSessionConfig(config);
       expect(phases).toContainEqual({
         phase: 'git-clone',
-        detail: 'Resolving Project repositories',
+        detail: encodeProjectPreparationProgress({ step: 'resolve' }),
       });
       expect(credentials.mode).toBe('native');
       expect(config.env).toBeUndefined();

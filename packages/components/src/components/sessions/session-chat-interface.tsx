@@ -139,6 +139,7 @@ import {
   resolveActiveAssistantTurnId,
   resolveBaseBranchPreference,
   resolveProjectGitHubRepo,
+  decodeProjectPreparationProgress,
 } from '@lody/shared';
 import { useIsMobile } from '../../hooks/use-mobile';
 import { useStableCallback } from '@/hooks/use-stable-callback';
@@ -3150,10 +3151,39 @@ export const SessionChatInterface = memo(
         case 'initializing': {
           const stage = liveSessionStatus.stage;
           switch (stage) {
-            case 'git-clone':
-              return tHeartbeat('sessions.statusIndicator.gitClone', {
-                repo: '',
-              });
+            case 'git-clone': {
+              // A Project group says which step it is on; anything else keeps
+              // the plain clone heartbeat.
+              const progress = decodeProjectPreparationProgress(liveSessionStatus.detail);
+              switch (progress?.step) {
+                case 'resolve':
+                  return t(
+                    'sessions.statusIndicator.projectPrep.resolve',
+                    'Finding the group’s repositories on this machine'
+                  );
+                case 'member':
+                  return t(
+                    'sessions.statusIndicator.projectPrep.member',
+                    'Preparing repositories {{done}}/{{total}} · {{path}}',
+                    progress
+                  );
+                case 'submodules':
+                  return t(
+                    'sessions.statusIndicator.projectPrep.submodules',
+                    'Checking out submodules'
+                  );
+                case 'setup':
+                  return t(
+                    'sessions.statusIndicator.projectPrep.setup',
+                    'Running setup for {{path}}',
+                    progress
+                  );
+                default:
+                  return tHeartbeat('sessions.statusIndicator.gitClone', {
+                    repo: '',
+                  });
+              }
+            }
             case 'managed-runtime':
               return (
                 liveSessionStatus.detail ??
