@@ -558,3 +558,26 @@ and the main directory's plain relative path format is unchanged.
 registration, authorization, indexing, watching and diffs. The UI session
 implements file tree grouping by root, `@` search and opening files by `rootId`.
 Neither side is implemented or verified yet.
+
+
+## Multi-root file contract
+
+Contract branch: `multi-repo-extra-roots-contracts`. Only the daemon writes
+`access?: 'worktree' | 'additional' | 'link'`. `MAIN_SESSION_FILE_ROOT_ID` is `main`;
+`getProjectMemberRootId(id)` returns `member:<id>` and `parseProjectMemberRootId` reverses it.
+`SessionFileRootIdSchema` validates optional file RPC rootId; omission means main.
+Remote content retains its existing encrypted envelope.
+
+`encodeSessionFilePath` / `decodeSessionFilePath` preserve plain relative main paths.
+Other roots use `\u0000lody-root:member:<id>/<relativePath>` with an actual leading NUL.
+NUL cannot occur in a real filename, so this cannot collide with any main file and reserves
+no same-named physical directory. This is a sync key, never a filesystem path, URL or shell
+argument: decode it, resolve the local registry, then authorize realpaths. File-index rows,
+per-turn diff paths and attachment sourcePath share the encoding. Old clients cannot operate
+on these new keys; extra-root compatibility is not claimed. RPC sends separate rootId and
+relative path fields, never the encoded key.
+
+The probe adds `isGit: boolean`; parsing older successful probes defaults to true because
+older daemons accepted only Git repositories. This commit provides contracts and the Git
+probe field only; non-Git probing, materialization, authorization and full file access follow
+in the runtime PR.

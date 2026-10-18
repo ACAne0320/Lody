@@ -1,3 +1,4 @@
+import { SessionFileRootIdSchema } from './project-path';
 import { ProjectLocalMemberProbeSchema } from './workspace-project';
 import { MemoryProviderRequestSchema, MemoryProviderResponseSchema } from './memory-provider';
 import {
@@ -186,6 +187,7 @@ export const LocalMachineRpcRequestSchema = z.discriminatedUnion('method', [
     method: z.literal('code-collab/lsp-definition'),
     params: z
       .object({
+        rootId: SessionFileRootIdSchema.optional(),
         sessionId: z.string().trim().min(1),
         path: z.string().min(1),
         line: z.number().int().nonnegative().optional(),
@@ -197,6 +199,7 @@ export const LocalMachineRpcRequestSchema = z.discriminatedUnion('method', [
     method: z.literal('code-collab/lsp-references'),
     params: z
       .object({
+        rootId: SessionFileRootIdSchema.optional(),
         sessionId: z.string().trim().min(1),
         path: z.string().min(1),
         line: z.number().int().nonnegative().optional(),

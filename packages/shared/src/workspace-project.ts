@@ -28,6 +28,8 @@ export type WorkspaceProject = {
   members: ProjectMember[];
 };
 export type SessionProjectMember = {
+  /** Written only by the owner daemon; re-evaluated on ACP startup. */
+  access?: 'worktree' | 'additional' | 'link';
   /** Owner-observed GitHub identity, including local members with a GitHub remote. */
   repoFullName?: string;
   o: number;
@@ -180,6 +182,7 @@ export function normalizeWorkspaceProject(value: unknown): WorkspaceProject | un
   return result.success ? result.data : undefined;
 }
 export const SessionProjectMemberSchema = z.object({
+  access: z.enum(['worktree', 'additional', 'link']).optional(),
   repoFullName: z
     .string()
     .regex(/^[\w.-]+\/[\w.-]+$/)
@@ -375,6 +378,8 @@ export function matchProjectSubmoduleMember(
 
 export const ProjectLocalMemberProbeSchema = z
   .object({
+    // Older probes accepted Git repositories only.
+    isGit: z.boolean().default(true),
     repoFullName: z
       .string()
       .regex(/^[\w.-]+\/[\w.-]+$/)

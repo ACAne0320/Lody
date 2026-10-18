@@ -3215,6 +3215,7 @@ describe('LoroStreamsMachineRpcServer', () => {
     const result = {
       type: 'project/probe-local-member' as const,
       repoFullName: 'acme/api',
+      isGit: true,
       submodules: [{ path: 'proto', url: '../proto.git', repoFullName: 'acme/proto' }],
     };
     const server = new LoroStreamsMachineRpcServer({

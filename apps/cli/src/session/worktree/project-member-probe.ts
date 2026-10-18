@@ -27,6 +27,7 @@ export const probeLocalProjectMember = Effect.fn('probeLocalProjectMember')(func
   const origin = yield* optionalConfig(['config', '--get', 'remote.origin.url']);
   const repoFullName = getProjectRepositoryFullName(origin);
   const result: ProjectLocalMemberProbe = {
+    isGit: true,
     ...(repoFullName ? { repoFullName } : {}),
     submodules: [],
   };

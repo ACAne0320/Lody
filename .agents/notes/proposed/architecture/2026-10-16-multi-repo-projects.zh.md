@@ -433,3 +433,21 @@ Provider 实现 `additionalDirectories`，并且 Lody 自带的 Claude、Codex �
 
 **分工**：根目录注册、授权、索引、监听和 diff 的 daemon 侧由逻辑 session 实现；文件树
 按根目录分组、`@` 搜索和按 `rootId` 打开文件由 UI session 实现。两侧均尚未实现或验证。
+
+
+## 多根目录文件契约
+
+契约分支 `multi-repo-extra-roots-contracts`：`access?: 'worktree' | 'additional' | 'link'`
+只由 daemon 写入。`MAIN_SESSION_FILE_ROOT_ID` 为 `main`，`getProjectMemberRootId(id)`
+生成 `member:<id>`，`parseProjectMemberRootId` 反向解析；`SessionFileRootIdSchema` 校验 RPC。
+文件类 RPC 的 `rootId` 可选，缺省表示 main；远程内容仍在原有加密外壳中。
+
+同步字符串由 `encodeSessionFilePath` / `decodeSessionFilePath` 编解码。main 保持纯相对路径；
+其他根目录使用 `\u0000lody-root:member:<id>/<relativePath>`（开头是实际 NUL，不是六个转义字符）。
+NUL 不能出现在真实文件名中，因此不与主目录的任何真实文件名冲突，也不保留成员同名目录。
+这是同步数据的键，不能直接交给文件系统、URL 或终端；必须先解码、查本机注册表，再做 realpath
+授权。文件索引行、每轮 diff 路径和附件 sourcePath 共用这一个编码。旧客户端不能操作此类新键；
+不宣称它们兼容额外根目录。RPC 始终用分离的 rootId 和相对路径，不发送编码后的键。
+
+探测结果增加 `isGit: boolean`；旧 daemon 的成功探测仅可能是 Git，解析旧结果时默认 true。
+本提交只提供契约及 Git 探测字段，非 Git 探测、物化、授权和完整文件能力在后续 runtime PR 实现。

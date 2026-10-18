@@ -1,3 +1,10 @@
+import {
+  encodeSessionFilePath,
+  decodeSessionFilePath,
+  getProjectMemberRootId,
+  parseProjectMemberRootId,
+  SessionFileRootIdSchema,
+} from '../src/project-path';
 import { SessionCreateRequestSchema } from '../src/message-schemas';
 import { describe, expect, it } from 'vitest';
 import {
@@ -276,5 +283,40 @@ describe('session file root resolution', () => {
     expect(
       resolveSessionFilePath([{ id: 'main', absolutePath: '/Work' }], '/work/a')
     ).toBeUndefined();
+  });
+});
+
+describe('multi-root wire file identities', () => {
+  it('round trips main and member paths without collisions with literal filenames', () => {
+    for (const relativePath of [
+      'docs/a.ts',
+      'member:docs/a.ts',
+      'lody-root:member:docs/a.ts',
+      'a\\b.txt',
+    ]) {
+      const main = { rootId: 'main', relativePath };
+      const member = { rootId: getProjectMemberRootId('docs'), relativePath };
+      expect(encodeSessionFilePath(main)).toBe(relativePath);
+      expect(encodeSessionFilePath(member)).not.toBe(relativePath);
+      expect(decodeSessionFilePath(encodeSessionFilePath(main))).toEqual(main);
+      expect(decodeSessionFilePath(encodeSessionFilePath(member))).toEqual(member);
+    }
+    expect(parseProjectMemberRootId('member:docs')).toBe('docs');
+    expect(parseProjectMemberRootId('main')).toBeUndefined();
+  });
+  it('rejects malformed roots, traversal and malformed wire keys', () => {
+    for (const root of ['member:', 'member:../x', 'member:__proto__', '/tmp']) {
+      expect(SessionFileRootIdSchema.safeParse(root).success).toBe(false);
+    }
+    for (const key of [
+      '../x',
+      '/etc/passwd',
+      '\0lody-root:main/a',
+      '\0lody-root:member:docs/../a',
+      'a\0b',
+    ]) {
+      expect(decodeSessionFilePath(key)).toBeUndefined();
+    }
+    expect(() => encodeSessionFilePath({ rootId: 'main', relativePath: '../a' })).toThrow();
   });
 });

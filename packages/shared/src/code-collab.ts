@@ -1,3 +1,4 @@
+import { SessionFileRootIdSchema } from './project-path';
 import { z } from 'zod';
 
 export const CODE_COLLAB_FEATURE_FLAGS = {
@@ -228,6 +229,7 @@ export type CodeCollabV2Error = z.infer<typeof CodeCollabV2ErrorSchema>;
 
 export const CodeCollabV2OpenTextRequestSchema = z
   .object({
+    rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
     path: z.string().min(1),
   })
@@ -248,6 +250,7 @@ export type CodeCollabV2OpenTextOk = z.infer<typeof CodeCollabV2OpenTextOkSchema
 
 export const CodeCollabV2FileIndexRequestSchema = z
   .object({
+    rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
   })
   .strict();
@@ -255,6 +258,7 @@ export type CodeCollabV2FileIndexRequest = z.infer<typeof CodeCollabV2FileIndexR
 
 export const CodeCollabV2RefreshTextRequestSchema = z
   .object({
+    rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
     path: z.string().min(1),
     digest: CodeCollabV2FileDigestSchema,
@@ -285,6 +289,7 @@ export type CodeCollabV2RefreshTextResponse = z.infer<typeof CodeCollabV2Refresh
 
 export const CodeCollabV2SaveTextRequestSchema = z
   .object({
+    rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
     requestedByUserId: z.string().trim().min(1),
     path: z.string().min(1),
@@ -325,6 +330,7 @@ export type CodeCollabV2SaveTextResponse = z.infer<typeof CodeCollabV2SaveTextRe
 
 export const CodeCollabV2OpenCurrentDiffRequestSchema = z
   .object({
+    rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
     path: z.string().min(1),
   })
@@ -377,6 +383,7 @@ export type CodeCollabV2OpenCurrentDiffResponse = z.infer<
 // and are lazily fetched via `open-current-diff`.
 export const CodeCollabV2OpenAllChangesDiffRequestSchema = z
   .object({
+    rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
     // Inline this file first (the file the user clicked) regardless of size ordering.
     focusPath: z.string().min(1).optional(),
@@ -448,6 +455,7 @@ export type CodeCollabV2OpenAllChangesDiffResponse = z.infer<
 
 export const CodeCollabV2OpenTurnDiffRequestSchema = z
   .object({
+    rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
     turnId: z.string().trim().min(1),
     path: z.string().min(1),
@@ -483,6 +491,7 @@ export type CodeCollabV2OpenTurnDiffResponse = z.infer<
 
 export const CodeCollabV2InitDirectoryRequestSchema = z
   .object({
+    rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
     path: z.string().min(1),
   })

@@ -275,3 +275,5 @@ Creation snapshots use `HEAD` for unspecified root bases and `gitlink` for submo
 the owner daemon resolves root placeholders to base refs and submodule placeholders to commits during materialization. Deselecting a parent
 also deselects all its descendants. Local submodule probing is read-only and returns no
 absolute host paths; machine-local URLs are redacted.
+
+Non-main sync file keys use a NUL-prefixed encoding that cannot collide with real filenames. File RPC uses optional rootId, defaulting to main. See the Note’s multi-root file contract for encoding details.
