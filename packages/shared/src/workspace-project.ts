@@ -39,6 +39,10 @@ export type WorkspaceProject = {
   members: ProjectMember[];
 };
 export type SessionProjectMember = {
+  /** Owner-daemon receipt; pins credentials and durable branch storage across restore. */
+  repositoryCheckout?:
+    | { kind: 'github' }
+    | { kind: 'local'; machineId: MachineId; localProjectId: LocalProjectId };
   /** Written only by the owner daemon; re-evaluated on ACP startup. */
   access?: 'worktree' | 'additional' | 'link';
   /** Owner-observed GitHub identity, including local members with a GitHub remote. */
@@ -194,6 +198,12 @@ export function normalizeWorkspaceProject(value: unknown): WorkspaceProject | un
   return result.success ? result.data : undefined;
 }
 export const SessionProjectMemberSchema = z.object({
+  repositoryCheckout: z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('github') }),
+      ProjectMemberSourceSchema.options[1].omit({ baseBranch: true }),
+    ])
+    .optional(),
   access: z.enum(['worktree', 'additional', 'link']).optional(),
   repoFullName: z
     .string()

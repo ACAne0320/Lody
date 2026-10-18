@@ -5,6 +5,9 @@ import path from 'node:path';
 import { mkdir, realpath } from 'node:fs/promises';
 import {
   SessionProjectRunSchema,
+  pickProjectRepositoryLocalCopy,
+  type LocalProjectMeta,
+  type MachineId,
   PROJECT_SUBMODULE_BASE,
   deduplicateProjectMembers,
   resolveSessionFilePath,
@@ -33,12 +36,29 @@ export function projectGroupDirectory(run: SessionProjectRun): string {
   return path.join(getLodyDataDir(), 'repos', SessionProjectRunSchema.parse(run).root);
 }
 
+export class ProjectRepositoryNotOnMachineError extends Error {
+  readonly code = 'project_repository_not_on_machine';
+  constructor(
+    readonly memberId: string,
+    readonly repoFullName: string
+  ) {
+    super(
+      `Repository ${repoFullName} is not on this machine; untick this member or add a local copy.`
+    );
+    this.name = 'ProjectRepositoryNotOnMachineError';
+  }
+}
+
+export type ProjectRepositoryResolutionOptions = {
+  machineId: string;
+  resolveLocalRoot: (id: LocalProjectId) => Promise<string | null>;
+  listLocalProjects?: () => Promise<LocalProjectMeta[]>;
+  allowManagedClone?: boolean;
+};
+
 export async function resolveProjectGroupRepositories(
   run: SessionProjectRun,
-  options: {
-    machineId: string;
-    resolveLocalRoot: (id: LocalProjectId) => Promise<string | null>;
-  }
+  options: ProjectRepositoryResolutionOptions
 ) {
   // All local bindings must resolve before materializing the first member.
   const resolved = new Map<
@@ -48,23 +68,57 @@ export async function resolveProjectGroupRepositories(
       repoId: ReturnType<typeof deriveRepoIdFromGitHubRepo>;
       url: string;
       isGit: boolean;
+      repoFullName?: string;
+      repositoryCheckout?: SessionProjectMember['repositoryCheckout'];
     }
   >();
   for (const [id, member] of Object.entries(run.members)) {
-    if (member.src.kind === 'github') {
+    let localProjectId = member.src.kind === 'local' ? member.src.localProjectId : undefined;
+    let localMachineId = member.src.kind === 'local' ? member.src.machineId : undefined;
+    if (member.src.kind === 'github' && member.src.preferLocal) {
+      const receipt = member.repositoryCheckout;
+      if (receipt?.kind === 'local') {
+        localProjectId = receipt.localProjectId;
+        localMachineId = receipt.machineId;
+      } else if (!receipt) {
+        const candidates = (await options.listLocalProjects?.()) ?? [];
+        while (candidates.length) {
+          const candidate = pickProjectRepositoryLocalCopy(member.src.repoFullName, candidates);
+          if (!candidate) break;
+          candidates.splice(candidates.indexOf(candidate), 1);
+          if (!existsSync(candidate.rootPath)) continue;
+          const repository = await localProjectsLegacy.getLocalProjectGitHubRepoAtRootPath(
+            candidate.rootPath
+          );
+          if (repository?.toLowerCase() === member.src.repoFullName.toLowerCase()) {
+            localProjectId = candidate.id;
+            localMachineId = options.machineId as MachineId;
+            break;
+          }
+        }
+      }
+      if (!localProjectId && !options.allowManagedClone)
+        throw new ProjectRepositoryNotOnMachineError(id, member.src.repoFullName);
+    }
+    if (member.src.kind === 'github' && !localProjectId) {
       const url = buildGitHubCloneUrl(member.src.repoFullName);
       resolved.set(id, {
         isGit: true,
+        repoFullName: member.src.repoFullName,
+        repositoryCheckout: member.src.preferLocal ? { kind: 'github' } : undefined,
         repoId: deriveRepoIdFromGitHubRepo(member.src.repoFullName),
         source: { kind: 'github', repoUrl: url },
         url,
       });
     } else {
-      if (member.src.machineId !== options.machineId)
+      if (localMachineId !== options.machineId)
         throw new Error('Project group member belongs to another machine');
-      const localRoot = await options.resolveLocalRoot(member.src.localProjectId);
+      if (!localProjectId) throw new Error(`Project group member is unavailable: ${id}`);
+      const localRoot = await options.resolveLocalRoot(localProjectId);
       if (!localRoot) throw new Error(`Project group member is unavailable: ${id}`);
       const probe = await worktreeGitLegacy.probeLocalProjectMember(localRoot);
+      if (member.src.kind === 'github' && !probe.isGit)
+        throw new ProjectRepositoryNotOnMachineError(id, member.src.repoFullName);
       if (!probe.isGit && member.placement.kind !== 'root')
         throw new Error('Non-Git project group members cannot be submodules');
       const originalRootPath = await realpath(
@@ -74,6 +128,14 @@ export async function resolveProjectGroupRepositories(
       );
       resolved.set(id, {
         isGit: probe.isGit,
+        repositoryCheckout:
+          member.src.kind === 'github'
+            ? {
+                kind: 'local',
+                machineId: options.machineId as MachineId,
+                localProjectId,
+              }
+            : undefined,
         repoId: deriveRepoIdFromLocalProjectPath(originalRootPath),
         source: { kind: 'local-shared', originalRootPath },
         url: originalRootPath,
@@ -82,16 +144,24 @@ export async function resolveProjectGroupRepositories(
   }
   const identities = new Map<string, string>();
   for (const [id, member] of Object.entries(run.members)) {
-    if (member.src.kind !== 'local') continue;
     const target = resolved.get(id)!;
+    if (target.source.kind !== 'local-shared') continue;
     if (!target.isGit) continue;
     const state = await localProjectsLegacy.getLocalProjectGitStateAtRootPath(target.url);
     if (!state.git) throw new Error(`Project group member is not a Git repository: ${id}`);
+    if (
+      member.src.kind === 'github' &&
+      state.githubRepoFullName?.toLowerCase() !== member.src.repoFullName.toLowerCase()
+    )
+      throw new ProjectRepositoryNotOnMachineError(id, member.src.repoFullName);
     if (state.githubRepoFullName) {
-      identities.set(
-        `${member.src.machineId}/${member.src.localProjectId}`,
-        state.githubRepoFullName
-      );
+      target.repoFullName =
+        member.src.kind === 'github' ? member.src.repoFullName : state.githubRepoFullName;
+      if (member.src.kind === 'local')
+        identities.set(
+          `${member.src.machineId}/${member.src.localProjectId}`,
+          state.githubRepoFullName
+        );
       target.url = buildGitHubCloneUrl(state.githubRepoFullName);
     }
   }
@@ -113,16 +183,18 @@ export async function resolveProjectGroupRepositories(
 }
 
 /** Promise orchestration remains with the existing session owner and repository managers. */
-export async function materializeProjectGroup(options: {
-  sessionId: SessionId;
-  machineId: string;
-  workspaceDocument: LoroDocumentManager;
-  logger: Logger;
-  resolveLocalRoot: (id: LocalProjectId) => Promise<string | null>;
-  brokerAuth: (source: WorktreeManagerSource) => Promise<GitCredentialBrokerAuth | undefined>;
-  supportsAdditionalDirectories?: boolean;
-  setup: (member: SessionProjectMember, workdir: string) => Promise<void>;
-}): Promise<{ workdir: string; run: SessionProjectRun }> {
+export async function materializeProjectGroup(
+  options: ProjectRepositoryResolutionOptions & {
+    sessionId: SessionId;
+    machineId: string;
+    workspaceDocument: LoroDocumentManager;
+    logger: Logger;
+    resolveLocalRoot: (id: LocalProjectId) => Promise<string | null>;
+    brokerAuth: (source: WorktreeManagerSource) => Promise<GitCredentialBrokerAuth | undefined>;
+    supportsAdditionalDirectories?: boolean;
+    setup: (member: SessionProjectMember, workdir: string) => Promise<void>;
+  }
+): Promise<{ workdir: string; run: SessionProjectRun }> {
   let result!: { workdir: string; run: SessionProjectRun };
   const owner = new WorkspaceGitService(options);
   await owner.updateProjectRun(options.sessionId, async (snapshot, publish) => {
@@ -139,6 +211,13 @@ export async function materializeProjectGroup(options: {
     )
       throw new Error('Project group directory escaped its storage root');
     const resolved = await resolveProjectGroupRepositories(run, options);
+    // Commit the selected store before creating branches, so retries never repick a copy.
+    for (const [id, target] of resolved) {
+      const member = run.members[id as keyof typeof run.members]!;
+      if (target.repositoryCheckout) member.repositoryCheckout = target.repositoryCheckout;
+      if (target.repoFullName) member.repoFullName = target.repoFullName;
+    }
+    await publish(run);
     const pending = new Set(Object.keys(run.members));
     const newlyCreated: SessionProjectMember[] = [];
     while (pending.size) {
@@ -195,7 +274,7 @@ export async function materializeProjectGroup(options: {
             const base = info.baseRef;
             member.base =
               base && base !== 'HEAD'
-                ? member.src.kind === 'github'
+                ? target.source.kind === 'github'
                   ? base.replace(/^origin\//, '')
                   : base
                 : await worktreeGitLegacy.run({ cwd: info.hostPath, args: ['rev-parse', 'HEAD'] });

@@ -554,6 +554,19 @@ UI 只在快照记录了 `access: 'additional' | 'link'` 时挂载根目录，�
 **分工。** 本分支包含 Spec、本节和 shared 契约。逻辑 session 实现 daemon：在添加项目
 和启动时发布 `githubRepoFullName`；从本地副本用本机凭证物化仓库 Member（否则回退到
 托管 clone，纯本地模式报告不可用）；把提示词清单和 PR 观测扩展到副本使用的凭证；声明
-该能力。UI session 实现选择器、编辑器迁移和 composer 过滤。目前只运行了 shared 契约
-测试。
+该能力。UI session 实现选择器、编辑器迁移和 composer 过滤。契约分支验证了 shared 契约；daemon 验证见下文。
 
+
+**Daemon 集成。** 添加项目及启动时发布 `githubRepoFullName`，其他行写入保留该字段。
+物化时按排序重新观测本机副本、拒绝重复身份并使用原生认证；缺少副本时通过托管克隆回退，
+否则报 `project_repository_not_on_machine`。新增由所有者写入的
+`SessionProjectMember.repositoryCheckout` 回执，在创建分支前固定 `{ kind: 'github' }`
+或 `{ kind: 'local', machineId, localProjectId }`，不含主机路径。重试及归档恢复保留该
+存储位置而不重新选择副本；本地副本将分支保存到原仓库，并保留 `src.repoFullName` 作为
+PR 身份。混合运行时在现有凭据租约内冻结原生仓库列表；主机 Git、Shell Git/gh 和 PR
+轮询按成员选择认证，同一仓库的原生与托管查询也分批处理。提示词清单标明本地副本，daemon
+宣告 `projectRepositoryMembers: 1`。真实临时 Git 仓库和假的提供方边界测试覆盖副本选择、
+过时或缺失副本、重复拒绝、发布与保留、凭据以及根仓库和子模块归档恢复。尚未验证真实
+GitHub、Windows 和桌面 UI 端到端行为。启动刷新不进入提示词热路径；现有会话串行化和
+租约释放继续拥有生命周期。由于 worktree 修改、setup/GC 和 Flock 编排的依赖仍未完成，
+本次暂缓 Effect 迁移。

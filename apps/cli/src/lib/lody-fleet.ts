@@ -1578,7 +1578,7 @@ export class LodyFleet {
         lastOpenedAtMs: nowMs,
       },
       nowMs,
-      { sync: runtime.lody.documentManager, reason: 'local-project-add' }
+      { sync: runtime.lody.documentManager, reason: 'local-project-add', refreshGitHubRemote: true }
     );
   }
 

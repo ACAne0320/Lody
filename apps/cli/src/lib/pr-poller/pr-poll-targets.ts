@@ -19,6 +19,7 @@ import {
  * as stored in session meta (also the write-back upsert key).
  */
 export type PrPollStatusTarget = {
+  nativeCredentials?: boolean;
   url: string;
   repoFullName: string;
   prNumber: number;
@@ -33,6 +34,7 @@ export type PrPollStatusTarget = {
  * still be discovered).
  */
 export type PrPollDiscoveryTarget = {
+  nativeCredentials?: boolean;
   repoFullName: string;
   branch: string;
   memberId?: string;
@@ -168,6 +170,8 @@ export function computePrPollMetaSignature(
             id,
             member.src.kind === 'github' ? member.src.repoFullName : member.repoFullName,
             member.branch,
+            member.repositoryCheckout,
+            member.src.kind,
           ])
         )
       : '',
@@ -236,7 +240,14 @@ export function enumeratePrPollTargets(
     const discoveryTargets: PrPollDiscoveryTarget[] = [];
     for (const [memberId, member] of Object.entries(ownerMeta.projectRun.members)) {
       const context = projectMemberRepositoryContext(ownerMeta, memberId);
-      if (!context.repoFullName || !context.branch) continue;
+      if (!context.repoFullName) continue;
+      const nativeCredentials =
+        member.src.kind === 'local' || member.repositoryCheckout?.kind === 'local';
+      for (const status of entry.statusTargets) {
+        if (status.repoFullName.toLowerCase() === context.repoFullName.toLowerCase())
+          status.nativeCredentials = nativeCredentials;
+      }
+      if (!context.branch) continue;
       const memberMeta = {
         ...ownerMeta,
         project: {
@@ -256,7 +267,7 @@ export function enumeratePrPollTargets(
         discoveryFingerprints[discoveryOwnerKey(entry.ownerSessionId, memberId)],
         defaultResolveGitHubRepo
       );
-      if (target) discoveryTargets.push({ ...target, memberId });
+      if (target) discoveryTargets.push({ ...target, memberId, nativeCredentials });
     }
     return {
       ...entry,

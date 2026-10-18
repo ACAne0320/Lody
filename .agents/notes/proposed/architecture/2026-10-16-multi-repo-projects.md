@@ -721,5 +721,24 @@ project is added and on startup, materializing repository Members from a local c
 with native credentials (falling back to the managed clone, or reporting unavailable
 in local-only mode), extending the prompt inventory and PR observation to the copy's
 credentials, and advertising the capability. The UI session implements the picker,
-editor migration and composer filtering. Only the shared contract tests have run.
+editor migration and composer filtering. The contract branch verified the shared contracts; daemon verification is described below.
 
+
+**Daemon integration.** Add/startup publication preserves `githubRepoFullName` across
+other row writers. Materialization re-observes ranked local copies, rejects duplicate
+identities, and uses native auth; missing copies use managed cloning or fail with
+`project_repository_not_on_machine`. The additive owner-written
+`SessionProjectMember.repositoryCheckout` receipt pins `{ kind: 'github' }` or
+`{ kind: 'local', machineId, localProjectId }` before branch creation, without host
+paths. Retries and archive/restore retain that store rather than repicking; local
+copies save branches to the original repository and retain `src.repoFullName` for
+PRs. Mixed runtimes freeze native repositories in the existing credential lease;
+host Git, shell Git/gh and PR polling select credentials per member, and PR batches
+separate native from managed queries. Prompt inventory identifies local copies;
+the daemon advertises `projectRepositoryMembers: 1`. Real temporary Git tests and
+fake provider boundaries cover selection, stale/missing copies, duplicates,
+publication/preservation, credentials and root/submodule archive/restore. Live
+GitHub, Windows and desktop UI end-to-end behavior remain unverified. Startup
+refresh stays off the prompt path. Existing session serialization and lease release
+remain the owners; Effect migration is deferred because worktree mutation/setup/GC
+and Flock orchestration still have unfinished dependencies.

@@ -200,6 +200,115 @@ const createSessionInner = async (
     }
   ).createSessionInner(config, undefined, preparedWorktree);
 
+describe('SessionManager repository Member credentials', () => {
+  it('keeps a GitHub-source local-copy session native and never enrolls its host worktree', async () => {
+    const temp = mkdtempSync(path.join(os.tmpdir(), 'repository-member-auth-'));
+    for (const key of Object.keys(process.env)) {
+      if (/^(GIT_|SSH_|LODY_GIT_)/.test(key)) vi.stubEnv(key, undefined);
+    }
+    vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+    vi.stubEnv('GIT_CONFIG_GLOBAL', os.devNull);
+    try {
+      const root = createLocalRepo(temp);
+      runGit(root, ['remote', 'add', 'origin', 'https://github.com/example/web.git']);
+      const workspaceDocument = createWorkspaceDocument(new Map());
+      const manager = new SessionManager(
+        createLogger(),
+        'token',
+        'machine-1' as MachineId,
+        'workspace-1' as WorkspaceId,
+        workspaceDocument,
+        {
+          sessionSandboxFactory: async () => createNoopSessionSandbox(),
+          cloudPort: createTestCloudPort(),
+        }
+      );
+      vi.spyOn(manager, 'resolveLocalProjectRootPath').mockImplementation(async (id) =>
+        id === 'copy' ? root : temp
+      );
+      const config = createSessionConfig({
+        sessionId: 'repo-member' as SessionId,
+        project: { kind: 'github', repoFullName: 'example/web' },
+        projectRun: {
+          id: '12345678-1234-4234-8234-123456789012' as never,
+          name: 'Group',
+          root: 'project-group-12345678-1234-4234-8234-123456789012',
+          members: {
+            ['docs' as keyof NonNullable<SessionConfig['projectRun']>['members']]: {
+              o: 1,
+              src: {
+                kind: 'local',
+                machineId: 'machine-1' as MachineId,
+                localProjectId: 'docs' as LocalProjectId,
+              },
+              placement: { kind: 'root', dir: 'docs' },
+              path: 'docs',
+              base: 'HEAD',
+            },
+            ['web' as keyof NonNullable<SessionConfig['projectRun']>['members']]: {
+              o: 0,
+              src: { kind: 'github', repoFullName: 'example/web', preferLocal: true },
+              placement: { kind: 'root', dir: 'web' },
+              path: 'web',
+              base: 'HEAD',
+              repositoryCheckout: {
+                kind: 'local',
+                machineId: 'machine-1' as MachineId,
+                localProjectId: 'copy' as LocalProjectId,
+              },
+            },
+          },
+        },
+      });
+      vi.spyOn(workspaceDocument, 'getOrCreateSessionDoc').mockResolvedValue({
+        getMetaState: async () => ({ projectRun: config.projectRun }),
+        setProjectRun: async (run: NonNullable<SessionConfig['projectRun']>) => {
+          config.projectRun = run;
+        },
+      } as never);
+      const internals = manager as unknown as {
+        prepareGitHubRepoSessionConfig(
+          config: SessionConfig
+        ): Promise<import('./session-credentials').SessionCredentials>;
+        ensureGitCredentialBrokerEnv(): Promise<never>;
+        resolveHostGitBrokerAuth(
+          source: WorktreeManagerSource,
+          config: SessionConfig,
+          credentials: import('./session-credentials').SessionCredentials
+        ): Promise<GitCredentialBrokerAuth | undefined>;
+      };
+      vi.spyOn(internals, 'ensureGitCredentialBrokerEnv').mockRejectedValue(
+        new Error('Unexpected broker enrollment')
+      );
+      const credentials = await internals.prepareGitHubRepoSessionConfig(config);
+      expect(credentials.mode).toBe('native');
+      expect(config.env).toBeUndefined();
+      const releasedManaged = {
+        mode: 'managed',
+        lease: { active: false },
+      } as unknown as import('./session-credentials').SessionCredentials;
+      expect(
+        await internals.resolveHostGitBrokerAuth(
+          { kind: 'local-shared', originalRootPath: root },
+          config,
+          releasedManaged
+        )
+      ).toBeUndefined();
+      await expect(
+        internals.resolveHostGitBrokerAuth(
+          { kind: 'github', repoUrl: 'https://github.com/example/managed.git' },
+          config,
+          releasedManaged
+        )
+      ).rejects.toMatchObject({ message: 'github_runtime_context_released' });
+      await credentials.release();
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(temp, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('SessionManager ACP project identity', () => {
   it.each([undefined, 'parent-session' as SessionId])(
     'resolves the registered root for local worktree sessions, including child %s',

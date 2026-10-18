@@ -350,6 +350,11 @@ describe('repository Members', () => {
   it('requires its own capability beyond multi-repository and file roots', () => {
     expect(
       machineSupportsProjectRepositoryMembers({
+        protocolCapabilities: CURRENT_MACHINE_PROTOCOL_CAPABILITIES,
+      })
+    ).toBe(true);
+    expect(
+      machineSupportsProjectRepositoryMembers({
         protocolCapabilities: { multiRepoProject: 1, projectFileRoots: 1 },
       })
     ).toBe(false);
@@ -359,6 +364,19 @@ describe('repository Members', () => {
       })
     ).toBe(true);
   });
+});
+
+it('preserves daemon repository checkout receipts in session snapshots', () => {
+  const snapshot = run();
+  const member = Object.values(snapshot.members)[0]!;
+  member.repositoryCheckout = {
+    kind: 'local',
+    machineId: 'machine' as never,
+    localProjectId: 'copy' as never,
+  };
+  expect(
+    Object.values(SessionProjectRunSchema.parse(snapshot).members)[0]?.repositoryCheckout
+  ).toEqual(member.repositoryCheckout);
 });
 
 describe('session file root resolution', () => {

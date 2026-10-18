@@ -3052,6 +3052,7 @@ export class MessageHandler {
           workspaceDocument: this.workspaceDocument,
           logger: this.logger,
           resolveLocalRoot: (id) => this.sessionManager.resolveLocalProjectRootPath(id),
+          allowManagedClone: this.cloudPort.githubTokens !== null,
           cleanup: (cleanupInput) => this.runArchivedWorktreeCleanupScript(cleanupInput),
         }),
       // Restore reattaches by `branchName`; a branch renamed in a terminal is
@@ -9630,7 +9631,7 @@ export class MessageHandler {
         lastOpenedAtMs: nowMs,
       },
       nowMs,
-      { sync: this.workspaceDocument, reason: 'local-project-add' }
+      { sync: this.workspaceDocument, reason: 'local-project-add', refreshGitHubRemote: true }
     );
   }
 

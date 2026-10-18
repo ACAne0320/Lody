@@ -3,7 +3,11 @@ import {
   reconcileProjectMemberLink,
   resolveProjectFileRoots,
 } from './worktree/project-member-access';
-import { materializeProjectGroup, projectGroupDirectory } from './worktree/project-worktrees';
+import {
+  materializeProjectGroup,
+  projectGroupDirectory,
+  resolveProjectGroupRepositories,
+} from './worktree/project-worktrees';
 import { resolveGitIdentityPolicyLegacy } from './git-identity-policy';
 import {
   acquireSessionCredentialsLegacy,
@@ -128,7 +132,10 @@ import { getEffectiveMemoryLimitBytes } from '@/utils/memory';
 import { withSlowOperationWarning } from '@/utils/slow-operation-warning';
 import { resolveGitHubRepoWorktreeConfig } from './worktree/worktree-config-resolver';
 import type { AcpCapabilitiesResult } from '@/agent/acp-capability-normalization';
-import { resolveWorkspaceLocalProjectRootPathWithRetry } from '@/lib/local-project-meta';
+import {
+  resolveWorkspaceLocalProjectRootPathWithRetry,
+  readMachineLocalProjects,
+} from '@/lib/local-project-meta';
 import { readTimeoutEnv } from '@/lib/loro/timeout-utils';
 import { loadSessionMcpCatalog } from '@/agent/session-mcp-resolver';
 import { SessionUserResolver } from './session-user-resolver';
@@ -1903,15 +1910,41 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       );
       config.projectRun = (await ownerDoc.getMetaState())?.projectRun;
     }
-    // A GitHub remote does not make a local project a managed GitHub checkout.
-    // Direct local sessions and their worktrees keep the user's native auth.
-    if (
-      config.project?.kind === 'local' &&
-      !Object.values(config.projectRun?.members ?? {}).some(
-        (member) => member.src.kind === 'github'
-      )
-    )
-      return nativeSessionCredentials;
+    // Resolve each repository before enrolling a managed credential lease. The same
+    // pinned receipt is used by materialization, refresh, PR observation and restore.
+    if (config.projectRun) {
+      let hasManagedMember = false;
+      const owner = new WorkspaceGitService({
+        workspaceDocument: this.workspaceDocument,
+        logger: this.logger,
+      });
+      await owner.updateProjectRun(config.parentSessionId ?? config.sessionId!, async (run) => {
+        const resolved = await resolveProjectGroupRepositories(run, {
+          machineId: this.machineId,
+          resolveLocalRoot: (id) => this.resolveLocalProjectRootPath(id),
+          listLocalProjects: async () =>
+            Object.values(
+              await readMachineLocalProjects(
+                this.workspaceDocument.repo,
+                this.workspaceId,
+                this.machineId
+              )
+            ),
+          allowManagedClone: this.cloudPort.githubTokens !== null,
+        });
+        for (const [id, target] of resolved) {
+          const member = run.members[id as keyof typeof run.members];
+          if (!member) throw new Error('Missing resolved project member');
+          if (target.repoFullName) member.repoFullName = target.repoFullName;
+          if (target.repositoryCheckout) member.repositoryCheckout = target.repositoryCheckout;
+          else delete member.repositoryCheckout;
+        }
+        hasManagedMember = [...resolved.values()].some((target) => target.source.kind === 'github');
+        config.projectRun = run;
+        return run;
+      });
+      if (!hasManagedMember) return nativeSessionCredentials;
+    } else if (config.project?.kind === 'local') return nativeSessionCredentials;
 
     const githubRepo = config.githubRepo ?? tryDeriveGitHubRepoFromUrl(config.githubRepoUrl);
     if (githubRepo) {
@@ -1931,6 +1964,13 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       sessionId: config.sessionId,
       requesterUserId: credentialOwner,
       machineId: this.machineId,
+      nativeRepositories: Object.values(config.projectRun?.members ?? {}).flatMap((member) =>
+        member.repositoryCheckout?.kind === 'local' && member.src.kind === 'github'
+          ? [member.src.repoFullName]
+          : member.src.kind === 'local' && member.repoFullName
+            ? [member.repoFullName]
+            : []
+      ),
     });
     if (credentials.mode !== 'managed') throw new Error('Managed credentials are required');
     try {
@@ -2407,16 +2447,31 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
         workspaceDocument: this.workspaceDocument,
         logger: this.logger,
         resolveLocalRoot: (id) => this.resolveLocalProjectRootPath(id),
+        listLocalProjects: async () =>
+          Object.values(
+            await readMachineLocalProjects(
+              this.workspaceDocument.repo,
+              this.workspaceId,
+              this.machineId
+            )
+          ),
+        allowManagedClone: this.cloudPort.githubTokens !== null,
         brokerAuth: (source) => this.resolveHostGitBrokerAuth(source, config, credentials),
         setup: async (member, memberWorkdir) => {
+          const localProjectId =
+            member.src.kind === 'local'
+              ? member.src.localProjectId
+              : member.repositoryCheckout?.kind === 'local'
+                ? member.repositoryCheckout.localProjectId
+                : undefined;
           const memberConfig: SessionConfig = {
             ...config,
             project:
-              member.src.kind === 'github'
+              member.src.kind === 'github' && !localProjectId
                 ? { kind: 'github', repoFullName: member.src.repoFullName, branch: member.base }
                 : {
                     kind: 'local',
-                    localProjectId: member.src.localProjectId,
+                    localProjectId: localProjectId!,
                     branch: member.base,
                     useWorktree: true,
                   },
@@ -2429,7 +2484,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
             workdir: memberWorkdir,
             branch: member.branch!,
             repoFullName: memberConfig.githubRepo,
-            localProjectId: member.src.kind === 'local' ? member.src.localProjectId : undefined,
+            localProjectId,
             logger: this.logger,
             events: createWorktreeScriptHistoryRecorder({
               sessionDoc: ownerDoc,

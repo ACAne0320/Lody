@@ -89,7 +89,7 @@ export const buildPrompt = (
         .sort(([, a], [, b]) => a.o - b.o)
         .map(
           ([id, member]) =>
-            `- ${JSON.stringify(id)}: ${JSON.stringify(member.access === 'additional' ? (options?.projectFileRoots?.find((root) => root.id === `member:${id}`)?.absolutePath ?? member.path) : member.path)} (${member.src.kind === 'github' ? member.src.repoFullName : member.access === 'additional' || member.access === 'link' ? 'non-Git directory, not isolated' : 'local repository'}), access ${member.access ?? 'worktree'}${member.access === 'additional' ? `; additional directory member:${id} supplied to the Provider` : ''}${member.access === 'additional' || member.access === 'link' ? '' : `; base ${JSON.stringify(member.base)}`}${member.placement.kind === 'submodule' ? `; submodule of ${JSON.stringify(member.placement.parent)}` : ''}`
+            `- ${JSON.stringify(id)}: ${JSON.stringify(member.access === 'additional' ? (options?.projectFileRoots?.find((root) => root.id === `member:${id}`)?.absolutePath ?? member.path) : member.path)} (${member.src.kind === 'github' ? `${member.src.repoFullName}${member.repositoryCheckout?.kind === 'local' ? ', local copy, native Git/GitHub credentials' : ''}` : member.access === 'additional' || member.access === 'link' ? 'non-Git directory, not isolated' : 'local repository'}), access ${member.access ?? 'worktree'}${member.access === 'additional' ? `; additional directory member:${id} supplied to the Provider` : ''}${member.access === 'additional' || member.access === 'link' ? '' : `; base ${JSON.stringify(member.base)}`}${member.placement.kind === 'submodule' ? `; submodule of ${JSON.stringify(member.placement.parent)}` : ''}`
         )
         .join(
           '\n'

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -141,6 +142,54 @@ function createRepo(flock: FakeMachineFlock) {
 }
 
 describe('local project root path publishing', () => {
+  it('publishes, refreshes and removes GitHub identity without losing it on other row writes', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'local-remote-'));
+    const git = (args: string[]) =>
+      execFileSync('git', args, { cwd: rootPath, env: { ...process.env, GIT_CONFIG_COUNT: '0' } });
+    try {
+      git(['init']);
+      git(['remote', 'add', 'origin', 'https://github.com/example/first.git']);
+      const { repo } = createRepo(new FakeMachineFlock());
+      const project = { ...projectMeta, rootPath };
+      const sync = { markMachineFlockDocDirty() {} };
+      const read = async () =>
+        (await readMachineLocalProjects(repo, workspaceId, machineId))[project.id];
+      await upsertMachineLocalProject(repo, workspaceId, machineId, project, 1, {
+        sync,
+        reason: 'local-project-add',
+        refreshGitHubRemote: true,
+      });
+      expect((await read())?.githubRepoFullName).toBe('example/first');
+      await upsertMachineLocalProject(
+        repo,
+        workspaceId,
+        machineId,
+        { ...project, name: 'Renamed' },
+        2,
+        { sync }
+      );
+      expect((await read())?.githubRepoFullName).toBe('example/first');
+      git(['remote', 'set-url', 'origin', 'git@github.com:example/second.git']);
+      await reconcileMachineLocalProjectRootPaths(repo, workspaceId, machineId, sync);
+      expect((await read())?.githubRepoFullName).toBe('example/second');
+      expect((await read())?.name).toBe('Renamed');
+      git(['remote', 'remove', 'origin']);
+      await reconcileMachineLocalProjectRootPaths(repo, workspaceId, machineId, sync);
+      expect((await read())?.githubRepoFullName).toBeUndefined();
+      await upsertMachineLocalProject(
+        repo,
+        workspaceId,
+        machineId,
+        { ...project, githubRepoFullName: 'example/first' },
+        3,
+        { sync }
+      );
+      expect((await read())?.githubRepoFullName).toBeUndefined();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
   it('repairs an older symlink row and canonicalizes later writes without changing its identity', async () => {
     const temp = mkdtempSync(join(tmpdir(), 'lody-project-path-'));
     try {

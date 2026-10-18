@@ -14,24 +14,30 @@ import type { LoroDocumentManager } from '@/lib/loro/doc';
 import type { Logger } from '@/utils/logger';
 import { WorkspaceGitService } from '../workspace-git-service';
 import { projectRunMetaPatch } from '../project-run-state';
-import { projectGroupDirectory, resolveProjectGroupRepositories } from './project-worktrees';
+import {
+  projectGroupDirectory,
+  resolveProjectGroupRepositories,
+  type ProjectRepositoryResolutionOptions,
+} from './project-worktrees';
 import { getWorktreeManager } from './worktree-manager';
 import { worktreeGitLegacy } from './git-execution-legacy';
 
 /** All backups finish before deinit/removal. Any unresolved member keeps the group. */
-export async function archiveProjectGroup(options: {
-  sessionId: SessionId;
-  worktreePath: string;
-  machineId: string;
-  workspaceDocument: LoroDocumentManager;
-  logger: Logger;
-  resolveLocalRoot: (id: LocalProjectId) => Promise<string | null>;
-  cleanup: (input: {
+export async function archiveProjectGroup(
+  options: ProjectRepositoryResolutionOptions & {
     sessionId: SessionId;
-    meta: SessionMeta;
     worktreePath: string;
-  }) => Promise<void>;
-}): Promise<void> {
+    machineId: string;
+    workspaceDocument: LoroDocumentManager;
+    logger: Logger;
+    resolveLocalRoot: (id: LocalProjectId) => Promise<string | null>;
+    cleanup: (input: {
+      sessionId: SessionId;
+      meta: SessionMeta;
+      worktreePath: string;
+    }) => Promise<void>;
+  }
+): Promise<void> {
   const owner = new WorkspaceGitService(options);
   await owner.withOwnerMutation(options.sessionId, async () => {
     const room = getSessionRoomId(options.sessionId);
@@ -96,6 +102,15 @@ export async function archiveProjectGroup(options: {
           ...run,
           members: { ['member' as keyof typeof run.members]: member },
         });
+        if (member.repositoryCheckout?.kind === 'local') {
+          projected.project = {
+            kind: 'local',
+            localProjectId: member.repositoryCheckout.localProjectId,
+            branch: member.base,
+            useWorktree: true,
+            githubRepoFullName: member.repoFullName,
+          };
+        }
         await options.cleanup({
           sessionId: options.sessionId,
           meta: { ...meta, ...projected },

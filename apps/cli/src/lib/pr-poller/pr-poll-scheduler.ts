@@ -743,7 +743,10 @@ export class PrPollScheduler {
       return false;
     }
     const nowMs = this.nowMs();
-    const credential = await runtime.handle.resolveCredential(batch.repoFullName);
+    const credential = await runtime.handle.resolveCredential(
+      batch.repoFullName,
+      batch.nativeCredentials
+    );
     if (!credential) {
       if (nowMs - runtime.lastCredentialLogAtMs >= CREDENTIAL_LOG_THROTTLE_MS) {
         runtime.lastCredentialLogAtMs = nowMs;
@@ -798,7 +801,10 @@ export class PrPollScheduler {
       // that scope's own freeze/bucket/cooldown gates, and quota must be
       // charged to the scope that actually made the call.
       runtime.handle.invalidateCredential(batch.repoFullName, credential);
-      const retried = await runtime.handle.resolveCredential(batch.repoFullName);
+      const retried = await runtime.handle.resolveCredential(
+        batch.repoFullName,
+        batch.nativeCredentials
+      );
       if (retried) {
         this.rememberRepoScope(batch, retried.credentialScope, this.nowMs());
         const retryGate = this.preflightScope(retried, batch.repoFullName, deferredHints);
@@ -873,8 +879,12 @@ export class PrPollScheduler {
     });
   }
 
-  private repoScopeKey(workspaceId: string, repoFullName: string): string {
-    return `${workspaceId}|${repoFullName}`;
+  private repoScopeKey(
+    workspaceId: string,
+    repoFullName: string,
+    nativeCredentials = false
+  ): string {
+    return `${workspaceId}|${repoFullName}|${nativeCredentials}`;
   }
 
   /**
@@ -889,7 +899,7 @@ export class PrPollScheduler {
     nowMs: number
   ): { scope: string; gate: PrPollScopeGate } | null {
     const known = this.knownRepoScopes.get(
-      this.repoScopeKey(batch.workspaceId, batch.repoFullName)
+      this.repoScopeKey(batch.workspaceId, batch.repoFullName, batch.nativeCredentials)
     );
     if (!known || nowMs - known.observedAtMs >= SCOPE_MAPPING_TTL_MS) {
       return null;
@@ -898,10 +908,13 @@ export class PrPollScheduler {
   }
 
   private rememberRepoScope(batch: PrPollBatchPlan, scope: string, nowMs: number): void {
-    this.knownRepoScopes.set(this.repoScopeKey(batch.workspaceId, batch.repoFullName), {
-      scope,
-      observedAtMs: nowMs,
-    });
+    this.knownRepoScopes.set(
+      this.repoScopeKey(batch.workspaceId, batch.repoFullName, batch.nativeCredentials),
+      {
+        scope,
+        observedAtMs: nowMs,
+      }
+    );
   }
 
   private deferGatedBatch(batch: PrPollBatchPlan, nowMs: number, deferredHints: number[]): boolean {

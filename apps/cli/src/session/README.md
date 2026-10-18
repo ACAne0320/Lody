@@ -569,3 +569,10 @@ Non-Git Project group members are registry-backed extra roots. `project-member-a
 resolves authority, reconciles links and prevents archive traversal into original directories.
 ACP startup negotiates access after initialize; per-root file state shares the session owner
 and physical-file save queues. See the multi-root integration section of the Project group Note.
+
+Repository Members (`github` with `preferLocal`) resolve against the executing
+machine's local-project catalog and re-observe each candidate's remote. The owner
+persists `repositoryCheckout` before creating branches, pinning credentials and
+archive/restore storage. Local copies use native auth, including in mixed managed
+groups; PR polling keeps native and managed targets in separate batches. Missing
+copies fail with `project_repository_not_on_machine` when managed cloning is absent.
