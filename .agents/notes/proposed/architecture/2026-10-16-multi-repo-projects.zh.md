@@ -451,7 +451,6 @@ NUL 不能出现在真实文件名中，因此不与主目录的任何真实文�
 探测结果增加 `isGit: boolean`；旧 daemon 的成功探测仅可能是 Git，解析旧结果时默认 true。
 本提交只提供契约及 Git 探测字段，非 Git 探测、物化、授权和完整文件能力在后续 runtime PR 实现。
 
-
 ## 多根目录 daemon 接入
 
 `multi-repo-extra-roots-runtime` 叠在契约分支之上。非 Git 接入和根目录文件请求须使用
@@ -495,4 +494,4 @@ UI 不新增路径格式，而是把额外根目录「挂载」在成员目录�
 带成员 `rootId` 的预览不走 Electron 本机快速路径：那条路径按主目录解析相对路径，会读到
 别的文件；这类请求一律交给机器解析。编辑器把非 Git 成员标为「直接修改原目录」，并且不允许
 它成为子模块或子模块的父成员；Info Bar 的仓库列表对这类成员显示「原目录 · 不隔离」。
-UI 与 daemon（#1674）使用同一个 `machineSupportsProjectFileRoots` 门控。以上仅在单元测试和类型检查中验证，未端到端运行。
+UI 只在快照记录了 `access: 'additional' | 'link'` 时挂载根目录，而只有支持 `projectFileRoots` 的 daemon（#1674）才会写这个字段，因此旧 daemon 不会产生挂载。以上仅在单元测试和类型检查中验证，未端到端运行。

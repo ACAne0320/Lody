@@ -581,7 +581,6 @@ older daemons accepted only Git repositories. This commit provides contracts and
 probe field only; non-Git probing, materialization, authorization and full file access follow
 in the runtime PR.
 
-
 ## Daemon multi-root integration
 
 `multi-repo-extra-roots-runtime` stacks on the contract branch. Non-Git members and root-aware
@@ -642,6 +641,7 @@ which resolves relative paths against the main directory and would read a
 different file; such requests always go to the machine. The editor marks a
 non-Git member as edited in place and does not let it be a submodule or a
 submodule's parent. The Info Bar's repository list shows such members as
-"Original directory · not isolated". The UI is gated by the same
-`machineSupportsProjectFileRoots` capability as the daemon (#1674). All of this
+"Original directory · not isolated". The UI mounts a root only when the snapshot records
+`access: 'additional' | 'link'`, which only a daemon with `projectFileRoots`
+(#1674) writes, so older daemons never produce mounts. All of this
 is verified only by unit tests and type checks; nothing has run end to end.

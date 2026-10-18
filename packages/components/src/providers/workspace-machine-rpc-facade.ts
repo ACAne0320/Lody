@@ -1,4 +1,5 @@
 import {
+  FilePreviewV3ResponseSchema,
   MAIN_SESSION_FILE_ROOT_ID,
   MemoryProviderResponseSchema,
   ProjectProbeLocalMemberResultSchema,
@@ -293,6 +294,23 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
     try {
       const result = await (async () => {
         const isElectron = typeof window !== 'undefined' && window.__LODY_ELECTRON__;
+        // A member root on this machine: ask the local daemon, which resolves the
+        // root from its registry and authorizes the real path. No remote channel
+        // is needed, so this also works in local-only mode.
+        if (memberRoot && (await canUseLocalMachineRpc(machineId))) {
+          const local = await sendLocalMachineRpcRequest({
+            machineId,
+            workspaceId,
+            method: 'file/preview',
+            params,
+            ...(options?.ownerSessionId === undefined
+              ? {}
+              : { ownerSessionId: options.ownerSessionId }),
+            timeoutMs: options?.timeoutMs ?? 30_000,
+          });
+          const parsed = FilePreviewV3ResponseSchema.safeParse(local);
+          return parsed.success ? parsed.data : null;
+        }
         if (isElectron && !memberRoot) {
           const ipc = getIpcServices();
           if (!ipc) throw new Error('Local file preview is not available.');
