@@ -724,7 +724,7 @@ credentials, and advertising the capability. The UI session implements the picke
 editor migration and composer filtering. The contract branch verified the shared contracts; daemon verification is described below.
 
 
-**Daemon integration.** Add/startup publication preserves `githubRepoFullName` across
+**Daemon integration** ([PR #1682](https://github.com/LodyAI/Lody/pull/1682)). Add/startup publication preserves `githubRepoFullName` across
 other row writers. Materialization re-observes ranked local copies, rejects duplicate
 identities, and uses native auth; missing copies use managed cloning or fail with
 `project_repository_not_on_machine`. The additive owner-written
@@ -742,3 +742,6 @@ GitHub, Windows and desktop UI end-to-end behavior remain unverified. Startup
 refresh stays off the prompt path. Existing session serialization and lease release
 remain the owners; Effect migration is deferred because worktree mutation/setup/GC
 and Flock orchestration still have unfinished dependencies.
+
+Focused suites, production typechecks, `check:quick`, formatting and docs checks pass.
+The broad workspace test stage of `pnpm check` was stopped before completion.

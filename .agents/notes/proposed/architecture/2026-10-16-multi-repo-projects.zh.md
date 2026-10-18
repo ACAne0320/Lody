@@ -557,7 +557,7 @@ UI 只在快照记录了 `access: 'additional' | 'link'` 时挂载根目录，�
 该能力。UI session 实现选择器、编辑器迁移和 composer 过滤。契约分支验证了 shared 契约；daemon 验证见下文。
 
 
-**Daemon 集成。** 添加项目及启动时发布 `githubRepoFullName`，其他行写入保留该字段。
+**Daemon 集成**（[PR #1682](https://github.com/LodyAI/Lody/pull/1682)）。添加项目及启动时发布 `githubRepoFullName`，其他行写入保留该字段。
 物化时按排序重新观测本机副本、拒绝重复身份并使用原生认证；缺少副本时通过托管克隆回退，
 否则报 `project_repository_not_on_machine`。新增由所有者写入的
 `SessionProjectMember.repositoryCheckout` 回执，在创建分支前固定 `{ kind: 'github' }`
@@ -570,3 +570,6 @@ PR 身份。混合运行时在现有凭据租约内冻结原生仓库列表；�
 GitHub、Windows 和桌面 UI 端到端行为。启动刷新不进入提示词热路径；现有会话串行化和
 租约释放继续拥有生命周期。由于 worktree 修改、setup/GC 和 Flock 编排的依赖仍未完成，
 本次暂缓 Effect 迁移。
+
+相关测试套件、生产类型检查、`check:quick`、格式化及文档检查通过。
+`pnpm check` 的全工作区测试阶段在完成前停止，不能视为完整检查通过。
