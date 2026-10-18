@@ -12,7 +12,10 @@ import {
   stopLocalLoroDataPlaneServer,
 } from '@/lib/local-loro-data-plane-server';
 import type { LocalProbeConfig } from '@/lib/local-probe';
-import { LocalProjectControlService } from '@/lib/local-project-control-service';
+import {
+  LocalProjectControlService,
+  LocalProjectCreateDirectoryError,
+} from '@/lib/local-project-control-service';
 import { LocalProjectHistorySyncService } from '@/lib/local-project-history-sync-service';
 import {
   readMachineLocalProjects,
@@ -66,11 +69,10 @@ import {
   CliType,
   MachineId,
   WorkspaceId,
-  createServerTimeFetcher,
   getServerNow,
   getSessionRoomId,
   isLoroRepoDocDeleted,
-  syncTime,
+  startTimeSyncLegacy,
   type CliRuntimeConnectivity,
   type CliRuntimeWorkspace,
   type LocalProjectControlErrorCode,
@@ -98,16 +100,9 @@ const FLEET_RECONCILE_RETRY_INITIAL_DELAY_MS = 5_000;
 const FLEET_RECONCILE_RETRY_MAX_DELAY_MS = 5 * 60_000;
 const FLEET_WORKSPACE_START_CONCURRENCY = 4;
 
-export async function syncCliServerTime(logger: Logger, serverUrl: string): Promise<void> {
-  await traceAsync(logger, 'startup.sync_time', undefined, async () => {
-    try {
-      await syncTime(createServerTimeFetcher(`${serverUrl}/api/time`));
-      logger.debug('Time synchronized with server');
-    } catch (error) {
-      logger.debug(
-        `Failed to sync time with server ${serverUrl}: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
+export function syncCliServerTime(logger: Logger, serverUrl: string) {
+  return startTimeSyncLegacy(`${serverUrl}/api/time`, () => {
+    logger.debug('Time synchronization unavailable; retaining the previous calibration.');
   });
 }
 
@@ -263,7 +258,7 @@ export class LodyFleet {
       initCliAnalytics();
     }
     this.memoryPressure.start();
-    // Sync time once before any time-sensitive operations (heartbeats, unread
+    // Await the first calibration attempt before time-sensitive operations (heartbeats, unread
     // detection). Local platform: no time server; getServerNow() falls back to
     // the local clock.
     if (this.startupTimeSync) {
@@ -1755,6 +1750,33 @@ export class LodyFleet {
             registeredProjects: await this.listRegisteredLocalProjectRootPaths(message.workspaceId),
           }),
         };
+      }
+
+      if (message.type === 'local-project/create-directory') {
+        try {
+          await this.resolveWorkspaceRuntime(message.workspaceId);
+        } catch {
+          return this.toProjectControlError(
+            requestType,
+            'workspace_not_found',
+            'Workspace runtime is unavailable.'
+          );
+        }
+        try {
+          return {
+            ok: true,
+            type: message.type,
+            result: await this.localProjectControlService.createDirectory(
+              message.parentPath,
+              message.name
+            ),
+          };
+        } catch (error) {
+          if (error instanceof LocalProjectCreateDirectoryError) {
+            return this.toProjectControlError(requestType, error.code, error.message);
+          }
+          throw error;
+        }
       }
 
       if (message.type === 'local-project/prepare-add') {

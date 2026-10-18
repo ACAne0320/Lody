@@ -17,7 +17,7 @@ Lody 根据可信执行终态与输入作者确定通知资格，不提供 Agent
 
 会话包含关系不决定受众。用户请求用精确输入 ID 标识结果归属；Host 仅通过活跃执行上下文返回这些 ID，MCP 将其冻结到现有 Operation 配置。RPC/steer 可以先于输入历史同步启动；MCP 在接受委派前读取精确输入以补齐来源，未同步则返回可重试错误且不创建 Operation，不阻塞普通 prompt 启动。自动汇总继承完整且按收件人隔离的批次成员归属，不伪造人类作者。用户输入附带批次时合并自身与继承的归属。成功要求其中至少一个请求已无活跃 Operation 或未消费结果；分批汇总和继续委派保留原始归属。失败/未知汇总立即提醒；旧数据缺少归属时保持 unknown。Steer 按当前 requester 查询完成状态，不能继承另一个收件人的归属。
 
-唯一发布边界在执行资源清理与 Inbox 结算之后，再检查 Stop，冻结事实后释放 prompt 槽位。投递由既有 Host work drain 跟踪并在 shutdown 回收，与 visible execution 和自动 Inbox launch 独立；慢投递不阻塞两种后继路径。归属查询失败只让通知保守跳过，不导致 Agent 执行失败或重跑。不新增调度规则、数据库表、通知队列或轮询。用户 Goal set/resume 明确使用 user 受众；现有 provider prompt 已覆盖 Goal 内部续跑。参见[会话关系](../../../../specs/session-relations.md)与[编排规则](../../../../apps/cli/src/orchestration/AGENTS.md)。
+唯一发布边界在执行资源清理与 Inbox 结算之后，再检查 Stop，冻结事实后释放 prompt 槽位。投递由既有 Host work drain 跟踪并在 shutdown 回收，与 visible execution 和自动 Inbox launch 独立；慢投递不阻塞两种后继路径。错误记录失败也不能跳过 Inbox 释放。后台桌面投影独立持有文档租约，手机投递不持有。归属查询失败只让通知保守跳过，不导致 Agent 执行失败或重跑。不新增调度规则、数据库表、通知队列或轮询。用户 Goal set/resume 明确使用 user 受众；现有 provider prompt 已覆盖 Goal 内部续跑。参见[会话关系](../../../../specs/session-relations.md)与[编排规则](../../../../apps/cli/src/orchestration/AGENTS.md)。
 
 定时任务当前产生普通用户 Turn，成功/失败/未知沿用同一策略，取消静默；高频任务可能每轮提醒。条件、摘要、健康事件及交接前告警暂缓。
 

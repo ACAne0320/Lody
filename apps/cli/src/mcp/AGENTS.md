@@ -2,12 +2,11 @@
 
 Parent instructions apply. Background: [README.md](README.md).
 
-- Route local Session/catalog tools via `session/call-tool` to the daemon repo, never a
-  second writer. Reuse SDK-parsed arguments and validate daemon inputs in
-  `session-tool-router.ts`; scope identity/host operations with AsyncLocalStorage in
-  `session-command-environment.ts`. Require an active local user Turn and exact
-  workspace/machine scope. Cloud retains authenticated commands and remote recovery
-  confirmation.
+- Route Session/catalog tools via `session/call-tool` to the daemon repo in every
+  composition, never a second replica or child `lody` CLI. Reuse SDK-parsed arguments
+  and validate daemon inputs in `session-tool-router.ts`; scope replica/identity with
+  ALS in `session-command-environment.ts`. Require exact workspace/machine scope
+  and an active Turn (local: its user). Cloud keeps authenticated commands/recovery.
 
 - MCP sharing requires the active Turn user to equal the CLI authenticated account.
   Fail closed on shared-machine account mismatch; never substitute the machine owner.
@@ -37,14 +36,15 @@ Parent instructions apply. Background: [README.md](README.md).
   requires access for both executing Machine owner and driving human (owned, or shared with
   shared project), never trusting synced `MachineMeta.ownerUserId`.
 - Operation identity comes only from active Host dispatch; reject absent runtime/userId.
-  Never infer identity from credentials, Session ownership or history. Freeze requesterUserId
-  and sourceTurnId. Resolve pending notification provenance from exact input before
-  acceptance; unsynced input is retryable, never empty origins.
-  Authors are provenance, not authorization. Recovery uses owner Machine/current access.
-- Direct Role creation stays on the ordinary `lody_session_create` and
-  `lody_session_create_many` tools. When `agentRoleId` is present, tolerate manual Machine, Agent,
-  and run-config fields but remove them before resolution: the current Role row is authoritative
-  and those fields must not influence validation, canonical identity, recovery, or dispatch.
+  Never infer it from credentials, Session owner or history. Freeze requesterUserId/sourceTurnId.
+  Resolve pending notification provenance from exact input before acceptance; unsynced input
+  is retryable, never empty origins. Authors are not authorization. Recovery uses owner
+  Machine/current access.
+- With `agentRoleId`, create tools require `agentRoleMachineId` for multi-machine
+  Roles. Strip manual target/run-config before resolution,
+  validation, identity, recovery or dispatch; the Role is authoritative.
+- Role create/update only propose. Save checks ownership, patches latest text;
+  replicas may overwrite. CLI shares [flow](README.md#agent-role-proposals).
 
 ## Session tool contracts
 

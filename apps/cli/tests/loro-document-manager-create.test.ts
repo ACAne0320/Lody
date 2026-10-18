@@ -7,7 +7,12 @@ import {
   type LocalLoroDataPlaneServerMessage,
 } from '@lody/shared/local-loro-data-plane';
 import { LocalLoroDataPlaneServerLegacy } from '@lody/shared/local-loro-data-plane-server';
-import type { WorkspaceId } from '@lody/shared';
+import {
+  SessionStatusFactory,
+  type MachineId,
+  type SessionId,
+  type WorkspaceId,
+} from '@lody/shared';
 import { InMemoryRemoteCursorStore } from '@loro-dev/streams-crdt';
 import { RepoSyncError, RepoTransportError, type RepoSyncReport } from 'loro-repo';
 
@@ -30,6 +35,8 @@ import {
   WorkspacePresenceLegacyFailure,
   createCliPresenceRuntimeLegacy,
 } from '../src/lib/loro/presence-legacy';
+// Fails exactly one presence close, as a timed-out SDK release would.
+let failNextPresenceClose: Error | undefined;
 const testPresenceLayer = WorkspacePresenceOwnersLive.pipe(
   Layer.provide(
     Layer.merge(
@@ -54,7 +61,11 @@ const testPresenceLayer = WorkspacePresenceOwnersLive.pipe(
                 onStatusChange('joined');
                 return { syncBarrier: () => Effect.void };
               }),
-            close: Effect.void,
+            close: Effect.suspend(() => {
+              const failure = failNextPresenceClose;
+              failNextPresenceClose = undefined;
+              return failure ? Effect.die(failure) : Effect.void;
+            }),
             rejoin: Effect.void,
             retryRelease: Effect.void,
           }),
@@ -109,42 +120,43 @@ const mocks = vi.hoisted(() => ({
   streamsGatewayBaseUrl: 'https://streams.example.test',
 }));
 
-vi.mock('loro-repo', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('loro-repo')>();
+vi.mock('@lody/shared/workspace-data/repo-legacy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@lody/shared/workspace-data/repo-legacy')>();
   return {
     ...actual,
-    LoroRepo: {
-      create: mocks.repoCreate,
+    WorkspaceRepoLegacy: {
+      create: async (options: unknown) => {
+        let repo: Partial<import('@lody/shared/workspace-data/repo-legacy').WorkspaceRepoLegacy>;
+        try {
+          repo = await mocks.repoCreate(options);
+        } catch (error) {
+          mocks.sqliteClose();
+          throw error;
+        }
+        repo.onTransportStatusChange ??= (_id: string, listener: (status: string) => void) => {
+          listener(mocks.transportStatus);
+          return () => {};
+        };
+        repo.runLegacy ??= Effect.runPromise;
+        repo.acquireDocHandleLegacy ??= async (id: string) => ({
+          ...(await repo.openPersistedDoc!(id)),
+          release: async () => {},
+        });
+        return repo;
+      },
     },
-    RepoDocHandle: class RepoDocHandle {},
-    RepoWatchHandle: class RepoWatchHandle {},
-    TransportSubscription: class TransportSubscription {},
   };
 });
 
-vi.mock('loro-repo/transport/streams', () => {
-  class MockStreamsTransportAdapter {
-    constructor(options: unknown) {
-      mocks.transportOptions.push(options);
-    }
-
-    connect = vi.fn(async () => {});
-    close = mocks.transportClose;
-    isConnected = vi.fn(() => mocks.transportStatus === 'connected');
-    getStatus = vi.fn(() => mocks.transportStatus);
-    onStatusChange = vi.fn(() => () => {});
-  }
-
-  return {
-    StreamsTransportAdapter: MockStreamsTransportAdapter,
-    // Real replica-bound persistence is covered with a real SqliteRepoStore in
-    // tests/cli-streams-replica-checkpoints.test.ts.
-    createRepoStreamsPersistence: (_repo: unknown, options: object) => ({
-      mode: 'replica-bound',
-      ...options,
-    }),
-  };
-});
+vi.mock('@lody/shared/workspace-data/streams', () => ({
+  workspaceStreamsTransport: (options: unknown) => {
+    mocks.transportOptions.push(options);
+    return {
+      kind: 'native-workspace-transport',
+      make: () => Effect.die('This controller test injects the Repo boundary'),
+    };
+  },
+}));
 
 vi.mock('loro-repo/storage/sqlite', () => ({
   SqliteRepoStore: class SqliteRepoStore {
@@ -173,6 +185,7 @@ vi.mock('@/utils/http-transport', () => ({
 }));
 
 import { LoroDocumentManager } from '../src/lib/loro/doc';
+import { withWorkspaceManager } from '../src/lib/command-runtime';
 import { createCliSqliteRepoStore } from '../src/lib/loro/sqlite-repo-store';
 
 const testStreamsTokens = {
@@ -275,6 +288,60 @@ const originalHomeEnv = process.env.HOME;
 let tempHomeDir: string | undefined;
 
 describe('LoroDocumentManager.create degraded startup behavior', () => {
+  it.each([true, false])(
+    'uses native metadata authority without a second service (cloud=%s)',
+    async (cloud) => {
+      const { WorkspaceRepoLegacy: NativeRepo } = await vi.importActual<
+        typeof import('@lody/shared/workspace-data/repo-legacy')
+      >('@lody/shared/workspace-data/repo-legacy');
+      const { SubscriptionRef } = await import('effect');
+      const repo = await NativeRepo.create({
+        authority: cloud ? { mode: 'remote', transports: ['streams'] } : { mode: 'local' },
+      });
+      const manager = new LoroDocumentManager({
+        repo,
+        workspaceId: 'authority-test' as WorkspaceId,
+        userId: 'user-1',
+        metaSub: null,
+        logger: createSilentLogger(),
+        streamsTokens: cloud ? testStreamsTokens : null,
+      });
+      let online = true;
+      try {
+        if (cloud)
+          await expect(manager.syncMetaOrThrow()).rejects.toThrow('Workspace metadata sync failed');
+        await repo.addTransport('streams', {
+          kind: 'native-workspace-transport',
+          make: (id) =>
+            Effect.succeed({
+              id,
+              authority: cloud ? 'server' : 'peer',
+              connect: Effect.void,
+              disconnect: Effect.void,
+              join: () =>
+                Effect.gen(function* () {
+                  return {
+                    status: yield* SubscriptionRef.make<'synced'>('synced'),
+                    close: Effect.void,
+                    sync: Effect.sync(() =>
+                      online ? ('confirmed' as const) : ('offline' as const)
+                    ),
+                  };
+                }),
+            }),
+        });
+        await manager.syncMetaOrThrow();
+        online = false;
+        if (cloud)
+          await expect(manager.syncMetaOrThrow()).rejects.toThrow('Workspace metadata sync failed');
+        else await manager.syncMetaOrThrow();
+        online = true;
+        await manager.syncMetaOrThrow();
+      } finally {
+        await manager.cleanUp({ fast: true });
+      }
+    }
+  );
   beforeEach(async () => {
     vi.clearAllMocks();
     mocks.transportOptions.length = 0;
@@ -325,6 +392,174 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
       process.env.LODY_LORO_AUTO_RECONNECT_INTERVAL_MS = originalReconnectIntervalEnv;
     }
   });
+
+  it('overlapping workspace commands share a real presence owner and keep the survivor writable', async () => {
+    let destroyed = false;
+    mocks.repoCreate.mockImplementation(async () => ({
+      joinMetaRoom: async () => createMetaSubscription(),
+      destroy: async () => {
+        destroyed = true;
+      },
+      addTransport: mocks.repoAddTransport,
+      removeTransport: mocks.repoRemoveTransport,
+      transportRooms: mocks.repoTransportRooms,
+    }));
+    mocks.cliHttpFetch.mockImplementation(async () =>
+      Response.json({
+        token: 'synthetic-streams-token',
+        expiresIn: 900,
+        gatewayBaseUrl: mocks.streamsGatewayBaseUrl,
+      })
+    );
+    const monitorAttach = vi
+      .spyOn(CliMachineMonitorRuntime.prototype, 'attachStreams')
+      .mockResolvedValue(undefined);
+    const auth = {
+      token: 'synthetic-command-token',
+      userId: 'user-1',
+      userName: 'Synthetic User',
+      userEmail: 'synthetic@example.test',
+      machineId: 'synthetic-machine' as MachineId,
+      machineName: 'Synthetic Machine',
+    };
+    const workspace = {
+      id: 'workspace-command-overlap',
+      slug: 'synthetic',
+      name: 'Synthetic',
+      role: 'owner',
+    };
+    const entered = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+    const finish = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+    const managers: LoroDocumentManager[] = [];
+    const run = (index: number) =>
+      withWorkspaceManager(auth, workspace, 'synthetic-command', async (manager) => {
+        managers[index] = manager;
+        entered[index]?.resolve();
+        await finish[index]?.promise;
+        manager.publishSessionPresence(
+          `synthetic-session-${index}` as SessionId,
+          auth.machineId,
+          SessionStatusFactory.running()
+        );
+        return 'accepted';
+      });
+    const first = run(0);
+    let second: Promise<string> | undefined;
+    try {
+      await Promise.race([first, entered[0]!.promise]);
+      second = run(1);
+      // The old helper rejects at the second presence acquisition; no sleeps
+      // or timeout are needed to distinguish that failure from successful entry.
+      await Promise.race([second, entered[1]!.promise]);
+      expect(managers[1]).toBe(managers[0]);
+      finish[0]?.resolve();
+      expect(await first).toBe('accepted');
+      expect(destroyed).toBe(false);
+      const manager = managers[1];
+      if (!manager) throw new Error('Missing surviving manager');
+      expect(
+        Object.values(manager.getPresenceStates() ?? {}).some(
+          (state) => state.kind === 'session' && state.sessionId === 'synthetic-session-0'
+        )
+      ).toBe(true);
+      finish[1]?.resolve();
+      expect(await second).toBe('accepted');
+      expect(destroyed).toBe(true);
+    } finally {
+      for (const gate of finish) gate.resolve();
+      await Promise.allSettled(second ? [first, second] : [first]);
+      monitorAttach.mockRestore();
+      mocks.repoCreate.mockReset();
+      mocks.cliHttpFetch.mockReset();
+    }
+  });
+
+  it.each(['transport', 'repo', 'presence', 'data-plane'] as const)(
+    'allows the next command after %s cleanup fails',
+    async (failedPhase) => {
+      const failure = new Error(`Synthetic ${failedPhase} cleanup failure`);
+      const managers: LoroDocumentManager[] = [];
+      const repos: { destroyed: boolean }[] = [];
+      mocks.repoCreate.mockImplementation(async () => {
+        const state = { destroyed: false };
+        const first = repos.length === 0;
+        repos.push(state);
+        return {
+          joinMetaRoom: async () => createMetaSubscription(),
+          addTransport: mocks.repoAddTransport,
+          removeTransport: async () => {
+            if (first && failedPhase === 'transport') throw failure;
+          },
+          transportRooms: mocks.repoTransportRooms,
+          destroy: async () => {
+            if (first && failedPhase === 'repo') throw failure;
+            state.destroyed = true;
+          },
+        };
+      });
+      mocks.cliHttpFetch.mockImplementation(async () =>
+        Response.json({
+          token: 'synthetic-streams-token',
+          expiresIn: 900,
+          gatewayBaseUrl: mocks.streamsGatewayBaseUrl,
+        })
+      );
+      const monitorAttach = vi
+        .spyOn(CliMachineMonitorRuntime.prototype, 'attachStreams')
+        .mockResolvedValue(undefined);
+      const auth = {
+        token: 'synthetic-cleanup-token',
+        userId: 'user-1',
+        userName: 'Synthetic User',
+        userEmail: 'synthetic@example.test',
+        machineId: 'synthetic-machine' as MachineId,
+        machineName: 'Synthetic Machine',
+      };
+      const workspace = {
+        id: `workspace-cleanup-${failedPhase}`,
+        slug: 'synthetic',
+        name: 'Synthetic',
+        role: 'owner',
+      };
+      const run = () =>
+        withWorkspaceManager(auth, workspace, 'synthetic-cleanup', async (manager) => {
+          if (failedPhase === 'presence' && managers.length === 0) failNextPresenceClose = failure;
+          if (failedPhase === 'data-plane' && managers.length === 0) {
+            // Fails before presence would stop; the owner must not be left live.
+            const server = Reflect.get(manager, 'localLoroDataPlaneServer') as {
+              disposeLegacy: () => Promise<void>;
+            };
+            server.disposeLegacy = async () => {
+              throw failure;
+            };
+          }
+          managers.push(manager);
+          manager.publishSessionPresence(
+            'synthetic-next-session' as SessionId,
+            auth.machineId,
+            SessionStatusFactory.running()
+          );
+          expect(
+            Object.values(manager.getPresenceStates() ?? {}).some(
+              (state) => state.kind === 'session' && state.sessionId === 'synthetic-next-session'
+            )
+          ).toBe(true);
+          return 'accepted';
+        });
+      try {
+        expect(await run()).toBe('accepted');
+        // A failed presence release used to retain the owner and refuse this command.
+        expect(await run()).toBe('accepted');
+        expect(managers[1]).not.toBe(managers[0]);
+        expect(repos[1]?.destroyed).toBe(true);
+      } finally {
+        failNextPresenceClose = undefined;
+        monitorAttach.mockRestore();
+        mocks.repoCreate.mockReset();
+        mocks.cliHttpFetch.mockReset();
+      }
+    }
+  );
 
   it('does not build a remote transport when repo creation fails', async () => {
     mocks.repoCreate.mockRejectedValueOnce(new Error('repo create failed'));
@@ -441,39 +676,6 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
     ).resolves.toBe(true);
     expect(manager.hasCompletedInitialMetaSync()).toBe(true);
     expect(unsubscribe).toHaveBeenCalledTimes(0);
-
-    await manager.cleanUp({ fast: true });
-  });
-
-  it('configures zstd snapshot codec on the streams transport adapter', async () => {
-    mocks.repoCreate.mockResolvedValueOnce({
-      joinMetaRoom: vi.fn(async () => createMetaSubscription()),
-      destroy: vi.fn(async () => {}),
-      addTransport: mocks.repoAddTransport,
-      removeTransport: mocks.repoRemoveTransport,
-      transportRooms: mocks.repoTransportRooms,
-    });
-
-    const manager = await LoroDocumentManager.create(
-      'workspace-4' as WorkspaceId,
-      'user-1',
-      createSilentLogger(),
-      { attachRemoteOnCreate: true, streamsTokens: testStreamsTokens }
-    );
-
-    expect(mocks.transportOptions).toHaveLength(1);
-    expect(mocks.transportOptions[0]).toMatchObject({
-      baseUrl: mocks.streamsGatewayBaseUrl,
-      snapshotCodec: {
-        compress: expect.any(Function),
-        decompress: expect.any(Function),
-      },
-    });
-    // One-shot commands do not pass a cursor scope: their LoroDoc progress must
-    // stay in this process's memory, never the daemon's shared SQLite cursors.
-    expect(mocks.transportOptions[0]).toMatchObject({
-      persistence: { documentRemoteCursorStore: expect.any(InMemoryRemoteCursorStore) },
-    });
 
     await manager.cleanUp({ fast: true });
   });
@@ -1030,6 +1232,10 @@ describe('LoroDocumentManager.create degraded startup behavior', () => {
     const repo = {
       destroy: vi.fn(async () => {}),
       reconnect: vi.fn(async () => {}),
+      onTransportStatusChange: (_id: string, listener: (status: string) => void) => {
+        listener('connected');
+        return () => {};
+      },
       addTransport: mocks.repoAddTransport,
       removeTransport: mocks.repoRemoveTransport,
       transportRooms: mocks.repoTransportRooms,

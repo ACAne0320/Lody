@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { LoroRepo } from 'loro-repo';
+import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import { v4 as uuid } from 'uuid';
 import { getSessionRoomId, type SessionId } from '@lody/shared';
 import { SessionDocument } from '../src/lib/loro/doc';
 
 describe('terminal notification projection', () => {
   it('publishes a small discovery index and replaces only the latest projection', async () => {
-    const repo = await LoroRepo.create({});
+    const repo = await WorkspaceRepoLegacy.create({});
     const id = uuid() as SessionId;
-    const session = new SessionDocument(repo, id);
+    const session = new SessionDocument(repo, id, (roomId) => repo.unloadDoc(roomId));
     try {
       await session.initOffline({ history: [] });
       await repo.upsertDocMeta(getSessionRoomId(id), { type: 'session' });
@@ -28,6 +28,7 @@ describe('terminal notification projection', () => {
       expect((await repo.getDocMeta(getSessionRoomId(id)))?.meta.notificationId).toBe(second.id);
       expect(await session.sessionData.history.readAll()).toEqual([]);
     } finally {
+      await session.destroy({ preserveStatus: true });
       await repo.destroy();
     }
   });

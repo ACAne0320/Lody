@@ -2,6 +2,7 @@ import type { Effect, Scope } from 'effect';
 export type { LoroStreamsTokenProvider } from '@lody/shared';
 import type { TerminalOutcome } from '@lody/shared/notifications';
 import type {
+  BugReportClientLog,
   LiveActivityConversationItem,
   LiveActivityPermissionAlert,
   LiveActivityStatusCounts,
@@ -234,6 +235,8 @@ export interface CloudBugReportInput {
   reporterUserId: string;
   requestToken: string;
   machineUserId: string;
+  /** The reporter's client log, already validated against its schema. */
+  clientLog?: BugReportClientLog;
 }
 
 export interface CloudBugReportPort {

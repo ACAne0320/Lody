@@ -4,6 +4,7 @@ import { turnNotificationAudience } from './notifications/turn-notification-audi
 import { fileLocksLegacy } from '@/utils/file-lock';
 import { Effect } from 'effect';
 import { awaitSessionHistoryOwner } from '@/session/session-history-owner';
+import { ConcurrentQueue } from './concurrent-queue';
 import {
   getSessionHistoryRpcRejection,
   putSessionHistoryRpcRejection,
@@ -32,6 +33,7 @@ import { describeRoostHistoryFailure } from '@/session/roost-history-diagnostics
 import {
   createLoroStreamsJsonStreamClient,
   LoroStreamsMachineRpcServer,
+  LoroStreamsRpcHandlerError,
   LORO_STREAMS_RPC_RETENTION_SECONDS,
   LORO_STREAMS_RPC_VERSION,
   type LocalProjectGitStateRpcResponse,
@@ -196,7 +198,7 @@ import {
   publishCodeCollabFileIndexFlock,
   publishCodeCollabFileIndexSignalFlock,
 } from './code-collab/code-collab-flock-publish';
-import type { ModelInfo } from '@lody/shared';
+import type { ModelInfo, SessionActiveInvocationContextResult } from '@lody/shared';
 import type {
   CloudNotificationsPort,
   CloudPort,
@@ -305,6 +307,7 @@ import { LodyOperationCoordinator } from '@/orchestration/operation-coordinator'
 import {
   createLocalSessionCommandEnvironment,
   getSessionCommandEnvironment,
+  runWithDaemonWorkspace,
   runWithSessionCommandEnvironment,
 } from './session-command-environment';
 import { getLodyOperationStorePath, LodyOperationStore } from '@/orchestration/operation-store';
@@ -372,14 +375,17 @@ import {
   isACPAgentRichContentNotification,
   materializeACPAgentRichContent,
 } from '@/lib/acp-agent-attachments';
-import { LocalProjectControlService } from '@/lib/local-project-control-service';
+import {
+  LocalProjectControlService,
+  LocalProjectCreateDirectoryError,
+} from '@/lib/local-project-control-service';
 import {
   makeLocalWorkspaceCatalog,
   type LocalCatalogAccessSnapshot,
   type LocalWorkspaceCatalogService,
 } from '@/lib/local-workspace-catalog';
 import { resolveSessionLiveStatus } from './session-live-status';
-import type { MemoryPressureEvictionResult } from './session-gc-manager';
+import type { MemoryPressureEvictionResult, SessionCleanupReason } from './session-gc-manager';
 import { PreviewService } from '@/preview/preview-service';
 import { LocalProjectHistorySyncService } from '@/lib/local-project-history-sync-service';
 import { precheckLocalProjectHistoryRequest } from '@/lib/local-project-history-precheck';
@@ -428,6 +434,7 @@ type LocalProjectOwnerOnlyRpcRequest = Extract<
       | 'local-project/add'
       | 'local-project/prepare-add'
       | 'local-project/list-roots'
+      | 'local-project/create-directory'
       | 'local-project/browse-dir';
   }
 >;
@@ -460,6 +467,7 @@ function isLocalProjectOwnerOnlyRpcRequest(
     request.type === 'local-project/add' ||
     request.type === 'local-project/prepare-add' ||
     request.type === 'local-project/list-roots' ||
+    request.type === 'local-project/create-directory' ||
     request.type === 'local-project/browse-dir'
   );
 }
@@ -689,6 +697,9 @@ export class MessageHandler {
   private pendingProcessLifecycleAction: MachineProcessLifecycleAction | null = null;
   private readonly store = new SessionTransientStore();
   private readonly historyOwnerAbort = new AbortController();
+  private readonly historyWatchAbort = new AbortController();
+  private readonly historyWatchReads = new ConcurrentQueue<string>(8);
+  private historyWatchWaiters = 0;
   private sessionActivePresence!: SessionActivePresenceControllerLegacy;
   private readonly titleGenerationInFlight = new Map<SessionId, Promise<string | null>>();
   // Note: titleGenerationInFlight, archiveInFlight are self-cleaning
@@ -2490,47 +2501,33 @@ export class MessageHandler {
     });
   }
 
-  private async prepareSessionWithAccessCheck(
-    spec: SessionPreparationSpec
-  ): Promise<SessionPrepareResponse> {
-    const { sessionId } = spec;
-    const access = await this.verifyMachineAccess({
-      sessionId,
-      requesterUserId: spec.requestedByUserId,
-      ...(spec.project?.kind === 'local' ? { localProjectId: spec.project.localProjectId } : {}),
-    });
-    if (access.outcome !== 'allowed') {
-      return {
-        type: 'session/prepare_response',
-        preparationId: spec.preparationId,
-        sessionId,
-        accepted: false,
-        disposition: access.outcome === 'denied' ? 'not-owned' : 'error',
-        error: access.outcome === 'denied' ? access.reason : access.error,
-      };
-    }
-    return this.sessionManager.requestSessionPreparation(spec);
+  /**
+   * Draft session preparation is retired. Desktops that predate its removal
+   * still ask for it, so both requests answer at once without doing any work.
+   * Prepare reports an accepted duplicate: an older desktop then holds that one
+   * lease until the draft idles or is sent. A rejection would make it ask again,
+   * and cancel, after every pause in typing.
+   */
+  private declineSessionPreparation(spec: SessionPreparationSpec): SessionPrepareResponse {
+    return {
+      type: 'session/prepare_response',
+      preparationId: spec.preparationId,
+      sessionId: spec.sessionId,
+      accepted: true,
+      disposition: 'duplicate',
+    };
   }
 
-  private async cancelSessionPreparationWithAccessCheck(
+  private declineSessionPreparationCancel(
     args: SessionPreparationCancelSpec
-  ): Promise<SessionPrepareCancelResponse> {
-    const { sessionId } = args;
-    const access = await this.verifyMachineAccess({
-      sessionId,
-      requesterUserId: args.requestedByUserId,
-    });
-    if (access.outcome !== 'allowed') {
-      return {
-        type: 'session/prepare-cancel_response',
-        preparationId: args.preparationId,
-        sessionId,
-        cancelled: false,
-        disposition: access.outcome === 'denied' ? 'not-owned' : 'error',
-        error: access.outcome === 'denied' ? access.reason : access.error,
-      };
-    }
-    return this.sessionManager.cancelSessionPreparation(args);
+  ): SessionPrepareCancelResponse {
+    return {
+      type: 'session/prepare-cancel_response',
+      preparationId: args.preparationId,
+      sessionId: args.sessionId,
+      cancelled: false,
+      disposition: 'not-found',
+    };
   }
 
   // Single access choke point for prompt-handoff steer: both RPC arrival paths
@@ -2852,6 +2849,7 @@ export class MessageHandler {
       },
     });
     this.filePreviewService = new FilePreviewService({
+      onDiagnostic: (event) => this.logger.debug(`[file-preview] ${JSON.stringify(event)}`),
       resolveLocalWorkspace: this.resolveLocalFilePreviewWorkspace,
       resolveWorkspace: async (sessionId) => {
         const resolved = await this.resolveCodeCollabV2Workspace(sessionId);
@@ -2951,15 +2949,19 @@ export class MessageHandler {
           // and cloud latency/failure cannot prevent desktop publication.
           const attempts = await Promise.allSettled([
             (async () => {
-              const doc = await this.workspaceDocument.getOrCreateSessionDoc(source.sessionId);
-              if (this.deletedSessionIds.has(source.sessionId)) return;
-              await doc.publishTerminalNotification({
-                id: crypto.randomUUID(),
-                recipientId: scope.recipientId,
-                turnId: source.turnId,
-                outcome,
-                createdAt: getServerNow(),
-              });
+              const lease = await this.workspaceDocument.acquireSessionDocLegacy(source.sessionId);
+              try {
+                if (this.deletedSessionIds.has(source.sessionId)) return;
+                await lease.doc.publishTerminalNotification({
+                  id: crypto.randomUUID(),
+                  recipientId: scope.recipientId,
+                  turnId: source.turnId,
+                  outcome,
+                  createdAt: getServerNow(),
+                });
+              } finally {
+                await lease.release();
+              }
             })(),
             this.notifyTurnOutcome(source.sessionId, scope.recipientId, source.turnId, outcome),
           ]);
@@ -3008,6 +3010,7 @@ export class MessageHandler {
         ),
       resolveAcpCapabilitySourceVersion: async (input) =>
         await resolveExpectedAcpCapabilitySourceVersion(input),
+      leaseSessionDoc: (sessionId) => this.workspaceDocument.acquireSessionDocLegacy(sessionId),
       evictForMemoryPressure: async (excludeSessionId) =>
         await this.evictForMemoryPressureFn(excludeSessionId),
     });
@@ -3266,7 +3269,7 @@ export class MessageHandler {
             },
             { onAcpBinaryProgress }
           ),
-        submitBugReport: async ({ description, reporterUserId, requestToken }) => {
+        submitBugReport: async ({ description, reporterUserId, requestToken, clientLog }) => {
           if (!this.cloudPort.bugReports) {
             return {
               type: 'machine/bug-report_response' as const,
@@ -3282,6 +3285,7 @@ export class MessageHandler {
             reporterUserId,
             requestToken,
             machineUserId: this.userId,
+            ...(clientLog ? { clientLog } : {}),
           });
         },
         cancelSession: async ({ sessionId, turnId, subagentTaskId, cancelId, pauseInbox }) => {
@@ -3352,12 +3356,12 @@ export class MessageHandler {
             disposition,
           };
         },
-        prepareSession: async (spec) => await this.prepareSessionWithAccessCheck(spec),
-        cancelSessionPreparation: async (args) =>
-          await this.cancelSessionPreparationWithAccessCheck(args),
+        prepareSession: async (spec) => this.declineSessionPreparation(spec),
+        cancelSessionPreparation: async (args) => this.declineSessionPreparationCancel(args),
         resolveSessionHistoryOwnerSessionId: this.resolveSessionHistoryOwnerSessionId,
-        readSessionHistory: async ({ sessionId, query }) =>
-          await this.readSessionHistoryForRpc(sessionId, query),
+        readSessionHistory: async ({ sessionId, query, signal }) =>
+          await this.readSessionHistoryForRpc(sessionId, query, signal),
+        waitForSessionHistoryChanges: async (args) => await this.waitForSessionHistoryChanges(args),
         writeSessionHistory: async ({ sessionId, operation, payload }) =>
           await this.writeSessionHistoryForRpc(sessionId, operation, payload),
         resolveCodeCollabOwnerSessionId: this.resolveCodeCollabV2OwnerSessionId,
@@ -3460,8 +3464,6 @@ export class MessageHandler {
       userResolver: this.sessionUserResolver,
       workspaceDocument: this.workspaceDocument,
       executionService: this.executionService,
-      getPreparedSessionLaunchConfig: (input) =>
-        this.sessionManager.getPreparedSessionLaunchConfig(input),
       accessPolicy: makeSessionAccessPolicy(this.localWorkspaceCatalog),
       canUseMachine: async (args) => await this.verifyMachineAccess(args),
       // P5/D11 snapshot bookkeeping for the watcher's background owner
@@ -3476,6 +3478,19 @@ export class MessageHandler {
         }
         await this.recordWorkspaceAccessSnapshot(null);
       },
+      // Members get a TTL-bounded cached allow refreshed by every confirmed
+      // backend allow and cleared by a definitive deny.
+      recordMemberAccessSnapshot: async ({ requesterUserId, localProjectId, verdict }) =>
+        await fileLocksLegacy.runPromise(
+          this.localWorkspaceCatalog.recordMemberAccessSnapshot({
+            workspaceId: this.workspaceId,
+            requesterUserId,
+            ...(localProjectId ? { localProjectId } : {}),
+            ownerUserId: this.userId,
+            machineId: this.machineId,
+            verifiedAt: verdict === 'allowed' ? new Date(getServerNow()).toISOString() : null,
+          })
+        ),
       recordChatFailure: async (sessionDoc, reason, message) =>
         await this.recordChatFailure(sessionDoc, reason, message),
       onStartupBootstrapComplete: () => {
@@ -3541,7 +3556,7 @@ export class MessageHandler {
           }
         : {}),
       materializeTarget: async (operation, item, index) =>
-        await this.withSessionCommandEnvironment(() =>
+        await this.withDaemonCommandScope(() =>
           this.materializeOperationTarget(operation, item, index)
         ),
     });
@@ -3587,7 +3602,7 @@ export class MessageHandler {
         rpcVersion: supportsStreamsRpc ? LORO_STREAMS_RPC_VERSION : undefined,
         supportsLocalProjectHistoryRpc: supportsStreamsRpc,
         protocolCapabilities: getHostMachineProtocolCapabilities(),
-        timeZone: getDeviceTimeZone(),
+        timeZone: getDeviceTimeZone(process.env.TZ),
         supportRegistryAgentTypes: this.supportRegistryAgentTypes,
         sessions: [],
       });
@@ -3740,7 +3755,8 @@ export class MessageHandler {
       void (async () => {
         const sessionId = exit.sessionId;
         this.logger.debug(`[${sessionId}] Session exit event received (exitCode=${exit.exitCode})`);
-        if (!this.store.has(sessionId)) {
+        if (!this.store.has(sessionId) || this.gcRetiringSessions.has(sessionId)) {
+          // GC ended an idle process; reopening its document now would undo the retirement.
           this.logger.debug(`[${sessionId}] Ignoring exit event for GC-cleaned session`);
           return;
         }
@@ -3759,7 +3775,7 @@ export class MessageHandler {
       this.codeCollabV2Service.releaseWorkspaceWatchForOwner(event.sessionId);
       void (async () => {
         const sessionId = event.sessionId;
-        if (!this.store.has(sessionId)) {
+        if (!this.store.has(sessionId) || this.gcRetiringSessions.has(sessionId)) {
           this.logger.debug(`[${sessionId}] Ignoring terminated event for GC-cleaned session`);
           return;
         }
@@ -5904,7 +5920,7 @@ export class MessageHandler {
         rpcVersion: supportsStreamsRpc ? LORO_STREAMS_RPC_VERSION : machineMeta?.rpcVersion,
         supportsLocalProjectHistoryRpc: supportsStreamsRpc,
         protocolCapabilities: getHostMachineProtocolCapabilities(),
-        timeZone: getDeviceTimeZone(),
+        timeZone: getDeviceTimeZone(process.env.TZ),
         supportRegistryAgentTypes: this.supportRegistryAgentTypes,
         sessions: machineMeta?.sessions ?? [],
       });
@@ -6424,8 +6440,29 @@ export class MessageHandler {
     return requester === ownerUserId || requester === this.userId;
   }
 
-  private withSessionCommandEnvironment<T>(run: () => T): T {
-    if (this.cloudPort.kind !== 'local') return run();
+  private readActiveInvocation(sessionId: SessionId): SessionActiveInvocationContextResult {
+    const invocation = this.executionService.getActiveInvocationContext(sessionId);
+    return invocation
+      ? { type: 'session/active-invocation-context', sessionId, active: true, ...invocation }
+      : { type: 'session/active-invocation-context', sessionId, active: false };
+  }
+
+  /**
+   * Commands the daemon executes always borrow its workspace replica. Cloud keeps
+   * its authenticated command behavior; only the local platform adds the local host.
+   */
+  private withDaemonCommandScope<T>(run: () => T): T {
+    if (this.cloudPort.kind !== 'local')
+      return runWithDaemonWorkspace(
+        {
+          workspaceId: this.workspaceId,
+          userId: this.userId,
+          machineId: this.machineId,
+          manager: this.workspaceDocument,
+          readInvocation: (sessionId) => this.readActiveInvocation(sessionId),
+        },
+        run
+      );
     return runWithSessionCommandEnvironment(
       createLocalSessionCommandEnvironment({
         manager: this.workspaceDocument,
@@ -6434,17 +6471,7 @@ export class MessageHandler {
         machineName: this.machineName,
         userId: this.userId,
         host: {
-          readInvocation: (sessionId) => {
-            const invocation = this.executionService.getActiveInvocationContext(sessionId);
-            return invocation
-              ? {
-                  type: 'session/active-invocation-context',
-                  sessionId,
-                  active: true,
-                  ...invocation,
-                }
-              : { type: 'session/active-invocation-context', sessionId, active: false };
-          },
+          readInvocation: (sessionId) => this.readActiveInvocation(sessionId),
           readLiveStatus: async (sessionId) => {
             const live = resolveSessionLiveStatus({
               presence: this.sessionActivePresence.getStatus(sessionId),
@@ -6525,8 +6552,6 @@ export class MessageHandler {
       case 'mcp/list-tools':
         return await listMcpTools(request.params.server);
       case 'session/call-tool': {
-        if (this.cloudPort.kind !== 'local')
-          throw new Error('Daemon Session tools require a local workspace');
         const { sessionId, name, arguments: args } = request.params;
         if (
           request.workspaceId !== this.workspaceId ||
@@ -6539,7 +6564,7 @@ export class MessageHandler {
         if (!sourceWorkdir && args && typeof args === 'object' && 'attachments' in args)
           throw new Error('Requester Session workspace is unavailable');
 
-        return this.withSessionCommandEnvironment(() =>
+        return this.withDaemonCommandScope(() =>
           executeDaemonSessionTool(
             {
               machineId: this.machineId,
@@ -6663,9 +6688,9 @@ export class MessageHandler {
         };
       }
       case 'session/prepare':
-        return await this.prepareSessionWithAccessCheck(request.params);
+        return this.declineSessionPreparation(request.params);
       case 'session/prepare-cancel':
-        return await this.cancelSessionPreparationWithAccessCheck(request.params);
+        return this.declineSessionPreparationCancel(request.params);
       case 'ios-simulator/agent-control': {
         const sessionId = request.params.sessionId as SessionId;
         const invocation = this.executionService.getActiveInvocationContext(sessionId);
@@ -6897,12 +6922,60 @@ export class MessageHandler {
     );
   };
 
+  private async waitForSessionHistoryChanges(args: {
+    sessionId: SessionId;
+    checkpoint: string;
+    waitMs: number;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    if (this.historyWatchWaiters >= 128)
+      throw new LoroStreamsRpcHandlerError(
+        'rpc_request_capacity_exceeded',
+        'History observation capacity exceeded.'
+      );
+    this.historyWatchWaiters++;
+    try {
+      const signal = AbortSignal.any([
+        this.historyOwnerAbort.signal,
+        this.historyWatchAbort.signal,
+        ...(args.signal ? [args.signal] : []),
+      ]);
+      await this.resolveSessionHistoryOwnerSessionId(args.sessionId, { signal });
+      this.touchSession(args.sessionId);
+      const doc = await this.workspaceDocument.getOrCreateSessionDoc(args.sessionId);
+      const backend = await this.getSessionBackend(doc);
+      if (backend.kind !== 'roost' || !backend.history.waitForChanges)
+        throw new Error('History observation unavailable');
+      await backend.flushLocalWrites();
+      await backend.history.waitForChanges(args.checkpoint, args.waitMs, signal);
+    } finally {
+      this.historyWatchWaiters--;
+    }
+  }
+
   private async readSessionHistoryForRpc(
     sessionId: SessionId,
-    query: SessionHistoryReadQuery
+    query: SessionHistoryReadQuery,
+    signal?: AbortSignal
   ): Promise<SessionHistoryReadResponse> {
     try {
-      await this.resolveSessionHistoryOwnerSessionId(sessionId);
+      if (query.kind === 'watchChanges') {
+        await this.waitForSessionHistoryChanges({
+          sessionId,
+          checkpoint: query.checkpoint,
+          waitMs: query.waitMs,
+          signal,
+        });
+        const read = {
+          kind: 'readChanges' as const,
+          checkpoint: query.checkpoint,
+          includeBodiesFrom: query.includeBodiesFrom,
+        };
+        return await this.historyWatchReads.enqueue(sessionId, () =>
+          this.readSessionHistoryForRpc(sessionId, read, signal)
+        );
+      }
+      await this.resolveSessionHistoryOwnerSessionId(sessionId, { signal });
       this.touchSession(sessionId);
       const sessionDoc = await this.workspaceDocument.getOrCreateSessionDoc(sessionId);
       const backend = await this.getSessionBackend(sessionDoc);
@@ -6918,6 +6991,45 @@ export class MessageHandler {
         let result: unknown;
         let pageTurns: SessionHistoryReadResponse['pageTurns'];
         switch (query.kind) {
+          case 'readChanges': {
+            if (!history.readChanges)
+              throw new Error('History incremental recovery is unavailable');
+            const changes = await history.readChanges(query.checkpoint);
+            result = changes;
+            if (changes.state === 'ready' && query.includeBodiesFrom !== undefined) {
+              const count = await history.count();
+              const retainedFrom =
+                query.includeBodiesFrom >= count && count > 0
+                  ? Math.max(0, count - 40)
+                  : Math.min(query.includeBodiesFrom, count);
+              const from =
+                changes.from === undefined
+                  ? undefined
+                  : Math.max(retainedFrom, Math.min(changes.from, count));
+              // Normal streaming edits/appends fit in one coherent reply. A large
+              // structural rewrite retains the bounded checkpoint-read path.
+              if (changes.ids.length + (from === undefined ? 0 : count - from) <= 500) {
+                const changed: SessionHistoryInput[] = [];
+                for (const id of changes.ids) {
+                  const read = await history.readTurn(id);
+                  if (read.state === 'ready') changed.push(read.turn as SessionHistoryInput);
+                }
+                const suffix =
+                  from === undefined
+                    ? []
+                    : (await history.readRange(from, count)).map((read) => {
+                        if (read.state !== 'ready')
+                          throw new Error('History suffix body is unavailable');
+                        return read.turn as SessionHistoryInput;
+                      });
+                result = {
+                  ...changes,
+                  bodies: { changed, ...(from === undefined ? {} : { from }), suffix },
+                };
+              }
+            }
+            break;
+          }
           case 'count':
             result = await history.count();
             break;
@@ -6947,7 +7059,10 @@ export class MessageHandler {
             }
             {
               const page = await history.readLatestDirectoryPage(query.limit);
-              result = page;
+              result =
+                query.withCheckpoint && history.getCheckpoint
+                  ? { ...page, checkpoint: await history.getCheckpoint() }
+                  : page;
               pageTurns = (
                 await history.readRange(page.startPosition, page.startPosition + page.rows.length)
               ).map((read) => {
@@ -6964,7 +7079,10 @@ export class MessageHandler {
             }
             {
               const page = await history.readOlderDirectoryPage(query.cursor, query.limit);
-              result = page;
+              result =
+                query.withCheckpoint && history.getCheckpoint
+                  ? { ...page, checkpoint: await history.getCheckpoint() }
+                  : page;
               pageTurns = (
                 await history.readRange(page.startPosition, page.startPosition + page.rows.length)
               ).map((read) => {
@@ -6983,6 +7101,21 @@ export class MessageHandler {
         await backend.flushLocalWrites();
         const after = await sessionDoc.getRoostHistoryCursor();
         if (before?.historyRevision !== after?.historyRevision) continue;
+        const protectedRead =
+          query.kind === 'readChanges' ||
+          ((query.kind === 'readLatestPage' || query.kind === 'readOlderPage') &&
+            query.withCheckpoint) ||
+          ((query.kind === 'readTurn' || query.kind === 'readRange') && query.atCheckpoint);
+        if (protectedRead) {
+          if (!history.getCheckpoint) throw new Error('History checkpoints are unavailable');
+          const current = await history.getCheckpoint();
+          const expected =
+            query.kind === 'readTurn' || query.kind === 'readRange'
+              ? query.atCheckpoint
+              : (result as { checkpoint?: string }).checkpoint;
+          if (current !== expected)
+            throw Object.assign(new Error('History checkpoint was superseded'), { code: 'stale' });
+        }
         if (after?.historyRevision === undefined || after.historyCount === undefined) {
           throw new Error('Roost history has no durable revision');
         }
@@ -7007,8 +7140,25 @@ export class MessageHandler {
           ...(pageTurns ? { pageTurns } : {}),
         };
       }
-      throw new Error('History changed during the read; retry the observation');
+      throw Object.assign(new Error('History changed during the read; retry the observation'), {
+        code: 'stale',
+      });
     } catch (error) {
+      const protectedRead =
+        query.kind === 'readChanges' ||
+        ((query.kind === 'readLatestPage' || query.kind === 'readOlderPage') &&
+          query.withCheckpoint) ||
+        ((query.kind === 'readTurn' || query.kind === 'readRange') && query.atCheckpoint);
+      if (protectedRead && error instanceof Error && 'code' in error && error.code === 'stale') {
+        this.logger.trace(`[${sessionId}] History observation superseded operation=${query.kind}`);
+        return {
+          type: 'session/history-read_response',
+          sessionId,
+          success: false,
+          retryReason: 'superseded',
+          error: 'The history observation was superseded; retry it.',
+        };
+      }
       const detail =
         describeRoostHistoryFailure(error, {
           stage: 'read',
@@ -7041,6 +7191,17 @@ export class MessageHandler {
       const payload = rawPayload;
       let result: unknown;
       switch (operation) {
+        case 'accept_input_and_dispatch': {
+          if (!backend.inputAcceptance?.acceptAndDispatch)
+            throw new Error('Input dispatch is unavailable');
+          const receipt = await backend.inputAcceptance.acceptAndDispatch(
+            parseHistoryWrite(HistoryEntryWriteSchema, payload.entry) as never
+          );
+          result = receipt;
+          if (receipt.status === 'accepted' && receipt.active && !this.cleanedUp)
+            void this.sessionDispatchWatcher.enqueueSessionCheck(sessionId);
+          break;
+        }
         case 'accept_input':
           if (!backend.inputAcceptance) throw new Error('Input acceptance is unavailable');
           result = await backend.inputAcceptance.accept(
@@ -9350,6 +9511,24 @@ export class MessageHandler {
         };
       }
 
+      if (request.type === 'local-project/create-directory') {
+        if (request.workspaceId !== this.workspaceId) {
+          return this.toLocalProjectControlError(
+            requestType,
+            'workspace_not_found',
+            'Workspace mismatch.'
+          );
+        }
+        return {
+          ok: true,
+          type: request.type,
+          result: await this.localProjectControlService.createDirectory(
+            request.parentPath,
+            request.name
+          ),
+        };
+      }
+
       if (request.type === 'local-project/prepare-add') {
         if (request.workspaceId !== this.workspaceId) {
           return this.toLocalProjectControlError(
@@ -9404,7 +9583,7 @@ export class MessageHandler {
     } catch (error) {
       return this.toLocalProjectControlError(
         requestType,
-        'execution_failed',
+        error instanceof LocalProjectCreateDirectoryError ? error.code : 'execution_failed',
         formatErrorMessage(error)
       );
     }
@@ -9789,6 +9968,13 @@ export class MessageHandler {
   }
 
   /**
+   * Release parked observers before the processor drains; shared writes keep their owner.
+   */
+  cancelPendingHistoryWatches(): void {
+    this.historyWatchAbort.abort();
+  }
+
+  /**
    * Flush pending ACP updates and tear down session resources.
    */
   async cleanup(): Promise<void> {
@@ -9796,6 +9982,7 @@ export class MessageHandler {
     void inboxShutdown.catch((cause) =>
       this.logger.error('Inbox shutdown retains resources', cause)
     );
+    this.cancelPendingHistoryWatches();
     this.historyOwnerAbort.abort();
     await this.iosSimulatorService.closeAll();
     this.logger.debug('Cleaning up message handler resources');
@@ -10012,12 +10199,19 @@ export class MessageHandler {
    * ACP process would discard that resumable session state.
    */
   async hasActiveGoal(sessionId: SessionId): Promise<boolean> {
-    const sessionDoc = await this.workspaceDocument.getOrCreateSessionDoc(sessionId);
-    const meta = await sessionDoc.getMetaState();
-    const legacyMeta = meta as SessionLegacyMetaFields | null | undefined;
-    const backend = await this.getSessionBackend(sessionDoc);
-    const historyGoal = resolveLatestSessionGoalFromHistory(await backend.readHistory());
-    return isSessionGoalActive(historyGoal ?? legacyMeta?.latestGoal);
+    // GC asks this right before retiring the session. An observation lease
+    // keeps the document safe during the read without restarting its idle
+    // clock; a plain borrow would make every retirement see a just-used session.
+    const lease = await this.workspaceDocument.acquireSessionDocLegacy(sessionId, {}, 'observe');
+    try {
+      const meta = await lease.doc.getMetaState();
+      const legacyMeta = meta as SessionLegacyMetaFields | null | undefined;
+      const backend = await this.getSessionBackend(lease.doc);
+      const historyGoal = resolveLatestSessionGoalFromHistory(await backend.readHistory());
+      return isSessionGoalActive(historyGoal ?? legacyMeta?.latestGoal);
+    } finally {
+      await lease.release();
+    }
   }
 
   /**
@@ -10110,33 +10304,62 @@ export class MessageHandler {
     this.logger.debug(message);
   }
 
+  /** Sessions whose GC teardown is running; their process exit is not a turn's end. */
+  private readonly gcRetiringSessions = new Set<SessionId>();
+
   /**
-   * Clean all transient state for a session.
-   * Called by GC manager when a session has been idle or evicted under memory pressure.
+   * Retire an idle session: called by GC for idle sessions and under memory
+   * pressure. Resolves false when the session was kept.
+   *
+   * The decision and the teardown run under the session's residency gate and
+   * only while no lease is held, so a turn, watcher or reader that starts
+   * meanwhile waits and then gets a fresh document; it never loses the one it
+   * holds. A session used within `minIdleMs` is kept. This is the only place
+   * that stops an idle session's agent process: ending a turn keeps the process
+   * alive for the next one.
    */
-  async cleanSessionForGC(sessionId: SessionId): Promise<void> {
-    this.logger.debug(`[GC] Cleaning session ${sessionId}`);
-
-    // 1. Clear active presence
-    this.clearSessionActivePresence(sessionId);
-
-    await this.iosSimulatorService.closeSession(sessionId);
-    await this.previewService.closeSessionPreviewForCleanup(sessionId, 'Session cleaned by GC');
-
-    // 2. Terminate session process first — if later steps throw, the process
-    //    is already gone and the session stays tracked for retry/cleanup.
-    if (this.sessionManager.hasSession(sessionId)) {
-      await this.sessionManager.terminateSession(sessionId, true);
+  async cleanSessionForGC(
+    sessionId: SessionId,
+    options: { reason: SessionCleanupReason; minIdleMs: number }
+  ): Promise<boolean> {
+    this.logger.debug(`[GC] Cleaning session ${sessionId} (reason=${options.reason})`);
+    const outcome = await this.workspaceDocument.retireSessionLegacy(sessionId, {
+      minIdleMs: options.minIdleMs,
+      // Re-checked under the gate; GC's earlier eligibility check can be stale.
+      veto: () =>
+        this.hasActiveTurn(sessionId) ||
+        this.executionService.getExecutionSnapshot(sessionId).hasActiveTurn ||
+        this.hasPendingUpdates(sessionId) ||
+        this.isArchiveInFlight(sessionId),
+      teardown: async (sessionDoc) => {
+        this.gcRetiringSessions.add(sessionId);
+        try {
+          this.clearSessionActivePresence(sessionId);
+          await this.iosSimulatorService.closeSession(sessionId);
+          await this.previewService.closeSessionPreviewForCleanup(
+            sessionId,
+            'Session cleaned by GC',
+            { sessionDoc }
+          );
+          // A failure here aborts the retirement: the document stays resident
+          // and the session stays tracked for the next sweep.
+          if (this.sessionManager.hasSession(sessionId)) {
+            await this.sessionManager.terminateSession(sessionId, true);
+          }
+        } finally {
+          this.gcRetiringSessions.delete(sessionId);
+        }
+      },
+    });
+    if (outcome !== 'retired') {
+      this.logger.debug(`[GC] Kept session ${sessionId} (${outcome})`);
+      return false;
     }
-
-    // 3. Clean Loro documents (main memory savings)
-    await this.workspaceDocument.cleanSessionDoc(sessionId);
-
-    // 4. Drop transient tracking last — only after all cleanup succeeded,
-    //    so getTrackedSessionIds() can still see it for retry if steps above throw.
+    // Drop transient tracking last, only after every step succeeded, so a
+    // failed retirement stays visible to getTrackedSessionIds() for retry.
     this.store.deleteSession(sessionId);
-
     this.logger.debug(`[GC] Session ${sessionId} cleaned`);
+    return true;
   }
 }
 import { getCodexProfileStore } from '@/agent/codex-profile-store';

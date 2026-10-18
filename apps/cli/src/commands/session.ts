@@ -109,7 +109,7 @@ import type { SessionTurn } from '@lody/shared/session-data';
 import { AuthClient } from '@/lib/auth';
 import {
   dispatchLocalControl,
-  createCommandSessionHistoryFactory,
+  withWorkspaceManager as withCommandWorkspaceManager,
   withMachineRpcClient,
   ensureWorkspaceMetaSynced,
   listAliveDocMetas,
@@ -156,8 +156,6 @@ import {
 } from './session-output';
 import { flushTelemetry } from '@/instrument';
 import { captureSessionCommandEvent } from './analytics-events';
-import { LODY_AUTH_SITE_URL, LODY_AUTH_URL } from '@/utils/const';
-import { createCloudBillingPort, createCloudStreamsTokenPort } from '@/lib/cloud-cli-port';
 import { readMachineAccessWithBoundedRetry } from '@/session/session-access-retry';
 import { createSessionBackend } from '@/session/session-backend';
 import { Effect } from 'effect';
@@ -911,38 +909,7 @@ async function withWorkspaceManager<T>(
   workspace: WorkspaceSummary,
   fn: (manager: LoroDocumentManager) => Promise<T>
 ): Promise<T> {
-  // One-shot commands need the remote Streams transport so their writes reach
-  // the cloud (and the daemon) instead of stranding in the local SQLite store.
-  if (!LODY_AUTH_URL) {
-    throw new Error('Cloud session commands require LODY_AUTH_URL');
-  }
-  const logger = getLogger('session');
-  let manager: LoroDocumentManager;
-  const sessionHistoryFactory = createCommandSessionHistoryFactory(
-    () => manager,
-    auth,
-    workspace.id as WorkspaceId
-  );
-  manager = await LoroDocumentManager.create(workspace.id as WorkspaceId, auth.userId, logger, {
-    attachRemoteOnCreate: true,
-    streamsTokens: createCloudStreamsTokenPort({
-      token: auth.token,
-      authBaseUrl: LODY_AUTH_URL,
-      authSiteUrl: LODY_AUTH_SITE_URL,
-      logger,
-    }),
-    cloudBilling: createCloudBillingPort({ token: auth.token }),
-    sessionHistoryFactory,
-  });
-  try {
-    return await fn(manager);
-  } finally {
-    await manager.cleanUp({ fast: true, preserveSessionStatus: true }).catch((error: unknown) => {
-      getLogger('session').warn(
-        `Failed to clean up workspace manager for ${workspace.id}: ${formatErrorMessage(error)}`
-      );
-    });
-  }
+  return withCommandWorkspaceManager(auth, workspace, 'session', fn);
 }
 
 async function listSessionMetasForWorkspace(manager: LoroDocumentManager): Promise<SessionMeta[]> {
@@ -1660,15 +1627,42 @@ export function withBuiltinDefaultTurnMode(
   return { ...config, modeId };
 }
 
+/**
+ * The inherited permission policy (`_permission` options such as Grok's
+ * `permission_mode`, or a `mode`-category option). Unlike effort and Fast it
+ * does not depend on the model, so a model switch or a partial option override
+ * must not silently reset it to the agent's default.
+ */
+function pickPermissionConfigOptionValues(
+  values: Record<string, string | boolean> | undefined,
+  capability: AcpCapabilityCacheEntry | undefined
+): Record<string, string | boolean> | undefined {
+  if (!values) return undefined;
+  const permissionIds = new Set(
+    (capability?.configOptions ?? [])
+      .filter((option) => option.category === '_permission' || option.category === 'mode')
+      .map((option) => option.id)
+  );
+  const picked = Object.fromEntries(Object.entries(values).filter(([id]) => permissionIds.has(id)));
+  return Object.keys(picked).length > 0 ? picked : undefined;
+}
+
 function mergeTurnDispatchConfig(
   explicitConfig: ResolvedTurnDispatchConfig,
-  fallbackConfig: ResolvedTurnDispatchConfig | undefined
+  fallbackConfig: ResolvedTurnDispatchConfig | undefined,
+  capability: AcpCapabilityCacheEntry | undefined
 ): ResolvedTurnDispatchConfig {
+  const inheritedPermission = pickPermissionConfigOptionValues(
+    fallbackConfig?.configOptionValues,
+    capability
+  );
   return {
     memory: explicitConfig.memory ?? fallbackConfig?.memory,
     modeId: explicitConfig.modeId ?? fallbackConfig?.modeId,
     modelId: explicitConfig.modelId ?? fallbackConfig?.modelId,
-    configOptionValues: explicitConfig.configOptionValues ?? fallbackConfig?.configOptionValues,
+    configOptionValues: explicitConfig.configOptionValues
+      ? { ...inheritedPermission, ...explicitConfig.configOptionValues }
+      : fallbackConfig?.configOptionValues,
   };
 }
 
@@ -2163,7 +2157,7 @@ export function resolveEffectiveSessionChatDispatchConfig(args: {
         modelId: explicitModelOption ? undefined : previous.modelId,
         configOptionValues:
           args.dispatchConfig.modelId && args.dispatchConfig.modelId !== previous.modelId
-            ? undefined
+            ? pickPermissionConfigOptionValues(previous.configOptionValues, args.capability)
             : previous.configOptionValues,
       }
     : undefined;
@@ -2186,7 +2180,7 @@ export function resolveEffectiveSessionChatDispatchConfig(args: {
   });
   removeShadowedInheritedSelectors(compatible, args.dispatchConfig, args.capability);
   const effective = withBuiltinDefaultTurnMode(
-    mergeTurnDispatchConfig(args.dispatchConfig, compatible),
+    mergeTurnDispatchConfig(args.dispatchConfig, compatible, args.capability),
     args.target,
     args.capability
   );
@@ -3496,7 +3490,7 @@ export async function resolveEffectiveSessionCreateDispatchConfig(args: {
     capability,
   });
   removeShadowedInheritedSelectors(inherited, requested.config, capability);
-  const merged = mergeTurnDispatchConfig(requested.config, inherited);
+  const merged = mergeTurnDispatchConfig(requested.config, inherited, capability);
   const effective = withBuiltinDefaultTurnMode(merged, args.agentConfig, capability);
   const derivedBuiltinDefault =
     effective.modeId === builtinDefault &&
@@ -4473,7 +4467,7 @@ function printHumanSessionStatus(result: SessionStatusResult): void {
   console.log(`parentSessionId: ${result.parentSessionId ?? '-'}`);
 }
 
-async function runSessionCommand(
+export async function runSessionCommand(
   options: CommonOptions,
   action: () => Promise<void>
 ): Promise<void> {
@@ -4481,6 +4475,8 @@ async function runSessionCommand(
     rootLogger.setDebug(true);
   }
 
+  // Keep diagnostics off stdout through setup, action, cleanup, and exit flushing.
+  const restoreLogging = options.json || options.jsonl ? routeLoggerToStderr() : () => {};
   try {
     await syncCommandTime('session');
     await action();
@@ -4500,6 +4496,8 @@ async function runSessionCommand(
       getLogger('session').error(message);
     }
     await exitSessionCommand(1);
+  } finally {
+    restoreLogging();
   }
 }
 
@@ -4909,6 +4907,80 @@ const sessionChatCommand = new Command('chat')
     }
   );
 
+/** Cancel a Session's running turn through the caller's workspace manager. */
+export async function cancelSessionTurn(args: {
+  auth: AuthContext;
+  workspaceId: WorkspaceId;
+  manager: LoroDocumentManager;
+  sessionId: SessionId;
+  turnId?: string;
+  operationCancel?: boolean;
+}) {
+  const { auth, workspaceId, manager, sessionId } = args;
+  await syncSessionReadData(manager, sessionId, undefined, `session.cancel:${sessionId}`);
+  const session = await resolveSessionMetaOrThrow(manager, sessionId);
+  await assertMachineAccess({
+    auth,
+    workspaceId,
+    machineId: session.machineId,
+    requester: resolveSessionRequester(auth),
+    localProjectId: session.project?.kind === 'local' ? session.project.localProjectId : undefined,
+  });
+  // Already-stopped cancellation stays idempotent even when the daemon is offline.
+  const turnId = await resolveRunningAssistantTurnId(manager, sessionId);
+  if (!turnId) return { ok: true as const, sessionId, alreadyStopped: true as const };
+  const expectedTurnId = normalizeCliValue(args.turnId);
+  if (expectedTurnId && turnId !== expectedTurnId)
+    return {
+      ok: true as const,
+      sessionId,
+      alreadyStopped: true as const,
+      expectedTurnId,
+      activeTurnId: turnId,
+    };
+
+  await ensureTargetMachineOnline({ auth, workspaceId, machineId: session.machineId });
+
+  const machine = await manager.repo.getDocMeta(getMachineRoomId(session.machineId));
+  const inboxCancel = getSessionCancelProtocolFields(
+    machine?.meta,
+    uuidV4(),
+    !args.operationCancel
+  );
+  const response =
+    session.machineId === auth.machineId
+      ? extractCancelResponse(
+          await dispatchLocalControl({
+            type: 'session/cancel',
+            sessionId,
+            machineId: auth.machineId,
+            workspaceId,
+            turnId,
+            ...inboxCancel,
+          })
+        )
+      : await withMachineRpcClient(
+          { auth, workspaceId, machineId: session.machineId },
+          async (client) =>
+            await client.requestSessionCancel({
+              sessionId,
+              turnId,
+              timeoutMs: 10_000,
+              ...inboxCancel,
+            })
+        );
+
+  if (!response) {
+    throw new Error(`Machine ${session.machineId} did not answer the cancel request.`);
+  }
+
+  if (!response.success) {
+    throw new Error(response.error ?? `Failed to cancel ${sessionId}.`);
+  }
+
+  return { ok: true as const, sessionId, response };
+}
+
 const sessionCancelCommand = new Command('cancel')
   .description('Cancel the current running turn for a session')
   .option('--workspace <selector>', 'Target workspace id, slug, or name')
@@ -4935,94 +5007,25 @@ const sessionCancelCommand = new Command('cancel')
           sessionId,
           options.workspace
         );
-        await withWorkspaceManager(auth, workspace, async (manager) => {
-          await syncSessionReadData(manager, sessionId, undefined, `session.cancel:${sessionId}`);
-          const session = await resolveSessionMetaOrThrow(manager, sessionId);
-          const workspaceId = workspace.id as WorkspaceId;
-          await assertMachineAccess({
+        const result = await withWorkspaceManager(auth, workspace, (manager) =>
+          cancelSessionTurn({
             auth,
-            workspaceId,
-            machineId: session.machineId,
-            requester: resolveSessionRequester(auth),
-            localProjectId:
-              session.project?.kind === 'local' ? session.project.localProjectId : undefined,
-          });
-          // Already-stopped cancellation stays idempotent even when the daemon is offline.
-          const turnId = await resolveRunningAssistantTurnId(manager, sessionId);
-          if (!turnId) {
-            if (options.json) {
-              printJson({ ok: true, sessionId, alreadyStopped: true });
-            } else {
-              console.log(`Session ${sessionId} has no active turn.`);
-            }
-            return;
-          }
-          const expectedTurnId = normalizeCliValue(options.turnId);
-          if (expectedTurnId && turnId !== expectedTurnId) {
-            if (options.json) {
-              printJson({
-                ok: true,
-                sessionId,
-                alreadyStopped: true,
-                expectedTurnId,
-                activeTurnId: turnId,
-              });
-            } else {
-              console.log(`Target turn ${expectedTurnId} is no longer active in ${sessionId}.`);
-            }
-            return;
-          }
-
-          await ensureTargetMachineOnline({ auth, workspaceId, machineId: session.machineId });
-
-          const machine = await manager.repo.getDocMeta(getMachineRoomId(session.machineId));
-          const inboxCancel = getSessionCancelProtocolFields(
-            machine?.meta,
-            uuidV4(),
-            !options.operationCancel
-          );
-          const response =
-            session.machineId === auth.machineId
-              ? extractCancelResponse(
-                  await dispatchLocalControl({
-                    type: 'session/cancel',
-                    sessionId,
-                    machineId: auth.machineId,
-                    workspaceId,
-                    turnId,
-                    ...inboxCancel,
-                  })
-                )
-              : await withMachineRpcClient(
-                  { auth, workspaceId, machineId: session.machineId },
-                  async (client) =>
-                    await client.requestSessionCancel({
-                      sessionId,
-                      turnId,
-                      timeoutMs: 10_000,
-                      ...inboxCancel,
-                    })
-                );
-
-          if (!response) {
-            throw new Error(`Machine ${session.machineId} did not answer the cancel request.`);
-          }
-
-          if (!response.success) {
-            throw new Error(response.error ?? `Failed to cancel ${sessionId}.`);
-          }
-
-          if (options.json) {
-            printJson({
-              ok: true,
-              sessionId,
-              response,
-            });
-            return;
-          }
-
+            workspaceId: workspace.id as WorkspaceId,
+            manager,
+            sessionId,
+            turnId: options.turnId,
+            operationCancel: options.operationCancel,
+          })
+        );
+        if (options.json) {
+          printJson(result);
+        } else if (result.response) {
           console.log(`Cancelled ${sessionId}`);
-        });
+        } else if (result.expectedTurnId) {
+          console.log(`Target turn ${result.expectedTurnId} is no longer active in ${sessionId}.`);
+        } else {
+          console.log(`Session ${sessionId} has no active turn.`);
+        }
       });
     }
   );
@@ -5107,184 +5110,179 @@ const sessionObserveCommand = new Command('observe')
       sessionIdArg: string | undefined,
       options: CommonOptions & { follow?: boolean; all?: boolean }
     ) => {
-      const restoreLogging = options.json || options.jsonl ? routeLoggerToStderr() : () => {};
-      try {
-        await runSessionCommand(options, async () => {
-          const selection = resolveObserveSelection(
-            sessionIdArg,
-            options,
-            process.env.LODY_SESSION_ID
-          );
-          const auth = getAuthContextOrThrow();
-          const sessionId = selection.sessionId;
-          const workspace = selection.all
-            ? selectWorkspaceSummary(await listWorkspacesForToken(auth.token), options.workspace)
-            : await resolveWorkspaceForSessionOrThrow(auth, sessionId as SessionId, {
-                workspace: options.workspace,
-                reason: `session.observe.resolve:${sessionId}`,
-              });
-          await withWorkspaceManager(auth, workspace, async (manager) => {
-            await syncWorkspaceMetaForRead(manager, 'session.observe:meta');
-            const stop = new AbortController();
-            let resolveStopped = () => {};
-            const stopped = new Promise<void>((resolve) => {
-              resolveStopped = resolve;
+      await runSessionCommand(options, async () => {
+        const selection = resolveObserveSelection(
+          sessionIdArg,
+          options,
+          process.env.LODY_SESSION_ID
+        );
+        const auth = getAuthContextOrThrow();
+        const sessionId = selection.sessionId;
+        const workspace = selection.all
+          ? selectWorkspaceSummary(await listWorkspacesForToken(auth.token), options.workspace)
+          : await resolveWorkspaceForSessionOrThrow(auth, sessionId as SessionId, {
+              workspace: options.workspace,
+              reason: `session.observe.resolve:${sessionId}`,
             });
-            let failure: unknown;
-            const stopObserving = () => {
-              stop.abort();
-              resolveStopped();
-            };
-            const fail = (error: unknown) => {
-              if (!stop.signal.aborted) {
-                failure = error;
-                stopObserving();
-              }
-            };
-            const write = createSessionObserveWriter({
-              output: process.stdout,
-              workspaceId: workspace.id as WorkspaceId,
-              streamId: uuidV4(),
-              now: getServerNow,
-              signal: stop.signal,
-            });
-            const emit = options.jsonl ? write : async () => {};
-            const attempt = <T>(run: () => Promise<T>) =>
-              Effect.tryPromise({ try: run, catch: (error) => error });
-            await Effect.runPromise(
-              Effect.scoped(
-                Effect.gen(function* () {
-                  yield* Effect.acquireRelease(
+        await withWorkspaceManager(auth, workspace, async (manager) => {
+          await syncWorkspaceMetaForRead(manager, 'session.observe:meta');
+          const stop = new AbortController();
+          let resolveStopped = () => {};
+          const stopped = new Promise<void>((resolve) => {
+            resolveStopped = resolve;
+          });
+          let failure: unknown;
+          const stopObserving = () => {
+            stop.abort();
+            resolveStopped();
+          };
+          const fail = (error: unknown) => {
+            if (!stop.signal.aborted) {
+              failure = error;
+              stopObserving();
+            }
+          };
+          const write = createSessionObserveWriter({
+            output: process.stdout,
+            workspaceId: workspace.id as WorkspaceId,
+            streamId: uuidV4(),
+            now: getServerNow,
+            signal: stop.signal,
+          });
+          const emit = options.jsonl ? write : async () => {};
+          const attempt = <T>(run: () => Promise<T>) =>
+            Effect.tryPromise({ try: run, catch: (error) => error });
+          await Effect.runPromise(
+            Effect.scoped(
+              Effect.gen(function* () {
+                yield* Effect.acquireRelease(
+                  Effect.sync(() => {
+                    process.once('SIGINT', stopObserving);
+                    process.once('SIGTERM', stopObserving);
+                  }),
+                  () =>
                     Effect.sync(() => {
-                      process.once('SIGINT', stopObserving);
-                      process.once('SIGTERM', stopObserving);
-                    }),
-                    () =>
-                      Effect.sync(() => {
-                        process.off('SIGINT', stopObserving);
-                        process.off('SIGTERM', stopObserving);
+                      process.off('SIGINT', stopObserving);
+                      process.off('SIGTERM', stopObserving);
+                    })
+                );
+                if (selection.all) {
+                  const reader = new WorkspaceSessionObserver({
+                    listMetas: () => listSessionMetasForWorkspace(manager),
+                    async readMeta(id) {
+                      const raw = await manager.repo.getDocMeta(getSessionRoomId(id));
+                      if (isLoroRepoDocDeleted(raw)) return null;
+                      if (!raw?.meta) throw new Error(`Session metadata is unavailable: ${id}`);
+                      return raw.meta as SessionMeta;
+                    },
+                    open: (id, onEvent) =>
+                      acquireSessionObservation({
+                        manager,
+                        sessionId: id,
+                        signal: stop.signal,
+                        emit: onEvent,
+                        onError: fail,
+                      }),
+                    emit,
+                    onError: fail,
+                    follow: options.follow === true,
+                  });
+                  yield* Effect.acquireRelease(Effect.succeed(reader), (owned) =>
+                    Effect.promise(() => owned.close())
+                  );
+                  yield* Effect.acquireRelease(
+                    Effect.sync(() =>
+                      manager.repo.watch(
+                        (event) => {
+                          if (event.kind === 'doc-metadata') {
+                            const id = getSessionIdFromRoomId(event.docId);
+                            if (id) reader.refresh(id);
+                          }
+                        },
+                        { kinds: ['doc-metadata'] }
+                      )
+                    ),
+                    (watch) => Effect.sync(() => watch.unsubscribe())
+                  );
+                  yield* Effect.acquireRelease(
+                    Effect.sync(() => manager.onMetaRoomSynced(() => reader.refresh())),
+                    (unsubscribe) => Effect.sync(unsubscribe)
+                  );
+                  yield* attempt(() => reader.start());
+                  if (!options.jsonl) {
+                    if (options.json)
+                      printJson({
+                        ok: true,
+                        version: 1,
+                        workspaceId: workspace.id,
+                        sessions: reader.current,
+                      });
+                    else
+                      for (const session of reader.current)
+                        console.log(
+                          `${session.sessionId}\t${session.state}\t${session.title ?? ''}`
+                        );
+                  }
+                  if (options.follow) yield* Effect.promise(() => stopped);
+                } else {
+                  if (!sessionId) throw new Error('Missing Session ID.');
+                  const handle = yield* Effect.acquireRelease(
+                    attempt(() =>
+                      acquireSessionObservation({
+                        manager,
+                        sessionId,
+                        signal: stop.signal,
+                        emit,
+                        onError: fail,
+                        onRemoved: resolveStopped,
+                      })
+                    ),
+                    (owned) =>
+                      Effect.promise(async () => {
+                        await owned?.close();
                       })
                   );
-                  if (selection.all) {
-                    const reader = new WorkspaceSessionObserver({
-                      listMetas: () => listSessionMetasForWorkspace(manager),
-                      async readMeta(id) {
-                        const raw = await manager.repo.getDocMeta(getSessionRoomId(id));
-                        if (isLoroRepoDocDeleted(raw)) return null;
-                        if (!raw?.meta) throw new Error(`Session metadata is unavailable: ${id}`);
-                        return raw.meta as SessionMeta;
-                      },
-                      open: (id, onEvent) =>
-                        acquireSessionObservation({
-                          manager,
-                          sessionId: id,
-                          signal: stop.signal,
-                          emit: onEvent,
-                          onError: fail,
-                        }),
-                      emit,
-                      onError: fail,
-                      follow: options.follow === true,
-                    });
-                    yield* Effect.acquireRelease(Effect.succeed(reader), (owned) =>
-                      Effect.promise(() => owned.close())
-                    );
-                    yield* Effect.acquireRelease(
-                      Effect.sync(() =>
-                        manager.repo.watch(
-                          (event) => {
-                            if (event.kind === 'doc-metadata') {
-                              const id = getSessionIdFromRoomId(event.docId);
-                              if (id) reader.refresh(id);
-                            }
-                          },
-                          { kinds: ['doc-metadata'] }
-                        )
-                      ),
-                      (watch) => Effect.sync(() => watch.unsubscribe())
-                    );
-                    yield* Effect.acquireRelease(
-                      Effect.sync(() => manager.onMetaRoomSynced(() => reader.refresh())),
-                      (unsubscribe) => Effect.sync(unsubscribe)
-                    );
-                    yield* attempt(() => reader.start());
-                    if (!options.jsonl) {
-                      if (options.json)
-                        printJson({
-                          ok: true,
-                          version: 1,
-                          workspaceId: workspace.id,
-                          sessions: reader.current,
-                        });
-                      else
-                        for (const session of reader.current)
-                          console.log(
-                            `${session.sessionId}\t${session.state}\t${session.title ?? ''}`
-                          );
-                    }
+                  if (!handle) return;
+                  const { observer } = handle;
+                  yield* Effect.acquireRelease(
+                    Effect.sync(() =>
+                      manager.repo.watch(
+                        (event) => {
+                          if (
+                            event.kind === 'doc-metadata' &&
+                            event.docId === getSessionRoomId(sessionId)
+                          )
+                            observer.refresh();
+                        },
+                        { kinds: ['doc-metadata'] }
+                      )
+                    ),
+                    (watch) => Effect.sync(() => watch.unsubscribe())
+                  );
+                  observer.refresh();
+                  yield* attempt(() => observer.flush());
+                  if (observer.current) {
+                    if (options.jsonl) yield* attempt(() => write({ type: 'ready', sessionId }));
+                    else if (options.json)
+                      printJson({
+                        ok: true,
+                        version: 1,
+                        workspaceId: workspace.id,
+                        session: observer.current,
+                      });
+                    else
+                      console.log(
+                        `${sessionId}\t${observer.current.state}\t${observer.current.latestTurn?.state ?? '-'}\t${observer.current.title ?? ''}`
+                      );
                     if (options.follow) yield* Effect.promise(() => stopped);
-                  } else {
-                    if (!sessionId) throw new Error('Missing Session ID.');
-                    const handle = yield* Effect.acquireRelease(
-                      attempt(() =>
-                        acquireSessionObservation({
-                          manager,
-                          sessionId,
-                          signal: stop.signal,
-                          emit,
-                          onError: fail,
-                          onRemoved: resolveStopped,
-                        })
-                      ),
-                      (owned) =>
-                        Effect.promise(async () => {
-                          await owned?.close();
-                        })
-                    );
-                    if (!handle) return;
-                    const { observer } = handle;
-                    yield* Effect.acquireRelease(
-                      Effect.sync(() =>
-                        manager.repo.watch(
-                          (event) => {
-                            if (
-                              event.kind === 'doc-metadata' &&
-                              event.docId === getSessionRoomId(sessionId)
-                            )
-                              observer.refresh();
-                          },
-                          { kinds: ['doc-metadata'] }
-                        )
-                      ),
-                      (watch) => Effect.sync(() => watch.unsubscribe())
-                    );
-                    observer.refresh();
-                    yield* attempt(() => observer.flush());
-                    if (observer.current) {
-                      if (options.jsonl) yield* attempt(() => write({ type: 'ready', sessionId }));
-                      else if (options.json)
-                        printJson({
-                          ok: true,
-                          version: 1,
-                          workspaceId: workspace.id,
-                          session: observer.current,
-                        });
-                      else
-                        console.log(
-                          `${sessionId}\t${observer.current.state}\t${observer.current.latestTurn?.state ?? '-'}\t${observer.current.title ?? ''}`
-                        );
-                      if (options.follow) yield* Effect.promise(() => stopped);
-                    }
                   }
-                  if (failure) yield* Effect.fail(failure);
-                })
-              )
-            );
-          });
+                }
+                if (failure) yield* Effect.fail(failure);
+              })
+            )
+          );
         });
-      } finally {
-        restoreLogging();
-      }
+      });
     }
   );
 

@@ -99,8 +99,8 @@ an independent connection to retry only settlement/release/pause writes. The ori
 failed close receipt remains unchanged; requests are never resubmitted.
 
 A wakeable receipt grants an automatic intent when idle; normal release grants one for queued wakeable receipts. Inbox-aware Stop cancels queued
-human execution eligibility and pauses automatic work. Fresh human input carries saved
-results, and a failed/unreleased execution cannot manufacture another wake. See the
+human execution eligibility and pauses automatic work. Fresh human or Agent-chat input
+clears that pause and carries saved results, and a failed/unreleased execution cannot manufacture another wake. See the
 [contract](../../../../specs/session-orchestration.md#idempotent-message-consumption).
 
 New Stop producers negotiate Inbox v2 with the target machine before adding `cancelId`
@@ -122,6 +122,7 @@ Batch membership is immutable. History projection is an idempotent stable-ID wri
 | Human input → prepared/original batch-free path | With results, bind trusted input receipt to a nonempty batch; without results, create no batch and retain the ordinary human-input path. Freeze original prompt/attachments/configuration |
 | Unsubmitted automatic batch → yield to human | Require old batch still prepared; supersede old intent/batch, transfer all live claims, create new fixed membership and human-input binding in one transaction. Failure rolls everything back; never release and bind in separate transactions |
 | Prepared → submitting | Under the shared gate, conditionally update owner/pause/acceptance sequence/execution identity/claim/binding, also verify automatic batch memberCount > 0, and persist unique submission token; immediately start transport afterward |
+| Begun, unsubmitted → withdrawn | Only the active execution with no release receipt, journaled resource, or fenced/submitted batch for its input may clear the active slot. Write no receipt and leave the input unfinished, so the same execution ID may begin it again and its prepared batch keeps its claims. A turn that stays pending after an unverified machine-access check uses this instead of release |
 | Prepared → paused/invalid | Require no submission fence; invalidate intent/binding and release claims as passive queued data, with pause in the same transaction; do not restore automatic eligibility |
 | Submitting → submitted/unknown | Persist receipt and retain non-resubmittable members. Unknown never returns to prepared/queued. Proven non-invocation records not_submitted for the recovery entry, without automatic replay |
 | Submitted/unknown → settled | Update settlement/consumption and Cause only; duplicate settlement is idempotent and invokes no provider. Settled uncertainty is not confirmed model success |

@@ -1,6 +1,7 @@
 import * as quotaRunner from '../src/agent/acp-runner';
 import { ProviderQuotaRefreshCache } from '../src/session/provider-quota-refresh-cache';
 import { createSessionBackend } from '@/session/session-backend';
+import type { MachineAccessVerification } from '@/session/session-access-retry';
 import {
   projectTurnAttention,
   type TurnOutcomeFact,
@@ -38,7 +39,7 @@ import {
   type WorkspaceId,
 } from '@lody/shared';
 import Database from 'better-sqlite3';
-import { Effect, Fiber } from 'effect';
+import { Data, Effect, Fiber } from 'effect';
 import type { LoroRepo } from 'loro-repo';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -68,9 +69,25 @@ import {
   type SessionExecutionServiceDeps,
 } from '../src/session/session-execution-service';
 import type { SessionManager } from '../src/session/session-manager';
+import {
+  jitterSessionStartRetryDelay,
+  recordIncompleteStartCleanup,
+  takeSessionStartRetry,
+  type SessionStartStage,
+} from '../src/session/session-start-stage';
+import type { SessionConfig } from '../src/session/types';
 import { GitExecutableNotFoundError } from '../src/session/worktree/git-process-error';
 import type { Logger } from '../src/utils/logger';
 import { withHistoryPort } from './history-port-fixture';
+
+/** Shape of an Effect tagged error without a message, as the lock errors once were. */
+class MessagelessStartFailure extends Data.TaggedError('MessagelessStartFailure')<{
+  cause: unknown;
+}> {}
+
+/** The OS refusing a fork, as `spawnSync` reports it. */
+const temporarySpawnFailure = () =>
+  Object.assign(new Error('spawnSync /usr/bin/git EAGAIN'), { code: 'EAGAIN' });
 import { composeTestSessionDoc } from './session-doc-fixture';
 
 const capabilityConfigId = 'config-1' as AgentConfigId;
@@ -224,6 +241,7 @@ const createBaseDeps = (
     abandonPendingSessionCreate: vi.fn(() => false),
     setSessionError: vi.fn(),
     terminateSession: vi.fn(),
+    retireSessionForReconfiguration: vi.fn(async () => {}),
     validateSessionCredentials: vi.fn(async () => {}),
   } as unknown as SessionManager;
   const workspaceDocument = {
@@ -6117,6 +6135,7 @@ describe('SessionExecutionService', () => {
     expectedMessage: string;
     expectedCode?: string;
     expectedTerminateForce?: boolean;
+    stage?: SessionStartStage;
   }>([
     {
       name: 'JSON-RPC internal error',
@@ -6154,6 +6173,22 @@ describe('SessionExecutionService', () => {
       expectedMessage: 'Git is unavailable: Lody could not find the Git executable in PATH.',
       expectedCode: 'git_executable_not_found',
     },
+    {
+      name: 'message-less failure while preparing the worktree',
+      error: new MessagelessStartFailure({ cause: new Error("Operation timed out after '5s'") }),
+      stage: 'worktree',
+      expectedReason: 'turn_pre_prompt_failed',
+      expectedMessage:
+        "Preparing the worktree failed: MessagelessStartFailure: Operation timed out after '5s'",
+    },
+    {
+      // A setup script is not known to be safe to run twice, so nothing repeats it.
+      name: 'temporary system error while the worktree setup script ran',
+      error: temporarySpawnFailure(),
+      stage: 'worktree-setup',
+      expectedReason: 'turn_pre_prompt_failed',
+      expectedMessage: 'Running the worktree setup script failed: spawnSync /usr/bin/git EAGAIN',
+    },
   ])('records exactly one visible chat_failed for a pre-prompt $name', async (testCase) => {
     let history: SessionHistoryInput[] = [];
     const sessionDoc = withHistoryPort({
@@ -6172,7 +6207,8 @@ describe('SessionExecutionService', () => {
     const sessionManager = {
       getSession: vi.fn(() => null),
       getPendingSession: vi.fn(() => null),
-      createSession: vi.fn(async () => {
+      createSession: vi.fn(async (config: SessionConfig) => {
+        if (testCase.stage) config.onStartStage?.(testCase.stage);
         throw testCase.error;
       }),
       setSessionError: vi.fn(),
@@ -6235,6 +6271,7 @@ describe('SessionExecutionService', () => {
       reason: testCase.expectedReason,
       message: testCase.expectedMessage,
     });
+    expect(sessionManager.createSession).toHaveBeenCalledTimes(1);
     if (testCase.expectedCode) {
       expect(notices[0]?.meta).toMatchObject({ code: testCase.expectedCode });
     }
@@ -6454,6 +6491,175 @@ describe('SessionExecutionService', () => {
     expect(notices).toHaveLength(0);
   });
 
+  const createRetryFixture = (createSession: (config: SessionConfig) => Promise<unknown>) => {
+    let history: SessionHistoryInput[] = [];
+    const sessionDoc = withHistoryPort({
+      getMetaState: vi.fn(async () => undefined),
+      getHistory: vi.fn(() => history),
+      setStatus: vi.fn(async () => {}),
+      setProject: vi.fn(async () => {}),
+      setBaseBranch: vi.fn(async () => {}),
+      updateHistory: vi.fn(
+        async (update: (entries: SessionHistoryInput[]) => SessionHistoryInput[]) => {
+          history = update(history);
+        }
+      ),
+      roomId: 'session-session-start-retry',
+    });
+    const sessionManager = {
+      getSession: vi.fn(() => null),
+      getPendingSession: vi.fn(() => null),
+      createSession: vi.fn(createSession),
+      setSessionError: vi.fn(),
+      terminateSession: vi.fn(),
+      validateSessionCredentials: vi.fn(async () => {}),
+    } as unknown as SessionManager;
+    let backoffStarted!: () => void;
+    const backoff = new Promise<void>((resolve) => {
+      backoffStarted = resolve;
+    });
+    const deps = createBaseDeps({
+      sessionManager,
+      beginConversationTurn: vi.fn(() => 'assistant-start-retry'),
+      setSessionActivePresencePhase: vi.fn(
+        (_sessionId: SessionId, _phase: SessionActivePresencePhase, detail?: string) => {
+          if (detail === 'Retrying after a temporary system error') backoffStarted();
+        }
+      ),
+      recordChatFailure: vi.fn(async (_sessionDoc: unknown, reason: string, message?: string) => {
+        await sessionDoc.updateHistory?.((entries: SessionHistoryInput[]) => [
+          ...entries,
+          {
+            id: `system-notice-${entries.length}`,
+            role: 'system',
+            timestamp: '2026-10-16T00:00:00.000Z',
+            fileDiff: [],
+            items: [{ type: 'system_notice', name: 'chat_failed', meta: { reason, message } }],
+          } as SessionHistoryInput,
+        ]);
+      }),
+      workspaceDocument: {
+        repo: {
+          upsertDocMeta: vi.fn(async () => {}),
+          getDocMeta: vi.fn(async () => undefined),
+        },
+        getOrCreateSessionDoc: vi.fn(async () => sessionDoc),
+        updateAcpCapabilities: vi.fn(async () => {}),
+      } as unknown as LoroDocumentManager,
+    });
+    const service = new SessionExecutionService(deps);
+    const start = () =>
+      service.startSession({
+        type: 'session/create',
+        sessionId: 'session-start-retry' as SessionId,
+        machineId: 'machine-1',
+        workspaceId: 'workspace-1' as WorkspaceId,
+        acpSessionConfig: { prompt: 'hello', cliType: 'builtin', agentType: 'codex' },
+        userTurnId: 'turn-start-retry',
+        userId: 'user-2',
+        userName: 'User 2',
+        userEmail: 'user2@example.com',
+      });
+    const notices = () =>
+      history
+        .flatMap((entry) => entry.items ?? [])
+        .filter((item) => item.type === 'system_notice' && item.name === 'chat_failed');
+    return { service, sessionManager, backoff, start, notices };
+  };
+
+  it('repeats a new start as a resume once its worktree setup has finished', async () => {
+    vi.useFakeTimers();
+    const resumeFlags: Array<boolean | undefined> = [];
+    const { sessionManager, start, notices } = createRetryFixture(async (config) => {
+      resumeFlags.push(config.resume);
+      config.onStartStage?.('agent-start');
+      throw resumeFlags.length === 1 ? temporarySpawnFailure() : new Error('agent crashed');
+    });
+    const execution = start();
+    await vi.advanceTimersByTimeAsync(16000);
+    await execution;
+    vi.useRealTimers();
+
+    // The second attempt skips the setup script that the first one already ran.
+    expect(resumeFlags).toEqual([undefined, true]);
+    expect(sessionManager.createSession).toHaveBeenCalledTimes(2);
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0]?.meta).toMatchObject({
+      reason: 'turn_pre_prompt_failed',
+      message: 'Starting the agent failed: agent crashed',
+    });
+  });
+
+  it('does not carry a start step into the next attempt', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const { notices, start } = createRetryFixture(async (config) => {
+      calls += 1;
+      if (calls === 1) {
+        config.onStartStage?.('agent-start');
+        throw temporarySpawnFailure();
+      }
+      // Fails before reporting any step of its own.
+      throw new Error('pending create was replaced');
+    });
+    const execution = start();
+    await vi.advanceTimersByTimeAsync(16000);
+    await execution;
+    vi.useRealTimers();
+
+    expect(notices()[0]?.meta).toMatchObject({
+      reason: 'turn_pre_prompt_failed',
+      message: 'pending create was replaced',
+    });
+  });
+
+  it('does not retry a start whose cleanup left resources unreleased', async () => {
+    vi.useFakeTimers();
+    const { sessionManager, notices, start } = createRetryFixture(async (config) => {
+      config.onStartStage?.('agent-start');
+      const failure = temporarySpawnFailure();
+      // SessionManager marks this when terminate or credential release fails.
+      recordIncompleteStartCleanup(failure);
+      throw failure;
+    });
+    const execution = start();
+    await vi.advanceTimersByTimeAsync(16000);
+    await execution;
+    vi.useRealTimers();
+
+    expect(sessionManager.createSession).toHaveBeenCalledTimes(1);
+    expect(notices()[0]?.meta).toMatchObject({
+      reason: 'turn_pre_prompt_failed',
+      message: 'Starting the agent failed: spawnSync /usr/bin/git EAGAIN',
+    });
+  });
+
+  it('makes no further start attempt after Stop during the retry delay', async () => {
+    vi.useFakeTimers();
+    const { service, sessionManager, backoff, start, notices } = createRetryFixture(
+      async (config) => {
+        config.onStartStage?.('worktree');
+        throw temporarySpawnFailure();
+      }
+    );
+    const execution = start();
+    await backoff;
+    const cancelling = service.cancelSession({
+      type: 'session/cancel',
+      sessionId: 'session-start-retry' as SessionId,
+      machineId: 'machine-1',
+      workspaceId: 'workspace-1' as WorkspaceId,
+      turnId: 'assistant-start-retry',
+    });
+    await vi.advanceTimersByTimeAsync(16000);
+    await expect(cancelling).resolves.toEqual({ success: true });
+    await execution;
+    vi.useRealTimers();
+
+    expect(sessionManager.createSession).toHaveBeenCalledTimes(1);
+    expect(notices()).toHaveLength(0);
+  });
+
   it.each<{
     name: string;
     errors: unknown[];
@@ -6463,6 +6669,8 @@ describe('SessionExecutionService', () => {
     history: SessionHistoryInput[];
     /** How many times the restore path may reach `createSession`. */
     expectedCreateSessionCalls: number;
+    /** Start step each attempt reports before failing. */
+    stage?: SessionStartStage;
   }>([
     {
       name: 'reports an ordinary restore failure',
@@ -6495,6 +6703,46 @@ describe('SessionExecutionService', () => {
       expectedCreateSessionCalls: 2,
     },
     {
+      name: 'reports a wrapped authentication failure from fallback restore',
+      errors: [
+        new Error('acp_resume_failed: session unavailable'),
+        new Error('[ACP_RESUME_FAILED] newSession: Internal error', {
+          cause: new RequestError(-32603, 'Internal error', { details: 'OAuth session expired' }),
+        }),
+      ],
+      expectedReason: 'acp_auth_required',
+      expectedMessage: '[ACP_RESUME_FAILED] newSession: Internal error',
+      resumeSessionId: 'acp-existing' as ACPSessionId,
+      history: PRIOR_CONVERSATION_HISTORY,
+      expectedCreateSessionCalls: 2,
+    },
+    {
+      // Classification reads `formatErrorMessage`, which a message-less wrapper leaves
+      // empty; its cause's text must not switch the restore to the replay fallback.
+      name: 'does not classify a message-less wrapper by its cause text',
+      errors: [
+        new MessagelessStartFailure({ cause: new Error('acp_resume_failed: session unavailable') }),
+      ],
+      stage: 'agent-start',
+      expectedReason: 'session_restore_failed',
+      expectedMessage:
+        'Starting the agent failed: MessagelessStartFailure: acp_resume_failed: session unavailable',
+      resumeSessionId: 'acp-existing' as ACPSessionId,
+      history: PRIOR_CONVERSATION_HISTORY,
+      expectedCreateSessionCalls: 1,
+    },
+    {
+      // Failure text reaches synced history, so an object cause is never dumped into it.
+      name: 'names only the type of a message-less failure with an object cause',
+      errors: [new MessagelessStartFailure({ cause: { headers: { authorization: 'secret' } } })],
+      stage: 'worktree',
+      expectedReason: 'session_restore_failed',
+      expectedMessage: 'Preparing the worktree failed: MessagelessStartFailure',
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 1,
+    },
+    {
       name: 'refuses a context-free fallback when history has not synced',
       errors: [new Error('acp_resume_failed: session unavailable')],
       expectedReason: 'session_restore_failed',
@@ -6525,6 +6773,57 @@ describe('SessionExecutionService', () => {
       // resume pointer must survive: no replacement session is created.
       expectedCreateSessionCalls: 1,
     },
+    {
+      name: 'names the start step and type of a message-less restore failure',
+      errors: [new MessagelessStartFailure({ cause: new Error("Operation timed out after '5s'") })],
+      stage: 'worktree',
+      expectedReason: 'session_restore_failed',
+      expectedMessage:
+        "Preparing the worktree failed: MessagelessStartFailure: Operation timed out after '5s'",
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 1,
+    },
+    {
+      name: 'retries a temporary system error and reports the last failure',
+      errors: [temporarySpawnFailure(), temporarySpawnFailure(), new Error('restore failed')],
+      stage: 'worktree',
+      expectedReason: 'session_restore_failed',
+      expectedMessage: 'Preparing the worktree failed: restore failed',
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 3,
+    },
+    {
+      name: 'stops retrying a temporary system error after three attempts',
+      errors: [temporarySpawnFailure(), temporarySpawnFailure(), temporarySpawnFailure()],
+      stage: 'agent-start',
+      expectedReason: 'session_restore_failed',
+      expectedMessage: 'Starting the agent failed: spawnSync /usr/bin/git EAGAIN',
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 3,
+    },
+    {
+      name: 'never repeats a restore whose worktree setup script failed',
+      errors: [temporarySpawnFailure()],
+      stage: 'worktree-setup',
+      expectedReason: 'session_restore_failed',
+      expectedMessage: 'Running the worktree setup script failed: spawnSync /usr/bin/git EAGAIN',
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 1,
+    },
+    {
+      name: 'keeps the auth message without a start step',
+      errors: [new AcpAuthenticationRequiredError([])],
+      stage: 'agent-start',
+      expectedReason: 'acp_auth_required',
+      expectedMessage: 'Authentication required',
+      resumeSessionId: undefined,
+      history: [],
+      expectedCreateSessionCalls: 1,
+    },
   ])('$name', async (testCase) => {
     vi.useFakeTimers();
     const { errors, expectedReason, expectedMessage, resumeSessionId, history } = testCase;
@@ -6543,7 +6842,8 @@ describe('SessionExecutionService', () => {
     const sessionManager = {
       getSession: vi.fn(() => null),
       getPendingSession: vi.fn(() => null),
-      createSession: vi.fn(async () => {
+      createSession: vi.fn(async (config: SessionConfig) => {
+        if (testCase.stage) config.onStartStage?.(testCase.stage);
         const error = errors.shift();
         if (!error) throw new Error('Unexpected restore attempt');
         throw error;
@@ -10888,6 +11188,15 @@ describe('Operation Inbox execution boundary', () => {
     const sending = createDeferred<void>();
     const delivered = createDeferred<void>();
     const f = inboxExecutionFixture(async () => ({ stopReason: 'end_turn' }));
+    let held = 0;
+    f.deps.leaseSessionDoc = async () => {
+      held++;
+      return {
+        release: async () => {
+          held--;
+        },
+      };
+    };
     f.deps.turnFinalization.onTurnOutcome = async () => {
       sending.resolve();
       await delivered.promise;
@@ -10902,8 +11211,9 @@ describe('Operation Inbox execution boundary', () => {
       expect(f.store.hasPendingWorkForRequester(f.message.workspaceId, f.message.sessionId)).toBe(
         false
       );
-      delivered.resolve();
       await running;
+      expect(held).toBe(0);
+      delivered.resolve();
     } finally {
       delivered.resolve();
       await f.close();
@@ -10967,6 +11277,158 @@ describe('Operation Inbox execution boundary', () => {
       await f.service.continueSession(f.message);
       expect(prompt).toHaveBeenCalledOnce();
       expect(facts.flatMap((fact) => projectTurnAttention(fact) ?? [])).toEqual([]);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it('holds a document lease for the whole turn and keeps the agent process after it', async () => {
+    let held = 0;
+    const heldDuringPrompt: number[] = [];
+    const f = inboxExecutionFixture(async () => {
+      heldDuringPrompt.push(held);
+      return { stopReason: 'end_turn' };
+    });
+    f.deps.leaseSessionDoc = async () => {
+      held += 1;
+      return {
+        release: async () => {
+          held -= 1;
+        },
+      };
+    };
+    try {
+      await f.accept();
+      await f.service.continueSession(f.message);
+      expect(heldDuringPrompt).toEqual([1]);
+      expect(held).toBe(0);
+      // Ending the turn released its lease; the agent process stays for the next turn.
+      expect(f.client.isCreated()).toBe(true);
+      expect(f.service.getExecutionSnapshot(f.message.sessionId).hasReusableSession).toBe(true);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it('keeps an access-unverified input pending so the access retry executes it once', async () => {
+    const received: ContentBlock[][] = [];
+    const f = inboxExecutionFixture(async (blocks) => {
+      received.push(structuredClone(blocks));
+      return { stopReason: 'end_turn' };
+    });
+    try {
+      await f.accept();
+      const dispatch = (access: MachineAccessVerification) => {
+        const onAccessIndeterminate = vi.fn(async () => {});
+        return {
+          onAccessIndeterminate,
+          run: f.service.dispatchPreparedSessionTurn({
+            sessionId: f.message.sessionId,
+            sessionDoc: f.doc,
+            userTurnId: 'human-input',
+            invocation: {
+              sourceTurnId: 'human-input',
+              requesterUserId: 'user-1',
+              inputConfig: f.message.acpSessionConfig,
+            },
+            dispatchSource: 'crdt',
+            accessPromise: Promise.resolve(access),
+            requestPromise: Promise.resolve({ mode: 'continue' as const, request: f.message }),
+            onAccessAllowed: async () => {},
+            onAccessDenied: async () => {},
+            onAccessIndeterminate,
+          }),
+        };
+      };
+      const backend = await createSessionBackend(f.doc);
+      const status = async () =>
+        (await backend.readHistory()).find((turn) => turn.id === 'human-input')?.status;
+
+      // A network blip during verification leaves both the turn and its input pending.
+      const offline = dispatch({
+        outcome: 'indeterminate',
+        cause: 'network',
+        error: 'fetch failed',
+      });
+      await offline.run;
+      expect(offline.onAccessIndeterminate).toHaveBeenCalledTimes(1);
+      expect(received).toEqual([]);
+      expect(
+        findNextDispatchableUserTurn(await backend.readHistory(), {
+          id: f.message.sessionId,
+        } as SessionMeta)?.id
+      ).toBe('human-input');
+      expect(f.store.inbox.inputEnded('workspace-1', f.message.sessionId, 'human-input')).toBe(
+        false
+      );
+      expect(f.service.getExecutionSnapshot(f.message.sessionId).hasActiveTurn).toBe(false);
+
+      // The retry reuses the same execution id and is admitted, not rejected.
+      await dispatch({ outcome: 'allowed' }).run;
+      expect(received).toEqual([[{ type: 'text', text: 'CURRENT_REQUEST' }]]);
+      expect(await status()).toBe('handled');
+      expect(f.store.inbox.inputEnded('workspace-1', f.message.sessionId, 'human-input')).toBe(
+        true
+      );
+    } finally {
+      await f.close();
+    }
+  });
+
+  it('retires a pending turn whose Inbox input already ended so later messages run', async () => {
+    const received: ContentBlock[][] = [];
+    const f = inboxExecutionFixture(async (blocks) => {
+      received.push(structuredClone(blocks));
+      return { stopReason: 'end_turn' };
+    });
+    try {
+      await f.accept();
+      const input = {
+        workspaceId: 'workspace-1',
+        sessionId: f.message.sessionId,
+        userId: 'user-1',
+        inputId: 'human-input',
+        kind: 'human' as const,
+        config: f.message.acpSessionConfig,
+      };
+      // State left by daemons before the withdraw fix: the input ended while its
+      // user turn stayed pending in history.
+      expect(f.store.inbox.begin(input, 'assistant:human-input')).toBe(true);
+      f.store.inbox.release({ ...input, executionId: 'assistant:human-input', outcome: 'failed' });
+
+      await expect(f.service.continueSession(f.message)).resolves.toBeUndefined();
+      const backend = await createSessionBackend(f.doc);
+      const old = (await backend.readHistory()).find((turn) => turn.id === 'human-input');
+      expect(old).toMatchObject({ status: 'failed' });
+      if (!old) throw new Error('Missing original human input');
+      expect(f.service.getExecutionSnapshot(f.message.sessionId).hasActiveTurn).toBe(false);
+      expect(received).toEqual([]);
+
+      await f.doc.sessionData.commands.applyHistoryAction({
+        kind: 'upsert-turn',
+        turn: {
+          ...old,
+          id: 'next-human',
+          status: 'pending',
+          items: [{ type: 'text', text: 'NEXT_REQUEST' }],
+        },
+      });
+      const history = await backend.readHistory();
+      expect(
+        findNextDispatchableUserTurn(history, { id: f.message.sessionId } as SessionMeta)?.id
+      ).toBe('next-human');
+      await f.service.acceptInboxHumanInput({
+        sessionId: f.message.sessionId,
+        inputId: 'next-human',
+        userId: 'user-1',
+        config: { ...f.message.acpSessionConfig, prompt: 'NEXT_REQUEST' },
+      });
+      await f.service.continueSession({
+        ...f.message,
+        userTurnId: 'next-human',
+        acpSessionConfig: { ...f.message.acpSessionConfig, prompt: 'NEXT_REQUEST' },
+      });
+      expect(received).toEqual([[{ type: 'text', text: 'NEXT_REQUEST' }]]);
     } finally {
       await f.close();
     }
@@ -11039,6 +11501,10 @@ describe('Operation Inbox execution boundary', () => {
       await f.accept();
       await f.service.continueSession(f.message);
       expect(f.store.inbox.pending('workspace-1')).toEqual([]);
+      expect(f.service.getExecutionSnapshot(f.message.sessionId)).toMatchObject({
+        hasActiveTurn: true,
+        releaseBlocked: { reason: 'Inbox resource acquisition remains incomplete' },
+      });
       const next = {
         workspaceId: 'workspace-1',
         sessionId: f.message.sessionId,
@@ -11058,8 +11524,20 @@ describe('Operation Inbox execution boundary', () => {
           'release outage'
         );
         expect(f.store.inbox.begin(next, 'successor')).toBe(false);
+        // A waiting input's recovery request reports the still-blocked slot.
+        await expect(f.service.requestReleaseRecovery(f.message.sessionId)).resolves.toBe(false);
+        expect(f.service.getExecutionSnapshot(f.message.sessionId).releaseBlocked).toBeDefined();
         db.exec('DROP TRIGGER release_outage');
-        await f.service.recoverInboxExecution(f.message.sessionId);
+        // Concurrent waiting inputs share one recovery, which succeeds once the fault clears.
+        const first = f.service.requestReleaseRecovery(f.message.sessionId);
+        const second = f.service.requestReleaseRecovery(f.message.sessionId);
+        expect(second).toBe(first);
+        await expect(first).resolves.toBe(true);
+        expect(f.service.getExecutionSnapshot(f.message.sessionId)).toMatchObject({
+          hasActiveTurn: false,
+        });
+        expect(f.service.getExecutionSnapshot(f.message.sessionId).releaseBlocked).toBeUndefined();
+        await expect(f.service.requestReleaseRecovery(f.message.sessionId)).resolves.toBe(false);
         expect(f.store.inbox.begin(next, 'successor')).toBe(true);
         expect(received).toHaveLength(1);
         expect(received[0]).toEqual([{ type: 'text', text: 'CURRENT_REQUEST' }]);
@@ -11071,8 +11549,87 @@ describe('Operation Inbox execution boundary', () => {
     }
   });
 
+  it('releases an Inbox turn whose failure handling also fails, so the next input runs', async () => {
+    // Regression: a document that stops accepting status writes mid-turn made the
+    // failure handler throw too. That skipped the Inbox release, leaked the turn
+    // registration, and refused every later input as `active-session` forever.
+    const received: ContentBlock[][] = [];
+    const f = inboxExecutionFixture(async (blocks) => {
+      received.push(structuredClone(blocks));
+      return { stopReason: 'end_turn' };
+    });
+    const setStatus = f.doc.setStatus.bind(f.doc);
+    let statusWritesFail = true;
+    f.doc.setStatus = async (status) => {
+      if (statusWritesFail) throw new Error('Mirror not initialized');
+      await setStatus(status);
+    };
+    try {
+      await f.accept();
+      await f.service.continueSession(f.message).catch(() => undefined);
+      expect(received).toHaveLength(0);
+      expect(f.service.getExecutionSnapshot(f.message.sessionId)).toMatchObject({
+        hasActiveTurn: false,
+      });
+      expect(f.service.getExecutionSnapshot(f.message.sessionId).releaseBlocked).toBeUndefined();
+
+      // The agent process is kept for reuse; only the turn's ownership was released.
+      expect(f.client.isCreated()).toBe(true);
+
+      statusWritesFail = false;
+      const next = { ...f.message, userTurnId: 'later-human' };
+      await f.service.acceptInboxHumanInput({
+        sessionId: next.sessionId,
+        inputId: next.userTurnId,
+        userId: 'user-1',
+        config: next.acpSessionConfig,
+      });
+      await f.service.continueSession(next);
+      expect(received).toHaveLength(1);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it('waits for a slow yielded finalization instead of treating it as a release failure', async () => {
+    const finalization = createDeferred<void>();
+    let service: SessionExecutionService | undefined;
+    const f = inboxExecutionFixture(async () => {
+      // A yielded turn's ancillary finalization outlives the old 5 s bound while
+      // the prompt fails, so the turn body exits early and the release waits.
+      const runtime = (
+        service as unknown as {
+          turnRuntimeBySession: Map<SessionId, { yieldedFinalization: Promise<void> }>;
+        }
+      ).turnRuntimeBySession.get('inbox-session' as SessionId);
+      if (runtime) runtime.yieldedFinalization = finalization.promise;
+      throw new Error('agent crashed');
+    });
+    service = f.service;
+    vi.useFakeTimers();
+    try {
+      await f.accept();
+      const turn = f.service.continueSession(f.message);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(f.service.getExecutionSnapshot(f.message.sessionId)).toMatchObject({
+        hasActiveTurn: true,
+      });
+      expect(f.service.getExecutionSnapshot(f.message.sessionId).releaseBlocked).toBeUndefined();
+
+      finalization.resolve();
+      await turn.catch(() => undefined);
+      expect(f.service.getExecutionSnapshot(f.message.sessionId)).toMatchObject({
+        hasActiveTurn: false,
+      });
+      expect(f.service.getExecutionSnapshot(f.message.sessionId).releaseBlocked).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+      await f.close();
+    }
+  });
+
   it.each(['valid', 'absent', 'foreign', 'canceled'] as const)(
-    'restores only a matching, uncanceled durable human receipt (%s) after RPC loss',
+    'restores human identity only from a matching, uncanceled durable receipt (%s) after RPC loss',
     async (mode) => {
       const received: ContentBlock[][] = [];
       const f = inboxExecutionFixture(async (blocks) => {
@@ -11129,13 +11686,19 @@ describe('Operation Inbox execution boundary', () => {
             userId: 'user-1',
             config: f.message.acpSessionConfig,
           });
-          expect(f.store.inbox.accept({ ...prior, kind: 'task', inputId: 'agent-task' })).toBe(
-            false
-          );
+          expect(
+            (f.store as unknown as { db: Database.Database }).db
+              .prepare('SELECT MAX(paused) AS paused FROM inbox_sessions WHERE session_id=?')
+              .get(f.message.sessionId)
+          ).toEqual({ paused: 1 });
           expect(received).toHaveLength(1);
-        } else {
+        } else if (mode === 'canceled') {
           expect(received).toEqual([]);
           expect(f.store.inbox.pending('workspace-1')).toEqual([]);
+        } else {
+          // Post-Stop input without a matching receipt still runs, as an Agent-rank task.
+          expect(received).toHaveLength(1);
+          expect(f.store.inbox.inputKind(prior, 'human-input')).toBe('task');
         }
       } finally {
         await f.close();
@@ -11328,6 +11891,75 @@ describe('Operation Inbox execution boundary', () => {
     }
   });
 
+  it('runs an Agent chat sent after an Inbox-aware Stop and clears the pause', async () => {
+    const building = createDeferred();
+    const release = createDeferred();
+    const received: ContentBlock[][] = [];
+    let hold = true;
+    const f = inboxExecutionFixture(
+      async (blocks) => {
+        received.push(blocks);
+        return {};
+      },
+      async (blocks) => {
+        if (hold) {
+          building.resolve();
+          await release.promise;
+        }
+        return blocks as ContentBlock[];
+      }
+    );
+    try {
+      await f.accept();
+      const running = f.service.continueSession(f.message);
+      await building.promise;
+      const turnId = f.service.getExecutionSnapshot(f.message.sessionId).activeTurnId!;
+      await f.service.cancelSession({
+        cancelId: 'modern-stop',
+        type: 'session/cancel',
+        sessionId: f.message.sessionId,
+        turnId,
+        machineId: 'machine-1',
+        workspaceId: 'workspace-1' as WorkspaceId,
+      });
+      release.resolve();
+      await running;
+      expect(received).toEqual([]);
+      hold = false;
+      f.client.isCreated = () => true;
+      // An Agent chat carries no human receipt, so the Inbox records it as a task.
+      await f.doc.sessionData.commands.applyHistoryAction({
+        kind: 'upsert-turn',
+        turn: {
+          id: 'agent-chat',
+          role: 'user',
+          timestamp: '2026-10-18T02:02:17Z',
+          status: 'pending',
+          read: false,
+          items: [{ type: 'text', text: 'delegated work' }],
+          inputConfig: f.message.acpSessionConfig,
+          finished: true,
+          fileDiff: [],
+        },
+      });
+      await f.service.continueSession({ ...f.message, userTurnId: 'agent-chat' });
+      expect(received).toHaveLength(1);
+      expect(
+        (await (await createSessionBackend(f.doc)).readHistory()).find(
+          (entry) => entry.id === 'agent-chat'
+        )?.status
+      ).toBe('handled');
+      expect(
+        (f.store as unknown as { db: Database.Database }).db
+          .prepare('SELECT MAX(paused) AS paused FROM inbox_sessions WHERE session_id=?')
+          .get(f.message.sessionId)
+      ).toEqual({ paused: 0 });
+    } finally {
+      release.resolve();
+      await f.close();
+    }
+  });
+
   it('Stop accepted while input is being built submits nothing and retains all eight results', async () => {
     const building = createDeferred();
     const release = createDeferred();
@@ -11372,15 +12004,10 @@ describe('Operation Inbox execution boundary', () => {
       ).toEqual({ count: 8 });
       expect(f.store.inbox.pending('workspace-1')).toEqual([]);
       expect(
-        f.store.inbox.accept({
-          workspaceId: 'workspace-1',
-          sessionId: f.message.sessionId,
-          userId: 'user-1',
-          inputId: 'agent-note',
-          kind: 'task',
-          config: { prompt: 'pretend user' },
-        })
-      ).toBe(false);
+        (f.store as unknown as { db: Database.Database }).db
+          .prepare('SELECT MAX(paused) AS paused FROM inbox_sessions WHERE session_id=?')
+          .get(f.message.sessionId)
+      ).toEqual({ paused: 1 });
     } finally {
       release.resolve();
       await f.close();
@@ -11565,5 +12192,24 @@ describe('Provider quota refresh', () => {
     ).resolves.toBe(false);
     await expect(cache.run('a', 'new', async () => true)).resolves.toBe(false);
     await expect(cache.run('b', 'other', async () => true)).resolves.toBe(true);
+  });
+});
+
+describe('session start retry pacing', () => {
+  it('caps retries per window across Sessions and frees them as the window passes', () => {
+    const startedAt: number[] = [];
+    const budget = { limit: 2, windowMs: 60_000 };
+    expect(takeSessionStartRetry(startedAt, 0, budget)).toBe(true);
+    expect(takeSessionStartRetry(startedAt, 1_000, budget)).toBe(true);
+    // A machine-wide failure must not turn every turn's retries into more load.
+    expect(takeSessionStartRetry(startedAt, 2_000, budget)).toBe(false);
+    expect(takeSessionStartRetry(startedAt, 60_000, budget)).toBe(true);
+    expect(startedAt).toEqual([1_000, 60_000]);
+  });
+
+  it('spreads retry delays over the upper half of the base delay', () => {
+    expect(jitterSessionStartRetryDelay(1_000, 0)).toBe(500);
+    expect(jitterSessionStartRetryDelay(1_000, 0.999)).toBe(1_000);
+    expect(jitterSessionStartRetryDelay(3_000, 0.5)).toBe(2_250);
   });
 });

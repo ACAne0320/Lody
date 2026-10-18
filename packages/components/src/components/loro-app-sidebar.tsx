@@ -77,6 +77,7 @@ import {
 } from '@/atoms';
 import {
   activeWorkspaceRuntimeAtom,
+  workspaceRuntimeInitFailureAtom,
   bugReportDialogOpenAtom,
   joinCommunityDialogOpenAtom,
   currentWorkspaceIdAtom,
@@ -1717,6 +1718,7 @@ export function LoroAppSidebar({
 
   const { organizations, activeOrganization, switchOrganization } = useOrganization();
   const runtime = useAtomValue(activeWorkspaceRuntimeAtom);
+  const runtimeInitFailure = useAtomValue(workspaceRuntimeInitFailureAtom);
   const docMetaScope = useAtomValue(docMetaCacheScopeAtom);
   const organizationsReady = Array.isArray(organizations);
   const expectedWorkspace = useMemo(() => {
@@ -1737,12 +1739,20 @@ export function LoroAppSidebar({
         ? resolveWorkspaceDataScope({
             targetSlug: workspaceSlug,
             runtime,
+            runtimeInitFailure,
             docMetaScope,
             organizationsReady,
             expectedWorkspaceId,
           })
         : null,
-    [docMetaScope, expectedWorkspaceId, organizationsReady, runtime, workspaceSlug]
+    [
+      docMetaScope,
+      expectedWorkspaceId,
+      organizationsReady,
+      runtime,
+      runtimeInitFailure,
+      workspaceSlug,
+    ]
   );
   const workspaceDataReady = workspaceDataScope?.status === 'ready';
   const scopedWorkspaceId = workspaceDataReady ? workspaceDataScope.workspaceId : null;
