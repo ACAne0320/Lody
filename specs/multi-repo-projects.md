@@ -121,11 +121,8 @@ cannot find it. Once set, the Member is a **submodule Member**:
   are linked correctly. Create PR opens the submodule's PR first, then the parent's
   PR that updates the pointer, and links the child PR from the parent PR.
   Merge-order guidance puts the submodule first.
-- It follows its parent Member when a conversation is created: ticked when the
-  parent is, and never unticked on its own, because the parent's worktree checks
-  out every submodule it declares anyway; unticking it would save no fetch and
-  only lose its branch and PR tracking. If the user unticks the parent, its
-  submodule Members are not materialized either.
+- It is always materialized with its parent; the parent's worktree checks out
+  every submodule it declares anyway.
 - Creating a conversation checks that the path is still a submodule pointing to the
   same repository in the parent's base commit. A mismatch is reported to the user;
   Lody does not silently flatten the Member instead.
@@ -153,8 +150,10 @@ secrets.
 Defining a Project only writes the definition. It does not clone, fetch, or create
 worktrees. When a conversation is created, the daemon on the execution machine
 creates a worktree and a new branch for each Git Member under the main directory; non-Git Members follow the access rules above.
-All Members are included by default; a Member the user unticks when creating the
-conversation is not fetched. Every Member is editable; there is no read-only mode.
+A conversation always gets every Member, exactly as the Project defines them;
+there is no per-conversation selection. A different set of repositories belongs in
+the Project's settings (or another Project). Every Member is editable; there is no
+read-only mode.
 
 - Each Member allocates its own branch under the existing rules. Branch names are
   not required to match across repositories.
@@ -166,9 +165,9 @@ conversation is not fetched. Every Member is editable; there is no read-only mod
   project there whose GitHub remote is that repository. Its worktree is created
   from that copy with the machine's own Git credentials, as for a local Member.
   Without a local copy, a managed deployment clones the repository like a GitHub
-  Member. The open-source desktop runs in local-only mode and never clones, so the
-  Member is shown as unavailable on that machine and must be unticked before the
-  conversation starts. Repository Members observe their PRs with the same
+  Member. The open-source desktop runs in local-only mode and never clones, so a
+  Project with a repository Member the machine has no copy of cannot start there;
+  the picker shows it as unavailable on that machine and says why. Repository Members observe their PRs with the same
   credentials that created their worktree.
 - Choosing where to run comes first, as for single projects: the new-conversation
   picker lists the Projects that can run on the selected machine. A Project whose

@@ -14,7 +14,6 @@ import {
   buildProjectRepositoryCopyIndex,
   getProjectGroupMachineAvailability,
   resolveProjectGroupLaunchTarget,
-  selectProjectGroupMembers,
 } from '@/lib/project-group-launch';
 
 const id = (value: string) => value as ProjectMemberId;
@@ -50,18 +49,16 @@ const project: WorkspaceProject = {
 };
 
 describe('project group launch', () => {
-  it('drops the submodules of an unticked parent', () => {
-    expect(
-      selectProjectGroupMembers(project, new Set([id('api')])).map((member) => member.id)
-    ).toEqual(['web']);
-  });
-
-  it('pins the machine that holds the local members, and rejects two machines', () => {
-    expect(resolveProjectGroupLaunchTarget(project, new Set())).toMatchObject({
-      kind: 'ready',
-      machineId: 'machine-1',
-    });
-    expect(resolveProjectGroupLaunchTarget(project, new Set([id('web')]))).toMatchObject({
+  it('launches every member, pinned to the machine of the local ones', () => {
+    const target = resolveProjectGroupLaunchTarget(project);
+    expect(target).toMatchObject({ kind: 'ready', machineId: 'machine-1' });
+    // The whole group, submodules included: there is no per-conversation subset.
+    expect(target.kind === 'ready' && target.members.map((member) => member.id)).toEqual([
+      'web',
+      'api',
+      'proto',
+    ]);
+    expect(resolveProjectGroupLaunchTarget({ members: project.members.slice(1) })).toMatchObject({
       kind: 'ready',
       machineId: null,
     });
@@ -81,13 +78,10 @@ describe('project group launch', () => {
         },
       ],
     };
-    expect(resolveProjectGroupLaunchTarget(split, new Set())).toEqual({
+    expect(resolveProjectGroupLaunchTarget(split)).toEqual({
       kind: 'machines_conflict',
       machineIds: ['machine-1', 'machine-2'],
     });
-    expect(resolveProjectGroupLaunchTarget(project, new Set([id('web'), id('api')])).kind).toBe(
-      'empty'
-    );
   });
 
   // The snapshot itself is the shared contract's; this pins the shape the

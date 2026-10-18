@@ -1,7 +1,6 @@
-import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import type { ProjectMember, ProjectMemberId } from '@lody/shared';
-import { ProjectGroupMemberPicker } from '@/components/chat/project-group-member-picker';
+import { ProjectGroupMemberList } from '@/components/chat/project-group-member-list';
 
 const id = (value: string) => value as ProjectMemberId;
 
@@ -30,14 +29,11 @@ const members: ProjectMember[] = [
   },
 ];
 
-function StatefulPicker(props: { missing?: readonly string[]; canClone?: boolean }) {
-  const [excluded, setExcluded] = useState<ReadonlySet<ProjectMemberId>>(new Set());
+function MemberList(props: { missing?: readonly string[]; canClone?: boolean }) {
   return (
     <div style={{ padding: 24, paddingTop: 260 }}>
-      <ProjectGroupMemberPicker
+      <ProjectGroupMemberList
         members={members}
-        excluded={excluded}
-        onExcludedChange={setExcluded}
         labelOf={(member) =>
           member.source.kind === 'github' ? member.source.repoFullName : member.id
         }
@@ -49,18 +45,21 @@ function StatefulPicker(props: { missing?: readonly string[]; canClone?: boolean
 }
 
 const meta = {
-  title: 'Chat/ProjectGroupMemberPicker',
-  component: StatefulPicker,
+  title: 'Chat/ProjectGroupMemberList',
+  component: MemberList,
   play: async ({ canvasElement }) => {
     canvasElement.querySelector<HTMLButtonElement>('button')?.click();
   },
-} satisfies Meta<typeof StatefulPicker>;
+} satisfies Meta<typeof MemberList>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Submodules step in per level and follow their parent. */
+/** Every member, read-only; submodules step in per level. */
 export const NestedSubmodules: Story = {};
 
-/** Local-only: a repository this machine has no copy of stays unticked. */
+/** Managed: a repository this machine has no copy of is cloned on start. */
+export const ClonedOnStart: Story = { args: { missing: ['docs'], canClone: true } };
+
+/** Local-only: the repository this machine lacks is why the group cannot start here. */
 export const MissingOnThisMachine: Story = { args: { missing: ['docs'], canClone: false } };

@@ -1,6 +1,5 @@
 import {
   getProjectBoundMachineId,
-  selectProjectMembers,
   type MachineId,
   type ProjectMember,
   type ProjectMemberId,
@@ -8,45 +7,29 @@ import {
   type WorkspaceProject,
 } from '@lody/shared';
 
-/**
- * The members a new conversation will use: everything not unticked, minus the
- * submodules of an unticked parent — a submodule is checked out by its
- * parent's worktree, so it cannot exist without it. The rule is the shared
- * contract's `selectProjectMembers`; the picker speaks in exclusions.
- */
-export function selectProjectGroupMembers(
-  project: Pick<WorkspaceProject, 'members'>,
-  excluded: ReadonlySet<ProjectMemberId>
-): ProjectMember[] {
-  return selectProjectMembers(
-    project.members,
-    project.members.filter((member) => !excluded.has(member.id)).map((member) => member.id)
-  );
-}
-
 export type ProjectGroupLaunchTarget =
   | { kind: 'ready'; members: ProjectMember[]; machineId: MachineId | null }
-  | { kind: 'empty' }
   | { kind: 'machines_conflict'; machineIds: MachineId[] };
 
 /**
- * Where a conversation in this group can run. Local members pin the machine
- * that holds them; GitHub members run anywhere. Local members on two machines
- * cannot share one conversation, because a conversation runs on one machine.
+ * Where a conversation in this group runs, with every member: a conversation
+ * is created from the group as configured, never a subset of it. Local
+ * members pin the machine that holds them; repository members run anywhere.
+ * Local members on two machines cannot share one conversation, because a
+ * conversation runs on one machine.
  */
 export function resolveProjectGroupLaunchTarget(
-  project: Pick<WorkspaceProject, 'members'>,
-  excluded: ReadonlySet<ProjectMemberId>
+  project: Pick<WorkspaceProject, 'members'>
 ): ProjectGroupLaunchTarget {
-  const members = selectProjectGroupMembers(project, excluded);
-  if (members.length === 0) return { kind: 'empty' };
   const machineIds = [
     ...new Set(
-      members.flatMap((member) => (member.source.kind === 'local' ? [member.source.machineId] : []))
+      project.members.flatMap((member) =>
+        member.source.kind === 'local' ? [member.source.machineId] : []
+      )
     ),
   ];
   if (machineIds.length > 1) return { kind: 'machines_conflict', machineIds };
-  return { kind: 'ready', members, machineId: machineIds[0] ?? null };
+  return { kind: 'ready', members: [...project.members], machineId: machineIds[0] ?? null };
 }
 
 /**
@@ -94,7 +77,7 @@ export function buildProjectRepositoryCopyIndex(
  *   editor forbade it); listed, never startable.
  * - `available`: `missing` are the repository Members this machine has no
  *   copy of. A managed deployment clones them; local-only mode cannot, so
- *   they start unticked and cannot be ticked.
+ *   the group cannot start on this machine.
  */
 export type ProjectGroupMachineAvailability =
   | { kind: 'elsewhere'; machineId: MachineId }

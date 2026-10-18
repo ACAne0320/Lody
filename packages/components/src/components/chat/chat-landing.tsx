@@ -277,7 +277,7 @@ import {
   type UnifiedProjectGroupOption,
   type UnifiedProjectSelection,
 } from './unified-project-selector';
-import { ProjectGroupMemberPicker } from './project-group-member-picker';
+import { ProjectGroupMemberList } from './project-group-member-list';
 import { useWorkspaceProjects } from '@/hooks/use-workspace-projects';
 import {
   buildProjectGroupProjectRef,
@@ -992,12 +992,8 @@ function WorkspaceChatLanding({
   const [selectedProjectGroupId, setSelectedProjectGroupId] = useState<string | null>(
     preSelectedProjectGroupId
   );
-  const [excludedProjectMemberIds, setExcludedProjectMemberIds] =
-    useState<ReadonlySet<ProjectMemberId>>(EMPTY_PROJECT_MEMBER_IDS);
   const selectProjectGroup = useCallback((projectId: string | null) => {
     setSelectedProjectGroupId(projectId);
-    // Every member starts ticked for each newly chosen group.
-    setExcludedProjectMemberIds(EMPTY_PROJECT_MEMBER_IDS);
   }, []);
   const selectedProjectGroup = useMemo(
     () =>
@@ -1095,7 +1091,8 @@ function WorkspaceChatLanding({
     [visibleLocalProjectMap]
   );
   // Without GitHub integration (local-only) a repository Member the machine
-  // has no copy of cannot be cloned, so it starts unticked and stays so.
+  // has no copy of cannot be cloned. A conversation always gets the whole
+  // group, so such a group cannot start on this machine.
   const canCloneProjectRepositories = useAppCapability('githubIntegration');
   const selectedProjectGroupAvailability = useMemo(
     () =>
@@ -1112,20 +1109,11 @@ function WorkspaceChatLanding({
     selectedProjectGroupAvailability?.kind === 'available'
       ? selectedProjectGroupAvailability.missing
       : EMPTY_PROJECT_MEMBER_IDS;
-  const projectGroupUnavailableMemberIds = canCloneProjectRepositories
-    ? EMPTY_PROJECT_MEMBER_IDS
-    : projectGroupMissingMemberIds;
+  const projectGroupLacksLocalCopies =
+    !canCloneProjectRepositories && projectGroupMissingMemberIds.size > 0;
   const projectGroupLaunchTarget = useMemo(
-    () =>
-      selectedProjectGroup
-        ? resolveProjectGroupLaunchTarget(
-            selectedProjectGroup,
-            projectGroupUnavailableMemberIds.size > 0
-              ? new Set([...excludedProjectMemberIds, ...projectGroupUnavailableMemberIds])
-              : excludedProjectMemberIds
-          )
-        : null,
-    [excludedProjectMemberIds, projectGroupUnavailableMemberIds, selectedProjectGroup]
+    () => (selectedProjectGroup ? resolveProjectGroupLaunchTarget(selectedProjectGroup) : null),
+    [selectedProjectGroup]
   );
   const projectGroupUsesRepositoryMembers =
     projectGroupLaunchTarget?.kind === 'ready' &&
@@ -3085,7 +3073,11 @@ function WorkspaceChatLanding({
       let projectRun: SessionProjectRun | undefined;
 
       if (selectedProjectGroupId) {
-        if (!selectedProjectGroup || projectGroupLaunchTarget?.kind !== 'ready') {
+        if (
+          !selectedProjectGroup ||
+          projectGroupLaunchTarget?.kind !== 'ready' ||
+          projectGroupLacksLocalCopies
+        ) {
           captureSessionInputBlocked('missing_project');
           setComposerError(
             projectGroupStatusMessage ??
@@ -3605,14 +3597,11 @@ function WorkspaceChatLanding({
     [visibleLocalProjectMap]
   );
   const branchWorktreePill = selectedProjectGroup ? (
-    <ProjectGroupMemberPicker
+    <ProjectGroupMemberList
       members={selectedProjectGroup.members}
-      excluded={excludedProjectMemberIds}
       missing={projectGroupMissingMemberIds}
       canClone={canCloneProjectRepositories}
-      onExcludedChange={setExcludedProjectMemberIds}
       labelOf={projectMemberLabel}
-      disabled={submitting}
     />
   ) : branchSelectorNode || topWorktreeNode ? (
     <div {...stylex.props(composerSurface.contextPill)}>
@@ -3681,24 +3670,26 @@ function WorkspaceChatLanding({
             projectId: project.id,
             name: project.name,
             memberCount: project.members.length,
-            ...(missing > 0
+            ...(missing > 0 && canCloneProjectRepositories
               ? {
-                  availability: canCloneProjectRepositories
-                    ? t('chat.projectGroup.missingClone', '{{count}} cloned on start', {
-                        count: missing,
-                      })
-                    : t('chat.projectGroup.missingLocal', '{{count}} not on this machine', {
-                        count: missing,
-                      }),
+                  availability: t('chat.projectGroup.missingClone', '{{count}} cloned on start', {
+                    count: missing,
+                  }),
                 }
               : {}),
+            // The whole group or nothing: a repository this machine lacks
+            // and cannot clone makes the group unavailable here.
             disabledReason:
               availability.kind === 'conflict'
                 ? t(
                     'chat.projectGroup.machinesConflict',
                     'Its local repositories are on different machines'
                   )
-                : undefined,
+                : missing > 0 && !canCloneProjectRepositories
+                  ? t('chat.projectGroup.missingLocal', '{{count}} not on this machine', {
+                      count: missing,
+                    })
+                  : undefined,
           },
         ];
       }),
@@ -4538,7 +4529,8 @@ function WorkspaceChatLanding({
 
   const hasSendableContent = prompt.trim().length > 0 || hasUploadedImages || hasUploadedFiles;
   const submitDisabled =
-    (selectedProjectGroupId !== null && projectGroupLaunchTarget?.kind !== 'ready') ||
+    (selectedProjectGroupId !== null &&
+      (projectGroupLaunchTarget?.kind !== 'ready' || projectGroupLacksLocalCopies)) ||
     getChatLandingSubmitDisabled({
       submitting,
       hasBlockingImages,
@@ -4583,8 +4575,12 @@ function WorkspaceChatLanding({
             'chat.projectGroup.machinesConflictStatus',
             'This group has local repositories on different machines, so they cannot share one conversation.'
           )
-        : projectGroupLaunchTarget?.kind === 'empty'
-          ? t('chat.projectGroup.empty', 'Choose at least one repository')
+        : projectGroupLacksLocalCopies
+          ? t(
+              'chat.projectGroup.missingLocalStatus',
+              'This machine has no copy of {{count}} of this group’s repositories. Add them as local projects here, or start on another machine.',
+              { count: projectGroupMissingMemberIds.size }
+            )
           : projectGroupLaunchTarget?.kind === 'ready' &&
               projectGroupLaunchTarget.members.length > 1 &&
               scopedMachineMeta &&

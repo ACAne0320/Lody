@@ -5063,11 +5063,9 @@
   "chat.projectPicker.groupMembers_other": "{{count}} 个仓库",
   "chat.projectPicker.removedGroup": "已删除的项目组",
   "chat.projectGroup.membersLabel": "本次对话使用的仓库",
-  "chat.projectGroup.membersCount": "{{selected}}/{{total}} 个仓库",
   "chat.projectGroup.machinesConflict": "它的本地仓库分布在不同机器上",
   "chat.projectGroup.machinesConflictStatus": "这个项目组的本地仓库分布在不同机器上，无法在同一个对话中使用。",
   "chat.projectGroup.missing": "这个项目组已不存在",
-  "chat.projectGroup.empty": "至少选择一个仓库",
   "chat.projectGroup.unsupportedMachine": "请更新这台机器上的 Lody，才能开始项目组对话。",
   "sessions.projectMembers.label": "仓库",
   "sessions.projectMembers.summary": "{{repos}} 个仓库 · {{prs}} 个 PR",
@@ -5102,5 +5100,8 @@
   "chat.projectGroup.memberMissing": "这台机器上没有",
   "chat.projectGroup.unsupportedRepositoryMembers": "请更新这台机器上的 Lody，才能使用它本地的仓库副本。",
   "settings.projectGroups.picker.blockedHere": "项目组已包含本机目录，对话只能在本机运行。",
-  "chat.projectGroup.memberWithParent": "随父仓库检出"
+  "chat.projectGroup.membersTotal": "{{count}} 个仓库",
+  "chat.projectGroup.membersTotal_other": "{{count}} 个仓库",
+  "chat.projectGroup.missingLocalStatus": "这台机器上缺少项目组中 {{count}} 个仓库的本地副本。请先在这台机器上添加它们，或换一台机器开始。",
+  "chat.projectGroup.missingLocalStatus_other": "这台机器上缺少项目组中 {{count}} 个仓库的本地副本。请先在这台机器上添加它们，或换一台机器开始。"
 }

@@ -5063,11 +5063,9 @@
   "chat.projectPicker.groupMembers_other": "{{count}} repositories",
   "chat.projectPicker.removedGroup": "Removed project group",
   "chat.projectGroup.membersLabel": "Repositories in this conversation",
-  "chat.projectGroup.membersCount": "{{selected}}/{{total}} repositories",
   "chat.projectGroup.machinesConflict": "Its local repositories are on different machines",
   "chat.projectGroup.machinesConflictStatus": "This group has local repositories on different machines, so they cannot share one conversation.",
   "chat.projectGroup.missing": "This project group no longer exists",
-  "chat.projectGroup.empty": "Choose at least one repository",
   "chat.projectGroup.unsupportedMachine": "Update Lody on this machine to start project group conversations.",
   "sessions.projectMembers.label": "Repositories",
   "sessions.projectMembers.summary": "{{repos}} repositories · {{prs}} PRs",
@@ -5105,5 +5103,10 @@
   "chat.projectGroup.memberMissing": "Not on this machine",
   "chat.projectGroup.unsupportedRepositoryMembers": "Update Lody on this machine to use its copies of these repositories.",
   "settings.projectGroups.picker.blockedHere": "The group already has folders on this machine, so its conversations run here.",
-  "chat.projectGroup.memberWithParent": "With its parent"
+  "chat.projectGroup.membersTotal": "{{count}} repositories",
+  "chat.projectGroup.membersTotal_one": "{{count}} repository",
+  "chat.projectGroup.membersTotal_other": "{{count}} repositories",
+  "chat.projectGroup.missingLocalStatus": "This machine has no copy of {{count}} of this group’s repositories. Add them as local projects here, or start on another machine.",
+  "chat.projectGroup.missingLocalStatus_one": "This machine has no copy of {{count}} of this group’s repositories. Add it as a local project here, or start on another machine.",
+  "chat.projectGroup.missingLocalStatus_other": "This machine has no copy of {{count}} of this group’s repositories. Add them as local projects here, or start on another machine."
 }

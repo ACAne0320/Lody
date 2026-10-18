@@ -96,9 +96,7 @@ Member 或待添加的仓库进行匹配。能自动探测到的关系会直接�
 - 它仍然是一个完整的 Member：单独观测分支和状态，单独发现 PR。Lody 保留这层关系，
   主要是为了正确关联 PR：Create PR 先为子模块创建 PR，再为父仓库创建更新指针的 PR，
   并在父 PR 中链接子 PR；合并顺序提示子模块先合。
-- 创建对话时跟随父 Member：父 Member 勾选时它也勾选，且不能单独取消。父 Member 的
-  worktree 无论如何都会检出它声明的所有子模块，单独取消既省不了拉取，只会丢掉它的分支
-  和 PR 跟踪。取消勾选父 Member 时，它的子模块 Member 也不会被物化。
+- 始终和父 Member 一起物化；父 Member 的 worktree 无论如何都会检出它声明的所有子模块。
 - 创建对话时会校验：父仓库的基准提交中，该路径仍是指向同一仓库的子模块。不一致时
   报告给用户，不静默改为平铺。
 - 没有被设为 Member 的子模块也会被 `--recursive` 初始化，可以修改，但不会被观测，
@@ -117,9 +115,9 @@ Member 或待添加的仓库进行匹配。能自动探测到的关系会直接�
 ## 创建与物化
 
 定义 Project 时只写入定义，不 clone、不 fetch，也不创建 worktree。新建对话时，
-Daemon 在执行机器上为每个 Git Member 创建一个 worktree 和新分支，非 Git Member 按接入规则处理。默认
-包含全部 Member；用户在创建对话时取消勾选的 Member 不会被拉取。所有 Member 都是
-可编辑的，没有只读模式。
+Daemon 在执行机器上为每个 Git Member 创建一个 worktree 和新分支，非 Git Member 按接入规则处理。对话
+总是包含 Project 定义的全部 Member，不能在创建对话时另选一部分；需要不同的仓库组合时，
+应修改 Project 设置（或另建一个 Project）。所有 Member 都是可编辑的，没有只读模式。
 
 - 每个 Member 按现有规则各自分配分支，不要求各仓库的分支名相同。
 - 对话在创建时冻结 Member 列表，之后对 Project 的编辑只影响新对话。
@@ -127,7 +125,8 @@ Daemon 在执行机器上为每个 Git Member 创建一个 worktree 和新分支
 - 仓库 Member 在执行机器有本地副本时使用本地副本，即这台机器上 GitHub 远端为该仓库的
   本地项目：worktree 从这份副本创建，使用本机自己的 Git 凭证，和本地 Member 一样。
   没有本地副本时，托管部署像 GitHub Member 一样 clone 这个仓库。开源桌面版是纯本地
-  模式，从不 clone，所以这个 Member 在这台机器上显示为不可用，开始对话前必须取消勾选。
+  模式，从不 clone，所以含有这台机器没有副本的仓库 Member 的 Project 不能在这里开始；
+  选择器把它显示为在这台机器上不可用，并说明原因。
   仓库 Member 用创建其 worktree 时的同一套凭证观测 PR。
 - 和单个项目一样，先选在哪台机器运行：新对话的选择器只列出能在所选机器上运行的
   Project。绑定机器的 Member 在另一台机器上的 Project 不在这里列出，因此在这个

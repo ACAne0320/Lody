@@ -512,10 +512,10 @@ its meaning. Type names in code are unchanged.
   project or GitHub group of its first member.
 - **New conversation**: a group sits on top of the plain chat context, leaving
   the existing local/GitHub logic and the mobile views unchanged. Choosing a
-  group lets its local members' machine decide the execution machine. The member
-  picker starts with everything ticked; a submodule follows its parent and cannot
-  be unticked alone, since the parent's worktree checks it out regardless. With one member left, the conversation is created as an ordinary
-  single-project one. If the daemon does not advertise `multiRepoProject`,
+  group lets its local members' machine decide the execution machine. A conversation always gets the whole group as configured; the composer only lists
+  the members, read-only (a submodule is checked out by its parent anyway, and a
+  different set belongs in the group's settings). A group with a single member
+  starts an ordinary single-project conversation. If the daemon does not advertise `multiRepoProject`,
   submission is blocked with a prompt to update.
 - **Info Bar**: a new Repositories chip (never staged) lists each repository in
   snapshot order with its path, branch, uncommitted/unpushed state, current PR
@@ -713,7 +713,9 @@ to one machine could not be used from another machine that has the same reposito
 - *Composer.* Machine first, as for single projects: groups bound to another
   machine are not listed, and choosing a group never switches the machine. A group
   without machine-bound Members is listed on every machine with its availability
-  there, and the member picker marks repository Members the machine lacks.
+  there, and its member list marks repository Members the machine lacks. In
+  local-only mode such a group is shown unavailable on that machine, since a
+  conversation always gets the whole group.
 
 **Split of work.** This branch holds the Spec, this section and the shared contract.
 The logic session implements the daemon: publishing `githubRepoFullName` when a
@@ -847,7 +849,7 @@ with the group. A repository Member's submodules are read from a copy on an
 online machine when there is one, so detection works without GitHub integration.
 In the composer, `getProjectGroupMachineAvailability` hides groups bound to
 another machine, appends "N cloned on start" or "N not on this machine" to the
-others, and in local-only mode leaves missing members unticked. Starting a group
+others, and in local-only mode disables a group the machine lacks a copy for. Starting a group
 with repository Members requires `projectRepositoryMembers` on the machine. The
 picker was checked in Storybook (Chinese, both filters). Pure helpers have unit
 tests. Nothing has run end to end against the daemon from #1682 yet.
