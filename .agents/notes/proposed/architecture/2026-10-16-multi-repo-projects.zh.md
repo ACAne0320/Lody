@@ -165,15 +165,15 @@ Project 名称经过小写化、只保留 `[a-z0-9-]` 并截断到 32 个字符�
 根目录。目前凡是涉及文件的功能，都假设只有一个会话工作区根目录，路径用相对这个根目录
 的形式表示：
 
-| 位置 | 现在的行为 | 根目录之外的路径 |
-| --- | --- | --- |
-| Code Collab 文件 RPC（`code-collab-v2-service.ts`） | 绝对路径只有落在工作区根目录内，才会转成相对路径 | 返回 `invalid_path` |
-| 文件索引 Flock（`<ws>:fi:<session>`） | 每个路径一行，键是相对工作区的路径；监听器拒绝绝对路径和 `..`（`workspace-watch-path-policy.ts`） | 无法表示 |
-| 本轮 diff（`code-collab-v2-diff-evidence.ts`） | `normalizeRelativePath` 只保留根目录内的路径 | 静默丢弃，本轮 diff 里看不到 |
-| 文件预览（`file-preview-path-policy.ts`） | 工作区根目录加固定的几个额外目录 | `path_not_allowed` |
-| Agent 输出的文件（`message-handler.ts`） | `resource_link` 必须在工作区内；历史里**有意**只保存相对路径，以免发布主机路径 | 被拒绝 |
-| 桌面端的 Markdown 链接与本地文件路径 | 只对已知工作区根目录下的路径做相对化，绝对路径由根目录加相对路径拼出 | 当作外部路径处理 |
-| 文件索引与 All Changes（`file-index-scan-core.ts`） | 只有 `isInsideGitWorktree(root)` 为真才用 `git ls-files` 和 Git diff 基准 | 不适用 |
+| 位置                                                | 现在的行为                                                                                        | 根目录之外的路径             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------- |
+| Code Collab 文件 RPC（`code-collab-v2-service.ts`） | 绝对路径只有落在工作区根目录内，才会转成相对路径                                                  | 返回 `invalid_path`          |
+| 文件索引 Flock（`<ws>:fi:<session>`）               | 每个路径一行，键是相对工作区的路径；监听器拒绝绝对路径和 `..`（`workspace-watch-path-policy.ts`） | 无法表示                     |
+| 本轮 diff（`code-collab-v2-diff-evidence.ts`）      | `normalizeRelativePath` 只保留根目录内的路径                                                      | 静默丢弃，本轮 diff 里看不到 |
+| 文件预览（`file-preview-path-policy.ts`）           | 工作区根目录加固定的几个额外目录                                                                  | `path_not_allowed`           |
+| Agent 输出的文件（`message-handler.ts`）            | `resource_link` 必须在工作区内；历史里**有意**只保存相对路径，以免发布主机路径                    | 被拒绝                       |
+| 桌面端的 Markdown 链接与本地文件路径                | 只对已知工作区根目录下的路径做相对化，绝对路径由根目录加相对路径拼出                              | 当作外部路径处理             |
+| 文件索引与 All Changes（`file-index-scan-core.ts`） | 只有 `isInsideGitWorktree(root)` 为真才用 `git ls-files` 和 Git diff 基准                         | 不适用                       |
 
 文件监听协议已经支持多个根目录（`replace-roots` 携带 `roots: string[]`），其余地方都
 只认一个根目录。
@@ -242,7 +242,6 @@ Changes 按 Member 分别使用 Git。这件事和将来是否支持本地目录
 worktree 的移除、SSH 子模块 URL 与托管凭证的配合，以及本地父仓库能否复用原仓库已有的
 子模块数据来避免联网拉取。
 
-
 ## Shared 契约实现
 
 第一部分实现在 `packages/shared/src/workspace-project.ts` 导出 `WorkspaceProject`、
@@ -263,7 +262,6 @@ list/write/delete 函数。定义与运行快照 schema 拒绝不安全的跨平
 当前能力广告。此契约部分不会让现有 daemon 开启多仓库创建。运行时实现、owner 串行写入元数据和生命周期行为仍待验证。
 
 契约 PR：[#1641](https://github.com/LodyAI/Lody/pull/1641)。
-
 
 ## 运行时存储发现与 worktree 基础能力
 
@@ -297,7 +295,6 @@ WorktreeGit 已拥有命令取消和清理；现有 manager/setup/GC 编排仍�
 
 Worktree 基础能力 PR：[ #1642](https://github.com/LodyAI/Lody/pull/1642)。
 
-
 ## Owner 串行与运行时接入
 
 拥有该对话的 daemon 在同一 document manager、同一 owner Session 的服务实例间共享
@@ -311,12 +308,10 @@ Session 启动使用冻结的项目组目录，首轮提示称为「Project grou
 ACP originProjectPath 指向稳定的项目组目录。归档/GC、PR 调和和按成员文件索引接入后，
 运行时声明 `multiRepoProject: 1`。
 
-
 本地 Member 的 GitHub PR 发现需要持久的机器观测仓库身份，避免 PR 调和器扫描元数据时
 逐个打开 Git。`SessionProjectMember` 新增可选 `repoFullName`，由 owner 从 Member remote
 观测写入；这是向后兼容的增量字段，`src` 仍保留冻结的本地绑定。创建请求不能提供权威的
 观测身份；PR 发现仍要求 Member 的观测分支，并在写回前重新校验仓库身份与分支。
-
 
 运行时归档在移除任何 root 前先完成所有成员备份。子模块分支先保存到持久仓库，父成员
 随后记录新的 gitlink。恢复从持久仓库取得子模块对象，包括远端没有的提交，并保留原始
@@ -380,7 +375,6 @@ root HEAD 回执保留命名基线引用，避免 PR 基线变成 SHA；本地 d
 2 项（含默认分支变化）。全工作区类型检查、check:quick、format、docs check 已通过；
 全仓测试另行记录。
 
-
 shared `withProjectGroupPrScope(prompt)` 将创建 PR 或 Commit & Push 操作应用到成员仓库，
 保留请求的操作及 draft 状态，先发布子模块再发布父仓库 gitlink，取得所有 URL 后在各 PR 正文
 互相链接。单独 Commit & Push 不开 PR；子模块发布失败时，不发布指向未发布提交的父仓库指针。
@@ -413,3 +407,29 @@ UI 中读取 `repo` 的代码须改为 `repoFullName`，不新增同义存储字
 
 尚未完成：本地成员的子模块探测与仓库身份（依赖 daemon 字段）、项目组版本的 Create PR
 提示词、移动端入口。UI 只在 Storybook 和单元测试中验证，尚未在真实 daemon 上端到端运行。
+
+## 修订：非 Git 成员与多根目录
+
+这一节修订「备选方案」中把非 Git 目录列为暂缓的结论。产品负责人正在为更多 ACP
+Provider 实现 `additionalDirectories`，并且 Lody 自带的 Claude、Codex 适配器已经支持
+（`packages/acp-extension-codex/src/CodexAcpClient.ts` 的 `readAdditionalDirectories`），
+因此现在引入非 Git 成员：
+
+- **接入方式由 daemon 在物化时决定**：Git 成员（GitHub 或本地）始终用 worktree；非 Git
+  成员在 Provider 声明支持 `additionalDirectories` 时作为额外目录传入，否则在主目录下建
+  软链接（Windows 用 junction）。
+- **软链接的边界**：此前否决软链接的理由逐条有了对应措施。写权限由额外目录或全权限模式
+  保证，而不是靠链接本身；索引和监听按注册的根目录工作，不依赖跟随链接；清理只删除链接、
+  不递归进入目标；链接目标只从本地项目注册表解析，被改动时重建。
+- **不隔离是有意的取舍**：和现有单项目「直接使用原目录」模式一样，非 Git 成员直接修改
+  原目录，没有分支、备份和 PR，界面需要明确说明。
+
+**多根目录的文件能力**：调研发现，同机 Electron 预览已经能只读打开任意路径，但远程预览、
+编辑保存、LSP、文件树、All Changes、`@` 搜索、每轮 diff 和 Agent 输出文件都只认单一
+工作区根目录（见「路径依赖调研」）。只开放额外目录而不改这些地方，用户会看到 Agent 改了
+文件，却无法在 Lody 中编辑、搜索或在 diff 里看到修改。因此一并按 `(rootId, relativePath)`
+把这些能力扩展到所有根目录：授权先解析真实路径再比对已注册的根目录，主目录的纯相对路径
+格式保持不变。
+
+**分工**：根目录注册、授权、索引、监听和 diff 的 daemon 侧由逻辑 session 实现；文件树
+按根目录分组、`@` 搜索和按 `rootId` 打开文件由 UI session 实现。两侧均尚未实现或验证。

@@ -19,10 +19,9 @@ Alice 的产品由本地文件夹 `web`（远端 `acme/web`）、`api`（远端 
 
 ## 概念
 
-- **Project**：工作区级的分组，由若干 **Member** 组成。每个 Member 是一个 Git
-  仓库：GitHub 仓库，或者一个是 Git 仓库的本地项目（可以没有远端，此时有分支和备份，
-  但没有 PR）。不是 Git 仓库的本地目录不能作为 Member；添加时会提示先 `git init`。
-  非 Git 目录等 ACP 的 `additionalDirectories` 普遍支持后再引入。
+- **Project**：工作区级的分组，由若干 **Member** 组成。Member 可以是 GitHub 仓库、
+  本地 Git 仓库（可以没有远端，此时有分支和备份，但没有 PR），或者本地非 Git 目录。
+  非 Git 目录没有分支、备份和 PR，对话直接修改原目录，见「成员接入方式」。
 - Member 按**仓库身份**去重：GitHub 仓库（有数字 ID 时以 ID 为准），或者没有 GitHub
   远端的本地仓库 `(machineId, localProjectId)`。同一个仓库从本地文件夹和 GitHub 各加
   一次，或者从同一个 monorepo 的两个子目录加入，都只算一个 Member。
@@ -53,6 +52,29 @@ Alice 的产品由本地文件夹 `web`（远端 `acme/web`）、`api`（远端 
 
 子模块以外的目录嵌套照样平铺。原来依赖 `../lib` 这类相对路径的仓库，只要把 Member
 的目录名设成原来的名字，就能继续使用这些引用。
+
+## 成员接入方式
+
+Daemon 在物化对话时，按成员类型和本次对话的 Provider 能力决定每个成员怎样进入
+Agent 的工作范围，并把结果记录在快照的运行时字段里：
+
+| 成员                                                       | 接入方式                                                        |
+| ---------------------------------------------------------- | --------------------------------------------------------------- |
+| GitHub 仓库                                                | 在主目录下建 worktree                                           |
+| 本地 Git 仓库                                              | 在主目录下建 worktree                                           |
+| 本地非 Git 目录，Provider 声明支持 `additionalDirectories` | 把原目录的真实路径作为额外目录传给 Provider，不放进主目录       |
+| 本地非 Git 目录，Provider 不支持                           | 在主目录下以成员目录名建软链接指向原目录（Windows 用 junction） |
+
+- 后续启动的 ACP 会话（恢复、换 Provider）重新判断：额外目录不可用时补建软链接，
+  可用时不再依赖软链接。
+- 非 Git 成员不隔离：同一目录被多个对话同时使用时，它们修改的是同一份文件。界面在
+  选择和使用这类成员时明确说明。它没有分支、备份提交和 PR。
+- 额外目录和软链接目标都只从本机的本地项目注册表解析（`localProjectId` → 路径），
+  不信任 Agent 提供的路径或磁盘上读到的链接目标。链接被 Agent 改动时，daemon 按注册表
+  重建。
+- 归档清理只删除链接本身，绝不递归进入链接目标；先移除所有成员链接并确认主目录下
+  不再有软链接，再删除主目录。非 Git 成员不参与备份提交。
+- 非 Git 成员只能是顶层成员，不能是子模块。
 
 ## 子模块 Member
 
@@ -96,8 +118,8 @@ Daemon 在执行机器上为每个 Member 创建一个 worktree 和新分支，�
 - 对话在创建时冻结 Member 列表，之后对 Project 的编辑只影响新对话。
 - 本地 Member 必须在执行机器上有绑定。没有绑定的 Member 不能被选中，Lody 不会悄悄
   改为 clone 一份。开源桌面版是纯本地模式，只支持本地 Member，PR 通过本机凭证观测。
-- 多 Member 对话始终使用 worktree。单 Member 对话保持现有行为，包括直接使用原始
-  目录的模式。
+- 多 Member 对话中，Git 成员始终使用 worktree，非 Git 成员按「成员接入方式」接入。
+  单 Member 对话保持现有行为，包括直接使用原始目录的模式。
 
 ## PR 关联
 
@@ -153,10 +175,22 @@ Project 的对话都归到同一个原生项目，`cwd` 仍是各自的主目录
 ## 文件路径
 
 同步数据不包含主机绝对路径。对话的文件根目录列表 `{ id, absolutePath }` 只保存在拥有
-该对话的机器上；主目录是根目录 `main`。同步数据用 `(rootId, relativePath)` 标识文件，
-主目录下的路径保持现有的纯相对路径形式。机器边界接受绝对路径，由同一个解析函数映射到
-某个根目录，不在任何根目录下的路径被拒绝。将来支持主目录之外的本地目录时，只需要增加
-根目录，不改变这一格式。调研见[提案 Note](../.agents/notes/proposed/architecture/2026-10-16-multi-repo-projects.zh.md#路径依赖调研为将来支持本地目录做准备)。
+该对话的机器上；主目录是根目录 `main`，每个以额外目录或软链接接入的成员各是一个根目录
+`member:<memberId>`。同步数据用 `(rootId, relativePath)` 标识文件，主目录下的路径保持
+现有的纯相对路径形式。机器边界接受绝对路径，由同一个解析函数映射到某个根目录，不在任何
+根目录下的路径被拒绝。
+
+所有根目录在 Lody 中享有和主目录相同的文件能力：
+
+- 文件预览（含远程查看）、打开编辑、保存和 LSP 都按根目录列表授权。授权先解析真实
+  路径，再判断是否在某个已注册根目录内，因此从软链接逃出根目录的路径仍被拒绝。只有在
+  所有根目录之外的文件才是 `external`（只读）；同机 Electron 的任意路径只读预览保持
+  不变。
+- 文件树、All Changes 和 `@` 文件搜索覆盖所有根目录，按根目录分组；每个根目录单独
+  扫描和监听。非 Git 根目录沿用现有的非 Git 扫描与快照方式。
+- 每轮 diff、Agent 输出的文件和附件来源路径都按根目录记录，额外目录中的修改不会被
+  丢弃。
+- 远程客户端请求文件时传 `rootId` 和相对路径，不传主机绝对路径。调研见[提案 Note](../.agents/notes/proposed/architecture/2026-10-16-multi-repo-projects.zh.md#路径依赖调研为将来支持本地目录做准备)。
 
 ## 证据
 
@@ -166,6 +200,9 @@ Project 的对话都归到同一个原生项目，`cwd` 仍是各自的主目录
   [`SessionMeta`](../packages/shared/src/schema.ts)。
 - 单分支 PR 发现，以及“当前 PR 是最后一项”：[PR 调和器](../apps/cli/src/lib/pr-poller/AGENTS.md)。
 - [分支观测](workspace-branch-state.md)、[本地 PR 观测](local-github-pr-observation.md)。
+- 目前只认单一根目录的位置：[预览路径策略](../packages/shared/src/node/file-preview-path-policy.ts)、
+  [Code Collab 路径解析](../apps/cli/src/lib/code-collab/code-collab-v2-service.ts)、
+  [每轮 diff 路径归一化](../apps/cli/src/lib/code-collab/code-collab-v2-diff-evidence.ts)。
 - 决策与备选方案：[提案 Note](../.agents/notes/proposed/architecture/2026-10-16-multi-repo-projects.zh.md)。
 
 创建快照对未指定的 root base 使用 `HEAD`，对子模块 base 使用 `gitlink`；owner daemon

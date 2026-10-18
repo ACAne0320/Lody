@@ -19,12 +19,11 @@ looks only at that branch.
 
 ## Concepts
 
-- **Project group** (code type `WorkspaceProject`, called Project below): a workspace-level group of **Members**. Each Member is a Git
-  repository: a GitHub repository, or a local project that is a Git repository.
-  A local repository may have no remote; it then gets a branch and backups, but no
-  PR. A local directory that is not a Git repository cannot be a Member; adding one
-  prompts the user to run `git init` first. Non-Git directories are deferred
-  until ACP `additionalDirectories` is widely supported.
+- **Project group** (code type `WorkspaceProject`, called Project below): a workspace-level group of **Members**. A Member can be
+  a GitHub repository, a local Git repository (which may have no remote; it then
+  gets a branch and backups, but no PR), or a local non-Git directory. A non-Git
+  directory has no branch, backups or PR, and the conversation edits the original
+  directory; see Member access.
 - Members are deduplicated by **repository identity**: a GitHub repository (by
   numeric ID when known), or a local repository without a GitHub remote,
   identified by `(machineId, localProjectId)`. A repository added once as a local
@@ -64,6 +63,35 @@ their original nesting, and it does not use symbolic links.
 Directory nesting other than submodules is flattened as well. A repository that
 relies on a relative path such as `../lib` keeps working when the user gives that
 Member its original directory name.
+
+## Member access
+
+When it materializes a conversation, the daemon decides how each Member enters the
+agent's working scope, from the Member's kind and this conversation's provider
+capabilities, and records the result in the snapshot's runtime fields:
+
+| Member                                                             | Access                                                                                                                                   |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub repository                                                  | A worktree under the main directory                                                                                                      |
+| Local Git repository                                               | A worktree under the main directory                                                                                                      |
+| Local non-Git directory, provider declares `additionalDirectories` | The original directory's real path is passed to the provider as an additional directory; nothing is placed in the main directory         |
+| Local non-Git directory, provider does not                         | A symbolic link named after the Member's directory, under the main directory, pointing at the original directory (a junction on Windows) |
+
+- ACP sessions started later (resume, provider change) decide again: when
+  additional directories are unavailable the link is created, and when they are
+  available the link is no longer relied on.
+- Non-Git Members are not isolated: conversations using the same directory edit
+  the same files. The UI says so wherever such a Member is chosen or used. It has
+  no branch, backup commit or PR.
+- Additional directories and link targets are resolved only from the machine's
+  local project registry (`localProjectId` → path). Paths supplied by the agent
+  and link targets read from disk are never trusted; if the agent changes a link,
+  the daemon recreates it from the registry.
+- Archive cleanup removes only the link itself and never recurses into its target:
+  it removes every Member link, confirms no symbolic link remains in the main
+  directory, and only then deletes the main directory. Non-Git Members take no
+  part in backup commits.
+- A non-Git Member can only be top-level, never a submodule.
 
 ## Submodule Members
 
@@ -126,9 +154,9 @@ conversation is not fetched. Every Member is editable; there is no read-only mod
   one cannot be selected; Lody does not silently clone a copy instead. The
   open-source desktop runs in local-only mode, so it supports only local Members
   and observes their PRs with the machine's own credentials.
-- Multi-Member conversations always use worktrees. Single-Member conversations
-  keep today's behavior, including the mode that uses the original directory
-  directly.
+- In multi-Member conversations Git Members always use worktrees, and non-Git
+  Members follow Member access. Single-Member conversations keep today's behavior,
+  including the mode that uses the original directory directly.
 
 ## PR association
 
@@ -206,12 +234,27 @@ directory.
 
 Synced data contains no absolute host paths. A conversation's list of file roots,
 `{ id, absolutePath }`, is kept only on the machine that owns the conversation;
-the main directory is the root `main`. Synced data identifies a file as
-`(rootId, relativePath)`, and paths under the main directory keep today's plain
-relative form. The machine boundary accepts absolute paths and maps them to a root
-through a single resolver; a path under no root is rejected. Supporting local
-directories outside the main directory later only adds roots and does not change
-this format. Survey: [proposal note](../.agents/notes/proposed/architecture/2026-10-16-multi-repo-projects.md#path-dependency-survey-preparing-for-local-directories).
+the main directory is the root `main`, and each Member accessed as an additional
+directory or a link is a root `member:<memberId>`. Synced data identifies a file
+as `(rootId, relativePath)`, and paths under the main directory keep today's
+plain relative form. The machine boundary accepts absolute paths and maps them to
+a root through a single resolver; a path under no root is rejected.
+
+Every root gets the same file capabilities in Lody as the main directory:
+
+- File preview (including remote viewing), opening for edit, saving and LSP are
+  authorized against the list of roots. Authorization resolves the real path
+  first and then checks that it lies in a registered root, so a path that escapes
+  a root through a symbolic link is still rejected. Only a file outside every
+  root is `external` (read-only); same-machine Electron's read-only preview of any
+  path is unchanged.
+- The file tree, All Changes and `@` file search cover every root, grouped by
+  root; each root is scanned and watched separately. Non-Git roots keep the
+  existing non-Git scanning and snapshot approach.
+- Turn diffs, agent output files and attachment source paths are recorded per
+  root, so edits in additional directories are not dropped.
+- Remote clients request files by `rootId` and relative path, never by absolute
+  host path. Survey: [proposal note](../.agents/notes/proposed/architecture/2026-10-16-multi-repo-projects.md#path-dependency-survey-preparing-for-local-directories).
 
 ## Evidence
 
@@ -223,6 +266,9 @@ These describe the current code, not an implementation of this Spec:
   [PR reconciler](../apps/cli/src/lib/pr-poller/AGENTS.md).
 - [Branch observation](workspace-branch-state.md) and
   [local PR observation](local-github-pr-observation.md).
+- Places that recognize only one root today: [preview path policy](../packages/shared/src/node/file-preview-path-policy.ts),
+  [Code Collab path resolution](../apps/cli/src/lib/code-collab/code-collab-v2-service.ts),
+  [turn diff path normalization](../apps/cli/src/lib/code-collab/code-collab-v2-diff-evidence.ts).
 - Decision and alternatives: [proposal note](../.agents/notes/proposed/architecture/2026-10-16-multi-repo-projects.md).
 
 Creation snapshots use `HEAD` for unspecified root bases and `gitlink` for submodule bases;

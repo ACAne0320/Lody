@@ -205,15 +205,15 @@ If local directories outside the main directory are supported later through
 file feature assumes a single session workspace root, and represents paths
 relative to that root:
 
-| Location | Current behavior | Paths outside the root |
-| --- | --- | --- |
-| Code Collab file RPC (`code-collab-v2-service.ts`) | An absolute path is converted to a relative one only when it is inside the workspace root | `invalid_path` |
-| File index Flock (`<ws>:fi:<session>`) | One row per path, keyed by the workspace-relative path; the watcher rejects absolute paths and `..` (`workspace-watch-path-policy.ts`) | Cannot be represented |
-| Turn diffs (`code-collab-v2-diff-evidence.ts`) | `normalizeRelativePath` keeps only paths inside the root | Silently dropped from the turn diff |
-| File preview (`file-preview-path-policy.ts`) | The workspace root plus a few fixed extra directories | `path_not_allowed` |
-| Agent output files (`message-handler.ts`) | A `resource_link` must be inside the workspace; history **deliberately** stores only the relative path so that no host path is published | Rejected |
-| Desktop Markdown links and local file paths | Only paths under the known workspace root are made relative; an absolute path is built from the root plus a relative path | Treated as external |
-| File index and All Changes (`file-index-scan-core.ts`) | `git ls-files` and a Git diff base are used only when `isInsideGitWorktree(root)` is true | Not applicable |
+| Location                                               | Current behavior                                                                                                                         | Paths outside the root              |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Code Collab file RPC (`code-collab-v2-service.ts`)     | An absolute path is converted to a relative one only when it is inside the workspace root                                                | `invalid_path`                      |
+| File index Flock (`<ws>:fi:<session>`)                 | One row per path, keyed by the workspace-relative path; the watcher rejects absolute paths and `..` (`workspace-watch-path-policy.ts`)   | Cannot be represented               |
+| Turn diffs (`code-collab-v2-diff-evidence.ts`)         | `normalizeRelativePath` keeps only paths inside the root                                                                                 | Silently dropped from the turn diff |
+| File preview (`file-preview-path-policy.ts`)           | The workspace root plus a few fixed extra directories                                                                                    | `path_not_allowed`                  |
+| Agent output files (`message-handler.ts`)              | A `resource_link` must be inside the workspace; history **deliberately** stores only the relative path so that no host path is published | Rejected                            |
+| Desktop Markdown links and local file paths            | Only paths under the known workspace root are made relative; an absolute path is built from the root plus a relative path                | Treated as external                 |
+| File index and All Changes (`file-index-scan-core.ts`) | `git ls-files` and a Git diff base are used only when `isInsideGitWorktree(root)` is true                                                | Not applicable                      |
 
 The file watch protocol already supports several roots (`replace-roots` carries
 `roots: string[]`). Everything else knows only one root.
@@ -313,7 +313,6 @@ worktree that contains submodules, how SSH submodule URLs work with hosted
 credentials, and whether a local parent can reuse the original repository's
 existing submodule data instead of fetching over the network.
 
-
 ## Shared contract implementation
 
 The first implementation slice exports `WorkspaceProject` and `SessionProjectRun` from
@@ -339,7 +338,6 @@ This contract slice does not enable creation on existing daemons. Runtime implem
 owner-serialized metadata writes and lifecycle behavior remain to be verified.
 
 Contract PR: [#1641](https://github.com/LodyAI/Lody/pull/1641).
-
 
 ## Runtime storage finding and worktree primitives
 
@@ -381,7 +379,6 @@ Live managed credentials remain outside the deterministic local test fixtures.
 
 Worktree primitives PR: [#1642](https://github.com/LodyAI/Lody/pull/1642).
 
-
 ## Owner serialization and runtime integration
 
 The owning daemon shares the existing WorkspaceGitService queue across service instances
@@ -397,14 +394,12 @@ Session startup uses the frozen group directory and first-use prompt context say
 ACP originProjectPath points to the stable group directory. With archive/GC, PR reconciliation
 and member-based file indexing connected, the runtime advertises `multiRepoProject: 1`.
 
-
 Local GitHub discovery needs a durable machine-observed repository identity for each local
 member, without opening Git during metadata-wide poller scans. `SessionProjectMember` adds
 optional `repoFullName`, populated by the owner from the member remote. This additive field
 is compatible with existing consumers; `src` remains the frozen local binding. The creation
 request cannot supply an authoritative observed identity. PR discovery still requires the
 member's observed branch and revalidates both identity and branch before writing.
-
 
 Runtime archive backs up all members before removing any root. Submodule refs are fetched
 into persistent repository storage before parent backup records the new gitlink. Restore
@@ -479,7 +474,6 @@ Validation includes 37 shared, 124 Streams, 13 RPC-scope and 12 Git/owner tests,
 two remote base tests including a changed default branch. Full workspace typecheck,
 `check:quick`, format and docs check passed; full repository tests remain separate.
 
-
 Shared `withProjectGroupPrScope(prompt)` scopes either PR creation or Commit & Push to
 member repositories. It preserves the requested action and draft status, publishes children
 before parent gitlinks, and cross-links all related PR bodies after URLs are known. Commit &
@@ -527,3 +521,40 @@ Not done yet: submodule detection and repository identity for local members
 (waiting on daemon fields), a Project group variant of the Create PR prompt, and
 mobile entry points. The UI is verified only in Storybook and unit tests, not
 end to end against a real daemon.
+
+## Revision: non-Git Members and multiple roots
+
+This section revises the conclusion under Alternatives that deferred non-Git
+directories. The product owner is implementing `additionalDirectories` for more
+ACP providers, and Lody's own Claude and Codex adapters already support it
+(`readAdditionalDirectories` in `packages/acp-extension-codex/src/CodexAcpClient.ts`),
+so non-Git Members are introduced now:
+
+- **The daemon decides access at materialization.** Git Members (GitHub or local)
+  always use worktrees. A non-Git Member is passed as an additional directory when
+  the provider declares `additionalDirectories`; otherwise it is a symbolic link
+  under the main directory (a junction on Windows).
+- **Link boundaries.** Each earlier reason for rejecting links now has a
+  countermeasure. Write access comes from the additional directory or full-access
+  mode, never from the link itself. Indexing and watching work on registered
+  roots and do not depend on following links. Cleanup removes only the link and
+  never recurses into its target. Link targets are resolved only from the local
+  project registry and recreated if changed.
+- **No isolation is a deliberate trade-off.** As with today's single-project mode
+  that uses the original directory, a non-Git Member edits the original directory
+  and has no branch, backups or PR; the UI must say so.
+
+**File capabilities across roots.** The survey found that same-machine Electron
+preview can already open any path read-only, but remote preview, edit and save,
+LSP, the file tree, All Changes, `@` search, turn diffs and agent output files
+all recognize only the single workspace root (see the path dependency survey).
+Opening additional directories without changing these would let users see the
+agent change files they cannot edit, search or find in a diff in Lody. These
+capabilities are therefore extended to every root using `(rootId, relativePath)`:
+authorization resolves the real path before comparing it with registered roots,
+and the main directory's plain relative path format is unchanged.
+
+**Split of work.** The logic session implements the daemon side: root
+registration, authorization, indexing, watching and diffs. The UI session
+implements file tree grouping by root, `@` search and opening files by `rootId`.
+Neither side is implemented or verified yet.
