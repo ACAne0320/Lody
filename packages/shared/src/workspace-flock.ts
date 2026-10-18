@@ -3,7 +3,7 @@ import {
   type WorkspaceProject,
   type ProjectId,
 } from './workspace-project';
-import { normalizeAgentRole, type AgentRole } from './agent-role';
+import { normalizeAgentRole, serializeAgentRoleRow, type AgentRole } from './agent-role';
 import type { AgentRoleId, McpServerId, WorkspaceId } from './ids';
 import { isWorkspaceMcpServerMeta, type WorkspaceMcpServerMeta } from './workspace-mcp';
 
@@ -226,7 +226,7 @@ const writeWorkspaceFlockRow = (
   if (workspaceFlockRowsEqual(previous, row)) {
     return false;
   }
-  flock.set(row.key, row.value);
+  flock.set(row.key, isAgentRoleRow(row) ? serializeAgentRoleRow(row.value) : row.value);
   flock.commit();
   return true;
 };

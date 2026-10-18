@@ -10,6 +10,7 @@ import { fileLocksLegacy } from '@/utils/file-lock';
 import {
   FileLocks,
   LockIoError,
+  LockOwnershipLost,
   LockReentrant,
   LockReleaseFailed,
   LockTimeout,
@@ -1453,6 +1454,7 @@ export class WorktreeManager {
           error instanceof LockIoError ||
           error instanceof LockReentrant ||
           error instanceof LockReleaseFailed ||
+          error instanceof LockOwnershipLost ||
           error instanceof LockTimeout
         )
           throw error;
