@@ -53,10 +53,10 @@ Root/CLI rules apply; `specs/session-orchestration.md` owns behavior.
   for normal release. Claim requires a wakeable result and freezes all available members.
   Later arrivals wait; pause, empty queues and duplicates cannot wake.
 - `inbox/service.ts` is native Effect v4. Scope owns its signal/fibers and repository connection;
-  one per-Session admission covers Stop, trusted human acceptance and actual transport start.
+  one per-Session admission covers Stop, fresh input acceptance and actual transport start.
   Core imports no platform/consumers; registered bridges execute. Submit/settle through execution owners.
 - Inbox-aware Stop pauses/cancels queued eligibility; legacy Stop only cancels execution.
-  Only trusted fresh human receipts clear pause (not role/userId/author). New human
+  Pause blocks only automatic wakes; fresh human and Agent-chat input both clear it. New
   acceptance cannot revive a canceled execution or discard an already prepared human input.
 - Fixed batch claims and submission fence precede synchronous transport start under the
   same gate, with no await between. Post-fence uncertainty never replays, including

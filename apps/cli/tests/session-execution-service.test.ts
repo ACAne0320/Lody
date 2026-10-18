@@ -11153,7 +11153,7 @@ describe('Operation Inbox execution boundary', () => {
   });
 
   it.each(['valid', 'absent', 'foreign', 'canceled'] as const)(
-    'restores only a matching, uncanceled durable human receipt (%s) after RPC loss',
+    'restores human identity only from a matching, uncanceled durable receipt (%s) after RPC loss',
     async (mode) => {
       const received: ContentBlock[][] = [];
       const f = inboxExecutionFixture(async (blocks) => {
@@ -11210,13 +11210,19 @@ describe('Operation Inbox execution boundary', () => {
             userId: 'user-1',
             config: f.message.acpSessionConfig,
           });
-          expect(f.store.inbox.accept({ ...prior, kind: 'task', inputId: 'agent-task' })).toBe(
-            false
-          );
+          expect(
+            (f.store as unknown as { db: Database.Database }).db
+              .prepare('SELECT MAX(paused) AS paused FROM inbox_sessions WHERE session_id=?')
+              .get(f.message.sessionId)
+          ).toEqual({ paused: 1 });
           expect(received).toHaveLength(1);
-        } else {
+        } else if (mode === 'canceled') {
           expect(received).toEqual([]);
           expect(f.store.inbox.pending('workspace-1')).toEqual([]);
+        } else {
+          // Post-Stop input without a matching receipt still runs, as an Agent-rank task.
+          expect(received).toHaveLength(1);
+          expect(f.store.inbox.inputKind(prior, 'human-input')).toBe('task');
         }
       } finally {
         await f.close();
@@ -11392,6 +11398,75 @@ describe('Operation Inbox execution boundary', () => {
     }
   });
 
+  it('runs an Agent chat sent after an Inbox-aware Stop and clears the pause', async () => {
+    const building = createDeferred();
+    const release = createDeferred();
+    const received: ContentBlock[][] = [];
+    let hold = true;
+    const f = inboxExecutionFixture(
+      async (blocks) => {
+        received.push(blocks);
+        return {};
+      },
+      async (blocks) => {
+        if (hold) {
+          building.resolve();
+          await release.promise;
+        }
+        return blocks as ContentBlock[];
+      }
+    );
+    try {
+      await f.accept();
+      const running = f.service.continueSession(f.message);
+      await building.promise;
+      const turnId = f.service.getExecutionSnapshot(f.message.sessionId).activeTurnId!;
+      await f.service.cancelSession({
+        cancelId: 'modern-stop',
+        type: 'session/cancel',
+        sessionId: f.message.sessionId,
+        turnId,
+        machineId: 'machine-1',
+        workspaceId: 'workspace-1' as WorkspaceId,
+      });
+      release.resolve();
+      await running;
+      expect(received).toEqual([]);
+      hold = false;
+      f.client.isCreated = () => true;
+      // An Agent chat carries no human receipt, so the Inbox records it as a task.
+      await f.doc.sessionData.commands.applyHistoryAction({
+        kind: 'upsert-turn',
+        turn: {
+          id: 'agent-chat',
+          role: 'user',
+          timestamp: '2026-10-18T02:02:17Z',
+          status: 'pending',
+          read: false,
+          items: [{ type: 'text', text: 'delegated work' }],
+          inputConfig: f.message.acpSessionConfig,
+          finished: true,
+          fileDiff: [],
+        },
+      });
+      await f.service.continueSession({ ...f.message, userTurnId: 'agent-chat' });
+      expect(received).toHaveLength(1);
+      expect(
+        (await (await createSessionBackend(f.doc)).readHistory()).find(
+          (entry) => entry.id === 'agent-chat'
+        )?.status
+      ).toBe('handled');
+      expect(
+        (f.store as unknown as { db: Database.Database }).db
+          .prepare('SELECT MAX(paused) AS paused FROM inbox_sessions WHERE session_id=?')
+          .get(f.message.sessionId)
+      ).toEqual({ paused: 0 });
+    } finally {
+      release.resolve();
+      await f.close();
+    }
+  });
+
   it('Stop accepted while input is being built submits nothing and retains all eight results', async () => {
     const building = createDeferred();
     const release = createDeferred();
@@ -11436,15 +11511,10 @@ describe('Operation Inbox execution boundary', () => {
       ).toEqual({ count: 8 });
       expect(f.store.inbox.pending('workspace-1')).toEqual([]);
       expect(
-        f.store.inbox.accept({
-          workspaceId: 'workspace-1',
-          sessionId: f.message.sessionId,
-          userId: 'user-1',
-          inputId: 'agent-note',
-          kind: 'task',
-          config: { prompt: 'pretend user' },
-        })
-      ).toBe(false);
+        (f.store as unknown as { db: Database.Database }).db
+          .prepare('SELECT MAX(paused) AS paused FROM inbox_sessions WHERE session_id=?')
+          .get(f.message.sessionId)
+      ).toEqual({ paused: 1 });
     } finally {
       release.resolve();
       await f.close();
