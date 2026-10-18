@@ -564,3 +564,8 @@ the creation snapshot. `project-worktree-archive.ts` backs up children before pa
 then deinitializes submodules and removes root worktrees. Unresolvable members retain
 the directory for GC retry. See the
 [single-writer decision](../../../../.agents/notes/proposed/architecture/2026-10-16-multi-repo-projects.md#runtime-storage-finding-and-worktree-primitives).
+
+Non-Git Project group members are registry-backed extra roots. `project-member-access.ts`
+resolves authority, reconciles links and prevents archive traversal into original directories.
+ACP startup negotiates access after initialize; per-root file state shares the session owner
+and physical-file save queues. See the multi-root integration section of the Project group Note.

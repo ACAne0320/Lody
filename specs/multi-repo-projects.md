@@ -58,7 +58,7 @@ directory. It is also the root for terminals, file search and previews. The main
 directory is not itself a Git repository. Each Member's Git data stays in its own
 repository: in `<data>/repos/<repo>/bare.git` for a GitHub Member, and in the
 original repository's `.git` for a local Member. Lody does not arrange Members by
-their original nesting, and it does not use symbolic links.
+their original nesting. Git Members do not use symbolic links; non-Git Members follow the access rules below.
 
 Directory nesting other than submodules is flattened as well. A repository that
 relies on a relative path such as `../lib` keeps working when the user gives that
@@ -142,7 +142,7 @@ secrets.
 
 Defining a Project only writes the definition. It does not clone, fetch, or create
 worktrees. When a conversation is created, the daemon on the execution machine
-creates a worktree and a new branch for each Member under the main directory.
+creates a worktree and a new branch for each Git Member under the main directory; non-Git Members follow the access rules above.
 All Members are included by default; a Member the user unticks when creating the
 conversation is not fetched. Every Member is editable; there is no read-only mode.
 
@@ -176,7 +176,7 @@ conversation is not fetched. Every Member is editable; there is no read-only mod
 
 ## Lifecycle
 
-Archive makes a backup commit for each Member and removes its worktree, one Member
+Archive makes a backup commit for each Git Member and removes its worktree, one Member
 at a time. The main directory is deleted only after every Member succeeds.
 Submodule Members are processed before their parents. Lody first makes the backup
 commit in the submodule and saves its task branch to a durable location for that

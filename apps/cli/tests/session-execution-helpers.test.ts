@@ -37,10 +37,19 @@ describe('session execution prompt helpers', () => {
     });
     const prompt = buildPrompt('Fix checkout', undefined, undefined, undefined, { projectRun });
     expect(prompt).toContain('Project group: "Shop"');
-    expect(prompt).toContain('"web/deps/api" (example/api), base "abc123"; submodule of "web"');
+    expect(prompt).toContain('"web/deps/api" (example/api), access worktree; base "abc123"; submodule of "web"');
     expect(prompt.indexOf('- "web":')).toBeLessThan(prompt.indexOf('- "api":'));
     expect(prompt).toContain('Project group instructions:\nKeep the API compatible.');
     expect(prompt).toContain('Fix checkout');
+    const web = Object.values(projectRun.members).find((member) => member.path === 'web')!;
+    web.src = { kind: 'local', machineId: 'm' as never, localProjectId: 'docs' as never };
+    web.access = 'additional';
+    const directoryPrompt = buildPrompt('Edit notes', undefined, undefined, undefined, {
+      projectRun, projectFileRoots: [{ id: 'member:web', absolutePath: '/registered/notes' }],
+    });
+    expect(directoryPrompt).toContain('"/registered/notes" (non-Git directory, not isolated)');
+    expect(directoryPrompt).not.toContain('base "main"');
+
   });
 
   it('keeps GitHub guidance without opting into first-task branch naming', () => {

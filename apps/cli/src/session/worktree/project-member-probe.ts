@@ -14,9 +14,27 @@ export const probeLocalProjectMember = Effect.fn('probeLocalProjectMember')(func
 ) {
   const git = yield* WorktreeGit;
   const fs = yield* FileSystem.FileSystem;
-  const root = yield* fs.realPath(
-    yield* git.run({ cwd: rootPath, args: ['rev-parse', '--show-toplevel'] })
-  );
+  const registeredRoot = yield* fs.realPath(rootPath);
+  const registeredStat = yield* fs.stat(registeredRoot);
+  if (registeredStat.type !== 'Directory')
+    return yield* Effect.fail(
+      new WorktreeGitExecutionFailed({
+        message: 'Project group member is not a directory',
+        cause: undefined,
+      })
+    );
+  const gitRoot = yield* git
+    .run({ cwd: registeredRoot, args: ['rev-parse', '--show-toplevel'] })
+    .pipe(
+      Effect.catchTag('WorktreeGitCommandFailed', (error) =>
+        error.code === 128 &&
+        error.stderr.includes('not a git repository (or any of the parent directories)')
+          ? Effect.succeed(null)
+          : Effect.fail(error)
+      )
+    );
+  if (gitRoot === null) return { isGit: false, submodules: [] } satisfies ProjectLocalMemberProbe;
+  const root = yield* fs.realPath(gitRoot);
   const run = (args: readonly string[]) => git.run({ cwd: root, args });
   const optionalConfig = (args: readonly string[]) =>
     run(args).pipe(

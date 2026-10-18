@@ -1,3 +1,4 @@
+import { reconcileProjectMemberLink } from './project-member-access';
 import { existsSync } from 'node:fs';
 import { worktreeGitLegacy } from './git-execution-legacy';
 import path from 'node:path';
@@ -46,12 +47,14 @@ export async function resolveProjectGroupRepositories(
       source: WorktreeManagerSource;
       repoId: ReturnType<typeof deriveRepoIdFromGitHubRepo>;
       url: string;
+      isGit: boolean;
     }
   >();
   for (const [id, member] of Object.entries(run.members)) {
     if (member.src.kind === 'github') {
       const url = buildGitHubCloneUrl(member.src.repoFullName);
       resolved.set(id, {
+        isGit: true,
         repoId: deriveRepoIdFromGitHubRepo(member.src.repoFullName),
         source: { kind: 'github', repoUrl: url },
         url,
@@ -61,10 +64,16 @@ export async function resolveProjectGroupRepositories(
         throw new Error('Project group member belongs to another machine');
       const localRoot = await options.resolveLocalRoot(member.src.localProjectId);
       if (!localRoot) throw new Error(`Project group member is unavailable: ${id}`);
+      const probe = await worktreeGitLegacy.probeLocalProjectMember(localRoot);
+      if (!probe.isGit && member.placement.kind !== 'root')
+        throw new Error('Non-Git project group members cannot be submodules');
       const originalRootPath = await realpath(
-        await worktreeGitLegacy.run({ cwd: localRoot, args: ['rev-parse', '--show-toplevel'] })
+        probe.isGit
+          ? await worktreeGitLegacy.run({ cwd: localRoot, args: ['rev-parse', '--show-toplevel'] })
+          : localRoot
       );
       resolved.set(id, {
+        isGit: probe.isGit,
         repoId: deriveRepoIdFromLocalProjectPath(originalRootPath),
         source: { kind: 'local-shared', originalRootPath },
         url: originalRootPath,
@@ -75,6 +84,7 @@ export async function resolveProjectGroupRepositories(
   for (const [id, member] of Object.entries(run.members)) {
     if (member.src.kind !== 'local') continue;
     const target = resolved.get(id)!;
+    if (!target.isGit) continue;
     const state = await localProjectsLegacy.getLocalProjectGitStateAtRootPath(target.url);
     if (!state.git) throw new Error(`Project group member is not a Git repository: ${id}`);
     if (state.githubRepoFullName) {
@@ -110,6 +120,7 @@ export async function materializeProjectGroup(options: {
   logger: Logger;
   resolveLocalRoot: (id: LocalProjectId) => Promise<string | null>;
   brokerAuth: (source: WorktreeManagerSource) => Promise<GitCredentialBrokerAuth | undefined>;
+  supportsAdditionalDirectories?: boolean;
   setup: (member: SessionProjectMember, workdir: string) => Promise<void>;
 }): Promise<{ workdir: string; run: SessionProjectRun }> {
   let result!: { workdir: string; run: SessionProjectRun };
@@ -135,6 +146,24 @@ export async function materializeProjectGroup(options: {
         const member = run.members[id as keyof typeof run.members]!;
         if (member.placement.kind === 'submodule' && pending.has(member.placement.parent)) continue;
         const target = resolved.get(id)!;
+        if (!target.isGit) {
+          if (member.placement.kind !== 'root')
+            throw new Error('Non-Git member cannot be a submodule');
+          // Before ACP initialization, register the directory without a link.
+          // The negotiated startup callback selects/reconciles the final access mode.
+          const additional = options.supportsAdditionalDirectories !== false;
+          await reconcileProjectMemberLink(root, member.placement.dir, target.url, additional);
+          member.access = additional ? 'additional' : 'link';
+          delete member.branch;
+          delete member.repoFullName;
+          delete member.dirty;
+          delete member.unpushed;
+          delete member.diff;
+          await publish(run);
+          pending.delete(id);
+          continue;
+        }
+        member.access = 'worktree';
         const manager = getWorktreeManager({
           repoId: target.repoId,
           source: target.source,
@@ -204,6 +233,7 @@ export async function materializeProjectGroup(options: {
     }
     for (const [id, member] of Object.entries(run.members)) {
       const target = resolved.get(id)!;
+      if (!target.isGit) continue;
       await getWorktreeManager({
         repoId: target.repoId,
         source: target.source,

@@ -3,6 +3,9 @@ import type { SessionMeta, SessionProjectRun } from '@lody/shared';
 /** Project group compatibility fields are published with the same run snapshot. */
 export function projectRunMetaPatch(run: SessionProjectRun): Partial<SessionMeta> {
   const members = Object.values(run.members).sort((a, b) => a.o - b.o);
+  const gitMembers = members.filter(
+    (member) => member.access !== 'additional' && member.access !== 'link'
+  );
   const first = members[0];
   if (!first) throw new Error('A project group must have members');
   const patch: Partial<SessionMeta> = {
@@ -13,11 +16,13 @@ export function projectRunMetaPatch(run: SessionProjectRun): Partial<SessionMeta
         : {
             kind: 'local',
             localProjectId: first.src.localProjectId,
-            branch: first.base,
-            useWorktree: true,
+            ...(first.access === 'additional' || first.access === 'link'
+              ? {}
+              : { branch: first.base }),
+            useWorktree: first.access !== 'additional' && first.access !== 'link',
             ...(first.repoFullName ? { githubRepoFullName: first.repoFullName } : {}),
           },
-    isWorktree: true,
+    isWorktree: first.access !== 'additional' && first.access !== 'link',
   };
   if (first.branch) patch.branchName = first.branch;
   if (first.src.kind === 'github') patch.repoFullName = first.src.repoFullName;
@@ -27,8 +32,8 @@ export function projectRunMetaPatch(run: SessionProjectRun): Partial<SessionMeta
     ['dirty', 'workspaceDirty'],
     ['unpushed', 'workspaceUnpushed'],
   ] as const) {
-    if (members.some((member) => member[field] === true)) patch[target] = true;
-    else if (members.every((member) => member[field] === false)) patch[target] = false;
+    if (gitMembers.some((member) => member[field] === true)) patch[target] = true;
+    else if (gitMembers.every((member) => member[field] === false)) patch[target] = false;
   }
   if (members.every((member) => member.diff !== undefined)) {
     patch.diffStats = {

@@ -30,6 +30,7 @@ import {
 import {
   CURRENT_MACHINE_PROTOCOL_CAPABILITIES,
   machineSupportsMultiRepoProject,
+  machineSupportsProjectFileRoots,
 } from '../src/machine-protocol-capabilities';
 
 const project = () =>
@@ -239,6 +240,15 @@ describe('workspace Projects', () => {
   });
   it('requires explicit multi-repository capability', () => {
     expect(machineSupportsMultiRepoProject({})).toBe(false);
+    expect(machineSupportsProjectFileRoots({})).toBe(false);
+    expect(machineSupportsProjectFileRoots({ protocolCapabilities: { multiRepoProject: 1 } })).toBe(
+      false
+    );
+    expect(
+      machineSupportsProjectFileRoots({
+        protocolCapabilities: CURRENT_MACHINE_PROTOCOL_CAPABILITIES,
+      })
+    ).toBe(true);
     expect(
       machineSupportsMultiRepoProject({
         protocolCapabilities: CURRENT_MACHINE_PROTOCOL_CAPABILITIES,

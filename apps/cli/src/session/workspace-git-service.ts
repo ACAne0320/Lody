@@ -120,6 +120,7 @@ export class WorkspaceGitService {
     const run = SessionProjectRunSchema.parse(snapshot);
     const root = await realpath(workdir);
     for (const member of Object.values(run.members)) {
+      if (member.access === 'additional' || member.access === 'link') continue;
       try {
         const cwd = await realpath(path.join(root, member.path));
         const resolved = resolveSessionFilePath([{ id: 'main', absolutePath: root }], cwd);

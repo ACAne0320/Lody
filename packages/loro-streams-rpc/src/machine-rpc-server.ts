@@ -493,12 +493,14 @@ type RpcServerDeps = {
   getCodeCollabLspDefinition?: (args: {
     sessionId: SessionId;
     path: string;
+    rootId?: string;
     line?: number;
     character?: number;
   }) => Promise<CodeCollabV2LspUnsupported>;
   getCodeCollabLspReferences?: (args: {
     sessionId: SessionId;
     path: string;
+    rootId?: string;
     line?: number;
     character?: number;
   }) => Promise<CodeCollabV2LspUnsupported>;
@@ -1661,6 +1663,7 @@ export class LoroStreamsMachineRpcServer {
           const response = await this.deps.getCodeCollabLspDefinition({
             sessionId: params.sessionId as SessionId,
             path: params.path,
+            ...(params.rootId === undefined ? {} : { rootId: params.rootId }),
             ...(params.line === undefined ? {} : { line: params.line }),
             ...(params.character === undefined ? {} : { character: params.character }),
           });
@@ -1684,6 +1687,7 @@ export class LoroStreamsMachineRpcServer {
           const response = await this.deps.getCodeCollabLspReferences({
             sessionId: params.sessionId as SessionId,
             path: params.path,
+            ...(params.rootId === undefined ? {} : { rootId: params.rootId }),
             ...(params.line === undefined ? {} : { line: params.line }),
             ...(params.character === undefined ? {} : { character: params.character }),
           });

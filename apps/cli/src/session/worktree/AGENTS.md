@@ -111,4 +111,4 @@ and file responsibilities: [../README.md](../README.md).
   it acts only on `archived` or `deleted` owners, never on `unknown`, and only once
   workspace metadata is complete. Contract: specs/session-worktree-lifecycle.md.
 
-- Project paths preserve repo storage/locks. Member probes are read-only and expose no host paths.
+- Project roots use registrations. Repair links; archive unlinks without following targets.

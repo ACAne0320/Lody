@@ -1,9 +1,24 @@
+import {
+  reconcileProjectMemberLink,
+  removeProjectMemberLinks,
+  resolveProjectFileRoots,
+  resolveProjectFileTarget,
+} from './worktree/project-member-access';
 import { worktreeGitLegacy } from './worktree/git-execution-legacy';
 import { archiveProjectGroup } from './worktree/project-worktree-archive';
 import { existsSync } from 'node:fs';
 import { materializeProjectGroup } from './worktree/project-worktrees';
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile, readFile, symlink } from 'node:fs/promises';
+import {
+  mkdtemp,
+  rm,
+  writeFile,
+  readFile,
+  symlink,
+  mkdir,
+  unlink,
+  realpath,
+} from 'node:fs/promises';
 import { devNull, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -15,6 +30,27 @@ import type { Logger } from '@/utils/logger';
 import type { SessionExec } from '@/lib/git/resolve-git-branch-name';
 import { WorkspaceGitService } from './workspace-git-service';
 
+const projectRun = (): SessionProjectRun => ({
+  id: '12345678-1234-4234-8234-123456789012' as never,
+  name: 'Example',
+  root: 'project-example-12345678-1234-4234-8234-123456789012',
+  members: {
+    web: {
+      o: 0,
+      src: { kind: 'github', repoFullName: 'example/web' },
+      placement: { kind: 'root', dir: 'web' },
+      path: 'web',
+      base: 'main',
+    },
+    api: {
+      o: 1,
+      src: { kind: 'github', repoFullName: 'example/api' },
+      placement: { kind: 'root', dir: 'api' },
+      path: 'api',
+      base: 'main',
+    },
+  },
+});
 const exec = promisify(execFile);
 const owner = 'owner' as SessionId;
 const child = 'child' as SessionId;
@@ -81,28 +117,6 @@ describe('WorkspaceGitService', () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  const projectRun = (): SessionProjectRun => ({
-    id: '12345678-1234-4234-8234-123456789012' as never,
-    name: 'Example',
-    root: 'project-example-12345678-1234-4234-8234-123456789012',
-    members: {
-      web: {
-        o: 0,
-        src: { kind: 'github', repoFullName: 'example/web' },
-        placement: { kind: 'root', dir: 'web' },
-        path: 'web',
-        base: 'main',
-      },
-      api: {
-        o: 1,
-        src: { kind: 'github', repoFullName: 'example/api' },
-        placement: { kind: 'root', dir: 'api' },
-        path: 'api',
-        base: 'main',
-      },
-    },
-  });
-
   it('serializes owner and child member mutations and recovers after a failed mutation', async () => {
     const { service, meta } = fixture();
     meta.set(owner, { projectRun: projectRun() });
@@ -166,6 +180,7 @@ describe('WorkspaceGitService', () => {
     await withRepo(async (root, git) => {
       await git(['remote', 'add', 'origin', 'git@github.com:acme/api.git']);
       expect(await worktreeGitLegacy.probeLocalProjectMember(root)).toEqual({
+        isGit: true,
         repoFullName: 'acme/api',
         submodules: [],
       });
@@ -174,6 +189,7 @@ describe('WorkspaceGitService', () => {
       await writeFile(join(root, '.gitmodules'), modules);
       const config = await readFile(join(root, '.git/config'), 'utf8');
       expect(await worktreeGitLegacy.probeLocalProjectMember(root)).toEqual({
+        isGit: true,
         repoFullName: 'acme/api',
         submodules: [
           { path: 'deps/proto', url: '../proto.git', repoFullName: 'acme/proto' },
@@ -187,6 +203,69 @@ describe('WorkspaceGitService', () => {
       await expect(worktreeGitLegacy.probeLocalProjectMember(root)).rejects.toThrow();
     });
   });
+
+  it.each([true, false])(
+    'materializes and archives non-Git members without touching their source (additional=%s)',
+    async (supportsAdditionalDirectories) => {
+      await withRepo(async (web, git) => {
+        await git([
+          '-c',
+          'user.name=Test',
+          '-c',
+          'user.email=test@example.com',
+          'commit',
+          '--allow-empty',
+          '-m',
+          'base',
+        ]);
+        const data = await mkdtemp(join(tmpdir(), 'non-git-group-'));
+        const docs = await mkdtemp(join(tmpdir(), 'non-git-docs-'));
+        vi.stubEnv('LODY_DATA_DIR', data);
+        await writeFile(join(docs, 'keep.txt'), 'original');
+        const { meta, workspaceDocument } = fixture();
+        const run = projectRun();
+        for (const [id, member] of Object.entries(run.members)) {
+          member.src = {
+            kind: 'local',
+            machineId: 'machine' as never,
+            localProjectId: id as never,
+          };
+          member.base = 'HEAD';
+        }
+        meta.set(owner, { projectRun: run, machineId: 'machine' as never });
+        const options = {
+          sessionId: owner,
+          machineId: 'machine',
+          workspaceDocument,
+          supportsAdditionalDirectories,
+          logger: { debug() {}, info() {}, warn() {}, trace() {} } as unknown as Logger,
+          resolveLocalRoot: async (id: string) => (id === 'web' ? web : docs),
+          brokerAuth: async () => undefined,
+          setup: async () => {},
+        };
+        try {
+          const prepared = await materializeProjectGroup(options);
+          const member = Object.values(prepared.run.members)[1]!;
+          expect(member.access).toBe(supportsAdditionalDirectories ? 'additional' : 'link');
+          expect(member.branch).toBeUndefined();
+          expect(existsSync(join(prepared.workdir, 'api'))).toBe(!supportsAdditionalDirectories);
+          meta.set(owner, { ...meta.get(owner), isArchived: true });
+          await archiveProjectGroup({
+            ...options,
+            worktreePath: prepared.workdir,
+            cleanup: async () => {},
+          });
+          expect(existsSync(prepared.workdir)).toBe(false);
+          expect(await readFile(join(docs, 'keep.txt'), 'utf8')).toBe('original');
+          expect(existsSync(join(docs, '.git'))).toBe(false);
+        } finally {
+          await rm(data, { recursive: true, force: true });
+          await rm(docs, { recursive: true, force: true });
+        }
+      });
+    },
+    180_000
+  );
 
   it.each(['roots', 'submodule', 'submodule-cache'])(
     'materializes, observes, archives and restores %s without losing branches',
@@ -437,5 +516,69 @@ describe('WorkspaceGitService', () => {
     await Promise.all([first, second]);
     expect(meta.get(owner)?.branchName).toBe('feature/new');
     expect(meta.get(child)).toEqual({ parentSessionId: owner });
+  });
+});
+
+describe('non-Git member access', () => {
+  it('rebuilds a replaced link from registration, rejects escapes and preserves target on cleanup', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'project-roots-'));
+    try {
+      const main = join(base, 'main');
+      const docs = join(base, 'docs');
+      const outside = join(base, 'outside');
+      for (const folder of [main, docs, outside]) await mkdir(folder);
+      await writeFile(join(docs, 'keep.txt'), 'original');
+      await writeFile(join(outside, 'secret.txt'), 'outside');
+      const run = projectRun();
+      const [id, member] = Object.entries(run.members)[0]!;
+      member.src = { kind: 'local', machineId: 'm' as never, localProjectId: 'docs' as never };
+      member.access = 'link';
+      member.placement = { kind: 'root', dir: 'docs' };
+      member.path = 'docs';
+      await reconcileProjectMemberLink(main, 'docs', docs, false);
+      const roots = await resolveProjectFileRoots(main, run, 'm', async () => docs);
+      expect(resolveProjectFileTarget(roots, 'docs/keep.txt')).toMatchObject({
+        rootId: `member:${id}`,
+        relativePath: 'keep.txt',
+      });
+      await unlink(join(main, 'docs'));
+      await symlink(outside, join(main, 'docs'), 'junction');
+      expect(resolveProjectFileTarget(roots, 'docs/secret.txt')).toBeUndefined();
+      await reconcileProjectMemberLink(main, 'docs', docs, false);
+      expect(await realpath(join(main, 'docs'))).toBe(await realpath(docs));
+      await symlink(outside, join(docs, 'escape'), 'junction');
+      expect(resolveProjectFileTarget(roots, 'escape/secret.txt', `member:${id}`)).toBeUndefined();
+      await symlink(join(outside, 'missing'), join(docs, 'dangling'), 'dir');
+      expect(resolveProjectFileTarget(roots, 'dangling/file.txt', `member:${id}`)).toBeUndefined();
+      await removeProjectMemberLinks(main, run);
+      expect(existsSync(join(main, 'docs'))).toBe(false);
+      expect(await readFile(join(docs, 'keep.txt'), 'utf8')).toBe('original');
+      expect(await readFile(join(outside, 'secret.txt'), 'utf8')).toBe('outside');
+      await expect(
+        reconcileProjectMemberLink(main, 'docs', join(base, 'missing'), false)
+      ).rejects.toThrow();
+      await mkdir(join(main, 'docs'));
+      await writeFile(join(main, 'docs', 'agent.txt'), 'keep');
+      await expect(reconcileProjectMemberLink(main, 'docs', docs, false)).rejects.toThrow(
+        'real entry'
+      );
+      expect(await readFile(join(main, 'docs', 'agent.txt'), 'utf8')).toBe('keep');
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+  it('probes non-Git directories and rejects missing roots', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'non-git-member-'));
+    try {
+      expect(await worktreeGitLegacy.probeLocalProjectMember(root)).toEqual({
+        isGit: false,
+        submodules: [],
+      });
+      await expect(
+        worktreeGitLegacy.probeLocalProjectMember(join(root, 'missing'))
+      ).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

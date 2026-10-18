@@ -1,3 +1,8 @@
+import { WorkspaceGitService } from './workspace-git-service';
+import {
+  reconcileProjectMemberLink,
+  resolveProjectFileRoots,
+} from './worktree/project-member-access';
 import { materializeProjectGroup, projectGroupDirectory } from './worktree/project-worktrees';
 import { resolveGitIdentityPolicyLegacy } from './git-identity-policy';
 import {
@@ -424,6 +429,7 @@ export type SessionMonitorRuntimeInfo = {
 
 export interface CreateAgentConfig {
   resolveWorktreeProject?: AgentClientOptions['resolveWorktreeProject'];
+  resolveAdditionalDirectories?: AgentClientOptions['resolveAdditionalDirectories'];
   cliType: AgentConfigCliType;
   agentType: string;
   command: string;
@@ -1476,6 +1482,42 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
       command: launch.command,
       args: launch.args,
       env: launch.env,
+      resolveAdditionalDirectories: config.projectRun
+        ? async (supported) => {
+            const ownerId = config.parentSessionId ?? config.sessionId!;
+            const owner = new WorkspaceGitService({
+              workspaceDocument: this.workspaceDocument,
+              logger: this.logger,
+            });
+            let directories: string[] = [];
+            await owner.updateProjectRun(ownerId, async (snapshot) => {
+              const roots = await resolveProjectFileRoots(
+                session.getWorkdir(),
+                snapshot,
+                this.machineId,
+                (id) => this.resolveLocalProjectRootPath(id),
+                undefined,
+                false
+              );
+              for (const [id, member] of Object.entries(snapshot.members)) {
+                if (member.access !== 'additional' && member.access !== 'link') continue;
+                const target = roots.find((root) => root.id === `member:${id}`)!;
+                if (member.placement.kind !== 'root') throw new Error('Invalid directory member');
+                await reconcileProjectMemberLink(
+                  roots[0]!.absolutePath,
+                  member.placement.dir,
+                  target.absolutePath,
+                  supported
+                );
+                member.access = supported ? 'additional' : 'link';
+              }
+              config.projectRun = snapshot;
+              directories = supported ? roots.slice(1).map((root) => root.absolutePath) : [];
+              return snapshot;
+            });
+            return directories;
+          }
+        : undefined,
       resolveWorktreeProject: config.projectRun
         ? async () => ({ version: 1, originProjectPath: projectGroupDirectory(config.projectRun!) })
         : localProjectId

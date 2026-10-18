@@ -1,3 +1,4 @@
+import { decodeSessionFilePath } from './project-path';
 import type { LodyRateLimitsCapability } from 'acp-extension-core';
 import type { MemoryBinding } from './memory-provider';
 import type { AcpModelControls } from './acp-model-capabilities';
@@ -1545,6 +1546,14 @@ export type SessionFileTransport = 'r2' | 'local';
  * absolute or parent-traversing path when it reaches a different machine.
  */
 export function isSessionFileSourcePath(value: string): boolean {
+  if (value.startsWith('\0')) {
+    const decoded = decodeSessionFilePath(value);
+    return (
+      decoded !== undefined &&
+      decoded.rootId !== 'main' &&
+      isSessionFileSourcePath(decoded.relativePath)
+    );
+  }
   if (value.length === 0 || value.includes('\0')) return false;
   const normalized = value.replace(/\\/g, '/');
   if (normalized === '.' || normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized)) {

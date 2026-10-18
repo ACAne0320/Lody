@@ -571,6 +571,7 @@ function extractImageGenerationContentFields(content: unknown): {
 export interface AgentClientOptions {
   /** Resolve logical project identity only after worktreeProject capability negotiation. */
   resolveWorktreeProject?: () => Promise<LodyWorktreeProject>;
+  resolveAdditionalDirectories?: (supported: boolean) => Promise<string[]>;
   sessionId: SessionId;
   workspaceId?: WorkspaceId;
   machineId?: MachineId;
@@ -637,6 +638,7 @@ export class AgentClient implements acp.Client {
   private readonly subagentSnapshots = new Map<string, LodySubagentSnapshot>();
   private readonly devinSubagentTaskIds = new Set<string>();
   private worktreeProject?: LodyWorktreeProject;
+  private additionalDirectories: string[] = [];
   private authMethods: acp.AuthMethod[] = [];
   private authenticationRequired = false;
   private acknowledgedSteerCapability: AcknowledgedSteerCapability | null = null;
@@ -1783,8 +1785,12 @@ export class AgentClient implements acp.Client {
           }
         : {}),
     };
-    if (clientIdentifier === undefined && Object.keys(lody).length === 0) return {};
+    const roots = this.additionalDirectories.length
+      ? { additionalDirectories: this.additionalDirectories }
+      : {};
+    if (clientIdentifier === undefined && Object.keys(lody).length === 0) return roots;
     return {
+      ...roots,
       _meta: {
         ...(clientIdentifier !== undefined ? { clientIdentifier } : {}),
         ...(Object.keys(lody).length > 0 ? { lody } : {}),
@@ -1883,6 +1889,7 @@ export class AgentClient implements acp.Client {
     const grokClientIdentifier = this.getGrokClientIdentifier();
     const devinClientCapabilitiesMeta = this.getDevinClientCapabilitiesMeta();
     this.worktreeProject = undefined;
+    this.additionalDirectories = [];
     this.logger.debug(
       `[${this.options.sessionId}] Starting ACP client (workdir=${workdir} resumeSessionId=${
         resumeSessionId ?? 'none'
@@ -2040,6 +2047,14 @@ export class AgentClient implements acp.Client {
       this.options.resolveWorktreeProject
     ) {
       this.worktreeProject = await withAbort(this.options.resolveWorktreeProject(), startupAbort);
+    }
+    if (this.options.resolveAdditionalDirectories) {
+      this.additionalDirectories = await withAbort(
+        this.options.resolveAdditionalDirectories(
+          initResponse.agentCapabilities?.sessionCapabilities?.additionalDirectories != null
+        ),
+        startupAbort
+      );
     }
     const sessionStartMeta = this.getSessionStartMeta();
 

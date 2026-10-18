@@ -1,3 +1,4 @@
+import { removeProjectMemberLinks } from './project-member-access';
 import path from 'node:path';
 import { realpath, rmdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -43,10 +44,20 @@ export async function archiveProjectGroup(options: {
     const expected = path.join(reposRoot, run.root, 'worktrees', options.sessionId);
     const root = await realpath(options.worktreePath);
     if (root !== expected) throw new Error('Project group archive path mismatch');
-    const repositories = await resolveProjectGroupRepositories(run, options);
-    const entries = Object.entries(run.members).sort(
-      ([, a], [, b]) => b.path.split('/').length - a.path.split('/').length
+    const repositories = await resolveProjectGroupRepositories(
+      {
+        ...run,
+        members: Object.fromEntries(
+          Object.entries(run.members).filter(
+            ([, member]) => member.access !== 'additional' && member.access !== 'link'
+          )
+        ),
+      },
+      options
     );
+    const entries = Object.entries(run.members)
+      .filter(([, member]) => member.access !== 'additional' && member.access !== 'link')
+      .sort(([, a], [, b]) => b.path.split('/').length - a.path.split('/').length);
     const managers = new Map(
       entries.map(([id, member]) => {
         const repo = repositories.get(id)!;
@@ -141,6 +152,7 @@ export async function archiveProjectGroup(options: {
       if (!member.branch) throw new Error('Project group member has no saved branch');
       await managers.get(id)!.removeBackedUpProjectWorktree(options.sessionId, member.branch);
     }
+    await removeProjectMemberLinks(root, run);
     // Input attachments are reproducible from their frozen blob references. Do not
     // erase other group-root files: there is no Git repository backing them up.
     const attachments = path.join(root, '.lody', 'attachments');

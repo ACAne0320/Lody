@@ -1,3 +1,4 @@
+import { resolveProjectFileRoots } from './worktree/project-member-access';
 import { readMessageAuthor } from '@lody/shared';
 import { type AcpLauncher, resolveAcpLauncher } from '@/agent/acp-analytics';
 import type { LodyRateLimitsCapability } from 'acp-extension-core';
@@ -6463,6 +6464,18 @@ export class SessionExecutionService {
                 );
               }
             }
+            const projectRun =
+              !hasPriorAcpSession && !message.parentSessionId
+                ? (await sessionDoc.getMetaState())?.projectRun
+                : undefined;
+            const projectFileRoots = projectRun
+              ? await resolveProjectFileRoots(
+                  session.getWorkdir(),
+                  projectRun,
+                  self.deps.machineId,
+                  (id) => self.deps.sessionManager.resolveLocalProjectRootPath(id)
+                )
+              : undefined;
             const sessionInputBlocks = resolveSessionExecutionInputBlocks({
               ...agentConfig,
               prompt: buildPrompt(
@@ -6472,10 +6485,8 @@ export class SessionExecutionService {
                 fromFeedbackPostId,
                 {
                   branchToRename,
-                  projectRun:
-                    !hasPriorAcpSession && !message.parentSessionId
-                      ? (await sessionDoc.getMetaState())?.projectRun
-                      : undefined,
+                  projectRun,
+                  projectFileRoots,
                 }
               ),
             });

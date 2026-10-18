@@ -48,7 +48,7 @@ Alice 的产品由本地文件夹 `web`（远端 `acme/web`）、`api`（远端 
 不搬目录。主目录就是 Agent Provider 的执行目录，也是终端、文件搜索和预览的根目录。
 主目录本身不是 Git 仓库。每个 Member 的 Git 数据仍在它自己的仓库里：GitHub Member
 在 `<data>/repos/<repo>/bare.git`，本地 Member 在原仓库的 `.git`。Lody 不按原有的
-嵌套关系摆放 Member，也不使用符号链接。
+嵌套关系摆放 Member。Git Member 不使用符号链接；非 Git Member 按下文接入规则处理。
 
 子模块以外的目录嵌套照样平铺。原来依赖 `../lib` 这类相对路径的仓库，只要把 Member
 的目录名设成原来的名字，就能继续使用这些引用。
@@ -110,7 +110,7 @@ Member 或待添加的仓库进行匹配。能自动探测到的关系会直接�
 ## 创建与物化
 
 定义 Project 时只写入定义，不 clone、不 fetch，也不创建 worktree。新建对话时，
-Daemon 在执行机器上为每个 Member 创建一个 worktree 和新分支，放到主目录下。默认
+Daemon 在执行机器上为每个 Git Member 创建一个 worktree 和新分支，非 Git Member 按接入规则处理。默认
 包含全部 Member；用户在创建对话时取消勾选的 Member 不会被拉取。所有 Member 都是
 可编辑的，没有只读模式。
 
@@ -135,7 +135,7 @@ Daemon 在执行机器上为每个 Member 创建一个 worktree 和新分支，�
 
 ## 生命周期
 
-归档时逐个 Member 执行备份提交并移除其 worktree；全部成功后才删除主目录。子模块
+归档时逐个 Git Member 执行备份提交并移除其 worktree；全部成功后才删除主目录。子模块
 Member 先于父 Member 处理：先在子模块中做备份提交，并把它的任务分支保存到该仓库的
 持久位置（GitHub Member 为 `<data>/repos/<repo>/bare.git`，本地 Member 为原仓库），
 因为子模块的 Git 数据位于父 worktree 的管理目录中，会随父 worktree 一起删除；之后

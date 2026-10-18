@@ -1,4 +1,8 @@
-import { resolveSessionFilePath } from '../project-path';
+import {
+  resolveSessionFilePath,
+  encodeSessionFilePath,
+  type SessionFileRoot,
+} from '../project-path';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -303,6 +307,7 @@ function resolveWorkspacePathTolerantly(
 export function resolveFilePreviewPath(args: {
   readonly workspaceRoot: string | null;
   readonly requestedPath: string;
+  readonly sessionRoots?: readonly SessionFileRoot[];
   readonly extraRoots?: readonly string[];
   readonly options?: FilePreviewPathPolicyOptions;
 }): FilePreviewPathResolution {
@@ -346,6 +351,7 @@ export function resolveFilePreviewPath(args: {
   // Authorization compares symlink-resolved paths only.
   const realRoots = [
     realWorkspaceRoot,
+    ...(args.sessionRoots ?? []).map((root) => resolveRealPathOrNull(root.absolutePath)),
     ...extraRoots.map((root) => resolveRealPathOrNull(root)),
   ].filter((root): root is string => root !== null);
   // Classification-only root set, used when the target does NOT exist and so has
@@ -476,17 +482,20 @@ export function resolveFilePreviewPath(args: {
     };
   }
 
-  const workspaceRelative =
-    realWorkspaceRoot === null ? null : path.relative(realWorkspaceRoot, realTarget);
-  const external = realWorkspaceRoot === null || !isWithinRoot(realWorkspaceRoot, realTarget);
+  const sessionRoots = (
+    args.sessionRoots ??
+    (realWorkspaceRoot ? [{ id: 'main', absolutePath: realWorkspaceRoot }] : [])
+  ).flatMap((root) => {
+    const absolutePath = resolveRealPathOrNull(root.absolutePath);
+    return absolutePath ? [{ ...root, absolutePath }] : [];
+  });
+  const sessionFile = resolveSessionFilePath(sessionRoots, realTarget);
+  const external = sessionFile === undefined;
   return {
     ok: true,
     resolved: {
       absolutePath: realTarget,
-      reportedPath:
-        external || workspaceRelative === null
-          ? realTarget
-          : workspaceRelative.split(path.sep).join('/'),
+      reportedPath: sessionFile ? encodeSessionFilePath(sessionFile) : realTarget,
       external,
       sizeBytes: stat.size,
     },

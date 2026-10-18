@@ -451,3 +451,35 @@ NUL 不能出现在真实文件名中，因此不与主目录的任何真实文�
 
 探测结果增加 `isGit: boolean`；旧 daemon 的成功探测仅可能是 Git，解析旧结果时默认 true。
 本提交只提供契约及 Git 探测字段，非 Git 探测、物化、授权和完整文件能力在后续 runtime PR 实现。
+
+
+## 多根目录 daemon 接入
+
+`multi-repo-extra-roots-runtime` 叠在契约分支之上。非 Git 接入和根目录文件请求须使用
+`machineSupportsProjectFileRoots`，对应 `projectFileRoots: 1`；旧的 `multiRepoProject: 1`
+只证明支持 Git 项目组，不能据此开放非 Git 成员。
+
+本机注册表是唯一根目录来源。物化只对 Git 成员分配分支；非 Git 成员在 ACP 初始化前注册
+额外目录，随后在每次启动的实际 `sessionCapabilities.additionalDirectories` 声明后，由
+owner 串行链发布 `additional` 或 `link`。支持时把真实目录传入 ACP 生命周期请求；否则
+重建链接（Windows 为 junction）。链接模式遇到真实同名条目会拒绝接入并保留条目；额外目录模式不占用该名称。
+首轮清单说明「不隔离」，并仅在运行时给 Agent 提供额外目录的真实路径，不存入同步元数据。
+
+文件读取每次重新解析注册表与 realpath；链接变化从注册表修复，不能扩大授权。缺失或不可读
+成员只使该根目录不可用，其他根目录仍可读；启动必须具备所有选中成员。预览不激活索引。
+编辑请求按根目录选择现有服务状态，所有根目录共用物理文件保存串行链；索引发布按 owner
+串行合并各根目录快照，监听订阅带根目录身份，防止后一个根目录替换前一个订阅。主目录保持
+按 Git Member 扫描；非 Git 根目录使用已有文件系统扫描与 diff 快照。LSP 既有后端尚未接线，
+所有根目录保留 `lsp_not_wired`，但请求先做同样的根目录授权。
+
+每轮证据、Agent 输出资源及附件来源使用统一根目录解析。快照库的局部键禁用 NUL，CLI 在
+存储边界把非主目录键转换为 `/lody-roots/member:<id>/<relativePath>` 并在返回时还原；
+前导斜杠不可能与既有纯相对键冲突，该局部键绝不作为磁盘路径使用，不改上游存储库。
+归档跳过非 Git 备份，unlink 已知成员链接，检查残留软链接后才清理主目录；目标缺失不阻止
+unlink，真实条目或未知链接保留供处理，不递归进入目标。
+
+原生 Effect 探测保留 Git 失败分类，仅正常的「不在 Git 仓库」得到 isGit=false；损坏仓库、
+权限和进程清理失败仍上报。接入与发布沿用既有 Promise 会话 owner，不引入第二个后台 owner
+或扩大 Effect 迁移；根目录工具只完成有限文件系统操作，无常驻资源。失败保留已发布状态与
+目录以便重试；单根目录读取失败不会禁止其他根目录使用。验证以临时目录、实际 Git 和假
+Provider 边界为主；真实 Provider、Windows junction 与 UI 端到端仍需跨平台验收。

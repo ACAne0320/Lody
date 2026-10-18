@@ -581,3 +581,43 @@ The probe adds `isGit: boolean`; parsing older successful probes defaults to tru
 older daemons accepted only Git repositories. This commit provides contracts and the Git
 probe field only; non-Git probing, materialization, authorization and full file access follow
 in the runtime PR.
+
+
+## Daemon multi-root integration
+
+`multi-repo-extra-roots-runtime` stacks on the contract branch. Non-Git members and root-aware
+file requests require `machineSupportsProjectFileRoots` (`projectFileRoots: 1`). The older
+`multiRepoProject: 1` only establishes Git Project group support.
+
+Local registrations are the sole authority. Materialization allocates branches only for Git
+members; non-Git directories are registered before ACP initialization. Each startup reads the
+actual `sessionCapabilities.additionalDirectories` declaration, then the owner mutation queue
+publishes additional/link access. Supported providers receive real directories on lifecycle
+requests; others receive repaired links (junctions on Windows). A real same-named entry blocks
+link access and is preserved; additional-directory access does not reserve that name. The first-turn inventory says non-Git members are not isolated;
+actual extra-root paths are supplied only to the runtime Agent prompt, not synced metadata.
+
+File access resolves registrations and realpaths afresh, repairing changed links from the
+registry without expanding authority. An unavailable member blocks only its own file access;
+startup still requires every selected member. Preview never activates indexing. Root-scoped
+file state shares the physical-file save queue and owner publication chain. Publications merge
+root snapshots and watch subscription identities include the root, so one root cannot replace
+another's subscription. Main retains per-Git-member scanning; non-Git roots use existing FS
+scanning and diff snapshots. LSP's existing backend is not wired: all roots retain
+`lsp_not_wired`, with the same root authorization before that response.
+
+Turn evidence, Agent resource files and attachment provenance share root resolution. The local
+snapshot library disallows NUL keys, so the CLI adapter maps non-main keys to
+`/lody-roots/member:<id>/<relativePath>` and reverses them on reads. Leading slash cannot collide
+with legacy relative keys; these local keys never become filesystem paths. No upstream storage
+change is needed. Archive skips non-Git backups, unlinks known member links, checks for residual
+symlinks, then cleans the group directory. Missing targets do not prevent unlink; real entries
+and unknown links are preserved rather than traversed.
+
+The native Effect probe returns isGit=false only for ordinary absence of a Git repository;
+corruption, permission and process-release failures remain errors. Access and publication use
+the existing Promise session owner, with no additional background owner or broader migration.
+Root helpers perform finite filesystem operations and retain no resources. Failures preserve
+published state and directories for retry; one unavailable root does not fence others. Tests
+use temporary directories, real Git and a fake Provider boundary. Real providers, Windows
+junctions and UI end-to-end behavior still require cross-platform acceptance.

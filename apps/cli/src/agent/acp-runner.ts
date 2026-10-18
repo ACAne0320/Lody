@@ -82,6 +82,7 @@ import { withAcpSessionStartSlot } from './acp-session-start-gate';
 
 export type CreateAcpClientOptions = {
   resolveWorktreeProject?: AgentClientOptions['resolveWorktreeProject'];
+  resolveAdditionalDirectories?: AgentClientOptions['resolveAdditionalDirectories'];
   stream: Stream;
   workdir: string;
   logger: Logger;
@@ -141,6 +142,7 @@ export const createAcpClient = async (options: CreateAcpClientOptions) => {
     modelId: options.modelId,
     configOptionValues: options.configOptionValues,
     resolveWorktreeProject: options.resolveWorktreeProject,
+    resolveAdditionalDirectories: options.resolveAdditionalDirectories,
     launcher: options.launcher,
     terminalEnabled: options.terminalEnabled,
     onStartupStage: options.onStartupStage,

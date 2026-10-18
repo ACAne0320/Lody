@@ -75,6 +75,7 @@ const createWorkspaceDocument = (): LoroDocumentManager =>
   ({
     repo: { getDocMeta: vi.fn(async () => ({ meta: { userId: 'user-1' } })) },
     getOrCreateSessionDoc: vi.fn(async () => ({
+      getMetaState: async () => ({}),
       setRepoFullName: vi.fn(async () => {}),
     })),
     cleanUp: vi.fn(async () => {}),
@@ -432,6 +433,7 @@ describe('SessionManager sandbox rebalance', () => {
       vi.stubEnv('LODY_DATA_DIR', directory);
       const doc = createWorkspaceDocument();
       const persisted = {
+        getMetaState: async () => ({}),
         setRepoFullName: async () => {},
         setACPSessionId: async () => {
           if (stage === 'after-agent-start') throw new Error('fixture persistence failed');
@@ -584,6 +586,7 @@ describe('SessionManager identity preflight', () => {
       const doc = createWorkspaceDocument();
       let persistedId: string | undefined;
       vi.mocked(doc.getOrCreateSessionDoc).mockResolvedValue({
+        getMetaState: async () => ({}),
         setRepoFullName: async () => {},
         setACPSessionId: async (id: string) => {
           persistedId = id;
