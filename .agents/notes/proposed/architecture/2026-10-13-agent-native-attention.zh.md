@@ -58,4 +58,4 @@ Lody 根据可信执行终态与输入作者确定通知资格，不提供 Agent
 因此使用「需要处理」。测试覆盖真实历史/控制投影持久化、来源继承、混合/手动输入、
 Unicode 长度、中英文载荷与目标不变。实际设备的排版和截断仍需原生验收。
 
-关联 PR 通过正文「lody · PR #1555」保留。可选、有数值范围限制的 `pullRequestNumber` 贯通桌面投影和原生推送上下文。优先最近的 open/draft 关联，否则保留最近的 closed/merged 关联；现代记录使用数组顺序，旧记录兼容 reportedAt/number，优先从 URL 解析编号。仅使用已有元数据，不请求 GitHub，点击仍打开会话。
+关联 PR 通过正文「lody PR #1555」保留。可选、有数值范围限制的 `pullRequestNumber` 贯通桌面投影和原生推送上下文。优先最近的 open/draft 关联，否则保留最近的 closed/merged 关联；现代记录使用数组顺序，旧记录兼容 reportedAt/number，优先从 URL 解析编号。仅使用已有元数据，不请求 GitHub，点击仍打开会话。

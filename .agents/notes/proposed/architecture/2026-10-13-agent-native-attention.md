@@ -69,4 +69,4 @@ Tests cover real history/control persistence, origin retention, mixed/manual inp
 Unicode length bounds, bilingual payloads and unchanged destinations. Device layout
 and truncation still require native verification.
 
-Associated PRs remain visible as `lody · PR #1555` in the body. The optional bounded `pullRequestNumber` crosses the desktop projection and native push context. Prefer the latest open/draft association, otherwise the latest closed/merged association; modern records use array order and legacy records retain reportedAt/number compatibility, with URL-derived numbers preferred. This uses existing metadata without GitHub requests and preserves the conversation click route.
+Associated PRs remain visible as `lody PR #1555` in the body. The optional bounded `pullRequestNumber` crosses the desktop projection and native push context. Prefer the latest open/draft association, otherwise the latest closed/merged association; modern records use array order and legacy records retain reportedAt/number compatibility, with URL-derived numbers preferred. This uses existing metadata without GitHub requests and preserves the conversation click route.

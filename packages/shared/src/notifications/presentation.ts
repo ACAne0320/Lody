@@ -151,6 +151,6 @@ export function formatNotification(
     body:
       [status, project, reference, schedule === title ? undefined : schedule]
         .filter(Boolean)
-        .join(' · ') || translate('notifications.copy.openConversation'),
+        .join(' ') || translate('notifications.copy.openConversation'),
   };
 }

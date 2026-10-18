@@ -91,7 +91,7 @@ describe('notification presentation', () => {
     const presentation = resolveNotificationPresentation(meta, [scheduled]);
     expect(formatNotification('failed', presentation, translate)).toEqual({
       title: 'Fix sign-in',
-      body: '定时任务失败 · lody · Daily dependency check',
+      body: '定时任务失败 lody Daily dependency check',
     });
     for (const inputs of [
       [{ id: 'manual' }],
@@ -123,7 +123,7 @@ describe('notification presentation', () => {
     expect(
       formatNotification('question', resolveNotificationPresentation(meta, [scheduled]), translate)
         .body
-    ).toBe('定时任务需要回答 · lody · Daily dependency check');
+    ).toBe('定时任务需要回答 lody Daily dependency check');
   });
 
   it('preserves the latest active PR in conversation and scheduled notifications', () => {
@@ -138,7 +138,7 @@ describe('notification presentation', () => {
       for (const event of ['succeeded', 'failed', 'unknown', 'permission', 'question'] as const) {
         expect(formatNotification(event, presentation, translate)).toEqual({
           title: 'Fix sign-in',
-          body: `${event === 'succeeded' ? '' : `${translate(`notifications.copy.${presentation.kind}.${event}`)} · `}lody · PR #15${inputs.length ? ' · Daily dependency check' : ''}`,
+          body: `${event === 'succeeded' ? '' : `${translate(`notifications.copy.${presentation.kind}.${event}`)} `}lody PR #15${inputs.length ? ' Daily dependency check' : ''}`,
         });
       }
     }
@@ -196,7 +196,7 @@ describe('notification presentation', () => {
       formatNotification('failed', resolveNotificationPresentation({}, [scheduled]), translate)
     ).toEqual({
       title: '未命名对话',
-      body: '定时任务失败 · Daily dependency check',
+      body: '定时任务失败 Daily dependency check',
     });
   });
 
