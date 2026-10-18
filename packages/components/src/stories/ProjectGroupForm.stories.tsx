@@ -21,6 +21,8 @@ import {
 const here = 'machine-1' as MachineId;
 const studio = 'machine-2' as MachineId;
 const mini = 'machine-3' as MachineId;
+const lz = 'machine-4' as MachineId;
+const build = 'machine-5' as MachineId;
 const local = (
   machineId: MachineId,
   machineName: string,
@@ -42,12 +44,14 @@ const local = (
 // no GitHub remote, so each binds a group to its machine.
 const sources: ProjectMemberSourceOption[] = buildProjectMemberSourceOptions({
   localProjects: [
-    local(here, 'MacBook Pro', 'web', 'acme/web'),
-    local(studio, 'Studio', 'web', 'acme/web'),
-    local(studio, 'Studio', 'api', 'acme/api'),
-    local(mini, 'Mac mini', 'api', 'acme/api'),
-    local(here, 'MacBook Pro', 'notes'),
-    local(studio, 'Studio', 'ios'),
+    local(here, 'zhaoliangdeMacBook-Pro.local', 'web', 'acme/web'),
+    local(studio, 'wibusdeMacBook-Air-M2.local', 'web', 'acme/web'),
+    local(studio, 'wibusdeMacBook-Air-M2.local', 'api', 'acme/api'),
+    local(mini, "Lampese's Mac mini", 'api', 'acme/api'),
+    local(here, 'zhaoliangdeMacBook-Pro.local', 'notes'),
+    local(studio, 'wibusdeMacBook-Air-M2.local', 'ios'),
+    local(lz, "lz's mac studio", 'loro', 'loro-dev/loro'),
+    local(build, 'build-runner-02.internal', 'loro-ffi', 'loro-dev/loro-ffi'),
   ],
   githubRepositories: [
     { fullName: 'acme/web', description: 'Next.js frontend' },

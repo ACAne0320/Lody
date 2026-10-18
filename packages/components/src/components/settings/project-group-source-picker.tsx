@@ -28,6 +28,12 @@ const REPOSITORIES = 'repositories';
 const MAX_NAMED_MACHINES = 3;
 
 const styles = stylex.create({
+  // The list is the trigger's width, like every list in @lody/ui. Its popup
+  // only sets a minimum, so whatever sits in it must not ask for more: a
+  // machine name in the filter row or a long note would otherwise widen the
+  // popup past the trigger. Inline-size containment keeps each of these from
+  // contributing its natural width; they wrap or truncate inside the list.
+  fitList: { contain: 'inline-size' },
   face: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -175,7 +181,7 @@ export function ProjectGroupSourcePicker({
               placeholder={t('settings.projectGroups.form.search')}
             />
             {layout.machineIds.length > 1 ? (
-              <div {...stylex.props(styles.filters)}>
+              <div {...stylex.props(styles.fitList, styles.filters)}>
                 <ToggleGroup
                   size="mini"
                   shape="pill"
@@ -197,7 +203,7 @@ export function ProjectGroupSourcePicker({
               </div>
             ) : null}
             {layout.hiddenRepositoryCount > 0 ? (
-              <div {...stylex.props(styles.hint)}>
+              <div {...stylex.props(styles.fitList, styles.hint)}>
                 {t('settings.projectGroups.picker.hiddenRepositories', {
                   count: layout.hiddenRepositoryCount,
                 })}
@@ -212,7 +218,7 @@ export function ProjectGroupSourcePicker({
           return (
             <Combobox.Group key={group.key} items={group.items}>
               <Combobox.GroupLabel>{groupLabel(group)}</Combobox.GroupLabel>
-              {note ? <div {...stylex.props(styles.note)}>{note}</div> : null}
+              {note ? <div {...stylex.props(styles.fitList, styles.note)}>{note}</div> : null}
               {group.items.map((option) => {
                 const Icon =
                   option.kind === 'directory'
@@ -227,7 +233,7 @@ export function ProjectGroupSourcePicker({
                     value={option}
                     disabled={layout.disabledKeys.has(option.key)}
                   >
-                    <span {...stylex.props(styles.option)}>
+                    <span {...stylex.props(styles.fitList, styles.option)}>
                       <Icon aria-hidden="true" {...stylex.props(catalog.icon)} />
                       <span {...stylex.props(styles.label)}>{option.label}</span>
                       {detail ? (
