@@ -163,6 +163,73 @@ describe('BillingSettingsView', () => {
     expect(button?.disabled).toBe(true);
   });
 
+  it.each(['month', 'year'] as const)(
+    'shows the same dated plan summary for paid Plus (%s)',
+    async (billingInterval) => {
+      const currentPeriodEnd = Date.UTC(2030, 0, 25);
+      await renderView({
+        overview: {
+          ...freeOverview,
+          billingAccountId: 'billing_paid',
+          effectivePlanTier: 'plus',
+          entitlementSource: 'stripe',
+          billingInterval,
+          currentPeriodEnd,
+        },
+        invoices: [],
+      });
+
+      expect(planNameText()).toBe('Plus');
+      expect(container?.textContent).toContain('Next renewal');
+      expect(container?.textContent).toContain(formatDate(currentPeriodEnd));
+      expect(container?.textContent).toContain(billingInterval === 'year' ? 'Yearly' : 'Monthly');
+      expect(container?.textContent).not.toContain('Gift access until');
+    }
+  );
+
+  it('labels a canceled paid plan with its access end date instead of a renewal', async () => {
+    const currentPeriodEnd = Date.UTC(2030, 0, 25);
+    await renderView({
+      overview: {
+        ...freeOverview,
+        billingAccountId: 'billing_paid',
+        effectivePlanTier: 'plus',
+        entitlementSource: 'stripe',
+        billingInterval: 'month',
+        currentPeriodEnd,
+        cancelAtPeriodEnd: true,
+      },
+      invoices: [],
+    });
+
+    expect(container?.textContent).toContain('Access ends');
+    expect(container?.textContent).toContain(formatDate(currentPeriodEnd));
+    expect(container?.textContent).not.toContain('Next renewal');
+  });
+
+  it('keeps the free plan on its status message', async () => {
+    await renderView({ overview: freeOverview });
+    expect(planNameText()).toBe('Free');
+    expect(container?.textContent).not.toContain('Next renewal');
+  });
+
+  it('keeps a pending paid checkout on its status message', async () => {
+    await renderView({
+      overview: {
+        ...freeOverview,
+        billingAccountId: 'billing_pending',
+        checkoutPending: true,
+        checkoutInterval: 'year',
+        currentPeriodEnd: Date.UTC(2030, 0, 25),
+      },
+      invoices: [],
+    });
+
+    expect(planNameText()).toBe('Plus');
+    expect(container?.textContent).toContain('Checkout required');
+    expect(container?.textContent).not.toContain('Next renewal');
+  });
+
   it('shows the amount and reason for billing scheduled after a gift', async () => {
     const nextBillingAt = Date.UTC(2030, 0, 25);
     await renderView({

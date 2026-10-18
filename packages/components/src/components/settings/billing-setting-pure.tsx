@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as stylex from '@stylexjs/stylex';
 import { FREE_SESSION_LIMIT_PER_WORKSPACE, FREE_WORKSPACE_MEMBER_LIMIT } from '@lody/shared';
-import { ArrowLeftRight, Check, Gift } from 'lucide-react';
+import { ArrowLeftRight, Check } from 'lucide-react';
 import { Badge } from '@lody/ui/badge';
 import { Button } from '@lody/ui/button';
 import { Input } from '@lody/ui/input';
@@ -44,6 +44,23 @@ const styles = stylex.create({
 
   planHeading: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: space[2] },
   planName: { margin: 0, fontSize: '1.125em', lineHeight: type.leading, color: colors.label },
+  planFocus: { marginTop: space[3] },
+  planFocusLabel: { margin: 0, color: colors.secondaryLabel, fontSize: uiText.footnoteSize },
+  planFocusDate: {
+    margin: 0,
+    marginTop: space[1],
+    fontSize: '1.45em',
+    lineHeight: 1.2,
+    letterSpacing: '-0.02em',
+    color: colors.label,
+    fontVariantNumeric: 'tabular-nums',
+  },
+  planFocusCaption: {
+    margin: 0,
+    marginTop: space[2],
+    fontSize: uiText.footnoteSize,
+    color: colors.secondaryLabel,
+  },
   statusLine: {
     display: 'flex',
     flexWrap: 'wrap',
@@ -73,35 +90,6 @@ const styles = stylex.create({
   },
   glyphSmall: { width: '12px', height: '12px', flexShrink: 0 },
   danger: { color: colors.destructive },
-  giftHero: { display: 'flex', alignItems: 'flex-start', gap: space[3], paddingBlock: space[4] },
-  giftMark: {
-    display: 'grid',
-    placeItems: 'center',
-    width: '36px',
-    height: '36px',
-    flexShrink: 0,
-    borderRadius: '10px',
-    backgroundColor: `color-mix(in oklab, ${colors.label} 5%, transparent)`,
-    color: colors.accent,
-  },
-  giftIcon: { width: '18px', height: '18px' },
-  giftContent: { minWidth: 0, flexGrow: 1 },
-  giftTitle: { margin: 0, color: colors.label, fontWeight: 500 },
-  giftExpiry: {
-    margin: 0,
-    marginTop: space[1],
-    fontSize: '1.45em',
-    lineHeight: 1.2,
-    letterSpacing: '-0.02em',
-    color: colors.label,
-    fontVariantNumeric: 'tabular-nums',
-  },
-  giftCaption: {
-    margin: 0,
-    marginTop: space[2],
-    fontSize: uiText.footnoteSize,
-    color: colors.secondaryLabel,
-  },
 
   metric: {
     display: 'flex',
@@ -585,6 +573,14 @@ export function BillingSettingsView({
     !overview.canResumeAfterGift &&
     overview.effectivePlanTier === 'plus';
   const showSubscriptionOffer = !entitled || canScheduleAfterGift;
+  const showGiftFocus = isPromotional && hasGiftTimeline && !checkoutInProgress && !isPastDue;
+  const showPaidFocus =
+    overview.entitlementSource === 'stripe' &&
+    isPaid &&
+    overview.currentPeriodEnd !== null &&
+    !checkoutInProgress &&
+    !isPastDue;
+  const planFocusAt = showGiftFocus ? giftEnd : showPaidFocus ? overview.currentPeriodEnd : null;
 
   // `null` = unlimited.
   const sessionLimit = entitled ? null : FREE_SESSION_LIMIT_PER_WORKSPACE;
@@ -605,7 +601,9 @@ export function BillingSettingsView({
   const planIntervalLabel =
     isPaid && !checkoutInProgress && overview.billingInterval
       ? isPromotional
-        ? t('billing.promotionalBadge')
+        ? showGiftFocus
+          ? null
+          : t('billing.promotionalBadge')
         : overview.billingInterval === 'year'
           ? t('billing.yearly')
           : t('billing.monthly')
@@ -773,42 +771,19 @@ export function BillingSettingsView({
         </CompactSection>
       ) : null}
 
-      {/* Plan status */}
+      {/* One plan card for gift, paid and free states. Dates get the same
+          prominence; pending and past-due states retain their status copy. */}
       <CompactSection>
-        {isPromotional && hasGiftTimeline && !checkoutInProgress && !isPastDue ? (
-          <div {...stylex.props(styles.block, styles.giftHero)}>
-            <div {...stylex.props(styles.giftMark)}>
-              <Gift aria-hidden="true" {...stylex.props(styles.giftIcon)} />
-            </div>
-            <div {...stylex.props(styles.giftContent)}>
-              <div {...stylex.props(styles.planHeading)}>
-                <p {...stylex.props(styles.giftTitle)}>{t('billing.giftHeroTitle')}</p>
-                {overview.autoRenewAfterGift ? (
-                  <Badge>{t('billing.postGiftBillingScheduled')}</Badge>
-                ) : null}
-              </div>
-              <p {...stylex.props(styles.giftExpiry)}>{formatDate(giftEnd)}</p>
-              <p {...stylex.props(styles.giftCaption)}>
-                {overview.autoRenewAfterGift
-                  ? t('billing.giftHeroScheduled', {
-                      interval:
-                        overview.scheduledBillingInterval === 'year'
-                          ? t('billing.yearly').toLocaleLowerCase()
-                          : t('billing.monthly').toLocaleLowerCase(),
-                    })
-                  : t('billing.giftHeroEnds')}
-              </p>
-            </div>
+        <div {...stylex.props(styles.block)}>
+          <div {...stylex.props(styles.planHeading)}>
+            <p {...stylex.props(styles.planName)}>{planName}</p>
+            {showGiftFocus ? <Badge>{t('billing.promotionalBadge')}</Badge> : null}
+            {overview.cancelAtPeriodEnd && !isPromotional ? (
+              <Badge>{t('billing.cancelAtPeriodEnd')}</Badge>
+            ) : null}
+            {checkoutInProgress ? <Badge>{t('billing.checkoutPending')}</Badge> : null}
           </div>
-        ) : (
-          <div {...stylex.props(styles.block)}>
-            <div {...stylex.props(styles.planHeading)}>
-              <p {...stylex.props(styles.planName)}>{planName}</p>
-              {overview.cancelAtPeriodEnd && !isPromotional ? (
-                <Badge>{t('billing.cancelAtPeriodEnd')}</Badge>
-              ) : null}
-              {checkoutInProgress ? <Badge>{t('billing.checkoutPending')}</Badge> : null}
-            </div>
+          {planIntervalLabel || (planFocusAt === null && planStatusDetail) ? (
             <div {...stylex.props(styles.statusLine)}>
               {planIntervalLabel ? (
                 <span {...stylex.props(styles.statusInterval)}>
@@ -832,17 +807,41 @@ export function BillingSettingsView({
                   ) : null}
                 </span>
               ) : null}
-              {planIntervalLabel && planStatusDetail ? (
+              {planIntervalLabel && planFocusAt === null && planStatusDetail ? (
                 <span aria-hidden="true" {...stylex.props(styles.statusDot)}>
                   ·
                 </span>
               ) : null}
-              {planStatusDetail ? (
+              {planFocusAt === null && planStatusDetail ? (
                 <span {...stylex.props(isPastDue && styles.danger)}>{planStatusDetail}</span>
               ) : null}
             </div>
-          </div>
-        )}
+          ) : null}
+          {planFocusAt !== null ? (
+            <div {...stylex.props(styles.planFocus)}>
+              <p {...stylex.props(styles.planFocusLabel)}>
+                {showGiftFocus
+                  ? t('billing.giftHeroTitle')
+                  : overview.cancelAtPeriodEnd
+                    ? t('billing.planEndsAt')
+                    : t('billing.planRenewsAt')}
+              </p>
+              <p {...stylex.props(styles.planFocusDate)}>{formatDate(planFocusAt)}</p>
+              {showGiftFocus ? (
+                <p {...stylex.props(styles.planFocusCaption)}>
+                  {overview.autoRenewAfterGift
+                    ? t('billing.giftHeroScheduled', {
+                        interval:
+                          overview.scheduledBillingInterval === 'year'
+                            ? t('billing.yearly').toLocaleLowerCase()
+                            : t('billing.monthly').toLocaleLowerCase(),
+                      })
+                    : t('billing.giftHeroEnds')}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </CompactSection>
 
       {/* Session usage */}
