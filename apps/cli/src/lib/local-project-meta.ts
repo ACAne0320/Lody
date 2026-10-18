@@ -163,11 +163,13 @@ export async function reconcileMachineLocalProjectRootPaths(
   repo: LoroRepo,
   workspaceId: WorkspaceId,
   machineId: MachineId,
-  sync: MachineFlockSyncScheduler
+  sync: MachineFlockSyncScheduler,
+  signal?: AbortSignal
 ): Promise<void> {
   await withMachineCatalogWriteLock(getMachineRoomId(machineId), async () => {
     const projects = await readMachineLocalProjects(repo, workspaceId, machineId);
     for (const project of Object.values(projects)) {
+      if (signal?.aborted) return;
       const canonicalRootPath = canonicalLocalProjectRootPath(project.rootPath);
       await upsertMachineLocalProject(
         repo,

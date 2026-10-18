@@ -745,3 +745,82 @@ and Flock orchestration still have unfinished dependencies.
 
 Focused suites, production typechecks, `check:quick`, formatting and docs checks pass.
 The broad workspace test stage of `pnpm check` was stopped before completion.
+
+**Daemon startup investigation (2026-10-18).** The baseline at #1682 serializes
+independent member creation, then remaining submodules, then setup. Selected
+submodule checkout also uses `--recursive`: it clones nested selected members
+before their own credential boundary, plus unselected descendants. The later pass
+skips directories with `.git`, so this is not generally two full downloads; nested
+selected members still repeat update/inspection/branch work. There are no explicit
+fetch jobs or object references. Required unselected submodules remain required;
+this change does not silently omit them.
+
+The relevant deadline is the daemon's `session-active-presence.ts` initialization
+watchdog, enforced by `awaitInitializationStall` in `session-execution-service.ts`.
+The materializer itself never selected a Git stage or reported progress. The outer
+`shouldPrepareWorktree` check selects `git-clone` only from the compatibility
+`project` field: Git-backed first members normally take that path, whereas a missing
+compatibility project or direct/non-Git first member leaves a group on generic
+`initializing` with a 180,000 ms silence limit. Restore initially uses `resuming`
+(900,000 ms). ACP starts afterward; its handshake timer does not cover this preparation. `WorktreeGit` separately limits each Git command to 600,000 ms;
+`withRepoLock`'s 120,000 ms is lock acquisition, not a whole-clone deadline. The
+existing `git-clone` watchdog budget is 1,800,000 ms. Fake-clock regression reproduces
+the generic-stage failure at 180 seconds, survival in the Git stage, renewal on a
+changed member milestone, and eventual failure on silence. No affected production
+session log was supplied: this establishes the code defect and reproducible timer,
+not proof of the timer that fired in the specific field report.
+`MessageHandler.handleSessionCreate` sends success before awaiting `startSession`,
+so the normal create acceptance/RPC wait does not enclose materialization.
+
+The fix reports the existing Git stage from credential preflight through real
+member/submodule/setup milestones, without heartbeat fakery or new protocol fields.
+It runs at most four independent member mutations, waits for parents, serializes
+siblings that share parent config, and serializes immutable branch receipts. All
+started tasks settle before the owner is released on failure; retries retain pinned
+`repositoryCheckout` and published branches. Selected submodules initialize without
+recursion under their own auth; local copies use `--reference` plus `--dissociate`
+to reuse objects without depending on future source retention. Remaining submodules
+initialize in bounded member batches and `git submodule update --jobs 4` batches.
+Setup stays in declared Member order because scripts can depend on one another.
+Managed empty caches are not treated as useful object references, and we do not add
+persistent alternates or broaden the existing file-transport permission policy.
+
+Startup reconciliation previously awaited every local-project remote before PR
+poller/schedule registration. It now starts after runtime readiness. The runtime
+owns its promise and abort signal: shutdown stops between projects and joins the
+current operation before closing the document. Errors remain logged; the next
+startup retries the scan. Observation and mutation still use their existing native
+Git boundary and Promise owners; no partial Effect migration is claimed.
+
+Measurements use the owning real-Git `workspace-git-service.test.ts` fixture: three
+independent roots, two selected nested members, one unselected nested leaf and one
+unselected sibling, empty setup hooks with file-read verification. Git URLs resolve
+to `file://` transport with `GIT_ALLOW_PROTOCOL=file`; no network or sleeps. Native
+`/usr/bin/git` avoids this development shell's credential wrapper overhead. A paired
+isolated run (baseline #1682 versus this change; process import/fixture creation
+excluded) measured the following wall-time spans. These are small local-fixture
+samples, not statistically established network performance forecasts.
+
+| Phase | Before (ms) | After (ms) |
+| --- | ---: | ---: |
+| Resolution and owner preparation | 594 | 558 |
+| Member checkouts (including selected submodules) | 874 | 715 |
+| Remaining submodule initialization | 147 | 139 |
+| Setup hooks | 3 | 4 |
+| Whole materialization | 1,619 | 1,419 |
+
+A separate twelve-project real-Git Flock scan took 398 ms. That scan used to be
+awaited on readiness; it now contributes no awaited scan time there, but still
+consumes background work. No end-to-end daemon readiness benchmark is claimed.
+Set `PROJECT_STARTUP_MEASUREMENTS` or `PROJECT_SCAN_MEASUREMENTS` to an output file
+when running the corresponding focused test to collect timings; assertions use
+explicit barriers and resulting Git/Flock state, never elapsed-time thresholds.
+Coverage includes three roots meeting at a credential barrier, parent-before-child
+checkout, absence of prematurely cloned selected descendants, no retained local
+alternates, serial setup, failure draining before owner handoff, archive/restore,
+scan cancellation between rows and shutdown joining observation. The UI can render
+existing `initializing` status with stage `git-clone` and its detail (for example,
+`Prepared web (1/5 ready)`); no new error codes or availability fields are added.
+Live GitHub transfers, large object-volume throughput, Windows and desktop E2E
+remain unverified. Existing per-command deadlines still apply to a single silent
+clone; completion milestones are not byte-level transfer progress.

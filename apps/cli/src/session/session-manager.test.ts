@@ -226,7 +226,9 @@ describe('SessionManager repository Member credentials', () => {
       vi.spyOn(manager, 'resolveLocalProjectRootPath').mockImplementation(async (id) =>
         id === 'copy' ? root : temp
       );
+      const phases: Array<{ phase: string; detail?: string }> = [];
       const config = createSessionConfig({
+        onPresencePhase: (phase, detail) => phases.push({ phase, detail }),
         sessionId: 'repo-member' as SessionId,
         project: { kind: 'github', repoFullName: 'example/web' },
         projectRun: {
@@ -281,6 +283,10 @@ describe('SessionManager repository Member credentials', () => {
         new Error('Unexpected broker enrollment')
       );
       const credentials = await internals.prepareGitHubRepoSessionConfig(config);
+      expect(phases).toContainEqual({
+        phase: 'git-clone',
+        detail: 'Resolving Project repositories',
+      });
       expect(credentials.mode).toBe('native');
       expect(config.env).toBeUndefined();
       const releasedManaged = {

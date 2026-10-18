@@ -95,7 +95,15 @@ export const checkoutProjectSubmodule = Effect.fn('checkoutProjectSubmodule')(fu
           '--',
           options.submodulePath,
         ]
-      : ['submodule', 'update', '--init', '--recursive', '--', options.submodulePath],
+      : [
+          'submodule',
+          'update',
+          '--init',
+          // Borrow objects only for this member, then sever the GC dependency.
+          ...(options.local ? ['--reference', options.repositoryPath, '--dissociate'] : []),
+          '--',
+          options.submodulePath,
+        ],
     cwd: options.parentPath,
     env: options.env,
   });

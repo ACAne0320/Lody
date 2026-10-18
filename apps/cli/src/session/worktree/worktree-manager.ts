@@ -1491,6 +1491,7 @@ export class WorktreeManager {
           return '';
         throw error;
       });
+      const missing: string[] = [];
       for (const entry of entries.split('\0').filter(Boolean)) {
         const memberPath = entry.slice(entry.indexOf('\n') + 1);
         if (!isSafeProjectPath(memberPath)) throw new Error('Invalid project group submodule path');
@@ -1501,8 +1502,11 @@ export class WorktreeManager {
         )
           throw new Error('Project group submodule path is a symlink');
         if (fs.existsSync(path.join(directory, '.git'))) continue;
+        missing.push(memberPath);
+      }
+      if (missing.length) {
         await this.runGit(
-          ['submodule', 'update', '--init', '--recursive', '--', memberPath],
+          ['submodule', 'update', '--init', '--recursive', '--jobs', '4', '--', ...missing],
           workdir,
           buildBrokerAuthEnv(brokerAuth)
         );

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -185,6 +185,64 @@ describe('local project root path publishing', () => {
         { sync }
       );
       expect((await read())?.githubRepoFullName).toBeUndefined();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it('stops the startup scan between projects and refreshes a multi-project catalog', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'local-project-scan-'));
+    const flock = new FakeMachineFlock();
+    const { repo } = createRepo(flock);
+    const stop = new AbortController();
+    try {
+      for (let index = 0; index < 12; index++) {
+        const root = join(rootPath, String(index));
+        mkdirSync(root);
+        execFileSync('git', ['init', '-q'], { cwd: root });
+        execFileSync(
+          'git',
+          ['remote', 'add', 'origin', `https://github.com/example/repo-${index}.git`],
+          { cwd: root }
+        );
+        const id = `project-${index}` as LocalProjectId;
+        writeMachineFlockRowToFlock(
+          flock,
+          { key: machineFlockKeys.localProject(id), value: { ...projectMeta, id, rootPath: root } },
+          1
+        );
+      }
+      await reconcileMachineLocalProjectRootPaths(
+        repo,
+        workspaceId,
+        machineId,
+        {
+          markMachineFlockDocDirty() {
+            stop.abort();
+          },
+        },
+        stop.signal
+      );
+      expect(
+        Object.values(await readMachineLocalProjects(repo, workspaceId, machineId)).filter(
+          (project) => project.githubRepoFullName
+        )
+      ).toHaveLength(1);
+      const start = performance.now();
+      await reconcileMachineLocalProjectRootPaths(repo, workspaceId, machineId, {
+        markMachineFlockDocDirty() {},
+      });
+      const elapsedMs = performance.now() - start;
+      expect(
+        Object.values(await readMachineLocalProjects(repo, workspaceId, machineId))
+          .map((project) => project.githubRepoFullName)
+          .sort()
+      ).toEqual(Array.from({ length: 12 }, (_, index) => `example/repo-${index}`).sort());
+      if (process.env.PROJECT_SCAN_MEASUREMENTS)
+        writeFileSync(
+          process.env.PROJECT_SCAN_MEASUREMENTS,
+          JSON.stringify({ projects: 12, elapsedMs })
+        );
     } finally {
       rmSync(rootPath, { recursive: true, force: true });
     }

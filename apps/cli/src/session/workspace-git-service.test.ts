@@ -4,6 +4,7 @@ import {
   resolveProjectFileRoots,
   resolveProjectFileTarget,
 } from './worktree/project-member-access';
+import { WorktreeManager } from './worktree/worktree-manager';
 import { worktreeGitLegacy } from './worktree/git-execution-legacy';
 import { archiveProjectGroup } from './worktree/project-worktree-archive';
 import { existsSync } from 'node:fs';
@@ -24,7 +25,7 @@ import {
   realpath,
 } from 'node:fs/promises';
 import { devNull, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve as resolvePath } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectRef, SessionId, SessionMeta, SessionProjectRun } from '@lody/shared';
@@ -581,6 +582,272 @@ describe('WorkspaceGitService', () => {
     },
     180_000
   );
+
+  it('prepares independent roots and nested members with local Git transport', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'lody-group-startup-'));
+    const repositories = ['web', 'api', 'core', 'docs', 'tools', 'extra', 'leaf'];
+    const git = async (repo: string, args: string[]) =>
+      (await exec('git', ['-C', join(directory, repo), ...args])).stdout.trim();
+    const timings: Record<string, number[]> = {};
+    const spans: Array<{ phase: string; start: number; end: number }> = [];
+    const started = performance.now();
+    for (const method of [
+      'createWorktree',
+      'materializeProjectSubmodule',
+      'initializeMissingProjectSubmodules',
+    ] as const) {
+      const original = WorktreeManager.prototype[method];
+      // Instrument the real boundary; no simulated Git or elapsed-time assertions.
+      vi.spyOn(WorktreeManager.prototype, method).mockImplementation(async function (
+        this: WorktreeManager,
+        ...args: never[]
+      ) {
+        const start = performance.now();
+        try {
+          return await Reflect.apply(original, this, args);
+        } finally {
+          const end = performance.now();
+          (timings[method] ??= []).push(end - start);
+          spans.push({
+            phase: method === 'initializeMissingProjectSubmodules' ? 'submodules' : 'checkouts',
+            start,
+            end,
+          });
+        }
+      });
+    }
+    try {
+      vi.stubEnv('GIT_ALLOW_PROTOCOL', 'file');
+      vi.stubEnv('LODY_DATA_DIR', join(directory, 'data'));
+      vi.stubEnv('GIT_CONFIG_COUNT', '1');
+      vi.stubEnv('GIT_CONFIG_KEY_0', 'url.file:///.insteadOf');
+      vi.stubEnv('GIT_CONFIG_VALUE_0', '/');
+      for (const repo of repositories) {
+        await mkdir(join(directory, repo));
+        await git(repo, ['init', '-b', 'main']);
+        await writeFile(join(directory, repo, 'readme'), repo);
+        await git(repo, ['add', '.']);
+        await git(repo, [
+          '-c',
+          'user.name=Test',
+          '-c',
+          'user.email=test@example.com',
+          'commit',
+          '-m',
+          'base',
+        ]);
+      }
+      for (const [parent, nested] of [
+        ['core', 'leaf'],
+        ['api', 'core'],
+        ['web', 'api'],
+        ['web', 'extra'],
+      ]) {
+        await git(parent!, ['submodule', 'add', join(directory, nested!), `deps/${nested}`]);
+        await git(parent!, [
+          '-c',
+          'user.name=Test',
+          '-c',
+          'user.email=test@example.com',
+          'commit',
+          '-am',
+          'submodule',
+        ]);
+      }
+      const { meta, workspaceDocument } = fixture();
+      const run = projectRun();
+      run.members = {};
+      for (const [index, id] of ['web', 'api', 'core', 'docs', 'tools'].entries()) {
+        const parent = id === 'api' ? 'web' : id === 'core' ? 'api' : undefined;
+        run.members[id as keyof typeof run.members] = {
+          o: index,
+          src: { kind: 'local', machineId: 'machine' as never, localProjectId: id as never },
+          placement: parent
+            ? { kind: 'submodule', parent: parent as never, path: `deps/${id}` }
+            : { kind: 'root', dir: id },
+          path: id === 'core' ? 'web/deps/api/deps/core' : id === 'api' ? 'web/deps/api' : id,
+          base: parent ? 'gitlink' : 'HEAD',
+        };
+      }
+      meta.set(owner, { projectRun: run, machineId: 'machine' as never });
+      const setup: string[] = [];
+      const progress: string[] = [];
+      const seen = new Set<string>();
+      const rootsReady = Promise.withResolvers<void>();
+      let rootsStarted = 0;
+      const start = performance.now();
+      const prepared = await materializeProjectGroup({
+        sessionId: owner,
+        machineId: 'machine',
+        workspaceDocument,
+        logger: { debug() {}, info() {}, warn() {}, trace() {} } as unknown as Logger,
+        resolveLocalRoot: async (id) => join(directory, id),
+        onProgress: (detail) => progress.push(detail),
+        brokerAuth: async (source) => {
+          if (source.kind !== 'local-shared' || seen.has(source.originalRootPath)) return undefined;
+          seen.add(source.originalRootPath);
+          if (
+            ['web', 'docs', 'tools'].some((id) => source.originalRootPath === join(directory, id))
+          ) {
+            if (++rootsStarted === 3) rootsReady.resolve();
+            await rootsReady.promise;
+          } else {
+            const root = join(directory, 'data/repos', run.root, 'worktrees', owner, 'web');
+            const nested =
+              source.originalRootPath === join(directory, 'api')
+                ? 'deps/api'
+                : 'deps/api/deps/core';
+            // A selected descendant must not be cloned recursively under its parent's credentials.
+            expect(existsSync(join(root, nested, '.git'))).toBe(false);
+          }
+          return undefined;
+        },
+        setup: async (member, workdir) => {
+          const setupStart = performance.now();
+          expect(await readFile(join(workdir, 'readme'), 'utf8')).toBe(
+            member.src.kind === 'local' ? member.src.localProjectId : ''
+          );
+          setup.push(member.path);
+          spans.push({ phase: 'setup', start: setupStart, end: performance.now() });
+        },
+      });
+      const materializeMs = performance.now() - start;
+      expect(setup).toEqual(['web', 'web/deps/api', 'web/deps/api/deps/core', 'docs', 'tools']);
+      expect(progress[0]).toBe('Resolving Project repositories');
+      expect(progress.at(-1)).toBe('Project repositories ready');
+      expect(progress).toContain('Prepared web/deps/api/deps/core (5/5 ready)');
+      // --dissociate must leave no dependency on a source repository's object retention.
+      const objects = (
+        await exec('git', [
+          '-C',
+          join(prepared.workdir, 'web/deps/api'),
+          'rev-parse',
+          '--git-path',
+          'objects/info/alternates',
+        ])
+      ).stdout.trim();
+      expect(existsSync(resolvePath(prepared.workdir, 'web/deps/api', objects))).toBe(false);
+      expect(
+        await readFile(join(prepared.workdir, 'web/deps/api/deps/core/deps/leaf/readme'), 'utf8')
+      ).toBe('leaf');
+      expect(await readFile(join(prepared.workdir, 'web/deps/extra/readme'), 'utf8')).toBe('extra');
+      for (const member of Object.values(prepared.run.members)) {
+        expect(
+          (
+            await exec('git', [
+              '-C',
+              join(prepared.workdir, member.path),
+              'branch',
+              '--show-current',
+            ])
+          ).stdout.trim()
+        ).toBe(member.branch);
+      }
+      if (process.env.PROJECT_STARTUP_MEASUREMENTS)
+        await writeFile(
+          process.env.PROJECT_STARTUP_MEASUREMENTS,
+          JSON.stringify({
+            materializeMs,
+            phaseWallMs: Object.fromEntries(
+              ['checkouts', 'submodules', 'setup'].map((phase) => {
+                const entries = spans.filter((span) => span.phase === phase);
+                return [
+                  phase,
+                  Math.max(...entries.map((span) => span.end)) -
+                    Math.min(...entries.map((span) => span.start)),
+                ];
+              })
+            ),
+            resolutionAndOwnerMs: Math.min(...spans.map((span) => span.start)) - start,
+            timings,
+            fixtureAndRunMs: performance.now() - started,
+          })
+        );
+    } finally {
+      vi.restoreAllMocks();
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  it('retains the Project owner until concurrent mutations settle after a failure', async () => {
+    await withRepo(async (web, webGit) =>
+      withRepo(async (api, apiGit) => {
+        for (const git of [webGit, apiGit])
+          await git([
+            '-c',
+            'user.name=Test',
+            '-c',
+            'user.email=test@example.com',
+            'commit',
+            '--allow-empty',
+            '-m',
+            'base',
+          ]);
+        const data = await mkdtemp(join(tmpdir(), 'lody-group-drain-'));
+        vi.stubEnv('LODY_DATA_DIR', data);
+        const { meta, workspaceDocument, service } = fixture();
+        const run = projectRun();
+        for (const [id, member] of Object.entries(run.members)) {
+          member.src = {
+            kind: 'local',
+            machineId: 'machine' as never,
+            localProjectId: id as never,
+          };
+          member.base = 'HEAD';
+        }
+        meta.set(owner, { projectRun: run });
+        const secondStarted = Promise.withResolvers<void>();
+        const failed = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let settled = false;
+        let successorEntered = false;
+        try {
+          const preparation = materializeProjectGroup({
+            sessionId: owner,
+            machineId: 'machine',
+            workspaceDocument,
+            logger: { debug() {}, info() {}, warn() {}, trace() {} } as unknown as Logger,
+            resolveLocalRoot: async (id) => (id === 'web' ? web : api),
+            brokerAuth: async (source) => {
+              if (source.kind === 'local-shared' && source.originalRootPath === web) {
+                await secondStarted.promise;
+                failed.resolve();
+                throw new Error('fixture credential failure');
+              }
+              secondStarted.resolve();
+              await release.promise;
+              return undefined;
+            },
+            setup: async () => {},
+          }).then(
+            () => {
+              settled = true;
+            },
+            (error) => {
+              settled = true;
+              throw error;
+            }
+          );
+          const outcome = expect(preparation).rejects.toThrow('fixture credential failure');
+          await failed.promise;
+          const successor = service.updateProjectRun(owner, async (snapshot) => {
+            successorEntered = true;
+            expect(snapshot.members['api' as keyof typeof snapshot.members]?.branch).toBeTruthy();
+            return snapshot;
+          });
+          expect(settled).toBe(false);
+          expect(successorEntered).toBe(false);
+          release.resolve();
+          await outcome;
+          await successor;
+          expect(successorEntered).toBe(true);
+        } finally {
+          release.resolve();
+          await rm(data, { recursive: true, force: true });
+        }
+      })
+    );
+  });
 
   it('publishes a local repository without a remote, including its unborn branch and later checkout', async () => {
     await withRepo(async (cwd, git) => {

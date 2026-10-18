@@ -1913,6 +1913,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
     // Resolve each repository before enrolling a managed credential lease. The same
     // pinned receipt is used by materialization, refresh, PR observation and restore.
     if (config.projectRun) {
+      config.onPresencePhase?.('git-clone', 'Resolving Project repositories');
       let hasManagedMember = false;
       const owner = new WorkspaceGitService({
         workspaceDocument: this.workspaceDocument,
@@ -2442,6 +2443,7 @@ export class SessionManager extends EventEmitter<SessionManagerEvents> {
 
     if (config.projectRun) {
       const prepared = await materializeProjectGroup({
+        onProgress: (detail) => config.onPresencePhase?.('git-clone', detail),
         sessionId: config.parentSessionId ?? config.sessionId!,
         machineId: this.machineId,
         workspaceDocument: this.workspaceDocument,

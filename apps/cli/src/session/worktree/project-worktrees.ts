@@ -192,6 +192,7 @@ export async function materializeProjectGroup(
     resolveLocalRoot: (id: LocalProjectId) => Promise<string | null>;
     brokerAuth: (source: WorktreeManagerSource) => Promise<GitCredentialBrokerAuth | undefined>;
     supportsAdditionalDirectories?: boolean;
+    onProgress?: (detail: string) => void;
     setup: (member: SessionProjectMember, workdir: string) => Promise<void>;
   }
 ): Promise<{ workdir: string; run: SessionProjectRun }> {
@@ -210,6 +211,7 @@ export async function materializeProjectGroup(
       `${run.root}/worktrees/${options.sessionId}`
     )
       throw new Error('Project group directory escaped its storage root');
+    options.onProgress?.('Resolving Project repositories');
     const resolved = await resolveProjectGroupRepositories(run, options);
     // Commit the selected store before creating branches, so retries never repick a copy.
     for (const [id, target] of resolved) {
@@ -220,111 +222,161 @@ export async function materializeProjectGroup(
     await publish(run);
     const pending = new Set(Object.keys(run.members));
     const newlyCreated: SessionProjectMember[] = [];
+    // Keep the owner lease until ALL started mutations settle, including on failure.
+    // Siblings share their parent's Git config/module storage and run separately.
+    let publications = Promise.resolve();
+    const checkpoint = () => {
+      const receipt = structuredClone(run);
+      publications = publications.then(() => publish(receipt));
+      return publications;
+    };
+    let completed = 0;
     while (pending.size) {
-      for (const id of pending) {
-        const member = run.members[id as keyof typeof run.members]!;
-        if (member.placement.kind === 'submodule' && pending.has(member.placement.parent)) continue;
-        const target = resolved.get(id)!;
-        if (!target.isGit) {
-          if (member.placement.kind !== 'root')
-            throw new Error('Non-Git member cannot be a submodule');
-          // Before ACP initialization, register the directory without a link.
-          // The negotiated startup callback selects/reconciles the final access mode.
-          const additional = options.supportsAdditionalDirectories !== false;
-          await reconcileProjectMemberLink(root, member.placement.dir, target.url, additional);
-          member.access = additional ? 'additional' : 'link';
-          delete member.branch;
-          delete member.repoFullName;
-          delete member.dirty;
-          delete member.unpushed;
-          delete member.diff;
-          await publish(run);
-          pending.delete(id);
-          continue;
-        }
-        member.access = 'worktree';
-        const manager = getWorktreeManager({
-          repoId: target.repoId,
-          source: target.source,
-          logger: options.logger,
-          ...(member.placement.kind === 'root'
-            ? { projectMember: { root: run.root, dir: member.placement.dir } }
-            : {}),
-        });
-        const auth = await options.brokerAuth(target.source);
-        const memberPath = path.join(root, member.path);
-        if (
-          existsSync(memberPath) &&
-          resolveSessionFilePath([{ id: 'main', absolutePath: root }], await realpath(memberPath))
-            ?.relativePath !== member.path
-        )
-          throw new Error('Project group member escaped its directory');
-        let existed = false;
-        if (member.placement.kind === 'root') {
-          existed = manager.hasWorktree(options.sessionId);
-          const info = await manager.createWorktree(
-            options.sessionId,
-            member.base,
-            member.branch,
-            undefined,
-            auth
-          );
-          if (member.base === 'HEAD') {
-            // Keep a named root base for PR targets; detached/recovered receipts pin the commit.
-            const base = info.baseRef;
-            member.base =
-              base && base !== 'HEAD'
-                ? target.source.kind === 'github'
-                  ? base.replace(/^origin\//, '')
-                  : base
-                : await worktreeGitLegacy.run({ cwd: info.hostPath, args: ['rev-parse', 'HEAD'] });
+      const parents = new Set<string>();
+      const ready = [...pending]
+        .filter((id) => {
+          const placement = run.members[id as keyof typeof run.members]!.placement;
+          if (placement.kind === 'root') return true;
+          if (pending.has(placement.parent) || parents.has(placement.parent)) return false;
+          parents.add(placement.parent);
+          return true;
+        })
+        .slice(0, 4);
+      if (!ready.length) throw new Error('Project group has unresolved member dependencies');
+      await settleProjectTasks(
+        ready.map(async (id) => {
+          const member = run.members[id as keyof typeof run.members]!;
+          options.onProgress?.(`Preparing ${member.path} (${completed}/${resolved.size} ready)`);
+          const target = resolved.get(id)!;
+          if (!target.isGit) {
+            if (member.placement.kind !== 'root')
+              throw new Error('Non-Git member cannot be a submodule');
+            // Before ACP initialization, register the directory without a link.
+            // The negotiated startup callback selects/reconciles the final access mode.
+            const additional = options.supportsAdditionalDirectories !== false;
+            await reconcileProjectMemberLink(root, member.placement.dir, target.url, additional);
+            member.access = additional ? 'additional' : 'link';
+            delete member.branch;
+            delete member.repoFullName;
+            delete member.dirty;
+            delete member.unpushed;
+            delete member.diff;
+            await checkpoint();
+            pending.delete(id);
+            completed++;
+            return;
           }
-          member.branch = info.branch;
-        } else {
-          const parent = run.members[member.placement.parent]!;
-          const restoring = Boolean(member.branch);
-          const info = await manager.materializeProjectSubmodule(
-            {
-              parentPath: path.join(root, parent.path),
-              submodulePath: member.placement.path,
-              expectedRepositoryUrl: target.url,
-              sessionId: options.sessionId,
-              restoreBranch: member.branch,
-            },
-            auth
-          );
-          member.branch = info.branch;
-          if ((!info.existed && !restoring) || member.base === PROJECT_SUBMODULE_BASE)
-            member.base = info.commit;
-          existed = info.existed === true;
-        }
-        const actualPath = await realpath(memberPath);
-        if (
-          resolveSessionFilePath([{ id: 'main', absolutePath: root }], actualPath)?.relativePath !==
-          member.path
-        )
-          throw new Error('Project group member escaped its directory');
-        // Persist every successful branch before starting another member: retries keep identity.
-        await publish(run);
-        if (!existed) newlyCreated.push(member);
-        pending.delete(id);
-      }
-    }
-    for (const [id, member] of Object.entries(run.members)) {
-      const target = resolved.get(id)!;
-      if (!target.isGit) continue;
-      await getWorktreeManager({
-        repoId: target.repoId,
-        source: target.source,
-        logger: options.logger,
-      }).initializeMissingProjectSubmodules(
-        path.join(root, member.path),
-        await options.brokerAuth(target.source)
+          member.access = 'worktree';
+          const manager = getWorktreeManager({
+            repoId: target.repoId,
+            source: target.source,
+            logger: options.logger,
+            ...(member.placement.kind === 'root'
+              ? { projectMember: { root: run.root, dir: member.placement.dir } }
+              : {}),
+          });
+          const auth = await options.brokerAuth(target.source);
+          const memberPath = path.join(root, member.path);
+          if (
+            existsSync(memberPath) &&
+            resolveSessionFilePath([{ id: 'main', absolutePath: root }], await realpath(memberPath))
+              ?.relativePath !== member.path
+          )
+            throw new Error('Project group member escaped its directory');
+          let existed = false;
+          if (member.placement.kind === 'root') {
+            existed = manager.hasWorktree(options.sessionId);
+            const info = await manager.createWorktree(
+              options.sessionId,
+              member.base,
+              member.branch,
+              undefined,
+              auth
+            );
+            if (member.base === 'HEAD') {
+              // Keep a named root base for PR targets; detached/recovered receipts pin the commit.
+              const base = info.baseRef;
+              member.base =
+                base && base !== 'HEAD'
+                  ? target.source.kind === 'github'
+                    ? base.replace(/^origin\//, '')
+                    : base
+                  : await worktreeGitLegacy.run({
+                      cwd: info.hostPath,
+                      args: ['rev-parse', 'HEAD'],
+                    });
+            }
+            member.branch = info.branch;
+          } else {
+            const parent = run.members[member.placement.parent]!;
+            const restoring = Boolean(member.branch);
+            const info = await manager.materializeProjectSubmodule(
+              {
+                parentPath: path.join(root, parent.path),
+                submodulePath: member.placement.path,
+                expectedRepositoryUrl: target.url,
+                sessionId: options.sessionId,
+                restoreBranch: member.branch,
+              },
+              auth
+            );
+            member.branch = info.branch;
+            if ((!info.existed && !restoring) || member.base === PROJECT_SUBMODULE_BASE)
+              member.base = info.commit;
+            existed = info.existed === true;
+          }
+          const actualPath = await realpath(memberPath);
+          if (
+            resolveSessionFilePath([{ id: 'main', absolutePath: root }], actualPath)
+              ?.relativePath !== member.path
+          )
+            throw new Error('Project group member escaped its directory');
+          // Serialize immutable receipts even while independent Git work runs in parallel.
+          await checkpoint();
+          if (!existed) newlyCreated.push(member);
+          pending.delete(id);
+          completed++;
+          options.onProgress?.(`Prepared ${member.path} (${completed}/${resolved.size} ready)`);
+        })
       );
     }
-    for (const member of newlyCreated) await options.setup(member, path.join(root, member.path));
+    const members = Object.entries(run.members);
+    for (let offset = 0; offset < members.length; offset += 4) {
+      await settleProjectTasks(
+        members.slice(offset, offset + 4).map(async ([id, member]) => {
+          const target = resolved.get(id)!;
+          if (!target.isGit) return;
+          options.onProgress?.(`Initializing submodules in ${member.path}`);
+          await getWorktreeManager({
+            repoId: target.repoId,
+            source: target.source,
+            logger: options.logger,
+          }).initializeMissingProjectSubmodules(
+            path.join(root, member.path),
+            await options.brokerAuth(target.source)
+          );
+          options.onProgress?.(`Submodules ready in ${member.path}`);
+        })
+      );
+    }
+    // Scripts may depend on other members' output; retain their declared ordering.
+    for (const member of newlyCreated.sort((a, b) => a.o - b.o)) {
+      options.onProgress?.(`Running setup for ${member.path}`);
+      await options.setup(member, path.join(root, member.path));
+    }
+    options.onProgress?.('Project repositories ready');
     result = { workdir: root, run };
     return run;
   });
   return result;
+}
+
+/** Promise mutations cannot be cancelled; never release their owner on the first rejection. */
+async function settleProjectTasks(tasks: Promise<void>[]): Promise<void> {
+  const results = await Promise.allSettled(tasks);
+  const failures = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason] : []
+  );
+  if (failures.length === 1) throw failures[0];
+  if (failures.length) throw new AggregateError(failures, 'Project member preparation failed');
 }

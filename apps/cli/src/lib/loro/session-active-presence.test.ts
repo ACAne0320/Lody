@@ -254,6 +254,35 @@ describe('native session presence leases', () => {
       )
   );
 
+  it.effect(
+    'gives Project Git preparation its own silence budget and renews on member completion',
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const h = yield* harness({ intervalMs: 30_000 });
+          const lease = yield* Scope.make();
+          yield* Scope.provide(h.owner.hold(sessionId, 'initializing'), lease);
+          yield* Scope.provide(h.owner.hold(otherId, 'initializing'), lease);
+          h.owner.setPhase(sessionId, 'git-clone', 'Preparing web (0/5 ready)');
+          yield* TestClock.adjust(180_000);
+          expect(h.events.filter((event) => event.kind === 'stall')).toMatchObject([
+            { sessionId: otherId, stall: { stage: 'initializing', budgetMs: 180_000 } },
+          ]);
+          yield* TestClock.adjust(1_590_000);
+          h.owner.setPhase(sessionId, 'git-clone', 'Prepared web (1/5 ready)');
+          yield* TestClock.adjust(60_000);
+          expect(
+            h.events.filter((event) => event.kind === 'stall' && event.sessionId === sessionId)
+          ).toEqual([]);
+          yield* TestClock.adjust(1_740_000);
+          expect(
+            h.events.filter((event) => event.kind === 'stall' && event.sessionId === sessionId)
+          ).toMatchObject([{ stall: { stage: 'git-clone', budgetMs: 1_800_000 } }]);
+          yield* close(lease);
+        })
+      )
+  );
+
   it.effect('keeps one generation and prevents an old release from clearing its successor', () =>
     Effect.scoped(
       Effect.gen(function* () {

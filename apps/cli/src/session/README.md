@@ -576,3 +576,13 @@ persists `repositoryCheckout` before creating branches, pinning credentials and
 archive/restore storage. Local copies use native auth, including in mixed managed
 groups; PR polling keeps native and managed targets in separate batches. Missing
 copies fail with `project_repository_not_on_machine` when managed cloning is absent.
+
+Project preparation reports the existing `git-clone` presence stage during repository
+resolution, member checkout, submodule initialization and setup. These are actual
+milestones, not periodic keepalives. Up to four independent checkouts run together;
+selected submodules wait for their parent, and siblings sharing parent Git config
+are serialized. Branch receipts publish serially, and failures drain started work
+before releasing the Project owner. Selected members initialize non-recursively
+with their own credentials; remaining submodules initialize afterward with four Git
+fetch jobs per command. Local selected copies lend objects via `--reference` and
+`--dissociate`, so source GC cannot invalidate a checkout. Setup retains Member order.
