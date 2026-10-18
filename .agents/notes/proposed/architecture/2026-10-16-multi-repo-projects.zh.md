@@ -12,7 +12,9 @@ Translation: current
 一个执行目录、一个分支，PR 发现也只针对这一个仓库。本提案引入工作区级的 Project：
 新建对话时，为每个 Member 创建一个可编辑的 worktree，平铺在一个主目录下，主目录就是
 Agent 的执行目录；PR 发现和“当前 PR”都改为按仓库计算。这是在评审中把最初的嵌套
-布局方案简化后的结果。已声明的子模块保留嵌套关系，其他成员平铺。shared 与 daemon
+布局方案简化后的结果。已声明的子模块保留嵌套关系，其他成员平铺。有 GitHub 远端的
+本地文件夹以仓库 Member 加入，在任何有它副本的机器上都能运行；只有没有远端的文件夹
+才把 Project 绑定到一台机器。shared 与 daemon
 实现正在评审，Agent 沙箱范围和旧客户端的呈现仍需产品验证。规范意图见[草案 Spec](../../../../specs/multi-repo-projects.zh.md)。
 
 ## 问题与要求
@@ -99,7 +101,9 @@ type ProjectMemberPlacement =
   | { kind: 'submodule'; parent: ProjectMemberId; path: string };
 
 type ProjectMemberSource =
-  | { kind: 'github'; repoFullName: string; repoId?: number; baseBranch?: string }
+  /** preferLocal：仓库 Member，见「修订：仓库 Member」。 */
+  | { kind: 'github'; repoFullName: string; repoId?: number; baseBranch?: string; preferLocal?: true }
+  /** 绑定机器：没有 GitHub 远端的文件夹，或者非 Git 目录。 */
   | { kind: 'local'; machineId: MachineId; localProjectId: LocalProjectId; baseBranch?: string };
 ```
 
@@ -495,3 +499,61 @@ UI 不新增路径格式，而是把额外根目录「挂载」在成员目录�
 别的文件；这类请求一律交给机器解析。编辑器把非 Git 成员标为「直接修改原目录」，并且不允许
 它成为子模块或子模块的父成员；Info Bar 的仓库列表对这类成员显示「原目录 · 不隔离」。
 UI 只在快照记录了 `access: 'additional' | 'link'` 时挂载根目录，而只有支持 `projectFileRoots` 的 daemon（#1674）才会写这个字段，因此旧 daemon 不会产生挂载。以上仅在单元测试和类型检查中验证，未端到端运行。
+
+## 修订：仓库 Member
+
+**问题。** 从本地文件夹加入的 Member 记录为 `(machineId, localProjectId)`。因此编辑器
+把一个仓库在每台机器上的副本都列成单独一行（三台机器的工作区里 `lody` 出现三次）；
+选了一个本地 Member 之后，又把其他机器的文件夹全部置灰，每行重复同一句很长的原因。
+机器一多，大部分行都是灰的。用户想的是「这个仓库」，而不是「那台机器上的副本」；
+而且绑定到一台机器的项目组，换到另一台有同样仓库的机器上也无法使用。
+
+**决策**（产品负责人看过示意图后确认）：
+
+- 已知 GitHub 远端的本地文件夹以**仓库 Member** 加入，即
+  `{ kind: 'github', repoFullName, preferLocal: true }`。只有没有 GitHub 远端的本地
+  仓库和非 Git 目录仍是绑定机器的 `local` 来源。Project 的执行机器由它绑定机器的
+  Member 决定（`getProjectBoundMachineId`）；没有这类 Member 的 Project 可以在任意
+  机器上运行。
+- **物化。** Daemon 在自己的机器上找远端是该仓库的本地项目，取最近打开的一个
+  （`pickProjectRepositoryLocalCopy`），并重新观测这个文件夹的远端，而不是信任已发布
+  的值。worktree 从这份副本创建，使用本机凭证，和本地 Member 完全一样。没有副本时，
+  托管部署像 GitHub Member 一样 clone；纯本地模式不 clone，而是报告这个 Member 在这台
+  机器上不可用。
+- **发布。** `LocalProjectMeta.githubRepoFullName` 由拥有该项目的 daemon 根据文件夹
+  的远端写入。规范化时丢弃格式错误的值，而不是拒绝整行项目。客户端用它把多份副本
+  合并成选择器里的一行，并在不逐个探测文件夹的情况下说明哪些机器能运行某个 Project。
+- **兼容。** `projectRepositoryMembers: 1` 控制含仓库 Member 的 Project 能否开始；
+  契约分支声明检查函数，daemon 分支负责声明该能力。`preferLocal` 是可选字段，旧客户端
+  把它读成普通 GitHub Member；旧客户端重新保存时会丢掉这个字段（它的 Zod 对象会剥离
+  未知键），这个 Member 退化为托管 clone。已保存的 Project 不会在后台被改写：下次
+  在编辑器里保存时，所在机器发布了远端的本地 Member 才会被转换，ID、目录和子模块位置
+  保持不变。
+
+**备选方案。**
+
+- *每个 Project 显式指定一台机器，选择器只显示这台机器。* 改动最小，但项目组在其他
+  有同样仓库的机器上仍然用不了，而且在一台机器的视图里，GitHub 和本地副本仍会重复。
+- *保留按机器的行，只按机器分组。* 噪音更少，但每个仓库仍按机器各出现一次，仍把项目组
+  绑定到一台机器。
+- *新增来源类型 `repo`。* 代码上更清楚，但旧客户端的可辨识联合会拒绝整行 Project；
+  可选字段则能降级。
+
+**UI。**
+
+- *编辑器选择器。* 每个仓库一行：GitHub 仓库缓存与发布了远端的本地项目合并，以小写
+  仓库名为键。分组为「仓库」「本机目录」「其他机器的目录」。只在 GitHub 上的仓库在
+  用户搜索前不列出（已选中的除外），所以仓库再多也不会把本地行挤出视野；列表末尾提示
+  「另有 N 个 GitHub 仓库，输入名称搜索」。搜索框下面有一排来源筛选（全部、仓库、本机、
+  各台机器），沿用 iOS 模拟器选择器的做法。项目组已有绑定机器的 Member 时，其他机器的
+  目录置灰，原因只在该组标题下说一次，不逐行重复。
+- *Composer。* 和单个项目一样先选机器：绑定到其他机器的项目组不列出，选择项目组从不
+  切换机器。没有绑定机器 Member 的项目组在每台机器上都列出，并说明在这台机器上的可用
+  情况；成员选择器标出这台机器缺少的仓库 Member。
+
+**分工。** 本分支包含 Spec、本节和 shared 契约。逻辑 session 实现 daemon：在添加项目
+和启动时发布 `githubRepoFullName`；从本地副本用本机凭证物化仓库 Member（否则回退到
+托管 clone，纯本地模式报告不可用）；把提示词清单和 PR 观测扩展到副本使用的凭证；声明
+该能力。UI session 实现选择器、编辑器迁移和 composer 过滤。目前只运行了 shared 契约
+测试。
+

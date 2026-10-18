@@ -10,6 +10,7 @@ export type MachineProtocolCapabilities = Record<string, number>;
 export const MACHINE_PROTOCOL_CAPABILITIES = {
   multiRepoProject: 'multiRepoProject',
   projectFileRoots: 'projectFileRoots',
+  projectRepositoryMembers: 'projectRepositoryMembers',
   operationInbox: 'operationInbox',
   magpieImport: 'magpieImport',
   dshProviderIsolation: 'dshProviderIsolation',
@@ -117,6 +118,7 @@ export function machineSupportsSubagentCancellation(
  */
 export const MULTI_REPO_PROJECT_PROTOCOL_VERSION = 1;
 export const PROJECT_FILE_ROOTS_PROTOCOL_VERSION = 1;
+export const PROJECT_REPOSITORY_MEMBERS_PROTOCOL_VERSION = 1;
 
 export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities = {
   [MACHINE_PROTOCOL_CAPABILITIES.multiRepoProject]: MULTI_REPO_PROJECT_PROTOCOL_VERSION,
@@ -409,5 +411,19 @@ export function machineSupportsProjectFileRoots(
     machine,
     MACHINE_PROTOCOL_CAPABILITIES.projectFileRoots,
     PROJECT_FILE_ROOTS_PROTOCOL_VERSION
+  );
+}
+
+/**
+ * Project group repository Members (`preferLocal`): the daemon uses its own
+ * copy of the repository when it has one. Older daemons would clone instead.
+ */
+export function machineSupportsProjectRepositoryMembers(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return machineSupportsProtocolCapability(
+    machine,
+    MACHINE_PROTOCOL_CAPABILITIES.projectRepositoryMembers,
+    PROJECT_REPOSITORY_MEMBERS_PROTOCOL_VERSION
   );
 }

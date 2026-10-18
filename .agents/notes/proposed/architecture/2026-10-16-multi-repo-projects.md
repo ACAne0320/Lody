@@ -16,7 +16,9 @@ editable worktree placed directly under one main directory, and that main
 directory is the agent's execution directory. PR discovery and the meaning of
 "current PR" become per-repository. This design simplifies the original
 nested-layout proposal after review. Declared submodules retain their nesting; other
-members are flattened. Shared and daemon implementation is under review. Agent sandbox
+members are flattened. A local folder with a GitHub remote joins as a repository
+Member that runs on any machine with a copy of it; only folders without a remote
+bind a Project to one machine. Shared and daemon implementation is under review. Agent sandbox
 scope and older-client presentation still need product verification. The intended contract is in the
 [draft Spec](../../../../specs/multi-repo-projects.md).
 
@@ -130,7 +132,9 @@ type ProjectMemberPlacement =
   | { kind: 'submodule'; parent: ProjectMemberId; path: string };
 
 type ProjectMemberSource =
-  | { kind: 'github'; repoFullName: string; repoId?: number; baseBranch?: string }
+  /** preferLocal: a repository Member, see "Revision: repository Members". */
+  | { kind: 'github'; repoFullName: string; repoId?: number; baseBranch?: string; preferLocal?: true }
+  /** Machine-bound: a folder without a GitHub remote, or a non-Git directory. */
   | { kind: 'local'; machineId: MachineId; localProjectId: LocalProjectId; baseBranch?: string };
 ```
 
@@ -645,3 +649,77 @@ submodule's parent. The Info Bar's repository list shows such members as
 `access: 'additional' | 'link'`, which only a daemon with `projectFileRoots`
 (#1674) writes, so older daemons never produce mounts. All of this
 is verified only by unit tests and type checks; nothing has run end to end.
+
+## Revision: repository Members
+
+**Problem.** Members added from local folders were recorded as
+`(machineId, localProjectId)`. The editor therefore listed every machine's copy of a
+repository as a separate row (`lody` three times in a workspace with three machines),
+and once one local Member was chosen it disabled every other machine's folders, each
+with the same long reason. In a workspace with several machines most rows were grey.
+The user means "this repository", not "the copy on that machine", and a group bound
+to one machine could not be used from another machine that has the same repositories.
+
+**Decision** (confirmed by the product owner after reviewing mockups):
+
+- A local folder whose GitHub remote is known joins as a **repository Member**,
+  `{ kind: 'github', repoFullName, preferLocal: true }`. Only a local repository
+  without a GitHub remote and a non-Git directory remain machine-bound `local`
+  sources. A Project's execution machine follows from its machine-bound Members
+  (`getProjectBoundMachineId`); a Project without any runs on any machine.
+- **Materialization.** The daemon looks for a local project on its own machine whose
+  remote is the repository, picking the most recently opened one
+  (`pickProjectRepositoryLocalCopy`), and re-observes that folder's remote rather than
+  trusting the published value. It creates the worktree from that copy with native
+  credentials, exactly like a local Member. Without a copy, a managed deployment
+  clones like a GitHub Member; local-only mode reports the Member unavailable on that
+  machine instead of cloning.
+- **Publication.** `LocalProjectMeta.githubRepoFullName` is written by the owning
+  daemon from the folder's remote. The normalizer drops a malformed value instead of
+  rejecting the project row. Clients use it to merge copies into one picker row and
+  to say which machines can run a Project without probing every folder.
+- **Compatibility.** `projectRepositoryMembers: 1` gates starting a Project that
+  contains a repository Member; the contract branch declares the checker and the
+  daemon branch advertises it. `preferLocal` is optional, so an older client reads
+  the Member as a plain GitHub Member; an older client that re-saves the Project
+  drops the flag (its Zod object strips unknown keys) and the Member degrades to a
+  managed clone. Saved Projects are not rewritten in the background: the editor
+  converts a local Member whose machine publishes a remote when the Project is next
+  saved, keeping the Member's ID, directory and submodule placement.
+
+**Alternatives.**
+
+- *An explicit machine per Project, with the picker showing only that machine.* The
+  smallest change, but a group stays unusable on any other machine that holds the
+  same repositories, and the duplicate rows remain within one machine's view of
+  GitHub plus local copies.
+- *Keep per-machine rows but group them by machine.* Less noise, but every
+  repository still appears once per machine and still binds the group to one.
+- *A new source kind `repo`.* Clearer in code, but a discriminated union in an older
+  client rejects the whole Project row; an optional field degrades instead.
+
+**UI.**
+
+- *Editor picker.* One row per repository: the GitHub repository cache merged with
+  local projects publishing a remote, keyed by the lowercase repository name. Rows
+  are grouped as Repositories, directories on this machine, and directories on other
+  machines. Repositories that exist only on GitHub are not listed until the user
+  searches (or already selected), so a long repository list never pushes local rows
+  out of view; the list ends with "N more GitHub repositories, type to search". A
+  row of source filters (All, Repositories, This machine, then each machine) sits
+  under the search field, following the iOS simulator picker. Once the group has a
+  machine-bound Member, other machines' directories are disabled and the reason is
+  stated once under their group label, not per row.
+- *Composer.* Machine first, as for single projects: groups bound to another
+  machine are not listed, and choosing a group never switches the machine. A group
+  without machine-bound Members is listed on every machine with its availability
+  there, and the member picker marks repository Members the machine lacks.
+
+**Split of work.** This branch holds the Spec, this section and the shared contract.
+The logic session implements the daemon: publishing `githubRepoFullName` when a
+project is added and on startup, materializing repository Members from a local copy
+with native credentials (falling back to the managed clone, or reporting unavailable
+in local-only mode), extending the prompt inventory and PR observation to the copy's
+credentials, and advertising the capability. The UI session implements the picker,
+editor migration and composer filtering. Only the shared contract tests have run.
+

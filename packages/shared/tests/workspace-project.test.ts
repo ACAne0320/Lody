@@ -18,6 +18,8 @@ import {
   getCurrentPullRequestsByRepository,
   getProjectRunRoot,
   resolveProjectMemberPaths,
+  getProjectBoundMachineId,
+  pickProjectRepositoryLocalCopy,
   type ProjectMember,
   type ProjectMemberId,
 } from '../src/workspace-project';
@@ -31,7 +33,10 @@ import {
   CURRENT_MACHINE_PROTOCOL_CAPABILITIES,
   machineSupportsMultiRepoProject,
   machineSupportsProjectFileRoots,
+  machineSupportsProjectRepositoryMembers,
 } from '../src/machine-protocol-capabilities';
+import type { MachineId } from '../src/ids';
+import type { LocalProjectId } from '../src/project';
 
 const project = () =>
   WorkspaceProjectSchema.parse({
@@ -259,6 +264,103 @@ describe('workspace Projects', () => {
     );
   });
 });
+describe('repository Members', () => {
+  const local = (machineId: string, localProjectId: string) =>
+    ({
+      kind: 'local',
+      machineId: machineId as MachineId,
+      localProjectId: localProjectId as LocalProjectId,
+    }) as const;
+
+  it('keeps preferLocal through the catalog and the frozen run', () => {
+    const p = project();
+    const withRepo = WorkspaceProjectSchema.parse({
+      ...p,
+      members: [
+        {
+          ...p.members[0]!,
+          source: { kind: 'github', repoFullName: 'acme/api', preferLocal: true },
+        },
+        p.members[1]!,
+      ],
+    });
+    expect(withRepo.members[0]!.source).toEqual({
+      kind: 'github',
+      repoFullName: 'acme/api',
+      preferLocal: true,
+    });
+    const frozen = buildSessionProjectRun(withRepo, ['api', 'proto'] as ProjectMemberId[]);
+    expect(frozen?.members['api' as ProjectMemberId]?.src).toMatchObject({ preferLocal: true });
+    expect(
+      WorkspaceProjectSchema.safeParse({
+        ...p,
+        members: [
+          {
+            ...p.members[0]!,
+            source: { kind: 'github', repoFullName: 'acme/api', preferLocal: false },
+          },
+        ],
+      }).success
+    ).toBe(false);
+  });
+
+  it('binds a group to the one machine of its local Members', () => {
+    const github = { kind: 'github', repoFullName: 'acme/api', preferLocal: true } as const;
+    expect(getProjectBoundMachineId([{ source: github }])).toBeNull();
+    expect(
+      getProjectBoundMachineId([
+        { source: github },
+        { source: local('m1', 'docs') },
+        { source: local('m1', 'notes') },
+      ])
+    ).toBe('m1');
+    expect(
+      getProjectBoundMachineId([{ source: local('m1', 'docs') }, { source: local('m2', 'ios') }])
+    ).toBe('conflict');
+  });
+
+  it('picks the most recently opened copy of a repository, ignoring case', () => {
+    const copies = [
+      { id: 'a' as LocalProjectId, githubRepoFullName: 'Acme/API', createdAtMs: 1 },
+      {
+        id: 'b' as LocalProjectId,
+        githubRepoFullName: 'acme/api',
+        createdAtMs: 2,
+        lastOpenedAtMs: 9,
+      },
+      {
+        id: 'c' as LocalProjectId,
+        githubRepoFullName: 'acme/web',
+        createdAtMs: 3,
+        lastOpenedAtMs: 99,
+      },
+      { id: 'd' as LocalProjectId, createdAtMs: 4 },
+    ];
+    expect(pickProjectRepositoryLocalCopy('acme/api', copies)?.id).toBe('b');
+    expect(pickProjectRepositoryLocalCopy('acme/proto', copies)).toBeUndefined();
+    // Equal recency falls back to the id, so every client picks the same copy.
+    expect(
+      pickProjectRepositoryLocalCopy('acme/api', [
+        { id: 'z' as LocalProjectId, githubRepoFullName: 'acme/api', createdAtMs: 5 },
+        { id: 'y' as LocalProjectId, githubRepoFullName: 'acme/api', createdAtMs: 5 },
+      ])?.id
+    ).toBe('y');
+  });
+
+  it('requires its own capability beyond multi-repository and file roots', () => {
+    expect(
+      machineSupportsProjectRepositoryMembers({
+        protocolCapabilities: { multiRepoProject: 1, projectFileRoots: 1 },
+      })
+    ).toBe(false);
+    expect(
+      machineSupportsProjectRepositoryMembers({
+        protocolCapabilities: { projectRepositoryMembers: 1 },
+      })
+    ).toBe(true);
+  });
+});
+
 describe('session file root resolution', () => {
   it('matches the deepest root and rejects siblings and traversal outside all roots', () => {
     const roots = [

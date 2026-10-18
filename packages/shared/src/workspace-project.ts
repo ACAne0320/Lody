@@ -7,7 +7,18 @@ import { parseGitHubPullRequestUrl } from './github-url';
 export type ProjectId = string & { __brand: 'ProjectId' };
 export type ProjectMemberId = string & { __brand: 'ProjectMemberId' };
 export type ProjectMemberSource =
-  | { kind: 'github'; repoFullName: string; repoId?: number; baseBranch?: string }
+  | {
+      kind: 'github';
+      repoFullName: string;
+      repoId?: number;
+      baseBranch?: string;
+      /**
+       * A repository Member: the execution machine's own copy (a local project
+       * whose GitHub remote is this repository) is used when it has one, and the
+       * Member runs on any machine. Without it this is a managed GitHub clone.
+       */
+      preferLocal?: true;
+    }
   | { kind: 'local'; machineId: MachineId; localProjectId: LocalProjectId; baseBranch?: string };
 export type ProjectMemberPlacement =
   | { kind: 'root'; dir: string }
@@ -89,6 +100,7 @@ export const ProjectMemberSourceSchema = z.discriminatedUnion('kind', [
     repoFullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
     repoId: z.number().int().positive().optional(),
     baseBranch: z.string().min(1).optional(),
+    preferLocal: z.literal(true).optional(),
   }),
   z.object({
     kind: z.literal('local'),
@@ -400,3 +412,44 @@ export const ProjectLocalMemberProbeSchema = z
   })
   .strict();
 export type ProjectLocalMemberProbe = z.infer<typeof ProjectLocalMemberProbeSchema>;
+
+/**
+ * The one machine a Project group must run on, from its machine-bound Members
+ * (local sources). `null` when it has none and may run anywhere; `conflict`
+ * when they are on different machines, which the editor never saves.
+ */
+export function getProjectBoundMachineId(
+  members: readonly Pick<ProjectMember, 'source'>[]
+): MachineId | null | 'conflict' {
+  let machineId: MachineId | null = null;
+  for (const { source } of members) {
+    if (source.kind !== 'local') continue;
+    if (machineId !== null && machineId !== source.machineId) return 'conflict';
+    machineId = source.machineId;
+  }
+  return machineId;
+}
+
+/**
+ * The local project a repository Member uses on one machine: among that
+ * machine's projects publishing this GitHub remote, the most recently opened.
+ * Clients use it to preview availability; the daemon re-observes the remote.
+ */
+export function pickProjectRepositoryLocalCopy<
+  T extends {
+    id: LocalProjectId;
+    githubRepoFullName?: string;
+    lastOpenedAtMs?: number;
+    createdAtMs: number;
+  },
+>(repoFullName: string, projects: Iterable<T>): T | undefined {
+  const name = repoFullName.toLowerCase();
+  let best: T | undefined;
+  for (const project of projects) {
+    if (project.githubRepoFullName?.toLowerCase() !== name) continue;
+    const rank = project.lastOpenedAtMs ?? project.createdAtMs;
+    const bestRank = best ? (best.lastOpenedAtMs ?? best.createdAtMs) : -Infinity;
+    if (!best || rank > bestRank || (rank === bestRank && project.id < best.id)) best = project;
+  }
+  return best;
+}

@@ -25,6 +25,11 @@ Alice 的产品由本地文件夹 `web`（远端 `acme/web`）、`api`（远端 
 - Member 按**仓库身份**去重：GitHub 仓库（有数字 ID 时以 ID 为准），或者没有 GitHub
   远端的本地仓库 `(machineId, localProjectId)`。同一个仓库从本地文件夹和 GitHub 各加
   一次，或者从同一个 monorepo 的两个子目录加入，都只算一个 Member。
+- Member 分为**仓库 Member**和**绑定机器的 Member**。已知 GitHub 远端的本地文件夹
+  以仓库 Member 加入：它记录的是仓库而不是机器，所以同一个 Project 可以在任意机器上
+  运行。只有没有 GitHub 远端的本地仓库和非 Git 目录绑定机器。一个 Project 的所有
+  绑定机器的 Member 都在同一台机器上，这台机器就是它唯一的执行机器；没有绑定机器的
+  Member 的 Project 可以在任意机器上运行。
 - 每个平铺的 Member 有一个目录名，在 Project 内唯一，默认取仓库名，用户可以修改；
   子模块 Member 的位置由子模块路径决定。
 - 现有的单个本地项目或 GitHub 仓库保持原样。它们原有的对话留在原来的位置，加入
@@ -116,8 +121,15 @@ Daemon 在执行机器上为每个 Git Member 创建一个 worktree 和新分支
 
 - 每个 Member 按现有规则各自分配分支，不要求各仓库的分支名相同。
 - 对话在创建时冻结 Member 列表，之后对 Project 的编辑只影响新对话。
-- 本地 Member 必须在执行机器上有绑定。没有绑定的 Member 不能被选中，Lody 不会悄悄
-  改为 clone 一份。开源桌面版是纯本地模式，只支持本地 Member，PR 通过本机凭证观测。
+- 绑定机器的 Member 必须在执行机器上有绑定，Lody 不会改为 clone 一份代替它。
+- 仓库 Member 在执行机器有本地副本时使用本地副本，即这台机器上 GitHub 远端为该仓库的
+  本地项目：worktree 从这份副本创建，使用本机自己的 Git 凭证，和本地 Member 一样。
+  没有本地副本时，托管部署像 GitHub Member 一样 clone 这个仓库。开源桌面版是纯本地
+  模式，从不 clone，所以这个 Member 在这台机器上显示为不可用，开始对话前必须取消勾选。
+  仓库 Member 用创建其 worktree 时的同一套凭证观测 PR。
+- 和单个项目一样，先选在哪台机器运行：新对话的选择器只列出能在所选机器上运行的
+  Project。绑定机器的 Member 在另一台机器上的 Project 不在这里列出；选择 Project
+  从不切换机器。每个列出的 Project 会说明所选机器缺少哪些仓库 Member。
 - 多 Member 对话中，Git 成员始终使用 worktree，非 Git 成员按「成员接入方式」接入。
   单 Member 对话保持现有行为，包括直接使用原始目录的模式。
 
@@ -132,6 +144,8 @@ Daemon 在执行机器上为每个 Git Member 创建一个 worktree 和新分支
 - 只有当前 PR 全部进入已启用的终态时，才触发 PR 自动归档；其中一个进入终态不算。
 - 兼容性：`project`、`branchName`、`repoFullName` 保留为第一个 Member 的投影，供旧
   客户端使用。只有声明了该协议能力的 daemon 才能创建多 Member 对话。
+  含仓库 Member 的 Project 只能在声明了仓库 Member 能力的 daemon 上开始；旧 daemon
+  会把这种 Member 当作普通的 GitHub clone。
 
 ## 生命周期
 
@@ -147,8 +161,13 @@ Member 无法解析或备份失败，都保留整个主目录并稍后重试。�
 
 ## 数据归属
 
-- Project 定义是工作区 Flock 文档中的一行，和 MCP、Agent Role 的目录放在一起。本地
-  Member 只引用 `(machineId, localProjectId)`；路径仍只存在于该机器的 Flock 中。
+- Project 定义是工作区 Flock 文档中的一行，和 MCP、Agent Role 的目录放在一起。绑定
+  机器的 Member 只引用 `(machineId, localProjectId)`；路径仍只存在于该机器的 Flock 中。
+- 每台机器在自己的 Flock 中、在每个本地项目旁发布它的 GitHub 仓库，由拥有该项目的
+  daemon 从文件夹的远端观测得到。客户端用它把同一个仓库的多份副本合并成一项，并显示
+  哪些机器能运行某个 Project。它只是仓库名，从不是路径，且只有拥有它的 daemon 写入。
+- 在仓库 Member 出现之前保存的 Project，其本地 Member 保持原样。编辑器再次保存时，
+  所在机器发布了 GitHub 远端的本地 Member 会变为仓库 Member，ID、目录和子模块位置不变。
 - 对话元数据保存创建时冻结的 Member 快照，包括 Project 名称和主目录名。删除或修改
   Project 不影响已有对话；Project 被删除后，已有对话仍按快照分组和恢复。
 - `projectRun` 保持 SessionMeta 上的单个顶层值。客户端只在创建对话时写初始快照；

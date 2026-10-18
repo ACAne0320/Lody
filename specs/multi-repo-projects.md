@@ -29,6 +29,13 @@ looks only at that branch.
   identified by `(machineId, localProjectId)`. A repository added once as a local
   folder and once from GitHub, or added from two subdirectories of one monorepo,
   is a single Member.
+- A Member is either a **repository Member** or a **machine-bound Member**. A local
+  folder whose GitHub remote is known joins as a repository Member: it records the
+  repository, not the machine, so the same Project runs on any machine. Only a
+  local repository without a GitHub remote and a non-Git directory are
+  machine-bound. All machine-bound Members of one Project are on one machine, and
+  that machine is the Project's only execution machine; a Project without
+  machine-bound Members can run on any machine.
 - Each flattened Member has a directory name that is unique within the Project. It
   defaults to the repository name and the user can change it. A submodule Member's
   location is set by its submodule path.
@@ -150,10 +157,21 @@ conversation is not fetched. Every Member is editable; there is no read-only mod
   not required to match across repositories.
 - A conversation freezes its Member list at creation, so later Project edits
   affect only new conversations.
-- A local Member must have a binding on the execution machine. A Member without
-  one cannot be selected; Lody does not silently clone a copy instead. The
-  open-source desktop runs in local-only mode, so it supports only local Members
-  and observes their PRs with the machine's own credentials.
+- A machine-bound Member must have a binding on the execution machine; Lody never
+  clones a copy in its place.
+- A repository Member uses a local copy when the execution machine has one: a local
+  project there whose GitHub remote is that repository. Its worktree is created
+  from that copy with the machine's own Git credentials, as for a local Member.
+  Without a local copy, a managed deployment clones the repository like a GitHub
+  Member. The open-source desktop runs in local-only mode and never clones, so the
+  Member is shown as unavailable on that machine and must be unticked before the
+  conversation starts. Repository Members observe their PRs with the same
+  credentials that created their worktree.
+- Choosing where to run comes first, as for single projects: the new-conversation
+  picker lists the Projects that can run on the selected machine. A Project whose
+  machine-bound Members are on another machine is not listed there; selecting a
+  Project never switches the machine. For each listed Project the picker says which
+  repository Members the selected machine lacks.
 - In multi-Member conversations Git Members always use worktrees, and non-Git
   Members follow Member access. Single-Member conversations keep today's behavior,
   including the mode that uses the original directory directly.
@@ -173,6 +191,9 @@ conversation is not fetched. Every Member is editable; there is no read-only mod
 - Compatibility: `project`, `branchName` and `repoFullName` stay as a projection of
   the first Member for older clients. Only a daemon that advertises this protocol
   capability can create multi-Member conversations.
+  A Project with repository Members starts only on a daemon that advertises the
+  repository-Member capability; an older daemon would treat such a Member as a
+  plain GitHub clone.
 
 ## Lifecycle
 
@@ -195,8 +216,17 @@ GC scope extended to `<data>/repos/project-*/worktrees/<session>`.
 ## Data ownership
 
 - A Project definition is a row in the workspace Flock document, alongside the MCP
-  and Agent Role catalogs. A local Member references only
+  and Agent Role catalogs. A machine-bound Member references only
   `(machineId, localProjectId)`; its path still lives only in that machine's Flock.
+- Each machine publishes the GitHub repository of each of its local projects
+  beside the project in its own Flock, observed from the folder's remote by the
+  owning daemon. Clients use it to merge one repository's copies into one entry and
+  to show which machines can run a Project. It names a repository, never a path,
+  and only the owning daemon writes it.
+- A Project saved before repository Members existed keeps its local Members as
+  they are. When the editor saves it again, a local Member whose machine publishes
+  a GitHub remote becomes a repository Member, keeping its ID, directory and
+  submodule placement.
 - Conversation metadata keeps the Member snapshot frozen at creation, including
   the Project name and the main directory name. Deleting or editing a Project does
   not affect existing conversations; after a Project is deleted, its conversations
