@@ -19,7 +19,7 @@ import { listWorkspaceGitHubRepositoriesForCliToken } from './workspace';
 import { listWorkspaceMcpCatalog } from './workspace-mcp-store';
 import { ResourceDiscovery } from './resource-discovery';
 import { getCliPlatformKind } from './cli-platform';
-import { getSessionCommandEnvironment } from './session-command-environment';
+import { getDaemonWorkspace, getSessionCommandEnvironment } from './session-command-environment';
 
 export async function createResourceDiscovery(args: {
   manager: LoroDocumentManager;
@@ -30,10 +30,13 @@ export async function createResourceDiscovery(args: {
   offline?: boolean;
 }): Promise<ResourceDiscovery> {
   const { manager, auth, workspaceId } = args;
-  if (!args.offline) await syncWorkspaceMetaForRead(manager, 'resource.discovery');
+  // The daemon owns ongoing synchronization. Discovery reads its current replica
+  // without making catalog availability depend on another remote catch-up.
+  const shouldSync = args.offline !== true && getDaemonWorkspace()?.manager !== manager;
+  if (shouldSync) await syncWorkspaceMetaForRead(manager, 'resource.discovery');
   const synced = new Set<string>();
   async function sync(id: string) {
-    if (!args.offline && !synced.has(id)) {
+    if (shouldSync && !synced.has(id)) {
       await manager.syncFlockDocOrThrow(id, { reason: 'resource.discovery' });
       synced.add(id);
     }

@@ -63,7 +63,9 @@ prevention, not a new authorization boundary or a full backup format.
 The existing cloud workspace runtime supplies the initial integration. New CLI
 workspace queries fail before cloud I/O in the local composition. Catalog offline
 reads still require authorization connectivity; repository listing is online-only.
-Catalog synchronization failures fail the read rather than claiming an empty result.
+Daemon-hosted discovery reads the daemon's current catalogs without forcing metadata
+or Flock synchronization; background synchronization owns freshness. Standalone CLI
+catalog synchronization failures fail the read rather than claiming an empty result.
 Operation CLI queries its local store, not a cross-machine aggregation service.
 
 ## Evidence
