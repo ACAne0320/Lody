@@ -4,11 +4,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Effect, Scope } from 'effect';
+import { makeMemoryNetwork } from 'loro-repo/effect';
+import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getSessionRoomId,
+  getMachineFlockDocId,
+  getMachineRoomId,
+  getMachineFlockAgentConfigs,
+  writeAgentConfigToFlock,
   getWorkspaceFlockDocId,
+  listWorkspaceAgentRoles,
+  readWorkspaceFlockRowsFromFlock,
+  readMachineFlockRowsFromFlock,
   writeWorkspaceAgentRoleToFlock,
+  type AgentConfigId,
   type AgentRoleId,
   type MachineId,
   type SessionId,
@@ -61,7 +72,9 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lody-daemon-tools-'));
     process.env.LODY_DATA_DIR = path.join(tempDir, '.lody');
     delete process.env.LODY_PLATFORM;
-    manager = await LoroDocumentManager.create(workspaceId, ownerUserId, createSilentLogger());
+    manager = await LoroDocumentManager.create(workspaceId, ownerUserId, createSilentLogger(), {
+      keepWorkspaceCatalogJoined: true,
+    });
     await manager.registerMachine(machineId, {
       id: machineId,
       name: 'Daemon',
@@ -235,6 +248,157 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
     );
     expect(result.isError).not.toBe(true);
     expect(JSON.parse(result.content[0]?.text ?? '{}')).toMatchObject({ items: [] });
+  });
+
+  it('hydrates a cold headless daemon and receives later Role changes without a discovery sync', async () => {
+    const docId = getWorkspaceFlockDocId(workspaceId);
+    const scope = await manager.repo.acquireScopeLegacy('test network');
+    const network = await manager.repo.runLegacy(Scope.provide(makeMemoryNetwork(), scope.scope));
+    const host = await WorkspaceRepoLegacy.create({});
+    const hostScope = await host.acquireScopeLegacy('test publisher');
+    const remote = await host.runLegacy(
+      Scope.provide(host.native.acquireRoom({ kind: 'flock', id: docId }), hostScope.scope)
+    );
+    if (remote.replica.kind !== 'flock') throw new Error('Expected Flock replica');
+    const remoteFlock = remote.replica.lease.flock;
+    const local = await manager.repo.openFlockDoc(docId);
+    const received = Promise.withResolvers<void>();
+    const updated = Promise.withResolvers<void>();
+    const reattached = Promise.withResolvers<void>();
+    const detach = local.flock.subscribe(() => {
+      const role = listWorkspaceAgentRoles(readWorkspaceFlockRowsFromFlock(local.flock)).find(
+        (row) => row.id === 'remote-role'
+      );
+      if (role?.revision === 1) received.resolve();
+      if (role?.revision === 2) updated.resolve();
+      if (role?.revision === 3) reattached.resolve();
+    });
+    const detachCallbacks = [detach];
+    try {
+      writeWorkspaceAgentRoleToFlock(remoteFlock, {
+        v: 1,
+        id: 'remote-role' as AgentRoleId,
+        ownerUserId: 'synthetic-collaborator',
+        visibility: 'private',
+        name: 'Remote Role',
+        machineId,
+        agentConfigId: 'remote-config' as AgentConfigId,
+        runConfig: {},
+        revision: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await host.addTransport('memory', {
+        make: () => Effect.succeed(network.transport('memory')),
+      });
+      await host.runLegacy(remote.sync('memory'));
+      await manager.repo.addTransport('memory', {
+        make: () => Effect.succeed(network.transport('memory')),
+      });
+      await received.promise;
+      const remoteMachineId = 'remote-machine' as MachineId;
+      const machineDocId = getMachineFlockDocId(workspaceId, remoteMachineId);
+      const machineRoom = await host.runLegacy(
+        Scope.provide(host.native.acquireRoom({ kind: 'flock', id: machineDocId }), hostScope.scope)
+      );
+      if (machineRoom.replica.kind !== 'flock') throw new Error('Expected machine Flock');
+      const remoteConfig = {
+        id: 'remote-agent' as AgentConfigId,
+        machineId: remoteMachineId,
+        name: 'Remote Agent',
+        cliType: 'custom' as const,
+        agentType: 'claude' as const,
+        env: {},
+      };
+      writeAgentConfigToFlock(machineRoom.replica.lease.flock, remoteConfig);
+      await host.runLegacy(machineRoom.sync('memory'));
+      await manager.repo.upsertDocMeta(getMachineRoomId(remoteMachineId), {
+        id: remoteMachineId,
+        name: 'Remote Machine',
+        ownerUserId,
+      });
+      const localMachine = await manager.repo.openFlockDoc(machineDocId);
+      const configReceived = Promise.withResolvers<void>();
+      const configUpdated = Promise.withResolvers<void>();
+      const detachMachine = localMachine.flock.subscribe(() => {
+        const config = getMachineFlockAgentConfigs(
+          readMachineFlockRowsFromFlock(localMachine.flock)
+        )[remoteConfig.id];
+        if (config?.name === 'Remote Agent') configReceived.resolve();
+        if (config?.name === 'Updated Agent') configUpdated.resolve();
+      });
+      detachCallbacks.push(detachMachine);
+      vi.spyOn(manager, 'syncMetaOrThrow').mockRejectedValue(new Error('No request sync'));
+      vi.spyOn(manager, 'syncFlockDocOrThrow').mockRejectedValue(new Error('No request sync'));
+      vi.spyOn(commandRuntime, 'getAuthContextOrThrow').mockImplementation(createAuth);
+      vi.spyOn(commandRuntime, 'resolveWorkspaceOrThrow').mockResolvedValue({
+        id: workspaceId,
+        name: 'Synthetic',
+        slug: 'synthetic',
+        role: 'owner',
+      });
+      vi.spyOn(sessionCommands, 'readSessionMachineAccess').mockResolvedValue({ allowed: true });
+      const list = () =>
+        runWithDaemonWorkspace(daemon, () =>
+          executeDaemonSessionTool(context(), 'lody_agent_role_list', {})
+        );
+      expect(JSON.parse((await list()).content[0]?.text ?? '{}').items).toMatchObject([
+        { id: 'remote-role', revision: 1 },
+      ]);
+      const configs = () =>
+        runWithDaemonWorkspace(daemon, () =>
+          executeDaemonSessionTool(context(), 'lody_agent_config_list', {
+            machineId: remoteMachineId,
+          })
+        );
+      // A first read admits background reader interest; it never waits for catch-up.
+      await configs();
+      await configReceived.promise;
+      expect(JSON.parse((await configs()).content[0]?.text ?? '{}').items).toMatchObject([
+        { id: remoteConfig.id, name: 'Remote Agent' },
+      ]);
+      writeAgentConfigToFlock(machineRoom.replica.lease.flock, {
+        ...remoteConfig,
+        name: 'Updated Agent',
+      });
+      await configUpdated.promise;
+      expect(JSON.parse((await configs()).content[0]?.text ?? '{}').items).toMatchObject([
+        { id: remoteConfig.id, name: 'Updated Agent' },
+      ]);
+      const role = listWorkspaceAgentRoles(readWorkspaceFlockRowsFromFlock(remoteFlock))[0];
+      if (!role) throw new Error('Missing Role');
+      writeWorkspaceAgentRoleToFlock(remoteFlock, {
+        ...role,
+        revision: 2,
+        name: 'Updated Role',
+        updatedAt: 2,
+      });
+      await updated.promise;
+      expect(JSON.parse((await list()).content[0]?.text ?? '{}').items).toMatchObject([
+        { id: 'remote-role', name: 'Updated Role', revision: 2 },
+      ]);
+      await manager.repo.removeTransport('memory');
+      writeWorkspaceAgentRoleToFlock(remoteFlock, {
+        ...role,
+        revision: 3,
+        name: 'Reattached Role',
+        updatedAt: 3,
+      });
+      // Cached results stay useful while detached; reattachment refreshes the same replica.
+      expect(JSON.parse((await list()).content[0]?.text ?? '{}').items).toMatchObject([
+        { id: 'remote-role', revision: 2 },
+      ]);
+      await manager.repo.addTransport('memory', {
+        make: () => Effect.succeed(network.transport('memory')),
+      });
+      await reattached.promise;
+      expect(JSON.parse((await list()).content[0]?.text ?? '{}').items).toMatchObject([
+        { id: 'remote-role', name: 'Reattached Role', revision: 3 },
+      ]);
+    } finally {
+      for (const unsubscribe of detachCallbacks) unsubscribe();
+      await host.destroy();
+    }
   });
 
   it('routes an MCP process Session tool to the daemon instead of executing it locally', async () => {

@@ -27,7 +27,9 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
   the shared query schema; the CLI only translates flags and resolves selectors.
 - `resource-discovery-runtime.ts` — workspace readers and caller-specific authorization.
   Daemon calls read its current replica without forced metadata/Flock synchronization;
-  standalone CLI calls synchronize unless `--offline`. Authorization and cloud presence
+  `loro/workspace-catalog-sync.ts` holds the daemon workspace Flock reader room,
+  including headless startup; native transport recovery keeps it current.
+  Standalone CLI calls synchronize unless `--offline`. Authorization and cloud presence
   remain online-aware independently of the catalog read policy.
   Intent and limits: [resource discovery](../../../../specs/resource-discovery.md).
 - `agent-role-create.ts` — Agent Role catalog read and create-path resolution

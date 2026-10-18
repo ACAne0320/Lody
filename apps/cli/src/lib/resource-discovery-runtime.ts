@@ -32,10 +32,14 @@ export async function createResourceDiscovery(args: {
   const { manager, auth, workspaceId } = args;
   // The daemon owns ongoing synchronization. Discovery reads its current replica
   // without making catalog availability depend on another remote catch-up.
-  const shouldSync = args.offline !== true && getDaemonWorkspace()?.manager !== manager;
+  const isDaemon = getDaemonWorkspace()?.manager === manager;
+  const shouldSync = args.offline !== true && !isDaemon;
   if (shouldSync) await syncWorkspaceMetaForRead(manager, 'resource.discovery');
   const synced = new Set<string>();
   async function sync(id: string) {
+    // Admission only: the daemon retains one background reader per queried
+    // catalog. It does not wait for a transport or authoritative baseline.
+    if (isDaemon) await manager.holdCatalogFlockDoc(id);
     if (shouldSync && !synced.has(id)) {
       await manager.syncFlockDocOrThrow(id, { reason: 'resource.discovery' });
       synced.add(id);

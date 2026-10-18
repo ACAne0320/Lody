@@ -64,7 +64,11 @@ The existing cloud workspace runtime supplies the initial integration. New CLI
 workspace queries fail before cloud I/O in the local composition. Catalog offline
 reads still require authorization connectivity; repository listing is online-only.
 Daemon-hosted discovery reads the daemon's current catalogs without forcing metadata
-or Flock synchronization; background synchronization owns freshness. Standalone CLI
+or Flock synchronization. The daemon holds a workspace Flock reader room even without
+a renderer or selected external MCP. Queried authorized machine catalogs also keep
+one background reader per key for the daemon lifetime. Acquisition runs in the background with capped
+I/O retry backoff; native transport recovery owns reconnects. Startup and reads never
+wait for network catch-up, and repo shutdown owns release. Standalone CLI
 catalog synchronization failures fail the read rather than claiming an empty result.
 Operation CLI queries its local store, not a cross-machine aggregation service.
 
