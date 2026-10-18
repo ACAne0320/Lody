@@ -5108,5 +5108,8 @@
   "chat.projectGroup.membersTotal_other": "{{count}} repositories",
   "chat.projectGroup.missingLocalStatus": "This machine has no copy of {{count}} of this group’s repositories. Add them as local projects here, or start on another machine.",
   "chat.projectGroup.missingLocalStatus_one": "This machine has no copy of {{count}} of this group’s repositories. Add it as a local project here, or start on another machine.",
-  "chat.projectGroup.missingLocalStatus_other": "This machine has no copy of {{count}} of this group’s repositories. Add them as local projects here, or start on another machine."
+  "chat.projectGroup.missingLocalStatus_other": "This machine has no copy of {{count}} of this group’s repositories. Add them as local projects here, or start on another machine.",
+  "sidebar.projectGroups.newChat": "New chat in this project group",
+  "sidebar.projectGroups.settings": "Edit project group",
+  "sidebar.projectGroups.reorder": "Reorder project group"
 }

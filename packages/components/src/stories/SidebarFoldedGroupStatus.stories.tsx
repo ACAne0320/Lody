@@ -121,6 +121,15 @@ const REPO_SESSIONS: SessionListRow[] = [
   row('gh-copy', 'Polish settings copy', 'LodyAI/Lody', { hasUnreadMessages: true }),
 ];
 
+// A Project group's conversations, listed under the group rather than the
+// repository of its first member.
+const GROUP_SESSIONS: SessionListRow[] = [
+  {
+    ...row('group-export', 'Export report across web and api', 'acme/web', { isWorking: true }),
+    projectGroup: { id: 'shop', name: 'Shop' },
+  },
+];
+
 const CHAT_SESSIONS: SessionListRow[] = [
   row('chat-plan', 'Plan the Q4 roadmap', null, { hasUnreadMessages: true }),
   row('chat-idea', 'Naming ideas', null, {}),
@@ -140,6 +149,9 @@ function FoldedGroupsSidebar({ folded, heading }: { folded: boolean; heading?: s
     { repoFullName: 'LodyAI/Lody', collapsed: folded },
   ]);
   const [chatsCollapsed, setChatsCollapsed] = useState(folded);
+  const [groupsFolded, setGroupsFolded] = useState<Record<string, boolean>>({
+    'projectGroup:shop': folded,
+  });
   const store = useMemo(() => createStore(), []);
   const emptyChildren = useMemo(() => new Map<string, SessionMeta[]>(), []);
 
@@ -153,6 +165,34 @@ function FoldedGroupsSidebar({ folded, heading }: { folded: boolean; heading?: s
           data-folded-groups-sidebar={folded ? 'folded' : 'expanded'}
           className="rounded-xl border border-sidebar-border/80 bg-sidebar p-2 text-sidebar-foreground text-[14px]"
         >
+          <div className="mb-3 space-y-0.5">
+            <SidebarSectionHeader
+              label="Project groups"
+              collapsed={false}
+              toggleLabel="Toggle"
+              onToggleCollapsed={() => undefined}
+            />
+            <SessionList
+              sessions={GROUP_SESSIONS}
+              repos={[]}
+              projectGroups={[
+                {
+                  projectId: 'shop',
+                  name: 'Shop',
+                  collapsed: groupsFolded['projectGroup:shop'] ?? false,
+                },
+                { projectId: 'docs', name: 'Docs site', collapsed: false },
+              ]}
+              onToggleProjectGroupCollapsed={(key) =>
+                setGroupsFolded((prev) => ({ ...prev, [key]: !prev[key] }))
+              }
+              onNewInProjectGroup={() => undefined}
+              onOpenProjectGroupSettings={() => undefined}
+              onArchiveProjectGroupChats={() => undefined}
+              onMoveProjectGroup={() => undefined}
+            />
+          </div>
+
           <div className="mb-3 space-y-0.5">
             <SidebarSectionHeader
               label="Mac Studio"

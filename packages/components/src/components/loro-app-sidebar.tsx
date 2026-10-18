@@ -99,6 +99,7 @@ import {
   chatScopeAtom,
   chatsCollapsedAtom,
   githubWorktreesSectionCollapsedAtom,
+  projectGroupOrderAtom,
   projectGroupsSectionCollapsedAtom,
   localProjectCollapseStateAtom,
   localProjectOrderAtom,
@@ -214,6 +215,8 @@ import {
   withSessionSendStates,
   type SessionRowOpenedByTreeSlot,
   type SidebarGroupActivity,
+  SIDEBAR_HOVER_ACTION_CLASS,
+  SIDEBAR_MENU_TRIGGER_OPEN_CLASS,
   SIDEBAR_ROW_LIST_CLASS,
   SIDEBAR_UNSENT_TITLE_CLASS,
 } from '@/components/sidebar-row-shared';
@@ -1074,19 +1077,8 @@ export type LocalProjectItemProps = {
   dragHandle?: ReactNode;
 };
 
-const hoverActionClassName = cn(
-  'inline-flex h-5 w-5 items-center justify-center rounded-sm',
-  'text-muted-foreground/70 transition-[opacity,background-color,color] duration-100',
-  'opacity-0 pointer-events-none',
-  'group-hover:opacity-100 group-hover:pointer-events-auto',
-  'group-data-[menu-open]:opacity-100 group-data-[menu-open]:pointer-events-auto',
-  'hover:text-foreground hover:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/60'
-);
-
-// The trigger itself stays pressed-looking while its menu is open, not just the
-// row around it. Only the ⋯ opens a menu — the compose button beside it does not.
-const menuTriggerOpenClassName =
-  'group-data-[menu-open]:bg-muted/30 group-data-[menu-open]:text-foreground';
+const hoverActionClassName = SIDEBAR_HOVER_ACTION_CLASS;
+const menuTriggerOpenClassName = SIDEBAR_MENU_TRIGGER_OPEN_CLASS;
 
 /**
  * Folded-group status for local-project Sessions: each one counted by the mark
@@ -2114,10 +2106,14 @@ export function LoroAppSidebar({
     () => tasks.filter((task) => Boolean(task.repoFullName) && !task.projectGroup),
     [tasks]
   );
+  const { projects: workspaceProjects } = useWorkspaceProjects();
+  const projectGroupTasks = useMemo(() => tasks.filter((task) => task.projectGroup), [tasks]);
   const projectGroupSessions = useMemo(
-    () => tasks.filter((task) => task.projectGroup && !task.isPinned),
-    [tasks]
+    () => projectGroupTasks.filter((task) => !task.isPinned),
+    [projectGroupTasks]
   );
+  // Project groups render first, so they own the view filter when present.
+  const showProjectGroups = workspaceProjects.length > 0 || projectGroupSessions.length > 0;
   const workspaceChatSessions = useMemo(
     () => chatSessions.filter((task) => !task.isPinned),
     [chatSessions]
@@ -2667,6 +2663,42 @@ export function LoroAppSidebar({
       });
     }
 
+    // A Project group conversation belongs to its group, not to the
+    // repository of its first member, so it is neither a chat nor a GitHub row.
+    const projectGroupsLabel = t('sidebar.projectGroups', 'Project groups');
+    for (const task of projectGroupTasks) {
+      const groupName = task.projectGroup?.name ?? '';
+      items.push({
+        id: task.sessionId,
+        kind: 'local',
+        projectGroup: true,
+        title: task.title,
+        sectionLabel: `${projectGroupsLabel} · ${groupName}`,
+        subtitle: groupName || null,
+        repoFullName: task.repoFullName ?? null,
+        branchName: task.branchName,
+        machineName: task.machineName ?? null,
+        historyBackend: task.historyBackend,
+        latestMessageAt: task.latestMessageAt,
+        isPinned: task.isPinned,
+        isWorking: task.isWorking,
+        isWorktree: task.isWorktree,
+        hasUnreadMessages: task.hasUnreadMessages,
+        isOffline: task.isOffline,
+        isWaitingPermission: task.isWaitingPermission,
+        prStatus: task.prStatus,
+        prCiState: task.prCiState,
+        prReadiness: task.prReadiness,
+        prNumber: task.prNumber,
+        prUrl: task.prUrl ?? null,
+        externalHistoryProvider: task.externalHistoryProvider ?? null,
+        owner: task.owner ?? null,
+        openedBySessionId: task.openedBySessionId ?? null,
+        openedByRowSessionId: task.openedByRowSessionId ?? null,
+        sharing: task.sharing,
+      });
+    }
+
     for (const section of localProjectSections) {
       const machineId = section.machineId;
       if (!machineId) continue;
@@ -2733,6 +2765,7 @@ export function LoroAppSidebar({
     localProjectSessionsByKey,
     liveSessionStatuses,
     onlineMachineIds,
+    projectGroupTasks,
     repoSessions,
     resolveOpenerRowId,
     resolveSessionAuthor,
@@ -2845,7 +2878,8 @@ export function LoroAppSidebar({
             ? section.projects.map((project) => `${section.machineId}:${project.id}`)
             : [];
           const canReorderProjects = !isMobile && sectionProjectKeys.length > 1;
-          const headerFilter = sectionIndex === 0 ? firstSectionFilterAction : null;
+          const headerFilter =
+            sectionIndex === 0 && !showProjectGroups ? firstSectionFilterAction : null;
           const machineMeta = section.machineId ? machineMetaMap.get(section.machineId) : undefined;
           const sectionMachine: SidebarMachineInfo | null =
             section.machineId && machineMeta
@@ -3343,7 +3377,6 @@ export function LoroAppSidebar({
     updateBanner,
   ]);
 
-  const { projects: workspaceProjects } = useWorkspaceProjects();
   const [projectGroupsSectionCollapsed, setProjectGroupsSectionCollapsed] = useAtom(
     projectGroupsSectionCollapsedAtom
   );
@@ -3352,16 +3385,37 @@ export function LoroAppSidebar({
   }, [setProjectGroupsSectionCollapsed]);
   // Collapse state shares the repo-group store, keyed by group key, so the
   // keyboard model's group-header toggle needs no second path.
-  const projectGroupStates = useMemo<SessionListProjectGroupState[]>(
-    () =>
-      workspaceProjects.map((project) => ({
+  // The user's arrangement first; groups never arranged keep catalog order after it.
+  const [projectGroupOrder, setProjectGroupOrder] = useAtom(projectGroupOrderAtom);
+  const projectGroupStates = useMemo<SessionListProjectGroupState[]>(() => {
+    const rank = new Map(projectGroupOrder.map((id, index) => [id, index]));
+    return workspaceProjects
+      .map((project, index) => ({ project, index }))
+      .sort(
+        (left, right) =>
+          (rank.get(left.project.id) ?? projectGroupOrder.length + left.index) -
+          (rank.get(right.project.id) ?? projectGroupOrder.length + right.index)
+      )
+      .map(({ project }) => ({
         projectId: project.id,
         name: project.name,
         collapsed: repoCollapseState[getProjectGroupSessionGroupKey(project.id)] ?? false,
-      })),
-    [repoCollapseState, workspaceProjects]
+      }));
+  }, [projectGroupOrder, repoCollapseState, workspaceProjects]);
+  const handleMoveProjectGroup = useCallback(
+    (projectIds: string[]) => {
+      const listed = new Set(projectIds);
+      setProjectGroupOrder([...projectIds, ...projectGroupOrder.filter((id) => !listed.has(id))]);
+    },
+    [projectGroupOrder, setProjectGroupOrder]
   );
-  const showProjectGroups = projectGroupStates.length > 0 || projectGroupSessions.length > 0;
+  const handleOpenProjectGroupSettings = useCallback(
+    (projectId: string) => {
+      closeMobileDrawer();
+      openSettings('project-groups', { projectGroupId: projectId });
+    },
+    [closeMobileDrawer, openSettings]
+  );
   const handleToggleProjectGroupCollapsed = useCallback(
     (groupKey: string) => {
       setRepoCollapseState((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }));
@@ -3408,6 +3462,9 @@ export function LoroAppSidebar({
           onShareSessionWithTeam={handleRequestShareSession}
           onToggleProjectGroupCollapsed={handleToggleProjectGroupCollapsed}
           onNewInProjectGroup={handleNewInProjectGroup}
+          onOpenProjectGroupSettings={handleOpenProjectGroupSettings}
+          onArchiveProjectGroupChats={handleArchiveProjectChats}
+          onMoveProjectGroup={isMobile ? undefined : handleMoveProjectGroup}
           onOpenPullRequest={handleOpenTaskPullRequest}
           getSessionHref={getSessionHref}
         />
@@ -3448,7 +3505,9 @@ export function LoroAppSidebar({
           toggleLabel={toggleLabel}
           onToggleCollapsed={handleToggleGithubWorktreesSection}
           action={
-            localProjectSections.length === 0 ? (firstSectionFilterAction ?? undefined) : undefined
+            localProjectSections.length === 0 && !showProjectGroups
+              ? (firstSectionFilterAction ?? undefined)
+              : undefined
           }
         />
       ) : null}
@@ -3465,7 +3524,7 @@ export function LoroAppSidebar({
       isLoading={sessionsListLoading}
       chatsCollapsed={chatsCollapsed}
       headerAction={
-        localProjectSections.length === 0 && !showGithubWorktrees
+        localProjectSections.length === 0 && !showGithubWorktrees && !showProjectGroups
           ? (firstSectionFilterAction ?? undefined)
           : undefined
       }

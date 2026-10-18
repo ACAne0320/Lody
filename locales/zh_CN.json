@@ -5103,5 +5103,8 @@
   "chat.projectGroup.membersTotal": "{{count}} 个仓库",
   "chat.projectGroup.membersTotal_other": "{{count}} 个仓库",
   "chat.projectGroup.missingLocalStatus": "这台机器上缺少项目组中 {{count}} 个仓库的本地副本。请先在这台机器上添加它们，或换一台机器开始。",
-  "chat.projectGroup.missingLocalStatus_other": "这台机器上缺少项目组中 {{count}} 个仓库的本地副本。请先在这台机器上添加它们，或换一台机器开始。"
+  "chat.projectGroup.missingLocalStatus_other": "这台机器上缺少项目组中 {{count}} 个仓库的本地副本。请先在这台机器上添加它们，或换一台机器开始。",
+  "sidebar.projectGroups.newChat": "在此项目组中新建对话",
+  "sidebar.projectGroups.settings": "编辑项目组",
+  "sidebar.projectGroups.reorder": "调整项目组顺序"
 }

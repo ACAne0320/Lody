@@ -189,6 +189,9 @@ export const settingsActiveTabAtom = atom<SettingsTabId>(SETTINGS_DEFAULT_TAB);
 export const settingsSelectedMachineIdAtom = atom<MachineId | null>(null);
 export const settingsSelectedProjectKeyAtom = atom<string | null>(null);
 
+/** A Project group whose editor Settings should open, set by the sidebar's "Edit project group". */
+export const settingsSelectedProjectGroupIdAtom = atom<string | null>(null);
+
 // Notification prompt dismissed state - persisted to localStorage
 // When true, the notification permission prompt will not be shown again
 export const notificationPromptDismissedAtom = atomWithStorage<boolean>(

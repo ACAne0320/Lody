@@ -34,6 +34,9 @@ import {
   Plus,
   Users,
   Boxes,
+  MoreHorizontal,
+  Settings2,
+  SquarePen,
 } from 'lucide-react';
 import { Spinner } from '@lody/ui/spinner';
 import {
@@ -90,6 +93,8 @@ import {
   SessionRowOpenedByMenuItems,
   SidebarListSkeleton,
   buildSessionRowOpenedByTreeSlot,
+  SIDEBAR_HOVER_ACTION_CLASS,
+  SIDEBAR_MENU_TRIGGER_OPEN_CLASS,
   SIDEBAR_ROW_LIST_CLASS,
   SIDEBAR_GROUP_LABEL_CLASS,
   SIDEBAR_ROW_TEXT_CLASS,
@@ -98,6 +103,7 @@ import {
   SidebarGroupActivityMark,
   SIDEBAR_UNSENT_TITLE_CLASS,
   summarizeSidebarGroupActivity,
+  type SidebarGroupActivity,
   useSessionUnsentNewConversation,
   withSessionSendStates,
 } from '@/components/sidebar-row-shared';
@@ -219,6 +225,11 @@ export type SessionListProps = {
   onToggleChatsCollapsed?: () => void;
   onToggleProjectGroupCollapsed?: (groupKey: string) => void;
   onNewInProjectGroup?: (projectId: string) => void;
+  /** Opens the group's editor; the group row's ⋯ menu offers it. */
+  onOpenProjectGroupSettings?: (projectId: string) => void;
+  onArchiveProjectGroupChats?: (sessionIds: string[]) => void;
+  /** Reorders Project groups; receives every listed group id in its new order. */
+  onMoveProjectGroup?: (projectIds: string[]) => void;
   onArchiveSession?: (sessionId: string) => void;
   onMarkSessionUnread?: (sessionId: string) => void;
   onRenameSession?: (sessionId: string, nextTitle: string) => void | Promise<void>;
@@ -260,6 +271,8 @@ export type SessionRowGroup = {
   repoFullName: string | null;
   /** Set for `projectGroup` groups. */
   projectId?: string;
+  /** A deleted Project group still listing its conversations: nothing to edit or start. */
+  projectGroupRemoved?: boolean;
   collapsed: boolean;
   sessions: SessionListRow[];
 };
@@ -424,6 +437,7 @@ export function buildGroups(
       kind: 'projectGroup',
       repoFullName: null,
       projectId,
+      projectGroupRemoved: true,
       collapsed: false,
       sessions: sortSessionRowsByLatestMessage(sessionsByProjectGroup.get(projectId) ?? []),
     });
@@ -565,6 +579,11 @@ type SessionGroupSectionProps = {
   onToggleChatsCollapsed?: () => void;
   onToggleProjectGroupCollapsed?: (groupKey: string) => void;
   onNewInProjectGroup?: (projectId: string) => void;
+  /** Opens the group's editor; the group row's ⋯ menu offers it. */
+  onOpenProjectGroupSettings?: (projectId: string) => void;
+  onArchiveProjectGroupChats?: (sessionIds: string[]) => void;
+  /** Reorders Project groups; receives every listed group id in its new order. */
+  onMoveProjectGroup?: (projectIds: string[]) => void;
   onArchiveSession?: (sessionId: string) => void;
   onMarkSessionUnread?: (sessionId: string) => void;
   onRenameSession?: (sessionId: string, nextTitle: string) => void | Promise<void>;
@@ -1368,6 +1387,175 @@ const SessionGroupRow = memo(function SessionGroupRow({
   );
 });
 
+/**
+ * A Project group's row, built like a local project's: the group mark turns
+ * into the fold chevron on hover, the row starts a conversation in the group,
+ * and the hover controls are the same ⋯ / new chat / drag handle in the same
+ * places. The ⋯ opens the row's own context menu.
+ */
+function ProjectGroupHeaderRow({
+  group,
+  selected,
+  isMobile,
+  activity,
+  dragHandle,
+  onToggle,
+  onNew,
+  onOpenSettings,
+  onArchiveChats,
+  headerAction,
+}: {
+  group: SessionRowGroup;
+  selected: boolean;
+  isMobile: boolean;
+  activity: SidebarGroupActivity | null;
+  dragHandle?: ReactNode;
+  onToggle?: () => void;
+  onNew?: () => void;
+  onOpenSettings?: () => void;
+  onArchiveChats?: (sessionIds: string[]) => void;
+  headerAction?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const sessionIds = useMemo(() => group.sessions.map((row) => row.sessionId), [group.sessions]);
+  const showMenu = !isMobile && (Boolean(onOpenSettings) || Boolean(onArchiveChats));
+  const showNew = !isMobile && Boolean(onNew);
+  const activate = onNew ?? onToggle;
+
+  const row = (
+    <div
+      role={activate ? 'button' : undefined}
+      tabIndex={activate ? 0 : -1}
+      aria-label={group.label}
+      aria-current={selected ? 'page' : undefined}
+      data-id={`group:${group.key}`}
+      data-scope-item="row"
+      data-sidebar-group-key={group.key}
+      data-menu-open={menuOpen ? '' : undefined}
+      className={cn(
+        'group relative w-full rounded-md px-2 py-1 text-left',
+        'border border-transparent bg-transparent',
+        !selected &&
+          !isMobile &&
+          'hover:bg-sidebar-hover hover:text-sidebar-hover-foreground data-[menu-open]:bg-sidebar-hover data-[menu-open]:text-sidebar-hover-foreground',
+        selected && 'border-sidebar-ring/30 bg-sidebar-selection hover:bg-sidebar-selection',
+        SIDEBAR_ROW_TEXT_CLASS,
+        'flex min-w-0 flex-1 select-none items-center gap-2 font-normal transition-colors',
+        activate ? 'cursor-pointer' : 'cursor-default',
+        selected ? 'text-sidebar-selection-foreground' : 'text-sidebar-row-foreground'
+      )}
+      onClick={activate}
+      onKeyDown={(event) => {
+        if (!activate || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        activate();
+      }}
+    >
+      <button
+        type="button"
+        className="relative -mr-1.5 flex h-5 w-5 shrink-0 items-center justify-center"
+        aria-label={t('common.toggle', 'Toggle')}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggle?.();
+        }}
+      >
+        <Boxes
+          aria-hidden="true"
+          className={cn(
+            'absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-current transition-opacity duration-100',
+            isMobile ? 'opacity-0' : 'group-hover:opacity-0'
+          )}
+        />
+        <ChevronDown
+          aria-hidden="true"
+          className={cn(
+            'absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-current',
+            'transition-[opacity,translate,scale,rotate] duration-100',
+            isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+            group.collapsed ? '-rotate-90' : 'rotate-0'
+          )}
+        />
+      </button>
+      <span className="min-w-0 flex-1 truncate text-left">{group.label}</span>
+      {showMenu || showNew || dragHandle ? (
+        <div className="flex shrink-0 items-center gap-0.5">
+          {showMenu ? (
+            <button
+              type="button"
+              className={cn(SIDEBAR_HOVER_ACTION_CLASS, SIDEBAR_MENU_TRIGGER_OPEN_CLASS)}
+              aria-label={t('sessions.moreActions', 'More actions')}
+              onClick={(event) => {
+                // Open the row's own right-click menu from a left click.
+                event.preventDefault();
+                event.stopPropagation();
+                const rect = event.currentTarget.getBoundingClientRect();
+                event.currentTarget.dispatchEvent(
+                  new MouseEvent('contextmenu', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: Math.round(rect.left),
+                    clientY: Math.round(rect.bottom),
+                  })
+                );
+              }}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          {showNew ? (
+            <button
+              type="button"
+              className={SIDEBAR_HOVER_ACTION_CLASS}
+              aria-label={t('sidebar.projectGroups.newChat', 'New chat in this project group')}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onNew?.();
+              }}
+            >
+              <SquarePen className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          {dragHandle}
+        </div>
+      ) : null}
+      {activity ? <SidebarGroupActivityMark activity={activity} /> : null}
+    </div>
+  );
+
+  return (
+    <div className="group flex items-center">
+      {showMenu ? (
+        <ContextMenu.Root onOpenChange={setMenuOpen}>
+          <ContextMenu.Trigger render={row} />
+          <ContextMenu.Content className="min-w-[180px]">
+            {onOpenSettings ? (
+              <ContextMenu.Item icon={Settings2} onClick={onOpenSettings}>
+                {t('sidebar.projectGroups.settings', 'Edit project group')}
+              </ContextMenu.Item>
+            ) : null}
+            {onArchiveChats ? (
+              <ContextMenu.Item
+                icon={Archive}
+                disabled={sessionIds.length === 0}
+                onClick={() => onArchiveChats(sessionIds)}
+              >
+                {t('sidebar.localProjects.archiveChats', 'Archive chats')}
+              </ContextMenu.Item>
+            ) : null}
+          </ContextMenu.Content>
+        </ContextMenu.Root>
+      ) : (
+        row
+      )}
+      {headerAction ? <div className="mr-2 shrink-0">{headerAction}</div> : null}
+    </div>
+  );
+}
+
 const SessionGroupSection = memo(function SessionGroupSection({
   group,
   selectedSessionId,
@@ -1379,6 +1567,8 @@ const SessionGroupSection = memo(function SessionGroupSection({
   onToggleChatsCollapsed,
   onToggleProjectGroupCollapsed,
   onNewInProjectGroup,
+  onOpenProjectGroupSettings,
+  onArchiveProjectGroupChats,
   onArchiveSession,
   onMarkSessionUnread,
   onRenameSession,
@@ -1503,148 +1693,173 @@ const SessionGroupSection = memo(function SessionGroupSection({
     <div
       className={cn(
         'flex flex-col gap-0.5',
-        getSidebarGroupSpacingClass(group.collapsed),
+        // Project groups stack like a machine's projects, 2px apart; repo
+        // groups and Chats keep the wider group rhythm.
+        isProjectGroup ? 'mb-0.5 last:mb-0' : getSidebarGroupSpacingClass(group.collapsed),
         // 16px above a top-level group (the repo groups before it end in 12px).
         isGroupLabel && 'mt-1 first:mt-0'
       )}
     >
-      <div className={cn('group flex items-center', isGroupLabel ? 'h-[26px]' : 'h-7')}>
-        <div
-          role={canNavigate || canToggle ? 'button' : undefined}
-          tabIndex={canNavigate || canToggle ? 0 : -1}
-          data-id={`group:${group.key}`}
-          data-scope-item="row"
-          data-sidebar-group-key={group.key}
-          className={cn(
-            'relative flex w-full select-none items-center rounded-md px-2 text-left',
-            isGroupLabel ? 'h-[26px] gap-1.5' : cn('h-7', isMobile ? 'gap-1' : 'gap-0.5'),
-            'border border-transparent',
-            'min-w-0 flex-1 transition-colors',
-            headerTypographyClass,
-            showActiveGroupState
-              ? 'cursor-pointer border-sidebar-ring/30 bg-sidebar-selection text-sidebar-selection-foreground hover:bg-sidebar-selection'
-              : canNavigate
-                ? cn(
-                    'cursor-pointer bg-transparent',
-                    headerBaseColorClass,
-                    !isMobile &&
-                      (isGroupLabel ? 'hover:text-sidebar-foreground' : 'hover:bg-sidebar-hover')
-                  )
-                : canToggle
-                  ? cn('cursor-pointer bg-transparent', headerBaseColorClass)
-                  : cn('cursor-default bg-transparent', headerBaseColorClass)
-          )}
-          onClick={canNavigate ? handleNavigate : handleToggleGroup}
-          onKeyDown={
-            canNavigate
-              ? (e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleNavigate();
-                  }
-                }
-              : canToggle
+      {isProjectGroup ? (
+        <ProjectGroupHeaderRow
+          group={group}
+          selected={showActiveGroupState}
+          isMobile={isMobile}
+          activity={collapsedActivity}
+          dragHandle={dragHandle}
+          onToggle={canToggle ? handleToggleGroup : undefined}
+          onNew={
+            !group.projectGroupRemoved && group.projectId && onNewInProjectGroup
+              ? () => onNewInProjectGroup(group.projectId!)
+              : undefined
+          }
+          onOpenSettings={
+            !group.projectGroupRemoved && group.projectId && onOpenProjectGroupSettings
+              ? () => onOpenProjectGroupSettings(group.projectId!)
+              : undefined
+          }
+          onArchiveChats={onArchiveProjectGroupChats}
+          headerAction={headerAction}
+        />
+      ) : (
+        <div className={cn('group flex items-center', isGroupLabel ? 'h-[26px]' : 'h-7')}>
+          <div
+            role={canNavigate || canToggle ? 'button' : undefined}
+            tabIndex={canNavigate || canToggle ? 0 : -1}
+            data-id={`group:${group.key}`}
+            data-scope-item="row"
+            data-sidebar-group-key={group.key}
+            className={cn(
+              'relative flex w-full select-none items-center rounded-md px-2 text-left',
+              isGroupLabel ? 'h-[26px] gap-1.5' : cn('h-7', isMobile ? 'gap-1' : 'gap-0.5'),
+              'border border-transparent',
+              'min-w-0 flex-1 transition-colors',
+              headerTypographyClass,
+              showActiveGroupState
+                ? 'cursor-pointer border-sidebar-ring/30 bg-sidebar-selection text-sidebar-selection-foreground hover:bg-sidebar-selection'
+                : canNavigate
+                  ? cn(
+                      'cursor-pointer bg-transparent',
+                      headerBaseColorClass,
+                      !isMobile &&
+                        (isGroupLabel ? 'hover:text-sidebar-foreground' : 'hover:bg-sidebar-hover')
+                    )
+                  : canToggle
+                    ? cn('cursor-pointer bg-transparent', headerBaseColorClass)
+                    : cn('cursor-default bg-transparent', headerBaseColorClass)
+            )}
+            onClick={canNavigate ? handleNavigate : handleToggleGroup}
+            onKeyDown={
+              canNavigate
                 ? (e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      handleToggleGroup();
+                      handleNavigate();
                     }
                   }
-                : undefined
-          }
-        >
-          {showGroupHeaderIcon ? (
-            <button
-              type="button"
-              className="relative flex h-5 w-5 shrink-0 items-center justify-center"
-              onClick={
-                canToggle
+                : canToggle
                   ? (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleToggleGroup();
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleToggleGroup();
+                      }
                     }
                   : undefined
-              }
-            >
-              {isProjectGroup ? (
-                <Boxes
-                  aria-hidden="true"
-                  className={cn(
-                    'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 opacity-70 transition-opacity duration-100',
-                    canToggle && isMobile ? 'opacity-0' : cn(canToggle && 'group-hover:opacity-0')
-                  )}
-                />
-              ) : (
-                <GitHubOwnerIcon
-                  repoFullName={group.repoFullName}
-                  className={cn(
-                    // Left-anchored (not centered in the 20px button) so its left edge
-                    // lines up with the session rows' leading status slot below.
-                    'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 transition-opacity duration-100',
-                    // Mobile: chevron is always shown so the owner avatar must hide
-                    // permanently to avoid the two icons overlapping.
-                    canToggle && isMobile ? 'opacity-0' : cn(canToggle && 'group-hover:opacity-0')
-                  )}
-                />
-              )}
-              {canToggle && (
-                <ChevronDown
-                  className={cn(
-                    'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4',
-                    'transition-[opacity,translate,scale,rotate] duration-150 ease-out',
-                    isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-                    group.collapsed ? '-rotate-90' : 'rotate-0'
-                  )}
-                />
-              )}
-            </button>
-          ) : null}
-          <span className="min-w-0 truncate text-left">{group.label}</span>
-          {!showGroupHeaderIcon && canToggle ? (
-            <ChevronDown
-              className={cn(
-                'h-3.5 w-3.5 shrink-0 text-current',
-                'transition-[opacity,translate,scale,rotate] duration-150 ease-out',
-                group.collapsed || isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-                // Chats is a top-level sidebar section, so its collapsed chevron
-                // stays visible without hover.
-                group.collapsed ? '-rotate-90' : 'rotate-0'
-              )}
-              aria-hidden="true"
-            />
-          ) : null}
-          <span className="flex-1" aria-hidden="true" />
-          {collapsedActivity ? <SidebarGroupActivityMark activity={collapsedActivity} /> : null}
-        </div>
-
-        {resolvedTrailingContent}
-
-        {canCreateNew && (
-          <button
-            type="button"
-            className={cn(
-              'ml-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm',
-              'text-sidebar-foreground-muted/80 transition-[opacity,background-color,color] duration-100',
-              'opacity-0 pointer-events-none',
-              'group-hover:opacity-100 group-hover:pointer-events-auto',
-              'hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring/40'
-            )}
-            aria-label="New session"
-            onClick={() => {
-              if (isProjectGroup) {
-                if (group.projectId) onNewInProjectGroup?.(group.projectId);
-                return;
-              }
-              onNew?.(group.repoFullName ?? undefined);
-            }}
+            }
           >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        )}
+            {showGroupHeaderIcon ? (
+              <button
+                type="button"
+                className="relative flex h-5 w-5 shrink-0 items-center justify-center"
+                onClick={
+                  canToggle
+                    ? (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleToggleGroup();
+                      }
+                    : undefined
+                }
+              >
+                {isProjectGroup ? (
+                  <Boxes
+                    aria-hidden="true"
+                    className={cn(
+                      'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 opacity-70 transition-opacity duration-100',
+                      canToggle && isMobile ? 'opacity-0' : cn(canToggle && 'group-hover:opacity-0')
+                    )}
+                  />
+                ) : (
+                  <GitHubOwnerIcon
+                    repoFullName={group.repoFullName}
+                    className={cn(
+                      // Left-anchored (not centered in the 20px button) so its left edge
+                      // lines up with the session rows' leading status slot below.
+                      'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 transition-opacity duration-100',
+                      // Mobile: chevron is always shown so the owner avatar must hide
+                      // permanently to avoid the two icons overlapping.
+                      canToggle && isMobile ? 'opacity-0' : cn(canToggle && 'group-hover:opacity-0')
+                    )}
+                  />
+                )}
+                {canToggle && (
+                  <ChevronDown
+                    className={cn(
+                      'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4',
+                      'transition-[opacity,translate,scale,rotate] duration-150 ease-out',
+                      isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                      group.collapsed ? '-rotate-90' : 'rotate-0'
+                    )}
+                  />
+                )}
+              </button>
+            ) : null}
+            <span className="min-w-0 truncate text-left">{group.label}</span>
+            {!showGroupHeaderIcon && canToggle ? (
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 text-current',
+                  'transition-[opacity,translate,scale,rotate] duration-150 ease-out',
+                  group.collapsed || isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                  // Chats is a top-level sidebar section, so its collapsed chevron
+                  // stays visible without hover.
+                  group.collapsed ? '-rotate-90' : 'rotate-0'
+                )}
+                aria-hidden="true"
+              />
+            ) : null}
+            <span className="flex-1" aria-hidden="true" />
+            {collapsedActivity ? <SidebarGroupActivityMark activity={collapsedActivity} /> : null}
+          </div>
 
-        {headerAction ? <div className="mr-2 shrink-0">{headerAction}</div> : null}
-      </div>
+          {resolvedTrailingContent}
+
+          {canCreateNew && (
+            <button
+              type="button"
+              className={cn(
+                'ml-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm',
+                'text-sidebar-foreground-muted/80 transition-[opacity,background-color,color] duration-100',
+                'opacity-0 pointer-events-none',
+                'group-hover:opacity-100 group-hover:pointer-events-auto',
+                'hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring/40'
+              )}
+              aria-label="New session"
+              onClick={() => {
+                if (isProjectGroup) {
+                  if (group.projectId) onNewInProjectGroup?.(group.projectId);
+                  return;
+                }
+                onNew?.(group.repoFullName ?? undefined);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {headerAction ? <div className="mr-2 shrink-0">{headerAction}</div> : null}
+        </div>
+      )}
 
       {!group.collapsed && (
         <div className={SIDEBAR_ROW_LIST_CLASS}>
@@ -1704,6 +1919,56 @@ const SessionGroupSection = memo(function SessionGroupSection({
         onClose={() => setRenameTarget(null)}
         onRename={(sessionId, nextTitle) => onRenameSession?.(sessionId, nextTitle)}
       />
+    </div>
+  );
+}, sessionGroupPropsEqual);
+
+/**
+ * A Project group that can be dragged within its section. The handle sits
+ * among the row's hover controls, where a local project keeps its own.
+ */
+const SortableProjectGroupSection = memo(function SortableProjectGroupSection({
+  group,
+  canReorder,
+  ...props
+}: Omit<SessionGroupSectionProps, 'dragHandle' | 'trailingContent'> & {
+  canReorder: boolean;
+}) {
+  const { t } = useTranslation();
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: group.key, disabled: !canReorder });
+  const constrainedTransform = transform ? { ...transform, x: 0, scaleX: 1, scaleY: 1 } : null;
+  const dragHandle = canReorder ? (
+    <button
+      type="button"
+      ref={setActivatorNodeRef}
+      className={cn(SIDEBAR_HOVER_ACTION_CLASS, 'cursor-grab touch-none active:cursor-grabbing')}
+      aria-label={t('sidebar.projectGroups.reorder', 'Reorder project group')}
+      {...attributes}
+      {...listeners}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <GripVertical className="h-3.5 w-3.5" />
+    </button>
+  ) : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(constrainedTransform), transition }}
+      className={cn('w-full', 'mb-0.5 last:mb-0', isDragging && 'z-10 opacity-60')}
+    >
+      <SessionGroupSection {...props} group={group} dragHandle={dragHandle} />
     </div>
   );
 }, sessionGroupPropsEqual);
@@ -1798,6 +2063,9 @@ export const SessionList = memo(function SessionList({
   projectGroups,
   onToggleProjectGroupCollapsed,
   onNewInProjectGroup,
+  onOpenProjectGroupSettings,
+  onArchiveProjectGroupChats,
+  onMoveProjectGroup,
   isLoading = false,
   chatsCollapsed = false,
   selectedSessionId,
@@ -1863,6 +2131,17 @@ export const SessionList = memo(function SessionList({
     [groups]
   );
   const canReorderRepos = typeof onMoveRepo === 'function' && repoIds.length > 1;
+  // Only defined groups reorder; a deleted group's leftovers keep their place.
+  const projectGroupKeys = useMemo(
+    () =>
+      groups
+        .filter((group) => group.kind === 'projectGroup' && !group.projectGroupRemoved)
+        .map((group) => group.key),
+    [groups]
+  );
+  const canReorderProjectGroups =
+    typeof onMoveProjectGroup === 'function' && projectGroupKeys.length > 1;
+  const sortableIds = useMemo(() => [...repoIds, ...projectGroupKeys], [projectGroupKeys, repoIds]);
   const repoStateByFullName = useMemo(() => {
     const map = new Map<string, SessionListRepoState>();
     for (const repo of repos) {
@@ -1909,6 +2188,21 @@ export const SessionList = memo(function SessionList({
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
+    const activeKey = String(event.active.id);
+    if (projectGroupKeys.includes(activeKey)) {
+      const overKey = event.over ? String(event.over.id) : null;
+      const fromIndex = projectGroupKeys.indexOf(activeKey);
+      const toIndex = overKey ? projectGroupKeys.indexOf(overKey) : -1;
+      if (!canReorderProjectGroups || toIndex < 0 || fromIndex === toIndex) return;
+      const keyToId = new Map(groups.map((group) => [group.key, group.projectId] as const));
+      onMoveProjectGroup?.(
+        arrayMove(projectGroupKeys, fromIndex, toIndex).flatMap((key) => {
+          const id = keyToId.get(key);
+          return id ? [id] : [];
+        })
+      );
+      return;
+    }
     if (!canReorderRepos) return;
     const overId = event.over?.id;
     if (!overId) return;
@@ -1948,7 +2242,7 @@ export const SessionList = memo(function SessionList({
   return (
     <Tooltip.Provider>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={repoIds} strategy={verticalListSortingStrategy}>
+        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
           <div className={cn('flex flex-col', className)}>
             {groups.map((group, groupIndex) => {
               const whetherShowFullList = resolvedShowFullListByGroup[group.key] ?? false;
@@ -1989,12 +2283,19 @@ export const SessionList = memo(function SessionList({
                 );
               }
 
+              const GroupSection =
+                group.kind === 'projectGroup' && !group.projectGroupRemoved
+                  ? SortableProjectGroupSection
+                  : SessionGroupSection;
               return (
-                <SessionGroupSection
+                <GroupSection
                   key={group.key}
                   group={group}
+                  canReorder={canReorderProjectGroups}
                   onToggleProjectGroupCollapsed={onToggleProjectGroupCollapsed}
                   onNewInProjectGroup={onNewInProjectGroup}
+                  onOpenProjectGroupSettings={onOpenProjectGroupSettings}
+                  onArchiveProjectGroupChats={onArchiveProjectGroupChats}
                   headerAction={groupHeaderAction}
                   selectedSessionId={selectedSessionId}
                   activeGroupKey={activeGroupKey}

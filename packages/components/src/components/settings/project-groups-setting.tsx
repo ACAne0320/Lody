@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as stylex from '@stylexjs/stylex';
-import { useAtomValue } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
 import { Boxes, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { WorkspaceProject } from '@lody/shared';
 import { userAtom } from '@/atoms';
+import { settingsSelectedProjectGroupIdAtom } from '@/atoms/settings';
 import { useProjectMemberSources } from '@/hooks/use-project-member-sources';
 import {
   canManageWorkspaceProject,
@@ -41,6 +42,21 @@ export function ProjectGroupsSetting() {
   const [editor, setEditor] = useState<ProjectGroupEditorState | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<WorkspaceProject | null>(null);
   const [removing, setRemoving] = useState(false);
+  // The sidebar's "Edit project group" names the group to open; the request is
+  // consumed once its row has synced, so reopening Settings starts on the list.
+  const [requestedGroupId, setRequestedGroupId] = useAtom(settingsSelectedProjectGroupIdAtom);
+  useEffect(() => {
+    if (!requestedGroupId) return;
+    const project = projects.find((candidate) => candidate.id === requestedGroupId);
+    if (!project) {
+      if (synced) setRequestedGroupId(null);
+      return;
+    }
+    setRequestedGroupId(null);
+    setEditor(
+      openProjectGroupEditorForEdit(project, !canManageWorkspaceProject(project, currentUserId))
+    );
+  }, [currentUserId, projects, requestedGroupId, setRequestedGroupId, synced]);
 
   const confirmRemoval = async () => {
     if (!pendingRemoval) return;

@@ -509,7 +509,13 @@ its meaning. Type names in code are unchanged.
   group is listed even with no conversations, so one can be started there;
   conversations of a deleted group stay grouped under the name in their
   snapshot. A conversation with `projectRun` no longer appears under the local
-  project or GitHub group of its first member.
+  project or GitHub group of its first member. A group row behaves like a local
+  project row: its mark turns into the fold chevron on hover, the row starts a
+  conversation, and the hover controls are ⋯ (edit the group, archive its
+  chats), new chat, and a drag handle; the order is saved per workspace like
+  local projects. The sidebar's view filter belongs to the first visible
+  section only. In the Updated view and Pinned, group conversations appear with
+  the group's mark and name.
 - **New conversation**: a group sits on top of the plain chat context, leaving
   the existing local/GitHub logic and the mobile views unchanged. Choosing a
   group lets its local members' machine decide the execution machine. A conversation always gets the whole group as configured; the composer only lists

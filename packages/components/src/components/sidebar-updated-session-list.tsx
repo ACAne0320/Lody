@@ -13,6 +13,7 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { startSessionMentionDrag } from '@/lib/session-mention-drag';
 import {
   Archive,
+  Boxes,
   Folder,
   GitBranch,
   GitPullRequest,
@@ -145,6 +146,11 @@ export type SidebarUpdatedItem = {
   isWorktree?: boolean;
   externalHistoryProvider?: LocalProjectHistoryProvider | null;
   sharing?: SessionSharingState;
+  /**
+   * Set for a Project group conversation: `subtitle` is the group's name and
+   * the project line shows the group mark instead of a folder.
+   */
+  projectGroup?: boolean;
 };
 
 /**
@@ -686,7 +692,9 @@ function UpdatedItemProjectLine({ item }: { item: SidebarUpdatedItem }) {
   if (!label) return null;
   const repoFullName = item.repoFullName ?? (item.kind === 'github' ? label : null);
   const isGithub = item.kind === 'github';
-  const mark = isGithub ? (
+  const mark = item.projectGroup ? (
+    <Boxes className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+  ) : isGithub ? (
     <UpdatedGitHubOwnerMark repoFullName={repoFullName} />
   ) : item.kind === 'local' ? (
     <Folder className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
