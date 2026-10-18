@@ -16,8 +16,9 @@ per-Session residency owner. Every user holds a lease, and retirement runs under
 a per-Session gate only while no lease is held; an acquire that arrives during
 retirement waits for a fresh generation. Releasing a lease never terminates the
 agent process, which stays resident for 20 minutes of idleness as before. The
-kernel is implemented; consumer wiring and removal of the unreferenced cache are
-stacked follow-ups and remain unverified in production.
+kernel, the document cache, GC and turn leases are wired. Converting the
+remaining one-shot borrows into held leases is a stacked follow-up, and none of
+this is yet verified in production.
 
 ## Problem
 
@@ -95,6 +96,40 @@ next turn reuses them. Only these end them:
 3. Convert the remaining one-shot callers to scoped borrows and delete the
    unreferenced cache, `pendingSessionDocs` and `isDestroyed` checks.
 
+## Wiring
+
+The second step wires the residency into the daemon:
+
+- **Document cache.** `LoroDocumentManager` keeps Session documents only in the
+  residency. `sessions` becomes a read-only view, and `pendingSessionDocs` is
+  gone.
+  - `acquireSessionDocLegacy` returns a lease.
+  - `getOrCreateSessionDoc` takes a lease and releases it at once.
+  - `cleanSessionDoc` retires now, or defers to the last release.
+  - `cleanUp` ends with `shutdown`. Opens and closes still run inside the
+    per-document ownership chain shared with renderer room bridges.
+- **Turns.** Every visible turn holds a lease from before it registers until
+  after it releases, through the optional `leaseSessionDoc` dependency. This
+  covers pre-prompt startup, which the store-phase check never saw.
+- **GC.** `cleanSessionForGC` retires through `retireSessionLegacy`.
+  - `minIdleMs` comes from the GC policy: the idle timeout for the sweep, and
+    60 s for memory pressure, so Legacy one-shot borrows are not evicted under
+    their callers.
+  - The in-memory eligibility checks run again as a veto under the gate.
+  - GC's goal check and read-only history snapshots take `observe` leases, so
+    reading a candidate never restarts its idle clock.
+  - Presence, simulator, preview and process teardown run under the gate. A
+    teardown failure keeps the Session and its tracking for the next sweep.
+  - `cleanSession` reports whether the Session was retired, so a kept Session
+    is never counted as evicted.
+- **Teardown must not re-enter.** Preview cleanup used to reacquire the
+  document to mark the connection closed. It now writes through the document
+  the retirement hands it, or writes only the metadata when none is open.
+  Process `exit` and `terminated` events raised by the GC teardown are ignored,
+  because finalizing them would reopen the document just retired.
+- **Not leased yet.** Dispatch watches take no lease. GC already vetoes
+  Sessions with pending user work, which is the only time a watch is held.
+
 ## Verification
 
 `session-residency.test.ts` uses `TestClock` and explicit deferreds. It covers:
@@ -111,5 +146,25 @@ next turn reuses them. Only these end them:
 A temporary ablation that lets the fast path ignore the gate makes the
 mid-retirement test fail.
 
-Limits: consumer wiring (steps 2 and 3) is not done yet. Interaction with real
-`SessionDocument` init and destroy is covered only once step 2 lands.
+Integration tests use a real `LoroDocumentManager` over an in-memory Repo. They cover:
+
+- a leased document refusing retirement, staying resident after its release,
+  and retiring only after the idle minimum;
+- the incident ordering: a turn arriving during a blocked GC teardown waits and
+  receives a fresh, writable document, while the teardown writes through the
+  doomed one;
+- cleanup deferred to the last release.
+
+A regression test runs the real `SessionGCManager` sweep with the real
+MessageHandler goal check and `cleanSessionForGC` over a real manager. A Session
+idle for 21 minutes is retired. Reverting the goal check to a plain borrow makes
+the test fail with the review's P1: the retirement reports `recently-used`.
+
+The existing retained-replica test from the native Repo adoption still passes.
+Execution tests show a turn holding its lease through the prompt and keeping the
+agent process afterwards.
+
+Limits: one-shot callers still rely on the refreshed idle clock rather than a
+held lease (step 3). Dispatch watches are not leased. MessageHandler's veto and
+event suppression have no dedicated test, because MessageHandler has no
+lightweight fixture.

@@ -1,5 +1,5 @@
 import { RepoIOError, RepoSyncFailed, RepoUnsupported } from 'loro-repo/effect';
-import { Effect, Exit } from 'effect';
+import { Cause, Effect, Exit, Scope } from 'effect';
 import {
   WorkspaceRepoLegacy,
   workspaceAcquisitionFailureLegacy,
@@ -303,6 +303,12 @@ class ProxiedWebSocket extends WebSocketOriginal {
 (globalThis as unknown as GlobalWithWebSocket).WebSocket = ProxiedWebSocket;
 
 import { FlockSyncTimeoutError, readTimeoutEnv, withTimeout } from './timeout-utils';
+import {
+  makeSessionResidency,
+  type SessionLeaseMode,
+  type SessionRetireOptions,
+  type SessionRetireOutcome,
+} from './session-residency';
 import { FlockSyncUnavailableError } from './flock-sync-errors';
 import { ConcurrentQueue } from '../concurrent-queue';
 import type { CliSqliteRepoStore } from './sqlite-repo-store';
@@ -359,9 +365,64 @@ export type LoroRepoPersistReason =
   | 'session-edit-and-resend-commit'
   | 'session-edit-and-resend-rollback';
 
+type SessionDocOpenOptions = { historyBackend?: SessionHistoryBackendKind; skipAutoRead?: boolean };
+type SessionDocCloseOptions = { preserveStatus?: boolean };
+
+/** A held Session document lease; see `LoroDocumentManager.acquireSessionDocLegacy`. */
+export type SessionDocLeaseLegacy = {
+  readonly doc: SessionDocument;
+  readonly release: () => Promise<void>;
+};
+
+/** Run a residency program for a Promise caller, rethrowing its original error. */
+const runResidencyLegacy = async <A>(program: Effect.Effect<A, unknown>): Promise<A> => {
+  const exit = await Effect.runPromiseExit(program);
+  if (Exit.isSuccess(exit)) return exit.value;
+  throw Cause.squash(exit.cause);
+};
+
 export class LoroDocumentManager {
   public readonly repo: WorkspaceRepoLegacy;
-  sessions: Map<SessionId, SessionDocument> = new Map();
+  /**
+   * Leased Session documents; see `session-residency.ts`. A lease keeps its
+   * document from being retired. Releasing one destroys nothing and does not
+   * stop the Session's agent process: both stay resident until GC retires a
+   * Session idle for `LODY_SESSION_GC_IDLE_TIMEOUT_MS` (20 minutes by default).
+   */
+  private readonly sessionResidency = makeSessionResidency<
+    SessionId,
+    SessionDocument,
+    SessionDocOpenOptions,
+    SessionDocCloseOptions
+  >({
+    open: (sessionId, retained, options) =>
+      Effect.tryPromise({
+        try: () => this.openSessionDoc(sessionId, retained, options ?? {}),
+        catch: (error) => error,
+      }),
+    close: (sessionId, sessionDoc, options) =>
+      Effect.tryPromise({
+        try: () =>
+          this.withLocalDocOwnership(getSessionRoomId(sessionId), () =>
+            sessionDoc.destroy({ preserveStatus: options?.preserveStatus })
+          ),
+        catch: (error) => error,
+      }),
+    reportDeferredRetireFailure: (sessionId, cause) =>
+      this.logger.warn(
+        `[${sessionId}] Deferred Session document retirement failed; it stays resident: ${Cause.pretty(cause)}`
+      ),
+  });
+
+  /** Resident Session documents, for synchronous observation only; never destroy one directly. */
+  get sessions(): ReadonlyMap<SessionId, SessionDocument> {
+    const resident = new Map<SessionId, SessionDocument>();
+    for (const sessionId of this.sessionResidency.keys()) {
+      const sessionDoc = this.sessionResidency.peek(sessionId);
+      if (sessionDoc) resident.set(sessionId, sessionDoc);
+    }
+    return resident;
+  }
   machine: MachineDocument | null = null;
   private readonly workspaceId: WorkspaceId;
   private readonly userId: string;
@@ -1154,7 +1215,6 @@ export class LoroDocumentManager {
     }
   }
 
-  private pendingSessionDocs = new Map<SessionId, Promise<SessionDocument>>();
   private readonly localDocRoomHydrateQueue = new ConcurrentQueue<string>(4);
   private readonly localDocOwnershipChains = new Map<string, Promise<void>>();
   private localDocRoomBridgeGeneration = 0;
@@ -1179,8 +1239,7 @@ export class LoroDocumentManager {
     if (
       !sessionId ||
       this.cleaningUp ||
-      this.sessions.has(sessionId) ||
-      this.pendingSessionDocs.has(sessionId) ||
+      this.sessionResidency.isResident(sessionId) ||
       this.localDocRoomBridges.has(docId)
     ) {
       return;
@@ -1203,8 +1262,7 @@ export class LoroDocumentManager {
               this.cleaningUp ||
               generation !== this.localDocRoomBridgeGeneration ||
               this.localDocRoomBridges.get(docId) !== bridge ||
-              this.sessions.has(sessionId) ||
-              this.pendingSessionDocs.has(sessionId)
+              this.sessionResidency.isResident(sessionId)
             ) {
               return;
             }
@@ -1216,8 +1274,7 @@ export class LoroDocumentManager {
                 this.cleaningUp ||
                 generation !== this.localDocRoomBridgeGeneration ||
                 this.localDocRoomBridges.get(docId) !== bridge ||
-                this.sessions.has(sessionId) ||
-                this.pendingSessionDocs.has(sessionId)
+                this.sessionResidency.isResident(sessionId)
               ) {
                 return;
               }
@@ -1260,8 +1317,7 @@ export class LoroDocumentManager {
             if (
               this.cleaningUp ||
               generation !== this.localDocRoomBridgeGeneration ||
-              this.sessions.has(sessionId) ||
-              this.pendingSessionDocs.has(sessionId) ||
+              this.sessionResidency.isResident(sessionId) ||
               this.localDocRoomBridges.has(docId)
             ) {
               return;
@@ -1361,48 +1417,103 @@ export class LoroDocumentManager {
       });
   }
 
+  /**
+   * Legacy one-shot borrow of a Session document. The lease ends at once and only
+   * refreshes the idle clock, so the document stays resident for at least the GC
+   * idle timeout after this call. A holder that keeps using the document across a
+   * long wait must hold `acquireSessionDocLegacy` instead.
+   */
   async getOrCreateSessionDoc(
     sessionId: SessionId,
-    options: { historyBackend?: SessionHistoryBackendKind; skipAutoRead?: boolean } = {}
+    options: SessionDocOpenOptions = {}
   ): Promise<SessionDocument> {
-    const docId = getSessionRoomId(sessionId);
+    const lease = await this.acquireSessionDocLegacy(sessionId, options);
+    await lease.release();
+    return lease.doc;
+  }
+
+  /**
+   * @deprecated Promise entry for a Session document lease. Consumers: turn
+   * execution and this manager's Legacy borrows. Remove when they hold native
+   * residency leases.
+   *
+   * The document is not retired while the lease is held. `release` is
+   * idempotent; it destroys nothing and leaves the agent process running.
+   * Pass `observe` for reads that must not count as use (GC checks, read-only
+   * snapshots): the release then leaves the idle clock where it was.
+   */
+  async acquireSessionDocLegacy(
+    sessionId: SessionId,
+    options: SessionDocOpenOptions = {},
+    mode: SessionLeaseMode = 'use'
+  ): Promise<SessionDocLeaseLegacy> {
     // An activated SessionDocument owns the live cloud room from here on. Stop
     // any one-shot renderer reconciliation without unloading the shared doc.
-    this.cancelLocalDocRoomBridge(docId);
-    const existing = this.sessions.get(sessionId);
-    if (existing && !existing.isDestroyed && !this.localDocOwnershipChains.has(docId)) {
-      if (options.historyBackend) {
-        await createSessionBackend(existing, { historyBackend: options.historyBackend });
-      }
-      return existing;
-    }
-
-    // Guard against concurrent init for the same session
-    const pending = this.pendingSessionDocs.get(sessionId);
-    if (pending) {
-      const sessionDoc = await pending;
+    this.cancelLocalDocRoomBridge(getSessionRoomId(sessionId));
+    const scope = Effect.runSync(Scope.make());
+    let released: Promise<void> | undefined;
+    const release = () => (released ??= runResidencyLegacy(Scope.close(scope, Exit.void)));
+    try {
+      const sessionDoc = await runResidencyLegacy(
+        Scope.provide(this.sessionResidency.acquire(sessionId, options, mode), scope)
+      );
       if (options.historyBackend) {
         await createSessionBackend(sessionDoc, { historyBackend: options.historyBackend });
       }
-      return sessionDoc;
+      return { doc: sessionDoc, release };
+    } catch (error) {
+      await release();
+      throw error;
     }
+  }
 
+  /**
+   * @deprecated Promise entry for idle GC and memory-pressure eviction. Remove
+   * when SessionGCManager composes the native residency.
+   *
+   * Retires the Session only when no lease is held and its last lease ended at
+   * least `minIdleMs` ago. `veto` and `teardown` run under the Session's gate:
+   * an acquire arriving meanwhile waits and then opens a fresh document.
+   * `teardown` receives the resident document (if any) so it can finish writes
+   * without acquiring the Session, which would wait on the gate it holds.
+   */
+  async retireSessionLegacy(
+    sessionId: SessionId,
+    options: {
+      minIdleMs: number;
+      veto: () => boolean;
+      teardown: (sessionDoc: SessionDocument | undefined) => Promise<void>;
+    }
+  ): Promise<SessionRetireOutcome> {
+    const retireOptions: SessionRetireOptions<SessionDocCloseOptions, SessionDocument> = {
+      minIdleMs: options.minIdleMs,
+      veto: Effect.sync(options.veto),
+      teardown: (sessionDoc) =>
+        Effect.tryPromise({ try: () => options.teardown(sessionDoc), catch: (error) => error }),
+    };
+    return await runResidencyLegacy(this.sessionResidency.retire(sessionId, retireOptions));
+  }
+
+  /** Lease count for a Session; GC diagnostics and tests only. */
+  sessionDocHolders(sessionId: SessionId): number {
+    return this.sessionResidency.holders(sessionId);
+  }
+
+  private async openSessionDoc(
+    sessionId: SessionId,
+    retained: SessionDocument | undefined,
+    options: SessionDocOpenOptions
+  ): Promise<SessionDocument> {
+    const docId = getSessionRoomId(sessionId);
     // Serialize activation with renderer-only release for this exact doc. If a
     // local leave already started repo.unloadDoc(), wait for it to finish and
     // open a fresh handle; otherwise the unload could evict the document that
     // the newly activated SessionDocument is about to retain.
-    const initPromise = this.withLocalDocOwnership(docId, async () => {
-      const cached = this.sessions.get(sessionId);
-      if (cached && !cached.isDestroyed) {
-        if (options.historyBackend) {
-          await createSessionBackend(cached, { historyBackend: options.historyBackend });
-        }
-        return cached;
-      }
+    return await this.withLocalDocOwnership(docId, async () => {
       // Failed eviction retains the replica and this wrapper's cleanup owner,
-      // not a usable Mirror. Reinitialize under the same per-doc ownership chain.
+      // not a usable Mirror. Reinitialize it rather than opening a second one.
       const sessionDoc =
-        cached ??
+        retained ??
         new SessionDocument(
           this.repo,
           sessionId,
@@ -1423,34 +1534,23 @@ export class LoroDocumentManager {
         historyBackend,
         skipAutoRead: options.skipAutoRead ?? Boolean(this.sessionHistoryFactory),
       });
-      // If cleanup ran while we were initializing, destroy the orphaned doc
-      // instead of registering it (cleanUp/cleanSessionDoc only sees this.sessions).
-      if (sessionDoc.isDestroyed) {
-        throw new Error(`Session doc ${sessionId} was destroyed during init`);
-      }
-      this.sessions.set(sessionId, sessionDoc);
       return sessionDoc;
     });
-
-    this.pendingSessionDocs.set(sessionId, initPromise);
-    try {
-      return await initPromise;
-    } finally {
-      if (this.pendingSessionDocs.get(sessionId) === initPromise)
-        this.pendingSessionDocs.delete(sessionId);
-    }
   }
 
   async getSessionHistorySnapshot(sessionId: SessionId): Promise<SessionHistoryInput[]> {
-    const active = this.sessions.get(sessionId);
-    if (active) {
-      const ready = await this.getOrCreateSessionDoc(sessionId, { skipAutoRead: true });
-      return await (await createSessionBackend(ready)).readHistory();
-    }
-
-    const pending = this.pendingSessionDocs.get(sessionId);
-    if (pending) {
-      return await (await createSessionBackend(await pending)).readHistory();
+    if (this.sessionResidency.isResident(sessionId)) {
+      // A read-only snapshot must not keep the session resident.
+      const lease = await this.acquireSessionDocLegacy(
+        sessionId,
+        { skipAutoRead: true },
+        'observe'
+      );
+      try {
+        return await (await createSessionBackend(lease.doc)).readHistory();
+      } finally {
+        await lease.release();
+      }
     }
 
     const docId = getSessionRoomId(sessionId);
@@ -1842,30 +1942,19 @@ export class LoroDocumentManager {
     this.detachMachineFlockMetaRoomSyncedListener = null;
     await this.machineFlockSync.cleanUp();
     await this.connectionRecovery.cleanUp();
-    // Await and destroy any in-flight session doc inits so they don't
-    // re-register themselves after cleanup has run.
-    for (const [sessionId, pending] of this.pendingSessionDocs) {
-      try {
-        const doc = await pending;
-        await doc.destroy({ preserveStatus: options.preserveSessionStatus });
-        this.sessions.delete(sessionId);
-      } catch {
-        // Init failed — nothing to clean up
-      }
-    }
-    this.pendingSessionDocs.clear();
     this.localDocRoomBridges.clear();
     for (const bridge of this.localFlockRoomBridges.values()) {
       bridge.sub?.unsubscribe();
     }
     this.localFlockRoomBridges.clear();
 
-    for (const sessionDoc of this.sessions.values()) {
-      await sessionDoc.destroy({ preserveStatus: options.preserveSessionStatus });
-    }
+    // Final teardown, after turns have stopped: close every resident Session
+    // document, leased or not, waiting for any open or retirement in flight.
+    await runResidencyLegacy(
+      this.sessionResidency.shutdown({ preserveStatus: options.preserveSessionStatus })
+    );
     await this.machine?.destroy();
     this.machine = null;
-    this.sessions.clear();
     this.machineExistenceWatcher?.unsubscribe();
     this.machineExistenceWatcher = null;
     this.remoteStreamsStatusUnsubscribe?.();
@@ -1885,27 +1974,21 @@ export class LoroDocumentManager {
     this.machineMonitorRuntime?.clearProvider();
   }
 
+  /**
+   * Retire a Session document now, or after its last lease is released. Never
+   * destroys a document a lease holder is still using, and never stops the
+   * Session's agent process.
+   */
   async cleanSessionDoc(
     sessionId: SessionId,
     options: { preserveStatus?: boolean } = {}
   ): Promise<void> {
-    // Also await any in-flight init for this session
-    const pending = this.pendingSessionDocs.get(sessionId);
-    if (pending) {
-      try {
-        await pending;
-      } catch {
-        // Initialization reports its own failure; retained wrappers still need cleanup.
-      }
-    }
-
-    await this.withLocalDocOwnership(getSessionRoomId(sessionId), async () => {
-      const sessionDoc = this.sessions.get(sessionId);
-      if (sessionDoc) {
-        await sessionDoc.destroy({ preserveStatus: options.preserveStatus });
-        if (this.sessions.get(sessionId) === sessionDoc) this.sessions.delete(sessionId);
-      }
-    });
+    await runResidencyLegacy(
+      this.sessionResidency.retire(sessionId, {
+        close: { preserveStatus: options.preserveStatus },
+        deferWhileInUse: true,
+      })
+    );
   }
 }
 

@@ -128,6 +128,11 @@ const createHandlerHarness = async (
       }
       return doc;
     }),
+    // Turns hold a residency lease; it is independent of the borrow counts asserted below.
+    acquireSessionDocLegacy: vi.fn(async (sessionId: SessionId) => ({
+      doc: docs.get(sessionId),
+      release: async () => {},
+    })),
   };
 
   const sessionManagerMock = {

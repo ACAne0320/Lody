@@ -385,7 +385,7 @@ import {
   type LocalWorkspaceCatalogService,
 } from '@/lib/local-workspace-catalog';
 import { resolveSessionLiveStatus } from './session-live-status';
-import type { MemoryPressureEvictionResult } from './session-gc-manager';
+import type { MemoryPressureEvictionResult, SessionCleanupReason } from './session-gc-manager';
 import { PreviewService } from '@/preview/preview-service';
 import { LocalProjectHistorySyncService } from '@/lib/local-project-history-sync-service';
 import { precheckLocalProjectHistoryRequest } from '@/lib/local-project-history-precheck';
@@ -2974,6 +2974,7 @@ export class MessageHandler {
         ),
       resolveAcpCapabilitySourceVersion: async (input) =>
         await resolveExpectedAcpCapabilitySourceVersion(input),
+      leaseSessionDoc: (sessionId) => this.workspaceDocument.acquireSessionDocLegacy(sessionId),
       evictForMemoryPressure: async (excludeSessionId) =>
         await this.evictForMemoryPressureFn(excludeSessionId),
     });
@@ -3718,7 +3719,8 @@ export class MessageHandler {
       void (async () => {
         const sessionId = exit.sessionId;
         this.logger.debug(`[${sessionId}] Session exit event received (exitCode=${exit.exitCode})`);
-        if (!this.store.has(sessionId)) {
+        if (!this.store.has(sessionId) || this.gcRetiringSessions.has(sessionId)) {
+          // GC ended an idle process; reopening its document now would undo the retirement.
           this.logger.debug(`[${sessionId}] Ignoring exit event for GC-cleaned session`);
           return;
         }
@@ -3737,7 +3739,7 @@ export class MessageHandler {
       this.codeCollabV2Service.releaseWorkspaceWatchForOwner(event.sessionId);
       void (async () => {
         const sessionId = event.sessionId;
-        if (!this.store.has(sessionId)) {
+        if (!this.store.has(sessionId) || this.gcRetiringSessions.has(sessionId)) {
           this.logger.debug(`[${sessionId}] Ignoring terminated event for GC-cleaned session`);
           return;
         }
@@ -10205,12 +10207,19 @@ export class MessageHandler {
    * ACP process would discard that resumable session state.
    */
   async hasActiveGoal(sessionId: SessionId): Promise<boolean> {
-    const sessionDoc = await this.workspaceDocument.getOrCreateSessionDoc(sessionId);
-    const meta = await sessionDoc.getMetaState();
-    const legacyMeta = meta as SessionLegacyMetaFields | null | undefined;
-    const backend = await this.getSessionBackend(sessionDoc);
-    const historyGoal = resolveLatestSessionGoalFromHistory(await backend.readHistory());
-    return isSessionGoalActive(historyGoal ?? legacyMeta?.latestGoal);
+    // GC asks this right before retiring the session. An observation lease
+    // keeps the document safe during the read without restarting its idle
+    // clock; a plain borrow would make every retirement see a just-used session.
+    const lease = await this.workspaceDocument.acquireSessionDocLegacy(sessionId, {}, 'observe');
+    try {
+      const meta = await lease.doc.getMetaState();
+      const legacyMeta = meta as SessionLegacyMetaFields | null | undefined;
+      const backend = await this.getSessionBackend(lease.doc);
+      const historyGoal = resolveLatestSessionGoalFromHistory(await backend.readHistory());
+      return isSessionGoalActive(historyGoal ?? legacyMeta?.latestGoal);
+    } finally {
+      await lease.release();
+    }
   }
 
   /**
@@ -10303,33 +10312,62 @@ export class MessageHandler {
     this.logger.debug(message);
   }
 
+  /** Sessions whose GC teardown is running; their process exit is not a turn's end. */
+  private readonly gcRetiringSessions = new Set<SessionId>();
+
   /**
-   * Clean all transient state for a session.
-   * Called by GC manager when a session has been idle or evicted under memory pressure.
+   * Retire an idle session: called by GC for idle sessions and under memory
+   * pressure. Resolves false when the session was kept.
+   *
+   * The decision and the teardown run under the session's residency gate and
+   * only while no lease is held, so a turn, watcher or reader that starts
+   * meanwhile waits and then gets a fresh document; it never loses the one it
+   * holds. A session used within `minIdleMs` is kept. This is the only place
+   * that stops an idle session's agent process: ending a turn keeps the process
+   * alive for the next one.
    */
-  async cleanSessionForGC(sessionId: SessionId): Promise<void> {
-    this.logger.debug(`[GC] Cleaning session ${sessionId}`);
-
-    // 1. Clear active presence
-    this.clearSessionActivePresence(sessionId);
-
-    await this.iosSimulatorService.closeSession(sessionId);
-    await this.previewService.closeSessionPreviewForCleanup(sessionId, 'Session cleaned by GC');
-
-    // 2. Terminate session process first — if later steps throw, the process
-    //    is already gone and the session stays tracked for retry/cleanup.
-    if (this.sessionManager.hasSession(sessionId)) {
-      await this.sessionManager.terminateSession(sessionId, true);
+  async cleanSessionForGC(
+    sessionId: SessionId,
+    options: { reason: SessionCleanupReason; minIdleMs: number }
+  ): Promise<boolean> {
+    this.logger.debug(`[GC] Cleaning session ${sessionId} (reason=${options.reason})`);
+    const outcome = await this.workspaceDocument.retireSessionLegacy(sessionId, {
+      minIdleMs: options.minIdleMs,
+      // Re-checked under the gate; GC's earlier eligibility check can be stale.
+      veto: () =>
+        this.hasActiveTurn(sessionId) ||
+        this.executionService.getExecutionSnapshot(sessionId).hasActiveTurn ||
+        this.hasPendingUpdates(sessionId) ||
+        this.isArchiveInFlight(sessionId),
+      teardown: async (sessionDoc) => {
+        this.gcRetiringSessions.add(sessionId);
+        try {
+          this.clearSessionActivePresence(sessionId);
+          await this.iosSimulatorService.closeSession(sessionId);
+          await this.previewService.closeSessionPreviewForCleanup(
+            sessionId,
+            'Session cleaned by GC',
+            { sessionDoc }
+          );
+          // A failure here aborts the retirement: the document stays resident
+          // and the session stays tracked for the next sweep.
+          if (this.sessionManager.hasSession(sessionId)) {
+            await this.sessionManager.terminateSession(sessionId, true);
+          }
+        } finally {
+          this.gcRetiringSessions.delete(sessionId);
+        }
+      },
+    });
+    if (outcome !== 'retired') {
+      this.logger.debug(`[GC] Kept session ${sessionId} (${outcome})`);
+      return false;
     }
-
-    // 3. Clean Loro documents (main memory savings)
-    await this.workspaceDocument.cleanSessionDoc(sessionId);
-
-    // 4. Drop transient tracking last — only after all cleanup succeeded,
-    //    so getTrackedSessionIds() can still see it for retry if steps above throw.
+    // Drop transient tracking last, only after every step succeeded, so a
+    // failed retirement stays visible to getTrackedSessionIds() for retry.
     this.store.deleteSession(sessionId);
-
     this.logger.debug(`[GC] Session ${sessionId} cleaned`);
+    return true;
   }
 }
 import { getCodexProfileStore } from '@/agent/codex-profile-store';

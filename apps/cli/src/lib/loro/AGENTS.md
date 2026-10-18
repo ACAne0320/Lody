@@ -30,12 +30,11 @@ Rules:
   existence index (`lib/loro/repo-existence.ts`), or a purpose-built local index
   (example: `session/session-fork-operation-store.ts`). Open docs only for the
   filtered candidates, under a concurrency bound (`mapWithConcurrency`, 4).
-- To drop a doc you opened for inspection, first prove no other holder adopted
-  it: `LoroDocumentManager.sessions` is a shared cache with **no refcounting**,
-  and `cleanSessionDoc`/`destroy` disposes every holder's mirror/subscriptions
-  (the dispatch watcher's `watchedSessions` guard blocks re-subscription). When you cannot
-  prove sole ownership, leave the doc cached. Never call
-  `repo.unloadDoc`/`unloadDocRoom` on a live wrapper directly either (the room
+- Session docs are leased (`session-residency.ts`): hold `acquireSessionDocLegacy`
+  across long waits; `getOrCreateSessionDoc` is a one-shot borrow. `cleanSessionDoc`
+  retires now or after the last lease; never `destroy` a cached wrapper. A lease
+  release never stops the agent process; only GC retires a Session idle 20 min.
+  Never call `repo.unloadDoc`/`unloadDocRoom` on a live wrapper directly either (the room
   binding would leak; see `SessionDocument.destroy` in `doc.ts`), and never let
   teardown write status/meta for docs that must stay hidden (e.g. unfinished
   fork targets).

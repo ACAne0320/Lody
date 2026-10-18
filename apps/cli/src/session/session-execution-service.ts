@@ -709,6 +709,12 @@ export type SessionExecutionServiceDeps = {
   }) => Promise<string | undefined>;
   /** Evict idle sessions if system memory is under pressure */
   evictForMemoryPressure: (excludeSessionId?: SessionId) => Promise<MemoryPressureEvictionResult>;
+  /**
+   * Lease the session's resident document for a whole visible turn, so GC cannot
+   * retire it mid-turn. Releasing the lease destroys nothing and keeps the agent
+   * process for the next turn. Optional for test doubles without residency.
+   */
+  leaseSessionDoc?: (sessionId: SessionId) => Promise<{ release: () => Promise<void> }>;
 };
 
 const shouldRedactEnvKey = (key: string): boolean => /token|secret|password|passwd|key/i.test(key);
@@ -4101,12 +4107,29 @@ export class SessionExecutionService {
     options: VisibleSessionTurnOptions,
     body: (ctx: VisibleSessionTurnContext) => Effect.Effect<void, unknown, Scope.Scope>
   ): Promise<string> {
-    const owned = this.runVisibleSessionTurnOwned(options, body);
+    const owned = this.runVisibleSessionTurnLeased(options, body);
     this.inboxVisibleExecutions.add(owned);
     try {
       return await owned;
     } finally {
       this.inboxVisibleExecutions.delete(owned);
+    }
+  }
+
+  private async runVisibleSessionTurnLeased(
+    options: VisibleSessionTurnOptions,
+    body: (ctx: VisibleSessionTurnContext) => Effect.Effect<void, unknown, Scope.Scope>
+  ): Promise<string> {
+    // Held from before the turn registers until after it releases, covering
+    // pre-prompt startup, the prompt, finalization and the Inbox release.
+    // The lease is normally a fast borrow of the document prepare just opened.
+    const lease = this.deps.leaseSessionDoc
+      ? await this.deps.leaseSessionDoc(options.sessionId)
+      : undefined;
+    try {
+      return await this.runVisibleSessionTurnOwned(options, body);
+    } finally {
+      await lease?.release();
     }
   }
 

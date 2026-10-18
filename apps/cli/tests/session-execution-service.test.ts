@@ -10834,6 +10834,34 @@ describe('Operation Inbox execution boundary', () => {
     };
   }
 
+  it('holds a document lease for the whole turn and keeps the agent process after it', async () => {
+    let held = 0;
+    const heldDuringPrompt: number[] = [];
+    const f = inboxExecutionFixture(async () => {
+      heldDuringPrompt.push(held);
+      return { stopReason: 'end_turn' };
+    });
+    f.deps.leaseSessionDoc = async () => {
+      held += 1;
+      return {
+        release: async () => {
+          held -= 1;
+        },
+      };
+    };
+    try {
+      await f.accept();
+      await f.service.continueSession(f.message);
+      expect(heldDuringPrompt).toEqual([1]);
+      expect(held).toBe(0);
+      // Ending the turn released its lease; the agent process stays for the next turn.
+      expect(f.client.isCreated()).toBe(true);
+      expect(f.service.getExecutionSnapshot(f.message.sessionId).hasReusableSession).toBe(true);
+    } finally {
+      await f.close();
+    }
+  });
+
   it('keeps an access-unverified input pending so the access retry executes it once', async () => {
     const received: ContentBlock[][] = [];
     const f = inboxExecutionFixture(async (blocks) => {

@@ -12,6 +12,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { LoroDocumentManager, SessionDocument } from '../src/lib/loro/doc';
+import { MessageHandler } from '../src/lib/message-handler';
+import { SessionGCManager } from '../src/lib/session-gc-manager';
+import { createSessionBackend } from '../src/session/session-backend';
 import {
   getSessionRoomId,
   type MessageContent,
@@ -684,6 +687,198 @@ describe('SessionDocument auto read', () => {
       await expect(doc.getMessageQueue()).resolves.toEqual([]);
     } finally {
       await repo.destroy();
+    }
+  });
+});
+
+describe('LoroDocumentManager Session residency', () => {
+  const noop = () => {};
+  const logger: Logger = {
+    info: noop,
+    warn: noop,
+    error: noop,
+    success: noop,
+    debug: noop,
+    trace: noop,
+    setLevel: noop,
+    child: () => logger,
+    close: async () => {},
+  };
+  const withManager = async (
+    run: (manager: LoroDocumentManager) => Promise<void>
+  ): Promise<void> => {
+    const repo = await WorkspaceRepoLegacy.create({});
+    const manager = new LoroDocumentManager({
+      repo,
+      workspaceId: 'synthetic-workspace' as WorkspaceId,
+      userId: 'synthetic-user',
+      metaSub: null,
+      logger,
+    });
+    try {
+      await run(manager);
+    } finally {
+      await manager.cleanUp({ preserveSessionStatus: true });
+    }
+  };
+  const idle = { minIdleMs: 0, veto: () => false };
+
+  it('never retires a leased document and keeps it resident after the lease ends', async () => {
+    await withManager(async (manager) => {
+      const sessionId = 'leased-session' as SessionId;
+      const lease = await manager.acquireSessionDocLegacy(sessionId, { skipAutoRead: true });
+      let tornDown = false;
+      await expect(
+        manager.retireSessionLegacy(sessionId, {
+          ...idle,
+          teardown: async () => {
+            tornDown = true;
+          },
+        })
+      ).resolves.toBe('in-use');
+      expect(tornDown).toBe(false);
+      expect(lease.doc.isDestroyed).toBe(false);
+
+      await lease.release();
+      // Releasing destroys nothing; only a later idle retirement does.
+      expect(lease.doc.isDestroyed).toBe(false);
+      expect(manager.sessions.get(sessionId)).toBe(lease.doc);
+      await expect(
+        manager.retireSessionLegacy(sessionId, {
+          ...idle,
+          minIdleMs: 20 * 60_000,
+          teardown: async () => {},
+        })
+      ).resolves.toBe('recently-used');
+      await expect(
+        manager.retireSessionLegacy(sessionId, { ...idle, teardown: async () => {} })
+      ).resolves.toBe('retired');
+      expect(lease.doc.isDestroyed).toBe(true);
+    });
+  });
+
+  it('gives a turn that arrives during GC teardown a fresh document, not the doomed one', async () => {
+    await withManager(async (manager) => {
+      const sessionId = 'retiring-session' as SessionId;
+      const doomed = await manager.getOrCreateSessionDoc(sessionId, { skipAutoRead: true });
+      const teardownEntered = Promise.withResolvers<SessionDocument | undefined>();
+      const finishTeardown = Promise.withResolvers<void>();
+      const retirement = manager.retireSessionLegacy(sessionId, {
+        ...idle,
+        teardown: async (sessionDoc) => {
+          teardownEntered.resolve(sessionDoc);
+          await finishTeardown.promise;
+          // The teardown writes through the document it was handed, without
+          // acquiring the Session whose gate it holds.
+          await sessionDoc?.setPreviewState({});
+        },
+      });
+      await expect(teardownEntered.promise).resolves.toBe(doomed);
+
+      // Like the Inbox turn that started 2 ms into GC.
+      let leased = false;
+      const turn = manager
+        .acquireSessionDocLegacy(sessionId, { skipAutoRead: true })
+        .then((lease) => {
+          leased = true;
+          return lease;
+        });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(leased).toBe(false);
+
+      finishTeardown.resolve();
+      await expect(retirement).resolves.toBe('retired');
+      const lease = await turn;
+      try {
+        expect(doomed.isDestroyed).toBe(true);
+        expect(lease.doc).not.toBe(doomed);
+        expect(lease.doc.isDestroyed).toBe(false);
+        await updateTestHistory(lease.doc, () => [createUserEntry('after-gc', 'still writable')]);
+        expect((await lease.doc.sessionData.history.readAll())[0]?.id).toBe('after-gc');
+      } finally {
+        await lease.release();
+      }
+    });
+  });
+
+  it('defers cleanup of a leased document until its last lease ends', async () => {
+    await withManager(async (manager) => {
+      const sessionId = 'archived-while-leased' as SessionId;
+      const lease = await manager.acquireSessionDocLegacy(sessionId, { skipAutoRead: true });
+      await manager.cleanSessionDoc(sessionId, { preserveStatus: true });
+      expect(lease.doc.isDestroyed).toBe(false);
+      await lease.release();
+      expect(lease.doc.isDestroyed).toBe(true);
+      expect(manager.sessions.has(sessionId)).toBe(false);
+    });
+  });
+
+  it('lets the real GC sweep retire a session idle past the timeout after its goal check', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      await withManager(async (manager) => {
+        const sessionId = 'idle-past-timeout' as SessionId;
+        const startedAt = Date.parse('2026-10-17T08:26:48.000Z');
+        vi.setSystemTime(startedAt);
+        // The last turn used the document, then ended.
+        const used = await manager.getOrCreateSessionDoc(sessionId, { skipAutoRead: true });
+        vi.setSystemTime(startedAt + 21 * 60_000);
+
+        const deleted: SessionId[] = [];
+        // The real MessageHandler methods GC runs, over the collaborators they read.
+        const handler = {
+          workspaceDocument: manager,
+          logger,
+          getSessionBackend: (sessionDoc: SessionDocument) => createSessionBackend(sessionDoc),
+          hasActiveTurn: () => false,
+          executionService: { getExecutionSnapshot: () => ({ hasActiveTurn: false }) },
+          hasPendingUpdates: () => false,
+          isArchiveInFlight: () => false,
+          gcRetiringSessions: new Set<SessionId>(),
+          clearSessionActivePresence: () => {},
+          iosSimulatorService: { closeSession: async () => {} },
+          previewService: { closeSessionPreviewForCleanup: async () => {} },
+          sessionManager: { hasSession: () => false },
+          store: { deleteSession: (id: SessionId) => deleted.push(id) },
+        } as unknown as MessageHandler;
+        const gc = new SessionGCManager(
+          {
+            idleTimeoutMs: 20 * 60_000,
+            sweepIntervalMs: 60_000,
+            enabled: true,
+            memoryThresholdBytes: 0,
+            maxEvictionsPerCall: 1,
+            pressureRecheckAttempts: 0,
+            pressureRecheckDelayMs: 0,
+          },
+          {
+            getSessionLastActivity: () => startedAt,
+            getSessionIds: () => [sessionId],
+            hasActiveTurn: () => false,
+            hasActiveGoal: (id) => MessageHandler.prototype.hasActiveGoal.call(handler, id),
+            hasPendingUpdates: () => false,
+            hasPendingUserWork: async () => false,
+            isArchiveInFlight: () => false,
+            cleanSession: (id, options) =>
+              MessageHandler.prototype.cleanSessionForGC.call(handler, id, options),
+            memoryPressure: {
+              getLatest: async () => ({ availableMemoryBytes: 1, effectiveMemoryLimitBytes: 1 }),
+              refresh: async () => ({ availableMemoryBytes: 1, effectiveMemoryLimitBytes: 1 }),
+            },
+            logger,
+            sleep: async () => {},
+          },
+          'linux'
+        );
+
+        await gc.sweep();
+
+        expect(used.isDestroyed).toBe(true);
+        expect(manager.sessions.has(sessionId)).toBe(false);
+        expect(deleted).toEqual([sessionId]);
+      });
+    } finally {
+      vi.useRealTimers();
     }
   });
 });
