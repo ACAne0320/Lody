@@ -5101,5 +5101,6 @@
   "chat.projectGroup.memberClone": "开始时 clone",
   "chat.projectGroup.memberMissing": "这台机器上没有",
   "chat.projectGroup.unsupportedRepositoryMembers": "请更新这台机器上的 Lody，才能使用它本地的仓库副本。",
-  "settings.projectGroups.picker.blockedHere": "项目组已包含本机目录，对话只能在本机运行。"
+  "settings.projectGroups.picker.blockedHere": "项目组已包含本机目录，对话只能在本机运行。",
+  "chat.projectGroup.memberWithParent": "随父仓库检出"
 }

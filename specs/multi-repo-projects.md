@@ -121,8 +121,11 @@ cannot find it. Once set, the Member is a **submodule Member**:
   are linked correctly. Create PR opens the submodule's PR first, then the parent's
   PR that updates the pointer, and links the child PR from the parent PR.
   Merge-order guidance puts the submodule first.
-- It can be selected only together with its parent Member. If the user unticks the
-  parent, its submodule Members are not materialized either.
+- It follows its parent Member when a conversation is created: ticked when the
+  parent is, and never unticked on its own, because the parent's worktree checks
+  out every submodule it declares anyway; unticking it would save no fetch and
+  only lose its branch and PR tracking. If the user unticks the parent, its
+  submodule Members are not materialized either.
 - Creating a conversation checks that the path is still a submodule pointing to the
   same repository in the parent's base commit. A mismatch is reported to the user;
   Lody does not silently flatten the Member instead.

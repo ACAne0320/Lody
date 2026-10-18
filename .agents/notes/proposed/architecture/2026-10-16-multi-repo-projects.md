@@ -513,8 +513,8 @@ its meaning. Type names in code are unchanged.
 - **New conversation**: a group sits on top of the plain chat context, leaving
   the existing local/GitHub logic and the mobile views unchanged. Choosing a
   group lets its local members' machine decide the execution machine. The member
-  picker starts with everything ticked, and unticking a parent also unticks its
-  submodules. With one member left, the conversation is created as an ordinary
+  picker starts with everything ticked; a submodule follows its parent and cannot
+  be unticked alone, since the parent's worktree checks it out regardless. With one member left, the conversation is created as an ordinary
   single-project one. If the daemon does not advertise `multiRepoProject`,
   submission is blocked with a prompt to update.
 - **Info Bar**: a new Repositories chip (never staged) lists each repository in

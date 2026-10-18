@@ -5104,5 +5104,6 @@
   "chat.projectGroup.memberClone": "Cloned on start",
   "chat.projectGroup.memberMissing": "Not on this machine",
   "chat.projectGroup.unsupportedRepositoryMembers": "Update Lody on this machine to use its copies of these repositories.",
-  "settings.projectGroups.picker.blockedHere": "The group already has folders on this machine, so its conversations run here."
+  "settings.projectGroups.picker.blockedHere": "The group already has folders on this machine, so its conversations run here.",
+  "chat.projectGroup.memberWithParent": "With its parent"
 }

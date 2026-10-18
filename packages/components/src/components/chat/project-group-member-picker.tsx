@@ -3,7 +3,6 @@ import * as stylex from '@stylexjs/stylex';
 import { ChevronDown, Folder, GitBranch, Github } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ProjectMember, ProjectMemberId } from '@lody/shared';
-import { collectProjectSubmoduleDescendants } from '@/lib/project-group-form';
 import { selectProjectGroupMembers } from '@/lib/project-group-launch';
 import { Menu } from '@lody/ui/menu';
 import { colors } from '@lody/ui/tokens/colors.stylex';
@@ -28,8 +27,9 @@ const styles = stylex.create({
   },
   count: { fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' },
   row: { display: 'flex', alignItems: 'center', gap: space[1.5], minWidth: 0 },
-  // A submodule sits under its parent, as it will on disk.
-  nested: { paddingInlineStart: space[4] },
+  // A submodule sits under its parent, one step further in per level, as it
+  // will on disk.
+  nested: (depth: number) => ({ paddingInlineStart: `${depth * 16}px` }),
   label: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   path: {
     flexShrink: 0,
@@ -60,9 +60,11 @@ export type ProjectGroupMemberPickerProps = {
 /**
  * Which of a Project group's repositories this conversation uses.
  *
- * Every member starts ticked. Unticking a parent unticks its submodules too —
- * a submodule is checked out inside its parent — and the count on the face
- * says how many repositories the conversation will get.
+ * Every member starts ticked. A submodule follows its parent and is never
+ * ticked on its own: the parent's worktree checks out every submodule it
+ * declares anyway, so unticking one would save nothing and only lose its
+ * branch and PR tracking. The count on the face says how many repositories
+ * the conversation will get.
  */
 export function ProjectGroupMemberPicker({
   members,
@@ -104,24 +106,17 @@ export function ProjectGroupMemberPicker({
     return out;
   }, [members]);
 
+  const memberIds = useMemo(() => new Set(members.map((member) => member.id)), [members]);
+  // A submodule whose parent is in the group comes and goes with it.
+  const followsParent = (member: ProjectMember) =>
+    member.placement.kind === 'submodule' && memberIds.has(member.placement.parent);
+
+  // Only top-level members are toggled; leaving out a parent leaves out its
+  // submodules through the shared selection rule.
   const toggle = (member: ProjectMember, checked: boolean) => {
     const next = new Set(excluded);
-    if (checked) {
-      next.delete(member.id);
-      // Ticking a submodule brings back the parent it lives in.
-      let placement = member.placement;
-      while (placement.kind === 'submodule') {
-        const parentId = placement.parent;
-        next.delete(parentId);
-        placement = members.find((candidate) => candidate.id === parentId)?.placement ?? {
-          kind: 'root',
-          dir: '',
-        };
-      }
-    } else {
-      next.add(member.id);
-      for (const child of collectProjectSubmoduleDescendants(members, member.id)) next.add(child);
-    }
+    if (checked) next.delete(member.id);
+    else next.add(member.id);
     onExcludedChange(next);
   };
 
@@ -160,20 +155,25 @@ export function ProjectGroupMemberPicker({
                 : Folder;
           const path =
             member.placement.kind === 'root' ? `${member.placement.dir}/` : member.placement.path;
+          const following = followsParent(member);
           const note = missing.has(member.id)
             ? canClone
               ? t('chat.projectGroup.memberClone', 'Cloned on start')
               : t('chat.projectGroup.memberMissing', 'Not on this machine')
-            : null;
+            : following
+              ? t('chat.projectGroup.memberWithParent', 'With its parent')
+              : null;
           return (
             <Menu.CheckboxItem
               key={member.id}
               checked={selected.has(member.id)}
-              disabled={unavailable.has(member.id)}
+              disabled={following || unavailable.has(member.id)}
               closeOnClick={false}
-              onCheckedChange={(checked) => toggle(member, checked)}
+              onCheckedChange={(checked) => {
+                if (!following) toggle(member, checked);
+              }}
             >
-              <span {...stylex.props(styles.row, depth > 0 && styles.nested)}>
+              <span {...stylex.props(styles.row, styles.nested(depth))}>
                 <Icon aria-hidden="true" {...stylex.props(composerSurface.glyph14)} />
                 <span {...stylex.props(styles.label)}>{labelOf(member)}</span>
                 <span {...stylex.props(styles.path)}>{path}</span>
