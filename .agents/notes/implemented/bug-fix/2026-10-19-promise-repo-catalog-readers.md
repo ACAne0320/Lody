@@ -23,7 +23,9 @@ The six reproduced `doc.ts` errors involved missing `runLegacy`,
 `acquireScopeLegacy`, `.native`, and an unimported `Scope`. #1692's native Repo
 tests did not validate the Promise product boundary. This corrects the catalog
 implementation/evidence in [the earlier daemon decision](../architecture/2026-10-16-daemon-hosted-mcp-workspace-commands.md),
-retaining its authorization, active Turn and daemon-borrowing contracts.
+retaining its authorization, active Turn and daemon-borrowing contracts. This
+supersedes main's interim Promise helper from `de8debe03`; its facade-level
+timeout, detach and acquisition coverage is retained against the scoped owner.
 
 Workspace startup starts metadata and workspace readers in the background.
 Requests admit one reader per authorized Machine Flock. Same-key requests share
