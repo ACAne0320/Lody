@@ -81,11 +81,21 @@ and [details group](../../../../.agents/notes/implemented/feature/2026-10-18-sid
   separately. Errors preserve the name, and pending operations cannot be repeated.
   [Decision and verification](../../../../.agents/notes/implemented/feature/2026-10-14-remote-directory-creation.md).
 
-- Entry and workspace-gate redirects use `BootNavigate`; `PreloadedMainLayout`
-  owns its boot-shell Suspense fallback for local and cloud paths. The ready layout
-  keeps the existing content gate while workspace data resolves. See
-  [startup intent](../../../../specs/app-startup-landing.md) and the
-  [first-paint decision](../../../../.agents/notes/implemented/feature/2026-09-26-boot-shell-first-paint.md).
+- Entry and workspace-gate redirects use `BootNavigate` to hint target geometry;
+  `PreloadedMainLayout` owns the boot-shell Suspense fallback. Inside `RootOutlet`'s
+  error boundary, `BootShellBoundary` supplies live route/sidebar/viewport state and
+  router `state.isLoading || state.status === 'pending'` to one persistent frame:
+  `isLoading` alone can clear before the pending match renders. Committed gates own its
+  path and status; if Suspense cleans up the outgoing owner, pending navigation
+  retains the last committed presentation. With no owners and navigation settled,
+  the provider releases the frame and clears that memory so later session navigation
+  cannot revive it. Static BootShell and `WorkspaceCard`
+  share frame geometry. `DocumentStyle` replaces the inline first-paint sheet
+  after commit and keeps live CSS mutable during updates; React's immutable
+  `style href` resources cannot own it. The card's content `LoadingPlaceholder` retains the
+  same mark while workspace data resolves. See [startup intent](../../../../specs/app-startup-landing.md),
+  the [first-paint decision](../../../../.agents/notes/implemented/feature/2026-09-26-boot-shell-first-paint.md),
+  and its [layout-handoff follow-up](../../../../.agents/notes/implemented/feature/2026-10-19-boot-shell-layout-handoff.md).
 
 - Sidebar footer: Help (`?`), Archive, Settings, in that order. Help retains the
   documentation, GitHub repository, community, GitHub Issues feedback, and bug-report menu; Archive is a direct
@@ -115,6 +125,23 @@ and [details group](../../../../.agents/notes/implemented/feature/2026-10-18-sid
   `VITE_SITE_URL` (default `https://lody.ai`) in the external browser. Complete
   account linking there with the same Lody account; the client's reactive settings
   query reflects completion. Browser settings keep their existing OAuth flow.
+- Login page: `login-page.tsx` is an inset dithered visual
+  (`login-dither-visual.tsx`, WebGL, theme-coloured, reduced-motion aware) beside an
+  anchored sign-in column; on narrow screens the visual stacks on top and folds
+  away for the email form. The header and legal notice stay mounted in ordinary
+  CSS flow. `login-view-slot.tsx` keeps the OAuth and email panels mounted in a
+  clipped horizontal track; one MotionValue drives translation and interpolated
+  intrinsic height together. Email sign-in and sign-up reuse the same form and
+  input elements. Only the name and forgot-password rows expand or contract,
+  with the viewport following their flow height in the same frame. Switching
+  never fades the form or scales its controls. Reversals start from current
+  numeric values, offscreen panels are inert and excluded from accessibility,
+  and email focuses after the slide completes without scrolling. Reduced motion
+  commits directly. Providers are one group of equal secondary buttons; the
+  method this device last completed is marked "Last used" via
+  `lib/last-login-method.ts`, written only on a completed sign-in.
+  [Decision](../../../../.agents/notes/implemented/feature/2026-10-17-login-inset-visual-last-used.md),
+  [retained sign-up transition fix](../../../../.agents/notes/implemented/bug-fix/2026-10-18-login-view-switching.md).
 - Browser desktop sign-in handoff: `login-page.tsx` under `?client_id=electron`,
   the page the desktop app opens in the system browser. A desktop sign-out leaves
   this browser signed in as the previous account, so the page names that account
