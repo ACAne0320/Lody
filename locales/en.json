@@ -3381,7 +3381,6 @@
   "sidebar.filter.emptyMyTasksHint": "Try showing every task in this workspace.",
   "sidebar.filter.showAllTasks": "Show all tasks",
   "sidebar.filter.updatedProjectNames": "Show Project",
-  "sidebar.filter.updatedProjectNamesUnavailable": "Available in Updated view",
   "sidebar.filter.trigger": "Filter sidebar",
   "sidebar.githubWorktrees": "GitHub Worktrees",
   "sidebar.pinned": "Pinned",
@@ -5010,5 +5009,7 @@
   "sessions.inputOwnerNeedsUpdate": "Update the conversation machine to receive this message.",
   "sessions.inputStorageUnavailable": "This environment cannot safely save and deliver the message.",
   "sessions.inputOutcomeUnknown": "The conversation machine has not confirmed this message. Check the original send result.",
-  "sessions.removeLocalInput": "Remove local copy"
+  "sessions.removeLocalInput": "Remove local copy",
+  "sidebar.filter.showBranchNames": "Show Branch",
+  "sidebar.filter.detailsHeading": "Details"
 }

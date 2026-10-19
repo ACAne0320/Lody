@@ -31,6 +31,12 @@ Child directories (`sessions/`, `mobile/`, …) own their own rules.
   Keep geometry in `session-row-leading-slot.tsx`; context-menu expand/collapse uses
   the same toggle.
 - Conversation titles stay `font-normal`; pin with the glyph, never weight.
+- Sidebar row visuals (radius, inset, ink, hover and selected fills, title clipping) are StyleX:
+  `sidebar-surface.ts` over `sidebar.tokens.stylex.ts`, which reads the theme's `--sidebar-*`
+  variables. Conversation, repo and navigation rows take them instead of Tailwind colour or radius
+  classes; Tailwind stays only for what StyleX cannot express (`group/row` reveals,
+  `data-[menu-open]`, focus rings). A Tailwind class on the same property beats a StyleX one
+  (utilities layer), so remove the old class when moving a property.
 - Desktop work/wait/unread/send status belongs only in `SessionRowStatusIndicator`
   inside `SidebarRowEndSlot`, never the leading slot; it replaces resting `Mergeable`,
   worktree, PR icon or mobile time with one 14px mark. +/- totals: hover card only.
@@ -60,6 +66,11 @@ Child directories (`sessions/`, `mobile/`, …) own their own rules.
 
 ## Entry points, drafts, and layout
 
+- The window is the sidebar's colour (`bg-sidebar` on the layout root; the sidebar has
+  no edge) and pages are one card set into it (`WorkspaceCard`): `bg-background`, 10px
+  radius, inset 8px at the top, right and bottom, a soft drop shadow and a faint 0.5px
+  border. Tabs and everything else live inside the card. Never give the sidebar its own
+  surface or a floating card.
 - Child-tab drafts send through the same accept unit as every other first message:
   `handleSendDraft` (`sessions/session-detail.tsx`) writes Session meta plus the first
   user turn together via `startSession` and only then promotes the draft tab;

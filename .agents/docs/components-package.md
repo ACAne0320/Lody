@@ -201,7 +201,15 @@ CSS variables and dimensions when no equivalent token exists. Keep runtime
 geometry and styles owned by external rendering engines at their existing dynamic
 boundary. Configure shared primitives through their documented props when those
 props reproduce the existing appearance. The [progressive StyleX migration note](../notes/implemented/simplification/2026-10-04-complex-surfaces-stylex.md) records the retained legacy overrides and
-the current application of these rules.
+current application of these rules.
+
+Lody Light's neutral surfaces, text, gray ramp and shadow ink use zero saturation
+at their existing lightness; the blue primary and links remain semantic accents. Their
+sources are the bundled VS Code theme, `@lody/ui`'s light palette and the Tailwind
+fallbacks. `boot-shell.ts` mirrors the sidebar, edge and status colors before the
+renderer starts. Keep those sources aligned when changing this palette. The
+[neutral gray decision](../notes/implemented/bug-fix/2026-10-17-neutral-light-grays.md)
+records the color correction and its verification limits.
 
 Settings' `CompactRow` keeps its label and helper in separate text nodes. Its
 optional `labelId` and `helperId` let a caller associate a control with those

@@ -33,6 +33,16 @@ The sidebar spans `loro-sidebar.tsx`, `loro-app-sidebar.tsx`, `session-list.tsx`
 `sidebar-*.tsx`. `sessions/session-list-rows.ts` resolves row relationships, while
 `lib/session-opened-by-tree.ts` builds the presentation tree.
 
+Header controls use the local `CuidaSidebarExpandOutline` SVG for the sidebar toggle
+and Lucide `ChevronLeft` / `ChevronRight` for history navigation, in 16px boxes.
+Cuida's source and Apache-2.0 license are retained beside the icon component.
+
+The Add folder and view controls use Lucide `FolderPlus` and `SlidersHorizontal`
+with 16px boxes and a 1.5 stroke width. Section-header actions both use the `mini`
+ghost Button: 24px square, 6px corner radius, and shared colors and hover treatment.
+The filter accepts `triggerSize` so callers use the Button size contract rather than
+overriding its dimensions with CSS.
+
 Section labels scroll with their rows, per the
 [sidebar section scrolling Spec](../../../../specs/sidebar-section-scrolling.md).
 
@@ -46,19 +56,21 @@ explains why exact opener navigation and root-row indentation use separate ids.
 A child Tab may open an independent Session: the row sits under the root, but its
 navigation must still return to the precise creating Tab.
 
-Updated organize mode is a mixed recency list. The sidebar view popover exposes
-`Show Project` as a switch below the View and Tasks menu groups. It controls the
-second line with folder / muted GitHub owner mark + project name. The complete
-row acts as the Switch hover target, changing only the track color. It remains
-visible but disabled in Project mode, with a right-side tooltip explaining that
-it is available in Updated view. Touch users open the same hint by tapping the
-disabled row, while keyboard focus also exposes it. GitHub owner marks keep
-their original colors at a fixed 60% opacity in every row state. Nested opened
-Sessions stay one title line so the 30px tree trunk still meets. Workspace-mode
-Pinned omits the line.
+Updated organize mode is a mixed recency list. The sidebar view popover hosts a
+`Details` group under the View and Tasks groups with a switch per second-line
+segment: `Show Project` (folder / muted GitHub owner mark + project name) and
+`Show Branch`. Both switches are persistent content preferences and stay
+interactive in every organize mode — each segment appears on the rows that
+carry it, and the Workspace branch/time line collapses entirely when the
+branch switch is off. A new or unset branch preference starts off; a previously
+saved choice is preserved. See the [default decision](../../../../.agents/notes/implemented/feature/2026-10-19-sidebar-branch-details-off-by-default.md).
+GitHub owner marks keep their original colors at a fixed
+60% opacity in every row state. Nested opened Sessions stay one title line so
+the tree trunk still meets. Workspace-mode Pinned omits the project line.
 Decisions:
-[project context](../../../../.agents/notes/implemented/feature/2026-09-20-sidebar-updated-project-context.md)
-and [display preference](../../../../.agents/notes/implemented/feature/2026-09-20-sidebar-updated-project-display-preference.md).
+[project context](../../../../.agents/notes/implemented/feature/2026-09-20-sidebar-updated-project-context.md),
+[display preference](../../../../.agents/notes/implemented/feature/2026-09-20-sidebar-updated-project-display-preference.md),
+and [details group](../../../../.agents/notes/implemented/feature/2026-10-18-sidebar-row-details-group.md).
 
 ## Entry points and layout
 
@@ -77,8 +89,9 @@ and [display preference](../../../../.agents/notes/implemented/feature/2026-09-2
 
 - Sidebar footer: Help (`?`), Archive, Settings, in that order. Help retains the
   documentation, GitHub repository, community, GitHub Issues feedback, and bug-report menu; Archive is a direct
-  button and becomes the return action while open. Desktop controls share the UI
-  primitive's small size; mobile actions retain their touch targets. See the
+  button and becomes the return action while open. Desktop controls are 28px and use
+  the navigation rows' ink and fills (`sidebarSurface.iconButton`, shared with the
+  header's icon buttons); mobile actions retain their touch targets. See the
   [footer Spec](../../../../specs/sidebar-footer.md).
 
 - [Zen layout](../../../../specs/zen-layout.md): `AppCommands` dispatches the shared
