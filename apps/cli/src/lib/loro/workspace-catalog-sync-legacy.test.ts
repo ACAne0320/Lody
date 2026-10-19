@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   LoroRepo,
   RepoStorageError,
-  type RepoRoomSubscription,
   type TransportAdapter,
   type TransportSubscription,
 } from 'loro-repo';

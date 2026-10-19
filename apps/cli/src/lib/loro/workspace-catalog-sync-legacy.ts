@@ -72,14 +72,15 @@ const delayOrAbort = (ms: number, signal: AbortSignal) =>
       resolve();
       return;
     }
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', abort);
-      resolve();
-    }, ms);
+    let timer: ReturnType<typeof setTimeout>;
     const abort = () => {
       clearTimeout(timer);
       resolve();
     };
+    timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
     signal.addEventListener('abort', abort, { once: true });
   });
 
@@ -108,7 +109,7 @@ export function createWorkspaceCatalogSyncLegacy(
       room.subscription = null;
       subscription.unsubscribe();
     };
-    while (!closed && !room.controller.signal.aborted) {
+    while (!room.controller.signal.aborted) {
       let subscription: RepoRoomSubscription;
       try {
         const pendingJoin = repo.joinFlockDocRoom(room.id);
