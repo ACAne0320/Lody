@@ -86,11 +86,15 @@ Performance comparisons must use the current full-Mirror baseline.
 
 ## Workspace transitions
 
-- Default app entry opens the workspace chat landing; never persist or restore the
-  last visited route. Explicit deep links and requested window targets retain their destination.
-  Entry/workspace gate redirects use `BootNavigate`; `PreloadedMainLayout` owns its
-  boot-shell Suspense fallback. Keep a visible shell until the destination commits;
-  the hidden warm window's `/` remains neutral.
+- Default entry opens workspace chat landing; never restore the last route. Deep
+  links and requested window targets keep their destination. `BootNavigate` hints
+  target geometry; `PreloadedMainLayout` owns its code-loading fallback.
+  `BootShellBoundary`, inside the route error boundary, keeps one surface across
+  committed boot gates. Recovery/destination commits release it immediately;
+  animation never decides readiness. Boot and real cards share frame geometry.
+  Document-safe styles use `DocumentStyle` for mutable updates and retire the
+  inline first-paint sheet only after the live sheet commits.
+  The hidden warm window's `/` remains neutral.
 
 - Dock counts derive from complete active metadata and the sidebar's child activity
   summary. Publish absolute snapshots, including zero, on change and every 30 seconds;
