@@ -100,8 +100,8 @@ observer-lease driven; never start OS probes permanently or persist snapshots.
 
 ## Catalog readers
 
-Promise Repo readers use capped join retries and bounded waits. Role validation syncs fresh.
-Repo shutdown releases rooms.
+Share Promise Repo; close readers first. Timeouts end waiters.
+Retry baseline errors in-place. Role writes confirm remote sync.
 
 ## Machine Flock writes for this machine are local-first
 
