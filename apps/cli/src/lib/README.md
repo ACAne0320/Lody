@@ -29,7 +29,8 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
   Daemon reads wait briefly for the first baseline, then return cached results with
   `catalog_syncing` uncertainty until confirmed; later reads never force catch-up.
   `loro/workspace-catalog-sync.ts` holds the daemon workspace Flock reader room,
-  including headless startup; native transport recovery keeps it current.
+  including headless startup; Repo subscriptions survive reattachment. Manager recovery
+  owns reconnects and Repo shutdown releases the rooms.
   Role proposal target validation requires fresh metadata/target synchronization.
   Standalone CLI calls synchronize unless `--offline`. Authorization and cloud presence
   remain online-aware independently of the catalog read policy.

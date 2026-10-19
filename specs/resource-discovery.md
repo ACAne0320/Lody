@@ -67,7 +67,7 @@ Daemon-hosted discovery reads the daemon's current catalogs without forcing meta
 or Flock synchronization. The daemon holds a workspace Flock reader room even without
 a renderer or selected external MCP. Queried authorized machine catalogs also keep
 one background reader per key for the daemon lifetime. Acquisition runs in the background with capped
-I/O retry backoff; native transport recovery owns reconnects. Startup never waits for
+I/O retry backoff; existing Repo transport recovery owns reconnects. Startup never waits for
 network catch-up. Reads share a short first-baseline budget; before confirmation they
 return cached rows with `sync.state: syncing`, downgrade catalog-dependent negative
 verdicts to `unknown/catalog_syncing`, and report missing get results as retryable

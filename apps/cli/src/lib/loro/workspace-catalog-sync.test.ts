@@ -1,262 +1,212 @@
-import { describe, expect } from 'vitest';
-import { it } from '@effect/vitest';
-import { Deferred, Effect, Exit, Fiber, Scope } from 'effect';
-import { TestClock } from 'effect/testing';
-import { make, makeMemoryNetwork, RepoIOError } from 'loro-repo/effect';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LoroRepo, RepoStorageError } from 'loro-repo';
+import type {
+  RepoRoomSubscription,
+  TransportAdapter,
+  TransportConnectionStatus,
+  TransportSubscription,
+  TransportSyncResult,
+} from 'loro-repo';
 import { getWorkspaceFlockDocId, type WorkspaceId } from '@lody/shared';
 import type { Logger } from '@/utils/logger';
-import { makeWorkspaceCatalogSync, startWorkspaceCatalogSync } from './workspace-catalog-sync';
+import { makeWorkspaceCatalogSync } from './workspace-catalog-sync';
 
 const workspaceId = 'catalog-sync-test' as WorkspaceId;
 const logger = { debug: () => {} } as Logger;
+const OK: TransportSyncResult = { ok: true };
+
+class MemoryStreamsAdapter implements TransportAdapter {
+  private connected = false;
+  readonly subscriptions = new Map<string, ReturnType<typeof makeSubscription>>();
+
+  constructor(private readonly holdFirstSync = false) {}
+
+  async connect(): Promise<void> {
+    this.connected = true;
+  }
+
+  async close(): Promise<void> {
+    this.connected = false;
+  }
+
+  isConnected(): boolean {
+    return this.connected;
+  }
+
+  getStatus(): TransportConnectionStatus {
+    return this.connected ? 'connected' : 'disconnected';
+  }
+
+  onStatusChange(): () => void {
+    return () => {};
+  }
+
+  async syncMeta(): Promise<TransportSyncResult> {
+    return OK;
+  }
+
+  joinMetaRoom(): TransportSubscription {
+    return this.join('meta');
+  }
+
+  async syncDoc(): Promise<TransportSyncResult> {
+    return OK;
+  }
+
+  joinDocRoom(docId: string): TransportSubscription {
+    return this.join(`doc:${docId}`);
+  }
+
+  async syncFlockDoc(): Promise<TransportSyncResult> {
+    return OK;
+  }
+
+  joinFlockDocRoom(flockDocId: string): TransportSubscription {
+    return this.join(`flock:${flockDocId}`);
+  }
+
+  async forgetFlockDoc(): Promise<void> {}
+
+  markSynced(key: string): void {
+    this.subscriptions.get(key)?.resolve();
+  }
+
+  private join(key: string): TransportSubscription {
+    const subscription = makeSubscription(!this.holdFirstSync);
+    this.subscriptions.set(key, subscription);
+    return subscription.subscription;
+  }
+}
+
+function makeSubscription(initiallySynced: boolean) {
+  const deferred = Promise.withResolvers<void>();
+  if (initiallySynced) deferred.resolve();
+  let status: TransportSubscription['status'] = 'joined';
+  const listeners = new Set<(status: TransportSubscription['status']) => void>();
+  return {
+    resolve: deferred.resolve,
+    subscription: {
+      unsubscribe: () => {
+        status = 'disconnected';
+        for (const listener of listeners) listener(status);
+      },
+      firstSyncedWithRemote: deferred.promise,
+      waitUntilSynced: async () => {},
+      get status() {
+        return status;
+      },
+      onStatusChange: (listener: (value: TransportSubscription['status']) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    } satisfies TransportSubscription,
+  };
+}
+
+const createRepo = () => LoroRepo.create({});
+
+const createCatalog = async (repo: LoroRepo, adapter?: MemoryStreamsAdapter) => {
+  const metaSubscription = await repo.joinMetaRoom();
+  const catalog = await makeWorkspaceCatalogSync(repo, workspaceId, logger, metaSubscription);
+  if (adapter) await repo.addTransport('streams', adapter);
+  return { catalog, metaSubscription };
+};
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('daemon workspace catalog ownership', () => {
-  it.effect('starts without waiting for a slow acquisition and releases its lease on close', () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const repo = yield* make();
-        const owner = yield* Scope.make();
-        const started = yield* Deferred.make<void>();
-        const resume = yield* Deferred.make<void>();
-        const acquired = yield* Deferred.make<void>();
-        let releases = 0;
-        yield* Scope.provide(
-          startWorkspaceCatalogSync(
-            {
-              ...repo,
-              acquireRoom: (target) =>
-                Effect.gen(function* () {
-                  expect(target).toEqual({
-                    kind: 'flock',
-                    id: getWorkspaceFlockDocId(workspaceId),
-                  });
-                  yield* Deferred.succeed(started, undefined);
-                  yield* Deferred.await(resume);
-                  const lease = yield* repo.acquireRoom(target);
-                  yield* Effect.addFinalizer(() =>
-                    Effect.sync(() => {
-                      releases += 1;
-                    })
-                  );
-                  yield* Deferred.succeed(acquired, undefined);
-                  return lease;
-                }),
-            },
-            workspaceId,
-            logger
-          ),
-          owner
-        );
-        yield* Deferred.await(started);
-        yield* TestClock.adjust(60_000);
-        expect(releases).toBe(0);
-        yield* Deferred.succeed(resume, undefined);
-        yield* Deferred.await(acquired);
-        yield* Scope.close(owner, Exit.void);
-        expect(releases).toBe(1);
-      })
-    )
-  );
+  it('holds workspace and queried machine rooms until Repo shutdown', async () => {
+    const repo = await createRepo();
+    const adapter = new MemoryStreamsAdapter();
+    const { catalog } = await createCatalog(repo, adapter);
+    const workspaceFlock = getWorkspaceFlockDocId(workspaceId);
+    const machineFlock = 'machine:catalog-sync-test';
 
-  it.effect(
-    'retries failed local acquisition, recovers, and cancels pending retries at close',
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const repo = yield* make();
-          const owner = yield* Scope.make();
-          const acquired = yield* Deferred.make<void>();
-          const failure = new RepoIOError('local catalog unavailable', undefined);
-          const errors: string[] = [];
-          let attempts = 0;
-          let releases = 0;
-          const recovering = {
-            ...repo,
-            acquireRoom: (target: Parameters<typeof repo.acquireRoom>[0]) =>
-              Effect.gen(function* () {
-                attempts += 1;
-                if (attempts <= 2) return yield* Effect.fail(failure);
-                const lease = yield* repo.acquireRoom(target);
-                yield* Effect.addFinalizer(() =>
-                  Effect.sync(() => {
-                    releases += 1;
-                  })
-                );
-                yield* Deferred.succeed(acquired, undefined);
-                return lease;
-              }),
-          };
-          const reporting = {
-            debug: (message: string) => {
-              errors.push(message);
-              throw new Error('diagnostics unavailable');
-            },
-          } as Logger;
-          yield* Scope.provide(
-            startWorkspaceCatalogSync(recovering, workspaceId, reporting),
-            owner
-          );
-          yield* TestClock.adjust(1_000);
-          yield* TestClock.adjust(2_000);
-          yield* Deferred.await(acquired);
-          expect(attempts).toBe(3);
-          expect(errors).toEqual([
-            `[${workspaceId}] Catalog reader failed: RepoIOError`,
-            `[${workspaceId}] Catalog reader failed: RepoIOError`,
-          ]);
-          yield* Scope.close(owner, Exit.void);
-          expect(releases).toBe(1);
-          const retryOwner = yield* Scope.make();
-          yield* Scope.provide(
-            startWorkspaceCatalogSync(
-              {
-                ...repo,
-                acquireRoom: () =>
-                  Effect.suspend(() => {
-                    attempts += 1;
-                    return Effect.fail(failure);
-                  }),
-              },
-              workspaceId,
-              logger
-            ),
-            retryOwner
-          );
-          yield* TestClock.adjust(1_000);
-          yield* Scope.close(retryOwner, Exit.void);
-          const stoppedAt = attempts;
-          yield* TestClock.adjust(120_000);
-          expect(attempts).toBe(stoppedAt);
-        })
-      )
-  );
+    try {
+      expect(await catalog.ready(workspaceFlock, 100)).toBe(true);
+      await catalog.hold(machineFlock);
+      expect(await catalog.ready(machineFlock, 100)).toBe(true);
+      expect(adapter.subscriptions.has(`flock:${workspaceFlock}`)).toBe(true);
+      expect(adapter.subscriptions.has(`flock:${machineFlock}`)).toBe(true);
 
-  it.effect(
-    'recovers a native retained release after transient catalog read and cleanup write failure',
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          let unavailable = true;
-          let loads = 0;
-          const failed = yield* Deferred.make<void>();
-          const loaded = yield* Deferred.make<void>();
-          const repo = yield* make({
-            autoPersistMs: 0,
-            storageAdapter: {
-              loadMeta: async () => undefined,
-              loadDoc: async () => undefined,
-              loadFlockDoc: async () => {
-                loads += 1;
-                if (unavailable) throw new Error('SQLITE_BUSY');
-                Deferred.doneUnsafe(loaded, Exit.void);
-                return undefined;
-              },
-              save: async () => {
-                if (unavailable) throw new Error('SQLITE_BUSY');
-              },
-            },
-          });
-          yield* repo.upsertDocMeta('machine:a', { id: 'a' });
-          const owner = yield* Scope.make();
-          const sync = yield* Scope.provide(
-            makeWorkspaceCatalogSync(repo, workspaceId, {
-              debug: (message: string) => {
-                if (message.includes('Die')) Deferred.doneUnsafe(failed, Exit.void);
-              },
-            } as Logger),
-            owner
-          );
-          yield* Deferred.await(failed);
-          yield* TestClock.adjust(1_000);
-          yield* TestClock.adjust(2_000);
-          const failedLoads = loads;
-          unavailable = false;
-          yield* sync.hold(getWorkspaceFlockDocId(workspaceId));
-          yield* TestClock.adjust(4_000);
-          yield* Deferred.await(loaded);
-          expect(loads).toBe(failedLoads + 1);
-          yield* Scope.close(owner, Exit.void);
-          const stoppedAt = loads;
-          yield* TestClock.adjust(120_000);
-          expect(loads).toBe(stoppedAt);
-        })
-      )
-  );
+      await catalog.close();
+      expect(adapter.subscriptions.get(`flock:${workspaceFlock}`)?.subscription.status).toBe(
+        'disconnected'
+      );
+      expect(adapter.subscriptions.get(`flock:${machineFlock}`)?.subscription.status).toBe(
+        'disconnected'
+      );
+    } finally {
+      await catalog.close();
+      await repo.destroy();
+    }
+  });
 
-  it.effect(
-    'bounds only the first-baseline waiter and keeps the reader alive across timeout and detach',
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const network = yield* makeMemoryNetwork();
-          const publisher = yield* make();
-          const id = getWorkspaceFlockDocId(workspaceId);
-          const remote = yield* publisher.acquireRoom({ kind: 'flock', id });
-          if (remote.replica.kind !== 'flock') throw new Error('Expected Flock');
-          remote.replica.lease.flock.set(['test'], 'remote');
-          remote.replica.lease.flock.commit();
-          yield* publisher.attachTransport({
-            ...network.transport('streams'),
-            authority: 'server',
-          });
-          yield* remote.sync('streams');
-          const repo = yield* make({ authority: { mode: 'remote', transports: ['streams'] } });
-          const sync = yield* makeWorkspaceCatalogSync(repo, workspaceId, logger);
-          const waiting = yield* Effect.forkChild(sync.ready(id, 1_000));
-          yield* TestClock.adjust(1_000);
-          expect(yield* Fiber.join(waiting)).toBe(false);
-          yield* repo.attachTransport({ ...network.transport('streams'), authority: 'server' });
-          expect(yield* sync.ready(id, 1_000)).toBe(true);
-          const local = yield* repo.acquireFlockDoc(id);
-          expect(local.flock.get(['test'])).toBe('remote');
-          yield* repo.removeTransport('streams');
-          expect(yield* sync.ready(id, 0)).toBe(true);
-        })
-      )
-  );
+  it('bounds a first-baseline wait without releasing the reader', async () => {
+    vi.useFakeTimers();
+    const repo = await createRepo();
+    const adapter = new MemoryStreamsAdapter(true);
+    const { catalog } = await createCatalog(repo);
+    const workspaceFlock = getWorkspaceFlockDocId(workspaceId);
 
-  it.effect(
-    'preserves cleanup defects and does not retry a failed release into a replacement owner',
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const repo = yield* make();
-          const owner = yield* Scope.make();
-          const original = new Error('cleanup failed');
-          const acquisition = new RepoIOError('acquisition failed', undefined);
-          let attempts = 0;
-          const fiber = yield* Scope.provide(
-            startWorkspaceCatalogSync(
-              {
-                ...repo,
-                acquireRoom: () =>
-                  Effect.gen(function* () {
-                    attempts += 1;
-                    yield* Effect.addFinalizer(() => Effect.die(original));
-                    return yield* Effect.fail(acquisition);
-                  }),
-              },
-              workspaceId,
-              logger
-            ),
-            owner
-          );
-          const result = yield* Fiber.await(fiber);
-          expect(Exit.isFailure(result)).toBe(true);
-          if (Exit.isFailure(result)) {
-            expect(result.cause.reasons).toEqual(
-              expect.arrayContaining([
-                expect.objectContaining({ _tag: 'Fail', error: acquisition }),
-                expect.objectContaining({ _tag: 'Die', defect: original }),
-              ])
-            );
-          }
-          yield* TestClock.adjust(120_000);
-          expect(attempts).toBe(1);
-          // A failed catalog owner does not fence unrelated rooms.
-          yield* Effect.scoped(repo.acquireRoom({ kind: 'flock', id: 'unrelated' }));
-          yield* Scope.close(owner, Exit.void);
-        })
-      )
-  );
+    try {
+      const waiting = catalog.ready(workspaceFlock, 1_000);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(waiting).resolves.toBe(false);
+
+      await repo.addTransport('streams', adapter);
+      adapter.markSynced(`flock:${workspaceFlock}`);
+      await expect(catalog.ready(workspaceFlock, 100)).resolves.toBe(true);
+      expect(adapter.subscriptions.get(`flock:${workspaceFlock}`)?.subscription.status).toBe(
+        'joined'
+      );
+    } finally {
+      await catalog.close();
+      await repo.destroy();
+    }
+  });
+
+  it('retries a transient local room acquisition and stops the retry when closed', async () => {
+    vi.useFakeTimers();
+    const repo = await createRepo();
+    const metaSubscription = await repo.joinMetaRoom();
+    const workspaceFlock = getWorkspaceFlockDocId(workspaceId);
+    const join = repo.joinFlockDocRoom.bind(repo);
+    const firstAttemptStarted = Promise.withResolvers<void>();
+    const retryStarted = Promise.withResolvers<void>();
+    let attempts = 0;
+    const retryingRepo = Object.assign(Object.create(repo), {
+      joinFlockDocRoom: async (id: string): Promise<RepoRoomSubscription> => {
+        attempts += 1;
+        if (attempts === 1) {
+          firstAttemptStarted.resolve();
+          throw new RepoStorageError('Temporary local storage outage', { code: 'unavailable' });
+        }
+        if (attempts === 2) retryStarted.resolve();
+        return join(id);
+      },
+    }) as LoroRepo;
+    const catalog = await makeWorkspaceCatalogSync(
+      retryingRepo,
+      workspaceId,
+      logger,
+      metaSubscription
+    );
+
+    try {
+      await firstAttemptStarted.promise;
+      expect(attempts).toBe(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await retryStarted.promise;
+      expect(attempts).toBe(2);
+      await catalog.close();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(attempts).toBe(2);
+    } finally {
+      await catalog.close();
+      await repo.destroy();
+    }
+  });
 });

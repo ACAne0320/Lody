@@ -10,6 +10,10 @@ Translation: current
 
 In the cloud composition, every Lody MCP tool call that touched a workspace opened a complete second replica in the MCP process: a Loro repo, a Streams transport, a token provider and a presence subscription. The process then tore all of it down when the call ended. Releasing presence needs network I/O within a five-second budget, so ordinary slow networks made cleanup fail, and the failure was retained as a fence: every later command for that workspace in the long-lived MCP host failed with `INTERNAL_ERROR` ("Workspace cleanup failed" / "Workspace presence operation failed") until restart. MCP workspace tools now run in the daemon against its existing replica in every composition, as OSS already did, and a failed release no longer blocks the workspace anywhere. Standalone terminal `lody` commands still open their own short-lived replica; packaged-app and live-cloud acceptance remain untested.
 
+## Follow-up
+
+The catalog-reader implementation and native lifecycle tests described below record the original #1692 approach. Their Promise Repo replacement is documented in the [follow-up correction](../bug-fix/2026-10-19-promise-repo-catalog-readers.md).
+
 ## How the defect was assembled
 
 Each step was reasonable alone; together they made a cleanup error permanent.

@@ -4,9 +4,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { Effect, Scope } from 'effect';
-import { makeMemoryNetwork } from 'loro-repo/effect';
-import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
+import { Effect } from 'effect';
+import type { Flock } from '@loro-dev/flock-wasm';
+import { LoroRepo } from 'loro-repo';
+import type {
+  TransportAdapter,
+  TransportConnectionStatus,
+  TransportSubscription,
+  TransportSyncResult,
+} from 'loro-repo';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getSessionRoomId,
@@ -53,6 +59,114 @@ const createSilentLogger = (): Logger => ({
   child: () => createSilentLogger(),
   close: async () => {},
 });
+
+const syncedRoomSubscription = (): TransportSubscription => ({
+  unsubscribe: () => {},
+  firstSyncedWithRemote: Promise.resolve(),
+  waitUntilSynced: async () => {},
+  status: 'joined',
+  onStatusChange: (listener) => {
+    listener('joined');
+    return () => {};
+  },
+});
+
+type MemoryRoom = { snapshot?: unknown; peers: Set<{ flock: Flock }> };
+
+class MemoryStreamsNetwork {
+  private readonly rooms = new Map<string, MemoryRoom>();
+
+  createAdapter(): TransportAdapter {
+    return new MemoryStreamsAdapter(this);
+  }
+
+  async sync(key: string, flock: Flock): Promise<TransportSyncResult> {
+    const room = this.room(key);
+    if (room.snapshot === undefined) room.snapshot = flock.exportJson({});
+    else await flock.importJson(room.snapshot);
+    return { ok: true };
+  }
+
+  join(key: string, flock: Flock): TransportSubscription {
+    const room = this.room(key);
+    const peer = { flock };
+    room.peers.add(peer);
+    const initialSync =
+      room.snapshot === undefined
+        ? Promise.resolve()
+        : Promise.resolve(flock.importJson(room.snapshot));
+    const unsubscribe = flock.subscribe((batch: { source?: string }) => {
+      if (batch.source !== 'local') return;
+      room.snapshot = flock.exportJson({});
+      for (const other of room.peers) {
+        if (other !== peer) void Promise.resolve(other.flock.importJson(room.snapshot));
+      }
+    });
+    return {
+      unsubscribe: () => {
+        unsubscribe();
+        room.peers.delete(peer);
+      },
+      firstSyncedWithRemote: initialSync,
+      waitUntilSynced: async () => {},
+      status: 'joined',
+      onStatusChange: (listener) => {
+        listener('joined');
+        return () => {};
+      },
+    };
+  }
+
+  private room(key: string): MemoryRoom {
+    let room = this.rooms.get(key);
+    if (!room) {
+      room = { peers: new Set() };
+      this.rooms.set(key, room);
+    }
+    return room;
+  }
+}
+
+class MemoryStreamsAdapter implements TransportAdapter {
+  private connected = false;
+
+  constructor(private readonly network: MemoryStreamsNetwork) {}
+
+  async connect(): Promise<void> {
+    this.connected = true;
+  }
+  async close(): Promise<void> {
+    this.connected = false;
+  }
+  isConnected(): boolean {
+    return this.connected;
+  }
+  getStatus(): TransportConnectionStatus {
+    return this.connected ? 'connected' : 'disconnected';
+  }
+  onStatusChange(): () => void {
+    return () => {};
+  }
+  async syncMeta(flock: Flock): Promise<TransportSyncResult> {
+    return this.network.sync('meta', flock);
+  }
+  joinMetaRoom(flock: Flock): TransportSubscription {
+    return this.network.join('meta', flock);
+  }
+  async syncDoc(): Promise<TransportSyncResult> {
+    return { ok: true };
+  }
+  joinDocRoom(): TransportSubscription {
+    return syncedRoomSubscription();
+  }
+  async syncFlockDoc(flockDocId: string, flock: Flock): Promise<TransportSyncResult> {
+    return this.network.sync(`flock:${flockDocId}`, flock);
+  }
+  joinFlockDocRoom(flockDocId: string, flock: Flock): TransportSubscription {
+    return this.network.join(`flock:${flockDocId}`, flock);
+  }
+  async forgetFlockDoc(): Promise<void> {}
+}
 
 const workspaceId = 'synthetic-cloud-workspace' as WorkspaceId;
 const machineId = 'synthetic-daemon-machine' as MachineId;
@@ -250,7 +364,7 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
     expect(JSON.parse(result.content[0]?.text ?? '{}')).toMatchObject({ items: [] });
   });
 
-  it('returns syncing uncertainty for a detached cold catalog and reads normally after its baseline', async () => {
+  it('returns syncing uncertainty before the daemon catalog baseline and reads from its cache after', async () => {
     await manager.cleanUp({ fast: true });
     manager = await LoroDocumentManager.create(workspaceId, ownerUserId, createSilentLogger(), {
       keepWorkspaceCatalogJoined: true,
@@ -283,19 +397,11 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
       createdAt: 1,
       updatedAt: 1,
     });
-    const host = await WorkspaceRepoLegacy.create({});
-    const networkOwner = await manager.repo.acquireScopeLegacy('cold catalog network');
-    const network = await manager.repo.runLegacy(
-      Scope.provide(makeMemoryNetwork(), networkOwner.scope)
-    );
-    let unsubscribe: (() => void) | undefined;
+    const network = new MemoryStreamsNetwork();
+    const publisher = await LoroRepo.create({});
     try {
-      const owner = await host.acquireScopeLegacy('config publisher');
-      const remote = await host.runLegacy(
-        Scope.provide(host.native.acquireRoom({ kind: 'flock', id }), owner.scope)
-      );
-      if (remote.replica.kind !== 'flock') throw new Error('Expected Flock');
-      writeAgentConfigToFlock(remote.replica.lease.flock, {
+      const remote = await publisher.openFlockDoc(id);
+      writeAgentConfigToFlock(remote.flock, {
         id: 'cold-config' as AgentConfigId,
         machineId: remoteMachineId,
         name: 'Remote',
@@ -303,11 +409,10 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         agentType: 'claude',
         env: {},
       });
-      await host.addTransport('streams', {
-        make: () =>
-          Effect.succeed({ ...network.transport('streams'), authority: 'server' as const }),
-      });
-      await host.runLegacy(remote.sync('streams'));
+      await publisher.joinFlockDocRoom(id);
+      await publisher.addTransport('streams', network.createAdapter());
+      await publisher.sync({ scope: 'doc', flockDocIds: [id] });
+
       vi.spyOn(sessionCommands, 'readSessionMachineAccess').mockResolvedValue({ allowed: true });
       const args = {
         manager,
@@ -322,18 +427,10 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         items: [{ availability: { state: 'unknown', reason: 'catalog_syncing' } }],
       });
       await expect(discovery.get('agent_config', 'cold-config')).rejects.toThrow('CATALOG_SYNCING');
-      const local = await manager.repo.openFlockDoc(id);
-      const received = Promise.withResolvers<void>();
-      unsubscribe = local.flock.subscribe(() => {
-        if (getMachineFlockAgentConfigs(readMachineFlockRowsFromFlock(local.flock))['cold-config'])
-          received.resolve();
-      });
-      await manager.repo.addTransport('streams', {
-        make: () =>
-          Effect.succeed({ ...network.transport('streams'), authority: 'server' as const }),
-      });
-      await received.promise;
-      // A new request reads the same native replica; no forced catch-up is needed.
+
+      await manager.repo.addTransport('streams', network.createAdapter());
+      expect(await manager.catalogBaselineReady(id, 100)).toBe(true);
+      // A new request reads the same daemon replica; no forced catch-up is needed.
       vi.spyOn(manager, 'syncMetaOrThrow').mockRejectedValue(new Error('No request sync'));
       vi.spyOn(manager, 'syncFlockDocOrThrow').mockRejectedValue(new Error('No request sync'));
       const ready = await runWithDaemonWorkspace(daemon, () => createResourceDiscovery(args));
@@ -341,26 +438,18 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         item: { id: 'cold-config', name: 'Remote' },
       });
     } finally {
-      unsubscribe?.();
-      await host.destroy();
+      await publisher.destroy();
     }
   });
 
   it('validates Role creation against a cold remote config before publishing the review card', async () => {
-    const networkOwner = await manager.repo.acquireScopeLegacy('role validation network');
-    const network = await manager.repo.runLegacy(
-      Scope.provide(makeMemoryNetwork(), networkOwner.scope)
-    );
-    const host = await WorkspaceRepoLegacy.create({});
+    const remoteMachineId = 'remote-role-target' as MachineId;
+    const id = getMachineFlockDocId(workspaceId, remoteMachineId);
+    const network = new MemoryStreamsNetwork();
+    const publisher = await LoroRepo.create({});
     try {
-      const owner = await host.acquireScopeLegacy('config publisher');
-      const remoteMachineId = 'remote-role-target' as MachineId;
-      const id = getMachineFlockDocId(workspaceId, remoteMachineId);
-      const room = await host.runLegacy(
-        Scope.provide(host.native.acquireRoom({ kind: 'flock', id }), owner.scope)
-      );
-      if (room.replica.kind !== 'flock') throw new Error('Expected Flock');
-      writeAgentConfigToFlock(room.replica.lease.flock, {
+      const room = await publisher.openFlockDoc(id);
+      writeAgentConfigToFlock(room.flock, {
         id: 'remote-role-config' as AgentConfigId,
         machineId: remoteMachineId,
         name: 'Remote',
@@ -368,13 +457,10 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         agentType: 'claude',
         env: {},
       });
-      await host.addTransport('memory', {
-        make: () => Effect.succeed(network.transport('memory')),
-      });
-      await host.runLegacy(room.sync('memory'));
-      await manager.repo.addTransport('memory', {
-        make: () => Effect.succeed(network.transport('memory')),
-      });
+      await publisher.joinFlockDocRoom(id);
+      await publisher.addTransport('memory', network.createAdapter());
+      await publisher.sync({ scope: 'doc', flockDocIds: [id] });
+      await manager.repo.addTransport('memory', network.createAdapter());
       await manager.repo.upsertDocMeta(getMachineRoomId(remoteMachineId), {
         id: remoteMachineId,
         name: 'Remote',
@@ -419,36 +505,31 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         error: { code: 'SYNC_UNAVAILABLE', retryable: true },
       });
     } finally {
-      await host.destroy();
+      await publisher.destroy();
     }
   });
 
-  it('hydrates a cold headless daemon and receives later Role changes without a discovery sync', async () => {
+  it('hydrates and keeps daemon catalogs current without a discovery sync', async () => {
+    const network = new MemoryStreamsNetwork();
+    const publisher = await LoroRepo.create({});
     const docId = getWorkspaceFlockDocId(workspaceId);
-    const scope = await manager.repo.acquireScopeLegacy('test network');
-    const network = await manager.repo.runLegacy(Scope.provide(makeMemoryNetwork(), scope.scope));
-    const host = await WorkspaceRepoLegacy.create({});
-    const hostScope = await host.acquireScopeLegacy('test publisher');
-    const remote = await host.runLegacy(
-      Scope.provide(host.native.acquireRoom({ kind: 'flock', id: docId }), hostScope.scope)
-    );
-    if (remote.replica.kind !== 'flock') throw new Error('Expected Flock replica');
-    const remoteFlock = remote.replica.lease.flock;
+    const remoteRoom = await publisher.openFlockDoc(docId);
+    await publisher.joinFlockDocRoom(docId);
     const local = await manager.repo.openFlockDoc(docId);
-    const received = Promise.withResolvers<void>();
-    const updated = Promise.withResolvers<void>();
+    const roleReceived = Promise.withResolvers<void>();
+    const roleUpdated = Promise.withResolvers<void>();
     const reattached = Promise.withResolvers<void>();
-    const detach = local.flock.subscribe(() => {
+    const detachRole = local.flock.subscribe(() => {
       const role = listWorkspaceAgentRoles(readWorkspaceFlockRowsFromFlock(local.flock)).find(
         (row) => row.id === 'remote-role'
       );
-      if (role?.revision === 1) received.resolve();
-      if (role?.revision === 2) updated.resolve();
+      if (role?.revision === 1) roleReceived.resolve();
+      if (role?.revision === 2) roleUpdated.resolve();
       if (role?.revision === 3) reattached.resolve();
     });
-    const detachCallbacks = [detach];
+    const detachCallbacks = [detachRole];
     try {
-      writeWorkspaceAgentRoleToFlock(remoteFlock, {
+      writeWorkspaceAgentRoleToFlock(remoteRoom.flock, {
         v: 1,
         id: 'remote-role' as AgentRoleId,
         ownerUserId: 'synthetic-collaborator',
@@ -461,20 +542,14 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         createdAt: 1,
         updatedAt: 1,
       });
-      await host.addTransport('memory', {
-        make: () => Effect.succeed(network.transport('memory')),
-      });
-      await host.runLegacy(remote.sync('memory'));
-      await manager.repo.addTransport('memory', {
-        make: () => Effect.succeed(network.transport('memory')),
-      });
-      await received.promise;
+      await publisher.addTransport('memory', network.createAdapter());
+      await publisher.sync({ scope: 'doc', flockDocIds: [docId] });
+      await manager.repo.addTransport('memory', network.createAdapter());
+      await roleReceived.promise;
+
       const remoteMachineId = 'remote-machine' as MachineId;
       const machineDocId = getMachineFlockDocId(workspaceId, remoteMachineId);
-      const machineRoom = await host.runLegacy(
-        Scope.provide(host.native.acquireRoom({ kind: 'flock', id: machineDocId }), hostScope.scope)
-      );
-      if (machineRoom.replica.kind !== 'flock') throw new Error('Expected machine Flock');
+      const remoteMachine = await publisher.openFlockDoc(machineDocId);
       const remoteConfig = {
         id: 'remote-agent' as AgentConfigId,
         machineId: remoteMachineId,
@@ -483,13 +558,24 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         agentType: 'claude' as const,
         env: {},
       };
-      writeAgentConfigToFlock(machineRoom.replica.lease.flock, remoteConfig);
-      await host.runLegacy(machineRoom.sync('memory'));
+      writeAgentConfigToFlock(remoteMachine.flock, remoteConfig);
+      await publisher.joinFlockDocRoom(machineDocId);
+      await publisher.sync({ scope: 'doc', flockDocIds: [machineDocId] });
       await manager.repo.upsertDocMeta(getMachineRoomId(remoteMachineId), {
         id: remoteMachineId,
         name: 'Remote Machine',
         ownerUserId,
       });
+      vi.spyOn(manager, 'syncMetaOrThrow').mockRejectedValue(new Error('No request sync'));
+      vi.spyOn(manager, 'syncFlockDocOrThrow').mockRejectedValue(new Error('No request sync'));
+      vi.spyOn(commandRuntime, 'getAuthContextOrThrow').mockImplementation(createAuth);
+      vi.spyOn(commandRuntime, 'resolveWorkspaceOrThrow').mockResolvedValue({
+        id: workspaceId,
+        name: 'Synthetic',
+        slug: 'synthetic',
+        role: 'owner',
+      });
+      vi.spyOn(sessionCommands, 'readSessionMachineAccess').mockResolvedValue({ allowed: true });
       const localMachine = await manager.repo.openFlockDoc(machineDocId);
       const configReceived = Promise.withResolvers<void>();
       const configUpdated = Promise.withResolvers<void>();
@@ -501,16 +587,6 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         if (config?.name === 'Updated Agent') configUpdated.resolve();
       });
       detachCallbacks.push(detachMachine);
-      vi.spyOn(manager, 'syncMetaOrThrow').mockRejectedValue(new Error('No request sync'));
-      vi.spyOn(manager, 'syncFlockDocOrThrow').mockRejectedValue(new Error('No request sync'));
-      vi.spyOn(commandRuntime, 'getAuthContextOrThrow').mockImplementation(createAuth);
-      vi.spyOn(commandRuntime, 'resolveWorkspaceOrThrow').mockResolvedValue({
-        id: workspaceId,
-        name: 'Synthetic',
-        slug: 'synthetic',
-        role: 'owner',
-      });
-      vi.spyOn(sessionCommands, 'readSessionMachineAccess').mockResolvedValue({ allowed: true });
       const list = () =>
         runWithDaemonWorkspace(daemon, () =>
           executeDaemonSessionTool(context(), 'lody_agent_role_list', {})
@@ -524,53 +600,48 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
             machineId: remoteMachineId,
           })
         );
-      // A first read admits background reader interest; it never waits for catch-up.
+      // The first config read admits a daemon room reader, independent of this request.
       await configs();
       await configReceived.promise;
       expect(JSON.parse((await configs()).content[0]?.text ?? '{}').items).toMatchObject([
         { id: remoteConfig.id, name: 'Remote Agent' },
       ]);
-      writeAgentConfigToFlock(machineRoom.replica.lease.flock, {
-        ...remoteConfig,
-        name: 'Updated Agent',
-      });
-      await configUpdated.promise;
-      expect(JSON.parse((await configs()).content[0]?.text ?? '{}').items).toMatchObject([
-        { id: remoteConfig.id, name: 'Updated Agent' },
-      ]);
-      const role = listWorkspaceAgentRoles(readWorkspaceFlockRowsFromFlock(remoteFlock))[0];
+
+      writeAgentConfigToFlock(remoteMachine.flock, { ...remoteConfig, name: 'Updated Agent' });
+      const role = listWorkspaceAgentRoles(readWorkspaceFlockRowsFromFlock(remoteRoom.flock))[0];
       if (!role) throw new Error('Missing Role');
-      writeWorkspaceAgentRoleToFlock(remoteFlock, {
+      writeWorkspaceAgentRoleToFlock(remoteRoom.flock, {
         ...role,
         revision: 2,
         name: 'Updated Role',
         updatedAt: 2,
       });
-      await updated.promise;
+      await Promise.all([roleUpdated.promise, configUpdated.promise]);
       expect(JSON.parse((await list()).content[0]?.text ?? '{}').items).toMatchObject([
         { id: 'remote-role', name: 'Updated Role', revision: 2 },
       ]);
+      expect(JSON.parse((await configs()).content[0]?.text ?? '{}').items).toMatchObject([
+        { id: remoteConfig.id, name: 'Updated Agent' },
+      ]);
       await manager.repo.removeTransport('memory');
-      writeWorkspaceAgentRoleToFlock(remoteFlock, {
+      writeWorkspaceAgentRoleToFlock(remoteRoom.flock, {
         ...role,
         revision: 3,
         name: 'Reattached Role',
         updatedAt: 3,
       });
-      // Cached results stay useful while detached; reattachment refreshes the same replica.
+      // The detached daemon keeps its last confirmed cache until the same room rejoins.
       expect(JSON.parse((await list()).content[0]?.text ?? '{}').items).toMatchObject([
         { id: 'remote-role', revision: 2 },
       ]);
-      await manager.repo.addTransport('memory', {
-        make: () => Effect.succeed(network.transport('memory')),
-      });
+      await manager.repo.addTransport('memory', network.createAdapter());
       await reattached.promise;
       expect(JSON.parse((await list()).content[0]?.text ?? '{}').items).toMatchObject([
         { id: 'remote-role', name: 'Reattached Role', revision: 3 },
       ]);
     } finally {
       for (const unsubscribe of detachCallbacks) unsubscribe();
-      await host.destroy();
+      await publisher.destroy();
     }
   });
 

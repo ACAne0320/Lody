@@ -390,13 +390,11 @@ export class LoroDocumentManager {
 
   /** Reader interest belongs to the daemon, never to a discovery request. */
   async holdCatalogFlockDoc(flockDocId: string): Promise<void> {
-    if (this.catalogSync) await this.repo.runLegacy(this.catalogSync.hold(flockDocId));
+    if (this.catalogSync) await this.catalogSync.hold(flockDocId);
   }
 
   async catalogBaselineReady(flockDocId: string | undefined, timeoutMs: number): Promise<boolean> {
-    return this.catalogSync
-      ? this.repo.runLegacy(this.catalogSync.ready(flockDocId, timeoutMs))
-      : true;
+    return this.catalogSync ? this.catalogSync.ready(flockDocId, timeoutMs) : true;
   }
 
   static async create(
@@ -517,12 +515,11 @@ export class LoroDocumentManager {
         ownerHistoryRouter: options.ownerHistoryRouter,
       });
       if (options.keepWorkspaceCatalogJoined) {
-        const catalogOwner = await createdRepo.acquireScopeLegacy('workspace catalog');
-        manager.catalogSync = await createdRepo.runLegacy(
-          Scope.provide(
-            makeWorkspaceCatalogSync(createdRepo.native, workspaceId, logger),
-            catalogOwner.scope
-          )
+        manager.catalogSync = await makeWorkspaceCatalogSync(
+          createdRepo,
+          workspaceId,
+          logger,
+          metaSub
         );
       }
     } catch (error) {
@@ -1834,6 +1831,8 @@ export class LoroDocumentManager {
     }
     this.detachMachineFlockMetaRoomSyncedListener?.();
     this.detachMachineFlockMetaRoomSyncedListener = null;
+    await this.catalogSync?.close();
+    this.catalogSync = undefined;
     await this.machineFlockSync.cleanUp();
     await this.connectionRecovery.cleanUp();
     // Await and destroy any in-flight session doc inits so they don't

@@ -10,6 +10,10 @@ Translation: current
 
 在 Cloud 组合下，每次触及工作区的 Lody MCP 工具调用，都会在 MCP 进程里打开一整套第二副本：Loro repo、Streams 传输、token provider 和 presence 订阅，调用结束时再全部拆掉。释放 presence 需要在五秒预算内完成网络 I/O，普通的慢网络就会让清理失败；而失败会被保留成一道栅栏：长期运行的 MCP host 里，该工作区之后的每条命令都以 `INTERNAL_ERROR`（"Workspace cleanup failed" / "Workspace presence operation failed"）失败，直到重启。现在，MCP 工作区工具在所有组合下都由 daemon 用它已有的副本执行（OSS 早已如此），且任何地方的释放失败都不再阻塞工作区。终端里独立运行的 `lody` 命令仍会打开短生命周期副本；打包应用与线上 Cloud 验收尚未测试。
 
+## 后续修正
+
+下文的目录 reader 实现和原生生命周期测试记录的是 #1692 最初采用的方案。改用 Promise Repo 的后续修正见[对应说明](../bug-fix/2026-10-19-promise-repo-catalog-readers.zh.md)。
+
 ## 缺陷是怎么叠出来的
 
 每一步单独看都合理，叠在一起就让一次清理错误变成永久故障。

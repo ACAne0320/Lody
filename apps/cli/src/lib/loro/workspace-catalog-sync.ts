@@ -1,149 +1,219 @@
-import { Deferred, Effect, Exit, Schedule, Stream, type Fiber } from 'effect';
 import {
-  RepoReleaseFailed,
-  type Repo,
-  type RepoError,
-  type RoomLease,
-  type RoomTarget,
-} from 'loro-repo/effect';
-import { getWorkspaceFlockDocId, type WorkspaceId } from '@lody/shared';
+  RepoStorageError,
+  RepoTransportError,
+  ResourceBusyError,
+  type LoroRepo,
+  type RepoRoomSubscription,
+} from 'loro-repo';
+import { getWorkspaceFlockDocId } from '@lody/shared';
+import type { WorkspaceId } from '@lody/shared';
 import type { Logger } from '@/utils/logger';
+import { withTimeout } from './timeout-utils';
 
-/** Reader acquisition/recovery has daemon ownership, independent of request waits. */
-const catalogReader = (
-  repo: Repo,
-  workspaceId: WorkspaceId,
-  logger: Logger,
-  target: RoomTarget,
-  onRoom: (room: RoomLease) => Effect.Effect<void> = () => Effect.void
-) => {
-  const holdRoom = Effect.scoped(
-    Effect.gen(function* () {
-      const room = yield* repo.acquireRoom(target);
-      yield* onRoom(room);
-      yield* Effect.never;
-    })
-  ).pipe(
-    Effect.tapCause((cause) =>
-      // Raw adapter Causes stay on the fiber/native owner, never in diagnostics.
-      Effect.sync(() =>
-        logger.debug(
-          `[${workspaceId}] Catalog reader failed: ${cause.reasons
-            .map((reason) => (reason._tag === 'Fail' ? reason.error._tag : reason._tag))
-            .join(', ')}`
-        )
-      ).pipe(Effect.catchCause(() => Effect.void))
-    ),
-    // Retry the whole Cause only when native ownership makes same-key reentry
-    // safe. Native acquireRoom retries retained RepoReleaseFailed receipts before
-    // replacing them; an arbitrary cleanup defect must still stop replacement.
-    Effect.exit,
-    Effect.flatMap((exit) => (Exit.isFailure(exit) ? Effect.fail(exit.cause) : Effect.void)),
-    Effect.retry({
-      while: (cause) =>
-        cause.reasons.every((reason) =>
-          reason._tag === 'Fail'
-            ? reason.error._tag === 'RepoIOError' ||
-              reason.error._tag === 'RepoResourceBusy' ||
-              reason.error instanceof RepoReleaseFailed
-            : reason._tag === 'Die' && reason.defect instanceof RepoReleaseFailed
-        ),
-      schedule: Schedule.min([Schedule.exponential('1 second'), Schedule.spaced('30 seconds')]),
-    }),
-    Effect.catch((cause) => Effect.failCause(cause))
-  );
-  return holdRoom;
-};
-
-export const startWorkspaceCatalogSync = Effect.fnUntraced(function* (
-  repo: Repo,
-  workspaceId: WorkspaceId,
-  logger: Logger,
-  flockDocId = getWorkspaceFlockDocId(workspaceId)
-) {
-  return yield* Effect.forkScoped(
-    catalogReader(repo, workspaceId, logger, { kind: 'flock', id: flockDocId })
-  );
-});
-
+/** Reader interest belongs to the daemon, never to a discovery request. */
 export interface WorkspaceCatalogSync {
-  hold: (flockDocId: string) => Effect.Effect<void>;
+  hold: (flockDocId: string) => Promise<void>;
   /** Undefined selects metadata. A timed-out waiter never cancels the daemon reader. */
-  ready: (flockDocId: string | undefined, timeoutMs: number) => Effect.Effect<boolean>;
+  ready: (flockDocId: string | undefined, timeoutMs: number) => Promise<boolean>;
+  close: () => Promise<void>;
 }
 
-export const makeWorkspaceCatalogSync = Effect.fnUntraced(function* (
-  repo: Repo,
+type CatalogRoom = {
+  id: string;
+  controller: AbortController;
+  subscription: RepoRoomSubscription | null;
+  baseline: boolean;
+  completion: Promise<void>;
+};
+
+const retryDelayMs = (attempt: number) => Math.min(1_000 * 2 ** attempt, 30_000);
+
+const isRetryableAcquisitionFailure = (error: unknown) =>
+  error instanceof ResourceBusyError ||
+  (error instanceof RepoStorageError && error.code === 'unavailable') ||
+  (error instanceof RepoTransportError && error.retryable);
+
+const safeErrorKind = (error: unknown) =>
+  error instanceof RepoStorageError
+    ? `RepoStorageError:${error.code}`
+    : error instanceof RepoTransportError
+      ? `RepoTransportError:${error.code}`
+      : error instanceof Error
+        ? error.name
+        : 'UnknownError';
+
+const logFailure = (logger: Logger, workspaceId: WorkspaceId, error: unknown) => {
+  try {
+    logger.debug(`[${workspaceId}] Catalog reader failed: ${safeErrorKind(error)}`);
+  } catch {
+    // Diagnostics must not change reader ownership or retry behavior.
+  }
+};
+
+const raceWithAbort = <A>(promise: Promise<A>, signal: AbortSignal) => {
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<{ kind: 'aborted' }>((resolve) => {
+    if (signal.aborted) {
+      resolve({ kind: 'aborted' });
+      return;
+    }
+    onAbort = () => resolve({ kind: 'aborted' });
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  return Promise.race([
+    promise.then((value) => ({ kind: 'value' as const, value })),
+    aborted,
+  ]).finally(() => {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  });
+};
+
+const delayOrAbort = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal.addEventListener('abort', abort, { once: true });
+  });
+
+export const makeWorkspaceCatalogSync = async (
+  repo: LoroRepo,
   workspaceId: WorkspaceId,
-  logger: Logger
-) {
-  const scope = yield* Effect.scope;
-  type Entry = {
-    fiber?: Fiber.Fiber<void, RepoError>;
-    room?: RoomLease;
-    acquired: Deferred.Deferred<void>;
-    baseline: boolean;
-  };
-  // Full terminal Causes remain on the fiber; native Repo retains failed releases.
-  const held = new Map<string | undefined, Entry>();
-  const ensure = (id: string | undefined) =>
-    Effect.suspend(() => {
-      const prior = held.get(id);
-      if (prior) return Effect.succeed(prior);
-      const entry: Entry = { acquired: Deferred.makeUnsafe<void>(), baseline: false };
-      held.set(id, entry);
-      const target: RoomTarget = id === undefined ? { kind: 'meta' } : { kind: 'flock', id };
-      return Effect.forkIn(
-        catalogReader(repo, workspaceId, logger, target, (room) =>
-          Effect.sync(() => {
-            entry.room = room;
-            Deferred.doneUnsafe(entry.acquired, Exit.void);
-          })
-        ),
-        scope
-      ).pipe(
-        Effect.map((fiber) => {
-          entry.fiber = fiber;
-          return entry;
-        })
-      );
-    });
-  const hold = (id: string) => ensure(id).pipe(Effect.asVoid);
-  const ready = Effect.fnUntraced(function* (id: string | undefined, timeoutMs: number) {
-    const entry = yield* ensure(id);
-    if (entry.baseline) return true;
-    if (entry.room) {
-      const authority = yield* entry.room.authority;
-      if (authority.baseline) {
-        entry.baseline = true;
-        return true;
+  logger: Logger,
+  metaSubscription: RepoRoomSubscription
+): Promise<WorkspaceCatalogSync> => {
+  const held = new Map<string, CatalogRoom>();
+  let closed = false;
+  let metaBaseline = false;
+  void metaSubscription.firstSyncedWithRemote.then(
+    () => {
+      metaBaseline = true;
+    },
+    () => {}
+  );
+
+  const acquire = async (room: CatalogRoom) => {
+    let attempt = 0;
+    const release = (subscription: RepoRoomSubscription) => {
+      if (room.subscription !== subscription) return;
+      room.subscription = null;
+      subscription.unsubscribe();
+    };
+    while (!closed && !room.controller.signal.aborted) {
+      let subscription: RepoRoomSubscription;
+      try {
+        const pendingJoin = repo.joinFlockDocRoom(room.id);
+        const joined = await raceWithAbort(pendingJoin, room.controller.signal);
+        if (joined.kind === 'aborted') {
+          void pendingJoin.then(
+            (lateSubscription) => lateSubscription.unsubscribe(),
+            () => {}
+          );
+          return;
+        }
+        subscription = joined.value;
+      } catch (error) {
+        if (!isRetryableAcquisitionFailure(error)) throw error;
+        logFailure(logger, workspaceId, error);
+        await delayOrAbort(retryDelayMs(attempt++), room.controller.signal);
+        continue;
+      }
+
+      room.subscription = subscription;
+      try {
+        // The Repo subscription survives transport detach/reattach. Keep one
+        // reader for the daemon lifetime while each request owns only its wait.
+        const synced = await raceWithAbort(
+          subscription.firstSyncedWithRemote,
+          room.controller.signal
+        );
+        if (synced.kind === 'aborted' || room.controller.signal.aborted || closed) {
+          release(subscription);
+          return;
+        }
+        room.baseline = true;
+        return;
+      } catch (error) {
+        release(subscription);
+        if (!isRetryableAcquisitionFailure(error)) throw error;
+        logFailure(logger, workspaceId, error);
+        await delayOrAbort(retryDelayMs(attempt++), room.controller.signal);
       }
     }
-    if (timeoutMs <= 0) return false;
-    const wait = Effect.gen(function* () {
-      yield* Deferred.await(entry.acquired);
-      const room = entry.room;
-      if (!room) return false;
-      const authority = yield* room.authority;
-      if (!authority.baseline) {
-        if (!authority.servers.length) yield* Effect.never;
-        yield* Stream.mergeAll(
-          authority.servers.map(({ id: transportId }) => room.state(transportId)),
-          { concurrency: 'unbounded' }
-        ).pipe(
-          Stream.filter((state) => state.baseline),
-          Stream.take(1),
-          Stream.runDrain
-        );
-      }
-      entry.baseline = true;
-      return true;
+  };
+
+  const ensure = (id: string) => {
+    const prior = held.get(id);
+    if (prior) return prior;
+    const room: CatalogRoom = {
+      id,
+      controller: new AbortController(),
+      subscription: null,
+      baseline: false,
+      completion: Promise.resolve(),
+    };
+    held.set(id, room);
+    room.completion = acquire(room).catch((error: unknown) => {
+      logFailure(logger, workspaceId, error);
+      if (held.get(id) === room) held.delete(id);
     });
-    return yield* wait.pipe(
-      Effect.timeoutOrElse({ duration: timeoutMs, orElse: () => Effect.succeed(false) })
-    );
-  });
-  yield* ensure(undefined);
-  yield* hold(getWorkspaceFlockDocId(workspaceId));
-  return { hold, ready } satisfies WorkspaceCatalogSync;
-});
+    return room;
+  };
+
+  const hold = async (id: string) => {
+    if (closed) return;
+    ensure(id);
+  };
+
+  const ready = async (id: string | undefined, timeoutMs: number) => {
+    if (closed) return false;
+    if (id === undefined) {
+      if (metaBaseline) return true;
+      if (timeoutMs <= 0) return false;
+      try {
+        await withTimeout(
+          metaSubscription.firstSyncedWithRemote,
+          timeoutMs,
+          'Timeout waiting for metadata catalog baseline'
+        );
+        metaBaseline = true;
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    const room = ensure(id);
+    if (room.baseline) return true;
+    if (timeoutMs <= 0) return false;
+    try {
+      await withTimeout(room.completion, timeoutMs, 'Timeout waiting for catalog baseline');
+      return room.baseline;
+    } catch {
+      return false;
+    }
+  };
+
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    for (const room of held.values()) {
+      room.controller.abort();
+      room.subscription?.unsubscribe();
+      room.subscription = null;
+    }
+    held.clear();
+  };
+
+  await hold(getWorkspaceFlockDocId(workspaceId));
+  return { hold, ready, close };
+};
