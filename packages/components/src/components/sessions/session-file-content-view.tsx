@@ -63,6 +63,8 @@ import {
 import { normalizePinnedProviderOpenResult } from '@/lib/session-file-provider-open-result';
 import { SessionFileBinaryPreview } from './session-file-binary-preview';
 import { SessionFileCsvPreview } from './session-file-csv-preview';
+import { DocumentSelectionSurface } from './document-selection-surface';
+import type { DocumentSelection } from '@/lib/document-selection';
 import { SessionFileImagePreview } from './session-file-image-preview';
 import { MarkdownRenderer } from '../ai-gui/markdown-renderer';
 import { MarkdownFileResources } from '../ai-gui/markdown-file-image';
@@ -494,6 +496,7 @@ export type SessionFileContentViewProps = {
   }) => void;
   visualAnnotationReferenceKeys?: readonly string[];
   onAddVisualAnnotationToChat?: (reference: VisualAnnotationReferencePayload) => boolean | void;
+  onAddSelectionToChat?: (selection: DocumentSelection) => boolean;
   onToggleVisualAnnotationInChat?: (reference: VisualAnnotationReferencePayload) => boolean | void;
 };
 
@@ -536,6 +539,7 @@ function SessionFileContentViewImpl({
   onOpenFile,
   visualAnnotationReferenceKeys,
   onAddVisualAnnotationToChat,
+  onAddSelectionToChat,
   onToggleVisualAnnotationInChat,
 }: SessionFileContentViewProps) {
   const { t } = useTranslation();
@@ -649,6 +653,27 @@ function SessionFileContentViewImpl({
   const markProviderConflictPendingRef = useRef<((message?: string) => void) | null>(null);
 
   const normalizedPath = useMemo(() => filePath.trim(), [filePath]);
+  const [retryRevision, setRetryRevision] = useState(0);
+  const [lastOpenRequest, setLastOpenRequest] = useState({ path: normalizedPath, focusRequestSeq });
+  // Reopening an already-active failed tab is a new read, not just cursor focus.
+  // Successful previews (especially unsaved drafts) retain their current snapshot.
+  if (
+    lastOpenRequest.path !== normalizedPath ||
+    lastOpenRequest.focusRequestSeq !== focusRequestSeq
+  ) {
+    setLastOpenRequest({ path: normalizedPath, focusRequestSeq });
+    if (
+      lastOpenRequest.path === normalizedPath &&
+      (data.status === 'error' || (data.status === 'ready' && data.snapshot.kind === 'missing'))
+    ) {
+      setRetryRevision((revision) => revision + 1);
+      setData({ status: 'loading' });
+    }
+  }
+  const retryFile = useCallback(() => {
+    setData({ status: 'loading' });
+    setRetryRevision((revision) => revision + 1);
+  }, []);
   const selectedLines = useMemo<SessionMonacoSelectedLines>(
     () => createSelectedLines(startLine, endLine, focusRequestSeq),
     [endLine, focusRequestSeq, startLine]
@@ -902,6 +927,7 @@ function SessionFileContentViewImpl({
       cancelled = true;
     };
   }, [
+    retryRevision,
     fileContentSource,
     fileProviderMessage,
     currentUserId,
@@ -1555,6 +1581,7 @@ function SessionFileContentViewImpl({
       <SessionFileErrorState
         message={data.message}
         reason={data.reason}
+        onRetry={retryFile}
         {...(fileErrorActions ? { fileActions: fileErrorActions } : {})}
       />
     );
@@ -1575,6 +1602,7 @@ function SessionFileContentViewImpl({
         url={data.snapshot.url}
         active={isActiveSurface}
         fileActions={sessionFileActions.buildErrorActions(normalizedPath, data.snapshot)}
+        onAddSelectionToChat={onAddSelectionToChat}
       />
     );
   } else if (data.snapshot.kind === 'missing') {
@@ -1582,6 +1610,7 @@ function SessionFileContentViewImpl({
       <SessionFileErrorState
         message={t('sessions.fileViewer.missing', 'File not found.')}
         reason="deleted"
+        onRetry={retryFile}
       />
     );
   } else if (showHtmlRendered && !supportsHtmlPreview && htmlPreviewSource !== null) {
@@ -1621,11 +1650,18 @@ function SessionFileContentViewImpl({
     );
   } else if (showCsvRendered && data.snapshot.kind === 'text') {
     body = (
-      <SessionFileCsvPreview
-        text={latestEditorTextRef.current ?? data.snapshot.text}
+      <DocumentSelectionSurface
         path={normalizedPath}
+        source={latestEditorTextRef.current ?? data.snapshot.text}
         active={isActiveSurface}
-      />
+        onAdd={onAddSelectionToChat}
+      >
+        <SessionFileCsvPreview
+          text={latestEditorTextRef.current ?? data.snapshot.text}
+          path={normalizedPath}
+          active={isActiveSurface}
+        />
+      </DocumentSelectionSurface>
     );
   } else if (showSvgRendered || showMarkdownRendered) {
     body = previewSurface;
