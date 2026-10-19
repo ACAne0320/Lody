@@ -2233,3 +2233,106 @@ html[data-focus-modality='pointer']
   --tw-ring-shadow: 0 0 #0000;
   --tw-ring-offset-shadow: 0 0 #0000;
 }
+
+/* The new-chat page's typed transition (`components/chat/home/home-dashboard.tsx`). Keep
+   the page still while the board, heading and every part of the switch follow one curve.
+   Named snapshots are siblings in the overlay, regardless of DOM nesting or z-index:
+   the pill must be below the segments, and the persistent labels above both. The pill
+   carries an own snapshot only across a board change, when it glides between the
+   segments; appearing or leaving with the fold, it is unnamed and part of its segment's.
+   Segment snapshots hold the changing summaries; clip them to their animated width without
+   stretching their text. Reduced motion never starts a transition. */
+html:active-view-transition-type(home-board)::view-transition-old(root),
+html:active-view-transition-type(home-board)::view-transition-new(root) {
+  animation: none;
+}
+
+html:active-view-transition-type(home-board)::view-transition-group(home-board),
+html:active-view-transition-type(home-board)::view-transition-group(home-pill),
+html:active-view-transition-type(home-board)::view-transition-group(home-now-segment),
+html:active-view-transition-type(home-board)::view-transition-group(home-week-segment),
+html:active-view-transition-type(home-board)::view-transition-group(home-now-label),
+html:active-view-transition-type(home-board)::view-transition-group(home-week-label),
+html:active-view-transition-type(home-board)::view-transition-group(home-fold),
+html:active-view-transition-type(home-board)::view-transition-group(home-heading) {
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html:active-view-transition-type(home-board)::view-transition-group(home-pill) {
+  z-index: 1;
+}
+
+html:active-view-transition-type(home-board)::view-transition-group(home-now-segment),
+html:active-view-transition-type(home-board)::view-transition-group(home-week-segment) {
+  z-index: 2;
+  overflow: clip;
+}
+
+html:active-view-transition-type(home-board)::view-transition-group(home-now-label),
+html:active-view-transition-type(home-board)::view-transition-group(home-week-label),
+html:active-view-transition-type(home-board)::view-transition-group(home-fold) {
+  z-index: 3;
+}
+
+/* The label remains readable throughout: only its position moves, never its bitmap size. */
+html:active-view-transition-type(home-board)::view-transition-old(home-now-label),
+html:active-view-transition-type(home-board)::view-transition-old(home-week-label) {
+  animation: none;
+  opacity: 0;
+}
+
+html:active-view-transition-type(home-board)::view-transition-new(home-now-label),
+html:active-view-transition-type(home-board)::view-transition-new(home-week-label) {
+  animation: none;
+  width: auto;
+  height: auto;
+}
+
+html:active-view-transition-type(home-board)::view-transition-old(home-now-segment),
+html:active-view-transition-type(home-board)::view-transition-new(home-now-segment),
+html:active-view-transition-type(home-board)::view-transition-old(home-week-segment),
+html:active-view-transition-type(home-board)::view-transition-new(home-week-segment) {
+  width: auto;
+  height: auto;
+  animation-duration: 200ms;
+  animation-timing-function: linear;
+}
+
+html:active-view-transition-type(home-board)::view-transition-group(home-board) {
+  overflow: clip;
+}
+
+html:active-view-transition-type(home-board)::view-transition-old(home-board),
+html:active-view-transition-type(home-board)::view-transition-new(home-board) {
+  height: auto;
+  animation-duration: 200ms;
+  animation-timing-function: linear;
+}
+
+/* One-shot entry for the new-chat landing heading: blur + fade in. */
+@keyframes home-heading-in {
+  from {
+    opacity: 0;
+    filter: blur(12px);
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+.animate-home-heading-in {
+  animation: home-heading-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-home-heading-in {
+    animation: none;
+    filter: none;
+    transform: none;
+    opacity: 1;
+  }
+}
