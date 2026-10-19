@@ -445,7 +445,7 @@ describe('PendingMessageRow failure presentation', () => {
     await render(record({ attachments: [{ ...readyFile, source: undefined }] }));
     expect(host.querySelector('button[aria-label="notes.md"]')?.parentElement).toBe(card);
     expect(host.querySelector('[role="progressbar"]')).toBeNull();
-    expect(card?.textContent).toBe('notes.md5 B');
+    expect(card?.textContent).toBe('notes.mdMD · 5 B');
 
     // The successful card owns the geometry before and after history publication.
     await act(async () =>
@@ -462,7 +462,7 @@ describe('PendingMessageRow failure presentation', () => {
       )
     );
     const delivered = host.querySelector('button[aria-label="notes.md"]')?.parentElement;
-    expect(delivered?.textContent).toBe('notes.md5 B');
+    expect(delivered?.textContent).toBe('notes.mdMD · 5 B');
     expect(delivered?.querySelector('svg')?.outerHTML).toBe(card?.querySelector('svg')?.outerHTML);
   });
 
