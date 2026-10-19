@@ -91,8 +91,6 @@ while the rest steps back (`home/focus-motion.ts`). [Why](../../../../../.agents
   sidebar writes a mention into the composer this layout renders, and nothing above
   it participates, so plumbing the handle up to `chat-landing.tsx` would buy
   nothing.
-- Draft ACP preparation has a longer contract that remains in the private
-  architecture context.
 
 Chat Landing no longer emits the legacy onboarding project-source, project-selection,
 or agent-selection events. Onboarding owns its route-scoped flow, step and operation

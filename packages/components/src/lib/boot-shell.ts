@@ -27,9 +27,9 @@ import { BOOT_SHELL_SIDEBAR_WIDTH } from './boot-shell-script';
 export const BOOT_SHELL_COLORS = {
   light: {
     canvas: '0 0% 97.6%',
-    sidebar: '240 6.7% 94.1%',
-    sidebarBorder: '221.5 13.7% 81.4%',
-    status: '220 8.9% 46.1%',
+    sidebar: '0 0% 94.1%',
+    sidebarBorder: '0 0% 81.6%',
+    status: '0 0% 46.3%',
   },
   dark: {
     canvas: '220 7.3% 8%',
