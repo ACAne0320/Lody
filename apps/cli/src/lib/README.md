@@ -14,18 +14,25 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
 
 ## Resource discovery
 
-- `workspace-command-manager.ts` — overlapping cloud commands borrow one document
-  manager through `command-runtime.ts`; the last callback awaits its cleanup.
-  Authorization scopes stay separate; failed cleanup blocks replacement only
-  while presence remains unreleased.
+- `workspace-command-manager.ts` — overlapping standalone commands borrow one
+  document manager through `command-runtime.ts`; the last callback awaits its
+  cleanup. Authorization scopes stay separate; a failed cleanup is reported once
+  and never blocks later commands. Daemon-executed commands borrow the daemon's
+  replica through `session-command-environment.ts` instead.
 - `discovery-query.ts` — strict query schemas, scope-bound keyset pagination and
   shared Session title/Machine/Agent/Role filters.
 - `resource-discovery.ts` — readable directory projections, Role availability,
   sensitive-field exclusion and list/get behavior shared by MCP and CLI.
   List inputs are validated here against resource-specific allowlists derived from
   the shared query schema; the CLI only translates flags and resolves selectors.
-- `resource-discovery-runtime.ts` — synchronized workspace readers and caller-specific
-  authorization; it supplies the existing workspace command runtime to the query service.
+- `resource-discovery-runtime.ts` — workspace readers and caller-specific authorization.
+  Daemon reads wait briefly for the first baseline, then return cached results with
+  `catalog_syncing` uncertainty until confirmed; later reads never force catch-up.
+  `loro/workspace-catalog-sync.ts` holds the daemon workspace Flock reader room,
+  including headless startup; native transport recovery keeps it current.
+  Role proposal target validation requires fresh metadata/target synchronization.
+  Standalone CLI calls synchronize unless `--offline`. Authorization and cloud presence
+  remain online-aware independently of the catalog read policy.
   Intent and limits: [resource discovery](../../../../specs/resource-discovery.md).
 - `agent-role-create.ts` — Agent Role catalog read and create-path resolution
   shared by the MCP create tools and CLI `session create --agent-role`: the Role
@@ -60,6 +67,10 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
   RPC wiring, local project control, session file upload/send, and the turn cloud
   side-effect gate. Turn execution itself lives in
   `../session/session-execution-service.ts`.
+  Machine registration passes the daemon's `TZ` hint to `getDeviceTimeZone`:
+  when Intl exposes no zone name, named zoneinfo paths and fixed whole-hour
+  POSIX zones such as `HKT-8` are resolved before the legacy UTC fallback.
+  See the [timezone decision](../../../../.agents/notes/implemented/bug-fix/2026-10-18-linux-schedule-timezone.md).
 - `machine-runtime.ts` — machine runtime bootstrap; still hosts the DEPRECATED hosted
   WS control-plane listener, and serializes remote bridge attach/detach/revoke through
   `runBridgeTransition`.
@@ -95,7 +106,10 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
   `session-file-backfill.ts`, `acp-agent-attachments.ts` — the attachment lifecycle;
   see
   [`.agents/docs/cli-lib-session-files.md`](../../../../.agents/docs/cli-lib-session-files.md).
-- `session-gc-manager.ts` — idle cleanup plus memory-pressure reclamation. Per-OS
+- `session-gc-manager.ts` — idle cleanup plus memory-pressure reclamation. Idle also
+  asks the native agent (`AgentClient.getNativeWork`, from Core `sessionActivity`)
+  whether it still runs or waits on background tasks
+  ([decision](../../../../.agents/notes/implemented/bug-fix/2026-10-18-gc-respects-native-agent-work.md)). Per-OS
   measurement rationale:
   [`.agents/docs/cli-lib-memory-pressure.md`](../../../../.agents/docs/cli-lib-memory-pressure.md).
 - `session-transient-store.ts` — buffered ACP updates and their turn ownership.
@@ -127,6 +141,9 @@ provides LocalProjects. See the [decision](../../../../.agents/notes/implemented
 ## Subdirectories
 
 - `acp/` — ACP notification → session history pipeline ([AGENTS.md](acp/AGENTS.md)).
+- `loro/session-agent-writes.ts` — agent output policy over the shared HistoryWriter;
+  mixed tool/subagent batches resolve original ownership and use nested item windows.
+  Storage responsibilities: [history writes](../../../../.agents/docs/session-history-writes.md).
 - `code-collab/` — unified Code Collab v2 filesystem RPC service
   ([AGENTS.md](code-collab/AGENTS.md)).
 - `file-preview/` — the `file/preview` (File Preview v3) read path

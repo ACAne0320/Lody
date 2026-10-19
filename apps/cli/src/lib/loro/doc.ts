@@ -1,5 +1,7 @@
 import type { LodyRateLimitsCapability } from 'acp-extension-core';
+import { terminalNotificationSchema, type TerminalNotification } from '@lody/shared/notifications';
 import { createSessionAgentWrites, type SessionAgentWrites } from './session-agent-writes';
+import { makeWorkspaceCatalogSync, type WorkspaceCatalogSync } from './workspace-catalog-sync';
 import { createSessionBackend, disposeSessionBackend } from '@/session/session-backend';
 import type { SessionBackend, SessionBackendFactory } from '@/session/session-backend';
 import { readLatestTurn } from '@lody/shared/session-data';
@@ -338,6 +340,8 @@ export interface LoroDocumentManagerOptions {
   cloudBilling?: CloudBillingPort | null;
   /** One-shot clients route history to the owner; daemons use installed local factories. */
   sessionHistoryFactory?: SessionBackendFactory;
+  /** Daemon-only Roost routing that leaves this machine's execution policies unchanged. */
+  ownerHistoryRouter?: SessionBackendFactory;
 }
 
 export type LoroRepoPersistReason =
@@ -381,6 +385,19 @@ export class LoroDocumentManager {
   private readonly streamsTokens: CloudStreamsTokenPort | null;
   public readonly cloudBilling: CloudBillingPort | null;
   private readonly sessionHistoryFactory?: SessionBackendFactory;
+  private readonly ownerHistoryRouter?: SessionBackendFactory;
+  private catalogSync?: WorkspaceCatalogSync;
+
+  /** Reader interest belongs to the daemon, never to a discovery request. */
+  async holdCatalogFlockDoc(flockDocId: string): Promise<void> {
+    if (this.catalogSync) await this.repo.runLegacy(this.catalogSync.hold(flockDocId));
+  }
+
+  async catalogBaselineReady(flockDocId: string | undefined, timeoutMs: number): Promise<boolean> {
+    return this.catalogSync
+      ? this.repo.runLegacy(this.catalogSync.ready(flockDocId, timeoutMs))
+      : true;
+  }
 
   static async create(
     workspaceId: WorkspaceId,
@@ -388,6 +405,8 @@ export class LoroDocumentManager {
     logger: Logger,
     options: {
       attachRemoteOnCreate?: boolean;
+      /** Daemon-only reader lease; one-shot commands retain explicit sync ownership. */
+      keepWorkspaceCatalogJoined?: boolean;
       /**
        * Only the daemon passes `shared-durable`; see `DocumentCursorScope`.
        * The default keeps LoroDoc progress in this process's memory.
@@ -396,6 +415,7 @@ export class LoroDocumentManager {
       streamsTokens?: CloudStreamsTokenPort | null;
       cloudBilling?: CloudBillingPort | null;
       sessionHistoryFactory?: SessionBackendFactory;
+      ownerHistoryRouter?: SessionBackendFactory;
     } = {}
   ): Promise<LoroDocumentManager> {
     // Configure the CLI's global HTTP dispatcher once (proxy/H2/diagnostics). This
@@ -494,7 +514,17 @@ export class LoroDocumentManager {
         streamsTokens: options.streamsTokens ?? null,
         cloudBilling: options.cloudBilling ?? null,
         sessionHistoryFactory: options.sessionHistoryFactory,
+        ownerHistoryRouter: options.ownerHistoryRouter,
       });
+      if (options.keepWorkspaceCatalogJoined) {
+        const catalogOwner = await createdRepo.acquireScopeLegacy('workspace catalog');
+        manager.catalogSync = await createdRepo.runLegacy(
+          Scope.provide(
+            makeWorkspaceCatalogSync(createdRepo.native, workspaceId, logger),
+            catalogOwner.scope
+          )
+        );
+      }
     } catch (error) {
       const failures: unknown[] = [error];
       try {
@@ -572,6 +602,7 @@ export class LoroDocumentManager {
     this.streamsTokens = options.streamsTokens ?? null;
     this.cloudBilling = options.cloudBilling ?? null;
     this.sessionHistoryFactory = options.sessionHistoryFactory;
+    this.ownerHistoryRouter = options.ownerHistoryRouter;
     this.remoteStreamsGeneration = this.remoteStreamsAttached ? 1 : 0;
     this.presenceRuntime = options.presenceRuntime ?? null;
     this.machineMonitorRuntime = options.machineMonitorRuntime ?? null;
@@ -1373,7 +1404,7 @@ export class LoroDocumentManager {
         sessionId,
         (sessionDocId) => this.unloadDocRoom(sessionDocId),
         this.logger,
-        this.sessionHistoryFactory
+        this.sessionHistoryFactory ?? this.ownerHistoryRouter
       );
       const meta = options.historyBackend ? undefined : await this.repo.getDocMeta(docId);
       const historyBackend =
@@ -1427,7 +1458,7 @@ export class LoroDocumentManager {
         sessionId,
         (snapshotDocId) => this.unloadDocRoom(snapshotDocId),
         this.logger,
-        this.sessionHistoryFactory
+        this.sessionHistoryFactory ?? this.ownerHistoryRouter
       );
       const meta = await this.repo.getDocMeta(docId);
       const historyBackend = !isLoroRepoDocDeleted(meta)
@@ -1760,11 +1791,6 @@ export class LoroDocumentManager {
     this.logger.debug(`Started watching document existence for machine ${machineId}`);
   }
 
-  /** Cleanup errors elsewhere must not fence a workspace whose presence already ended. */
-  isPresenceReleased(): boolean {
-    return this.presenceRuntime?.isReleased() ?? true;
-  }
-
   async cleanUp(options: { fast?: boolean; preserveSessionStatus?: boolean } = {}) {
     this.cleaningUp = true;
     let presenceCleanupFailure: unknown;
@@ -1772,7 +1798,14 @@ export class LoroDocumentManager {
     for (const docId of [...this.localDocRoomBridges.keys()]) {
       this.cancelLocalDocRoomBridge(docId);
     }
-    await this.localLoroDataPlaneServer?.disposeLegacy();
+    try {
+      await this.localLoroDataPlaneServer?.disposeLegacy();
+    } catch (error) {
+      // Still stop presence: a live owner left behind would refuse every later
+      // owner of this workspace, while a stopped one can be retired.
+      await this.presenceRuntime?.stop().catch(() => undefined);
+      throw error;
+    }
     try {
       await this.machineMonitorRuntime?.stop();
     } catch (error) {
@@ -2485,6 +2518,7 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
       humanInputReceipts: state.humanInputReceipts as SessionDocMeta['humanInputReceipts'],
       cancelRequest: state.cancelRequest as SessionDocMeta['cancelRequest'],
       forkOperation: state.forkOperation as SessionDocMeta['forkOperation'],
+      notification: state.notification,
       preview: state.preview as SessionDocMeta['preview'],
       externalHistoryCursor: state.externalHistoryCursor as SessionDocMeta['externalHistoryCursor'],
       roostHistoryCursor: state.roostHistoryCursor as SessionDocMeta['roostHistoryCursor'],
@@ -3038,6 +3072,35 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
       this.sessionId
     );
     this.logger.debug(`[${this.sessionId}] setStatus: upsertDocMeta complete`);
+  }
+
+  /** Publish the latest terminal projection, not a delivery queue. The UUID
+   * index makes only this changed document discoverable without history scans.
+   */
+  async publishTerminalNotification(notification: TerminalNotification): Promise<void> {
+    if (!this.mirror) throw new Error('Mirror not initialized');
+    terminalNotificationSchema.parse(notification);
+    const current = await this.repo.getDocMeta(this.roomId);
+    if (!current || isLoroRepoDocDeleted(current)) return;
+    this.mirror.setState((prev) => ({
+      ...prev,
+      notification: {
+        ...notification,
+        presentation: notification.presentation
+          ? {
+              kind: notification.presentation.kind,
+              conversationTitle: notification.presentation.conversationTitle,
+              scheduleName: notification.presentation.scheduleName,
+              projectName: notification.presentation.projectName,
+              pullRequestNumber: notification.presentation.pullRequestNumber,
+            }
+          : undefined,
+      },
+    }));
+    // Commit the control document before exposing its activation index. This is
+    // best effort across independently synced documents, not a delivery barrier.
+    this.handle?.doc.commit();
+    await this.repo.upsertDocMeta(this.roomId, { notificationId: notification.id });
   }
 
   async getPreviewState(): Promise<SessionPreviewDocState | undefined> {
