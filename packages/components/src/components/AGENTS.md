@@ -81,10 +81,12 @@ Child directories (`sessions/`, `mobile/`, …) own their own rules.
 
 ## Conversation access
 
-- `session-sharing.tsx` owns one desktop control: team visibility selects menu/button (private scope
-  stays explained in the menu), public status selects the label; never add a second badge. Paths
-  stay in `⋯`. Closed headers read only the management row (`unknown` stays not-shared); the keyed
-  panel and `⋯` dialog reuse one publisher. [Contract](../../../../.agents/notes/implemented/feature/2026-09-14-session-header-share-control.md).
+- `session-sharing.tsx` owns one desktop header control for team and web access: team visibility
+  selects menu/button, public status selects the label, and its audience strip shows current access.
+  Unavailable audiences are disabled with a reason; narrowing, tabs, search, and a second badge are
+  forbidden. Paths and base branch stay in `⋯`. Closed headers read only the `useSessionShareStatus`
+  management row (`unknown` means not shared). The inline panel and `⋯` dialog reuse one keyed
+  publisher; the panel stays open while publishing. [Contract](../../../../.agents/notes/implemented/feature/2026-09-14-session-header-share-control.md).
 
 ## Local projects
 
