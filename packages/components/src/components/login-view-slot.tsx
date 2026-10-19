@@ -57,7 +57,7 @@ export function LoginViewSlot({
     };
     measureRef.current = measure;
     measure();
-    if (typeof ResizeObserver === 'undefined') return;
+    if (typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(measure);
     observer.observe(firstRef.current!);
     observer.observe(secondRef.current!);
@@ -69,7 +69,7 @@ export function LoginViewSlot({
       progress.set(active);
       setMoving(false);
       if (active === 1) entered.current();
-      return;
+      return undefined;
     }
     setMoving(true);
     const animation = animate(progress, active, {
@@ -142,7 +142,7 @@ export function LoginExpandingRow({
       setMeasured(true);
       setMoving(false);
       measure?.();
-      return;
+      return undefined;
     }
     setMoving(true);
     const animation = animate(height, target, {
@@ -157,7 +157,7 @@ export function LoginExpandingRow({
   }, [open, reducedMotion, contentKey, height, measure]);
 
   useLayoutEffect(() => {
-    if (typeof ResizeObserver === 'undefined') return;
+    if (typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(() => {
       // Font and viewport changes update the intrinsic target. During a row
       // transition the running numeric height remains the sole owner.
