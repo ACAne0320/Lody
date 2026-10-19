@@ -87,15 +87,12 @@ Performance comparisons must use the current full-Mirror baseline.
 
 ## Workspace transitions
 
-- Default entry opens workspace chat landing; never restore the last route. Deep
-  links and requested window targets keep their destination. `BootNavigate` hints
-  target geometry; `PreloadedMainLayout` owns its code-loading fallback.
-  `BootShellBoundary`, inside the route error boundary, keeps one surface across
-  committed boot gates. Recovery/destination commits release it immediately;
-  animation never decides readiness. Boot and real cards share frame geometry.
-  Document-safe styles use `DocumentStyle` for mutable updates and retire the
-  inline first-paint sheet only after the live sheet commits.
-  The hidden warm window's `/` remains neutral.
+- Default to chat; never restore the last route; preserve deep links and window
+  targets. `BootNavigate` hints geometry; `PreloadedMainLayout` owns code fallback.
+  `BootShellBoundary` inside the route error boundary holds one shell through gates
+  until recovery or destination commits; animation never gates readiness. Boot and
+  real cards share frames. `DocumentStyle` owns updates; retire inline first-paint
+  styles only after live commit. Keep the hidden warm window's `/` neutral.
 
 - Dock counts derive from complete active metadata and the sidebar's child activity
   summary. Publish absolute snapshots, including zero, on change and every 30 seconds;
@@ -116,10 +113,9 @@ Performance comparisons must use the current full-Mirror baseline.
 
 ## Billing data
 
-- When authenticated user and workspace resolution completes, preload the billing
-  overview into the existing session-scoped billing-page cache. The preload is only
-  a latency optimization: billing permissions, quota checks, destructive-operation
-  guards, and Stripe invoice history keep their existing live/on-demand data paths.
+- After auth/workspace resolution, preload billing overview into the session-scoped
+  cache for latency only. Permissions, quotas, destructive guards, and Stripe invoice
+  history remain live/on-demand.
 
 ## ACP selectors
 
