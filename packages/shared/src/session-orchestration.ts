@@ -220,6 +220,7 @@ export type FrozenOperationContinuationConfig = {
    * correspond to batch items rejected before a target was accepted.
    */
   targetDispatchConfigs?: Array<{
+    mcpServerIds?: string[];
     modeId?: string;
     modelId?: string;
     configOptionValues?: Record<string, string | boolean>;

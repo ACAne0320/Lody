@@ -7,105 +7,68 @@ Translation: current
 
 ## Abstract
 
-Project conversations currently have no project-specific MCP defaults, so users
-must choose servers through the composer or workspace defaults. This proposal
-adds per-server project overrides in workspace Flock and resolves them before
-accepting the first turn of a new conversation. The resulting ids use the existing
-per-turn execution contract, keeping retries independent of later preference
-edits. Existing conversations retain their selection; dynamic inheritance is an
-alternative requiring additional provenance, not part of this proposed first version.
+Project conversations need reusable MCP selections without changing accepted
+turns. The revised design stores one optional ids array per project in workspace
+Flock, resolves it when authoring a new conversation, and reuses existing per-turn
+and Operation dispatch configuration. This replaces the initial per-server override
+proposal, accepting whole-list conflict resolution and no automatic additions after
+customization. Shared/CLI implementation is in progress; UI delivery is outstanding.
 
-## Evidence and responsibility boundaries
+## Decision and responsibilities
 
-- `packages/shared/src/workspace-mcp.ts` already owns catalog `enabledByDefault`,
-  preserves absent versus empty selection, and resolves runtime connection problems.
-- `packages/components/src/hooks/use-session-mcp-selection.ts` currently chooses
-  temporary override, persisted ids, then workspace defaults. Its state reset only
-  follows persisted ids; adding project context requires a scope-aware reset.
-- Landing, draft-session and existing-session composers all use this hook. A Tab-only
-  change would miss CLI/MCP authoring and staged sends.
-- `packages/shared/src/workspace-flock.ts` currently recognizes `mcpServer` and
-  `agentRole` families. New policy rows need parser, scan, writer, subscription and
-  forward-compatibility coverage, not merely a new TypeScript type.
-- `apps/cli/src/commands/session.ts` builds continuation input config without
-  visibly passing MCP ids at the inspected `buildCliHistoryInputConfig` call.
-  Creation, continuation, operation acceptance and recovery need an explicit audit;
-  UI inheritance alone cannot establish CLI/MCP parity.
-- `session-dispatch-watcher.ts` forwards the driving turn's ids; `session-manager.ts`
-  passes them to `loadSessionMcpCatalog`. Preserve that boundary. Preparation keys
-  already account for MCP selection in `packages/shared/src/session-preparation.ts`.
-
-The [draft Spec](../../../../specs/project-default-mcp.md) owns proposed user semantics.
-This extends the [catalog durability explanation](../../../docs/workspace-catalog-durability.md)
-and must preserve the [local orchestration boundary](../../implemented/architecture/2026-09-29-local-session-orchestration.md).
-
-## Proposed structure
+The [Spec](../../../../specs/project-default-mcp.md) owns semantics.
+Draft PR: [#1708](https://github.com/LodyAI/Lody/pull/1708).
+The 2026-10-19 design revision simplifies project policy to one row and preserves
+UI/CLI/MCP coverage as the final scope. An absent row inherits workspace defaults; an
+explicit empty list disables all. A customized project stops following later
+workspace default edits. Concurrent edits to one project replace the list under
+Flock ordering. This is a deliberate trade-off against per-server tri-state
+inheritance and independent switch conflict resolution.
 
 ```mermaid
 flowchart TD
-  C[Workspace MCP catalog] --> R[Shared default-selection resolver]
-  P[Project override rows] --> R
-  R --> A[UI / CLI / MCP turn authoring]
-  E[Explicit selection or target conversation selection] --> A
-  A --> F[Accepted request and turn: frozen mcpServerIds]
-  F --> D[Dispatch / retry / recovery]
-  D --> L[Existing runtime catalog resolver]
+  C[Workspace catalog] --> R[Shared default resolver]
+  P[Optional project ids array] --> R
+  R --> A[UI / CLI / MCP authoring]
+  E[Explicit or existing conversation selection] --> A
+  A --> T[Existing turn and Operation dispatch config]
+  T --> D[Dispatch / retry / recovery]
+  D --> L[Runtime connection resolution]
   C --> L
 ```
 
-Use a proposed row key `['projectMcpDefault', projectKey, mcpServerId]` with a
-boolean value. The workspace is implicit in the document. Encode `projectKey`
-from a versioned structured tuple, avoiding delimiter collisions: local machine
-plus project id, or canonical GitHub repository identity; never cwd or branch.
-Use the repository's existing canonicalization rules and verify rename/removal
-lifecycle during implementation. Removing a project cleans only its preferences;
-it never removes catalog entries or historical turn selections.
+Shared owns project identity, row validation and the pure default resolver.
+Components owns the Tab, authorized durable writes, ready snapshot and scoped draft
+selection. CLI/MCP authoring resolves target-project defaults or target-conversation
+selection and writes ids. Operation acceptance uses its existing per-target config;
+recovery never rereads defaults. Runtime continues to resolve connections from the
+catalog and driving turn. Preserve [catalog durability](../../../docs/workspace-catalog-durability.md)
+and the [local orchestration boundary](../../implemented/architecture/2026-09-29-local-session-orchestration.md).
 
-An absent row inherits workspace default; `false` suppresses a globally enabled
-server. Row granularity prevents independent switches from overwriting a whole
-array. Same-row conflicts follow Flock ordering. Reset deletes overrides in one
-durable transaction; test concurrent reset/edit semantics explicitly. Deleting an
-MCP may leave inert orphan references until bounded cleanup; surface them as removed
-and do not reuse ids. No destructive sweep during a partially loaded catalog.
+The earlier proposal added per-server overrides, extensive UI controls and new
+protocol negotiation. These are unnecessary for the initial scope. The existing
+wire field carries explicit ids, so use targeted compatibility checks. Loading,
+permissions, durable writes, click-time snapshots and local boundaries remain
+correctness requirements; Flock or an existing `synced` flag does not prove them.
 
-`@lody/shared` owns identity, schemas and a pure selection resolver. Components own
-presentation, draft scope, loading and durable-write feedback. Authoring services
-own ready-snapshot reads, access checks and freezing before acceptance. Runtime
-owns connection resolution, capability checks and diagnostics, never default policy.
-New typed writer APIs should mutate one row and validate ownership/catalog scope.
-Use existing platform ports; do not create a cloud backend requirement.
+## Implementation evidence and limits
 
-## Choices and trade-offs
+`workspace-mcp.ts` now supplies project keys and replacement-default selection;
+`workspace-flock.ts` parses, scans and writes project preference rows. The shared
+invariant is updated from two layers to catalog/project defaults/turn selections.
+CLI create resolves defaults before preparation; continuation retains the target's
+selection. CLI JSON selection and MCP optional arrays preserve explicit `[]`.
+Single/batch MCP Operations freeze resolved ids in existing target dispatch configs;
+recovery preserves old Operations as empty when no ids were captured.
 
-| Choice | Result |
-| --- | --- |
-| Add project ids to each MCP catalog entry | Couples server editing to project policy and enlarges conflicting catalog writes; reject. |
-| Store one selected-id array per project | Simpler, but loses independent concurrent switches and needs a separate inherit/replace mode; not preferred. |
-| Apply defaults only in the UI hook | Misses CLI/MCP and accepted-operation freezing; reject. |
-| Union defaults at ACP startup | Overrides explicit `[]`, mutates retries and defeats user deselection; reject. |
-| Live inherit defaults in all conversations | Useful if requested, but needs persisted inherit/override provenance and migration for older turns; defer. |
-| Seed new conversations through shared authoring | Reuses current per-turn runtime contract; preferred first version. |
+Shared tests exercise absence/empty/replacement, removed ids, identity isolation and
+row updates. CLI tests exercise ready-read failures, frozen selection after preference
+edits, and explicit opt-out. The local integration suite verifies real daemon-backed
+MCP creation and continuation, persisted Operation configuration, batch opt-out
+inheritance, and zero product-cloud access. Final full-check results belong in the
+PR; do not infer packaged UI validation from these tests.
 
-Important contract change: `packages/shared/AGENTS.md` currently says MCP has
-exactly two durable layers. This design deliberately proposes a third *authoring
-policy* layer while retaining catalog and per-turn execution ownership. Implementation
-must update that rule alongside the draft Spec. This design-only change does not
-silently rewrite the active invariant or claim approval.
-
-## Implementation sequence and verification limits
-
-1. Agree on new-conversation semantics; implement shared identity, row contract,
-   authorized durable writer and resolver with precedence/concurrency behavior tests.
-2. Integrate all authoring entry points, operation freeze, deferred send and warm
-   preparation. Test `[]`, retry after policy edits, target-project delegation,
-   continued conversation selection, and config-driven runtime recreation.
-3. Add the Tab, search/status rows, reset and composer integration. Exercise project
-   switching, workspace isolation, loading, failed saves and read-only access.
-4. Add protocol capability negotiation and mixed-version tests. Verify local-only
-   composition and use synthetic MCP E2E fixtures rather than personal catalog data.
-
-Research inspected source and existing contracts; no application code was changed,
-no behavioral tests or packaged UI checks were run, and there is no approval.
-Draft PR: [#1708](https://github.com/LodyAI/Lody/pull/1708).
-Documentation checks are recorded in the task response. Private catalog data and
-retrieved conversation content are intentionally excluded from repository artifacts.
+UI implementation remains delegated and pending. Do not mark this note implemented
+or the whole feature complete until UI selection/readiness/writer authorization and
+end-to-end acceptance are integrated. No additional project policy is resolved at
+ACP startup, and Role rows do not gain MCP selections.

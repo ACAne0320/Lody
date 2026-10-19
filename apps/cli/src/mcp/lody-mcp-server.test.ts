@@ -884,6 +884,7 @@ describe('session MCP input schemas', () => {
       modeId: 'agent',
       modelId: 'gpt-5.6-sol',
       configOptionValues: { 'fast-mode': true },
+      mcpServerIds: [],
       inheritSessionDefaults: false,
     });
     await expect(
@@ -892,6 +893,7 @@ describe('session MCP input schemas', () => {
       modeId: undefined,
       modelId: undefined,
       configOptionValues: { mode: 'read-only', model: 'gpt-5.5' },
+      mcpServerIds: [],
       inheritSessionDefaults: false,
     });
     await expect(
@@ -906,6 +908,7 @@ describe('session MCP input schemas', () => {
       modeId: 'read-only',
       modelId: 'gpt-5.5',
       configOptionValues: { 'fast-mode': false, reasoning_effort: 'high', plan_mode: true },
+      mcpServerIds: [],
       inheritSessionDefaults: false,
     });
   });

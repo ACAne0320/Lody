@@ -6,6 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { LoroRepo } from 'loro-repo';
 import {
   getMachineFlockDocId,
+  getWorkspaceFlockDocId,
+  getProjectMcpKey,
+  writeWorkspaceMcpServerToFlock,
+  writeProjectMcpDefaultToFlock,
   getSessionRoomId,
   isLoroRepoDocDeleted,
   type AcpCapabilityCacheEntry,
@@ -43,6 +47,8 @@ import {
   deriveSessionLiveStatus,
   ensureSessionCreateWorkspaceMetaFresh,
   resolveCreateAgentSelector,
+  resolveEffectiveSessionCreateDispatchConfig,
+  parseCliMcpServerIds,
   resolveCreateCurrentSessionId,
   resolveOpenedBySessionRelation,
   resolveSessionCreateOwnerUserId,
@@ -2154,5 +2160,99 @@ describe('delegated machine access', () => {
       allowed: false,
       reason: 'not_visible',
     });
+  });
+});
+
+describe('MCP selection at turn authoring', () => {
+  it('freezes project defaults and honors explicit opt-out through subsequent resolution', async () => {
+    const repo = await LoroRepo.create({});
+    try {
+      const workspaceId = 'workspace-mcp' as WorkspaceId;
+      const project = { kind: 'github' as const, repoFullName: 'Example/Repo', branch: 'main' };
+      const key = getProjectMcpKey(project);
+      if (!key) throw new Error('Expected a project identity');
+      const handle = await repo.openFlockDoc(getWorkspaceFlockDocId(workspaceId));
+      for (const id of ['global', 'project']) {
+        writeWorkspaceMcpServerToFlock(handle.flock, {
+          id: id as import('@lody/shared').McpServerId,
+          name: id,
+          transport: 'stdio',
+          connection: { transport: 'stdio', command: 'synthetic' },
+          enabledByDefault: id === 'global',
+          createdAt: 1,
+          updatedAt: 1,
+        });
+      }
+      writeProjectMcpDefaultToFlock(handle.flock, key, {
+        ids: ['project' as import('@lody/shared').McpServerId],
+      });
+      const manager = {
+        repo,
+        syncFlockDocOrThrow: async () => {
+          await repo.flush();
+        },
+      } as unknown as import('../lib/loro/doc').LoroDocumentManager;
+      const args = {
+        manager,
+        workspaceId,
+        project,
+        agentConfig: {
+          id: 'agent',
+          name: 'Synthetic',
+          machineId: 'machine',
+          cliType: 'custom',
+          agentType: 'claude',
+        } as AgentConfigMeta,
+        dispatchConfig: {},
+      };
+      const frozen = await resolveEffectiveSessionCreateDispatchConfig(args);
+      expect(frozen.mcpServerIds).toEqual(['project']);
+      writeProjectMcpDefaultToFlock(handle.flock, key, { ids: [] });
+      expect(
+        (await resolveEffectiveSessionCreateDispatchConfig({ ...args, dispatchConfig: frozen }))
+          .mcpServerIds
+      ).toEqual(['project']);
+      expect((await resolveEffectiveSessionCreateDispatchConfig(args)).mcpServerIds).toEqual([]);
+      expect(
+        (await resolveEffectiveSessionCreateDispatchConfig({ ...args, project: undefined }))
+          .mcpServerIds
+      ).toEqual(['global']);
+      expect(
+        (
+          await resolveEffectiveSessionCreateDispatchConfig({
+            ...args,
+            project: undefined,
+            dispatchConfig: { mcpServerIds: [] },
+          })
+        ).mcpServerIds
+      ).toEqual([]);
+      const unavailable = {
+        repo,
+        syncFlockDocOrThrow: async () => {
+          throw new Error('catalog unavailable');
+        },
+      } as unknown as import('../lib/loro/doc').LoroDocumentManager;
+      await expect(
+        resolveEffectiveSessionCreateDispatchConfig({ ...args, manager: unavailable })
+      ).rejects.toThrow('catalog unavailable');
+      expect(
+        (
+          await resolveEffectiveSessionCreateDispatchConfig({
+            ...args,
+            manager: unavailable,
+            dispatchConfig: { mcpServerIds: [] },
+          })
+        ).mcpServerIds
+      ).toEqual([]);
+    } finally {
+      await repo.destroy();
+    }
+  });
+
+  it('accepts CLI empty selection and rejects malformed selection inputs', () => {
+    expect(parseCliMcpServerIds('[]')).toEqual([]);
+    expect(parseCliMcpServerIds('["a", " a ", "b"]')).toEqual(['a', 'b']);
+    for (const value of ['{}', '[1]', '[""]', 'null'])
+      expect(() => parseCliMcpServerIds(value)).toThrow();
   });
 });
