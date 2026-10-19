@@ -91,11 +91,6 @@ const ENTRANCE_ITEM: Variants = {
   hidden: { opacity: 0, y: 10 },
   shown: { opacity: 1, y: 0, transition: { duration: 0.5, ease: ENTRANCE_EASE } },
 };
-const ENTRANCE_TAGLINE: Variants = {
-  hidden: { opacity: 0, y: 6 },
-  shown: { opacity: 1, y: 0, transition: { duration: 0.7, delay: 0.9, ease: ENTRANCE_EASE } },
-};
-
 const normalizeBasePath = () => {
   const baseUrl = import.meta.env.BASE_URL || '/';
   return baseUrl === '/' || baseUrl === './' || baseUrl === '.' ? '' : baseUrl.replace(/\/$/, '');
