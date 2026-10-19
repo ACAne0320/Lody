@@ -10,10 +10,6 @@ Translation: current
 
 在 Cloud 组合下，每次触及工作区的 Lody MCP 工具调用，都会在 MCP 进程里打开一整套第二副本：Loro repo、Streams 传输、token provider 和 presence 订阅，调用结束时再全部拆掉。释放 presence 需要在五秒预算内完成网络 I/O，普通的慢网络就会让清理失败；而失败会被保留成一道栅栏：长期运行的 MCP host 里，该工作区之后的每条命令都以 `INTERNAL_ERROR`（"Workspace cleanup failed" / "Workspace presence operation failed"）失败，直到重启。现在，MCP 工作区工具在所有组合下都由 daemon 用它已有的副本执行（OSS 早已如此），且任何地方的释放失败都不再阻塞工作区。终端里独立运行的 `lody` 命令仍会打开短生命周期副本；打包应用与线上 Cloud 验收尚未测试。
 
-## 后续修正
-
-下文的目录 reader 实现和原生生命周期测试记录的是 #1692 最初采用的方案。改用 Promise Repo 的后续修正见[对应说明](../bug-fix/2026-10-19-promise-repo-catalog-readers.zh.md)。
-
 ## 缺陷是怎么叠出来的
 
 每一步单独看都合理，叠在一起就让一次清理错误变成永久故障。
@@ -42,7 +38,7 @@ MCP 进程 ──session/call-tool──▶ daemon：唯一的工作区副本
 - `runWithDaemonWorkspace` 把 daemon 的 manager 借给 daemon 执行的命令。它只改变命令使用哪份副本：Cloud 的鉴权、工作区解析和远端恢复都保持原样。daemon 网关只在驱动请求者 Session 的那个 Turn 仍活跃时放行，因此比 Turn 活得更久的进程不能继续使用这些工具。本地平台另外保留单用户环境，并要求该 Turn 的请求者是本地用户；Cloud 中共享机器上可能是协作者在驱动 Session。
 - 借用副本的命令从不清理 daemon 的副本，因此命令结束时不再有可能失败的释放步骤。
 - 资源发现读取 daemon 缓存，不强制每次追平。metadata、工作区与授权机器目录共用一次一秒的首次 baseline 等待预算；超时不取消 daemon reader，而是让本次结果保持未确认：列表附带 `sync.state: syncing`，依赖目录的负面判定改为 `unknown/catalog_syncing`，缺少 get 结果返回可重试的 `CATALOG_SYNCING`。已完成 baseline 的目录不再等待。Role 提议的目标校验复用了 discovery，因此显式选择 fresh 模式：同步 metadata，并在访问校验后同步唯一目标 Machine Flock，要求远端确认；失败保留原始 cause 并返回可重试错误，不发布提议。普通读取、独立 CLI、鉴权与分发契约各自保留。
-- daemon 现在显式持有工作区目录的房间订阅（`workspace-catalog-sync.ts`），覆盖没有选择外部 MCP 的 headless 启动。查询涉及的已授权 Machine Flock 也会获得去重的后台读取订阅，首次 baseline 的等待不接管或取消这些 reader。本地加载与 native 保留的释放责任按有上限的退避间隔恢复；未知清理缺陷会停止替换，同时保留完整 Cause 和 native 清理责任；普通重连仍由原生传输恢复负责。读取订阅由 repo consumer 退出流程释放，不等待远端追平。仅删除请求同步会让冷启动目录一直为空；真实双 repo MCP 测试复现该失败，并验证后续远端修改和重新挂载传输。原生生命周期测试覆盖慢加载、重试恢复、取消、SQLite 读取与清理写入同时暂时失败后的恢复，以及同时保留加载与清理的原始 Cause。
+- #1713 之后的兼容性修正：`workspace-catalog-sync-legacy.ts` 通过已发布的 Promise Repo API 去重持有 metadata、工作区和查询涉及的 Machine 目录房间。原生兼容层已撤回，不能调用 `runLegacy`、`acquireScopeLegacy` 或 `.native`。启动和 hold 不等待获取房间或远端追平；有界的首次 baseline 等待不会释放 reader。临时加入失败会按有上限的退避间隔重试；传输恢复与最终房间释放继续由现有 Repo 负责。已确认的 baseline 在传输断开后仍可读。原生 reader 模块及其测试与当前生产接线分离。Promise Repo 回归覆盖及实现细节见[目录 reader 修正说明](../bug-fix/2026-10-19-promise-repo-catalog-readers.zh.md)。这不代表生产 Streams 或已有原生兼容层 MCP 测试已通过验证。
 - Roost 历史始终留在 Session 的所属机器。一次性 manager 对每个 Session 都注入 owner RPC，而 daemon 安装的 Roost owner 是本机数据库。因此 Cloud daemon 的 manager 按 Session 路由：其他机器的 Session 使用同一套 owner RPC 服务，本机的 Session（或所属机器尚未知的）继续使用本地 owner。该路由独立于 `sessionHistoryFactory`，daemon 自己的执行文档保持原有的自动已读策略。缺少它时，读取其他机器的 Session 会得到空历史，新输入被写进调用方的数据库，所属机器收到 dispatch 后找不到消息。这同样覆盖 daemon 的 Cloud Operation 恢复，它调用的是同一套 create 与 chat 路径。
 - MCP 的取消和归档改为调用共享的进程内函数，不再启动会自建副本的子 `lody` CLI。
 - 释放失败永远不阻塞工作区。接纳替换者之前，presence 注册表先等上一个 owner 的停止流程结束，新流不会与未完成的释放重叠；若释放失败，该 owner 退役：残留工作仍归应用根 Scope 所有，退出时照样被停止，且之后每次申请 owner 都会在后台重试它，直到释放成功。两个存活 owner 仍被禁止。`cleanUp` 即使前面的步骤失败也会停止 presence，不会留下存活 owner。独立命令池对清理失败只报告一次（报告器抛错会被忽略），并总是移除条目。

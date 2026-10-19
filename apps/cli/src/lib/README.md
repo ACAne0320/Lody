@@ -28,7 +28,7 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
 - `resource-discovery-runtime.ts` — workspace readers and caller-specific authorization.
   Daemon reads wait briefly for the first baseline, then return cached results with
   `catalog_syncing` uncertainty until confirmed; later reads never force catch-up.
-  `loro/workspace-catalog-sync.ts` holds the daemon workspace Flock reader room,
+  `loro/workspace-catalog-sync-legacy.ts` holds the daemon workspace Flock reader room,
   including headless startup; Repo subscriptions survive reattachment. Manager recovery
   owns reconnects and Repo shutdown releases the rooms.
   Role proposal target validation requires fresh metadata/target synchronization.

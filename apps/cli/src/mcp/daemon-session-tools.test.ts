@@ -55,10 +55,19 @@ const createSilentLogger = (): Logger => ({
   success: () => {},
   debug: () => {},
   trace: () => {},
+  setDebug: () => {},
   setLevel: () => {},
   child: () => createSilentLogger(),
   close: async () => {},
 });
+
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
 
 const syncedRoomSubscription = (): TransportSubscription => ({
   unsubscribe: () => {},
@@ -71,7 +80,10 @@ const syncedRoomSubscription = (): TransportSubscription => ({
   },
 });
 
-type MemoryRoom = { snapshot?: unknown; peers: Set<{ flock: Flock }> };
+type MemoryRoom = {
+  snapshot?: Awaited<ReturnType<Flock['exportJson']>>;
+  peers: Set<{ flock: Flock }>;
+};
 
 class MemoryStreamsNetwork {
   private readonly rooms = new Map<string, MemoryRoom>();
@@ -82,7 +94,7 @@ class MemoryStreamsNetwork {
 
   async sync(key: string, flock: Flock): Promise<TransportSyncResult> {
     const room = this.room(key);
-    if (room.snapshot === undefined) room.snapshot = flock.exportJson({});
+    if (room.snapshot === undefined) room.snapshot = flock.exportJson();
     else await flock.importJson(room.snapshot);
     return { ok: true };
   }
@@ -97,7 +109,7 @@ class MemoryStreamsNetwork {
         : Promise.resolve(flock.importJson(room.snapshot));
     const unsubscribe = flock.subscribe((batch: { source?: string }) => {
       if (batch.source !== 'local') return;
-      room.snapshot = flock.exportJson({});
+      room.snapshot = flock.exportJson();
       for (const other of room.peers) {
         if (other !== peer) void Promise.resolve(other.flock.importJson(room.snapshot));
       }
@@ -273,7 +285,9 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         role: 'owner',
       });
       vi.spyOn(sessionCommands, 'readSessionMachineAccess').mockImplementation(async (args) => ({
-        allowed: args.delegatedRequester?.userId === 'synthetic-collaborator',
+        ...(args.delegatedRequester?.userId === 'synthetic-collaborator'
+          ? { allowed: true as const }
+          : { allowed: false as const, reason: 'not_visible' as const }),
       }));
       vi.spyOn(manager, 'syncMetaOrThrow').mockImplementation(async () => {
         if (failure === 'metadata')
@@ -405,8 +419,9 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         id: 'cold-config' as AgentConfigId,
         machineId: remoteMachineId,
         name: 'Remote',
+        description: undefined,
         cliType: 'custom',
-        agentType: 'claude',
+        agentType: 'claude' as const,
         env: {},
       });
       await publisher.joinFlockDocRoom(id);
@@ -453,8 +468,9 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         id: 'remote-role-config' as AgentConfigId,
         machineId: remoteMachineId,
         name: 'Remote',
+        description: undefined,
         cliType: 'custom',
-        agentType: 'claude',
+        agentType: 'claude' as const,
         env: {},
       });
       await publisher.joinFlockDocRoom(id);
@@ -516,9 +532,9 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
     const remoteRoom = await publisher.openFlockDoc(docId);
     await publisher.joinFlockDocRoom(docId);
     const local = await manager.repo.openFlockDoc(docId);
-    const roleReceived = Promise.withResolvers<void>();
-    const roleUpdated = Promise.withResolvers<void>();
-    const reattached = Promise.withResolvers<void>();
+    const roleReceived = deferred();
+    const roleUpdated = deferred();
+    const reattached = deferred();
     const detachRole = local.flock.subscribe(() => {
       const role = listWorkspaceAgentRoles(readWorkspaceFlockRowsFromFlock(local.flock)).find(
         (row) => row.id === 'remote-role'
@@ -554,6 +570,7 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         id: 'remote-agent' as AgentConfigId,
         machineId: remoteMachineId,
         name: 'Remote Agent',
+        description: undefined,
         cliType: 'custom' as const,
         agentType: 'claude' as const,
         env: {},
@@ -577,8 +594,8 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
       });
       vi.spyOn(sessionCommands, 'readSessionMachineAccess').mockResolvedValue({ allowed: true });
       const localMachine = await manager.repo.openFlockDoc(machineDocId);
-      const configReceived = Promise.withResolvers<void>();
-      const configUpdated = Promise.withResolvers<void>();
+      const configReceived = deferred();
+      const configUpdated = deferred();
       const detachMachine = localMachine.flock.subscribe(() => {
         const config = getMachineFlockAgentConfigs(
           readMachineFlockRowsFromFlock(localMachine.flock)
@@ -757,7 +774,7 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
     await expect(
       runWithDaemonWorkspace(daemon, () =>
         executeDaemonSessionTool(
-          { ...context(), sessionId: 'missing-session' },
+          { ...context(), sessionId: 'missing-session' as SessionId },
           'lody_operation_list',
           {}
         )

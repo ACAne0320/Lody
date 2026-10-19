@@ -1,7 +1,7 @@
 import type { LodyRateLimitsCapability } from 'acp-extension-core';
 import { terminalNotificationSchema, type TerminalNotification } from '@lody/shared/notifications';
 import { createSessionAgentWrites, type SessionAgentWrites } from './session-agent-writes';
-import { makeWorkspaceCatalogSync, type WorkspaceCatalogSync } from './workspace-catalog-sync';
+import { createWorkspaceCatalogSyncLegacy } from './workspace-catalog-sync-legacy';
 import { createSessionBackend, disposeSessionBackend } from '@/session/session-backend';
 import type { SessionBackend, SessionBackendFactory } from '@/session/session-backend';
 import { readLatestTurn } from '@lody/shared/session-data';
@@ -386,11 +386,11 @@ export class LoroDocumentManager {
   public readonly cloudBilling: CloudBillingPort | null;
   private readonly sessionHistoryFactory?: SessionBackendFactory;
   private readonly ownerHistoryRouter?: SessionBackendFactory;
-  private catalogSync?: WorkspaceCatalogSync;
+  private catalogSync?: ReturnType<typeof createWorkspaceCatalogSyncLegacy>;
 
   /** Reader interest belongs to the daemon, never to a discovery request. */
   async holdCatalogFlockDoc(flockDocId: string): Promise<void> {
-    if (this.catalogSync) await this.catalogSync.hold(flockDocId);
+    this.catalogSync?.hold(flockDocId);
   }
 
   async catalogBaselineReady(flockDocId: string | undefined, timeoutMs: number): Promise<boolean> {
@@ -515,7 +515,7 @@ export class LoroDocumentManager {
         ownerHistoryRouter: options.ownerHistoryRouter,
       });
       if (options.keepWorkspaceCatalogJoined) {
-        manager.catalogSync = await makeWorkspaceCatalogSync(
+        manager.catalogSync = createWorkspaceCatalogSyncLegacy(
           createdRepo,
           workspaceId,
           logger,
