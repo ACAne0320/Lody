@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1713](https://github.com/LodyAI/Lody/pull/1713)
 
 [中文](2026-10-19-repo-upgrade-without-consumer-migration.zh.md)
 
@@ -54,13 +55,15 @@ still explains the retained upgrade.
 
 ## Verification
 
-Frozen installation and full workspace typecheck pass, as do formatting,
-type-aware lint, Effect lint, all 58 script tests and the repository boundary
-guards. Targeted CLI suites pass 467 cases, renderer sync/runtime/action suites
-pass 308, and RPC passes 153 with three configured skips. The two Shared listener
-suites previously blocked by the sandbox now pass all 14 cases. Shared declaration
-emission and documentation checking pass; documentation retains 69 warnings.
+Frozen installation, full workspace typecheck, formatting, type-aware lint,
+Effect lint, all 58 script tests, i18n and all repository boundary guards pass.
+Full renderer passes 5,615 cases and full Shared passes 1,571. RPC passes 153
+with three configured skips. Shared declaration emission and documentation
+checking pass; documentation retains 69 warnings.
 
-The complete root application test chain is still running; its final outcome is
-recorded in the PR before delivery. Production services, device recovery and
-packaging acceptance remain unverified.
+The full CLI run has 4,385 passes, four skips and one failure in the unchanged
+`github-git-transport.test.ts` recursive native SSH clone fixture, which returns
+`context_unreadable`. This makes the root `pnpm check` fail, and its remaining
+package test chain is not reported complete. The five targeted execution suites
+also pass all 360 cases after the environment restrictions were removed.
+Production services, device recovery and packaging acceptance remain unverified.

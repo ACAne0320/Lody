@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1713](https://github.com/LodyAI/Lody/pull/1713)
 
 [English](2026-10-19-repo-upgrade-without-consumer-migration.md)
 
@@ -25,6 +26,6 @@ Translation: current
 
 ## 验证
 
-冻结安装、全仓类型检查、格式化、类型感知 lint、Effect lint、58 项脚本测试和仓库边界检查通过。CLI 定向测试 467 项通过，renderer 同步/runtime/action 测试 308 项通过，RPC 153 项通过、3 项既定跳过。此前被沙箱阻塞的两组 Shared 监听测试现已全部通过，共 14 项。Shared 声明生成与文档检查通过，文档保留 69 个警告。
+冻结安装、全仓类型检查、格式化、类型感知 lint、Effect lint、58 项脚本测试、i18n 和全部仓库边界检查通过。renderer 全量 5,615 项通过，Shared 全量 1,571 项通过。RPC 153 项通过、3 项既定跳过。Shared 声明生成和文档检查通过，文档保留 69 个警告。
 
-完整根应用测试链仍在运行，交付前会将最终结果记录到 PR。生产服务、设备恢复和打包验收未验证。
+CLI 全量 4,385 项通过、4 项跳过、1 项失败。失败来自未修改的 `github-git-transport.test.ts` 递归原生 SSH 克隆测试，返回 `context_unreadable`，因此根 `pnpm check` 失败，不宣称其剩余包测试链全部完成。环境限制移除后，五组定向执行测试也全部通过，共 360 项。生产服务、设备恢复和打包验收未验证。
