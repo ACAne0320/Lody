@@ -46,6 +46,15 @@ detach; reattachment updates the same Repo. Request timeout only stops its Defer
 waiter, never acquisition or the reader lease. Existing manager/Repo transport
 recovery handles reconnect; this unit does not loop rejoin on detached bindings.
 
+A transient metadata save failure can leave the room healthy and joined while
+`waitFor` returns a tagged error. Filtering that error stranded the initial
+baseline until a transport state change. The reader now passes the original SDK
+error into capped backoff and retries only the barrier on the same stable binding;
+it keeps its room and replica leases. Detached results still wait for a status
+event rather than polling. Concurrent requests share recovery, remain unconfirmed
+until success, and cannot cancel it. Closing the owner interrupts backoff and
+releases readers without treating recovered background errors as cleanup failures.
+
 ## Failure and shutdown
 
 The installed SDK releases the room reference when a join rejects. The entry
@@ -83,13 +92,16 @@ workspace and Machine cold reads; later edits; detach/reattach; same-key ownersh
 failed/slow acquisition; waiter timeout; close/late results; sibling cleanup after
 defects; strict no-route rejection; and create/update failure with no history row
 followed by same-id retry. MCP integration uses the real manager and local socket.
+Real metadata-save fault injection also covers a joined room recovering without
+reattachment, retained data, concurrent waiter expiry, independent Flock reads,
+continued failures through the 30-second retry cap and shutdown during backoff.
+The recovery regression fails against the previous error-filtering implementation.
 No live cloud, device recovery, packaged-app or production acceptance is claimed.
 
 Verification passes `env -u GIT_EXEC_PATH pnpm check`, `pnpm format`, changed-test
 typechecking and `pnpm run docs check` with existing documentation warnings.
-The five targeted suites pass 75 cases, independently repeated by a read-only
-reviewer with no proven P0/P1. Removing only the inherited session Git exec-path
-is required for the unchanged recursive native SSH fixture; its isolated rerun
+The suite requires local HTTP/MCP listeners. Removing only the inherited session
+Git exec-path is required for the unchanged recursive native SSH fixture; its isolated rerun
 passes with the same environment adjustment. No source workaround was added.
 
 The patch targets OSS main, which retains #1692. It neither reverts nor restores

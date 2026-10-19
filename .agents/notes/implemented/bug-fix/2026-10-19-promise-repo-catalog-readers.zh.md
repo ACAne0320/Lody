@@ -20,6 +20,8 @@ workspace 启动时在后台建立元数据和 workspace reader。请求只为�
 
 cloud baseline 要求稳定的 `streams` binding 完成 `caught-up` 阶段的 `waitFor`，包括元数据 hydration。此前缓存仍可读，但返回 syncing/unknown，缺失 get 可重试。本地组合在本地 acquisition 完成后有权威数据。确认过的 baseline 在 detach 时仍允许读缓存；reattach 更新同一个 Repo。请求超时只结束 Deferred 等待者，不取消 acquisition 或释放 reader。传输恢复继续由已有 manager/Repo 管理；这里不对 detached binding 启动 rejoin 循环。
 
+临时元数据落盘失败时，room 可能仍健康且 joined，但 `waitFor` 返回 tagged error。此前过滤该错误会让首次 baseline 一直等到传输状态变化。reader 现在将原始 SDK 错误交给有限退避，只重试同一稳定 binding 的屏障，保留 room 与副本 lease。detached 结果仍等待状态事件，不轮询。同 key 请求共享恢复，成功前保持未确认，请求不能取消恢复。owner 关闭时中断退避并释放 reader；已恢复的后台错误不变成 cleanup 失败。
+
 ## 失败与关闭
 
 已安装 SDK 在 join 拒绝时释放 room 引用，entry 以最大 30 秒的指数退避重试。cleanup defect 不启动替代 reader。owner 保留 fiber Exit，诊断只输出安全摘要；Scope 关闭先中断并等待所有 reader，再交付 cleanup 失败。room 释放失败时仍尝试释放副本。manager 记录 reader 关闭失败后继续独立清理和 Repo 销毁。
@@ -34,8 +36,8 @@ Promise acquisition 不接受 abort。关闭会阻止其后续接入 room 并释
 
 ## 证据与限制
 
-测试使用真实 Promise Repo/Flock 副本、内存传输边界、显式完成信号与 Effect TestClock，覆盖元数据、workspace 和 Machine 冷读取、后续编辑、detach/reattach、同 key 所有权、失败与慢 acquisition、等待者超时、关闭与迟到结果、cleanup defect 后的独立释放、严格 no-route 拒绝，以及创建/更新失败不写历史后用相同 id 重试。MCP 集成使用真实 manager 和本地 socket。未声称验证真实 cloud、设备恢复、打包应用或生产验收。
+测试使用真实 Promise Repo/Flock 副本、内存传输边界、显式完成信号与 Effect TestClock，覆盖元数据、workspace 和 Machine 冷读取、后续编辑、detach/reattach、同 key 所有权、失败与慢 acquisition、等待者超时、关闭与迟到结果、cleanup defect 后的独立释放、严格 no-route 拒绝，以及创建/更新失败不写历史后用相同 id 重试。元数据 save 故障注入还覆盖 joined room 无需重新接入即可恢复、保留数据、并发等待者超时、独立 Flock 读取、持续失败达到 30 秒退避上限，以及退避期间关闭。恢复测试在此前过滤错误的实现上失败。MCP 集成使用真实 manager 和本地 socket。未声称验证真实 cloud、设备恢复、打包应用或生产验收。
 
-验证已通过 `env -u GIT_EXEC_PATH pnpm check`、`pnpm format`、变更测试的类型检查和 `pnpm run docs check`，文档检查保留既有告警。5 个目标 suite 的 75 个用例通过，独立只读审查复跑通过且未发现可证明的 P0/P1。未改动的递归 native SSH fixture 需要仅移除会话注入的 Git exec-path；相同环境调整下的独立重跑通过，没有增加源码绕过。
+验证已通过 `env -u GIT_EXEC_PATH pnpm check`、`pnpm format`、变更测试的类型检查和 `pnpm run docs check`，文档检查保留既有告警。全套测试需要允许本地 HTTP/MCP 监听。未改动的递归 native SSH fixture 需要仅移除会话注入的 Git exec-path；相同环境调整下的独立重跑通过，没有增加源码绕过。
 
 补丁直接基于保留 #1692 的 OSS main，不撤回或恢复该 PR。#1679 idle GC、依赖版本、发布 changelog 和私有仓发布指针均不变。最终 PR 记录基线和最终验证版本。

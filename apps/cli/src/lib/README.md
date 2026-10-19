@@ -30,6 +30,8 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
   `catalog_syncing` uncertainty until confirmed; later reads never force catch-up.
   `loro/workspace-catalog-sync.ts` holds metadata, workspace and authorized Machine
   readers on the existing Promise Repo using its public room and replica leases.
+  Failed baseline barriers retry with capped backoff on the same binding, so a
+  temporary storage error can recover without replacing the reader or reconnecting.
   `workspace-catalog-sync-legacy.ts` owns the manager-facing Scope and closes it
   before Repo shutdown; transport recovery keeps live rooms current.
   Role create/update proposals require confirmed metadata/workspace synchronization;

@@ -19,6 +19,7 @@ import {
 import type { Logger } from '@/utils/logger';
 import { makeWorkspaceCatalogSync } from './workspace-catalog-sync';
 import { WorkspaceCatalogSyncLegacy } from './workspace-catalog-sync-legacy';
+import { makePromiseRepoNetwork } from './promise-repo-network.test-support';
 
 const workspaceId = 'catalog-sync-test' as WorkspaceId;
 const workspace = getWorkspaceFlockDocId(workspaceId);
@@ -152,6 +153,119 @@ const fixture = Effect.fnUntraced(function* () {
 });
 
 describe('daemon Promise Repo catalog ownership', () => {
+  for (const recover of [true, false]) {
+    it.effect(
+      recover
+        ? 'recovers a failed metadata durability barrier without replacing the joined reader'
+        : 'bounds repeated baseline failures and releases readers while storage is still unavailable',
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            let unavailable = true;
+            let persisted = false;
+            const originalError = new Error('SQLITE_BUSY');
+            const failures = Array.from({ length: 7 }, () => signal<unknown>());
+            let failureIndex = 0;
+            const repo = yield* Effect.acquireRelease(
+              Effect.promise(() =>
+                LoroRepo.create({
+                  metaDebounceCommitMs: 0,
+                  // The explicit baseline barrier owns this flush, not a real timer.
+                  metaPersistDebounceMs: 60_000,
+                  storageAdapter: {
+                    loadMeta: async () => undefined,
+                    loadDoc: async () => undefined,
+                    loadFlockDoc: async () => undefined,
+                    save: async (payload) => {
+                      if (payload.type !== 'meta-update' && payload.type !== 'meta-snapshot')
+                        return;
+                      if (unavailable) throw originalError;
+                      persisted = true;
+                    },
+                  },
+                })
+              ),
+              (acquiredRepo) => Effect.promise(() => acquiredRepo.destroy())
+            );
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                // Terminal Repo flush is independent of the stopped baseline reader.
+                unavailable = false;
+              })
+            );
+            const meta = yield* Effect.promise(() => repo.joinMetaRoom());
+            yield* Effect.addFinalizer(() => Effect.sync(() => meta.unsubscribe()));
+            const binding = meta.subscription('streams');
+            const waitFor = binding.waitFor.bind(binding);
+            // Observe actual SDK results without changing its barrier or storage behavior.
+            vi.spyOn(binding, 'waitFor').mockImplementation(async (options) => {
+              const result = await waitFor(options);
+              if (result.status === 'error') failures[failureIndex++]?.resolve(result.error);
+              return result;
+            });
+            yield* Effect.promise(() => repo.upsertDocMeta('machine:target', { name: 'retained' }));
+            const owner = yield* Scope.make();
+            yield* Effect.addFinalizer(() => Scope.close(owner, Exit.void));
+            const sync = yield* Scope.provide(
+              makeWorkspaceCatalogSync(repo, workspaceId, logger),
+              owner
+            );
+            yield* Effect.promise(() =>
+              repo.addTransport('streams', makePromiseRepoNetwork().transport())
+            );
+            expect(yield* Effect.promise(() => failures[0]!.promise)).toBe(originalError);
+            expect(binding.status).toBe('joined');
+            const attached = repo.transportRooms('streams');
+            const waiters = yield* Effect.forkChild(
+              Effect.all([sync.ready(undefined, 250), sync.ready(undefined, 250)], {
+                concurrency: 'unbounded',
+              })
+            );
+            yield* TestClock.adjust(250);
+            expect(yield* Fiber.join(waiters)).toEqual([false, false]);
+            expect(persisted).toBe(false);
+            // A metadata persistence failure must not stop independent Flock readers.
+            expect(yield* sync.ready(workspace, 1_000)).toBe(true);
+            expect(yield* sync.ready(machine, 1_000)).toBe(true);
+            yield* TestClock.adjust(750);
+            expect(yield* Effect.promise(() => failures[1]!.promise)).toMatchObject({
+              errors: [originalError, originalError],
+            });
+            if (recover) {
+              unavailable = false;
+              yield* TestClock.adjust(2_000);
+              expect(yield* sync.ready(undefined, 1_000)).toBe(true);
+              expect(persisted).toBe(true);
+              expect(binding.status).toBe('joined');
+              expect(repo.transportRooms('streams')).toEqual(expect.arrayContaining(attached));
+              expect(
+                (yield* Effect.promise(() => repo.getDocMeta('machine:target')))?.meta.name
+              ).toBe('retained');
+              expect(yield* sync.ready(undefined, 0)).toBe(true);
+            } else {
+              // Retry backoff grows to 30s, independent of how often requests arrive.
+              for (const [index, delay] of [2_000, 4_000, 8_000, 16_000, 30_000].entries()) {
+                yield* TestClock.adjust(delay);
+                expect(yield* Effect.promise(() => failures[index + 2]!.promise)).toMatchObject({
+                  errors: [originalError, originalError],
+                });
+                expect(yield* sync.ready(undefined, 0)).toBe(false);
+                expect(persisted).toBe(false);
+              }
+            }
+            yield* Scope.close(owner, Exit.void);
+            for (const id of [workspace, machine])
+              yield* Effect.promise(() => repo.unloadFlockDoc(id));
+            meta.unsubscribe();
+            expect(repo.transportRooms('streams')).toEqual([]);
+            const failuresAtClose = failureIndex;
+            yield* TestClock.adjust(120_000);
+            expect(failureIndex).toBe(failuresAtClose);
+          })
+        )
+    );
+  }
+
   it.effect(
     'bounds cold waits, shares same-key ownership, and observes live edits after detach/reattach',
     () =>

@@ -7,7 +7,7 @@ import { STREAMS_TRANSPORT_ID } from './streams-room-binding';
 const reportFailure = (logger: Logger, workspaceId: WorkspaceId) => {
   try {
     // SDK failures may contain credentials; keep raw failures out of diagnostics.
-    logger.debug(`[${workspaceId}] Catalog reader acquisition/cleanup failed`);
+    logger.debug(`[${workspaceId}] Catalog reader acquisition/baseline/cleanup failed`);
   } catch {
     // Diagnostics cannot interrupt resource recovery.
   }
@@ -74,7 +74,7 @@ const acquireCatalogRoom = Effect.fnUntraced(function* (
 });
 
 /** Observe the stable Streams binding across detach/reattach without syncing it. */
-const firstBaseline = (room: RepoRoomSubscription) => {
+const firstBaseline = (room: RepoRoomSubscription, workspaceId: WorkspaceId, logger: Logger) => {
   const binding = room.subscription(STREAMS_TRANSPORT_ID);
   return Stream.callback<void>(
     Effect.fnUntraced(function* (queue) {
@@ -87,7 +87,17 @@ const firstBaseline = (room: RepoRoomSubscription) => {
     { bufferSize: 1, strategy: 'sliding' }
   ).pipe(
     Stream.mapEffect(() =>
-      Effect.promise((signal) => binding.waitFor({ phase: 'caught-up', signal }))
+      Effect.promise((signal) => binding.waitFor({ phase: 'caught-up', signal })).pipe(
+        // A failed hydration/persistence barrier is a tagged result, not a rejection.
+        // Retry only the barrier on this stable binding, retaining both reader leases.
+        Effect.flatMap((result) =>
+          result.status === 'error' ? Effect.fail(result.error) : Effect.succeed(result)
+        ),
+        Effect.tapError(() => Effect.sync(() => reportFailure(logger, workspaceId))),
+        Effect.retry({
+          schedule: Schedule.min([Schedule.exponential('1 second'), Schedule.spaced('30 seconds')]),
+        })
+      )
     ),
     Stream.filter((result) => result.status === 'complete'),
     Stream.take(1),
@@ -144,7 +154,7 @@ export const makeWorkspaceCatalogSync = Effect.fnUntraced(function* (
       Effect.gen(function* () {
         const room = yield* acquireCatalogRoom(repo, id, workspaceId, logger);
         if (!room) return;
-        if (requireRemoteBaseline) yield* firstBaseline(room);
+        if (requireRemoteBaseline) yield* firstBaseline(room, workspaceId, logger);
         entry.baseline = true;
         yield* Deferred.succeed(entry.ready, true);
         yield* Effect.never;
