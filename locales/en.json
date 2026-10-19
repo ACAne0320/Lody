@@ -823,7 +823,6 @@
   "composer.promptPlaceholder.mobileSkills": "Press '$' for skills.",
   "composer.promptPlaceholder.skills": "Press '$' for skills.",
   "desktopGithubInstall.openButton": "Open Lody Desktop",
-  "desktopGithubInstall.opening": "Opening Lody Desktop…",
   "desktopGithubInstall.title": "Continue in Lody Desktop",
   "device.codeHint": "Code is case-insensitive",
   "device.codePlaceholder": "Enter 8-digit code",
@@ -5011,5 +5010,16 @@
   "sessions.inputOutcomeUnknown": "The conversation machine has not confirmed this message. Check the original send result.",
   "sessions.removeLocalInput": "Remove local copy",
   "sidebar.filter.showBranchNames": "Show Branch",
-  "sidebar.filter.detailsHeading": "Details"
+  "sidebar.filter.detailsHeading": "Details",
+  "desktopGithubInstall.arriveDescription": "Getting Lody Desktop ready",
+  "desktopGithubInstall.arriveTitle": "Connecting GitHub",
+  "desktopGithubInstall.copied": "Copied",
+  "desktopGithubInstall.copyLink": "Copy link",
+  "desktopGithubInstall.description": "GitHub is installed. Finish connecting it in the app.",
+  "desktopGithubInstall.fallback": "Nothing happened? Copy the link and paste it into the address bar.",
+  "desktopGithubInstall.markLabel": "GitHub and Lody",
+  "device.markLabel": "Terminal and Lody",
+  "invite.markLabel": "Workspace and Lody",
+  "emailVerified.markLabel": "Email and Lody",
+  "desktopCheckoutReturn.markLabel": "Stripe and Lody"
 }
