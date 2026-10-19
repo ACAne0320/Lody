@@ -105,6 +105,7 @@ silently rewrite the active invariant or claim approval.
    composition and use synthetic MCP E2E fixtures rather than personal catalog data.
 
 Research inspected source and existing contracts; no application code was changed,
-no behavioral tests or packaged UI checks were run, and there is no PR or approval.
+no behavioral tests or packaged UI checks were run, and there is no approval.
+Draft PR: [#1708](https://github.com/LodyAI/Lody/pull/1708).
 Documentation checks are recorded in the task response. Private catalog data and
 retrieved conversation content are intentionally excluded from repository artifacts.
