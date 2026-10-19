@@ -832,7 +832,6 @@
   "composer.promptPlaceholder.mobileSkills": "按 '$' 使用技能。",
   "composer.promptPlaceholder.skills": "按 '$' 使用技能。",
   "desktopGithubInstall.openButton": "打开 Lody Desktop",
-  "desktopGithubInstall.opening": "正在打开 Lody Desktop…",
   "desktopGithubInstall.title": "继续使用 Lody Desktop",
   "device.codeHint": "验证码不区分大小写",
   "device.codePlaceholder": "输入8位验证码",
@@ -5095,5 +5094,16 @@
   "sidebar.filter.showBranchNames": "显示分支",
   "sidebar.filter.detailsHeading": "详情",
   "login.lastUsed": "上次使用",
-  "login.tagline": "为团队正在使用的 Coding Agents 提供一个共享工作空间。"
+  "login.tagline": "为团队正在使用的 Coding Agents 提供一个共享工作空间。",
+  "desktopGithubInstall.arriveDescription": "正在准备 Lody Desktop",
+  "desktopGithubInstall.arriveTitle": "正在连接 GitHub",
+  "desktopGithubInstall.copied": "已复制",
+  "desktopGithubInstall.copyLink": "复制链接",
+  "desktopGithubInstall.description": "GitHub 已安装，回到应用中完成连接。",
+  "desktopGithubInstall.fallback": "没有反应？复制链接，粘贴到地址栏打开。",
+  "desktopGithubInstall.markLabel": "GitHub 与 Lody",
+  "device.markLabel": "终端与 Lody",
+  "invite.markLabel": "工作区与 Lody",
+  "emailVerified.markLabel": "邮箱与 Lody",
+  "desktopCheckoutReturn.markLabel": "Stripe 与 Lody"
 }
