@@ -93,17 +93,19 @@ Child directories (`sessions/`, `mobile/`, …) own their own rules.
 
 ## Conversation access
 
-- `session-sharing.tsx` owns ONE desktop header control for both access axes.
-  Team visibility picks the shape — private keeps the menu explaining its
-  inherited machine/project scope before either sharing action, anything else is
-  a plain button — and a published link picks the label in both shapes, being
-  the wider disclosure. Never add a second badge beside it; the private scope
-  stays the menu's first block.
-- `useSessionShareStatus` is the only cloud read a header makes while the share
-  editor is CLOSED: the management row, never a source document. `unknown` reads
-  as not-yet-shared, so the label upgrades in place instead of flashing in.
-- The page owns that editor: header control and `…` menu open the same
-  `SessionShareDialog`, keyed by session id so a switching tab cannot retarget it.
+- `session-sharing.tsx` owns ONE desktop header control for both access axes: a
+  "Share" trigger over one popover that answers "who can open this" with a title,
+  a faint watermark and a sliding audience strip (you, team, web) that shows what
+  IS, never a preview. Narrowing is not offered; blocked audiences are disabled
+  with the reason in the caption. Plain ghost rows follow, sharing the `⋯`
+  menu's handlers; path and base branch stay in `⋯` only. No tabs, search or
+  second badge. [Why](../../../../.agents/notes/implemented/feature/2026-09-14-session-header-share-control.md).
+- `useSessionShareStatus` is the only cloud read a header makes while the editor
+  is CLOSED: the management row, never a source document. `unknown` reads as
+  not-yet-shared, so the label upgrades in place instead of flashing in.
+- The panel hosts the publish editor inline (`renderEditor`, mounted only while
+  open, keyed by session id) and stays open while publishing; `⋯` opens the same
+  editor in `SessionShareDialog`.
 
 ## Local projects
 

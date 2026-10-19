@@ -5,9 +5,10 @@ Parent rules apply. `CLAUDE.md` is a symlink; edit this file only.
 - Breaking static-publication cutover in progress: do not deploy until the
   anonymous reader, MCP confirmation, GC and integration fixtures switch
   together. [Intent](../../../../../specs/session-sharing.md).
-- `session-share-dialog.tsx` and controlled `session-share-manager.tsx` own
-  authenticated publication. The manager is one screen at a time — setup,
-  publishing, published — with exactly one primary action each.
+- `session-share-dialog.tsx`, `session-share-panel.tsx` and controlled
+  `session-share-manager.tsx` own authenticated publication. The manager is one
+  screen at a time — setup, publishing, published — with exactly one primary
+  action each.
   A human action starts publication; the package is frozen in full before any
   byte is uploaded. Include all selected stored history, including
   thought/tool content with the [sharing projection](../../../../../specs/session-sharing.md).
@@ -16,6 +17,8 @@ Parent rules apply. `CLAUDE.md` is a symlink; edit this file only.
   reuses the frozen retry keys), uploads and commits. There is no publication
   preview or prepare-only action. A stale draft is revoked by the next publish,
   never on dialog open.
+- The header panel hosts the editor inline (`session-share-panel.tsx`, `embedded`
+  manager; [why](../../../../../.agents/notes/implemented/feature/2026-09-14-session-header-share-control.md)); `⋯` still opens the dialog.
 - Progress must stay honest: only the object upload has a byte total, so only it
   may show a percentage; capture and the publish commit use the indeterminate
   sweep. Auto-copy may claim "copied" only after the clipboard write resolves; a

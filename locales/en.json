@@ -5011,5 +5011,17 @@
   "sessions.inputOutcomeUnknown": "The conversation machine has not confirmed this message. Check the original send result.",
   "sessions.removeLocalInput": "Remove local copy",
   "sidebar.filter.showBranchNames": "Show Branch",
-  "sidebar.filter.detailsHeading": "Details"
+  "sidebar.filter.detailsHeading": "Details",
+  "sharing.static.phaseHintPanel": "Keep this panel open until it finishes.",
+  "sharing.static.readOnlyTag": "Read-only",
+  "sharing.static.cardPlaceholder": "Your link appears here",
+  "sharing.static.cardReady": "Link ready",
+  "sessions.sharing.panelTitle": "Share this conversation",
+  "sharing.header.manageLink": "Manage link",
+  "sharing.header.publishTitle": "Publish to the web",
+  "sharing.header.whoCanOpen": "Who can open this",
+  "sharing.header.anyoneWithLink": "Anyone with the link",
+  "sharing.header.audienceYou": "Only you",
+  "sharing.header.audienceTeam": "Team",
+  "sharing.header.audienceWeb": "Web"
 }
