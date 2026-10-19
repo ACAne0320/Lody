@@ -29,9 +29,7 @@ their own eyebrow and badge; `device-auth-page.tsx` used a card with an alert an
 a 10-second countdown back to `/`, although the person's next step is in their
 terminal; `email-verified-page.tsx`, `desktop-checkout-return-page.tsx` and
 `desktop-github-install-page.tsx` each drew their own centered card, and errors
-everywhere were free text in a separate block. The login redesign
-([login inset visual](2026-10-17-login-inset-visual-last-used.md)) owns the
-product's illustrated moment; these pages should not compete with it.
+everywhere were free text in a separate block. The login page owns the product's illustrated moment; these pages should not compete with it.
 
 ## Reference
 

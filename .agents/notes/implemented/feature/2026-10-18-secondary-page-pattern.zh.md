@@ -11,7 +11,7 @@ Translation: current
 
 ## 问题
 
-从 `components/pages/*` 读到：`accept-invitation-page.tsx` 有六个状态，各带 eyebrow 和徽标；`device-auth-page.tsx` 用卡片加 Alert，并在 10 秒后跳回 `/`，而用户的下一步其实在终端；`email-verified-page.tsx`、`desktop-checkout-return-page.tsx`、`desktop-github-install-page.tsx` 各自画一张居中卡片，所有错误都是独立区块里的自由文本。登录页重设计（[login inset visual](2026-10-17-login-inset-visual-last-used.zh.md)）承担了产品的插画时刻，这些页面不应与它竞争。
+从 `components/pages/*` 读到：`accept-invitation-page.tsx` 有六个状态，各带 eyebrow 和徽标；`device-auth-page.tsx` 用卡片加 Alert，并在 10 秒后跳回 `/`，而用户的下一步其实在终端；`email-verified-page.tsx`、`desktop-checkout-return-page.tsx`、`desktop-github-install-page.tsx` 各自画一张居中卡片，所有错误都是独立区块里的自由文本。登录页承担了产品的插画时刻，这些页面不应与它竞争。
 
 ## 参考
 
