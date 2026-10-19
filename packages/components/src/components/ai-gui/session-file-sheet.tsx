@@ -220,6 +220,10 @@ function SheetArt({ art }: { art: Art }) {
           <span {...stylex.props(sheet.trace, sheet.line('55%', '0%'))} />
         </span>
       );
+    default: {
+      const unreachable: never = art;
+      return unreachable;
+    }
   }
 }
 
