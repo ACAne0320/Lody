@@ -5105,5 +5105,17 @@
   "device.markLabel": "终端与 Lody",
   "invite.markLabel": "工作区与 Lody",
   "emailVerified.markLabel": "邮箱与 Lody",
-  "desktopCheckoutReturn.markLabel": "Stripe 与 Lody"
+  "desktopCheckoutReturn.markLabel": "Stripe 与 Lody",
+  "sharing.static.phaseHintPanel": "完成前请保持此面板打开。",
+  "sharing.static.readOnlyTag": "只读",
+  "sharing.static.cardPlaceholder": "链接会出现在这里",
+  "sharing.static.cardReady": "链接已就绪",
+  "sessions.sharing.panelTitle": "分享此对话",
+  "sharing.header.manageLink": "管理链接",
+  "sharing.header.publishTitle": "发布到网页",
+  "sharing.header.whoCanOpen": "谁可以打开",
+  "sharing.header.anyoneWithLink": "任何拿到链接的人",
+  "sharing.header.audienceYou": "仅自己",
+  "sharing.header.audienceTeam": "团队",
+  "sharing.header.audienceWeb": "网页"
 }
