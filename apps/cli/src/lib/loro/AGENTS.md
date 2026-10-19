@@ -100,8 +100,8 @@ observer-lease driven; never start OS probes permanently or persist snapshots.
 
 ## Catalog readers
 
-`workspace-catalog-sync.ts`: daemon readers, bounded baseline waits, uncertain reads.
-Role validation requires fresh sync. Repo owns reader release.
+Readers share this Promise Repo; close before destroying it. Timeout ends only
+the waiter. Role writes confirm remote sync.
 
 ## Machine Flock writes for this machine are local-first
 

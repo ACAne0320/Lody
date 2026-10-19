@@ -28,9 +28,12 @@ subdirectory; this file is the navigation index. Cross-module explanations live 
 - `resource-discovery-runtime.ts` — workspace readers and caller-specific authorization.
   Daemon reads wait briefly for the first baseline, then return cached results with
   `catalog_syncing` uncertainty until confirmed; later reads never force catch-up.
-  `loro/workspace-catalog-sync.ts` holds the daemon workspace Flock reader room,
-  including headless startup; native transport recovery keeps it current.
-  Role proposal target validation requires fresh metadata/target synchronization.
+  `loro/workspace-catalog-sync.ts` holds metadata, workspace and authorized Machine
+  readers on the existing Promise Repo using its public room and replica leases.
+  `workspace-catalog-sync-legacy.ts` owns the manager-facing Scope and closes it
+  before Repo shutdown; transport recovery keeps live rooms current.
+  Role create/update proposals require confirmed metadata/workspace synchronization;
+  creation also confirms the authorized target catalog before publishing a card.
   Standalone CLI calls synchronize unless `--offline`. Authorization and cloud presence
   remain online-aware independently of the catalog read policy.
   Intent and limits: [resource discovery](../../../../specs/resource-discovery.md).
