@@ -165,7 +165,9 @@ describe('SessionAccessControl', () => {
     await render({ state: privateState, publicShare: { status: 'none', renderEditor } });
 
     await openPanel();
-    expect(panel().textContent).toContain('Who can open this');
+    expect(panel().querySelector('[role="tablist"]')?.getAttribute('aria-label')).toBe(
+      'Who can open this'
+    );
     expect(panel().textContent).toContain('Private to you');
     // The mocked translator does not interpolate, so assert the reason text
     // the private branch resolved rather than the project name it names.

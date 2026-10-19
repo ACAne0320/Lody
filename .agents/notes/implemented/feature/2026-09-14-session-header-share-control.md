@@ -135,8 +135,9 @@ published private conversation reads "Shared" while its menu still names the
 private scope and the link disclosure. `use-session-share-management.test.tsx`
 gains the status hook: active reads `shared`, absent and `draft`/`revoked` read
 `none`, an unanswered query stays `unknown`, and no workspace reports `none`
-whatever the control plane holds. Both files, plus the existing header-menu,
-share-manager and mobile-menu suites, pass.
+whatever the control plane holds. The audience tablist has the accessible name
+"Who can open this". Both files, plus the existing header-menu, share-manager
+and mobile-menu suites, pass.
 
 Layout was reviewed from rendered Storybook screenshots of
 `Sessions/SessionAccessControl` in both themes, covering the plain share button,

@@ -637,12 +637,12 @@ export function SessionAccessControl({
                 </div>
                 {stops.length > 1 ? (
                   <div {...stylex.props(accessPanel.stops)}>
-                    <Tabs.Root
-                      value={current}
-                      onValueChange={(next) => choose(next as AccessStop)}
-                      aria-label={t('sharing.header.whoCanOpen', 'Who can open this')}
-                    >
-                      <Tabs.List size="small" stretch>
+                    <Tabs.Root value={current} onValueChange={(next) => choose(next as AccessStop)}>
+                      <Tabs.List
+                        size="small"
+                        stretch
+                        aria-label={t('sharing.header.whoCanOpen', 'Who can open this')}
+                      >
                         {stops.map((stop) => (
                           <Tabs.Tab
                             key={stop.id}

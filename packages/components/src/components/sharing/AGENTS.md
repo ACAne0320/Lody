@@ -17,12 +17,9 @@ Parent rules apply. `CLAUDE.md` is a symlink; edit this file only.
   reuses the frozen retry keys), uploads and commits. There is no publication
   preview or prepare-only action. A stale draft is revoked by the next publish,
   never on dialog open.
-- The header panel hosts the editor inline (`session-share-panel.tsx`, `embedded`
-  manager; [why](../../../../../.agents/notes/implemented/feature/2026-09-14-session-header-share-control.md)); `⋯` still opens the dialog.
-- Progress must stay honest: only the object upload has a byte total, so only it
-  may show a percentage; capture and the publish commit use the indeterminate
-  sweep. Auto-copy may claim "copied" only after the clipboard write resolves; a
-  rejected write shows the manual-copy field.
+- Progress is determinate only for object upload. Claim auto-copy only after clipboard success; otherwise show manual copy.
+- The header panel keeps the editor inline in `session-share-panel.tsx` with the `embedded` manager;
+  `⋯` still opens the dialog.
 - MCP consent names purpose, exact targets and full URL delivery to the agent.
   One approval starts an independent share and encrypted result delivery.
   Hide cards on local or canonical publication success.
