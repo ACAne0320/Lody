@@ -410,14 +410,14 @@ describe('HomeDashboard', () => {
 
       // A focused "now" row leaves with the board; the fold control takes the focus.
       click(fold());
-      press(segment('now'));
+      click(segment('now'));
       const row = q('[data-session="run"]')!;
       act(() => {
         row.focus();
       });
       press(row);
       expect(byTestId('home-now')).toBeNull();
-      expect(boards).toEqual([null, 'week', null, 'now', null]);
+      expect(boards).toEqual([null, 'week', null, 'week', 'now', null]);
       expect(document.activeElement).toBe(fold());
 
       // A text field keeps its Escape.
@@ -425,7 +425,8 @@ describe('HomeDashboard', () => {
       const field = document.createElement('textarea');
       byTestId('home-dashboard')!.appendChild(field);
       press(field);
-      expect(byTestId('home-week')).not.toBeNull();
+      expect(byTestId('home-now')).not.toBeNull();
+      expect(boards).toEqual([null, 'week', null, 'week', 'now', null, 'now']);
       field.remove();
     });
 

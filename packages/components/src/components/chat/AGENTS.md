@@ -87,34 +87,9 @@ project.sharedWithTeam`. The selected Private segment opens `ProjectShareDialog`
   user turn is locally accepted, submit MUST hand the lease to the durable session
   before clearing the draft or navigating; a successful handoff must not send
   `session/prepare-cancel`.
-- The desktop landing keeps its composer docked at the bottom (the session composer's
-  shell class); above it, centred in that band (not on the whole page), sit a plain heading
-  and, in the composer's `ConversationColumn`, `HomeDashboard`: ONE line with a segment per board and
-  under it the open board (folded by default; "now" or the last seven days when unfolded). The other segment swaps
-  them; the open one or the end control folds it into the line, where each segment shows
-  its summary. Never per-tile toggles or a settings list. The choice is device-local
-  (`lody:homeBoard`). [Decisions](../../../../../.agents/notes/implemented/feature/2026-10-16-home-week-tiles.md).
-- "Now" (`lib/home-now.ts` over `homeNowInputAtom`: the signed-in user's open root
-  sessions, presence rolled up from child tabs) puts each session in ONE list by first
-  reason: waiting > running > CI failed > unread > draft > ready to merge > open PR >
-  recent. A running agent is never "needs you". Rows open their session. Height is
-  `layoutHomeNow`'s: a row budget by priority (needs you never gives way) within the rows
-  the landing stage has room for (`landing-stage.ts`), two columns levelled with real rows,
-  empty lists not drawn, one calm tile when all are empty. "Show all" — or the tile itself,
-  while it hides rows (`total > shown`), a row press excluded — opens the whole list
-  in the board's frame, never grows a tile in place. Too short for one row per list, the
-  board shows folded without changing `lody:homeBoard`. The plan usage
-  (shortest window only; a known Codex reset in its own tile beside it, never inside) lives
-  on "now"; the forecast loads only while "now" is open ([rules](../codex-reset/AGENTS.md)).
-- The week board keeps the activity wall (workdays, newest weeks that fit, four blue steps
-  over a neutral quiet gray, ONE shared day tooltip, never bars), merged PRs, streak,
-  agents and repository; no cost, start-hours, longest conversation or busiest day.
-- Both boards: tiles placed by hand, never auto-flow; rows are `minmax(…, auto)` floors;
-  empty or not-yet-loaded data shows zeros or an empty-list line, never a hole. The well,
-  no shadow, hairline charts, no canvas/WebGL/per-frame script; tile text is never
-  `tertiaryLabel`. Motion: the week's one-time roll-up, the wall fading in, and switching
-  as one quiet View Transition (height eases, boards cross-fade, the pill glides; never
-  scaled or flown); all off under reduced motion.
+- Home starts folded; Now/Week choice is local. Keep stage-fitted Now priorities, Week activity
+  wall and hand-placed empty-safe tiles; honor reduced motion. Load Codex forecast only on Now.
+  [Contract](../../../../../.agents/notes/implemented/feature/2026-10-16-home-week-tiles.md).
 - `chat-landing-view.tsx` renders `ChatComposer`; stateful loading stays in
   `chat-landing.tsx`, session-mention drop handling in the view. Paint the page-level
   `ConversationDropOverlay` when sidebar drag starts, before `dragenter`. Desktop
@@ -128,17 +103,12 @@ project.sharedWithTeam`. The selected Private segment opens `ProjectShareDialog`
   (`[data-keyboard-nav="composer"]`), never the trigger. Use `lib/menu-focus.ts`
   through `ui/dropdown-menu` and `OptionSelector`, including keep-open run-config
   selections (`event.preventDefault`).
-- Desktop landing's machine/project/branch menus always open upward with collision
-  flipping disabled. Their top-row labels and glyphs, including disabled branch
-  state, share the same neutral foreground level.
+- Landing menus open upward; triggers share neutral ink, including disabled branches.
 - The ACP provider cycle command uses the same single-machine scope as the visible
   provider menu. Never cycle all workspace configs while retaining the old machine id.
 - Mobile composer pickers rely on `MobileInlinePicker` plus
   `MobileInlinePickerRowSlot` so dropdown panels project to a full-row slot,
   never resizing a narrow footer chip.
-- Keep raw local Git, Machine RPC, and Streams failures out of landing status copy;
-  retain them for submit blocking, telemetry, logging, and scoped retry. Status copy
-  is for actionable validation and selected-machine project guidance.
-- Chat Landing must not initiate ACP capability probes: startup refresh lives in
-  the workspace runtime and explicit probes in settings/onboarding. Do not render
-  their spinner, download progress, or ready state in the landing composer.
+- Keep raw local Git/Machine RPC/Streams failures for blocking, telemetry, logs and scoped retry;
+  status copy shows actionable validation and selected-machine project guidance only.
+- Landing never probes ACP capabilities; refresh belongs to runtime or explicit settings/onboarding.

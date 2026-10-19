@@ -650,19 +650,6 @@ export function NowBoard({
         );
     }
   };
-  const board = (
-    <div {...stylex.props(styles.columns, layout.columns.length === 1 && styles.single)}>
-      {layout.columns.map((column, index) => (
-        <div
-          key={index}
-          data-now-column={layout.columns.length === 1 ? 'whole' : index === 0 ? 'left' : 'right'}
-          {...stylex.props(styles.column)}
-        >
-          {column.map(block)}
-        </div>
-      ))}
-    </div>
-  );
   const opened = focus != null && model[focus.key].total > 0 ? focus : null;
   return (
     <div

@@ -56,7 +56,7 @@ export function buildHomeWeekUsage(args: {
   agentConfigId?: AgentConfigId | null;
   modelId?: string | null;
 }): HomeWeekUsage | null {
-  const entry = resolveAgentRateLimitForModel(args);
+  const entry = resolveAgentRateLimitForModel({ ...args, modelId: args.modelId ?? null });
   if (!entry) return null;
   const windows = getAgentRateLimitWindows(entry.limits)
     .sort(
