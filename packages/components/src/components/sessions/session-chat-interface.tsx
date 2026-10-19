@@ -1544,7 +1544,6 @@ export function SessionHeaderMenu({
 
               {showBranchInfo ? (
                 <Menu.Item
-                  className="items-start"
                   onClick={() =>
                     copyToClipboard(
                       branchDisplayValue,
