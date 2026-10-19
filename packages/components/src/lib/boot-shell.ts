@@ -6,8 +6,8 @@ import { WORKSPACE_FRAME_CSS } from './workspace-frame';
 /** Literal theme fallbacks are checked against the bundled themes. */
 export const BOOT_SHELL_COLORS = {
   light: {
-    canvas: '240 9.1% 97.8%',
-    sidebar: '240 3.2% 93.9%',
+    canvas: '0 0% 97.6%',
+    sidebar: '0 0% 94.1%',
     sidebarBorder: '0 0% 81.6%',
     frameBorder: '0 0% 85.5%',
     status: '0 0% 46.3%',
