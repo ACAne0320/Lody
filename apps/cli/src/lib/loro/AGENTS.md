@@ -126,7 +126,7 @@ removal rules live in [../AGENTS.md](../AGENTS.md).
 
 ## Streams recovery has TWO signals and they must not be recombined
 
-`connection-recovery.ts` has TWO signals. `onStreamsOnline` is cheap, unthrottled, and
+In `connection-recovery.ts`, `onStreamsOnline` is cheap, unthrottled, and
 fires on every health rising edge — it RELEASES work parked while offline (dirty
 Machine Flock docs, which arm no timer of their own, plus the scheduled automation
 queues). `onMetaRoomSynced` is the EXPENSIVE "rescan the workspace index" signal whose
@@ -135,7 +135,7 @@ fan-out per `LODY_LORO_META_SYNCED_MIN_INTERVAL_MS` (30s), deferred and never dr
 because the dispatch bootstrap scan is the only retry path for a session whose
 reconcile threw. A fan-out after a real meta-room outage skips that floor; a
 transport-only flap does not. Recombining them turned a single stuck room into ~3400
-session reconciles/minute. Backoff is flap-aware for the same reason: health that does
+session reconciles/minute. Backoff is flap-aware: health that does
 not survive `LODY_LORO_HEALTH_STABILITY_WINDOW_MS` (5s) counts as a failed recovery and
 charges the attempt counter instead of resetting it, and `force` must not clear that
 history. Regression: `tests/reconnect-storm-repro.test.ts`.
