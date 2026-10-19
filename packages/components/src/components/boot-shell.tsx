@@ -97,7 +97,7 @@ export function BootShell({ status, sidebar, path, layout }: Presentation) {
     [status, sidebar, path, layout]
   );
   useLayoutEffect(() => {
-    if (!register) return;
+    if (!register) return undefined;
     register(id, presentation);
     return () => register(id, null);
   }, [id, presentation, register]);
