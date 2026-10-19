@@ -1,16 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LoroRepo, type TransportAdapter, type TransportSubscription } from 'loro-repo';
+import {
+  LoroRepo,
+  ResourceBusyError,
+  type TransportAdapter,
+  type TransportSubscription,
+} from 'loro-repo';
 import { getWorkspaceFlockDocId, type WorkspaceId } from '@lody/shared';
-import { createWorkspaceCatalogSyncLegacy } from './workspace-catalog-sync-legacy';
+import type { Logger } from '@/utils/logger';
+import { WorkspaceCatalogSyncLegacy } from './workspace-catalog-sync-legacy';
 
 const workspaceId = 'promise-catalog-test' as WorkspaceId;
+const logger = { debug: () => {} } as Logger;
 
 describe('Promise Repo catalog readers', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('retains readers after timeout, remembers baseline after detach, and releases on Repo close', async () => {
+  it('retains readers after timeout, remembers baseline after detach, and releases before Repo close', async () => {
     vi.useFakeTimers();
     const repo = await LoroRepo.create({});
+    const catalog = new WorkspaceCatalogSyncLegacy(repo, workspaceId, logger, true);
     const live = new Set<string>();
     const baselines = new Map<string, () => void>();
     const join = (id: string): TransportSubscription => {
@@ -39,12 +47,10 @@ describe('Promise Repo catalog readers', () => {
       joinFlockDocRoom: (id) => join(id),
     };
     try {
-      const catalog = createWorkspaceCatalogSyncLegacy(repo, workspaceId);
       const id = getWorkspaceFlockDocId(workspaceId);
       expect(await catalog.ready(id, 0)).toBe(false);
       await repo.addTransport('streams', adapter);
-      catalog.hold(id);
-      catalog.hold(id);
+      await Promise.all([catalog.hold(id), catalog.hold(id)]);
       const pending = catalog.ready(id, 100);
       await vi.advanceTimersByTimeAsync(100);
       expect(await pending).toBe(false);
@@ -58,6 +64,7 @@ describe('Promise Repo catalog readers', () => {
       baselines.get('meta')?.();
       expect(await catalog.ready(undefined, 100)).toBe(true);
     } finally {
+      await catalog.close();
       await repo.destroy();
     }
     expect(live.size).toBe(0);
@@ -74,19 +81,24 @@ describe('Promise Repo catalog readers', () => {
           rejectJoin = reject;
         })
     );
+    const catalog = new WorkspaceCatalogSyncLegacy(repo, workspaceId, logger, false);
     try {
-      const catalog = createWorkspaceCatalogSyncLegacy(repo, workspaceId);
       const id = getWorkspaceFlockDocId(workspaceId);
-      expect(catalog.hold(id)).toBeUndefined();
+      await catalog.hold(id);
       const pending = catalog.ready(id, 100);
       await vi.advanceTimersByTimeAsync(100);
       expect(await pending).toBe(false);
       rejectJoin(new Error('temporary local load failure'));
       await vi.advanceTimersByTimeAsync(0);
       vi.mocked(repo.joinFlockDocRoom).mockImplementation(join);
-      expect(await catalog.ready(id, 100)).toBe(false);
-      expect(repo.transportRooms('streams').some((room) => room.room.id === id)).toBe(true);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await catalog.ready(id, 0)).toBe(true);
+      await expect(repo.unloadFlockDoc(id)).rejects.toBeInstanceOf(ResourceBusyError);
+      await catalog.close();
+      await repo.unloadFlockDoc(id);
+      expect(repo.transportRooms('streams')).toEqual([]);
     } finally {
+      await catalog.close();
       await repo.destroy();
     }
   });
