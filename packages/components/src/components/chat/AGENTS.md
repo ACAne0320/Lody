@@ -19,7 +19,7 @@ Index and rationale: [README.md](README.md).
 - Single-member workspaces pass no project-sharing state. Otherwise local project
   options and the selected desktop trigger show only effective `Private`; hide Team
   and unresolved states. Effective access is `machine.sharedWithTeam &&
-  project.sharedWithTeam`. The selected Private segment opens `ProjectShareDialog`;
+project.sharedWithTeam`. The selected Private segment opens `ProjectShareDialog`;
   its project share mutation also shares the machine atomically. Use
   `useConvexErrorMessage` for failures (auth recovery, no raw Convex toast).
   GitHub options have no access badge. A desktop machine option is local only when
@@ -28,9 +28,9 @@ Index and rationale: [README.md](README.md).
   keeps the current source revision quiet, while "Don't remind me again"
   suppresses that user's notice for the workspace across future revisions.
 - The composer box border is 1px (`border`), not a 0.5px hairline. Light fill is
-  `--composer`; the session info bar uses the same fill. Both share
-  `COMPOSER_ELEVATION_CLASS`. The info bar uses `INFO_BAR_ELEVATION_CLASS`.
-  Dark fill stays `bg-input/90`.
+  `--composer`, dark fill stays `bg-input/90`, and the box is `rounded-2xl` with a
+  soft wide lift (`COMPOSER_ELEVATION_CLASS`). The session info bar uses the same
+  fill with its own `INFO_BAR_ELEVATION_CLASS`.
 - Desktop footer order: run config → permission → usage. Provider interaction mode
   belongs inside run config; the standalone button is explicit permission mode,
   falling back to legacy ACP modes. Plus / model / mode share `gap-x-1.5`; when
@@ -87,6 +87,34 @@ Index and rationale: [README.md](README.md).
   user turn is locally accepted, submit MUST hand the lease to the durable session
   before clearing the draft or navigating; a successful handoff must not send
   `session/prepare-cancel`.
+- The desktop landing keeps its composer docked at the bottom (the session composer's
+  shell class); above it, centred in that band (not on the whole page), sit a plain heading
+  and, in the composer's `ConversationColumn`, `HomeDashboard`: ONE line with a segment per board and
+  under it the open board (folded by default; "now" or the last seven days when unfolded). The other segment swaps
+  them; the open one or the end control folds it into the line, where each segment shows
+  its summary. Never per-tile toggles or a settings list. The choice is device-local
+  (`lody:homeBoard`). [Decisions](../../../../../.agents/notes/implemented/feature/2026-10-16-home-week-tiles.md).
+- "Now" (`lib/home-now.ts` over `homeNowInputAtom`: the signed-in user's open root
+  sessions, presence rolled up from child tabs) puts each session in ONE list by first
+  reason: waiting > running > CI failed > unread > draft > ready to merge > open PR >
+  recent. A running agent is never "needs you". Rows open their session. Height is
+  `layoutHomeNow`'s: a row budget by priority (needs you never gives way) within the rows
+  the landing stage has room for (`landing-stage.ts`), two columns levelled with real rows,
+  empty lists not drawn, one calm tile when all are empty. "Show all" — or the tile itself,
+  while it hides rows (`total > shown`), a row press excluded — opens the whole list
+  in the board's frame, never grows a tile in place. Too short for one row per list, the
+  board shows folded without changing `lody:homeBoard`. The plan usage
+  (shortest window only; a known Codex reset in its own tile beside it, never inside) lives
+  on "now"; the forecast loads only while "now" is open ([rules](../codex-reset/AGENTS.md)).
+- The week board keeps the activity wall (workdays, newest weeks that fit, four blue steps
+  over a neutral quiet gray, ONE shared day tooltip, never bars), merged PRs, streak,
+  agents and repository; no cost, start-hours, longest conversation or busiest day.
+- Both boards: tiles placed by hand, never auto-flow; rows are `minmax(…, auto)` floors;
+  empty or not-yet-loaded data shows zeros or an empty-list line, never a hole. The well,
+  no shadow, hairline charts, no canvas/WebGL/per-frame script; tile text is never
+  `tertiaryLabel`. Motion: the week's one-time roll-up, the wall fading in, and switching
+  as one quiet View Transition (height eases, boards cross-fade, the pill glides; never
+  scaled or flown); all off under reduced motion.
 - `chat-landing-view.tsx` renders `ChatComposer`; stateful loading stays in
   `chat-landing.tsx`, session-mention drop handling in the view. Paint the page-level
   `ConversationDropOverlay` when sidebar drag starts, before `dragenter`. Desktop
