@@ -10978,6 +10978,7 @@ describe('Operation Inbox execution boundary', () => {
       accept,
       close,
       wake: () => bridge.wake(),
+      now,
       storePath: path.join(root, 'operations.sqlite3'),
       now,
     };
