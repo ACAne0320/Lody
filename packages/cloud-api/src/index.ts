@@ -1,3 +1,5 @@
+import type { NotificationPresentation } from '@lody/shared/notifications';
+import type { TerminalOutcome } from '@lody/shared/notifications';
 import { anyApi, type FunctionReference } from 'convex/server';
 import type {
   RecoveryVaultPutRequest,
@@ -905,6 +907,8 @@ export type CloudApi = {
         workspaceId: string;
         sessionId: string;
         occurrenceId: string;
+        outcome?: TerminalOutcome;
+        presentation?: NotificationPresentation;
         cliToken: string;
         workspaceSlug: string;
       },
@@ -916,11 +920,13 @@ export type CloudApi = {
         toolTitle?: string;
         toolKind?: string;
         requestKind?: 'permission' | 'ask_user_question';
+        presentation?: NotificationPresentation;
         userId: string;
         workspaceId: string;
         sessionId: string;
         cliToken: string;
         workspaceSlug: string;
+        deliveryVersion?: 1;
         requestId: string;
         toolCallId: string;
       },

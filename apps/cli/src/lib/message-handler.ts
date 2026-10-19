@@ -1,4 +1,10 @@
+import {
+  resolveNotificationPresentation,
+  type NotificationPresentation,
+} from '@lody/shared/notifications';
 import type { SessionActivePresencePhase } from './loro/session-active-presence';
+import { projectTurnAttention, type TerminalOutcome } from '@lody/shared/notifications';
+import { turnNotificationAudience } from './notifications/turn-notification-audience';
 import { fileLocksLegacy } from '@/utils/file-lock';
 import { Effect } from 'effect';
 import { awaitSessionHistoryOwner } from '@/session/session-history-owner';
@@ -166,11 +172,9 @@ import {
   buildLiveActivityConversationItems,
   countLiveActivityConversationCandidates,
   countLiveActivityConversationStatuses,
-  findLiveActivityPermissionAlertCandidate,
   buildLodyConversationsLiveActivityId,
   LODY_CONVERSATIONS_LIVE_ACTIVITY_SCHEMA_VERSION,
   type LiveActivityConversationItem,
-  type LiveActivityPermissionAlert,
   type LiveActivityStatusCounts,
   getCodeCollabFileIndexFlockDocId,
   shouldBypassSessionQuota,
@@ -567,7 +571,6 @@ type LiveActivitySummary = {
   statusCounts: LiveActivityStatusCounts;
   items: LiveActivityConversationItem[];
   updatedAt: number;
-  permissionAlert?: LiveActivityPermissionAlert;
 };
 
 function formatLiveActivityUpdatedAt(value: number, nowMs: number): string {
@@ -955,6 +958,13 @@ export class MessageHandler {
       let author = existing.state === 'ready' ? readMessageAuthor(existing.turn.author) : undefined;
       if (!author && userTurnId) {
         const input = await backend.history.readTurn(userTurnId);
+        if (input.state === 'ready' && input.turn.role === 'user') {
+          this.executionService.setTurnNotificationAudience(
+            sessionId,
+            userTurnId,
+            turnNotificationAudience(input.turn.author)
+          );
+        }
         const meta = await sessionDoc.getMetaState();
         if (meta)
           author = await resolveSessionMessageAuthor(
@@ -985,7 +995,7 @@ export class MessageHandler {
 
   /**
    * Run a Lody-cloud side effect attached to a visible turn (usage flush,
-   * completion notification, Live Activity sync). Two-layer discipline —
+   * turn outcome notification, Live Activity sync). Two-layer discipline —
    * cloud work must never hold the turn's presence scope
    * (specs/local-first-two-plane.md):
    *
@@ -2934,8 +2944,49 @@ export class MessageHandler {
           await this.turnPostProcessingService.detectAndAssociatePR(ctx),
         syncWorkspaceGitState: async (sessionId, session) =>
           await this.turnPostProcessingService.syncWorkspaceGitState(sessionId, session),
-        notifySessionCompleted: async (sessionId, userId, occurrenceId) =>
-          await this.notifySessionCompleted(sessionId, userId, occurrenceId),
+        onTurnOutcome: async (fact) => {
+          if (this.deletedSessionIds.has(fact.sessionId)) return;
+          const attention = projectTurnAttention(fact);
+          if (!attention) return;
+          const { scope, source, outcome } = attention;
+          const presentation = await this.buildNotificationPresentation(
+            source.sessionId,
+            source.originTurnIds ?? [source.turnId]
+          );
+          // Independent channels: a local projection failure cannot block mobile,
+          // and cloud latency/failure cannot prevent desktop publication.
+          const attempts = await Promise.allSettled([
+            (async () => {
+              const lease = await this.workspaceDocument.acquireSessionDocLegacy(source.sessionId);
+              try {
+                if (this.deletedSessionIds.has(source.sessionId)) return;
+                await lease.doc.publishTerminalNotification({
+                  id: crypto.randomUUID(),
+                  recipientId: scope.recipientId,
+                  turnId: source.turnId,
+                  outcome,
+                  presentation,
+                  createdAt: getServerNow(),
+                });
+              } finally {
+                await lease.release();
+              }
+            })(),
+            this.notifyTurnOutcome(
+              source.sessionId,
+              scope.recipientId,
+              source.turnId,
+              outcome,
+              presentation
+            ),
+          ]);
+          for (const attempt of attempts) {
+            if (attempt.status === 'rejected')
+              this.logger.debug(
+                `[${source.sessionId}] Notification attempt failed: ${formatErrorMessage(attempt.reason)}`
+              );
+          }
+        },
       },
       recordChatFailure: async (sessionDoc, reason, message, code) =>
         await this.recordChatFailure(sessionDoc, reason, message, code),
@@ -8873,38 +8924,26 @@ export class MessageHandler {
     }
 
     if (notificationService) {
-      if (requestKind === 'permission') {
-        void (async () => {
-          const historySynced = await doc.waitUntilSynced();
-          if (resolved) return;
-          if (!historySynced) {
-            this.logger.debug(
-              `[${sessionId}] Permission request history was not confirmed before Live Activity sync; sending notification fallback`
-            );
-            await notificationService.notifyPermissionRequested(notificationInput);
-            return;
-          }
-
-          const liveActivityResult = await this.syncLiveActivitySummary(permissionUserId, {
-            permissionAlert: true,
+      // Ordinary push owns the alert. Live Activity remains a silent projection;
+      // provider acceptance is not proof that the user saw a permission request.
+      void this.runTurnCloudSideEffect(sessionId, 'permission notification', async () => {
+        const invocation = this.executionService.getActiveInvocationContext(sessionId);
+        const presentation =
+          invocation && invocation.requesterUserId === permissionUserId
+            ? await this.buildNotificationPresentation(
+                sessionId,
+                invocation.notificationOriginTurnIds.length
+                  ? invocation.notificationOriginTurnIds
+                  : [invocation.sourceTurnId]
+              )
+            : undefined;
+        if (!resolved)
+          await notificationService.notifyPermissionRequested({
+            ...notificationInput,
+            presentation,
           });
-          if (resolved) return;
-          if (liveActivityResult.sent && !liveActivityResult.ended) {
-            return;
-          }
-
-          await notificationService.notifyPermissionRequested(notificationInput);
-        })().catch((error: unknown) => {
-          this.logger.debug(
-            `[${sessionId}] Failed to send permission notification fallback: ${formatErrorMessage(
-              error
-            )}`
-          );
-        });
-      } else {
-        void notificationService.notifyPermissionRequested(notificationInput);
-        void this.syncLiveActivitySummary(permissionUserId);
-      }
+      });
+      void this.syncLiveActivitySummary(permissionUserId);
     }
 
     // Track when permission was requested for duration calculation
@@ -10022,22 +10061,69 @@ export class MessageHandler {
     await this.sessionManager.cleanUp();
   }
 
-  private async notifySessionCompleted(
+  private async buildNotificationPresentation(
+    sessionId: SessionId,
+    originTurnIds: readonly string[]
+  ): Promise<NotificationPresentation | undefined> {
+    // Presentation is optional. Read only exact originating inputs, never the transcript.
+    // Mixed/large batches fall back to the conversation name.
+    try {
+      const lease = await this.workspaceDocument.acquireSessionDocLegacy(sessionId);
+      try {
+        const meta = await lease.doc.getMetaState();
+        if (!meta) return undefined;
+        const backend = await this.getSessionBackend(lease.doc);
+        const inputs: { id: string; scheduleRun?: unknown }[] = [];
+        if (originTurnIds.length <= 32) {
+          for (const id of originTurnIds) {
+            const read = await backend.history.readTurn(id);
+            inputs.push(read.state === 'ready' ? read.turn : { id });
+          }
+        }
+        let projectName: string | undefined;
+        if (meta.project?.kind === 'local') {
+          try {
+            projectName = (
+              await resolveWorkspaceLocalProject(
+                this.workspaceDocument.repo,
+                this.workspaceId,
+                meta.machineId,
+                meta.project.localProjectId
+              )
+            )?.name;
+          } catch {
+            /* The repository name remains a useful fallback. */
+          }
+        }
+        return resolveNotificationPresentation(meta, inputs, projectName);
+      } finally {
+        await lease.release();
+      }
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async notifyTurnOutcome(
     sessionId: SessionId,
     userId: string,
-    occurrenceId: string
+    occurrenceId: string,
+    outcome: TerminalOutcome,
+    presentation?: NotificationPresentation
   ): Promise<void> {
     if (!this.notificationService) {
       return;
     }
     const notificationService = this.notificationService;
-    await this.runTurnCloudSideEffect(sessionId, 'completion notification', async () => {
+    await this.runTurnCloudSideEffect(sessionId, 'turn outcome notification', async () => {
       const sessionDoc = await this.workspaceDocument.getOrCreateSessionDoc(sessionId);
       const meta = await sessionDoc.getMetaState();
       const workspaceSlug = this.workspaceSlug?.trim() || this.workspaceId;
       await notificationService.notifySessionCompleted({
         sessionId,
         occurrenceId,
+        outcome,
+        presentation,
         sessionTitle: meta?.title,
         pullRequests: meta?.pullRequests,
         workspaceId: this.workspaceId,
@@ -10048,10 +10134,7 @@ export class MessageHandler {
     });
   }
 
-  private async buildLiveActivitySummary(
-    userId: string,
-    options: { permissionAlert?: boolean } = {}
-  ): Promise<LiveActivitySummary> {
+  private async buildLiveActivitySummary(userId: string): Promise<LiveActivitySummary> {
     const sessionMetas = (
       await Promise.all(
         [...this.workspaceDocument.sessions.values()].map(async (sessionDoc) => {
@@ -10076,14 +10159,6 @@ export class MessageHandler {
       },
       formatUpdatedAt: (updatedAt) => formatLiveActivityUpdatedAt(updatedAt, nowMs),
     });
-    const permissionAlertCandidate = options.permissionAlert
-      ? findLiveActivityPermissionAlertCandidate({
-          sessions: sessionMetas,
-          currentUserId: userId,
-          defaultTitle: 'New Task',
-        })
-      : null;
-
     const summary: LiveActivitySummary = {
       activityId: buildLodyConversationsLiveActivityId({
         workspaceId: this.workspaceId,
@@ -10101,25 +10176,16 @@ export class MessageHandler {
       items,
       updatedAt: nowMs,
     };
-    if (permissionAlertCandidate) {
-      summary.permissionAlert = {
-        title: 'Permission Required',
-        body: permissionAlertCandidate.sessionTitle,
-      };
-    }
     return summary;
   }
 
-  private async syncLiveActivitySummary(
-    userId: string,
-    options: { permissionAlert?: boolean } = {}
-  ): Promise<LiveActivitySummarySyncResult> {
+  private async syncLiveActivitySummary(userId: string): Promise<LiveActivitySummarySyncResult> {
     if (!this.notificationService) {
       return { sent: false, reason: 'notifications_disabled' };
     }
 
     try {
-      const summary = await this.buildLiveActivitySummary(userId, options);
+      const summary = await this.buildLiveActivitySummary(userId);
       return await this.notificationService.syncLiveActivitySummary({
         workspaceId: this.workspaceId,
         userId,

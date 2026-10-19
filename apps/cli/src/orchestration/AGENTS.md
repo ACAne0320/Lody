@@ -25,8 +25,8 @@ Root/CLI rules apply; `specs/session-orchestration.md` owns behavior.
 - Create Operations freeze each target's effective dispatch config at
   acceptance; recovery must not re-read mutable requester history defaults.
   Full content stays in the target Session history.
-- Accepted Operations freeze `requesterUserId` and exact `sourceTurnId`; `requesterSessionId` names
-  the source Session. Recovery uses that user for attribution/authorization and the current owner
+- Accepted Operations freeze `requesterUserId`, `sourceTurnId` and notification origins; `requesterSessionId` names
+  its source. Recovery uses that user for attribution/authorization and the current owner
   Machine credential to execute. Completion preserves userId. Matching includes both ids, kind,
   and fingerprint; reuse from another Turn is `OPERATION_ID_REUSED`, not a retry.
   Author/attachment snapshots in `operation_authors` / `operation_inputs` freeze atomically.

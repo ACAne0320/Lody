@@ -163,9 +163,16 @@ export class LodyOperationCoordinator {
       },
       report: (cause) => this.options.logger.warn(`[inbox] ${String(cause)}`),
     });
-    this.options.executionService.setOperationInbox?.(this.inbox, (sessionId) => {
-      void this.options.dispatchWatcher.enqueueSessionCheck?.(sessionId);
-    });
+    this.options.executionService.setOperationInbox?.(
+      this.inbox,
+      (sessionId) => {
+        void this.options.dispatchWatcher.enqueueSessionCheck?.(sessionId);
+      },
+      {
+        originsForBatch: (batch) => this.store!.notificationOriginsForBatch(batch),
+        pendingOrigins: (scope, origins) => this.store!.pendingNotificationOrigins(scope, origins),
+      }
+    );
 
     const epoch = {};
     this.nativeEpoch = epoch;
@@ -380,7 +387,13 @@ export class LodyOperationCoordinator {
           chainDepth: batch.chainDepth,
         },
       },
-      { dispatchSource: 'inbox', inboxBatch: batch }
+      {
+        dispatchSource: 'inbox',
+        inboxBatch: batch,
+        // Synthetic input is not human-authored. Execution inherits result
+        // ownership from the full, scoped Operation membership instead.
+        notificationAudience: { kind: 'unknown' },
+      }
     );
   }
 
