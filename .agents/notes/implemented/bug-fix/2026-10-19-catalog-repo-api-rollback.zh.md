@@ -3,6 +3,7 @@
 Status: implemented
 Type: bug-fix
 Translation: current
+PR: [#1728](https://github.com/LodyAI/Lody/pull/1728)
 
 [English](2026-10-19-catalog-repo-api-rollback.md)
 
