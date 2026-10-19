@@ -129,7 +129,11 @@ function render(store: ReturnType<typeof createStore>) {
   );
 }
 
-const text = () => container.textContent ?? '';
+const text = () => {
+  const visible = container.cloneNode(true) as HTMLElement;
+  visible.querySelectorAll('style').forEach((style) => style.remove());
+  return visible.textContent ?? '';
+};
 const buttonLabels = () =>
   Array.from(container.querySelectorAll('button')).map((button) => button.textContent);
 const click = (label: string) => {
