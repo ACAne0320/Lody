@@ -1,6 +1,7 @@
 import type { LodyRateLimitsCapability } from 'acp-extension-core';
 import { terminalNotificationSchema, type TerminalNotification } from '@lody/shared/notifications';
 import { createSessionAgentWrites, type SessionAgentWrites } from './session-agent-writes';
+import { makeWorkspaceCatalogSync, type WorkspaceCatalogSync } from './workspace-catalog-sync';
 import { createSessionBackend, disposeSessionBackend } from '@/session/session-backend';
 import type { SessionBackend, SessionBackendFactory } from '@/session/session-backend';
 import { readLatestTurn } from '@lody/shared/session-data';
@@ -385,6 +386,18 @@ export class LoroDocumentManager {
   public readonly cloudBilling: CloudBillingPort | null;
   private readonly sessionHistoryFactory?: SessionBackendFactory;
   private readonly ownerHistoryRouter?: SessionBackendFactory;
+  private catalogSync?: WorkspaceCatalogSync;
+
+  /** Reader interest belongs to the daemon, never to a discovery request. */
+  async holdCatalogFlockDoc(flockDocId: string): Promise<void> {
+    if (this.catalogSync) await this.repo.runLegacy(this.catalogSync.hold(flockDocId));
+  }
+
+  async catalogBaselineReady(flockDocId: string | undefined, timeoutMs: number): Promise<boolean> {
+    return this.catalogSync
+      ? this.repo.runLegacy(this.catalogSync.ready(flockDocId, timeoutMs))
+      : true;
+  }
 
   static async create(
     workspaceId: WorkspaceId,
@@ -392,6 +405,8 @@ export class LoroDocumentManager {
     logger: Logger,
     options: {
       attachRemoteOnCreate?: boolean;
+      /** Daemon-only reader lease; one-shot commands retain explicit sync ownership. */
+      keepWorkspaceCatalogJoined?: boolean;
       /**
        * Only the daemon passes `shared-durable`; see `DocumentCursorScope`.
        * The default keeps LoroDoc progress in this process's memory.
@@ -501,6 +516,15 @@ export class LoroDocumentManager {
         sessionHistoryFactory: options.sessionHistoryFactory,
         ownerHistoryRouter: options.ownerHistoryRouter,
       });
+      if (options.keepWorkspaceCatalogJoined) {
+        const catalogOwner = await createdRepo.acquireScopeLegacy('workspace catalog');
+        manager.catalogSync = await createdRepo.runLegacy(
+          Scope.provide(
+            makeWorkspaceCatalogSync(createdRepo.native, workspaceId, logger),
+            catalogOwner.scope
+          )
+        );
+      }
     } catch (error) {
       const failures: unknown[] = [error];
       try {
