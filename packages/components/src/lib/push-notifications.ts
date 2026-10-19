@@ -48,7 +48,27 @@ function installationId() {
 }
 export function installPushPort(value: PushPort): () => void {
   port = value;
+  const refresh = () => {
+    void subscribe(generation, true).catch(() => console.error('Push refresh failed'));
+  };
+  const changed = (event: MessageEvent) => {
+    if (
+      event.data?.type === 'lody:push-subscription-changed' &&
+      (event.source as ServiceWorker | null)?.scriptURL ===
+        new URL('/push/lody/worker.js', location.origin).href
+    )
+      refresh();
+  };
+  const web = !isNativeAppShell() && isPushSupported();
+  if (web) {
+    window.addEventListener('focus', refresh);
+    navigator.serviceWorker.addEventListener('message', changed);
+  }
   return () => {
+    if (web) {
+      window.removeEventListener('focus', refresh);
+      navigator.serviceWorker.removeEventListener('message', changed);
+    }
     if (port === value) {
       port = undefined;
       userId = undefined;
@@ -57,11 +77,59 @@ export function installPushPort(value: PushPort): () => void {
   };
 }
 function enabled() {
-  return localStorage.getItem(enabledKey) !== 'false';
+  return isNativeAppShell()
+    ? localStorage.getItem(enabledKey) !== 'false'
+    : localStorage.getItem(enabledKey) === 'true';
 }
-function worker() {
-  return navigator.serviceWorker.register('/push/lody/worker.js', { scope: '/push/lody/' });
+async function webLock<T>(task: () => Promise<T>): Promise<T> {
+  return await navigator.locks.request('lody:push', task);
 }
+function currentWebAccount(epoch: number) {
+  return (
+    epoch === generation && Boolean(userId) && localStorage.getItem('lody:push-user') === userId
+  );
+}
+function accountMessage(reg: ServiceWorkerRegistration, id: string | null): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!reg.active) return reject(new Error('Push worker unavailable'));
+    const channel = new MessageChannel();
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      channel.port1.close();
+      channel.port2.close();
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => finish(new Error('Push worker account update timed out')), 5000);
+    channel.port1.onmessage = (event) =>
+      finish(event.data?.ok === true ? undefined : new Error('Push worker account update failed'));
+    reg.active.postMessage({ type: 'account', userId: id }, [channel.port2]);
+  });
+}
+async function revokeWebAccount(stillDisabled: () => boolean) {
+  const reg = await navigator.serviceWorker.getRegistration('/push/lody/');
+  if (reg?.active && new URL(reg.scope).pathname === '/push/lody/' && stillDisabled())
+    await accountMessage(reg, null);
+}
+async function clearWebSubscription() {
+  const reg = await navigator.serviceWorker.getRegistration('/push/lody/');
+  if (!reg || new URL(reg.scope).pathname !== '/push/lody/') return;
+  // Clear display authorization before removing the remote subscription.
+  try {
+    await accountMessage(reg, null);
+  } finally {
+    await (await reg.pushManager.getSubscription())?.unsubscribe();
+    for (const notification of await reg.getNotifications()) notification.close();
+  }
+}
+function vapidKey(): Uint8Array<ArrayBuffer> {
+  const value = import.meta.env.VITE_PUSH_VAPID_PUBLIC_KEY;
+  const decoded = atob(value.replace(/-/g, '+').replace(/_/g, '/'));
+  const key = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+  if (key.length !== 65 || key[0] !== 4) throw new Error('Invalid Web Push public key');
+  return key;
+}
+
 async function save(input: Omit<PushRegistration, 'installationId' | 'language'>, epoch: number) {
   const current = port;
   const id = installationId();
@@ -69,6 +137,7 @@ async function save(input: Omit<PushRegistration, 'installationId' | 'language'>
     .catch(() => {})
     .then(async () => {
       if (!current || !userId || epoch !== generation || !enabled()) return;
+      if (!isNativeAppShell() && !currentWebAccount(epoch)) return;
       await current.register({ ...input, installationId: id, language });
     });
   writes = write;
@@ -76,61 +145,93 @@ async function save(input: Omit<PushRegistration, 'installationId' | 'language'>
 }
 
 async function subscribe(epoch: number, create: boolean) {
-  if (!port || !userId || !enabled()) return;
+  if (!port || !userId) return;
   if (isNativeAppShell()) {
     const bridge = window.__LODY_PUSH__;
-    if (!bridge || (await bridge.permission()) !== 'granted' || epoch !== generation) return;
+    if (!enabled() || !bridge || (await bridge.permission()) !== 'granted' || epoch !== generation)
+      return;
     await bridge.register((input) => save(input, epoch));
     return;
   }
-  if (Notification.permission !== 'granted') return;
-  const registration = await worker();
-  // Wait for this exact registration, not navigator.serviceWorker.ready (the
-  // page is deliberately outside our dedicated worker scope).
-  if (!registration.active)
-    await new Promise<void>((resolve, reject) => {
-      const installing = registration.installing ?? registration.waiting;
-      if (!installing) return reject(new Error('Push worker unavailable'));
-      const changed = () => {
-        if (installing.state === 'activated') {
-          installing.removeEventListener('statechange', changed);
-          resolve();
-        }
-        if (installing.state === 'redundant') {
-          installing.removeEventListener('statechange', changed);
-          reject(new Error('Push worker failed'));
-        }
-      };
-      installing.addEventListener('statechange', changed);
-      changed();
+  await webLock(async () => {
+    if (!currentWebAccount(epoch)) return;
+    const registration = await navigator.serviceWorker.register('/push/lody/worker.js', {
+      scope: '/push/lody/',
+      updateViaCache: 'none',
     });
-  if (epoch !== generation || !enabled()) return;
-  registration.active?.postMessage({ type: 'account', userId });
-  let subscription = await registration.pushManager.getSubscription();
-  if (!subscription && create)
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: import.meta.env.VITE_PUSH_VAPID_PUBLIC_KEY,
-    });
-  if (!subscription) return;
-  const json = subscription.toJSON();
-  await save(
-    {
-      platform: 'web',
-      purpose: 'notification',
-      token: subscription.endpoint,
-      p256dh: json.keys?.p256dh,
-      auth: json.keys?.auth,
-    },
-    epoch
-  );
+    // Wait for this exact registration, not navigator.serviceWorker.ready (the
+    // page is deliberately outside our dedicated worker scope).
+    if (!registration.active)
+      await new Promise<void>((resolve, reject) => {
+        const installing = registration.installing ?? registration.waiting;
+        if (!installing) return reject(new Error('Push worker unavailable'));
+        const timer = setTimeout(() => {
+          installing.removeEventListener('statechange', changed);
+          reject(new Error('Push worker activation timed out'));
+        }, 10000);
+        const changed = () => {
+          if (installing.state === 'activated') {
+            clearTimeout(timer);
+            installing.removeEventListener('statechange', changed);
+            resolve();
+          }
+          if (installing.state === 'redundant') {
+            clearTimeout(timer);
+            installing.removeEventListener('statechange', changed);
+            reject(new Error('Push worker failed'));
+          }
+        };
+        installing.addEventListener('statechange', changed);
+        changed();
+      });
+    if (!currentWebAccount(epoch)) return;
+    // Bind even with permission disabled, so an account switch cannot leave the old recipient active.
+    await accountMessage(registration, null);
+    if (!enabled() || Notification.permission !== 'granted') return;
+    let subscription = await registration.pushManager.getSubscription();
+    const key = vapidKey();
+    const previousKey = subscription?.options.applicationServerKey;
+    if (subscription && (!previousKey || !equalKey(new Uint8Array(previousKey), key))) {
+      if (!create) return;
+      await subscription.unsubscribe();
+      subscription = null;
+    }
+    if (!currentWebAccount(epoch) || !enabled()) return;
+    if (!subscription && create)
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: key,
+      });
+    if (!subscription || !currentWebAccount(epoch) || !enabled()) return;
+    const json = subscription.toJSON();
+    await save(
+      {
+        platform: 'web',
+        purpose: 'notification',
+        token: subscription.endpoint,
+        p256dh: json.keys?.p256dh,
+        auth: json.keys?.auth,
+      },
+      epoch
+    );
+    if (currentWebAccount(epoch) && enabled()) await accountMessage(registration, userId!);
+  });
+}
+function equalKey(a: Uint8Array, b: Uint8Array) {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
 export function isPushSupported(): boolean {
   if (typeof window === 'undefined' || window.__LODY_ELECTRON__ === true) return false;
-  // First release supports native shells only. Browser registration remains
-  // deferred even when a deployment still has VAPID configuration.
-  return isNativeAppShell() && Boolean(window.__LODY_PUSH__);
+  if (isNativeAppShell()) return Boolean(window.__LODY_PUSH__);
+  return Boolean(
+    window.isSecureContext &&
+    'Notification' in window &&
+    'PushManager' in window &&
+    'serviceWorker' in navigator &&
+    navigator.locks &&
+    import.meta.env.VITE_PUSH_VAPID_PUBLIC_KEY
+  );
 }
 
 // The settings facade preserves the existing permission/subscription distinction.
@@ -146,12 +247,15 @@ const client = {
         if (epoch !== generation) return;
         // Replace old provider subscriptions only after the user opens the new app.
         if (!isNativeAppShell())
-          for (const reg of await navigator.serviceWorker.getRegistrations()) {
-            if (new URL(reg.scope).pathname === '/push/onesignal/') {
-              await (await reg.pushManager.getSubscription())?.unsubscribe();
-              await reg.unregister();
+          await webLock(async () => {
+            if (!currentWebAccount(epoch)) return;
+            for (const reg of await navigator.serviceWorker.getRegistrations()) {
+              if (new URL(reg.scope).pathname === '/push/onesignal/') {
+                await (await reg.pushManager.getSubscription())?.unsubscribe();
+                await reg.unregister();
+              }
             }
-          }
+          });
         await subscribe(epoch, true);
       });
     await pending;
@@ -166,10 +270,13 @@ const client = {
     const localCleanup = async () => {
       if (isNativeAppShell()) await window.__LODY_PUSH__?.unregister();
       else {
-        const reg = await navigator.serviceWorker.getRegistration('/push/lody/');
-        reg?.active?.postMessage({ type: 'account', userId: null });
-        await (await reg?.pushManager.getSubscription())?.unsubscribe();
-        for (const notification of (await reg?.getNotifications()) ?? []) notification.close();
+        // Revoke display permission without waiting behind a browser network operation.
+        await revokeWebAccount(() => !localStorage.getItem('lody:push-user')).catch(() => {});
+        await webLock(async () => {
+          // A newer login owns the origin now. Never tear down its subscription.
+          if (localStorage.getItem('lody:push-user')) return;
+          await clearWebSubscription();
+        });
       }
     };
     await Promise.allSettled([
@@ -197,10 +304,11 @@ const client = {
           (async () => {
             if (isNativeAppShell()) await window.__LODY_PUSH__?.unregister();
             else {
-              const reg = await navigator.serviceWorker.getRegistration('/push/lody/');
-              reg?.active?.postMessage({ type: 'account', userId: null });
-              await (await reg?.pushManager.getSubscription())?.unsubscribe();
-              for (const notification of (await reg?.getNotifications()) ?? []) notification.close();
+              await revokeWebAccount(() => !enabled()).catch(() => {});
+              await webLock(async () => {
+                if (enabled()) return;
+                await clearWebSubscription();
+              });
             }
           })(),
         ]);
@@ -209,7 +317,9 @@ const client = {
         if (!enabled()) return false;
         if (isNativeAppShell()) return (await window.__LODY_PUSH__?.permission()) === 'granted';
         const reg = await navigator.serviceWorker.getRegistration('/push/lody/');
-        return Boolean(await reg?.pushManager.getSubscription());
+        return (
+          Notification.permission === 'granted' && Boolean(await reg?.pushManager.getSubscription())
+        );
       },
     },
   },
@@ -257,7 +367,16 @@ export function schedulePushTask(
 }
 
 export async function logoutPush() {
-  if (!port || !userId) return;
+  // A reload loses in-memory login state, but the browser worker/subscription
+  // persists. Sign-out must revoke those even before delayed push setup runs.
+  if (
+    (!port || !userId) &&
+    (isNativeAppShell() ||
+      typeof navigator === 'undefined' ||
+      !('serviceWorker' in navigator) ||
+      !navigator.locks)
+  )
+    return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([

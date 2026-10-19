@@ -10,8 +10,8 @@ Translation: current
 Shared notification settings previously loaded a vendor SDK and delegated device
 identity to it. The client now registers native tokens or browser subscriptions
 through injected authenticated platform operations.
-The first release enables native shells only; browser support is deferred even
-when VAPID configuration exists. Browser transport code is retained but dormant. The private native shell owns
+Native shells and explicitly opted-in, capable browsers are supported. Web uses
+a configured VAPID public key and a dedicated Service Worker. The private native shell owns
 OS registration and ActivityKit; the hosted backend owns delivery. This removes
 vendor runtime dependencies while retaining existing settings and local Electron
 notifications. Provider acceptance and native device delivery remain separate
@@ -32,6 +32,11 @@ Account changes invalidate old callbacks; sign-out stops local registration and
 attempts bounded server cleanup before auth state disappears. Web subscriptions
 use a dedicated worker scope; the hosted worker binds display and clicks to the
 recipient account. Browser permission alone does not mean a subscription exists.
+Web Locks serialize origin-wide subscription changes; worker account updates must
+be acknowledged after persistence. Logout clears durable browser authorization
+even before delayed in-memory login. Focus and subscription-change messages
+reconcile rotated keys/endpoints; closed workers never store session credentials.
+A browser requiring a fresh user gesture can require explicit re-enablement.
 
 Keeping the old SDK would preserve third-party identity and script loading;
 a separate shared backend client would violate the platform boundary. The chosen
@@ -40,6 +45,6 @@ facade preserves the current settings contract without either dependency.
 ## Verification
 
 Behavioral tests cover native token upload, opt-out, late callbacks, Web
-support remaining disabled even with permissions and VAPID configured. Real APNs/FCM delivery and Xcode compilation
+permission/explicit opt-in gates, key rotation, refresh, and reload-before-login logout. Real APNs/FCM delivery and Xcode compilation
 require the private host's credentials and Apple toolchain; these tests do not
 establish delivery. There is no automatic retry or exactly-once delivery claim.
