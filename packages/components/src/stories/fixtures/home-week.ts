@@ -38,7 +38,7 @@ const row = (
 });
 
 /** Synthetic rows: made-up work, never a captured session. */
-function rows(kind: HomeWeekFixtureKind): HomeWeekRow[] {
+function weekRows(kind: HomeWeekFixtureKind): HomeWeekRow[] {
   if (kind === 'new') return [];
   if (kind === 'quiet') {
     return [row([2, 10], 2, 120, 30, 'claude'), row([1, 15], 1, 60, 12, 'claude')];
@@ -87,7 +87,7 @@ function activity(kind: HomeWeekFixtureKind): [string, number][] {
 export function homeWeekFixture(kind: HomeWeekFixtureKind): HomeWeekModel {
   const days = activity(kind);
   return buildHomeWeek(
-    { rows: rows(kind), activeDays: days.map(([day]) => day), activity: days },
+    { rows: weekRows(kind), activeDays: days.map(([day]) => day), activity: days },
     HOME_WEEK_NOW
   );
 }

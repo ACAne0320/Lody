@@ -649,6 +649,7 @@ export function NowBoard({
           />
         );
     }
+    return null;
   };
   const opened = focus != null && model[focus.key].total > 0 ? focus : null;
   return (

@@ -26,7 +26,7 @@ export function useLandingRoom(target: RefObject<HTMLElement | null>): number | 
   useLayoutEffect(() => {
     if (!landing) {
       setRoom(null);
-      return;
+      return undefined;
     }
     const { stage, group } = landing;
     const measure = () => {
@@ -35,7 +35,7 @@ export function useLandingRoom(target: RefObject<HTMLElement | null>): number | 
       setRoom(Math.max(0, stage.clientHeight - rest - LANDING_STAGE_BREATHING_PX));
     };
     measure();
-    if (typeof ResizeObserver === 'undefined') return;
+    if (typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(measure);
     observer.observe(stage);
     observer.observe(group);

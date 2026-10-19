@@ -77,9 +77,9 @@ export const Folded: Story = {
   args: { defaultBoard: null },
 };
 
-function landingAt(height: string, args: Story['args'] = { defaultBoard: 'now' }): Story {
+function landingAt(height: string, storyArgs: Story['args'] = { defaultBoard: 'now' }): Story {
   return {
-    args,
+    args: storyArgs,
     parameters: { layout: 'fullscreen' },
     render: (args) => (
       <div style={{ height }}>

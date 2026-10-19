@@ -31,7 +31,7 @@ function row(overrides: Partial<HomeWeekRow> = {}): HomeWeekRow {
   };
 }
 
-const week = (rows: HomeWeekRow[], activeDays: string[] = []): HomeWeekInput => ({
+const makeWeekInput = (rows: HomeWeekRow[], activeDays: string[] = []): HomeWeekInput => ({
   rows,
   activeDays,
 });
@@ -39,7 +39,7 @@ const week = (rows: HomeWeekRow[], activeDays: string[] = []): HomeWeekInput => 
 describe('buildHomeWeek lines', () => {
   it('adds the lines of sessions last active in the seven days, and spreads them over their days', () => {
     const model = buildHomeWeek(
-      week([
+      makeWeekInput([
         row({ lastAt: at(0), add: 100, del: 20 }),
         row({ lastAt: at(0, 1), add: 10, del: 0 }),
         row({ lastAt: at(6), add: 5, del: 5 }),
@@ -58,17 +58,19 @@ describe('buildHomeWeek lines', () => {
       row({ lastAt: at(1), add: 150, del: 0 }),
       row({ lastAt: at(8), add: 100, del: 0 }),
     ];
-    expect(buildHomeWeek(week(rows), NOW).delta).toBe(50);
-    expect(buildHomeWeek(week([rows[0]!]), NOW).delta).toBeNull();
+    expect(buildHomeWeek(makeWeekInput(rows), NOW).delta).toBe(50);
+    expect(buildHomeWeek(makeWeekInput([rows[0]!]), NOW).delta).toBeNull();
     expect(
-      buildHomeWeek(week([row({ lastAt: at(1), add: 50 }), row({ lastAt: at(9), add: 100 })]), NOW)
-        .delta
+      buildHomeWeek(
+        makeWeekInput([row({ lastAt: at(1), add: 50 }), row({ lastAt: at(9), add: 100 })]),
+        NOW
+      ).delta
     ).toBe(-50);
   });
 
   it('counts a merged pull request with the session it belongs to', () => {
     const model = buildHomeWeek(
-      week([row({ mergedPrs: 2 }), row({ lastAt: at(10), mergedPrs: 5 })]),
+      makeWeekInput([row({ mergedPrs: 2 }), row({ lastAt: at(10), mergedPrs: 5 })]),
       NOW
     );
     expect(model.mergedPrs).toBe(2);
@@ -78,7 +80,7 @@ describe('buildHomeWeek lines', () => {
 describe('buildHomeWeek sessions', () => {
   it('counts sessions created in the window', () => {
     const model = buildHomeWeek(
-      week([
+      makeWeekInput([
         row({ createdAt: at(0, 9) }),
         row({ createdAt: at(2, 9) }),
         row({ createdAt: at(3, 23) }),
@@ -91,7 +93,7 @@ describe('buildHomeWeek sessions', () => {
 
   it('names the two agents that did most of the work, most first', () => {
     const model = buildHomeWeek(
-      week([
+      makeWeekInput([
         row({ agentType: 'codex' }),
         row({ agentType: 'claude' }),
         row({ agentType: 'claude' }),
@@ -109,7 +111,7 @@ describe('buildHomeWeek sessions', () => {
 describe('buildHomeWeek repository', () => {
   it('names the repository most sessions were in, with its share of all sessions', () => {
     const model = buildHomeWeek(
-      week([
+      makeWeekInput([
         row({ repo: 'LodyAI/lody' }),
         row({ repo: 'LodyAI/lody' }),
         row({ repo: 'LodyAI/site-docs' }),
@@ -118,11 +120,14 @@ describe('buildHomeWeek repository', () => {
       NOW
     );
     expect(model.topRepo).toEqual({ repo: 'LodyAI/lody', count: 2, percent: 50 });
-    expect(buildHomeWeek(week([row({ repo: null })]), NOW).topRepo).toBeNull();
+    expect(buildHomeWeek(makeWeekInput([row({ repo: null })]), NOW).topRepo).toBeNull();
   });
 
   it('breaks a repository tie alphabetically', () => {
-    const model = buildHomeWeek(week([row({ repo: 'b/zeta' }), row({ repo: 'a/alpha' })]), NOW);
+    const model = buildHomeWeek(
+      makeWeekInput([row({ repo: 'b/zeta' }), row({ repo: 'a/alpha' })]),
+      NOW
+    );
     expect(model.topRepo?.repo).toBe('a/alpha');
   });
 });
@@ -131,27 +136,30 @@ describe('buildHomeWeek streak', () => {
   const days = (...back: number[]) => back.map((n) => homeWeekDayKey(at(n))).sort();
 
   it('runs through today', () => {
-    expect(buildHomeWeek(week([], days(0, 1, 2)), NOW).streak).toBe(3);
+    expect(buildHomeWeek(makeWeekInput([], days(0, 1, 2)), NOW).streak).toBe(3);
   });
 
   it('does not break because today is still empty', () => {
-    expect(buildHomeWeek(week([], days(1, 2, 3)), NOW).streak).toBe(3);
+    expect(buildHomeWeek(makeWeekInput([], days(1, 2, 3)), NOW).streak).toBe(3);
   });
 
   it('stops at the first empty day, and is zero after a quiet stretch', () => {
-    expect(buildHomeWeek(week([], days(0, 2, 3)), NOW).streak).toBe(1);
-    expect(buildHomeWeek(week([], days(3, 4)), NOW).streak).toBe(0);
+    expect(buildHomeWeek(makeWeekInput([], days(0, 2, 3)), NOW).streak).toBe(1);
+    expect(buildHomeWeek(makeWeekInput([], days(3, 4)), NOW).streak).toBe(0);
   });
 
   it('is not capped by the seven-day window', () => {
     const long = Array.from({ length: 20 }, (_, n) => n);
-    expect(buildHomeWeek(week([], days(...long)), NOW).streak).toBe(20);
+    expect(buildHomeWeek(makeWeekInput([], days(...long)), NOW).streak).toBe(20);
   });
 });
 
 describe('buildHomeWeek in a quiet week', () => {
   it('is all zeros, with nothing to compare', () => {
-    const model = buildHomeWeek(week([row({ createdAt: at(20), lastAt: at(20), add: 50 })]), NOW);
+    const model = buildHomeWeek(
+      makeWeekInput([row({ createdAt: at(20), lastAt: at(20), add: 50 })]),
+      NOW
+    );
     expect(model).toMatchObject({
       lines: 0,
       delta: null,
@@ -165,7 +173,10 @@ describe('buildHomeWeek in a quiet week', () => {
   });
 
   it('counts a session created earlier that changed lines in the window', () => {
-    const model = buildHomeWeek(week([row({ createdAt: at(30), lastAt: at(1), add: 5 })]), NOW);
+    const model = buildHomeWeek(
+      makeWeekInput([row({ createdAt: at(30), lastAt: at(1), add: 5 })]),
+      NOW
+    );
     expect(model.lines).toBe(5);
     expect(model.sessions).toBe(0);
   });
@@ -173,9 +184,13 @@ describe('buildHomeWeek in a quiet week', () => {
 
 describe('homeWeekInputEqual', () => {
   it('compares by value', () => {
-    expect(homeWeekInputEqual(week([row()], ['a']), week([row()], ['a']))).toBe(true);
-    expect(homeWeekInputEqual(week([row()]), week([row({ add: 1 })]))).toBe(false);
-    expect(homeWeekInputEqual(week([], ['a']), week([], ['b']))).toBe(false);
+    expect(homeWeekInputEqual(makeWeekInput([row()], ['a']), makeWeekInput([row()], ['a']))).toBe(
+      true
+    );
+    expect(homeWeekInputEqual(makeWeekInput([row()]), makeWeekInput([row({ add: 1 })]))).toBe(
+      false
+    );
+    expect(homeWeekInputEqual(makeWeekInput([], ['a']), makeWeekInput([], ['b']))).toBe(false);
   });
 });
 
@@ -268,7 +283,7 @@ describe('the activity wall', () => {
 describe('lines added and removed', () => {
   it('splits the lines changed in the window into what was added and what was removed', () => {
     const model = buildHomeWeek(
-      week([
+      makeWeekInput([
         row({ lastAt: at(1), add: 2000, del: 418 }),
         row({ lastAt: at(3), add: 100, del: 30 }),
         row({ lastAt: at(9), add: 5000, del: 900 }),
@@ -281,7 +296,7 @@ describe('lines added and removed', () => {
   });
 
   it('is zero for a quiet week', () => {
-    const model = buildHomeWeek(week([]), NOW);
+    const model = buildHomeWeek(makeWeekInput([]), NOW);
     expect([model.added, model.removed, model.lines]).toEqual([0, 0, 0]);
   });
 });
