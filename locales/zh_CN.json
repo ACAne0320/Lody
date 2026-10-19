@@ -3396,7 +3396,6 @@
   "sidebar.filter.emptyMyTasksHint": "可以试试显示这个工作区中的全部任务。",
   "sidebar.filter.showAllTasks": "显示全部任务",
   "sidebar.filter.updatedProjectNames": "显示项目",
-  "sidebar.filter.updatedProjectNamesUnavailable": "仅可用于「最近更新」视图",
   "sidebar.filter.trigger": "筛选侧边栏",
   "sidebar.githubWorktrees": "GitHub Worktrees",
   "sidebar.pinned": "已置顶",
@@ -5093,5 +5092,7 @@
   "sessions.fileViewer.selection.tools": "批注工具",
   "sessions.fileViewer.pdf.more": "更多阅读选项",
   "sessions.fileViewer.selection.drawHint": "选好工具后，在截图上拖动绘制。",
-  "sessions.fileViewer.selection.screenshotPreview": "选区截图预览"
+  "sessions.fileViewer.selection.screenshotPreview": "选区截图预览",
+  "sidebar.filter.showBranchNames": "显示分支",
+  "sidebar.filter.detailsHeading": "详情"
 }

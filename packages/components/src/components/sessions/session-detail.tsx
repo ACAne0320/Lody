@@ -20,14 +20,12 @@ import {
   Link,
   LockKeyhole,
   Monitor,
-  PanelBottom,
-  PanelLeft,
-  PanelRight,
   Pencil,
   Search,
   Trash2,
   Users,
 } from 'lucide-react';
+import { CuidaSidebarExpandOutline } from '@lody/ui';
 import { Spinner } from '@lody/ui/spinner';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lody/ui/button';
@@ -533,6 +531,8 @@ const detailStyles = stylex.create({
     width: '16px',
     height: '16px',
   },
+  bottomPanelIcon: { rotate: '-90deg' },
+  rightPanelIcon: { rotate: '180deg' },
   rootFill: {
     height: '100%',
   },
@@ -952,7 +952,10 @@ const TerminalDockToggleButton = memo(function TerminalDockToggleButton() {
       title={label}
       className={stylex.props(detailStyles.shrink).className}
     >
-      <PanelBottom {...stylex.props(detailStyles.icon16)} />
+      <CuidaSidebarExpandOutline
+        {...stylex.props(detailStyles.icon16, detailStyles.bottomPanelIcon)}
+        aria-hidden="true"
+      />
     </Button>
   );
 });
@@ -6750,7 +6753,10 @@ const SessionDetail = ({
           .className
       }
     >
-      <PanelRight {...stylex.props(detailStyles.icon16)} />
+      <CuidaSidebarExpandOutline
+        {...stylex.props(detailStyles.icon16, detailStyles.rightPanelIcon)}
+        aria-hidden="true"
+      />
     </Button>
   );
 
@@ -6764,7 +6770,7 @@ const SessionDetail = ({
       aria-label={t('sessions.leftSidebar.show', 'Show navigation sidebar')}
       className={stylex.props(detailStyles.shrink).className}
     >
-      <PanelLeft {...stylex.props(detailStyles.icon16)} />
+      <CuidaSidebarExpandOutline {...stylex.props(detailStyles.icon16)} aria-hidden="true" />
     </Button>
   ) : null;
 

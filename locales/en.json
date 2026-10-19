@@ -3396,7 +3396,6 @@
   "sidebar.filter.emptyMyTasksHint": "Try showing every task in this workspace.",
   "sidebar.filter.showAllTasks": "Show all tasks",
   "sidebar.filter.updatedProjectNames": "Show Project",
-  "sidebar.filter.updatedProjectNamesUnavailable": "Available in Updated view",
   "sidebar.filter.trigger": "Filter sidebar",
   "sidebar.githubWorktrees": "GitHub Worktrees",
   "sidebar.pinned": "Pinned",
@@ -5093,5 +5092,7 @@
   "sessions.fileViewer.selection.tools": "Markup tools",
   "sessions.fileViewer.pdf.more": "More document controls",
   "sessions.fileViewer.selection.drawHint": "Drag on the screenshot to draw.",
-  "sessions.fileViewer.selection.screenshotPreview": "Selected screenshot"
+  "sessions.fileViewer.selection.screenshotPreview": "Selected screenshot",
+  "sidebar.filter.showBranchNames": "Show Branch",
+  "sidebar.filter.detailsHeading": "Details"
 }
