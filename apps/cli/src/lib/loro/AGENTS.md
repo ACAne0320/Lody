@@ -7,7 +7,7 @@
 Synced Mirrors use `ignoreUnknownProperties: true`; unknown roots must not block writes.
 Test: `packages/shared/tests/session-doc-forward-compat.test.ts`.
 
-SessionDocument Mirror is control-only. HistoryWriter writes; SessionData reads.
+SessionDocument Mirror: control-only. HistoryWriter writes; SessionData reads.
 `session-agent-writes.ts` uses shared planners, never UI ports or a second writer.
 Replacement rules: [shared](../../../../../packages/shared/AGENTS.md#session-history).
 
@@ -98,10 +98,10 @@ and MUST sample without a cloud transport. Cloud observers/snapshots attach only
 the authorized remote bridge attaches, and detach on offline/revocation. Sampling is
 observer-lease driven; never start OS probes permanently or persist snapshots.
 
-## Catalog readers
+## Catalog API
 
-`workspace-catalog-sync.ts`: daemon readers, bounded baseline waits, uncertain reads.
-Role validation requires fresh sync. Repo owns reader release.
+Use this Repo's Promise API: `loro-repo@0.23.2` has no
+`runLegacy`, `acquireScopeLegacy` or `.native`. No second replica.
 
 ## Machine Flock writes for this machine are local-first
 

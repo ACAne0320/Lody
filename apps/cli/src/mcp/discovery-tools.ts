@@ -1,11 +1,7 @@
 import type { createSessionToolRegistrar } from './session-tool-router';
 import { z } from 'zod';
 import { ResourceListSchemas, type DiscoveryQuery } from '@/lib/discovery-query';
-import {
-  CatalogSyncingError,
-  type ResourceDiscovery,
-  type DiscoveryResource,
-} from '@/lib/resource-discovery';
+import type { ResourceDiscovery, DiscoveryResource } from '@/lib/resource-discovery';
 
 export function registerDiscoveryTools(
   registerTool: ReturnType<typeof createSessionToolRegistrar>,
@@ -28,16 +24,6 @@ export function registerDiscoveryTools(
         content: [{ type: 'text' as const, text: JSON.stringify(await withDiscovery(read)) }],
       };
     } catch (error) {
-      if (error instanceof CatalogSyncingError)
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({ ok: false, error: error.toLodyError() }),
-            },
-          ],
-        };
       return {
         isError: true,
         content: [
@@ -53,7 +39,7 @@ export function registerDiscoveryTools(
     registerTool(
       `lody_${resource}_list`,
       {
-        description: `${descriptions[resource]} Returns a bounded page (default 20, maximum 100); follow nextCursor with the same filters to enumerate all entries. If sync.state is syncing, cached results may be incomplete; retry before treating absence as final.`,
+        description: `${descriptions[resource]} Returns a bounded page (default 20, maximum 100); follow nextCursor with the same filters to enumerate all entries.`,
         inputSchema: ResourceListSchemas[resource],
         annotations: { readOnlyHint: true },
       },
@@ -64,7 +50,7 @@ export function registerDiscoveryTools(
     registerTool(
       `lody_${resource}_get`,
       {
-        description: `Read one ${resource} by stable id from its list tool. CATALOG_SYNCING is retryable.`,
+        description: `Read one ${resource} by stable id from its list tool.`,
         inputSchema: z.object({ id: z.string().trim().min(1) }).strict(),
         annotations: { readOnlyHint: true },
       },

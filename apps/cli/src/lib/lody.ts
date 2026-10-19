@@ -107,7 +107,6 @@ export class Lody {
           // The daemon is the only process that resumes LoroDoc rooms from the
           // shared SQLite cursors; one-shot commands keep theirs in memory.
           documentCursorScope: 'shared-durable',
-          keepWorkspaceCatalogJoined: true,
           streamsTokens: options.cloudPort.streamsTokens,
           cloudBilling: options.cloudPort.billing,
           ownerHistoryRouter,
