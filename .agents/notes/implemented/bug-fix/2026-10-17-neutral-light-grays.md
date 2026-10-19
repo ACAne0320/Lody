@@ -28,4 +28,4 @@ Apply the same rule to the `@lody/ui` light palette, its gray ramp and shadow in
 
 ## Verification and limits
 
-The light theme's neutral tokens and HSL values were source-checked, and a direct conversion check confirmed the boot-shell canvas, sidebar, border and status values match the bundled theme. `git diff --check` passes. `pnpm run docs status` and `pnpm run docs check` still report the same pre-existing malformed home-week notes, broken subagent-events links and oversized component guidance files. Tests and a rendered screenshot were not run, so the final appearance and contrast still need visual review in the app.
+`tests/boot-shell.test.tsx` checks that the literal first-paint canvas, sidebar, sidebar border and status colors match the bundled theme's resolved values. The focused boot-shell, sidebar badge and workspace sidebar suites pass. The theme's rendered appearance and contrast still need visual review in the app.

@@ -1116,20 +1116,25 @@ function ProductionLikeTopContent({
   expandLocalProjects?: boolean;
 }) {
   const isMobile = useIsMobile();
-  const projectGroups = localProjectGroups ?? [
-    {
-      machineId: demoMachineId,
-      machineName: 'Mac Studio',
-      label: 'Local Projects',
-      projects: localProjects,
-    },
-    {
-      machineId: 'machine-remote' as MachineId,
-      machineName: 'MacBook Pro',
-      label: 'MacBook Pro projects',
-      projects: localProjects.slice(0, 1),
-    },
-  ];
+  const projectGroups = useMemo(() => {
+    const projects = localProjects ?? [];
+    return (
+      localProjectGroups ?? [
+        {
+          machineId: demoMachineId,
+          machineName: 'Mac Studio',
+          label: 'Local Projects',
+          projects,
+        },
+        {
+          machineId: 'machine-remote' as MachineId,
+          machineName: 'MacBook Pro',
+          label: 'MacBook Pro projects',
+          projects: projects.slice(0, 1),
+        },
+      ]
+    );
+  }, [localProjectGroups, localProjects]);
   const [collapsedMachineGroups, setCollapsedMachineGroups] = useState<Record<string, boolean>>({});
   const projectCollapseStates = useMemo(
     () =>

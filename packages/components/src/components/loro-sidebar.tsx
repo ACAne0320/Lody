@@ -731,7 +731,7 @@ function NavButton({
             active ? sidebarSurface.selected : sidebarSurface.hover,
             // Keep the label clear of the trailing control instead of letting it
             // truncate under it.
-            action && sidebarSurface.navAction
+            Boolean(action) && sidebarSurface.navAction
           ).className,
           'focus-visible:ring-1 focus-visible:ring-sidebar-ring/30'
         )}
