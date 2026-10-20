@@ -50,6 +50,9 @@ whitepaper, Specs, decisions and this package's docs. Contract:
   neither permission nor AEAD validity.
 - Ed25519 requires canonical nonzero prime-subgroup A and R and S<L
   (`zip215: false`); fixed native Effects and private exact caches keep these checks.
+  The WebAssembly verifier (`wasm/ed25519-strict`, rebuilt only by its `build.mjs`)
+  is a fixed backend with the pure-JS fallback, never injectable, and must accept
+  exactly what the pure-JS path accepts (`test/ed25519-wasm.test.ts`).
 - Byte wrappers own copies. Epoch keys have no public byte export; private keys
   stay with the platform. Every key copy and plaintext buffer is disposed with
   `acquireUseRelease`; native calls are uninterruptible.

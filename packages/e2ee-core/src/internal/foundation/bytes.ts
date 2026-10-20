@@ -1,6 +1,7 @@
 import { Brand, Result } from 'effect';
 import { Point } from '@noble/ed25519';
 import { ValidationError } from './errors';
+import { wasmSigningKeyValid } from './ed25519-wasm';
 import { keyId } from './identifiers';
 import { OwnedBytes } from './owned-bytes';
 
@@ -51,13 +52,17 @@ export function signingPublicKey(input: unknown): Result.Result<SigningPublicKey
     const bytes = key.toBytes();
     const id = keyId(bytes);
     if (validatedSigningKeys.has(id)) return key;
-    const valid = Result.try({
-      try: () => {
-        const point = Point.fromBytes(bytes, false);
-        return !point.isSmallOrder() && point.isTorsionFree();
-      },
-      catch: () => new ValidationError({ code: 'invalid-key' }),
-    });
+    const fast = wasmSigningKeyValid(bytes);
+    const valid =
+      fast === undefined
+        ? Result.try({
+            try: () => {
+              const point = Point.fromBytes(bytes, false);
+              return !point.isSmallOrder() && point.isTorsionFree();
+            },
+            catch: () => new ValidationError({ code: 'invalid-key' }),
+          })
+        : Result.succeed(fast);
     if (!(yield* valid)) return yield* Result.fail(new ValidationError({ code: 'invalid-key' }));
     if (validatedSigningKeys.size === SIGNING_KEY_CACHE_LIMIT)
       validatedSigningKeys.delete(validatedSigningKeys.values().next().value!);
