@@ -3,6 +3,7 @@
 Status: implemented
 Type: bug-fix
 Translation: current
+PR: [#1760](https://github.com/LodyAI/Lody/pull/1760)
 
 [English](2026-10-20-session-room-join-retry.md)
 
