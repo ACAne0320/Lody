@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1766](https://github.com/LodyAI/Lody/pull/1766)
 
 [English](2026-10-20-external-mcp.md)
 
