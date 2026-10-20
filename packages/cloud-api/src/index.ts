@@ -2,6 +2,22 @@ import type { NotificationPresentation } from '@lody/shared/notifications';
 import type { TerminalOutcome } from '@lody/shared/notifications';
 import { anyApi, type FunctionReference } from 'convex/server';
 import type {
+  WorkspaceAdmissionDescriptor,
+  E2eeWorkspaceCreateRequest,
+  E2eeWorkspaceCreateResult,
+  E2eeWorkspaceHistoryRequest,
+  E2eeWorkspaceHistoryPage,
+} from './e2ee-workspaces';
+export type {
+  WorkspaceAdmissionDescriptor,
+  WorkspaceModeDescriptor,
+  E2eeWorkspaceCreateRequest,
+  E2eeWorkspaceCreateResult,
+  E2eeLedgerCheckpoint,
+  E2eeWorkspaceHistoryRequest,
+  E2eeWorkspaceHistoryPage,
+} from './e2ee-workspaces';
+import type {
   RecoveryVaultPutRequest,
   RecoveryVaultReadRequest,
   RecoveryVaultIndexReadRequest,
@@ -365,6 +381,12 @@ type SeatInvitePreview =
     };
 
 export type CloudApi = {
+  /** Optional developer-only E2EE control plane; does not authorize content access. */
+  e2eeWorkspaces: {
+    create: Action<E2eeWorkspaceCreateRequest, E2eeWorkspaceCreateResult>;
+    describe: Query<{ workspaceId: string }, WorkspaceAdmissionDescriptor>;
+    history: Action<E2eeWorkspaceHistoryRequest, E2eeWorkspaceHistoryPage>;
+  };
   /** Optional E2EE ciphertext staging. No ordinary/local product constructs it. */
   e2eeRecoveryVault: {
     putImmutable: Mutation<RecoveryVaultPutRequest, { ok: true }>;

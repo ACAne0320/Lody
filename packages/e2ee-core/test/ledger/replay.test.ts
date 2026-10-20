@@ -19,6 +19,7 @@ import * as Bytes from '../../src/internal/foundation/bytes';
 import { encodeCbor, type CborValue } from '../../src/internal/foundation/cbor';
 import { keyId } from '../../src/internal/foundation/identifiers';
 import * as Ledger from '@lody/e2ee-core/protocol';
+import ledgerV1 from '../ledger-v1-vector.json';
 
 const ok = <A, E>(r: Result.Result<A, E>): A => Result.getOrThrow(r);
 const filled = (n: number, size = 32) => new Uint8Array(size).fill(n);
@@ -443,6 +444,10 @@ describe('atomic member removal and epoch publication', () => {
     for (const view of [suffix, fresh]) {
       expect(comparable(view)).toEqual(comparable(full));
       expect(hex(ok(Snapshots.comparisonNote(view, publicKey(owner))).stateDigest)).toBe(
+        hex(ok(Snapshots.comparisonNote(full, publicKey(owner))).stateDigest)
+      );
+      // A reader holding no device gets the same digest as the members' notes.
+      expect(hex(ok(Snapshots.ledgerStateDigest(view)))).toBe(
         hex(ok(Snapshots.comparisonNote(full, publicKey(owner))).stateDigest)
       );
       expect(ok(Ledger.epochHistoryPacket(view, 1)).packet).toEqual(filled(30, 72));
@@ -1213,6 +1218,7 @@ describe('authenticated snapshot migration reproduction', () => {
     expect(code(Snapshots.comparisonNote(counterfeit, ok(Bytes.signingPublicKey(owner.pk))))).toBe(
       'unauthorized'
     );
+    expect(code(Snapshots.ledgerStateDigest(counterfeit))).toBe('unauthorized');
     expect(
       code(Snapshots.historicalContentIdentity(counterfeit, ok(Bytes.signingPublicKey(owner.pk))))
     ).toBe('unauthorized');
@@ -1667,6 +1673,23 @@ describe('authenticated snapshot migration reproduction', () => {
         .members.get(keyId(id(11)))!.role
     ).toBe('member');
   });
+  it('tracks current member users: a removed user may rejoin, a current one never twice, also after import', () => {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    const rejoin = o.join(carol, 11); // same user as bob, fresh keys and request
+    const withBob = ok(o.verify());
+    const duplicate = o.append(owner, [1, id(12), rejoin[2]]);
+    expect(code(o.verify())).toBe('replay');
+    const imported = ok(Snapshots.verifyLedgerSnapshot(endorsed(withBob)));
+    expect(code(Ledger.extendLedger(imported, [duplicate], checkpoint(o.records)))).toBe('replay');
+
+    const removed = org();
+    removed.append(owner, removed.join(bob, 11));
+    removed.append(owner, [8, id(11), 1, filled(21), filled(30, 72)]);
+    removed.append(owner, [1, id(12), removed.join(carol, 11)[2]]);
+    expect(code(removed.verify())).toBe('accepted');
+  });
+
   it('retains replay prevention after endorsement import and rejects malformed complete-state facts', () => {
     const o = org();
     o.append(owner, o.join(bob, 11));
@@ -2126,5 +2149,199 @@ describe('public admission consent and ordinary intent', () => {
       )
     );
     expect(Result.isFailure(bad) && bad.failure).toMatchObject({ code: 'bad-signature' });
+  });
+});
+
+describe('retained verified state', () => {
+  const publicKey = (key: Keys) => ok(Bytes.signingPublicKey(key.pk));
+  function history() {
+    const o = org();
+    o.append(owner, o.join(bob, 11));
+    o.append(owner, [3, id(11), 1]);
+    o.append(owner, o.device(phone, 0));
+    o.append(bob, [7, 1, filled(21), filled(31, 72)]);
+    o.append(owner, [5, phone.pk]);
+    o.append(owner, [8, id(11), 2, filled(22), filled(32, 72)]);
+    o.append(owner, o.join(carol, 12));
+    return o;
+  }
+  const prefix = (o: ReturnType<typeof org>, length: number) =>
+    ok(
+      Ledger.verifyLedger({
+        anchor: o.anchor,
+        records: o.records.slice(0, length),
+        checkpoint: checkpoint(o.records.slice(0, length)),
+      })
+    );
+
+  it('restores at every position and extends to exactly the full replay', () => {
+    const o = history(),
+      full = ok(o.verify()),
+      exported = ok(Ledger.exportVerifiedState(full));
+    expect(hex(exported.stateDigest)).toBe(
+      hex(ok(Snapshots.comparisonNote(full, publicKey(owner))).stateDigest)
+    );
+    for (let length = 1; length < o.records.length; length++) {
+      const saved = ok(Ledger.exportVerifiedState(prefix(o, length)));
+      const restored = ok(Ledger.restoreVerifiedState(saved));
+      expect(restored).toMatchObject({ length, historyStart: length - 1 });
+      expect(restored.verification).toBe('full-history');
+      const extended = ok(
+        Ledger.extendLedger(restored, o.records.slice(length), checkpoint(o.records))
+      );
+      expect(comparable(extended)).toEqual(comparable(full));
+      const again = ok(Ledger.exportVerifiedState(extended));
+      expect(again.bytes).toEqual(exported.bytes);
+      expect(hex(again.stateDigest)).toBe(hex(exported.stateDigest));
+    }
+  });
+
+  it('keeps every replay fact: used keys, closed joins, users and commitments', () => {
+    const o = history(),
+      restored = ok(Ledger.restoreVerifiedState(ok(Ledger.exportVerifiedState(ok(o.verify())))));
+    const attempts: readonly (readonly CborValue[])[] = [
+      o.device(phone, 0), // revoked signing key
+      o.join(bob, 11), // removed membership ID and closed join
+      [1, id(13), o.join(carol, 13)[2]], // carol's request again
+      [1, id(14), o.join(keys(14), 12)[2]], // carol's user while she is a member
+      [7, 3, filled(21), filled(33, 72)], // reused epoch commitment
+    ];
+    for (const op of attempts) {
+      const record = signed([restored.head.toBytes(), owner.pk, op], owner);
+      expect(
+        code(Ledger.extendLedger(restored, [record], checkpoint([...o.records, record])))
+      ).toBe('replay');
+    }
+  });
+
+  it('fails closed on a forked continuation and on bytes that do not match the stored position', () => {
+    const o = history(),
+      saved = ok(Ledger.exportVerifiedState(prefix(o, 4))),
+      restored = ok(Ledger.restoreVerifiedState(saved));
+    const parent = Ledger.hashRecordBytes(o.records[2]!).toBytes(),
+      fork = signed([parent, owner.pk, [3, id(11), 2]], owner);
+    expect(
+      code(Ledger.extendLedger(restored, [fork], { head: Ledger.hashRecordBytes(fork), length: 5 }))
+    ).toBe('wrong-parent');
+
+    const other = ok(Ledger.exportVerifiedState(prefix(o, 5)));
+    expect(code(Ledger.restoreVerifiedState({ ...saved, head: other.head }))).toBe(
+      'checkpoint-mismatch'
+    );
+    expect(code(Ledger.restoreVerifiedState({ ...saved, length: 5 }))).toBe('checkpoint-mismatch');
+    expect(code(Ledger.restoreVerifiedState({ ...other, bytes: saved.bytes }))).toBe(
+      'checkpoint-mismatch'
+    );
+    const elsewhere = ok(Bytes.genesisHash(filled(9)));
+    expect(code(Ledger.restoreVerifiedState({ ...saved, genesis: elsewhere }))).toBe(
+      'wrong-anchor'
+    );
+    expect(
+      code(Ledger.restoreVerifiedState({ ...saved, bytes: saved.bytes.subarray(0, 40) }))
+    ).not.toBe('accepted');
+    const future = new Uint8Array(saved.bytes);
+    future[1] = 2;
+    expect(code(Ledger.restoreVerifiedState({ ...saved, bytes: future }))).toBe('unknown-version');
+  });
+
+  it('reports facts it does not retain as unavailable', () => {
+    const o = history(),
+      full = ok(o.verify()),
+      restored = ok(Ledger.restoreVerifiedState(ok(Ledger.exportVerifiedState(full))));
+    expect(ok(Snapshots.historicalContentIdentity(full, publicKey(bob)))).toMatchObject({
+      kind: 'member',
+    });
+    expect(ok(Snapshots.historicalContentIdentity(restored, publicKey(bob)))).toMatchObject({
+      kind: 'device-only',
+    });
+    expect(code(Ledger.epochPublicationRecord(full, 2))).toBe('accepted');
+    expect(code(Ledger.epochPublicationRecord(restored, 2))).toBe('unauthorized');
+    expect(ok(Ledger.epochHistoryPacket(restored, 2)).packet).toEqual(filled(32, 72));
+  });
+});
+
+describe('frozen ledger v1 compatibility', () => {
+  const fromHex = (value: string) => new Uint8Array(Buffer.from(value, 'hex'));
+  const records = ledgerV1.records.map((record) => fromHex(record.hex));
+  const anchor = ok(Bytes.genesisHash(fromHex(ledgerV1.anchor)));
+  const prefix = (length: number) =>
+    Ledger.verifyLedger({
+      anchor,
+      records: records.slice(0, length),
+      checkpoint: checkpoint(records.slice(0, length)),
+    });
+
+  it('verifies independently encoded v1 history with unchanged hashes and state', () => {
+    // Created outside this codebase; a failure here means existing ledgers stop verifying.
+    expect(records.map((record) => hex(Ledger.hashRecordBytes(record)))).toEqual(
+      ledgerV1.records.map((record) => record.hash)
+    );
+    const view = ok(prefix(ledgerV1.expected.verifiedLength));
+    const state = comparable(view);
+    const expected = ledgerV1.expected;
+    expect(state.owner).toBe(expected.owner);
+    expect(state.epoch).toEqual(expected.epoch);
+    expect(
+      Object.fromEntries(state.members.map(([key, userId, role]) => [key, { userId, role }]))
+    ).toEqual(expected.members);
+    expect(
+      Object.fromEntries(
+        state.devices.map(([key, membershipId, kind]) => [key, { membershipId, kind }])
+      )
+    ).toEqual(expected.devices);
+  });
+
+  it('stops at a genuine capability declaration as an upgrade, with its position', () => {
+    const all = Ledger.verifyLedger({ anchor, records, checkpoint: checkpoint(records) });
+    expect(Result.isFailure(all) && all.failure).toMatchObject(ledgerV1.expected.failure);
+    const before = ok(prefix(ledgerV1.expected.verifiedLength));
+    const extended = Ledger.extendLedger(before, records.slice(-1), checkpoint(records));
+    expect(Result.isFailure(extended) && extended.failure).toMatchObject(ledgerV1.expected.failure);
+    expect(before.length).toBe(ledgerV1.expected.verifiedLength);
+  });
+});
+
+describe('capability declarations', () => {
+  it('lets Owner and Admin personal devices declare, and reports an upgrade rather than corruption', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      const o = org();
+      o.append(owner, o.join(bob, 11));
+      if (role === 'admin') o.append(owner, [3, id(11), 1]);
+      o.append(role === 'owner' ? owner : bob, [9, [1, 7]]);
+      const result = o.verify();
+      expect(Result.isFailure(result) && result.failure).toMatchObject({
+        code: 'upgrade-required',
+        position: o.records.length - 1,
+      });
+    }
+  });
+
+  it('rejects declarations by Member, Guest, machine and recovery devices', () => {
+    for (const role of ['member', 'guest'] as const) {
+      const o = org();
+      o.append(owner, o.join(bob, 11));
+      if (role === 'guest') o.append(owner, [3, id(11), 3]);
+      o.append(bob, [9, [1]]);
+      expect(code(o.verify())).toBe('unauthorized');
+    }
+    for (const kind of [1, 2]) {
+      const o = org();
+      o.append(owner, o.device(machine, kind));
+      o.append(machine, [9, [1]]);
+      expect(code(o.verify())).toBe('unauthorized');
+    }
+  });
+
+  it.each([
+    ['empty', []],
+    ['zero', [0]],
+    ['unsorted', [2, 1]],
+    ['duplicate', [1, 1]],
+    ['beyond u32', [2 ** 32]],
+    ['too many', Array.from({ length: 17 }, (_, index) => index + 1)],
+  ])('rejects a %s capability list as invalid', (_, capabilities) => {
+    const o = org();
+    o.append(owner, [9, capabilities]);
+    expect(code(o.verify())).toBe('invalid-operation');
   });
 });

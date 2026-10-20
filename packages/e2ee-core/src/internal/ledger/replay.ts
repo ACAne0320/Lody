@@ -1,4 +1,12 @@
-import { verifiedSnapshotState, proposalOf, noteOf, type SnapshotTrust } from './snapshot-codec';
+import {
+  verifiedSnapshotState,
+  proposalOf,
+  noteOf,
+  stateDigestOf,
+  encodeRetainedState,
+  decodeRetainedState,
+  type SnapshotTrust,
+} from './snapshot-codec';
 import { Chunk, Effect, HashMap, HashSet, Result } from 'effect';
 import {
   genesisHash,
@@ -294,6 +302,42 @@ export function extendLedger(
     : fail('unauthorized');
 }
 
+/** A party's own verified state at one position, to restore later. Not a snapshot: it is evidence for nobody else. */
+export interface RetainedLedgerState {
+  readonly bytes: Uint8Array;
+  readonly genesis: GenesisHash;
+  readonly head: RecordHash;
+  readonly length: number;
+  /** The digest this position's comparison note carries; for comparison and audits, not checked on restore. */
+  readonly stateDigest: RecordHash;
+}
+/** Canonical state of a genuine view, for its holder's own storage. */
+export function exportVerifiedState(
+  view: LedgerView
+): Result.Result<RetainedLedgerState, LedgerError> {
+  const state = states.get(view);
+  if (!state) return fail('unauthorized');
+  return Result.map(encodeRetainedState(state), ({ bytes, stateDigest }) =>
+    Object.freeze({
+      bytes,
+      genesis: view.genesis,
+      head: view.head,
+      length: view.length,
+      stateDigest,
+    })
+  );
+}
+/** Resume from bytes the caller itself exported and stored. Decodes only; no signature
+ * or digest recheck. Never accept another party's bytes here: use endorsed snapshots. */
+export function restoreVerifiedState(input: {
+  readonly bytes: Uint8Array;
+  readonly genesis: GenesisHash;
+  readonly head: RecordHash;
+  readonly length: number;
+}): Result.Result<LedgerView, LedgerError> {
+  return Result.map(decodeRetainedState(input.bytes, input), viewOf);
+}
+
 /** What a device may do with document content at a verified view. */
 export interface ContentPermissions {
   /** Host admission: active personal/machine device of a non-Guest member. */
@@ -463,6 +507,14 @@ export function prepareLedgerSnapshot(view: LedgerView, signer: SigningPublicKey
 export function comparisonNote(view: LedgerView, signer: SigningPublicKey) {
   const state = states.get(view);
   return state ? noteOf(state, signer) : fail('unauthorized');
+}
+/**
+ * The comparison digest of a genuine view without naming a note signer, for a
+ * reader that holds no device in this ledger. Equal to its comparison notes' digest.
+ */
+export function ledgerStateDigest(view: LedgerView) {
+  const state = states.get(view);
+  return state ? stateDigestOf(state) : fail('unauthorized');
 }
 /** Who authored historical content: the member (when history is available) or only the device. */
 export type HistoricalContentIdentity =

@@ -26,7 +26,12 @@ Follow the package [boundary](../../../AGENTS.md) and [record/replay contract](R
   Close this Scope before destroying the SDK owner. ACK/CAS and snapshot bootstrap
   remain separate contracts; no fallback append or new snapshot header.
 
-- Current format only: no legacy-ledger adapters, old-state import, schema conversion or version downgrade. Current-format historical replay and rollback protection remain mandatory.
+- Ledger v1 freezes at the first production creation (see the foundations Spec);
+  before that, format changes need owner approval and a regenerated vector.
+  New operations need a prior tag9 capability declaration; an unsupported genuine
+  declaration is `upgrade-required`, never corruption or a skipped record. No legacy-ledger
+  adapters, old-state import, schema conversion or version downgrade. Current-format
+  historical replay and rollback protection remain mandatory.
 
 - I/O owners use cooperative fixed-native verification; the same pure replay owns
   authority. Persisted bytes are fully reverified on open. SQL is not authority;
@@ -39,6 +44,9 @@ Follow the package [boundary](../../../AGENTS.md) and [record/replay contract](R
   snapshot bytes and an explicit transport locator. Requalify on every open;
   persist exact snapshot/suffix/position together. No SQL-chosen endorser, unknown
   prefix skipping or implied snapshot-only submission authorization.
+- Retained state (`exportVerifiedState`/`restoreVerifiedState`) restores only the
+  caller's own export: no signature, curve-point or digest recheck, no acceptance
+  from another party, no unretained fact invented. Restore results equal full replay.
 - `VerifiedLedger` is the single rollback guard: genuine view, same workspace,
   continuation of the newest observed view, containment of the durable pin.
   Unchanged pins are not rewritten; failed pin writes keep the in-memory view.

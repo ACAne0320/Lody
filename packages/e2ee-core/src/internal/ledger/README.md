@@ -33,6 +33,18 @@ forks; callers own those trust and freshness checks. There is no arbitrary-state
 starting point in the record/replay entry. The explicit snapshot entry below has
 separate qualification and provenance.
 
+`exportVerifiedState` and `restoreVerifiedState` let a party resume from **its
+own** earlier verified view. Export returns the canonical state bytes (the
+comparison-note state plus the view's verification origin), position and the
+comparison-note `stateDigest`. Restore only decodes: it checks structure and the
+caller's stored genesis/length/head, but neither signatures, curve points nor the
+digest, because the bytes come from the caller's own storage. The restored view
+extends exactly like the exported one; the next record must name its head. It
+reports historical attribution of removed devices as `device-only` and original
+epoch publication records as unavailable. Never restore another party's bytes;
+that is what endorsed snapshots are for. Retained bytes are current-format only:
+after an encoding change, rebuild them by one full replay.
+
 Preserved candidate v1 arrays/domains: genesis, admit Member, set role, admit own
 device, revoke own device, transfer Owner, publish epoch. Owner/Admin personal
 devices may invite and rotate; only Owner personal devices change roles or transfer
@@ -41,7 +53,13 @@ only its target, records never create an approval ancestry tree, and Owner retai
 a personal/recovery path. Retired signing/encryption keys, member IDs, closed join
 requests and epoch commitments remain replay facts. Legacy tag 2 removal is rejected:
 it violates the already adopted atomic removal/rotation rule; [P12](../../../README.md) owns the current tag8 transition.
-No new tag or protocol policy is defined here.
+Tag 9 declares capabilities: Owner/Admin personal devices list strictly ascending
+nonzero u32 codes, monotonically. This verifier implements none, so a genuine
+declaration ends verification at its position with `upgrade-required` rather than
+an invalid-ledger code. The v1 arrays and domains above become permanent at the
+first production creation; see the
+[frozen vector](../../../test/ledger-v1-vector.json) and
+[format compatibility](../../../../../specs/e2ee-foundations.md#format-compatibility).
 
 Join `expiresAt` remains a signed nullable field; pure historical replay does not
 consult a current wall clock. Online request expiry/admission belongs to a future
