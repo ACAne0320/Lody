@@ -2,7 +2,12 @@ import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { Point, etc, hashes, utils, verify } from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
+  ED25519_KNOWN_ANSWERS,
+  ed25519WasmActive,
+  provideEd25519WasmModule,
+  resetEd25519WasmForTests,
   setEd25519WasmEnabled,
   wasmSigningKeyValid,
   wasmVerifyStrict,
@@ -86,9 +91,9 @@ function nodeSigned(size: number) {
 const nonCanonical = (() => {
   const encodings: Uint8Array[] = [];
   for (let y = 0n; y < 19n; y++)
-    for (const sign of [0, 0x80]) {
+    for (const signBit of [0, 0x80]) {
       const bytes = le(y + P);
-      bytes[31]! |= sign;
+      bytes[31]! |= signBit;
       encodings.push(bytes);
     }
   for (const y of [1n, P - 1n]) {
@@ -99,10 +104,38 @@ const nonCanonical = (() => {
   return encodings;
 })();
 
+const packagedWasm = new URL('../wasm/ed25519-strict/ed25519_strict.wasm', import.meta.url);
+const fromHex = (value: string) => new Uint8Array(Buffer.from(value, 'hex'));
+/** Hand-assembled module with the verifier's exports that accepts everything. */
+const ACCEPT_ALL = fromHex(
+  '0061736d01000000' +
+    '0110' +
+    '03' +
+    '60017f017f' +
+    '6000017f' +
+    '60027f7f017f' +
+    '0304' +
+    '03000102' +
+    '0503010001' +
+    '0724' +
+    '04' +
+    '066d656d6f72790200' +
+    '05696e7075740000' +
+    '066b65795f6f6b0001' +
+    '0676657269667900' +
+    '02' +
+    '0a10' +
+    '03' +
+    '040041000b' +
+    '040041010b' +
+    '040041010b'
+);
+
 describe('WebAssembly strict Ed25519', () => {
-  it('embeds exactly the module its build recorded', () => {
+  it('embeds and packages exactly the module its build recorded', () => {
     const bytes = Buffer.from(ED25519_WASM_BASE64, 'base64');
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(ED25519_WASM_SHA256);
+    expect(readFileSync(packagedWasm)).toEqual(bytes);
     expect(wasmSigningKeyValid(new Uint8Array(32))).toBe(false);
   });
 
@@ -205,5 +238,55 @@ describe('WebAssembly strict Ed25519', () => {
       setEd25519WasmEnabled(true);
     }
     expect(withWasm).toEqual(['ok', 'bad-signature', 'bad-signature']);
+  });
+
+  it('uses only modules that pass its known-answer vectors, which test the strict rules', () => {
+    const k = ED25519_KNOWN_ANSWERS;
+    const key = fromHex(k.key);
+    const message = fromHex(k.message);
+    expect(nobleVerify(key, message, fromHex(k.valid))).toBe(true);
+    // Accepted by the bare cofactored equation, rejected only by the subgroup rule.
+    expect(verify(fromHex(k.torsionR), message, key, { zip215: false })).toBe(true);
+    expect(nobleVerify(key, message, fromHex(k.torsionR))).toBe(false);
+    expect(nobleKey(fromHex(k.smallOrderKey))).toBe(false);
+    expect(nobleKey(fromHex(k.nonCanonicalKey))).toBe(false);
+
+    // It instantiates and accepts anything; only the known answers reject it.
+    const cheat = new WebAssembly.Instance(new WebAssembly.Module(ACCEPT_ALL)).exports as {
+      verify(length: number, checked: number): number;
+      key_ok(): number;
+    };
+    expect([cheat.verify(0, 0), cheat.key_ok()]).toEqual([1, 1]);
+    resetEd25519WasmForTests();
+    try {
+      provideEd25519WasmModule(new WebAssembly.Module(ACCEPT_ALL));
+      expect(ed25519WasmActive()).toBe(false);
+      expect(wasmVerifyStrict(key, message, fromHex(k.torsionR))).toBeUndefined();
+    } finally {
+      resetEd25519WasmForTests();
+    }
+    expect(ed25519WasmActive()).toBe(true);
+  });
+
+  it('falls back to pure JS where compiling from bytes is forbidden, and uses a provided packaged module', () => {
+    const compiled = new WebAssembly.Module(readFileSync(packagedWasm));
+    const Original = WebAssembly.Module;
+    const signed = nodeSigned(64);
+    resetEd25519WasmForTests();
+    // workerd: "Wasm code generation disallowed by embedder".
+    (WebAssembly as { Module: unknown }).Module = function () {
+      throw new WebAssembly.CompileError('Wasm code generation disallowed by embedder');
+    };
+    try {
+      expect(ed25519WasmActive()).toBe(false);
+      const result = verifySignature(signed.key, signed.message, signed.signature);
+      expect(result._tag).toBe('Success');
+      provideEd25519WasmModule(compiled);
+      expect(ed25519WasmActive()).toBe(true);
+      expect(wasmVerifyStrict(signed.key, signed.message, signed.signature)).toBe(true);
+    } finally {
+      (WebAssembly as { Module: unknown }).Module = Original;
+      resetEd25519WasmForTests();
+    }
   });
 });

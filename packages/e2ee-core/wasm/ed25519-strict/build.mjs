@@ -1,10 +1,10 @@
 // Builds the strict Ed25519 verifier to WebAssembly and embeds it in core.
 // Requires rustup with the wasm32-unknown-unknown target. Run from anywhere:
 //   node packages/e2ee-core/wasm/ed25519-strict/build.mjs
-// The output module is committed; CI only checks that it matches its recorded hash.
+// Both outputs are committed; CI only checks that they match the recorded hash.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,9 +15,11 @@ execFileSync(
   ['build', '--locked', '--release', '--target', 'wasm32-unknown-unknown'],
   { cwd: crate, stdio: 'inherit' }
 );
-const wasm = readFileSync(
-  path.join(crate, 'target/wasm32-unknown-unknown/release/lody_ed25519_strict.wasm')
-);
+const built = path.join(crate, 'target/wasm32-unknown-unknown/release/lody_ed25519_strict.wasm');
+const wasm = readFileSync(built);
+// Runtimes that forbid compiling from bytes (Cloudflare Workers) import this file
+// at bundle time through the `./cloudflare` entry.
+copyFileSync(built, path.join(crate, 'ed25519_strict.wasm'));
 const rustc = execFileSync('rustc', ['--version'], { encoding: 'utf8' }).trim();
 const lock = readFileSync(path.join(crate, 'Cargo.lock'), 'utf8');
 const dalek = /name = "curve25519-dalek"\nversion = "([^"]+)"/.exec(lock)?.[1];

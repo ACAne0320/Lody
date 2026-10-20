@@ -67,12 +67,12 @@ function decodePlain(bytes: Uint8Array, maxArray: number, maxBstr: number): Cbor
     const length = 1 << size;
     if (at + length > bytes.length) return undefined;
     let value = 0;
-    for (let i = 0; i < length; i++) value = value * 256 + bytes[at++]!;
-    return value >= MINIMUM[size]! && value <= Number.MAX_SAFE_INTEGER ? value : undefined;
+    for (let i = 0; i < length; i++) value = value * 256 + bytes[at++];
+    return value >= MINIMUM[size] && value <= Number.MAX_SAFE_INTEGER ? value : undefined;
   };
   const item = (depth: number): CborValue | undefined => {
     if (depth > MAX_DEPTH || at >= bytes.length) return undefined;
-    const initial = bytes[at++]!;
+    const initial = bytes[at++];
     const major = initial >> 5;
     if (major === 7)
       return initial === 0xf4

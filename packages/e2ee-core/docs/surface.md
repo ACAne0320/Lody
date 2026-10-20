@@ -89,3 +89,7 @@ repository's tests and the Lab, with no compatibility promise.
 `LedgerSubmissionStream`, `streamsLedgerFeedSource`, `makeLedgerStreamReader`,
 `LedgerStreamReader`, `streamsDocumentBinding`, `StreamsDocumentBindingOptions`,
 `makeStreamsUpdateBinding`.
+
+## `@lody/e2ee-core/cloudflare`
+
+`ed25519WasmActive`. Import this entry once in a Cloudflare Worker: workerd forbids compiling WebAssembly from bytes at runtime, so the bundler compiles the packaged strict Ed25519 module instead. Without it core still verifies correctly in pure JS, only slower.

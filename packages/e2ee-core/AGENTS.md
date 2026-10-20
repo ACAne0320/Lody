@@ -10,8 +10,8 @@ whitepaper, Specs, decisions and this package's docs. Contract:
 ## Structure
 
 - Entries are exactly `.` (workflows), `./services` (ports), `./protocol`,
-  `./host`, `./adapters/node-sqlite`, `./adapters/loro-streams` and the unstable
-  `./internal`. Add an export only to the entry whose role it serves.
+  `./host`, `./adapters/node-sqlite`, `./adapters/loro-streams`, `./cloudflare`
+  (bundle-time WebAssembly for workerd) and the unstable `./internal`. Add an export only to the entry whose role it serves.
 - Protocol code is pure (Result, plus Effect only for async crypto/verification)
   and imports no service or adapter. Workflows depend only on protocol code and
   `services/` tags; never on an adapter, Node API or SQLite. Adapters never decide

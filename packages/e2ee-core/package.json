@@ -10,6 +10,7 @@
     "./host": "./src/host/index.ts",
     "./adapters/node-sqlite": "./src/adapters/node-sqlite/index.ts",
     "./adapters/loro-streams": "./src/adapters/loro-streams/index.ts",
+    "./cloudflare": "./src/cloudflare/index.ts",
     "./internal": "./src/internal/index.ts"
   },
   "scripts": {
