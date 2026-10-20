@@ -184,7 +184,7 @@ import { SubagentRunMessageList } from './subagent-run-history';
 import { styles as subagentHistoryStyles } from './subagent-run-history.stylex';
 import { SessionReadonlyContext } from './session-readonly-context';
 import { normalizeSessionLinksForExport } from '@lody/shared/session-link-export';
-import { UserMessageEditor } from './user-message-editor';
+import { UserMessageEditor, type UserMessageEditorProps } from './user-message-editor';
 import type { MentionProjectSource } from '@/components/mentions/mention-project-file-source';
 import type { SkillMentionAgent } from '@/components/mentions/mention-skill-source';
 import type { Mention as MentionRange } from '@/ui/mention/index';
@@ -533,6 +533,7 @@ export type UserMessageEditSubmission = {
  * editor degrades to a plain textarea.
  */
 export type UserMessageEditMentionContext = {
+  sessionSource?: UserMessageEditorProps['sessionSource'];
   mentionSource?: MentionProjectSource;
   availableCommands?: AcpCommandSummary[];
   skillAgent?: SkillMentionAgent;
@@ -4048,6 +4049,7 @@ const UserMessageRowView = ({
                       isSaving={isSavingEdit}
                       conversationFontSize={conversationFontSize}
                       mentionSource={editMentionContext?.mentionSource}
+                      sessionSource={editMentionContext?.sessionSource}
                       availableCommands={editMentionContext?.availableCommands}
                       skillAgent={editMentionContext?.skillAgent}
                       currentSessionId={sessionId}
