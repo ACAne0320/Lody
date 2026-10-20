@@ -6564,6 +6564,18 @@ export class MessageHandler {
     };
 
     switch (request.method) {
+      case 'mcp/call-external-tool': {
+        if (request.workspaceId !== this.workspaceId || request.machineId !== this.machineId)
+          throw new Error('External MCP scope mismatch');
+        const { executeExternalDaemonTool } = await import('@/mcp/external/daemon-tools');
+        return this.withDaemonCommandScope(() =>
+          executeExternalDaemonTool(
+            request.params.token,
+            request.params.name,
+            request.params.arguments
+          )
+        );
+      }
       case 'mcp/list-tools':
         return await listMcpTools(request.params.server);
       case 'session/call-tool': {

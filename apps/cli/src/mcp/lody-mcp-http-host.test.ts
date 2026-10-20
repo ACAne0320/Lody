@@ -1,5 +1,12 @@
-import type http from 'node:http';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import http from 'node:http';
+import { PassThrough } from 'node:stream';
+import type { Socket } from 'node:net';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { enableExternalAccess, externalAccessPath } from './external/access';
+import * as peerUid from './loopback-peer-uid';
 import type { Logger } from '@/utils/logger';
 import { createMcpHttpServer } from './lody-mcp-http-host';
 import {
@@ -65,6 +72,82 @@ const modernRequest = (id: number, method: string, params: Record<string, unknow
       },
     },
   });
+
+describe('external MCP HTTP authentication without network I/O', () => {
+  let root: string;
+  let previousDataDir: string | undefined;
+  beforeEach(async () => {
+    previousDataDir = process.env.LODY_DATA_DIR;
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'external-http-'));
+    process.env.LODY_DATA_DIR = root;
+    vi.spyOn(peerUid, 'lookupLoopbackPeerUid').mockResolvedValue(process.getuid?.() ?? 0);
+  });
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    if (previousDataDir === undefined) delete process.env.LODY_DATA_DIR;
+    else process.env.LODY_DATA_DIR = previousDataDir;
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  async function request(url: string, token: string, body: string, modern = false) {
+    const socket = new PassThrough();
+    Object.assign(socket, {
+      remoteAddress: '127.0.0.1',
+      remotePort: 12345,
+      localAddress: '127.0.0.1',
+      localPort: 12346,
+    });
+    const req = new http.IncomingMessage(socket as Socket);
+    req.method = 'POST';
+    req.url = url;
+    req.headers = {
+      host: '127.0.0.1:12346',
+      accept: ACCEPT,
+      'content-type': 'application/json',
+      'content-length': String(Buffer.byteLength(body)),
+      authorization: `Bearer ${token}`,
+      ...(modern
+        ? {
+            'mcp-protocol-version': '2026-07-28',
+            'mcp-method': 'tools/list',
+          }
+        : {}),
+    };
+    req.rawHeaders = Object.entries(req.headers).flatMap(([key, value]) => [key, String(value)]);
+    const res = new http.ServerResponse(req);
+    const chunks: Buffer[] = [];
+    socket.on('data', (chunk: Buffer) => chunks.push(chunk));
+    res.assignSocket(socket as Socket);
+    const finished = new Promise<void>((resolve) => res.once('finish', resolve));
+    const server = createMcpHttpServer(TOKEN, NOOP_LOGGER);
+    server.emit('request', req, res);
+    req.complete = true;
+    req.push(body);
+    req.push(null);
+    await finished;
+    res.emit('close');
+    socket.destroy();
+    return { status: res.statusCode, wire: Buffer.concat(chunks).toString('utf8') };
+  }
+  it('accepts a dedicated token without Session headers, lists only external tools, and revokes it', async () => {
+    const { token } = await enableExternalAccess({
+      userId: 'synthetic-user',
+      workspaceId: 'synthetic-workspace',
+      machineId: 'synthetic-machine',
+    });
+    const initialized = await request('/mcp/external', token, INITIALIZE_BODY);
+    expect(initialized.status, initialized.wire).toBe(200);
+    expect((await request('/mcp/external', TOKEN, INITIALIZE_BODY)).status).toBe(401);
+    expect((await request('/mcp', token, INITIALIZE_BODY)).status).toBe(401);
+    const catalog = await request('/mcp/external', token, modernRequest(2, 'tools/list'), true);
+    expect(catalog.status, catalog.wire).toBe(200);
+    expect(catalog.wire).toContain('lody_session_create');
+    expect(catalog.wire).toContain('lody_operation_get');
+    expect(catalog.wire).not.toContain('lody_mcp_configure');
+    expect(catalog.wire).not.toContain('lody_session_archive');
+    await fs.rm(externalAccessPath());
+    expect((await request('/mcp/external', token, INITIALIZE_BODY)).status).toBe(401);
+  });
+});
 
 describe('MCP HTTP host wire behavior', () => {
   let server: http.Server;

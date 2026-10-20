@@ -42,6 +42,9 @@ import {
 import type { Logger } from '@/utils/logger';
 import { executeDaemonSessionTool } from './daemon-session-tools';
 import { buildLodyMcpServer, runWithMcpSessionContext } from './lody-mcp-server';
+import { executeExternalDaemonTool } from './external/daemon-tools';
+import { enableExternalAccess, externalAccessPath } from './external/access';
+import { buildExternalMcpServer } from './external/tools';
 
 const createSilentLogger = (): Logger => ({
   info: () => {},
@@ -132,6 +135,178 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
     userEmail: 'owner@example.test',
     machineId,
     machineName: 'Daemon',
+  });
+
+  it('serves external reads without an active Turn and fences account, scope and hidden tools', async () => {
+    const { token } = await enableExternalAccess({ userId: ownerUserId, workspaceId, machineId });
+    await manager.repo.upsertDocMeta(getSessionRoomId(sessionId), {
+      userId: ownerUserId,
+      title: 'External visible session',
+    });
+    const environment = createLocalSessionCommandEnvironment({
+      manager,
+      workspaceId,
+      machineId,
+      machineName: 'Daemon',
+      userId: ownerUserId,
+      host: {
+        readInvocation: (id) => ({
+          type: 'session/active-invocation-context',
+          sessionId: id,
+          active: false,
+        }),
+        readLiveStatus: async (id) => ({
+          sessionId: id,
+          fresh: true,
+          machineOnline: true,
+          state: 'idle',
+          observedAt: 0,
+        }),
+        cancelSession: async () => {
+          throw new Error('Unexpected cancellation');
+        },
+        dispatchSession: async () => {
+          throw new Error('Unexpected dispatch');
+        },
+      },
+    });
+    await runWithSessionCommandEnvironment(environment, async () => {
+      const result = await executeExternalDaemonTool(token, 'lody_session_list', {});
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(result.content[0]?.text ?? '{}')).toMatchObject({
+        items: [{ id: sessionId, title: 'External visible session' }],
+      });
+      await expect(executeDaemonSessionTool(context(), 'lody_session_list', {})).rejects.toThrow(
+        'active local user Turn'
+      );
+      await expect(
+        executeExternalDaemonTool(token, 'lody_session_archive', { sessionId })
+      ).rejects.toThrow('Unsupported external MCP tool');
+      const other = await manager.createSession(machineId, 'custom', 'claude');
+      await manager.repo.upsertDocMeta(getSessionRoomId(other), { userId: 'different-user' });
+      const denied = await executeExternalDaemonTool(token, 'lody_session_history', {
+        sessionId: other,
+      });
+      expect(denied).toMatchObject({ isError: true, content: [{ text: 'Session not found' }] });
+      for (const mismatch of [
+        { workspaceId: 'wrong' },
+        { machineId: 'wrong' },
+        { userId: 'wrong' },
+      ]) {
+        const foreign = await enableExternalAccess({
+          userId: ownerUserId,
+          workspaceId,
+          machineId,
+          ...mismatch,
+        });
+        await expect(
+          executeExternalDaemonTool(foreign.token, 'lody_session_list', {})
+        ).rejects.toThrow('access denied');
+      }
+      await fs.rm(externalAccessPath());
+      await expect(executeExternalDaemonTool(token, 'lody_session_list', {})).rejects.toThrow(
+        'access denied'
+      );
+    });
+  });
+
+  it('advertises only the external catalog to a real MCP client', async () => {
+    const server = buildExternalMcpServer(async () => ({
+      content: [{ type: 'text', text: JSON.stringify({ items: [] }) }],
+    }));
+    const client = new Client({ name: 'external-test', version: '1' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const names = (await client.listTools()).tools.map((tool) => tool.name);
+      expect(names).toContain('lody_session_create');
+      expect(names).toContain('lody_session_history');
+      expect(names).not.toContain('lody_session_archive');
+      expect(names).not.toContain('lody_mcp_configure');
+      expect(names).not.toContain('lody_session_create_many');
+      const result = await client.callTool({ name: 'lody_session_list', arguments: {} });
+      expect(result).toMatchObject({ content: [{ text: '{"items":[]}' }] });
+      const invalid = await client.callTool({
+        name: 'lody_session_create',
+        arguments: { prompt: 'missing operation id' },
+      });
+      expect(invalid.isError).toBe(true);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('creates and sends external work once, with persisted history and no parent Session', async () => {
+    const agentConfigId = await seedRoles();
+    const { token } = await enableExternalAccess({ userId: ownerUserId, workspaceId, machineId });
+    const dispatched: string[] = [];
+    const environment = createLocalSessionCommandEnvironment({
+      manager,
+      workspaceId,
+      machineId,
+      machineName: 'Daemon',
+      userId: ownerUserId,
+      host: {
+        readInvocation: (id) => ({
+          type: 'session/active-invocation-context',
+          sessionId: id,
+          active: false,
+        }),
+        readLiveStatus: async (id) => ({
+          sessionId: id,
+          fresh: true,
+          machineOnline: true,
+          state: 'idle',
+          observedAt: 0,
+        }),
+        cancelSession: async () => {
+          throw new Error('Unexpected cancellation');
+        },
+        dispatchSession: async (_id, input) => {
+          if (input) dispatched.push(input.inputId);
+        },
+      },
+    });
+    await runWithSessionCommandEnvironment(environment, async () => {
+      const call = async (name: string, input: Record<string, unknown>) => {
+        const result = await executeExternalDaemonTool(token, name, input);
+        expect(result.isError, JSON.stringify(result)).not.toBe(true);
+        return JSON.parse(result.content[0]?.text ?? '{}') as {
+          state: string;
+          sessionId: SessionId;
+          userTurnId: string;
+        };
+      };
+      const create = {
+        operationId: 'external-create',
+        agentConfigId,
+        prompt: 'Synthetic initial task',
+      };
+      const first = await call('lody_session_create', create);
+      expect(first.state).toBe('accepted');
+      expect(await call('lody_session_create', create)).toEqual(first);
+      const meta = (await manager.repo.getDocMeta(getSessionRoomId(first.sessionId)))?.meta;
+      expect(meta).toMatchObject({ userId: ownerUserId, machineId, agentConfigId });
+      expect(meta).not.toHaveProperty('parentSessionId');
+      expect(meta).not.toHaveProperty('openedBySessionId');
+      const chat = {
+        operationId: 'external-chat',
+        sessionId: first.sessionId,
+        prompt: 'Synthetic follow-up',
+      };
+      const second = await call('lody_session_chat', chat);
+      expect(second.state).toBe('accepted');
+      expect(await call('lody_session_chat', chat)).toEqual(second);
+      const doc = await manager.getOrCreateSessionDoc(first.sessionId);
+      const backend = await createSessionBackend(doc);
+      expect(
+        (await backend.readHistory()).filter((turn) => turn.role === 'user').map((turn) => turn.id)
+      ).toEqual([first.userTurnId, second.userTurnId]);
+      expect(dispatched).toEqual([first.userTurnId, second.userTurnId]);
+      expect(await call('lody_operation_get', { operationId: 'external-chat' })).toEqual(second);
+    });
   });
 
   async function seedRoles() {

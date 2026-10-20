@@ -1374,6 +1374,14 @@ describe('session command helpers', () => {
       'legacy-session'
     );
     expect(resolveCreateCurrentSessionId({}, {})).toBeUndefined();
+    expect(
+      resolveCreateCurrentSessionId(
+        { currentSessionId: null },
+        {
+          LODY_SESSION_ID: 'legacy-session',
+        }
+      )
+    ).toBeUndefined();
   });
 
   it('rejects nested child sessions but accepts a root parent', () => {

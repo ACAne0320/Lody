@@ -111,6 +111,21 @@ export const SessionToolResultSchema = z
 
 export const LocalMachineRpcRequestSchema = z.discriminatedUnion('method', [
   BaseLocalMachineRpcRequestSchema.extend({
+    method: z.literal('mcp/call-external-tool'),
+    params: z
+      .object({
+        token: z.string().min(1).max(4096),
+        name: z.string().min(1).max(100),
+        arguments: z
+          .record(z.string(), z.json())
+          .refine(
+            (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength <= 256 * 1024,
+            'External tool arguments exceed 256 KiB'
+          ),
+      })
+      .strict(),
+  }).strict(),
+  BaseLocalMachineRpcRequestSchema.extend({
     method: z.literal('ios-simulator/agent-control'),
     params: z.object({ sessionId: SessionIdSchema, command: IosSimulatorCommandSchema }).strict(),
   }).strict(),

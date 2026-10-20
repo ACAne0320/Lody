@@ -5,6 +5,16 @@ import { NodeStreamableHTTPServerTransport, toNodeHandler } from '@modelcontextp
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { SessionIdSchema } from '@lody/shared';
 import { getLocalControlSocketPath } from '@lody/shared/node/local-ipc';
+import { makeLocalControlClientAuto } from '@lody/shared/node/local-ipc';
+import { Effect } from 'effect';
+import { z } from 'zod';
+import {
+  authenticateExternalAccess,
+  mcpEndpointPath,
+  readMcpEndpoint,
+  writePrivateJson,
+} from './external/access';
+import { buildExternalMcpServer } from './external/tools';
 import { createFileLogger, type Logger } from '@/utils/logger';
 import { formatErrorMessage } from '@/utils/format-error';
 import {
@@ -81,10 +91,22 @@ export async function runLodyMcpHttpHost(): Promise<void> {
     return;
   }
   const preferredPortRaw = process.env[MCP_HTTP_PREFERRED_PORT_ENV];
-  const preferredPort = preferredPortRaw ? Number.parseInt(preferredPortRaw, 10) : 0;
+  let preferredPort = preferredPortRaw ? Number.parseInt(preferredPortRaw, 10) : 0;
+  if (!preferredPort) {
+    try {
+      preferredPort = Number(new URL(await readMcpEndpoint()).port);
+    } catch {
+      // An absent previous endpoint needs no port reservation.
+    }
+  }
 
   const server = createMcpHttpServer(token, logger);
   const port = await listen(server, Number.isNaN(preferredPort) ? 0 : preferredPort);
+  try {
+    await writePrivateJson(mcpEndpointPath(), { port });
+  } catch {
+    logger.warn('[mcp-http-host] could not publish the local external endpoint');
+  }
   logger.info(`[mcp-http-host] listening on 127.0.0.1:${port}`);
 
   const handshake: McpHttpHostHandshake = { type: 'lody-mcp-http-listening', port };
@@ -237,7 +259,8 @@ async function handleRequest(
   logger: Logger
 ): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-  if (url.pathname !== '/mcp') {
+  const external = url.pathname === '/mcp/external';
+  if (url.pathname !== '/mcp' && !external) {
     reject(res, 404, 'Not found');
     return;
   }
@@ -253,7 +276,8 @@ async function handleRequest(
 
   const authorization = singleHeader(req, 'authorization');
   const bearer = authorization?.startsWith('Bearer ') ? authorization.slice(7) : null;
-  if (!bearer || !timingSafeTokenEqual(bearer, token)) {
+  const access = external && bearer ? await authenticateExternalAccess(bearer) : null;
+  if (!bearer || (external ? !access : !timingSafeTokenEqual(bearer, token))) {
     reject(res, 401, 'Unauthorized');
     return;
   }
@@ -286,16 +310,42 @@ async function handleRequest(
     }
   }
 
-  const context = parseSessionContextHeaders(req);
-  if (!context) {
+  const context = external ? null : parseSessionContextHeaders(req);
+  if (!external && !context) {
     reject(res, 400, 'Missing or invalid Lody MCP session context headers');
     return;
   }
+  const createServer = () =>
+    access
+      ? buildExternalMcpServer(async (name, args) => {
+          const response = await Effect.runPromise(
+            makeLocalControlClientAuto().machineRpc(
+              {
+                method: 'mcp/call-external-tool',
+                machineId: access.machineId,
+                workspaceId: access.workspaceId,
+                params: {
+                  token: bearer,
+                  name,
+                  arguments: z.record(z.string(), z.json()).parse(args),
+                },
+              },
+              { timeoutMs: 10 * 60 * 1000 }
+            )
+          );
+          if (!response.ok) throw new Error(response.error);
+          if (!('type' in response.result) || response.result.type !== 'session/tool-result')
+            throw new Error('Invalid external MCP response');
+          return response.result;
+        })
+      : buildLodyMcpServer();
+  const withContext = <T>(run: () => T): T =>
+    context ? runWithMcpSessionContext(context, run) : run();
 
   if (req.headers['mcp-protocol-version'] === '2026-07-28') {
-    const handler = createMcpHandler(buildLodyMcpServer);
+    const handler = createMcpHandler(createServer);
     res.on('close', () => void handler.close());
-    await runWithMcpSessionContext(context, () => toNodeHandler(handler)(req, res));
+    await withContext(() => toNodeHandler(handler)(req, res));
     return;
   }
 
@@ -303,7 +353,7 @@ async function handleRequest(
   // down when the response closes. The MCP client re-initializes per
   // connection, and every tool call carries its full context in headers, so no
   // cross-request state is needed and concurrent sessions cannot interleave.
-  const server = buildLodyMcpServer();
+  const server = createServer();
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -312,7 +362,7 @@ async function handleRequest(
     void transport.close();
     void server.close();
   });
-  await runWithMcpSessionContext(context, async () => {
+  await withContext(async () => {
     await server.connect(transport);
     await transport.handleRequest(req, res);
   });

@@ -69,6 +69,14 @@ Diagnostic logs, including workspace transport cleanup, go to stderr.
 
 ## Workspace discovery
 
+To let another local Agent use Lody, start the daemon and run
+`lody mcp access enable --workspace <id-or-slug>`. Configure the printed HTTP URL
+and `Authorization` header in that Agent's MCP client. This issues a dedicated
+local token, shown once; it grants discovery and task execution in the selected
+workspace. `lody mcp access status` shows the current URL and
+`lody mcp access disable` revokes new calls. Re-enabling rotates the token.
+The endpoint remains loopback-only. See [supported tools and retry behavior](src/mcp/README.md#http-and-loopback).
+
 The cloud workspace CLI and Lody MCP share resource queries. Lists return 20 entries
 by default (maximum page size 100), `hasMore` and an optional `nextCursor`. Continue
 with the same filters, or use CLI `--all-pages`. JSON includes `items` plus the

@@ -20,6 +20,39 @@ See the [decision and verification](../../../../.agents/notes/implemented/bug-fi
 
 ## HTTP and loopback
 
+The same host serves an opt-in `/mcp/external` endpoint for other local agents.
+`lody mcp access enable --workspace <id-or-slug>` issues a separate local bearer
+token and prints its URL/header once. Only its hash and owner/workspace/machine
+scope are saved. `access status` reports the URL without credentials; enabling
+again rotates the token, and `access disable` revokes new requests. Previously
+accepted tasks continue. This token is a local capability, not a product CLI
+account token. The daemon must be running; the host reuses its saved port when
+available. If that port is taken, obtain the new URL from `access status`.
+
+External tools reuse discovery registration, history paging and Session command
+services. Their catalog covers resource discovery, own-machine/own-user Session
+list/status/history, standalone create, chat and external request receipts.
+Creation accepts `agentConfigId`, optional `localProjectId`, and model/mode/config
+options. Roles, parent Sessions, attachments, batches, previews, schedules and
+catalog mutations are not external write capabilities in this release.
+
+Each request authenticates at HTTP and again in the daemon. Internal token/context
+headers cannot authorize external calls. External credentials cannot authorize
+the internal endpoint. The internal Session/Turn checks remain unchanged.
+Local composition performs no cloud authentication; cloud composition also
+rechecks the bound owner's workspace access through existing command services.
+
+Create/chat require a caller-chosen `operationId`. A private receipt, keyed by
+user/workspace/machine/operation, fixes the target Session and Turn before writing.
+Concurrent/repeated calls cannot start a second write; different arguments reject
+id reuse. `accepted` means the command returned and its repo flushed, not that the
+Agent finished. A crash/error after claiming returns `uncertain`, including its
+fixed target ids; do not automatically send a new operation. Inspect history and
+status first. Receipts survive token rotation and are retained without automatic
+expiry, so old ids cannot silently execute again. They contain no prompts or output.
+The existing Session-backed Operation/Inbox store is not used for external requests.
+See [external access contract](../../../../specs/external-mcp.md).
+
 - The MCP HTTP host answers a strict HTTP client (Grok's Rust `rmcp`), which reports a
   never-completing response as a transport failure, not an MCP error. Every request must
   reach a terminated response: `GET /mcp` is answered with 405 rather than handed to the

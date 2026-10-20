@@ -214,7 +214,8 @@ export type CreateOptions = CommonOptions &
     agentConfig?: string;
     /** CLI `--agent-role` selector (id or name), resolved from the workspace catalog. */
     agentRole?: string;
-    currentSessionId?: SessionId;
+    /** null explicitly disables ambient LODY_SESSION_ID for external callers. */
+    currentSessionId?: SessionId | null;
     defaultMachineId?: MachineId;
     requesterUserId?: string;
     /** Trusted human requester supplied by a delegated internal caller. */
@@ -3167,6 +3168,7 @@ export function resolveCreateCurrentSessionId(
   options: Pick<CreateOptions, 'currentSessionId'>,
   env: NodeJS.ProcessEnv = process.env
 ): SessionId | undefined {
+  if (options.currentSessionId === null) return undefined;
   return (normalizeCliValue(options.currentSessionId) ?? normalizeCliValue(env.LODY_SESSION_ID)) as
     | SessionId
     | undefined;

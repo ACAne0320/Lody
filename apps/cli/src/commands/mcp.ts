@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { mcpAccessCommand } from './mcp-access';
 import { discoveryListCommand } from './discovery';
 import { isDeepStrictEqual } from 'node:util';
 import { v4 as uuidV4 } from 'uuid';
@@ -377,6 +378,7 @@ const removeCommand = addCommonOptions(
 
 export const mcpCommand = new Command('mcp')
   .description('Manage workspace MCP servers')
+  .addCommand(mcpAccessCommand)
   .addCommand(listCommand)
   .addCommand(addCommand)
   .addCommand(setCommand)

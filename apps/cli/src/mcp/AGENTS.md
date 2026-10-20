@@ -2,7 +2,7 @@
 
 Parent instructions apply. Background: [README.md](README.md).
 
-- Route Session/catalog tools via `session/call-tool` to the daemon repo in every
+- Route internal Session/catalog tools via `session/call-tool` to the daemon repo in every
   composition, never a second replica or child `lody` CLI. Reuse SDK-parsed arguments
   and validate daemon inputs in `session-tool-router.ts`; scope replica/identity with
   ALS in `session-command-environment.ts`. Require exact workspace/machine scope
