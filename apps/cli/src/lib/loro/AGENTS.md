@@ -88,8 +88,8 @@ Only Legacy entries execute. No kernel Promise/timers,
 extra runtime or POST/SSE queue. Failed release retains work/Cause/owner and
 fences its generations; the registry retires it, never blocking the workspace.
 Close joins completion. Revoke preserves local
-production. CLI owns registry/token Scopes; durable/presence share one provider.
-`platform/presence.ts` consumes the published SDK native entry.
+production. CLI owns registry/token Scopes; workspace token users share one kernel.
+`platform/presence.ts` uses the published SDK native entry.
 
 ## Device resources use `machine-monitor.ts`
 

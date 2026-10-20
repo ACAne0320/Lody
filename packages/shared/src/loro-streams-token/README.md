@@ -73,7 +73,8 @@ Both diagnostic outputs omit credentials, JWTs, URLs, messages, stacks and recov
 owners. Preserve the original Cause separately for recovery; log the safe summary.
 
 Renderer workspace runtime, CLI durable transports and Machine RPC still use
-`createLoroStreamsTokenProviderLegacy` / `createTokenProviderLegacy`. Renderer
+`createLoroStreamsTokenProviderLegacy` / `createTokenProviderLegacy` (the CLI ones borrow
+a shared workspace kernel, below). Renderer
 teardown awaits this provider's close, retaining it on failure; the CLI official
 cloud composition retains Legacy providers until cloud-port disposal. Native
 `CloudStreamsTokenPort.createTokenProvider` places ownership in its caller's Scope.
@@ -94,5 +95,12 @@ CLI workspace presence creates one native provider in its workspace Scope. Durab
 Streams and machine monitor use `createLoroStreamsTokenProviderLegacy({ provider,
 executor })` with that provider and the existing application runtime; this mode
 creates no runtime or cache. Its close ends the provider after all cloud sinks
-are detached, and never disposes the borrowed executor. Renderer/Machine RPC
-callers may still use the owned options until their application ownership migrates.
+are detached, and never disposes the borrowed executor.
+
+In the official CLI cloud port every such provider, and the Machine RPC Legacy
+provider, is a view of one kernel per workspace (`apps/cli/src/lib/loro/streams-token-shares.ts`),
+so a cold start or reconnect makes one token request. A view's close fences and
+interrupts only its own reads; the last view closes the kernel, whose failed close
+still reports the kernel as recovery owner. Release failures and terminal auth of
+the shared kernel are visible to every view. Renderer callers still use the owned
+options until their application ownership migrates.

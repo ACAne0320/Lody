@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Exit, Scope } from 'effect';
 import type { Logger } from '../src/utils/logger';
 import { afterEach, expect, it, vi } from 'vitest';
 import {
@@ -115,6 +115,99 @@ it('official native Streams token port supplies the shared kernel and cancels ow
     expect(signal?.aborted).toBe(true);
     await port.closeLegacy();
     expect(() => port.createTokenProviderLegacy({ workspaceId: 'workspace' })).toThrow('closed');
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it('workspace Streams borrowers share one kernel; a closed borrower ends only its own reads', async () => {
+  vi.stubEnv('LODY_HTTP_TRANSPORT', 'default');
+  const logger: Logger = {
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    trace: () => {},
+    success: () => {},
+    setLevel: () => {},
+    child: () => logger,
+    close: async () => {},
+  };
+  type Pending = { respond: (token: string) => void; aborted: Promise<void>; workspaceId: string };
+  const requests: Pending[] = [];
+  const waiters: Array<{ count: number; resolve: () => void }> = [];
+  const requestCount = (count: number) =>
+    new Promise<void>((resolve) => {
+      if (requests.length >= count) resolve();
+      else waiters.push({ count, resolve });
+    });
+  vi.stubGlobal('fetch', (_url: unknown, init: RequestInit) => {
+    let aborted!: () => void;
+    const pending: Pending = {
+      respond: () => {},
+      aborted: new Promise<void>((resolve) => (aborted = resolve)),
+      workspaceId: (JSON.parse(init.body as string) as { workspaceId: string }).workspaceId,
+    };
+    const response = new Promise<Response>((resolve, reject) => {
+      pending.respond = (token) => resolve(Response.json({ token, expiresIn: 3600 }));
+      init.signal?.addEventListener(
+        'abort',
+        () => {
+          aborted();
+          reject(new DOMException('fixture aborted', 'AbortError'));
+        },
+        { once: true }
+      );
+    });
+    requests.push(pending);
+    for (const waiter of waiters) if (requests.length >= waiter.count) waiter.resolve();
+    return response;
+  });
+  const port = createCloudStreamsTokenPort({
+    token: 'synthetic-cli-token',
+    authBaseUrl: 'https://fixture.convex.cloud',
+    logger,
+  });
+  try {
+    // Durable/presence borrow natively; Machine RPC borrows through the Legacy facade.
+    const durableScope = Effect.runSync(Scope.make());
+    const durable = await Effect.runPromise(
+      Scope.provide(port.createTokenProvider({ workspaceId: 'workspace' }), durableScope)
+    );
+    const rpc = port.createTokenProviderLegacy({ workspaceId: 'workspace' });
+    const other = port.createTokenProviderLegacy({ workspaceId: 'other' });
+
+    const durableRead = Effect.runPromise(durable.getToken());
+    const rpcRead = rpc.getToken();
+    const otherRead = other.getToken();
+    await requestCount(2);
+    expect(requests.map((request) => request.workspaceId).sort()).toEqual(['other', 'workspace']);
+
+    // The durable transport detaches mid-refresh: its own read ends, the shared request survives.
+    const durableClosed = Effect.runPromise(Scope.close(durableScope, Exit.void));
+    await expect(durableRead).rejects.toBeDefined();
+    await durableClosed;
+    const shared = requests.find((request) => request.workspaceId === 'workspace')!;
+    shared.respond('jwt-workspace');
+    await expect(rpcRead).resolves.toBe('jwt-workspace');
+    requests.find((request) => request.workspaceId === 'other')!.respond('jwt-other');
+    await expect(otherRead).resolves.toBe('jwt-other');
+
+    // A later borrower of the same workspace reuses the cached token.
+    const reattached = port.createTokenProviderLegacy({ workspaceId: 'workspace' });
+    await expect(reattached.getToken()).resolves.toBe('jwt-workspace');
+    expect(requests).toHaveLength(2);
+
+    // The last borrower's close ends the kernel; a pending refresh is aborted with it.
+    rpc.invalidate('manual');
+    const refresh = reattached.getToken();
+    await requestCount(3);
+    await rpc.close();
+    await reattached.close();
+    await requests[2]!.aborted;
+    await expect(refresh).rejects.toBeDefined();
+    await other.close();
+    await port.closeLegacy();
   } finally {
     vi.unstubAllEnvs();
   }

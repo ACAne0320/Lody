@@ -389,7 +389,9 @@ renderer and Machine RPC callers use the sole
 `createTokenProviderLegacy` port/type. Renderer teardown and CLI cloud-port
 shutdown await provider close. CLI durable transport and machine monitor borrow the
 workspace-native provider through `{provider, executor}` in that same facade,
-creating no extra runtime/cache. This is token ownership, not completion of upper
+creating no extra runtime/cache. In the CLI port those providers and Machine RPC's
+are views of one kernel per workspace (`loro/streams-token-shares.ts`): a view's
+close ends only its reads, and the last one closes the kernel. This is token ownership, not completion of upper
 Loro/daemon lifecycles. [API and decision](../../packages/shared/src/loro-streams-token/README.md).
 
 Native getToken/auth preserve terminal typed failure; only the explicit Legacy
