@@ -256,6 +256,7 @@ import {
   CAPACITY_RETRY_CONTINUATION_PROMPT,
   useCapacityAutoRetry,
 } from './use-capacity-auto-retry';
+import { useSessionDocStaleReport } from './use-session-doc-stale-report';
 import { buildFixCiErrorsPrompt, buildResolvePrConflictsPrompt } from './session-pr-prompts';
 import { resolveConflictsActionAtomFamily } from './session-pr-agent-action';
 import { setPreferredPrMergeMethod, usePreferredPrMergeMethod } from './pr-merge-method';
@@ -4039,6 +4040,19 @@ export const SessionChatInterface = memo(
       isDispatching,
       isSessionWorking,
       isGoalActive,
+    });
+    const peekSessionStore = useCallback(
+      () => runtime?.peekSessionStore?.(session.id),
+      [runtime, session.id]
+    );
+    useSessionDocStaleReport({
+      sessionId: session.id,
+      docReady: sessionDocReady && !hideMessageArea,
+      machineOnlineStatus: sessionMachineOnlineStatus,
+      agentBusy: isAgentBusy,
+      activeAssistantTurnId: activeAssistantTurnId ?? null,
+      lastMessageAt: session.lastMessageAt,
+      peekStore: peekSessionStore,
     });
     const canStopAgent = canStopAgentEnabled({
       isContextCompacting,

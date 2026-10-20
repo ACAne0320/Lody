@@ -1927,6 +1927,220 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     await runtime.dispose();
   });
 
+  it('re-joins a held session room after every initial join attempt failed', async () => {
+    // A join that never attaches leaves loro-repo no room record, so neither
+    // repo.reconnect() nor the reconnect loop can revive it. The open view
+    // used to sit on its cached copy until a reload.
+    const { LoroRepo: RealRepo } = await vi.importActual<typeof import('loro-repo')>('loro-repo');
+    const repo = await RealRepo.create({
+      metaDebounceCommitMs: 0,
+      resolveRoomTransports: () => ({ transportIds: ['local'] }),
+    });
+    const subscription = (): TransportSubscription => ({
+      status: 'joined',
+      firstSyncedWithRemote: Promise.resolve(),
+      onStatusChange: () => () => {},
+      unsubscribe: () => {},
+      waitUntilSynced: async () => {},
+      rejoin: async () => {},
+    });
+    const sessionId = 'synthetic-join-retry' as SessionId;
+    const roomId = getSessionRoomId(sessionId);
+    // Three attempts inside one join pass, then one more after the backoff.
+    let failingJoins = 4;
+    const adapter: TransportAdapter = {
+      connect: async () => {},
+      close: async () => {},
+      isConnected: () => true,
+      getStatus: () => 'connected',
+      onStatusChange: () => () => {},
+      reconnect: async () => {},
+      syncMeta: async () => ({ ok: true }),
+      syncDoc: async () => ({ ok: true }),
+      joinMetaRoom: () => subscription(),
+      joinDocRoom: (docId) => {
+        if (docId === roomId && failingJoins > 0) {
+          failingJoins -= 1;
+          throw new Error('synthetic attach failure');
+        }
+        return subscription();
+      },
+    };
+    const add = repo.addTransport.bind(repo);
+    vi.spyOn(repo, 'addTransport').mockImplementation((id, _adapter, options) =>
+      add(id, adapter, options)
+    );
+    mocks.repoOverride = repo;
+    enableElectronLocalDataPlane();
+    await repo.upsertDocMeta(roomId, { id: sessionId, machineId: 'local-machine' });
+
+    const runtime = await createWorkspaceRuntime({
+      workspaceSlug: 'workspace',
+      workspaceId: 'workspace-1' as WorkspaceId,
+      apiBaseUrl: 'https://api.example.test',
+    });
+    runtime.setLocalMachineId('local-machine' as MachineId);
+    const store = await runtime.acquireSessionStore(sessionId);
+    const releaseSync = store.acquireSync();
+    try {
+      // The join pass's own retries (1 s, 2 s) all fail.
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(failingJoins).toBe(1);
+      expect(store.getSyncState()).toBe('error');
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(failingJoins).toBe(0);
+      expect(store.getSyncState()).toBe('synced');
+      await expect(store.firstSynced).resolves.toBeUndefined();
+    } finally {
+      releaseSync();
+      runtime.releaseSessionStoreRef(sessionId);
+      await runtime.dispose();
+    }
+  });
+
+  it('inspects a joined session room whose upload never drains', async () => {
+    const { LoroRepo: RealRepo } = await vi.importActual<typeof import('loro-repo')>('loro-repo');
+    const { LoroDoc } = await import('loro-crdt');
+    const repo = await RealRepo.create({
+      metaDebounceCommitMs: 0,
+      resolveRoomTransports: () => ({ transportIds: ['local'] }),
+    });
+    const subscription = (wedged: boolean): TransportSubscription => ({
+      status: 'joined',
+      firstSyncedWithRemote: Promise.resolve(),
+      onStatusChange: () => () => {},
+      unsubscribe: () => {},
+      // A wedged room queue: explicit sync never settles.
+      waitUntilSynced: () => (wedged ? new Promise<void>(() => {}) : Promise.resolve()),
+      rejoin: async () => {},
+    });
+    const adapter: TransportAdapter = {
+      connect: async () => {},
+      close: async () => {},
+      isConnected: () => true,
+      getStatus: () => 'connected',
+      onStatusChange: () => () => {},
+      reconnect: async () => {},
+      syncMeta: async () => ({ ok: true }),
+      syncDoc: async () => ({ ok: true }),
+      joinMetaRoom: () => subscription(false),
+      joinDocRoom: () => subscription(true),
+    };
+    const add = repo.addTransport.bind(repo);
+    vi.spyOn(repo, 'addTransport').mockImplementation((id, _adapter, options) =>
+      add(id, adapter, options)
+    );
+    mocks.repoOverride = repo;
+    enableElectronLocalDataPlane();
+    const sessionId = 'synthetic-inspect' as SessionId;
+    await repo.upsertDocMeta(getSessionRoomId(sessionId), {
+      id: sessionId,
+      machineId: 'local-machine',
+    });
+
+    const runtime = await createWorkspaceRuntime({
+      workspaceSlug: 'workspace',
+      workspaceId: 'workspace-1' as WorkspaceId,
+      apiBaseUrl: 'https://api.example.test',
+    });
+    runtime.setLocalMachineId('local-machine' as MachineId);
+    const store = await runtime.acquireSessionStore(sessionId);
+    const releaseSync = store.acquireSync();
+    try {
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(store.getSyncState()).toBe('synced');
+      const inspectWithin = async (timeoutMs: number) => {
+        const inspecting = store.inspectSync({ uploadProbeTimeoutMs: timeoutMs });
+        await vi.advanceTimersByTimeAsync(timeoutMs);
+        return await inspecting;
+      };
+      expect(await inspectWithin(1_000)).toMatchObject({
+        bindingStatus: 'joined',
+        lastRemoteImportAt: null,
+        uploadProbe: 'timeout',
+      });
+
+      const remote = new LoroDoc();
+      remote.getMap('synthetic').set('k', 1);
+      remote.commit();
+      store.doc.import(remote.export({ mode: 'update' }));
+      const importedAt = Date.now();
+
+      expect(await inspectWithin(10_000)).toMatchObject({
+        transportId: 'local',
+        bindingStatus: 'joined',
+        syncState: 'synced',
+        lastRemoteImportAt: importedAt,
+        uploadProbe: 'timeout',
+      });
+    } finally {
+      releaseSync();
+      runtime.releaseSessionStoreRef(sessionId);
+      await runtime.dispose();
+    }
+  });
+
+  it('stops re-joining a failed session room once its last view releases it', async () => {
+    const { LoroRepo: RealRepo } = await vi.importActual<typeof import('loro-repo')>('loro-repo');
+    const repo = await RealRepo.create({
+      metaDebounceCommitMs: 0,
+      resolveRoomTransports: () => ({ transportIds: ['local'] }),
+    });
+    const sessionId = 'synthetic-join-released' as SessionId;
+    const roomId = getSessionRoomId(sessionId);
+    let docJoins = 0;
+    const adapter: TransportAdapter = {
+      connect: async () => {},
+      close: async () => {},
+      isConnected: () => true,
+      getStatus: () => 'connected',
+      onStatusChange: () => () => {},
+      reconnect: async () => {},
+      syncMeta: async () => ({ ok: true }),
+      syncDoc: async () => ({ ok: true }),
+      joinMetaRoom: () => ({
+        status: 'joined',
+        firstSyncedWithRemote: Promise.resolve(),
+        onStatusChange: () => () => {},
+        unsubscribe: () => {},
+        waitUntilSynced: async () => {},
+        rejoin: async () => {},
+      }),
+      joinDocRoom: (docId) => {
+        if (docId === roomId) docJoins += 1;
+        throw new Error('synthetic attach failure');
+      },
+    };
+    const add = repo.addTransport.bind(repo);
+    vi.spyOn(repo, 'addTransport').mockImplementation((id, _adapter, options) =>
+      add(id, adapter, options)
+    );
+    mocks.repoOverride = repo;
+    enableElectronLocalDataPlane();
+    await repo.upsertDocMeta(roomId, { id: sessionId, machineId: 'local-machine' });
+
+    const runtime = await createWorkspaceRuntime({
+      workspaceSlug: 'workspace',
+      workspaceId: 'workspace-1' as WorkspaceId,
+      apiBaseUrl: 'https://api.example.test',
+    });
+    runtime.setLocalMachineId('local-machine' as MachineId);
+    const store = await runtime.acquireSessionStore(sessionId);
+    const releaseSync = store.acquireSync();
+    try {
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(docJoins).toBe(3);
+      releaseSync();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(docJoins).toBe(3);
+      expect(store.getSyncState()).toBe('idle');
+    } finally {
+      runtime.releaseSessionStoreRef(sessionId);
+      await runtime.dispose();
+    }
+  });
+
   it('does not restart presence during durable meta sync recovery', async () => {
     const neverSynced = new Promise<void>(() => {});
     mocks.joinMetaRoom

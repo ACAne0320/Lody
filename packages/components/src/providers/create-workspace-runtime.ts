@@ -130,6 +130,7 @@ import type { LodyControlConnectionState } from '@/atoms/control-connection';
 import { createManagedStoreCache } from './store-ref-tracker';
 import { waitForRoomToSync } from './room-sync';
 import {
+  computeLocalReconnectDelayMs,
   createLocalReconnectLoop,
   type LocalReconnectLoop,
   type LocalReconnectTriggerReason,
@@ -4428,6 +4429,14 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     }
     const { mirror, history, sessionData, dispose: disposeConversation } = conversation;
 
+    // Inbound progress for stall diagnostics: the room can stay joined while
+    // nothing it receives is applied. One timestamp per import, no payload.
+    const storeOpenedAt = Date.now();
+    let lastRemoteImportAt: number | null = null;
+    const unsubscribeImportWatch = persistedDoc.doc.subscribe((event) => {
+      if (event.by === 'import') lastRemoteImportAt = Date.now();
+    });
+
     const syncTracker = createTrackedRoomSyncTracker(roomId);
     // Track subscription for cleanup
     let roomSub: Awaited<ReturnType<typeof persistedDoc.joinRoom>> | null = null;
@@ -4436,6 +4445,10 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
     let syncLeaseCount = 0;
     let syncReleaseTimer: ReturnType<typeof setTimeout> | null = null;
     let syncJoinPromise: Promise<void> | null = null;
+    // A join whose every attempt failed leaves no room for repo.reconnect() to
+    // repair, so the store re-joins on its own backoff while a lease remains.
+    let joinRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let joinRetryAttempt = 0;
     let resolveFirstSynced: (() => void) | null = null;
     const firstSynced = new Promise<void>((resolve) => {
       resolveFirstSynced = resolve;
@@ -4448,8 +4461,17 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
       }
     };
 
+    const clearJoinRetryTimer = () => {
+      if (joinRetryTimer !== null) {
+        clearTimeout(joinRetryTimer);
+        joinRetryTimer = null;
+      }
+    };
+
     const stopSyncNow = () => {
       clearSyncReleaseTimer();
+      clearJoinRetryTimer();
+      joinRetryAttempt = 0;
       cloudRepairUnsubscribe?.();
       cloudRepairUnsubscribe = null;
       if (roomSub) {
@@ -4466,7 +4488,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
 
     const startSync = () => {
       clearSyncReleaseTimer();
-      if (disposed || roomSub || syncJoinPromise) {
+      if (disposed || roomSub || syncJoinPromise || joinRetryTimer) {
         return;
       }
 
@@ -4506,11 +4528,29 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
             return;
           }
           roomSub = joined;
+          joinRetryAttempt = 0;
           syncTracker.markFirstSynced();
           resolveFirstSynced?.();
           resolveFirstSynced = null;
         } catch (error) {
           syncTracker.markFirstSyncFailed();
+          // A returned subscription keeps self-healing inside the SDK; only a
+          // join that never produced one needs a fresh attempt.
+          if (!roomSub && !disposed && syncLeaseCount > 0) {
+            const delayMs = computeLocalReconnectDelayMs(joinRetryAttempt);
+            joinRetryAttempt += 1;
+            console.warn('createWorkspaceRuntime: session room join failed; retrying', {
+              workspaceId,
+              roomId,
+              attempt: joinRetryAttempt,
+              delayMs,
+            });
+            joinRetryTimer = setTimeout(() => {
+              joinRetryTimer = null;
+              // A pending release owns the room once the last lease is gone.
+              if (syncLeaseCount > 0) startSync();
+            }, delayMs);
+          }
           throw error;
         }
       });
@@ -4571,8 +4611,31 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
         materializedSessionIds.delete(sessionId);
         stopSyncNow();
         syncTracker.dispose();
+        unsubscribeImportWatch();
         disposeConversation();
         disposeReaderObservation();
+      },
+      inspectSync: async ({ uploadProbeTimeoutMs }) => {
+        const binding = roomSub ? readinessBindingForDocRoom(roomSub, roomId) : null;
+        const bindingStatus = binding?.status ?? null;
+        // Explicit sync shares the room's single operation queue with live
+        // applies, so a wedged queue shows up as a timeout here.
+        const probe = binding
+          ? await binding.waitFor({
+              phase: 'pending-upload-empty',
+              timeoutMs: uploadProbeTimeoutMs,
+            })
+          : null;
+        return {
+          transportId:
+            binding?.transportId ??
+            targetRouter.getReadinessTransportForRoom({ kind: 'doc', id: roomId }),
+          bindingStatus,
+          syncState: syncTracker.getSyncState(),
+          openedAt: storeOpenedAt,
+          lastRemoteImportAt,
+          uploadProbe: probe?.status ?? null,
+        };
       },
       waitUntilSynced: async (signal?: AbortSignal) => {
         if (signal) await waitForPromiseOrAbort(transportReady.promise, signal);

@@ -128,6 +128,25 @@ export type SessionDocStore = {
    * background join/SSE work instead of keeping it alive until it settles.
    */
   waitUntilSynced: (signal?: AbortSignal) => Promise<void>;
+  /**
+   * Bounded diagnostics for a conversation that looks stale. Ids, states and
+   * timestamps only. The upload probe runs one explicit sync and settles
+   * within `uploadProbeTimeoutMs`.
+   */
+  inspectSync: (options: { uploadProbeTimeoutMs: number }) => Promise<SessionSyncInspection>;
+};
+
+export type SessionSyncInspection = {
+  /** The plane whose binding gates this room's readiness. */
+  readonly transportId: string;
+  /** `null` while no join has produced a subscription. */
+  readonly bindingStatus: string | null;
+  readonly syncState: RoomSyncState;
+  readonly openedAt: number;
+  /** Last time a remote import landed in this doc; `null` if none since open. */
+  readonly lastRemoteImportAt: number | null;
+  /** `waitFor('pending-upload-empty')` outcome; `null` without a subscription. */
+  readonly uploadProbe: string | null;
 };
 
 export type PreviewVisualCommentDocUpdater =
