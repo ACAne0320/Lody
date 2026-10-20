@@ -64,11 +64,11 @@ catalogs:
       specifier: 0.6.0
       version: 0.6.0
     '@loro-dev/streams-client':
-      specifier: 0.12.0
-      version: 0.12.0
+      specifier: 0.12.1
+      version: 0.12.1
     '@loro-dev/streams-crdt':
-      specifier: 0.19.0
-      version: 0.19.0
+      specifier: 0.19.1
+      version: 0.19.1
     '@tanstack/react-router':
       specifier: ^1.127.9
       version: 1.170.18
@@ -130,8 +130,8 @@ catalogs:
       specifier: 2.3.2
       version: 2.3.2
     loro-repo:
-      specifier: 0.23.2
-      version: 0.23.2
+      specifier: 0.23.3
+      version: 0.23.3
     loro-websocket:
       specifier: ^0.6.2
       version: 0.6.2
@@ -325,10 +325,10 @@ importers:
         version: 0.1.3
       '@loro-dev/streams-client':
         specifier: 'catalog:'
-        version: 0.12.0(effect@4.0.2)
+        version: 0.12.1(effect@4.0.2)
       '@loro-dev/streams-crdt':
         specifier: 'catalog:'
-        version: 0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
+        version: 0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
       '@modelcontextprotocol/client':
         specifier: 2.0.0
         version: 2.0.0
@@ -445,7 +445,7 @@ importers:
         version: 2.3.2(loro-crdt@1.16.3)
       loro-repo:
         specifier: 'catalog:'
-        version: 0.23.2(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@13.0.3)(effect@4.0.2)(loro-crdt@1.16.3)
+        version: 0.23.3(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@13.0.3)(effect@4.0.2)(loro-crdt@1.16.3)
       ora:
         specifier: ^8.2.0
         version: 8.2.0
@@ -1147,7 +1147,7 @@ importers:
         version: 0.4.4
       '@loro-dev/streams-crdt':
         specifier: 'catalog:'
-        version: 0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
+        version: 0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
       '@meowdown/core':
         specifier: 0.59.0
         version: 0.59.0(@lezer/common@1.5.2)(@shikijs/types@4.3.1)(@types/hast@3.0.5)(highlight.js@11.11.1)(loro-crdt@1.16.3)(lowlight@3.3.0)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-transform@1.12.0)(prosemirror-view@1.42.2)(refractor@5.0.0)
@@ -1321,7 +1321,7 @@ importers:
         version: 2.3.2(loro-crdt@1.16.3)(loro-mirror@2.3.2(loro-crdt@1.16.3))(react@19.2.0)
       loro-repo:
         specifier: 'catalog:'
-        version: 0.23.2(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.10.0)(effect@4.0.2)(loro-crdt@1.16.3)
+        version: 0.23.3(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.10.0)(effect@4.0.2)(loro-crdt@1.16.3)
       loro-websocket:
         specifier: 'catalog:'
         version: 0.6.2(@loro-dev/flock@4.4.4)(loro-crdt@1.16.3)
@@ -1648,7 +1648,7 @@ importers:
         version: link:../shared
       '@loro-dev/streams-client':
         specifier: 'catalog:'
-        version: 0.12.0(effect@4.0.2)
+        version: 0.12.1(effect@4.0.2)
       zod:
         specifier: 4.3.6
         version: 4.3.6
@@ -1704,7 +1704,7 @@ importers:
         version: 4.0.2(effect@4.0.2)
       '@loro-dev/streams-crdt':
         specifier: 'catalog:'
-        version: 0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
+        version: 0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
       acp-extension-core:
         specifier: workspace:*
         version: link:../acp-extension-core
@@ -1759,7 +1759,7 @@ importers:
         version: 24.10.12
       loro-repo:
         specifier: 'catalog:'
-        version: 0.23.2(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.10.0)(effect@4.0.2)(loro-crdt@1.16.3)
+        version: 0.23.3(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.10.0)(effect@4.0.2)(loro-crdt@1.16.3)
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
@@ -3906,8 +3906,8 @@ packages:
     resolution: {integrity: sha512-FWyrr7AnhJZXsrxubqjjgabD1aRksziU8HNR3WiJoYaPQEX0kDwiqqAJ53xgYI7MurQNfUcGVmSw0aD+TCNSMA==}
     engines: {node: '>=18'}
 
-  '@loro-dev/streams-client@0.12.0':
-    resolution: {integrity: sha512-sUQs7CMVtHhdOEtbYY1Sge1r6o6guqYaFmg2G8qJfrSa/3ysn2Ub5HbPBz/I8iOYDUHkpvJeXJdvl/Q+SSszkw==}
+  '@loro-dev/streams-client@0.12.1':
+    resolution: {integrity: sha512-FWx0J0DcKmIk7YIZO8u1Jrc8+O38Wo8Jmvx4+5NSJRrE69O7Bvi5A5HU4dlI5e5sZg9atRRxhTR8VLQ+Y3e7qg==}
     engines: {node: '>=18'}
     peerDependencies:
       effect: 4.0.2
@@ -3939,8 +3939,8 @@ packages:
       loro-crdt:
         optional: true
 
-  '@loro-dev/streams-crdt@0.19.0':
-    resolution: {integrity: sha512-3P1zY2DzaIyCfa6JN4WfbqCrBFV07VJhWxMY9pLRf/8PD8kVV7ZI/7qL0xbCyrCVCNiGtnI40XugwLRmfGyxvA==}
+  '@loro-dev/streams-crdt@0.19.1':
+    resolution: {integrity: sha512-BGCcunydzZsbdVVInmJoUYNXkfGPBAsFyLmIzDio8y5k4fi76cy3rC9x5VTtJKEG9BBM0KiZT56kcX/TJDDtjQ==}
     peerDependencies:
       '@loro-dev/flock-wasm': ^0.4.0
       effect: 4.0.2
@@ -10938,8 +10938,8 @@ packages:
     resolution: {integrity: sha512-j28FzDwOVHk95asjQEk8yse7hfYHnStdusYcQBphWRwzA8wzE5iMHQpnDyog1O6kmJQ6W/iC8yDisHpxH0wUAg==}
     engines: {node: '>=18.0.0'}
 
-  loro-repo@0.23.2:
-    resolution: {integrity: sha512-N1bxZsklCIsr1lQSEaGQLnPeG2S/zmXyB9uPjNJPh/fSKR9ctHNeXe74oo2Jae6N/SWzaWjAt23DhMvPHS9Vmg==}
+  loro-repo@0.23.3:
+    resolution: {integrity: sha512-K8/23fX7PxDoZG/fVtD9I1Ux43ACBg8x3q1BXmbd89qPnxEU2bVf9IEbp96Q431x28/QrYAHpSFRCruok0rzaA==}
     engines: {node: '>=18'}
     peerDependencies:
       '@loro-dev/flock-wasm': ^0.4.2
@@ -16637,7 +16637,7 @@ snapshots:
 
   '@loro-dev/streams-client@0.10.0': {}
 
-  '@loro-dev/streams-client@0.12.0(effect@4.0.2)':
+  '@loro-dev/streams-client@0.12.1(effect@4.0.2)':
     optionalDependencies:
       effect: 4.0.2
 
@@ -16655,9 +16655,9 @@ snapshots:
       '@loro-dev/flock-wasm': 0.4.4
       loro-crdt: 1.16.3
 
-  '@loro-dev/streams-crdt@0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)':
+  '@loro-dev/streams-crdt@0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)':
     dependencies:
-      '@loro-dev/streams-client': 0.12.0(effect@4.0.2)
+      '@loro-dev/streams-client': 0.12.1(effect@4.0.2)
       effect: 4.0.2
     optionalDependencies:
       '@loro-dev/flock-wasm': 0.4.4
@@ -24511,7 +24511,7 @@ snapshots:
 
   loro-protocol@0.3.0: {}
 
-  loro-repo@0.23.2(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.10.0)(effect@4.0.2)(loro-crdt@1.16.3):
+  loro-repo@0.23.3(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.10.0)(effect@4.0.2)(loro-crdt@1.16.3):
     dependencies:
       '@loro-dev/flock-wasm': 0.4.4
       loro-adaptors: 0.6.1(@loro-dev/flock@4.4.4)(loro-crdt@1.16.3)
@@ -24519,7 +24519,7 @@ snapshots:
       loro-protocol: 0.3.0
       loro-websocket: 0.6.2(@loro-dev/flock@4.4.4)(loro-crdt@1.16.3)
     optionalDependencies:
-      '@loro-dev/streams-crdt': 0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
+      '@loro-dev/streams-crdt': 0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
       '@types/better-sqlite3': 7.6.13
       better-sqlite3: 12.10.0
       effect: 4.0.2
@@ -24529,7 +24529,7 @@ snapshots:
       - utf-8-validate
       - yjs
 
-  loro-repo@0.23.2(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@13.0.3)(effect@4.0.2)(loro-crdt@1.16.3):
+  loro-repo@0.23.3(@loro-dev/flock-wasm@0.4.4)(@loro-dev/flock@4.4.4)(@loro-dev/streams-crdt@0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@13.0.3)(effect@4.0.2)(loro-crdt@1.16.3):
     dependencies:
       '@loro-dev/flock-wasm': 0.4.4
       loro-adaptors: 0.6.1(@loro-dev/flock@4.4.4)(loro-crdt@1.16.3)
@@ -24537,7 +24537,7 @@ snapshots:
       loro-protocol: 0.3.0
       loro-websocket: 0.6.2(@loro-dev/flock@4.4.4)(loro-crdt@1.16.3)
     optionalDependencies:
-      '@loro-dev/streams-crdt': 0.19.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
+      '@loro-dev/streams-crdt': 0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
       '@types/better-sqlite3': 7.6.13
       better-sqlite3: 13.0.3
       effect: 4.0.2
