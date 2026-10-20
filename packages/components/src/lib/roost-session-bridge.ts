@@ -13,6 +13,8 @@ import type {
 } from '@lody/shared';
 import {
   createRoostSessionData,
+  createRoostDirectoryRow,
+  applySessionHistoryPatches,
   type HistoryAction,
   type HistoryImportInput,
   type ReplaceEditableTailInput,
@@ -70,6 +72,7 @@ type RoostHistoryTransport = {
 type RoostHistoryObservationOptions = {
   readonly incremental?: boolean | (() => boolean);
   readonly watch?: boolean | (() => boolean);
+  readonly patches?: boolean | (() => boolean);
   readonly active?: () => boolean;
   readonly subscribeWake?: (wake: () => void) => () => void;
 };
@@ -242,6 +245,9 @@ const createRoostSessionDataFactoryFromTransport =
         ? options.incremental()
         : options.incremental === true;
     const active = () => options.active?.() ?? true;
+    const patchesEnabled = () =>
+      incrementalEnabled() &&
+      (typeof options.patches === 'function' ? options.patches() : options.patches === true);
     const watchEnabled = () =>
       incrementalEnabled() &&
       active() &&
@@ -336,9 +342,8 @@ const createRoostSessionDataFactoryFromTransport =
             throw new Error('Roost page bodies and directory disagree');
           }
           turns.forEach((turn, index) => rememberBody(turn, page.startPosition + index));
-          await cached(() =>
-            cache.acceptPage(page, turns, revision, response.historyChange, replacingSnapshot)
-          );
+          if (!replacingSnapshot)
+            await cached(() => cache.acceptPage(page, turns, revision, response.historyChange));
         } else if (query.kind === 'readTurn' || query.kind === 'readAt') {
           const read = validateTurnRead(response.result, 'Roost turn read');
           if (read.state === 'ready')
@@ -596,6 +601,42 @@ const createRoostSessionDataFactoryFromTransport =
         }
       }
       if (before) {
+        if (incrementalEnabled() && localHead?.checkpoint && !replacingSnapshot) {
+          // A durable cursor already names an absolute edge. Read that window
+          // directly at its checkpoint instead of walking from the latest page.
+          const from = Math.max(0, before.end - query.limit);
+          const response = await readOwner({
+            kind: 'readRange',
+            from,
+            to: before.end,
+            atCheckpoint: localHead.checkpoint,
+          });
+          if (
+            response.historyRevision !== localHead.revision ||
+            response.historyCount !== localHead.count ||
+            !Array.isArray(response.result) ||
+            response.result.length !== before.end - from
+          )
+            throw new HistoryRefreshSupersededError();
+          const turns = response.result.map((value) => {
+            const read = validateTurnRead(value, 'Roost cached page recovery');
+            if (read.state !== 'ready') throw new Error('Roost cached page body is unavailable');
+            return read.turn as SessionHistoryInput;
+          });
+          const page: SessionHistoryDirectoryPage = {
+            checkpoint: localHead.checkpoint,
+            startPosition: from,
+            totalCount: localHead.count,
+            rows: turns.map((turn, index) =>
+              createRoostDirectoryRow(from + index, turn as SessionEntry)
+            ),
+            hasMoreOlder: from > 0,
+            cursor: from > 0 ? roostCacheCursor(localHead.revision, from) : null,
+          };
+          await cached(() => cache.acceptPage(page, turns, localHead.revision));
+          turns.forEach((turn, index) => rememberBody(turn, from + index));
+          return { page, directoryEpoch };
+        }
         // A durable cursor survives owner restarts. Resolve its absolute edge
         // through the existing reverse API if this replica lacks that page.
         let response = await readOwner({ kind: 'readLatestPage', limit: 40 });
@@ -664,20 +705,30 @@ const createRoostSessionDataFactoryFromTransport =
       refreshing = true;
       refreshRequested = false;
       try {
-        let prior = await cached(() => cache.getHead());
-        if (incrementalEnabled() && prior?.checkpoint) {
+        const prior = await cached(() => cache.getHead());
+        const checkpoint = prior?.checkpoint ?? prior?.recoveryCheckpoint;
+        if (incrementalEnabled() && prior && !checkpoint) {
+          // No verified interval remains. Establish a new bounded window;
+          // unknown older bodies must not become a patch baseline.
+          replacingSnapshot = true;
+          bodies.clear();
+        }
+        if (incrementalEnabled() && prior && checkpoint) {
+          const withPatches = patchesEnabled() && prior.checkpoint !== undefined;
           const response = await readOwner(
-            watchEnabled()
+            watchEnabled() && prior.checkpoint
               ? {
                   kind: 'watchChanges',
-                  checkpoint: prior.checkpoint,
+                  checkpoint,
                   waitMs: 15_000,
                   includeBodiesFrom: prior.start,
+                  ...(withPatches ? { withPatches: true as const } : {}),
                 }
               : {
                   kind: 'readChanges',
-                  checkpoint: prior.checkpoint,
+                  checkpoint,
                   includeBodiesFrom: prior.start,
+                  ...(withPatches ? { withPatches: true as const } : {}),
                 }
           );
           const revision = response.historyRevision!;
@@ -699,6 +750,11 @@ const createRoostSessionDataFactoryFromTransport =
             const from = change.from === undefined ? undefined : Math.min(change.from, count);
             const affected = (await cached(() => cache.readAffected(change.ids))) ?? [];
             const replacements: { position: number; turn: SessionHistoryInput }[] = [];
+            const patches = new Map(
+              withPatches && change.patches && change.patches.baseCheckpoint === prior.checkpoint
+                ? change.patches.turns.map((patch) => [patch.turnId, patch.operations])
+                : []
+            );
             const changedBodies =
               change.bodies === undefined
                 ? undefined
@@ -709,11 +765,30 @@ const createRoostSessionDataFactoryFromTransport =
                   );
             for (const row of affected) {
               if (from !== undefined && row.position >= from) continue;
+              const operations = patches.get(row.turnId);
+              if (operations) {
+                let prepared: SessionHistoryInput | undefined;
+                try {
+                  [prepared] = validateHistory(
+                    [applySessionHistoryPatches(row.turn, operations)],
+                    'Roost content patches'
+                  );
+                } catch {
+                  // Keep the cached checkpoint; repair this body at the owner's target checkpoint.
+                }
+                if (prepared) {
+                  replacements.push({ position: row.position, turn: prepared });
+                  continue;
+                }
+              }
               if (changedBodies) {
                 const turn = changedBodies.get(row.turnId);
-                if (!turn) throw new Error('Roost incremental body is incomplete');
-                replacements.push({ position: row.position, turn });
-                continue;
+                if (turn) {
+                  replacements.push({ position: row.position, turn });
+                  continue;
+                }
+                if (!change.patches?.turns.some((patch) => patch.turnId === row.turnId))
+                  throw new Error('Roost incremental body is incomplete');
               }
               const read = await readOwner({
                 kind: 'readTurn',
@@ -773,7 +848,15 @@ const createRoostSessionDataFactoryFromTransport =
             if (change.bodies === undefined && revision < observedHistoryRevision)
               throw new HistoryRefreshSupersededError();
             const applied = await cached(() =>
-              cache.applyChanges(prior!, revision, count, change.checkpoint, from, replacements)
+              cache.applyChanges(
+                prior,
+                revision,
+                count,
+                change.checkpoint,
+                from,
+                replacements,
+                !withPatches
+              )
             );
             if (applied === undefined) throw new Error('Roost history cache is unavailable');
             if (!applied) throw new HistoryRefreshSupersededError();
@@ -805,9 +888,8 @@ const createRoostSessionDataFactoryFromTransport =
             // when older pages have never been loaded. Do not reread its tail.
             return;
           } else {
-            // A reset rejects complete coverage, even when the control revision
-            // looks consecutive. Neither its last hint nor a latest page can
-            // repair unreported prefix changes.
+            // A reset rejects prefix coverage. Replace the readable window
+            // atomically, then fetch invalidated older pages on demand.
             replacingSnapshot = true;
             bodies.clear();
             observedDirectoryEpoch += 1;
@@ -836,62 +918,38 @@ const createRoostSessionDataFactoryFromTransport =
               return read.turn as SessionHistoryInput;
             });
             const applied = await cached(() => cache.updateTurns(deltaRevision, deltaCount, turns));
-            if (applied && prior.start === 0) {
+            if (applied) {
               retryDelay = 250;
               consecutiveSupersessions = 0;
               return;
             }
           }
         }
-        let response = await readOwner({ kind: 'readLatestPage', limit: 40 });
+        const response = await readOwner({ kind: 'readLatestPage', limit: 40 });
         const revision = response.historyRevision;
-        let page = validateDirectoryPage(response.result, 'Roost refresh page');
+        const page = validateDirectoryPage(response.result, 'Roost refresh page');
         if (displayedCacheRevision !== undefined && displayedCacheRevision !== revision) {
           displayedCacheRevision = undefined;
           for (const listener of listeners)
             listener({ kind: 'structure', from: 0, to: page.totalCount });
         }
-        // Populate the durable replica by bounded pages after the first window
-        // is available. Keep the previous coherent snapshot during a revision
-        // gap; publication of the replacement is atomic in the cache.
-        let head = await cached(() => cache.getHead());
-        if (!head) throw new Error('Roost history cache is unavailable');
-        const rebuilding =
-          replacingSnapshot || (prior?.revision !== revision && head?.revision !== revision);
-        for (;;) {
-          if (
-            disposed ||
-            listeners.size === 0 ||
-            !page.cursor ||
-            (!rebuilding && incrementalEnabled() && head?.checkpoint) ||
-            (head &&
-              head.revision === revision &&
-              head.start === 0 &&
-              (!replacingSnapshot || head.checkpoint === page.checkpoint))
-          )
-            break;
-          await new Promise<void>((resolve) => setTimeout(resolve, 0));
-          response = await readOwner({ kind: 'readOlderPage', cursor: page.cursor, limit: 40 });
-          if (response.historyRevision !== revision) throw new HistoryRefreshSupersededError();
-          page = validateDirectoryPage(response.result, 'Roost refresh page');
-          head = await cached(() => cache.getHead());
-        }
+        const rebuilding = replacingSnapshot;
         if (replacingSnapshot) {
-          if (
-            !head ||
-            head.revision !== revision ||
-            head.start !== 0 ||
-            head.checkpoint !== page.checkpoint
-          )
-            throw new HistoryRefreshSupersededError();
+          const turns = validateHistory(response.pageTurns, 'Roost replacement window');
+          const applied = await cached(() =>
+            cache.acceptPage(page, turns, revision!, response.historyChange, prior)
+          );
+          if (applied === undefined) throw new Error('Roost history cache is unavailable');
+          if (!applied) throw new HistoryRefreshSupersededError();
           replacingSnapshot = false;
+          hasIncrementalCheckpoint = page.checkpoint !== undefined;
+          if (revision! < Math.max(ownerRevision ?? 0, observedHistoryRevision))
+            refreshRequested = true;
         }
-        if (!disposed && head?.start === 0 && (!prior || prior.start > 0 || rebuilding)) {
-          // Wake readers that previously failed on an uncached old body,
-          // including a search or fact scan with no remaining visible page work.
+        if (!disposed && rebuilding) {
           observedDirectoryEpoch += 1;
           for (const listener of listeners)
-            listener({ kind: 'structure', from: 0, to: head.count });
+            listener({ kind: 'structure', from: 0, to: page.totalCount });
         }
         retryDelay = refreshRequested || watchEnabled() ? 0 : 250;
         consecutiveSupersessions = 0;
