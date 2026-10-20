@@ -164,6 +164,9 @@ provides LocalProjects. See the [decision](../../../../.agents/notes/implemented
   assistant models through shallow scalar/count reads of already-open documents.
   It compares current catalog metadata on each reconciliation so stale overwrites
   are repaired on the next history change or flush.
+  `sqlite-lock-diagnostics.ts` logs, at most once a minute, which processes hold a
+  workspace `repo.sqlite3` open when loro-repo or streams-crdt reports
+  `database is locked`; it only observes (`lsof`) and never retries or blocks.
   `streams-transport.ts` connects safe failure diagnostics to the existing logger;
   it registers the typed error formatter without adding Repo/WASM imports to the
   generic error utility used by standalone workers.

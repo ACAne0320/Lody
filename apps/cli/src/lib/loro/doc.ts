@@ -231,11 +231,13 @@ function installStreamsDiagnostics(): void {
     if (typeof args[0] === 'string' && args[0].startsWith('[streams-crdt]')) {
       const detail = args.length > 1 ? ` ${JSON.stringify(args[1])}` : '';
       getLogger().debug(`[loro-streams-diag] ${args[0]}${detail}`);
+      if (mentionsSqliteBusy(args)) void sqliteLockReporterLegacy.reportBusy('streams-crdt');
       return;
     }
     if (typeof args[0] === 'string' && args[0].startsWith('[loro-repo]')) {
       const detail = args.length > 1 ? ` ${args[1]}` : '';
       getLogger().debug(`[loro-streams-diag] ${args[0]}${detail}`);
+      if (mentionsSqliteBusy(args)) void sqliteLockReporterLegacy.reportBusy('loro-repo');
       return;
     }
     origConsoleError.apply(console, args);
@@ -299,6 +301,7 @@ import { FlockSyncTimeoutError, readTimeoutEnv, withTimeout } from './timeout-ut
 import { FlockSyncUnavailableError } from './flock-sync-errors';
 import { ConcurrentQueue } from '../concurrent-queue';
 import type { CliSqliteRepoStore } from './sqlite-repo-store';
+import { mentionsSqliteBusy, sqliteLockReporterLegacy } from './sqlite-lock-diagnostics';
 import type { CloudBillingPort, CloudStreamsTokenPort } from '@lody/platform';
 
 /**
