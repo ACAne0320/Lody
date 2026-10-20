@@ -80,8 +80,8 @@ export function useSessionDocStaleReport(
           transportId: inspection?.transportId ?? null,
           bindingStatus: inspection?.bindingStatus ?? null,
           syncState: inspection?.syncState ?? null,
-          uploadProbe: inspection?.uploadProbe ?? null,
-          uploadProbeMs: inspection ? Date.now() - reportedAt : null,
+          pendingUploadProbe: inspection?.pendingUploadProbe ?? null,
+          pendingUploadProbeMs: inspection ? Date.now() - reportedAt : null,
           staleForMs: reportedAt - staleSince,
           openForMs: inspection ? reportedAt - inspection.openedAt : null,
           lastRemoteImportAgoMs:

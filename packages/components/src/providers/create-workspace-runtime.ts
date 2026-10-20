@@ -4488,9 +4488,12 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
 
     const startSync = () => {
       clearSyncReleaseTimer();
-      if (disposed || roomSub || syncJoinPromise || joinRetryTimer) {
+      if (disposed || roomSub || syncJoinPromise) {
         return;
       }
+      // A new lease or sync wait is a caller asking now: it pre-empts the
+      // pending backoff (keeping its attempt count) instead of waiting it out.
+      clearJoinRetryTimer();
 
       // Join only while a UI surface has an active sync lease. The persisted
       // doc and Mirror stay in memory for fast tab switches; the SSE connection
@@ -4618,8 +4621,9 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
       inspectSync: async ({ uploadProbeTimeoutMs }) => {
         const binding = roomSub ? readinessBindingForDocRoom(roomSub, roomId) : null;
         const bindingStatus = binding?.status ?? null;
-        // Explicit sync shares the room's single operation queue with live
-        // applies, so a wedged queue shows up as a timeout here.
+        // Waits only for this replica's pending uploads to drain. It settles
+        // at once when nothing is pending, so it says nothing about inbound
+        // applies; a timeout means local changes stayed unsent.
         const probe = binding
           ? await binding.waitFor({
               phase: 'pending-upload-empty',
@@ -4634,7 +4638,7 @@ export async function createWorkspaceRuntime(deps: RuntimeDeps): Promise<Workspa
           syncState: syncTracker.getSyncState(),
           openedAt: storeOpenedAt,
           lastRemoteImportAt,
-          uploadProbe: probe?.status ?? null,
+          pendingUploadProbe: probe?.status ?? null,
         };
       },
       waitUntilSynced: async (signal?: AbortSignal) => {

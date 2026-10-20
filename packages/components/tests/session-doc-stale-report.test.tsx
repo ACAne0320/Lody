@@ -49,7 +49,7 @@ const createStore = (inspection: Partial<SessionSyncInspection> = {}): SessionDo
       syncState: 'synced',
       openedAt: START - 600_000,
       lastRemoteImportAt: START - 300_000,
-      uploadProbe: 'timeout',
+      pendingUploadProbe: 'timeout',
       ...inspection,
     }),
   }) as unknown as SessionDocStore;
@@ -107,7 +107,7 @@ describe('useSessionDocStaleReport', () => {
     expect(entry).toContain('session-stale');
     expect(entry).toContain('turn-1');
     expect(entry).toMatch(/bindingStatus.*joined/);
-    expect(entry).toMatch(/uploadProbe.*timeout/);
+    expect(entry).toMatch(/pendingUploadProbe.*timeout/);
     expect(entry).toMatch(/lastRemoteImportAgoMs.*330000/);
     expect(entry).toMatch(/lastMessageAgoMs.*40000/);
 

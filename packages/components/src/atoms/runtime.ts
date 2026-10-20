@@ -130,8 +130,8 @@ export type SessionDocStore = {
   waitUntilSynced: (signal?: AbortSignal) => Promise<void>;
   /**
    * Bounded diagnostics for a conversation that looks stale. Ids, states and
-   * timestamps only. The upload probe runs one explicit sync and settles
-   * within `uploadProbeTimeoutMs`.
+   * timestamps only. The pending-upload probe waits for this replica's
+   * queued uploads and settles within `uploadProbeTimeoutMs`.
    */
   inspectSync: (options: { uploadProbeTimeoutMs: number }) => Promise<SessionSyncInspection>;
 };
@@ -145,8 +145,12 @@ export type SessionSyncInspection = {
   readonly openedAt: number;
   /** Last time a remote import landed in this doc; `null` if none since open. */
   readonly lastRemoteImportAt: number | null;
-  /** `waitFor('pending-upload-empty')` outcome; `null` without a subscription. */
-  readonly uploadProbe: string | null;
+  /**
+   * `waitFor('pending-upload-empty')` outcome; `null` without a subscription.
+   * `complete` also when nothing was pending, so it never proves inbound
+   * applies are flowing; `timeout` means local changes stayed unsent.
+   */
+  readonly pendingUploadProbe: string | null;
 };
 
 export type PreviewVisualCommentDocUpdater =

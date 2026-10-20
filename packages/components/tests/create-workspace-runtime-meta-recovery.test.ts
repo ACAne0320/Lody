@@ -1999,6 +1999,89 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
     }
   });
 
+  it('joins at once when a caller waits for sync during the join backoff', async () => {
+    // A send's sync wait after the fault cleared must not sit out the backoff,
+    // nor resolve without any join as if the room were synced.
+    const { LoroRepo: RealRepo } = await vi.importActual<typeof import('loro-repo')>('loro-repo');
+    const repo = await RealRepo.create({
+      metaDebounceCommitMs: 0,
+      resolveRoomTransports: () => ({ transportIds: ['local'] }),
+    });
+    const subscription = (): TransportSubscription => ({
+      status: 'joined',
+      firstSyncedWithRemote: Promise.resolve(),
+      onStatusChange: () => () => {},
+      unsubscribe: () => {},
+      waitUntilSynced: async () => {},
+      rejoin: async () => {},
+    });
+    const sessionId = 'synthetic-join-preempt' as SessionId;
+    const roomId = getSessionRoomId(sessionId);
+    let failingJoins = 3;
+    let docJoins = 0;
+    const adapter: TransportAdapter = {
+      connect: async () => {},
+      close: async () => {},
+      isConnected: () => true,
+      getStatus: () => 'connected',
+      onStatusChange: () => () => {},
+      reconnect: async () => {},
+      syncMeta: async () => ({ ok: true }),
+      syncDoc: async () => ({ ok: true }),
+      joinMetaRoom: () => subscription(),
+      joinDocRoom: (docId) => {
+        if (docId !== roomId) return subscription();
+        docJoins += 1;
+        if (failingJoins > 0) {
+          failingJoins -= 1;
+          throw new Error('synthetic attach failure');
+        }
+        return subscription();
+      },
+    };
+    const add = repo.addTransport.bind(repo);
+    vi.spyOn(repo, 'addTransport').mockImplementation((id, _adapter, options) =>
+      add(id, adapter, options)
+    );
+    mocks.repoOverride = repo;
+    enableElectronLocalDataPlane();
+    await repo.upsertDocMeta(roomId, { id: sessionId, machineId: 'local-machine' });
+
+    const runtime = await createWorkspaceRuntime({
+      workspaceSlug: 'workspace',
+      workspaceId: 'workspace-1' as WorkspaceId,
+      apiBaseUrl: 'https://api.example.test',
+    });
+    runtime.setLocalMachineId('local-machine' as MachineId);
+    const store = await runtime.acquireSessionStore(sessionId);
+    const releaseSync = store.acquireSync();
+    try {
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect({ docJoins, state: store.getSyncState() }).toEqual({ docJoins: 3, state: 'error' });
+
+      // The shortest backoff is 800 ms; stay well inside it.
+      let settled = false;
+      const waiting = store.waitUntilSynced().then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      expect({ docJoins, settled, state: store.getSyncState() }).toEqual({
+        docJoins: 4,
+        settled: true,
+        state: 'synced',
+      });
+      await waiting;
+
+      // The pre-empted backoff never fires a redundant join later.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(docJoins).toBe(4);
+    } finally {
+      releaseSync();
+      runtime.releaseSessionStoreRef(sessionId);
+      await runtime.dispose();
+    }
+  });
+
   it('inspects a joined session room whose upload never drains', async () => {
     const { LoroRepo: RealRepo } = await vi.importActual<typeof import('loro-repo')>('loro-repo');
     const { LoroDoc } = await import('loro-crdt');
@@ -2058,7 +2141,7 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
       expect(await inspectWithin(1_000)).toMatchObject({
         bindingStatus: 'joined',
         lastRemoteImportAt: null,
-        uploadProbe: 'timeout',
+        pendingUploadProbe: 'timeout',
       });
 
       const remote = new LoroDoc();
@@ -2072,7 +2155,7 @@ describe('createWorkspaceRuntime meta recovery lifecycle', () => {
         bindingStatus: 'joined',
         syncState: 'synced',
         lastRemoteImportAt: importedAt,
-        uploadProbe: 'timeout',
+        pendingUploadProbe: 'timeout',
       });
     } finally {
       releaseSync();

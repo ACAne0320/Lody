@@ -35,6 +35,14 @@ runs once per mounted view (`use-session-doc.ts`). The tracker reported `error`,
 the reconnect loop ran `repo.reconnect()` on its backoff, but that only repairs rooms
 that still exist.
 
+How often this is reached is limited. Network and authentication failures do not
+make `joinRoom()` throw: both the Streams and the local data-plane adapters connect
+without I/O and return a subscription synchronously from `joinDocRoom`, which then
+heals inside the SDK, and an open Session store's doc is already loaded, so
+`ensureDoc` hits its cache. The known throw sources are synchronous adapter join
+errors and storage failures while loading. This retry is therefore a defensive fix,
+not the cause of the commonly reported "stops updating until reload".
+
 ## Decision
 
 - After a join pass fails without producing a subscription, and a lease remains,
@@ -42,6 +50,12 @@ that still exist.
   resets the attempt count. Releasing the last lease or disposing the store cancels
   the timer; a timer that fires after the last release does nothing, so the pending
   room release keeps ownership.
+- A caller that asks for sync during the backoff (a new lease, or `waitUntilSynced`
+  from a send, its sending indicator or the completion notifier) cancels the timer
+  and joins at once, keeping the attempt count. Otherwise that wait resolved with no
+  join at all, clearing a message's sending state while nothing was uploaded, and
+  recovery after the fault cleared waited up to 30 s. Concurrent callers still share
+  one join pass.
 - `createRoomSyncTracker().attach` now applies `sub.status` immediately. A Loro Repo
   binding emits its status when its base attaches, before `joinRoom()` resolves and
   hands it to the tracker. Without this, the `error` written by the failed pass
@@ -54,10 +68,13 @@ the one room and to the lifetime of its lease.
 
 ## Verification
 
-Two cases in `create-workspace-runtime-meta-recovery.test.ts` use a real `LoroRepo`
+Three cases in `create-workspace-runtime-meta-recovery.test.ts` use a real `LoroRepo`
 whose local adapter throws from `joinDocRoom`. The first fails four joins, then
 asserts the store reaches `synced` and resolves `firstSynced`; it failed before both
-changes (no retry, then a stale `error`). The second asserts that releasing the lease
+changes (no retry, then a stale `error`). The second fails three joins, then asserts
+that a `waitUntilSynced` call joins within 100 ms, well inside the shortest backoff,
+and that the cancelled timer adds no later join; it fails when the timer blocks
+callers. The third asserts that releasing the lease
 stops further joins. The affected component suites pass.
 
 ## Not addressed: a live read that stops applying while it stays joined
@@ -101,14 +118,18 @@ console warning, with ids, states and durations only:
 - `lastRemoteImportAgoMs` from a per-store import timestamp (`null` means no remote
   import since the store opened) against `lastMessageAgoMs` from Session meta, which
   arrives over the separate Meta stream;
-- `uploadProbe`: one `waitFor({ phase: 'pending-upload-empty' })` bounded to 10 s.
-  It runs the SDK's explicit sync, which shares the room's `opQueue`, so `timeout`
-  on a `joined` room points at a wedged queue — only while local changes are
-  pending, since an empty queue may settle without entering it.
+- `pendingUploadProbe`: one `waitFor({ phase: 'pending-upload-empty' })` bounded to
+  10 s. In streams-crdt 0.19.1 it flushes local exports, then only waits for this
+  replica's queued uploads to drain; it does not enter the room's `opQueue`. It is
+  `complete` at once when nothing is pending, so it never proves that inbound applies
+  flow. `timeout` means local changes stayed unsent for 10 s: a wedged queue, or just a
+  slow upload.
 
-Reading the entry: a `joined` binding with an old remote import and a recent meta
-message is a per-room stall; add a `timeout` probe and it is the apply chain; a
-non-`joined` binding is ordinary transport trouble. Other conversations in the same
+Reading the entry: the main signal is a `joined` binding whose remote import is old
+while the meta message is recent — a per-room stall in which the room claims health
+but stopped applying. A `timeout` probe adds that this replica's uploads are stuck
+too, consistent with a wedged room queue. A non-`joined` binding is ordinary
+transport trouble. Other conversations in the same
 workspace stopping too points at the Repo-wide persistence queue. A false positive
 is a turn whose agent died while its machine stayed online: it costs one entry per
 turn. Neither test exercises a real stalled SDK; they cover the trigger conditions,

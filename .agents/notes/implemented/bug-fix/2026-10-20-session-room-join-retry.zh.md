@@ -28,12 +28,21 @@ PR: [#1760](https://github.com/LodyAI/Lody/pull/1760)
 `acquireSync` 每个挂载的视图只调用一次（`use-session-doc.ts`）。tracker 报告 `error`，
 重连循环于是按退避调用 `repo.reconnect()`，但它只修复仍然存在的房间。
 
+这条路径的可达性有限。网络和鉴权故障不会让 `joinRoom()` 抛错：Streams 和本地数据面两种
+adapter 的 connect 都不做 I/O，`joinDocRoom` 同步返回订阅，之后由 SDK 自愈；已打开的会话
+store 的 doc 也已加载，`ensureDoc` 直接命中缓存。已知的抛错来源只有同步的 adapter join 异常
+和加载时的存储失败。因此这次重试是防御性修复，不是常见的"不再更新、刷新才好"的原因。
+
 ## 决定
 
 - 一轮 join 没有产生订阅就失败，且仍有 lease 时，store 在
   `computeLocalReconnectDelayMs(attempt)` 之后重新加入。成功加入后重置计数。释放最后一个
   lease 或销毁 store 会取消定时器；最后一个 lease 释放后才触发的定时器什么都不做，
   房间仍由待执行的释放流程负责。
+- 退避期间有调用方要求同步时（新的 lease，或者发送、发送中指示、完成通知里的
+  `waitUntilSynced`），会取消定时器并立即 join，保留尝试次数。否则这次等待会在完全没有
+  join 的情况下 resolve，消息的"发送中"状态被清掉而实际什么都没上传，故障解除后的恢复
+  也要再等最多 30 秒。并发调用仍共用同一轮 join。
 - `createRoomSyncTracker().attach` 现在立即应用 `sub.status`。Loro Repo 的 binding 在
   base attach 时就发出状态，早于 `joinRoom()` resolve 并把它交给 tracker。不这样做，
   失败那轮写入的 `error` 会比替换它的订阅活得更久。
@@ -44,10 +53,12 @@ PR: [#1760](https://github.com/LodyAI/Lody/pull/1760)
 
 ## 验证
 
-`create-workspace-runtime-meta-recovery.test.ts` 新增两个用例，使用真实 `LoroRepo`，
+`create-workspace-runtime-meta-recovery.test.ts` 新增三个用例，使用真实 `LoroRepo`，
 其本地 adapter 在 `joinDocRoom` 中抛错。第一个让前四次 join 失败，然后断言 store 达到
 `synced` 并 resolve `firstSynced`；两处修改之前它都会失败（先是不重试，后是残留的
-`error`）。第二个断言释放 lease 后不再 join。相关组件测试套件全部通过。
+`error`）。第二个让前三次失败，然后断言一次 `waitUntilSynced` 调用在 100 毫秒内完成 join
+（远小于最短退避），且被取消的定时器之后不会再多 join 一次；定时器挡住调用方时它会失败。
+第三个断言释放 lease 后不再 join。相关组件测试套件全部通过。
 
 ## 未解决：live read 停止应用，但仍保持 joined
 
@@ -82,12 +93,14 @@ history 停在一个没结束的 assistant turn 上（`unfinished_assistant_turn
 - readiness binding 的 `bindingStatus`、`syncState` 和 `transportId`；
 - `lastRemoteImportAgoMs`，来自每个 store 记录的 import 时间戳（`null` 表示 store 打开后
   没有远端 import），对照来自 Session meta 的 `lastMessageAgoMs`，后者经独立的 Meta 流到达；
-- `uploadProbe`：一次限时 10 秒的 `waitFor({ phase: 'pending-upload-empty' })`。它执行 SDK
-  的显式 sync，与房间的 `opQueue` 共用队列，所以 `joined` 房间上的 `timeout` 指向队列卡住；
-  但只在有待上传的本地改动时成立，队列为空时它可能不进队列就直接 settle。
+- `pendingUploadProbe`：一次限时 10 秒的 `waitFor({ phase: 'pending-upload-empty' })`。在
+  streams-crdt 0.19.1 里它先 flush 本地导出，然后只等本副本排队中的上传清空，不进入房间的
+  `opQueue`。没有待上传内容时它立即返回 `complete`，所以永远不能证明入站应用在正常进行。
+  `timeout` 表示本地改动 10 秒内没传出去：可能是队列卡住，也可能只是上传慢。
 
-解读：binding 为 `joined`、远端 import 很旧、meta 消息很新，是单个房间卡住；再加上 probe
-`timeout`，就是应用链卡住；binding 不是 `joined`，是普通的传输问题。同一 workspace 的其他
+解读：主要信号是 binding 为 `joined`，但远端 import 很旧而 meta 消息很新——房间自称正常
+却已停止应用，是单个房间卡住。probe 再是 `timeout`，说明本副本的上传也卡住了，与房间队列
+卡住一致。binding 不是 `joined`，是普通的传输问题。同一 workspace 的其他
 对话也一起停了，指向整个 Repo 共用的持久化队列。误报来自机器仍在线但 agent 已死的 turn：
 每个 turn 最多一条。两个测试都没有覆盖真实卡住的 SDK；它们覆盖触发条件、记录字段，以及
 针对永不 settle 的 `waitUntilSynced` 的探测。
