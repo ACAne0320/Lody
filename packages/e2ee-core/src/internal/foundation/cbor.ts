@@ -7,7 +7,7 @@ export const MAX_RECORD_BYTES = 8192;
 export const MAX_DEPTH = 8;
 export const MAX_ARRAY_LENGTH = 32;
 export const MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024;
-export const MAX_SNAPSHOT_ARRAY_LENGTH = 16_384;
+/** Per byte string in a record. Snapshot and retained state carry whole fixed-width tables as single byte strings, bounded only by their total budget. */
 export const MAX_BSTR_BYTES = 256;
 /** Values accepted by the bounded canonical CBOR codec: integers, byte strings, text, booleans, null and arrays of these. */
 export type CborValue = null | boolean | number | Uint8Array | readonly CborValue[];
@@ -22,22 +22,25 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-function asPlain(value: unknown, depth: number, maxArray: number): Result<CborValue> {
+function asPlain(
+  value: unknown,
+  depth: number,
+  maxArray: number,
+  maxBstr: number
+): Result<CborValue> {
   if (depth > MAX_DEPTH) return invalid('nesting');
   if (value === null || value === true || value === false) return Result.succeed(value);
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value >= 0 ? Result.succeed(value) : invalid('canonical');
   }
   if (value instanceof Uint8Array) {
-    return value.byteLength <= MAX_BSTR_BYTES
-      ? Result.succeed(copyBytes(value))
-      : invalid('oversize');
+    return value.byteLength <= maxBstr ? Result.succeed(copyBytes(value)) : invalid('oversize');
   }
   if (Array.isArray(value)) {
     if (value.length > maxArray) return invalid('oversize');
     const result: CborValue[] = [];
     for (const item of value) {
-      const parsed = asPlain(item, depth + 1, maxArray);
+      const parsed = asPlain(item, depth + 1, maxArray, maxBstr);
       if (Result.isFailure(parsed)) return parsed;
       result.push(parsed.success);
     }
@@ -62,7 +65,12 @@ function decodingError(error: unknown): ValidationError {
   return new ValidationError({ code: 'canonical' });
 }
 
-function decodeBounded(input: unknown, maxBytes: number, maxArray: number): Result<CborValue> {
+function decodeBounded(
+  input: unknown,
+  maxBytes: number,
+  maxArray: number,
+  maxBstr = MAX_BSTR_BYTES
+): Result<CborValue> {
   return Result.gen(function* () {
     if (!(input instanceof Uint8Array)) return yield* invalid('canonical');
     if (input.byteLength === 0) return yield* invalid('truncated');
@@ -82,7 +90,7 @@ function decodeBounded(input: unknown, maxBytes: number, maxArray: number): Resu
       }
       return yield* invalid('canonical');
     }
-    return yield* asPlain(decoded, 0, maxArray);
+    return yield* asPlain(decoded, 0, maxArray, maxBstr);
   });
 }
 
@@ -104,7 +112,8 @@ function headerSize(value: number): number {
 function prepareEncoding(
   value: CborValue,
   maxBytes: number,
-  maxArray = MAX_ARRAY_LENGTH
+  maxArray = MAX_ARRAY_LENGTH,
+  maxBstr = MAX_BSTR_BYTES
 ): Result<CborValue> {
   let remaining = maxBytes;
   const ancestors = new Set<readonly CborValue[]>();
@@ -122,7 +131,7 @@ function prepareEncoding(
     }
     if (item instanceof Uint8Array) {
       const length = item.byteLength;
-      if (length > MAX_BSTR_BYTES || !charge(headerSize(length) - 1 + length)) {
+      if (length > maxBstr || !charge(headerSize(length) - 1 + length)) {
         return invalid('oversize');
       }
       return Result.succeed(copyBytes(item));
@@ -151,11 +160,12 @@ function prepareEncoding(
 function encodeBounded(
   value: CborValue,
   maxBytes: number,
-  maxArray = MAX_ARRAY_LENGTH
+  maxArray = MAX_ARRAY_LENGTH,
+  maxBstr = MAX_BSTR_BYTES
 ): Result<Uint8Array<ArrayBuffer>> {
   return Result.gen(function* () {
     const prepared = yield* Result.try({
-      try: () => prepareEncoding(value, maxBytes, maxArray),
+      try: () => prepareEncoding(value, maxBytes, maxArray, maxBstr),
       catch: () => new ValidationError({ code: 'canonical' }),
     });
     const stable = yield* prepared;
@@ -177,19 +187,23 @@ export const encodeCbor = (value: CborValue): Result<Uint8Array<ArrayBuffer>> =>
     return bytes;
   });
 
-/** Separate fixed snapshot budget; ordinary record limits remain unchanged. */
+/** Separate fixed snapshot budget; ordinary record limits remain unchanged. Its state is a few arrays of byte-string tables. */
 export const decodeSnapshotCbor = (input: unknown): Result<CborValue> =>
-  decodeBounded(input, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_ARRAY_LENGTH);
+  decodeBounded(input, MAX_SNAPSHOT_BYTES, MAX_ARRAY_LENGTH, MAX_SNAPSHOT_BYTES);
 /** A party's own retained ledger state (never exchanged): a larger budget than an endorsed snapshot. */
 export const MAX_RETAINED_STATE_BYTES = 16 * 1024 * 1024;
-export const MAX_RETAINED_ARRAY_LENGTH = 262_144;
 export const decodeRetainedCbor = (input: unknown): Result<CborValue> =>
-  decodeBounded(input, MAX_RETAINED_STATE_BYTES, MAX_RETAINED_ARRAY_LENGTH);
+  decodeBounded(input, MAX_RETAINED_STATE_BYTES, MAX_ARRAY_LENGTH, MAX_RETAINED_STATE_BYTES);
 export const encodeRetainedCbor = (value: CborValue): Result<Uint8Array<ArrayBuffer>> =>
-  encodeBounded(value, MAX_RETAINED_STATE_BYTES, MAX_RETAINED_ARRAY_LENGTH);
+  encodeBounded(value, MAX_RETAINED_STATE_BYTES, MAX_ARRAY_LENGTH, MAX_RETAINED_STATE_BYTES);
 export const encodeSnapshotCbor = (value: CborValue): Result<Uint8Array<ArrayBuffer>> =>
   Result.gen(function* () {
-    const bytes = yield* encodeBounded(value, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_ARRAY_LENGTH);
+    const bytes = yield* encodeBounded(
+      value,
+      MAX_SNAPSHOT_BYTES,
+      MAX_ARRAY_LENGTH,
+      MAX_SNAPSHOT_BYTES
+    );
     yield* decodeSnapshotCbor(bytes);
     return bytes;
   });

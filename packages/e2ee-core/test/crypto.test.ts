@@ -1481,7 +1481,7 @@ describe('ledger-bound signed document workflows', () => {
       Result.isFailure(Documents.openDocument(f.view(), f.scope, f.key, frame, new Uint8Array([9])))
     ).toBe(true);
   });
-  it('opens a retired author from endorsed snapshot as device-only without recovering write permission', async () => {
+  it('opens a retired author from an endorsed snapshot as its original member without recovering write permission', async () => {
     const f = ledgerFixture();
     f.addPhone();
     const input = {
@@ -1512,8 +1512,11 @@ describe('ledger-bound signed document workflows', () => {
     const imported = read(Snapshots.verifyLedgerSnapshot({ snapshot: produced.snapshot, trust }));
     const opened = read(Documents.openDocument(imported, f.scope, f.key, frame));
     expect(opened.plaintext).toEqual(new Uint8Array([4, 5]));
-    expect(opened.author).toMatchObject({ kind: 'device-only', reason: 'missing-history-context' });
-    expect('actor' in opened.author).toBe(false);
+    // The qualified endorsement carries the full device history.
+    const original = read(Documents.openDocument(full, f.scope, f.key, frame)).author;
+    expect(opened.author.kind).toBe('member');
+    expect(opened.author.actor.toBytes()).toEqual(original.actor.toBytes());
+    expect(opened.author.memberInstance.toBytes()).toEqual(original.memberInstance.toBytes());
     expect(
       Result.isFailure(
         await result(Documents.sealDocument({ ...input, ledger: () => Effect.succeed(imported) }))

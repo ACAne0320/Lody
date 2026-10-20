@@ -7,7 +7,7 @@ import {
   decodeRetainedState,
   type SnapshotTrust,
 } from './snapshot-codec';
-import { Chunk, Effect, HashMap, HashSet, Result } from 'effect';
+import { Chunk, Effect, HashMap, Result } from 'effect';
 import {
   genesisHash,
   recordHash,
@@ -516,15 +516,12 @@ export function ledgerStateDigest(view: LedgerView) {
   const state = states.get(view);
   return state ? stateDigestOf(state) : fail('unauthorized');
 }
-/** Who authored historical content: the member (when history is available) or only the device. */
-export type HistoricalContentIdentity =
-  | (HistoricalContentAuthor & { readonly kind: 'member' })
-  | {
-      readonly kind: 'device-only';
-      readonly device: SigningPublicKey;
-      readonly reason: 'missing-history-context';
-    };
-/** Snapshot replay-prevention facts can identify only a device, never invent its original user. */
+/** Who authored historical content: the device's member instance and user at admission. */
+export type HistoricalContentIdentity = HistoricalContentAuthor & { readonly kind: 'member' };
+/**
+ * Every source (full replay, a qualified endorsed snapshot, retained state) carries
+ * the full device history, so any device this ledger ever admitted has an author.
+ */
 export function historicalContentIdentity(
   view: LedgerView,
   device: SigningPublicKey
@@ -536,16 +533,14 @@ export function historicalContentIdentity(
       signingPublicKey(device.toBytes()),
       (error) => new LedgerError({ code: error.code })
     );
-    const author = stateGet(state.contentAuthors, keyId(key.toBytes()));
-    return author
-      ? Object.freeze({ kind: 'member' as const, ...author })
-      : HashSet.has(state.usedSigningKeys, keyId(key.toBytes()))
-        ? Object.freeze({
-            kind: 'device-only' as const,
-            device: key,
-            reason: 'missing-history-context' as const,
-          })
-        : yield* fail('unauthorized');
+    const record = stateGet(state.deviceHistory, keyId(key.toBytes()));
+    if (!record) return yield* fail('unauthorized');
+    return Object.freeze({
+      kind: 'member' as const,
+      device: key,
+      actor: stateGet(state.membershipUsers, keyId(record.membershipId.toBytes()))!,
+      memberInstance: record.membershipId,
+    });
   });
 }
 

@@ -40,8 +40,8 @@ comparison-note `stateDigest`. Restore only decodes: it checks structure and the
 caller's stored genesis/length/head, but neither signatures, curve points nor the
 digest, because the bytes come from the caller's own storage. The restored view
 extends exactly like the exported one; the next record must name its head. It
-reports historical attribution of removed devices as `device-only` and original
-epoch publication records as unavailable. Never restore another party's bytes;
+keeps every device's historical author but reports original epoch publication
+records as unavailable. Never restore another party's bytes;
 that is what endorsed snapshots are for. Retained bytes are current-format only:
 after an encoding change, rebuild them by one full replay.
 
@@ -70,9 +70,9 @@ packet copy; epoch zero uses an empty previous-key packet. Unknown/future epochs
 fail rather than fabricate a key. Decryption belongs to the key workflow.
 
 The explicit snapshot entry's `historicalContentIdentity(view, device)` is the
-single historical-author query. Full history returns admission-bound user/member
-identity even after revocation; an endorsed retired device without member history
-returns `device-only`, never guessed user attribution. Unknown/fake views fail.
+single historical-author query. Every source keeps every device ever admitted,
+so it returns the admission-bound user/member identity even after revocation,
+also from an endorsed snapshot or retained state. Unknown/fake views fail.
 `contentPermissions(view, device)` separates current host write admission from
 honest new-content sealing: active non-Guest personal/machine devices may write,
 Recovery never writes, and a pending rotation additionally blocks new seals.
@@ -131,9 +131,8 @@ offset, without invented pre-snapshot history. `extendLedger` checks every suffi
 record and its previous hash/count. Continuation cannot skip an unknown prefix.
 Full audit remains `verifyLedger`; signatures/endorsement are not that audit.
 
-`historicalContentIdentity` distinguishes retained original member attribution from
-a snapshot-only device with missing history context. The strict author query stays
-strict. Current document workflow fallback consumption is still a separate owner.
+`historicalContentIdentity` answers from the device and membership history that
+full replay, snapshot import and retained restore all carry; an unknown device fails.
 
 `signLedgerSnapshot` borrows DeviceSigner, signs/verifies the canonical body and
 head attestation, then checks a real continuation and current management eligibility.

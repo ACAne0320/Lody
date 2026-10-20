@@ -138,7 +138,7 @@ results() / acknowledge()   已完成任务保留到确认为止
 
 - **Loro / streams-crdt**：`streamsDocumentBinding({ resource, model, writeEpoch })`（`@lody/e2ee-core/adapters/loro-streams`）是 `@loro-dev/streams-crdt` 文档的载荷保护绑定。它封装更新（头部 3）与快照（头部 4，续读 offset 位于签名头部内），并打开读到的内容。签名器、账本视图与密钥分别取自 `DeviceIdentity`、`VerifiedLedger` 与 `InstalledEpochHistory`。
 - **其他传输**：`sealDocument`、`openDocument` 与 `authenticateDocument`（`/protocol`）接收文档密钥、签名器和已验证视图的查询函数。新的封装要求在确切的当前纪元具有当前写权限，加密前与签名后各检查一次；每次执行都重新加密，因此重试必须重发返回的字节。
-- 读取时先认证历史作者再解密：被吊销作者的旧内容仍可打开并归属（`member`，或快照之后的 `device-only`），但这不授予当前写权限。
+- 读取时先认证历史作者再解密：被吊销作者的旧内容仍可打开并归属到原成员（快照之后同样如此），但这不授予当前写权限。
 
 ## 投递（分发器内部）
 
