@@ -63,7 +63,7 @@ Lody 在 `pnpm-workspace.yaml` 的 catalog 中把 streams-crdt 固定为 0.19.1�
 - **测试。** 由第二个连接持有写锁，测试使用假定时器。不加修改时，顺序用例会阻塞 15 秒（三次调用各 5 秒）并失败，关闭用例和 `PersistenceWriter` 用例也会失败。预算用例是行为契约，改前改后都通过。完整的 `pnpm check` 通过（651 个测试），构建、打包和 writer recovery 检查也都通过。
 - **暂缓的方案。** 把 SQLite 工作移进 worker 还能把 CRDT 的 CPU 计算移出主线程，owner 决定暂不做。
 
-Lody 只需要升级版本：`createCliSqliteRepoStore` 自己打开连接，会直接用上新的默认值。0.23.3 的 npm 发布任务失败了，需要重新运行，所以 loro-repo 暂时仍固定在 0.23.2；读取循环的修复不依赖它。
+Lody 只需要升级版本：`createCliSqliteRepoStore` 自己打开连接，会直接用上新的默认值。本次修改把 loro-repo 固定为 0.23.3，并加入对应的经审核 `minimumReleaseAgeExclude` 条目。
 
 ## 记录锁的持有者
 

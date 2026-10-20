@@ -145,9 +145,8 @@ shared commit once instead of retrying each group alone.
   CRDT CPU work off the main thread. The owner deferred it for now.
 
 Lody needs only the version bump: `createCliSqliteRepoStore` opens its own
-connection, so it gets the new defaults. The 0.23.3 npm publish job failed and
-still has to be re-run, so the loro-repo pin stays at 0.23.2 for now; the read
-loop fix does not depend on it.
+connection, so it gets the new defaults. This change pins loro-repo 0.23.3
+with a matching reviewed `minimumReleaseAgeExclude` entry.
 
 ## Naming the lock holder
 
