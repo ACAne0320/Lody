@@ -151,6 +151,47 @@ describe('RecoverableConvexBetterAuthProvider one-time token flow', () => {
     await expect(staleRecovery).resolves.toBeNull();
   });
 
+  it('keeps a recovery JWT when Convex auth restarts for the same session', async () => {
+    window.history.replaceState({}, '', '/');
+    let resolveToken!: (value: { data: { token: string } }) => void;
+    const token = vi.fn().mockReturnValueOnce(
+      new Promise<{ data: { token: string } }>((resolve) => {
+        resolveToken = resolve;
+      })
+    );
+    const authClient = {
+      useSession: () => ({
+        data: { session: { id: 'session-a', token: 'better-auth-session-a' } },
+        isPending: false,
+      }),
+      convex: { token },
+      crossDomain: { oneTimeToken: { verify: vi.fn() } },
+      getSession: vi.fn(),
+      updateSession: vi.fn(),
+      signOut: vi.fn(),
+    } as unknown as LodyAuthClient;
+    const renderProvider = (recoveryGeneration: number) => (
+      <RecoverableConvexBetterAuthProvider
+        authClient={authClient}
+        client={{} as ConvexReactClient}
+        recoveryGeneration={recoveryGeneration}
+      >
+        <div />
+      </RecoverableConvexBetterAuthProvider>
+    );
+    await act(async () => {
+      root.render(renderProvider(0));
+    });
+    const recovery = requestCurrentConvexJwt(authClient);
+    // Convex auth recovery restarts the provider while GitHub recovery waits.
+    await act(async () => {
+      root.render(renderProvider(1));
+    });
+    resolveToken({ data: { token: 'jwt-a' } });
+    await expect(recovery).resolves.toBe('jwt-a');
+    expect(token).toHaveBeenCalledTimes(1);
+  });
+
   it('does not share a pending token request across Better Auth sessions', async () => {
     window.history.replaceState({}, '', '/');
     let sessionId = 'session-a';

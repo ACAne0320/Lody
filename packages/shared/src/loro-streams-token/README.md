@@ -102,5 +102,7 @@ provider, is a view of one kernel per workspace (`apps/cli/src/lib/loro/streams-
 so a cold start or reconnect makes one token request. A view's close fences and
 interrupts only its own reads; the last view closes the kernel, whose failed close
 still reports the kernel as recovery owner. Release failures and terminal auth of
-the shared kernel are visible to every view. Renderer callers still use the owned
+the shared kernel are visible to every view; a view that joins a terminally rejected
+kernel first invalidates it once, so a reattach after access is restored is admitted
+as a fresh kernel would be. Renderer callers still use the owned
 options until their application ownership migrates.

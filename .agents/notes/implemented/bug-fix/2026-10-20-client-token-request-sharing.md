@@ -14,9 +14,9 @@ and the PR poller asked the cloud on every poll even when it ended up using loca
 `gh`. Durable sync and Machine RPC also kept separate Streams token kernels. Each of
 these now joins one request per identity and scope. A rejection drops a token only
 while it is still the cached one. The CLI reuses a failed GitHub answer for at most
-30 seconds, so a newly granted credential can take that long to be used without a
-configuration signal. Cross-window sharing and production request rates are not
-covered here.
+5 seconds per command and 30 seconds for PR polling, because it receives no
+reauthorization signal. Sharing never keeps a failure that a fresh owner would have
+retried. Cross-window sharing and production request rates are not covered here.
 
 ## Problem and evidence
 
@@ -52,9 +52,10 @@ fence is unchanged.
 
 **Convex JWT.** `lib/convex-jwt.ts` owns the per-auth-client request map. The
 mounted provider publishes its auth key (recovery generation, logout intent, session
-ID). GitHub recovery joins that key's request and returns null if the intent
-generation or key changed before the JWT arrived. Different sessions still never
-share a request.
+ID). GitHub recovery joins that key's request and returns null if the logout intent
+or session changed before the JWT arrived. A Convex auth restart alone keeps the
+session, so its JWT is still used; that restart happens exactly while GitHub actions
+answer `unauthorized`. Different sessions still never share a request.
 
 **CLI GitHub tokens.** `createSharedGitHubTokenManagers` gives sessions and the PR
 poller leases on one manager per workspace; the last lease shuts it down. Candidate
@@ -62,14 +63,20 @@ lookups join an in-flight request keyed like the cache, with the same
 rejected-token rule as the renderer. Failures are remembered per partition in both
 the candidate cache and the write-token state:
 
-| Answer                                                                                        | Reuse                                 |
-| --------------------------------------------------------------------------------------------- | ------------------------------------- |
-| Unlinked repository, unavailable personal grant, installation/authorization/membership errors | 30 s                                  |
-| Network error, timeout, `token_generation_failed`                                             | 1 s doubling to 30 s, from completion |
-| `unauthorized` (CLI login)                                                                    | never                                 |
+| Answer                                                                                        | Per-command candidate | Write-token state (PR polling) |
+| --------------------------------------------------------------------------------------------- | --------------------- | ------------------------------ |
+| Unlinked repository, unavailable personal grant, installation/authorization/membership errors | 5 s                   | 30 s                           |
+| Network error, timeout, `token_generation_failed`                                             | 1 s doubling to 5 s   | 1 s doubling to 30 s           |
+| `unauthorized` (CLI login)                                                                    | never                 | never                          |
 
-Invalidation and `invalidateAll` clear remembered failures and fence in-flight
-fetches by epoch. A rejection of a token already replaced is ignored. During
+Nothing tells the CLI about a reauthorization or configuration change. During reuse a
+candidate's source is skipped and the next identity is selected, so a long window
+could make an agent push or open a PR as the App right after the user fixed their
+personal grant. The candidate window only merges one command's helper calls; the
+longer window applies to background polling, where the only cost is a delayed retry.
+
+A rejected token's invalidation and `invalidateAll` clear remembered failures and
+fence in-flight fetches by epoch. A rejection of a token already replaced is ignored. During
 reuse the source still fails, and source order, machine eligibility and the
 "once per operation" rule are unchanged. The [identity fallback Spec](../../../../specs/github-identity-fallback.md)
 now states this; it remains a draft for review. This partly replaces the
@@ -78,14 +85,14 @@ now states this; it remains a draft for review. This partly replaces the
 **CLI Streams tokens.** `streams-token-shares.ts` keeps one kernel per workspace in
 the official cloud port. Native and Legacy providers are views of it:
 
-| Question         | Answer                                                                                                                                                                                                                   |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Trigger          | The first borrow builds the kernel in a share-owned Scope; later borrows join it.                                                                                                                                        |
-| Owner            | The share owns the kernel; each consumer owns its view.                                                                                                                                                                  |
-| Cancellation     | A waiter's interruption releases its kernel lease only. A view's close fences that view and interrupts its reads; others continue.                                                                                       |
-| Handoff          | The last close removes the share and closes the kernel. A later borrow builds a new kernel, as a per-consumer kernel did before.                                                                                         |
-| Failure recovery | A failed kernel close reports the kernel as owner; `retryCleanup` on any view delegates to it.                                                                                                                           |
-| Containment      | A kernel release failure or terminal 401/403 now fences Machine RPC together with durable/presence, which already shared one. Before, Machine RPC never ran `retryCleanup`. The durable attach path now recovers it too. |
+| Question         | Answer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trigger          | The first borrow builds the kernel in a share-owned Scope; later borrows join it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Owner            | The share owns the kernel; each consumer owns its view.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Cancellation     | A waiter's interruption releases its kernel lease only. A view's close fences that view and interrupts its reads; others continue.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Handoff          | The last close removes the share and closes the kernel. A later borrow builds a new kernel, as a per-consumer kernel did before.                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Failure recovery | A failed kernel close reports the kernel as owner; `retryCleanup` on any view delegates to it.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Containment      | A kernel release failure fences Machine RPC together with durable/presence, which already shared one; the durable attach path's `retryCleanup` now recovers it too. A terminal 401/403 fences existing views, but a view joining such a kernel (for example a reattach after workspace access was restored) first runs `invalidate('manual')`, giving one fresh admission as a per-consumer kernel did. Its retry policy bounds the rate. Without this, Machine RPC's lifelong lease kept the terminal answer and the workspace stayed local-only. |
 
 ## Alternatives considered
 
@@ -104,6 +111,12 @@ New cases in the owning suites (`github-token.test.ts`,
 assert the requests reaching the cloud boundary and the tokens callers receive. An
 ablation against the previous implementations made the key cases fail: 2 of the
 renderer cases, 8 of the manager cases and the Streams sharing case.
+
+A failure-containment review of the first revision found three ways sharing kept a
+failure longer than separate owners had. Each now has a case that failed against
+that revision: a borrower joining a kernel after a terminal 403 is admitted, a
+recovery JWT survives a same-session Convex auth restart, and a reauthorized
+personal grant is used by the next command within 5 seconds.
 
 Not covered: cross-window or cross-tab sharing (stage D needs a platform service
 and its own review), one-shot CLI commands (separate processes), Electron main's

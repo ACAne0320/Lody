@@ -139,6 +139,12 @@ const DEFAULT_APP_TOKEN_CACHE_MS = 15 * 60 * 1000;
 const CANDIDATE_CACHE_MS = 60_000;
 /** Longest a failed cloud answer is reused before the next request. */
 export const GITHUB_TOKEN_FAILURE_BACKOFF_MAX_MS = 30_000;
+/**
+ * Per-command candidates skip a failed source during reuse and select the next
+ * identity, and nothing tells the CLI about a reauthorization. Reuse there only
+ * merges the helper calls of one command, so a fixed grant is used within seconds.
+ */
+export const GITHUB_CANDIDATE_FAILURE_REUSE_MAX_MS = 5_000;
 const TRANSIENT_FAILURE_BACKOFF_BASE_MS = 1_000;
 
 /**
@@ -147,15 +153,16 @@ const TRANSIENT_FAILURE_BACKOFF_BASE_MS = 1_000;
  * service failures back off exponentially from their completion. An expired CLI
  * login is never reused: the login recovery path owns it.
  */
-export function githubTokenFailureBackoffMs(error: unknown, previousFailures: number) {
+export function githubTokenFailureBackoffMs(
+  error: unknown,
+  previousFailures: number,
+  maxMs = GITHUB_TOKEN_FAILURE_BACKOFF_MAX_MS
+) {
   if (error instanceof GitHubTokenFetchError) {
     if (error.code === 'unauthorized') return null;
-    if (error.code !== 'token_generation_failed') return GITHUB_TOKEN_FAILURE_BACKOFF_MAX_MS;
+    if (error.code !== 'token_generation_failed') return maxMs;
   }
-  return Math.min(
-    GITHUB_TOKEN_FAILURE_BACKOFF_MAX_MS,
-    TRANSIENT_FAILURE_BACKOFF_BASE_MS * 2 ** previousFailures
-  );
+  return Math.min(maxMs, TRANSIENT_FAILURE_BACKOFF_BASE_MS * 2 ** previousFailures);
 }
 
 /**
@@ -274,7 +281,11 @@ export class GitHubTokenManager {
               : entry.result;
           },
           (error: unknown) => {
-            const backoffMs = githubTokenFailureBackoffMs(error, previousFailures);
+            const backoffMs = githubTokenFailureBackoffMs(
+              error,
+              previousFailures,
+              GITHUB_CANDIDATE_FAILURE_REUSE_MAX_MS
+            );
             if (generation === this.candidateGeneration && backoffMs !== null)
               this.candidates.set(cacheKey, {
                 kind: 'failed',
@@ -312,7 +323,7 @@ export class GitHubTokenManager {
         invalidatedPersonalToken,
       })
     );
-    const unavailableUntil = this.now() + GITHUB_TOKEN_FAILURE_BACKOFF_MAX_MS;
+    const unavailableUntil = this.now() + GITHUB_CANDIDATE_FAILURE_REUSE_MAX_MS;
     if (!result.success) {
       if (result.errorCode === 'repo_not_linked')
         return { kind: 'unavailable', result: null, expiresAt: unavailableUntil };

@@ -212,3 +212,55 @@ it('workspace Streams borrowers share one kernel; a closed borrower ends only it
     vi.unstubAllEnvs();
   }
 });
+
+it('a borrower joining a terminally rejected workspace kernel gets one fresh admission', async () => {
+  vi.stubEnv('LODY_HTTP_TRANSPORT', 'default');
+  const logger: Logger = {
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    trace: () => {},
+    success: () => {},
+    setLevel: () => {},
+    child: () => logger,
+    close: async () => {},
+  };
+  let accessAllowed = false;
+  let requests = 0;
+  vi.stubGlobal('fetch', async () => {
+    requests++;
+    return accessAllowed
+      ? Response.json({ token: 'jwt-restored', expiresIn: 3600 })
+      : new Response(null, { status: 403 });
+  });
+  const port = createCloudStreamsTokenPort({
+    token: 'synthetic-cli-token',
+    authBaseUrl: 'https://fixture.convex.cloud',
+    logger,
+  });
+  try {
+    // Machine RPC keeps its lease while workspace access is revoked.
+    const rpc = port.createTokenProviderLegacy({ workspaceId: 'workspace' });
+    await expect(rpc.getToken()).rejects.toBeDefined();
+    // The terminal answer still fences the existing borrower without new requests.
+    await expect(rpc.getToken()).rejects.toBeDefined();
+    expect(requests).toBe(1);
+
+    // Access is restored and durable sync reattaches through a new borrower.
+    accessAllowed = true;
+    const scope = Effect.runSync(Scope.make());
+    const durable = await Effect.runPromise(
+      Scope.provide(port.createTokenProvider({ workspaceId: 'workspace' }), scope)
+    );
+    await expect(Effect.runPromise(durable.getToken())).resolves.toBe('jwt-restored');
+    await expect(rpc.getToken()).resolves.toBe('jwt-restored');
+    expect(requests).toBe(2);
+
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    await rpc.close();
+    await port.closeLegacy();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

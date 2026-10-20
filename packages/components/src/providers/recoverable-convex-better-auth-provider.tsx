@@ -82,10 +82,14 @@ function useRecoverableBetterAuth(authClient: LodyAuthClient, generation: number
         const mountedRef = useRef(true);
         activeAuthKeyRef.current = authKey;
         // Out-of-band JWT recovery joins this session's request; publish before any effect runs.
-        activateConvexJwtAuthKey(authClient, authKey);
+        const jwtIdentity = `${authIntentGeneration}:${sessionId ?? ''}`;
+        activateConvexJwtAuthKey(authClient, authKey, jwtIdentity);
         const cachedToken = cachedTokenState.authKey === authKey ? cachedTokenState.token : null;
 
-        useEffect(() => activateConvexJwtAuthKey(authClient, authKey), [authKey]);
+        useEffect(
+          () => activateConvexJwtAuthKey(authClient, authKey, jwtIdentity),
+          [authKey, jwtIdentity]
+        );
 
         useEffect(() => {
           mountedRef.current = true;

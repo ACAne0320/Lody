@@ -54,12 +54,14 @@ have a 15-second deadline; helper requests wait 20 seconds including response
 bodies, so a helper always outlasts the broker's own cloud request. Successful credentials may be cached for up to 60 seconds,
 partitioned by repository, owner, machine and source and bounded by token expiry.
 Concurrent requests for one partition share one cloud request. A failed answer is
-reused for that partition for at most 30 seconds, so frequent commands and PR polling
-do not ask the cloud again for an unavailable source; the source still fails and
-selection advances exactly as before. An expired CLI login is never reused.
-Configuration changes and explicit reauthorization clear both caches; without such
-a signal, a newly granted credential can take up to 30 seconds to be used. Remote
-revocation while disconnected is not guaranteed instantaneous.
+reused for that partition so repeated requests do not ask the cloud again for an
+unavailable source; the source still fails and selection advances exactly as before.
+The CLI receives no reauthorization or configuration signal, so reuse is short where
+it can change the selected identity: per-command candidates reuse a failure for at
+most 5 seconds, enough to merge one command's helper calls. Background PR polling
+reuses one for at most 30 seconds. An expired CLI login is never reused, and a
+rejected token's invalidation clears the partition. Remote revocation while
+disconnected is not guaranteed instantaneous.
 
 Broker failure cannot prevent an eligible machine candidate. Broker startup
 failure is reported while trusted local context remains usable. Concurrent startup

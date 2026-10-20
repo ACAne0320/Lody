@@ -1,8 +1,10 @@
 import { getAuthSessionIntentGeneration, type LodyAuthClient } from './auth';
 
 type ConvexJwtRequests = {
-  /** Auth key of the mounted Convex auth provider, which owns session identity. */
+  /** Auth key of the mounted Convex auth provider; it includes the auth restart generation. */
   activeAuthKey: string | undefined;
+  /** Session identity of that key: logout intent and session, without the restart generation. */
+  activeIdentity: string | undefined;
   pending: Map<string, Promise<string | null>>;
 };
 
@@ -11,7 +13,7 @@ const REQUESTS = new WeakMap<object, ConvexJwtRequests>();
 function requestsFor(authClient: LodyAuthClient): ConvexJwtRequests {
   let requests = REQUESTS.get(authClient);
   if (!requests) {
-    requests = { activeAuthKey: undefined, pending: new Map() };
+    requests = { activeAuthKey: undefined, activeIdentity: undefined, pending: new Map() };
     REQUESTS.set(authClient, requests);
   }
   return requests;
@@ -45,31 +47,40 @@ export function requestConvexJwt(
  * The mounted Convex auth provider publishes its session identity; the returned
  * release clears it only while no newer identity replaced it.
  */
-export function activateConvexJwtAuthKey(authClient: LodyAuthClient, authKey: string): () => void {
+export function activateConvexJwtAuthKey(
+  authClient: LodyAuthClient,
+  authKey: string,
+  identity: string
+): () => void {
   const requests = requestsFor(authClient);
   requests.activeAuthKey = authKey;
+  requests.activeIdentity = identity;
   return () => {
-    if (requests.activeAuthKey === authKey) requests.activeAuthKey = undefined;
+    if (requests.activeAuthKey !== authKey) return;
+    requests.activeAuthKey = undefined;
+    requests.activeIdentity = undefined;
   };
 }
 
 /**
  * A fresh JWT for whichever session the provider currently authenticates.
  * Joins the provider's in-flight request; returns null on failure or when the
- * session changed before the JWT arrived, so an old session's JWT is never used.
+ * session or logout intent changed before the JWT arrived, so an old session's
+ * JWT is never used. A Convex auth restart alone keeps the session, so its JWT
+ * stays valid for this caller.
  */
 export async function requestCurrentConvexJwt(authClient: LodyAuthClient): Promise<string | null> {
   const intent = getAuthSessionIntentGeneration(authClient);
   const requests = requestsFor(authClient);
-  const currentKey = () => requests.activeAuthKey ?? `detached:${intent}`;
-  const authKey = currentKey();
+  const currentIdentity = () => requests.activeIdentity ?? `detached:${intent}`;
+  const identity = currentIdentity();
   let token: string | null;
   try {
-    token = await requestConvexJwt(authClient, authKey);
+    token = await requestConvexJwt(authClient, requests.activeAuthKey ?? `detached:${intent}`);
   } catch {
     return null;
   }
-  if (getAuthSessionIntentGeneration(authClient) !== intent || currentKey() !== authKey) {
+  if (getAuthSessionIntentGeneration(authClient) !== intent || currentIdentity() !== identity) {
     return null;
   }
   return token;

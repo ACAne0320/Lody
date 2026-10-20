@@ -20,6 +20,7 @@ vi.mock('@lody/cloud-api', () => ({
 import {
   GitHubTokenManager,
   GitHubTokenFetchError,
+  GITHUB_CANDIDATE_FAILURE_REUSE_MAX_MS,
   GITHUB_TOKEN_FAILURE_BACKOFF_MAX_MS,
   createSharedGitHubTokenManagers,
   withRequestDeadline,
@@ -462,7 +463,7 @@ describe('GitHubTokenManager', () => {
       expect(actionMock).toHaveBeenCalledTimes(1);
     });
 
-    it('reuses an unavailable personal answer for 30 s, then asks again', async () => {
+    it('reuses an unavailable personal answer only within one command burst', async () => {
       const { clock, manager } = createManager();
       actionMock.mockResolvedValue({
         success: false,
@@ -475,11 +476,21 @@ describe('GitHubTokenManager', () => {
         ).resolves.toEqual({ available: false, reason: 'personal_auth_missing' });
       expect(actionMock).toHaveBeenCalledTimes(1);
 
-      clock.nowMs += GITHUB_TOKEN_FAILURE_BACKOFF_MAX_MS;
-      await manager.getCredentialCandidate('org/repo', context, 'personal');
+      // A reauthorization sends the CLI no signal: the next command a few seconds
+      // later must ask again instead of falling back to another identity.
+      clock.nowMs += GITHUB_CANDIDATE_FAILURE_REUSE_MAX_MS;
+      actionMock.mockResolvedValueOnce({
+        success: true,
+        token: 'personal-reauthorized',
+        tokenSource: 'personal',
+        expiresAt: hourFromNow(clock.nowMs),
+      });
+      await expect(
+        manager.getCredentialCandidate('org/repo', context, 'personal')
+      ).resolves.toEqual({ token: 'personal-reauthorized', tokenSource: 'personal' });
       expect(actionMock).toHaveBeenCalledTimes(2);
 
-      // Explicit invalidation (configuration change, reauthorization) ends the backoff.
+      // Invalidation after a rejected token ends reuse of the cached answer.
       manager.invalidate('org/repo', { requesterUserId: 'owner' });
       await manager.getCredentialCandidate('org/repo', context, 'personal');
       expect(actionMock).toHaveBeenCalledTimes(3);
@@ -650,7 +661,13 @@ describe('GitHubTokenManager', () => {
           code: 'repo_not_linked',
         });
       expect(actionMock).toHaveBeenCalledTimes(1);
-      clock.nowMs += GITHUB_TOKEN_FAILURE_BACKOFF_MAX_MS;
+      // Background polling keeps the longer window.
+      clock.nowMs += GITHUB_CANDIDATE_FAILURE_REUSE_MAX_MS;
+      await expect(manager.getWriteTokenInfoForRepo('org/repo', context)).rejects.toMatchObject({
+        code: 'repo_not_linked',
+      });
+      expect(actionMock).toHaveBeenCalledTimes(1);
+      clock.nowMs += GITHUB_TOKEN_FAILURE_BACKOFF_MAX_MS - GITHUB_CANDIDATE_FAILURE_REUSE_MAX_MS;
       actionMock.mockResolvedValueOnce({
         success: true,
         token: 'app-linked',

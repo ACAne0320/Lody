@@ -34,15 +34,31 @@ export function makeStreamsTokenShares(
       return share.provider.close.pipe(Effect.andThen(Scope.close(share.scope, Exit.void)));
     });
 
-  const view = Effect.fnUntraced(function* (workspaceId: string, share: Share) {
+  const view = Effect.fnUntraced(function* (workspaceId: string, share: Share, joined: boolean) {
     const reads = yield* Scope.make();
     let closed = false;
     let receipt: Deferred.Deferred<void> | undefined;
+    // A borrower joining a kernel that holds a terminal 401/403 (for example a
+    // reattach after workspace access was restored) gets one fresh admission on its
+    // first read, as a per-consumer kernel did. The borrower's own retry policy
+    // bounds how often that happens; existing borrowers stay fenced until then.
+    let admission: Effect.Effect<void> = joined
+      ? Effect.flatMap(share.provider.health, (health) =>
+          health.terminalAuthStatus === undefined
+            ? Effect.void
+            : share.provider.invalidate('manual')
+        )
+      : Effect.void;
     const getToken: LoroStreamsTokenProvider['getToken'] = (context) =>
       Effect.uninterruptibleMask((restore) =>
         Effect.suspend(() => {
           if (closed) return Effect.fail(closedError());
-          return Effect.forkIn(Effect.interruptible(share.provider.getToken(context)), reads).pipe(
+          const admit = admission;
+          admission = Effect.void;
+          return admit.pipe(
+            Effect.andThen(
+              Effect.forkIn(Effect.interruptible(share.provider.getToken(context)), reads)
+            ),
             Effect.flatMap((read) =>
               restore(Fiber.join(read)).pipe(Effect.onInterrupt(() => Fiber.interrupt(read)))
             )
@@ -98,7 +114,7 @@ export function makeStreamsTokenShares(
         const existing = shares.get(workspaceId);
         if (existing) {
           existing.leases++;
-          return yield* view(workspaceId, existing);
+          return yield* view(workspaceId, existing, true);
         }
         const scope = yield* Scope.make();
         const provider = yield* Scope.provide(make(workspaceId), scope);
@@ -107,11 +123,11 @@ export function makeStreamsTokenShares(
           // Another borrower created it while this kernel was built; this one never ran.
           yield* provider.close.pipe(Effect.andThen(Scope.close(scope, Exit.void)), Effect.orDie);
           raced.leases++;
-          return yield* view(workspaceId, raced);
+          return yield* view(workspaceId, raced, true);
         }
         const share: Share = { provider, scope, leases: 1 };
         shares.set(workspaceId, share);
-        return yield* view(workspaceId, share);
+        return yield* view(workspaceId, share, false);
       })
     );
 
