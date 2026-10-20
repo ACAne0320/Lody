@@ -57,8 +57,12 @@ function asPlain(
  * alone rejects input and chooses the error code. Every value they produce is
  * the one that path produces (test/cbor-fast-path.test.ts).
  */
-const MINIMUM = [24, 0x100, 0x10000, 0x1_0000_0000] as const;
+// Smallest value each head size may carry (shortest form). Plain branches and a
+// DataView keep this valid under consumers' noUncheckedIndexedAccess as well.
+const minimumFor = (size: number) =>
+  size === 0 ? 24 : size === 1 ? 0x100 : size === 2 ? 0x10000 : 0x1_0000_0000;
 function decodePlain(bytes: Uint8Array, maxArray: number, maxBstr: number): CborValue | undefined {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let at = 0;
   const argument = (info: number): number | undefined => {
     if (info < 24) return info;
@@ -67,12 +71,12 @@ function decodePlain(bytes: Uint8Array, maxArray: number, maxBstr: number): Cbor
     const length = 1 << size;
     if (at + length > bytes.length) return undefined;
     let value = 0;
-    for (let i = 0; i < length; i++) value = value * 256 + bytes[at++];
-    return value >= MINIMUM[size] && value <= Number.MAX_SAFE_INTEGER ? value : undefined;
+    for (let i = 0; i < length; i++) value = value * 256 + view.getUint8(at++);
+    return value >= minimumFor(size) && value <= Number.MAX_SAFE_INTEGER ? value : undefined;
   };
   const item = (depth: number): CborValue | undefined => {
     if (depth > MAX_DEPTH || at >= bytes.length) return undefined;
-    const initial = bytes[at++];
+    const initial = view.getUint8(at++);
     const major = initial >> 5;
     if (major === 7)
       return initial === 0xf4

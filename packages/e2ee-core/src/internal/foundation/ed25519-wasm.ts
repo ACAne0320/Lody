@@ -71,8 +71,7 @@ function verifierExports(value: WebAssembly.Exports): Exports | null {
 function passesKnownAnswers(exports: Exports): boolean {
   const key = hex(KNOWN.key);
   const message = hex(KNOWN.message);
-  const tampered = message.slice();
-  tampered[0] ^= 1;
+  const tampered = message.map((byte, index) => (index === 0 ? byte ^ 1 : byte));
   const valid = hex(KNOWN.valid);
   const torsion = hex(KNOWN.torsionR);
   const verify = (k: Uint8Array, m: Uint8Array, s: Uint8Array, checked: number) =>
