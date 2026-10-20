@@ -76,16 +76,16 @@ therefore races its own 1 s restart.
 All three defects are in loro-streams. Each patch was applied to a scratch copy
 of the published bundle and run through the same reproduction:
 
-| Bundle | `SqliteError` from the hook | Retriable 503 from the hook | Abort without reason |
-| --- | --- | --- | --- |
-| streams-crdt 0.17.0 + streams-client 0.9.0 | spins after 1 s | spins at once | spins at once |
-| streams-crdt 0.19.0 + streams-client 0.12.0 | spins after 1 s | spins at once | spins at once |
-| fresh controller at loop entry only | recovers | spins | spins |
-| aborted branch swaps controller and backs off | recovers | recovers | recovers |
-| both changes | recovers | recovers | recovers |
-| caller-abort classification only | no spin, but stays `error` with no new request | not run | not run |
+| Bundle                                        | `SqliteError` from the hook                    | Retriable 503 from the hook | Abort without reason |
+| --------------------------------------------- | ---------------------------------------------- | --------------------------- | -------------------- |
+| streams-crdt 0.17.0 + streams-client 0.9.0    | spins after 1 s                                | spins at once               | spins at once        |
+| streams-crdt 0.19.0 + streams-client 0.12.0   | spins after 1 s                                | spins at once               | spins at once        |
+| fresh controller at loop entry only           | recovers                                       | spins                       | spins                |
+| aborted branch swaps controller and backs off | recovers                                       | recovers                    | recovers             |
+| both changes                                  | recovers                                       | recovers                    | recovers             |
+| caller-abort classification only              | no spin, but stays `error` with no new request | not run                     | not run              |
 
-Proposed upstream change,
+Merged upstream change,
 [loro-streams#429](https://github.com/loro-dev/loro-streams/pull/429)
 (on `main` at `0900fca1`):
 
@@ -108,9 +108,11 @@ Proposed upstream change,
 - The built patch also recovers in every loopback scenario that uses real
   `fetch`.
 
-Lody adopts the fix by bumping the reviewed SDK pins in `pnpm-workspace.yaml`.
-Fresh releases also need reviewed `minimumReleaseAgeExclude` entries. One
-catalog bump covers the CLI and the renderer, which uses the same live loop.
+Lody adopts the fix by pinning streams-crdt 0.19.1 and streams-client 0.12.1
+in the `pnpm-workspace.yaml` catalog, with matching reviewed
+`minimumReleaseAgeExclude` entries. One catalog bump covers the CLI and the
+renderer, which uses the same live loop. loro-repo's peer range already accepts
+0.19.1, so its resolved peer moves too.
 Durable rooms in Lody, both in the 0.107 stable branches and on `main`, use the
 Promise `StreamsCrdt` through `loro-repo/transport/streams`. The only
 `@loro-dev/streams-crdt/effect` import is the presence (ephemeral) stream, and
@@ -143,7 +145,9 @@ shared commit once instead of retrying each group alone.
   CRDT CPU work off the main thread. The owner deferred it for now.
 
 Lody needs only the version bump: `createCliSqliteRepoStore` opens its own
-connection, so it gets the new defaults.
+connection, so it gets the new defaults. The 0.23.3 npm publish job failed and
+still has to be re-run, so the loro-repo pin stays at 0.23.2 for now; the read
+loop fix does not depend on it.
 
 ## Naming the lock holder
 

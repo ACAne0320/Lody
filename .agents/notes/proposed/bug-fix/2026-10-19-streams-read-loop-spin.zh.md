@@ -36,23 +36,23 @@ Translation: current
 
 三个缺陷都在 loro-streams。每个补丁都打在已发布产物的临时副本上，再跑同一个复现：
 
-| 产物 | 钩子抛 `SqliteError` | 钩子抛可重试的 503 | 无原因的取消 |
-| --- | --- | --- | --- |
-| streams-crdt 0.17.0 + streams-client 0.9.0 | 1 秒后空转 | 立即空转 | 立即空转 |
-| streams-crdt 0.19.0 + streams-client 0.12.0 | 1 秒后空转 | 立即空转 | 立即空转 |
-| 仅循环入口换新控制器 | 恢复 | 空转 | 空转 |
-| 取消分支换控制器并退避 | 恢复 | 恢复 | 恢复 |
-| 两处都改 | 恢复 | 恢复 | 恢复 |
-| 仅修正调用方取消的归类 | 不空转，但停在 `error`，不发新请求 | 未测 | 未测 |
+| 产物                                        | 钩子抛 `SqliteError`               | 钩子抛可重试的 503 | 无原因的取消 |
+| ------------------------------------------- | ---------------------------------- | ------------------ | ------------ |
+| streams-crdt 0.17.0 + streams-client 0.9.0  | 1 秒后空转                         | 立即空转           | 立即空转     |
+| streams-crdt 0.19.0 + streams-client 0.12.0 | 1 秒后空转                         | 立即空转           | 立即空转     |
+| 仅循环入口换新控制器                        | 恢复                               | 空转               | 空转         |
+| 取消分支换控制器并退避                      | 恢复                               | 恢复               | 恢复         |
+| 两处都改                                    | 恢复                               | 恢复               | 恢复         |
+| 仅修正调用方取消的归类                      | 不空转，但停在 `error`，不发新请求 | 未测               | 未测         |
 
-提议的上游修改为 [loro-streams#429](https://github.com/loro-dev/loro-streams/pull/429)（基于 `main` 的 `0900fca1`）：
+已合并的上游修改为 [loro-streams#429](https://github.com/loro-dev/loro-streams/pull/429)（基于 `main` 的 `0900fca1`）：
 
 - streams-crdt `transport-runtime.ts:runReadLoopIterations` 在入口替换已取消的 `requestController`。在取消分支里，若控制器仍是捕获的那一个，就换上新的控制器并走 `awaitReadRetryBackoff`。由 `rejoin()` 触发的取消已经换过控制器，保持立即重启。
 - streams-client `sse.ts:readSseEvents` 把调用方取消之后发生的响应体读取失败记录为 `abortKind: "caller"`，与"显式取消不算 `network_error`"的既有规则一致。
 - 回归测试模拟 Undici 用取消原因让已取消请求的响应体出错的行为。测试使用假定时器，并加了一个守卫：读取反复发生却没有新请求时，守卫会关闭 transport。streams-crdt `self-healing-loops.test.ts` 的三个用例和 streams-client `error-context.test.ts` 的调用方取消用例，打补丁前失败、打补丁后通过。两个包的完整测试套件都通过（streams-crdt 510 个，streams-client 206 个）。只改读取循环就能通过循环测试；只改归类时，房间停在 `error`，不发新请求。
 - 构建出的补丁在所有使用真实 `fetch` 的回环场景中都能恢复。
 
-Lody 通过提升 `pnpm-workspace.yaml` 中经审核的 SDK 版本固定来采纳修复。刚发布的版本还需要加入经审核的 `minimumReleaseAgeExclude` 条目。一次 catalog 升级同时覆盖 CLI 和使用同一实时循环的 renderer。Lody 的持久化房间，无论 0.107 稳定分支还是 `main`，都通过 `loro-repo/transport/streams` 使用 Promise 版 `StreamsCrdt`。唯一的 `@loro-dev/streams-crdt/effect` 引用是 presence（临时）流，稳定版构建也没有引用 `loro-repo/effect`。所以修复覆盖了 Lody 运行的全部持久化房间。
+Lody 在 `pnpm-workspace.yaml` 的 catalog 中把 streams-crdt 固定为 0.19.1、streams-client 固定为 0.12.1，并加入对应的经审核 `minimumReleaseAgeExclude` 条目，以此采纳修复。一次 catalog 升级同时覆盖 CLI 和使用同一实时循环的 renderer。loro-repo 的 peer 范围已经接受 0.19.1，所以它解析到的 peer 也随之更新。Lody 的持久化房间，无论 0.107 稳定分支还是 `main`，都通过 `loro-repo/transport/streams` 使用 Promise 版 `StreamsCrdt`。唯一的 `@loro-dev/streams-crdt/effect` 引用是 presence（临时）流，稳定版构建也没有引用 `loro-repo/effect`。所以修复覆盖了 Lody 运行的全部持久化房间。
 
 ## 等锁时不再冻结事件循环
 
@@ -63,7 +63,7 @@ Lody 通过提升 `pnpm-workspace.yaml` 中经审核的 SDK 版本固定来采�
 - **测试。** 由第二个连接持有写锁，测试使用假定时器。不加修改时，顺序用例会阻塞 15 秒（三次调用各 5 秒）并失败，关闭用例和 `PersistenceWriter` 用例也会失败。预算用例是行为契约，改前改后都通过。完整的 `pnpm check` 通过（651 个测试），构建、打包和 writer recovery 检查也都通过。
 - **暂缓的方案。** 把 SQLite 工作移进 worker 还能把 CRDT 的 CPU 计算移出主线程，owner 决定暂不做。
 
-Lody 只需要升级版本：`createCliSqliteRepoStore` 自己打开连接，会直接用上新的默认值。
+Lody 只需要升级版本：`createCliSqliteRepoStore` 自己打开连接，会直接用上新的默认值。0.23.3 的 npm 发布任务失败了，需要重新运行，所以 loro-repo 暂时仍固定在 0.23.2；读取循环的修复不依赖它。
 
 ## 记录锁的持有者
 
