@@ -3159,6 +3159,7 @@
   "settings.general.cliAutoStart.label": "Run local agent",
   "settings.general.cliAutoStart.toggleFailed": "Failed to update local agent setting",
   "settings.general.cliDaemon.helper": "The background process that runs local agents and terminals.",
+  "settings.general.cliDaemon.hostAccessDenied": "Another Lody process with different privileges (started as administrator, as another user, or as a service) holds the local agent, and this app is not allowed to connect. Quit that process, or open Lody with the same privileges, then restart.",
   "settings.general.cliDaemon.label": "Daemon",
   "settings.general.loadingDescription": "Preparing general settings.",
   "settings.general.preventSleep.label": "Prevent sleep",
