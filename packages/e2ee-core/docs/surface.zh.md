@@ -83,3 +83,7 @@
 `LedgerSubmissionStream`, `streamsLedgerFeedSource`, `makeLedgerStreamReader`,
 `LedgerStreamReader`, `streamsDocumentBinding`, `StreamsDocumentBindingOptions`,
 `makeStreamsUpdateBinding`.
+
+## `@lody/e2ee-core/cloudflare`
+
+`ed25519WasmActive`。在 Cloudflare Worker 中导入一次该入口即可：workerd 禁止在运行时从字节编译 WebAssembly，因此改由打包器编译包内的严格 Ed25519 模块。不导入时，core 仍会用纯 JS 正确验证，只是更慢。

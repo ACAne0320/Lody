@@ -1,6 +1,7 @@
 import { Brand, Result } from 'effect';
 import { Point } from '@noble/ed25519';
 import { ValidationError } from './errors';
+import { wasmSigningKeyValid } from './ed25519-wasm';
 import { keyId } from './identifiers';
 import { OwnedBytes } from './owned-bytes';
 
@@ -30,7 +31,9 @@ export type EpochNumber = number & Brand.Brand<'EpochNumber'>;
 const epochBrand = Brand.nominal<EpochNumber>();
 // Only exact bytes that passed the fixed point checks enter this bounded cache.
 // A cache hit proves key shape, never signer authority or signature validity.
-const SIGNING_KEY_CACHE_LIMIT = 256;
+// Least recently used eviction: a ledger's frequent signers (its Owner) stay cached
+// while thousands of members' keys pass through once.
+const SIGNING_KEY_CACHE_LIMIT = 4096;
 const validatedSigningKeys = new Set<string>();
 
 function exact<K extends string>(
@@ -50,14 +53,22 @@ export function signingPublicKey(input: unknown): Result.Result<SigningPublicKey
     const key = yield* exact('SigningPublicKey', 32, input);
     const bytes = key.toBytes();
     const id = keyId(bytes);
-    if (validatedSigningKeys.has(id)) return key;
-    const valid = Result.try({
-      try: () => {
-        const point = Point.fromBytes(bytes, false);
-        return !point.isSmallOrder() && point.isTorsionFree();
-      },
-      catch: () => new ValidationError({ code: 'invalid-key' }),
-    });
+    if (validatedSigningKeys.has(id)) {
+      validatedSigningKeys.delete(id);
+      validatedSigningKeys.add(id);
+      return key;
+    }
+    const fast = wasmSigningKeyValid(bytes);
+    const valid =
+      fast === undefined
+        ? Result.try({
+            try: () => {
+              const point = Point.fromBytes(bytes, false);
+              return !point.isSmallOrder() && point.isTorsionFree();
+            },
+            catch: () => new ValidationError({ code: 'invalid-key' }),
+          })
+        : Result.succeed(fast);
     if (!(yield* valid)) return yield* Result.fail(new ValidationError({ code: 'invalid-key' }));
     if (validatedSigningKeys.size === SIGNING_KEY_CACHE_LIMIT)
       validatedSigningKeys.delete(validatedSigningKeys.values().next().value!);
