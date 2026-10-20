@@ -68,6 +68,8 @@ From the Convex limits documentation: queries and mutations have 1 s of user-cod
 
 ## Core implementation (2026-10-19)
 
+> **Update (2026-10-20):** the state encoding and the restore rules below are replaced by the [compact ledger state](2026-10-20-e2ee-compact-ledger-state.md): fixed-width tables with full membership and device history, so restored and snapshot-imported views keep every author.
+
 `exportVerifiedState`/`restoreVerifiedState` are in `@lody/e2ee-core/protocol`. The retained bytes are the comparison-note state array plus the view's verification origin, so the export digest is the comparison-note digest without a second encoding. They share the snapshot decoder, with a 16 MiB budget instead of the 2 MiB snapshot cap. Restore skips the per-key Ed25519 curve check (about 7 ms per key) that dominated a first version; export sorts hex keys directly instead of re-parsing them per comparison.
 
 Same real-data ledgers as above (one Node process, idle host):
@@ -81,6 +83,8 @@ Same real-data ledgers as above (one Node process, idle host):
 The first version's restore took 14.5 s and 58 s for the last two rows. Compression is not used (owner decision): quality 11 costs seconds, and even quality 6 adds 20–80 ms per rewrite to save space only on member-heavy states. Retained state is stored uncompressed. Restore's remaining cost is per-element generator overhead in the shared decoder; a write-path restore under 0.6 s at 8,000 records is accepted for now.
 
 ## Capacity of one 900 KiB chunk
+
+> **Update (2026-10-20):** these row costs are for the previous encoding. With the [compact ledger state](2026-10-20-e2ee-compact-ledger-state.md) a member with one device costs 138 bytes, each further device 69 and each rotation 104, and one chunk holds about 6,600 single-device members.
 
 The host needs more than the current membership: verifying the next record also needs every replay fact, which never shrinks (all signing and encryption keys, membership IDs and join requests ever used, and every epoch commitment). Retained state is exactly the comparison-note state, so its size follows from the CBOR rows:
 

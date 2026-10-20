@@ -32,11 +32,9 @@ returned bytes, rather than rerun encryption. No pending store is introduced.
 
 `authenticateDocument` returns only historical author/signature evidence relative
 to that verified view and caller scope. It authenticates revoked admitted authors;
-the returned author is a discriminated identity: full available history gives
-`kind: member` with the original actor/membership; snapshot replay-prevention
-facts for a retired device give only `kind: device-only`, device and
-`missing-history-context`. No original user is guessed and no new write right
-is restored. This does not establish current publication permission, ciphertext validity, global
+the returned author is `kind: member` with the original actor/membership, from
+full history, an endorsed snapshot or retained state alike, since all carry the
+device history. No new write right is restored. This does not establish current publication permission, ciphertext validity, global
 freshness or prior host admission. `openDocument` additionally verifies the AEAD
 and returns an owned plaintext buffer. Untrusted metadata cannot choose the
 trusted genesis/resource/purpose. Context, signature or tag failure returns no

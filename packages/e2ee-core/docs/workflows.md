@@ -222,8 +222,8 @@ document key derived from the epoch key, and purpose-bound AAD.
   exact current epoch, checked before encryption and again after signing. Each
   run encrypts anew, so a retry must resend the returned bytes.
 - Reading authenticates the historical author before decrypting. A revoked
-  author's old content still opens and is attributed (`member`, or
-  `device-only` after a snapshot), but this grants no current write right.
+  author's old content still opens and is attributed to its original member,
+  also after a snapshot, but this grants no current write right.
 
 ## Delivery (inside the distributor)
 
