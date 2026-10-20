@@ -1,6 +1,6 @@
 import { Effect, Exit, Scope } from 'effect';
 import type { Logger } from '../src/utils/logger';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createCommandAttachmentTransfer,
   createCloudSessionSharingPort,
@@ -263,4 +263,112 @@ it('a borrower joining a terminally rejected workspace kernel gets one fresh adm
   } finally {
     vi.unstubAllEnvs();
   }
+});
+
+describe('shared Streams kernel after a failed response-body release', () => {
+  const logger: Logger = {
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    trace: () => {},
+    success: () => {},
+    setLevel: () => {},
+    child: () => logger,
+    close: async () => {},
+  };
+  // The first token response is a 503 whose body cancellation rejects: the kernel
+  // records a release failure. Later responses succeed.
+  const failingReleaseThenRecovered = () => {
+    vi.stubEnv('LODY_HTTP_TRANSPORT', 'default');
+    let requests = 0;
+    vi.stubGlobal('fetch', async () => {
+      requests++;
+      if (requests === 1)
+        return new Response(
+          new ReadableStream({
+            cancel: () => Promise.reject(new Error('synthetic body release failure')),
+          }),
+          { status: 503 }
+        );
+      return Response.json({ token: 'jwt-recovered', expiresIn: 3600 });
+    });
+    const port = createCloudStreamsTokenPort({
+      token: 'synthetic-cli-token',
+      authBaseUrl: 'https://fixture.convex.cloud',
+      logger,
+    });
+    return { port, requests: () => requests };
+  };
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('lets the next durable reattach recover the kernel while Machine RPC keeps its lease', async () => {
+    const { port, requests } = failingReleaseThenRecovered();
+    const rpc = port.createTokenProviderLegacy({ workspaceId: 'workspace' });
+    await expect(rpc.getToken()).rejects.toBeDefined();
+
+    // Durable sync reattaches; its first read drives the shared cleanup.
+    const scope = Effect.runSync(Scope.make());
+    const durable = await Effect.runPromise(
+      Scope.provide(port.createTokenProvider({ workspaceId: 'workspace' }), scope)
+    );
+    await expect(Effect.runPromise(durable.getToken())).resolves.toBe('jwt-recovered');
+    expect(requests()).toBe(2);
+    // The long-lived Machine RPC borrower recovers with it.
+    await expect(rpc.getToken()).resolves.toBe('jwt-recovered');
+    expect((await Effect.runPromise(durable.health)).state).toBe('open');
+
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    await rpc.close();
+    await port.closeLegacy();
+  });
+
+  it('finishes a failed last close through retryCleanup without releasing a lease twice', async () => {
+    const { port, requests } = failingReleaseThenRecovered();
+    const durable = port.createTokenProviderLegacy({ workspaceId: 'workspace' });
+    await expect(durable.getToken()).rejects.toBeDefined();
+    await expect(durable.close()).rejects.toBeDefined();
+    // Retrying cleanup finishes the kernel close; the same close then succeeds.
+    await durable.retryCleanup();
+    await expect(durable.close()).resolves.toBeUndefined();
+
+    // The retired kernel is gone: a new borrower gets a fresh kernel and token.
+    const next = port.createTokenProviderLegacy({ workspaceId: 'workspace' });
+    await expect(next.getToken()).resolves.toBe('jwt-recovered');
+    expect(requests()).toBe(2);
+    await next.close();
+    await port.closeLegacy();
+  });
+
+  it('does not interrupt another borrower when cleanup is retried on a healthy kernel', async () => {
+    vi.stubEnv('LODY_HTTP_TRANSPORT', 'default');
+    let respond!: () => void;
+    const requested = new Promise<void>((started) => {
+      vi.stubGlobal(
+        'fetch',
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = () => resolve(Response.json({ token: 'jwt-shared', expiresIn: 3600 }));
+            started();
+          })
+      );
+    });
+    const port = createCloudStreamsTokenPort({
+      token: 'synthetic-cli-token',
+      authBaseUrl: 'https://fixture.convex.cloud',
+      logger,
+    });
+    const rpc = port.createTokenProviderLegacy({ workspaceId: 'workspace' });
+    const durable = port.createTokenProviderLegacy({ workspaceId: 'workspace' });
+    const rpcRead = rpc.getToken();
+    await requested;
+    // A durable reattach retries cleanup of its previous provider before closing it.
+    await durable.retryCleanup();
+    await durable.close();
+    respond();
+    await expect(rpcRead).resolves.toBe('jwt-shared');
+    await rpc.close();
+    await port.closeLegacy();
+  });
 });

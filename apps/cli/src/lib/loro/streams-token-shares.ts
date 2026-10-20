@@ -1,4 +1,4 @@
-import { Deferred, Effect, Exit, Fiber, Scope } from 'effect';
+import { Cause, Deferred, Effect, Exit, Fiber, Scope } from 'effect';
 import { LoroStreamsTokenError, type LoroStreamsTokenProvider } from '@lody/shared';
 
 type Share = {
@@ -17,27 +17,44 @@ const closedError = () =>
  *
  * Each borrower gets its own view: closing a view fences and interrupts only that
  * view's reads. The last view's close closes the kernel; a failed kernel close
- * keeps its owner in the reported Cause for `retryCleanup`, as an owned kernel did.
- * Release and credential failures of the shared kernel are visible to every view.
+ * keeps its owner in the reported Cause, and that view's `retryCleanup` finishes
+ * the close. Sharing must not hold a failure longer than separate kernels did:
+ * every read first drives the kernel's shared, bounded cleanup when a release
+ * failed, and a joining view clears a terminal 401/403 once.
  */
 export function makeStreamsTokenShares(
-  make: (workspaceId: string) => Effect.Effect<LoroStreamsTokenProvider, never, Scope.Scope>
+  make: (workspaceId: string) => Effect.Effect<LoroStreamsTokenProvider, never, Scope.Scope>,
+  options?: {
+    /** A cleanup report of already-ended raw work, observed before it is retired. */
+    readonly onCleanupReported?: (cause: Cause.Cause<unknown>) => void;
+  }
 ) {
   const shares = new Map<string, Share>();
 
-  const release = (workspaceId: string, share: Share) =>
-    Effect.suspend(() => {
-      share.leases--;
-      if (share.leases > 0) return Effect.void;
-      if (shares.get(workspaceId) === share) shares.delete(workspaceId);
-      // The kernel finalizer in this Scope is its own memoized close.
-      return share.provider.close.pipe(Effect.andThen(Scope.close(share.scope, Exit.void)));
+  /**
+   * Next-use recovery of a release-failed kernel. The kernel shares one cleanup
+   * flight among concurrent callers. Its first run reports raw work that already
+   * ended with a failed release and retires it; only when no unsettled raw work
+   * remains is one immediate rerun allowed. Unsettled work keeps the full Cause and
+   * owner for the next read.
+   */
+  const recover = (share: Share) =>
+    Effect.gen(function* () {
+      if ((yield* share.provider.health).state !== 'release-failed') return undefined;
+      const first = yield* Effect.exit(share.provider.retryCleanup);
+      if (Exit.isSuccess(first)) return undefined;
+      if ((yield* share.provider.health).pendingRawWork) return yield* first;
+      options?.onCleanupReported?.(first.cause);
+      return yield* share.provider.retryCleanup;
     });
 
   const view = Effect.fnUntraced(function* (workspaceId: string, share: Share, joined: boolean) {
     const reads = yield* Scope.make();
     let closed = false;
     let receipt: Deferred.Deferred<void> | undefined;
+    let closeFailed = false;
+    let leaseReleased = false;
+    let finalClosePending = false;
     // A borrower joining a kernel that holds a terminal 401/403 (for example a
     // reattach after workspace access was restored) gets one fresh admission on its
     // first read, as a per-consumer kernel did. The borrower's own retry policy
@@ -55,7 +72,8 @@ export function makeStreamsTokenShares(
           if (closed) return Effect.fail(closedError());
           const admit = admission;
           admission = Effect.void;
-          return admit.pipe(
+          return recover(share).pipe(
+            Effect.andThen(admit),
             Effect.andThen(
               Effect.forkIn(Effect.interruptible(share.provider.getToken(context)), reads)
             ),
@@ -65,19 +83,46 @@ export function makeStreamsTokenShares(
           );
         })
       );
+    // Resumable: the lease is released exactly once, and only the last view closes
+    // the kernel and the share Scope. A rerun after `retryCleanup` repeats only the
+    // unfinished kernel close.
+    const finish = Effect.gen(function* () {
+      yield* Scope.close(reads, Exit.void);
+      if (!leaseReleased) {
+        leaseReleased = true;
+        share.leases--;
+        if (share.leases > 0) return;
+        if (shares.get(workspaceId) === share) shares.delete(workspaceId);
+        finalClosePending = true;
+      }
+      if (!finalClosePending) return;
+      // The kernel finalizer in this Scope is its own memoized close.
+      yield* share.provider.close;
+      yield* Scope.close(share.scope, Exit.void);
+      finalClosePending = false;
+    });
     const close = Effect.uninterruptible(
       Effect.gen(function* () {
         if (receipt) return yield* Deferred.await(receipt);
         const done = Deferred.makeUnsafe<void>();
         receipt = done;
         closed = true;
-        // Interrupts this view's reads; the kernel bounds each reader's own cleanup.
-        const exit = yield* Scope.close(reads, Exit.void).pipe(
-          Effect.andThen(release(workspaceId, share)),
-          Effect.exit
-        );
+        const exit = yield* Effect.exit(finish);
+        closeFailed = Exit.isFailure(exit);
         yield* Deferred.done(done, exit);
         return yield* exit;
+      })
+    );
+    const retryCleanup = Effect.uninterruptible(
+      Effect.gen(function* () {
+        // Only a failed release needs the kernel's cleanup; on a healthy shared
+        // kernel it would interrupt other borrowers' reads. The failure being
+        // reported here already reached the close or read that hit it.
+        yield* recover(share);
+        if (!closeFailed) return;
+        // The kernel is recovered: finish this view's close and replace its receipt.
+        receipt = undefined;
+        yield* close;
       })
     );
     const borrowed: LoroStreamsTokenProvider = {
@@ -102,7 +147,7 @@ export function makeStreamsTokenShares(
       getGatewayBaseUrl: share.provider.getGatewayBaseUrl,
       getShardHostSuffix: share.provider.getShardHostSuffix,
       close,
-      retryCleanup: share.provider.retryCleanup,
+      retryCleanup,
     };
     return borrowed;
   });

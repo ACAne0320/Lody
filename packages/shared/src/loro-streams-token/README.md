@@ -104,5 +104,8 @@ interrupts only its own reads; the last view closes the kernel, whose failed clo
 still reports the kernel as recovery owner. Release failures and terminal auth of
 the shared kernel are visible to every view; a view that joins a terminally rejected
 kernel first invalidates it once, so a reattach after access is restored is admitted
-as a fresh kernel would be. Renderer callers still use the owned
+as a fresh kernel would be. Every view read first drives the kernel's shared bounded
+`retryCleanup` when a release failed (one immediate rerun only after an ended
+failure was reported and no raw work remains), and a view's `retryCleanup` finishes
+its failed last close without releasing its lease twice. Renderer callers still use the owned
 options until their application ownership migrates.

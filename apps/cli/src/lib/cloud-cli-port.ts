@@ -11,6 +11,7 @@ import {
   buildLoroStreamsTokenEndpoint,
   PreviewControlVerificationSchema,
   createLoroStreamsTokenProviderLegacy,
+  describeLoroStreamsTokenCause,
   makeLoroStreamsTokenProvider,
   makeLoroStreamsTokenWebPorts,
   LoroStreamsTokenPorts,
@@ -113,19 +114,26 @@ export function createCloudStreamsTokenPort(options: {
   let retiring = false;
   const legacyOwners = new Map<ReturnType<typeof createLoroStreamsTokenProviderLegacy>, boolean>();
   // Durable sync, presence and Machine RPC of one workspace borrow one kernel.
-  const shares = makeStreamsTokenShares((workspaceId) =>
-    makeLoroStreamsTokenProvider({
-      endpoint: buildLoroStreamsTokenEndpoint(authSiteUrl),
-      workspaceId,
-    }).pipe(
-      Effect.provideService(
-        LoroStreamsTokenPorts,
-        makeLoroStreamsTokenWebPorts({
-          credential: Effect.succeed(options.token),
-          fetchImpl,
-        })
-      )
-    )
+  const shares = makeStreamsTokenShares(
+    (workspaceId) =>
+      makeLoroStreamsTokenProvider({
+        endpoint: buildLoroStreamsTokenEndpoint(authSiteUrl),
+        workspaceId,
+      }).pipe(
+        Effect.provideService(
+          LoroStreamsTokenPorts,
+          makeLoroStreamsTokenWebPorts({
+            credential: Effect.succeed(options.token),
+            fetchImpl,
+          })
+        )
+      ),
+    {
+      onCleanupReported: (cause) =>
+        options.logger.debug(
+          `[streams-token] Recovered ended release failure ${JSON.stringify(describeLoroStreamsTokenCause(cause))}`
+        ),
+    }
   );
   return {
     createTokenProvider: ({ workspaceId }) =>
