@@ -1626,6 +1626,64 @@ describe('single history writer', () => {
     mirror.dispose();
   });
 
+  it('rewrites a large text to unrelated content as one splice and converges with a peer', () => {
+    const doc = new Loro();
+    doc.setPeerId('1');
+    const mirror = open(doc);
+    const body = (tag: string) =>
+      Array.from({ length: 300 }, (_, i) => `${tag} paragraph ${i}\n`).join('');
+    const turn = (text: string): SessionHistory => ({
+      id: 'turn',
+      role: 'assistant',
+      timestamp: '2026-01-01T00:00:00Z',
+      items: [{ type: 'text', text }],
+      fileDiff: [],
+    });
+    mirror.historyWriter.append(turn(`head\n${body('A')}tail`));
+    const peer = new Loro();
+    peer.setPeerId('2');
+    peer.import(doc.export({ mode: 'snapshot' }));
+    const before = doc.version();
+    mirror.historyWriter.update(() => [turn(`head\n${body('B')}tail`)]);
+    expect(doc.toJSON().history[0].items[0].text).toBe(`head\n${body('B')}tail`);
+    const ops = doc
+      .exportJsonUpdates(before, doc.version())
+      .changes.flatMap((change) => change.ops)
+      .map((op) => op.content as { type: string; pos: number });
+    // Unbounded Myers (`LoroText.update`) blocks for minutes on ~100k-char
+    // rewrites and emits an op per differing run; the splice keeps the common
+    // prefix/suffix and replaces only the middle.
+    expect(ops).toEqual([
+      expect.objectContaining({ type: 'delete', pos: 5 }),
+      expect.objectContaining({ type: 'insert', pos: 5 }),
+    ]);
+    peer.import(doc.export({ mode: 'update', from: peer.version() }));
+    expect(peer.toJSON()).toEqual(doc.toJSON());
+    mirror.dispose();
+  });
+
+  it('keeps surrogate pairs intact when the edit boundary falls inside one', () => {
+    const doc = new Loro();
+    const mirror = open(doc);
+    const turn = (text: string): SessionHistory => ({
+      id: 'turn',
+      role: 'assistant',
+      timestamp: '2026-01-01T00:00:00Z',
+      items: [{ type: 'text', text }],
+      fileDiff: [],
+    });
+    // 😀 (D83D DE00) and 😁 (D83D DE01) share their high surrogate, so the
+    // common prefix ends inside a pair; 😂 (D83D DE02) before 😁 makes the
+    // common suffix start inside one. Loro rejects either split.
+    const steps = ['a😀b', 'a😁b', 'x😁', 'x😂😁', '😂', ''];
+    mirror.historyWriter.append(turn(steps[0]!));
+    for (const text of steps.slice(1)) {
+      mirror.historyWriter.update(() => [turn(text)]);
+      expect(doc.toJSON().history[0].items[0].text).toBe(text);
+    }
+    mirror.dispose();
+  });
+
   it('uses the same new storage shape as Mirror before #443', () => {
     const oldDoc = new Loro();
     const newDoc = new Loro();
