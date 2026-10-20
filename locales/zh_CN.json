@@ -3159,6 +3159,7 @@
   "settings.general.cliAutoStart.label": "运行本机 Agent",
   "settings.general.cliAutoStart.toggleFailed": "更新本机 Agent 设置失败",
   "settings.general.cliDaemon.helper": "运行本地 Agent 和终端的后台守护进程。",
+  "settings.general.cliDaemon.hostAccessDenied": "本地 Agent 被另一个权限不同的 Lody 进程占用（以管理员、其他用户或服务身份启动），本应用无权连接。请结束该进程，或以相同权限打开 Lody，然后重新启动。",
   "settings.general.cliDaemon.label": "守护进程",
   "settings.general.loadingDescription": "正在准备通用设置。",
   "settings.general.preventSleep.label": "禁止休眠",
