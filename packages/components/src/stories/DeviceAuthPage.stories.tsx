@@ -31,6 +31,24 @@ export const ReadyToSubmit: Story = {
   },
 };
 
+export const Confirmation: Story = {
+  args: {
+    userCode: 'ABCD2345',
+    canSubmit: true,
+    request: { clientName: 'Lody CLI', clientId: 'lody-cli', scope: 'read  write' },
+    onDeny: fn(),
+  },
+};
+
+export const NoScope: Story = {
+  args: {
+    ...Confirmation.args,
+    request: { clientName: 'Lody CLI', clientId: 'lody-cli', scope: '' },
+  },
+};
+
+export const Denied: Story = { args: { denied: true } };
+
 export const PastedFormattedCode: Story = {
   args: {
     userCode: 'ABCD-EFGH',

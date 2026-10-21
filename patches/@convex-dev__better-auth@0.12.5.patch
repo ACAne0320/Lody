@@ -1,0 +1,247 @@
+diff --git a/dist/auth-options.js b/dist/auth-options.js
+index 1b67f02ec..d6eabd0f7 100644
+--- a/dist/auth-options.js
++++ b/dist/auth-options.js
+@@ -4,7 +4,6 @@ import { emailOTP } from "better-auth/plugins/email-otp";
+ import { genericOAuth } from "better-auth/plugins/generic-oauth";
+ import { jwt } from "better-auth/plugins/jwt";
+ import { magicLink } from "better-auth/plugins/magic-link";
+-import { oidcProvider } from "better-auth/plugins/oidc-provider";
+ import { oneTimeToken } from "better-auth/plugins/one-time-token";
+ import { phoneNumber } from "better-auth/plugins/phone-number";
+ import { twoFactor } from "better-auth/plugins/two-factor";
+@@ -33,10 +32,6 @@ export const options = {
+                 },
+             ],
+         }),
+-        oidcProvider({
+-            loginPage: "/login",
+-            __skipDeprecationWarning: true,
+-        }),
+         bearer(),
+         oneTimeToken(),
+         jwt(),
+diff --git a/dist/plugins/convex/index.d.ts b/dist/plugins/convex/index.d.ts
+index e316d163f..761935692 100644
+--- a/dist/plugins/convex/index.d.ts
++++ b/dist/plugins/convex/index.d.ts
+@@ -98,7 +98,7 @@ export declare const convex: (opts: {
+     jwksRotateOnTokenGenerationError?: boolean;
+     /**
+      * @param {BetterAuthOptions} options - Better Auth options. Not required,
+-     * currently used to pass the basePath to the oidcProvider plugin.
++     * used to set the basePath of the Convex JWKS discovery URL.
+      */
+     options?: BetterAuthOptions;
+ }) => {
+@@ -258,7 +258,7 @@ export declare const convex: (opts: {
+             metadata: {
+                 isAction: false;
+             };
+-        }, import("better-auth/plugins/oidc-provider").OIDCMetadata>;
++        }, { issuer: string; jwks_uri: string; authorization_endpoint: string; token_endpoint: string; userinfo_endpoint: string; registration_endpoint: string; end_session_endpoint: string; scopes_supported: string[]; response_types_supported: string[]; response_modes_supported: string[]; grant_types_supported: string[]; acr_values_supported: string[]; subject_types_supported: string[]; id_token_signing_alg_values_supported: string[]; token_endpoint_auth_methods_supported: string[]; code_challenge_methods_supported: string[]; claims_supported: string[] }>;
+         getJwks: import("better-call").StrictEndpoint<"/convex/jwks", {
+             method: "GET";
+             metadata: {
+diff --git a/dist/plugins/convex/index.js b/dist/plugins/convex/index.js
+index 549d21da3..4749f77e1 100644
+--- a/dist/plugins/convex/index.js
++++ b/dist/plugins/convex/index.js
+@@ -1,16 +1,9 @@
+ import { createAuthEndpoint, createAuthMiddleware, sessionMiddleware, } from "better-auth/api";
+ import { bearer as bearerPlugin } from "better-auth/plugins/bearer";
+ import { jwt as jwtPlugin } from "better-auth/plugins/jwt";
+-import { oidcProvider as oidcProviderPlugin } from "better-auth/plugins/oidc-provider";
+ import { omit } from "convex-helpers";
+ import { VERSION } from "../../version.js";
+ export const JWT_COOKIE_NAME = "convex_jwt";
+-const normalizeAfterHooks = (hooks) => {
+-    return hooks.map((hook) => ({
+-        ...hook,
+-        matcher: (ctx) => Boolean(hook.matcher(ctx)),
+-    }));
+-};
+ const getJwksAlg = (authProvider) => {
+     const isCustomJwt = "type" in authProvider && authProvider.type === "customJwt";
+     if (isCustomJwt && authProvider.algorithm !== "RS256") {
+@@ -42,14 +35,6 @@ const parseAuthConfig = (authConfig, opts) => {
+ };
+ export const convex = (opts) => {
+     const jwtExpirationSeconds = opts.jwt?.expirationSeconds ?? opts.jwtExpirationSeconds ?? 60 * 15;
+-    const oidcProvider = oidcProviderPlugin({
+-        loginPage: "/not-used",
+-        metadata: {
+-            issuer: `${process.env.CONVEX_SITE_URL}`,
+-            jwks_uri: `${process.env.CONVEX_SITE_URL}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`,
+-        },
+-        __skipDeprecationWarning: true,
+-    });
+     const providerConfig = parseAuthConfig(opts.authConfig, opts);
+     const jwtOptions = {
+         jwt: {
+@@ -168,7 +153,6 @@ export const convex = (opts) => {
+                 },
+             ],
+             after: [
+-                ...normalizeAfterHooks(oidcProvider.hooks.after),
+                 {
+                     matcher: (ctx) => {
+                         return Boolean(ctx.path?.startsWith("/sign-in") ||
+@@ -232,13 +216,28 @@ export const convex = (opts) => {
+                 },
+                 // TODO: properly type this
+             }, async (ctx) => {
+-                const response = await oidcProvider.endpoints.getOpenIdConfig({
+-                    ...ctx,
+-                    asResponse: false,
+-                    returnHeaders: false,
+-                    returnStatus: false,
+-                });
+-                return response;
++                // Convex exposes JWT discovery, not an OAuth authorization server.
++                // Preserve the former discovery document without loading the removed OIDC plugin.
++                const baseURL = ctx.context.baseURL;
++                return {
++                  issuer: `${process.env.CONVEX_SITE_URL}`,
++                  authorization_endpoint: `${baseURL}/oauth2/authorize`,
++                  token_endpoint: `${baseURL}/oauth2/token`,
++                  userinfo_endpoint: `${baseURL}/oauth2/userinfo`,
++                  jwks_uri: `${process.env.CONVEX_SITE_URL}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`,
++                  registration_endpoint: `${baseURL}/oauth2/register`,
++                  end_session_endpoint: `${baseURL}/oauth2/endsession`,
++                  scopes_supported: ["openid", "profile", "email", "offline_access"],
++                  response_types_supported: ["code"],
++                  response_modes_supported: ["query"],
++                  grant_types_supported: ["authorization_code", "refresh_token"],
++                  acr_values_supported: ["urn:mace:incommon:iap:silver", "urn:mace:incommon:iap:bronze"],
++                  subject_types_supported: ["public"],
++                  id_token_signing_alg_values_supported: ["HS256"],
++                  token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "none"],
++                  code_challenge_methods_supported: ["S256"],
++                  claims_supported: ["sub", "iss", "aud", "exp", "nbf", "iat", "jti", "email", "email_verified", "name"],
++                };
+             }),
+             getJwks: createAuthEndpoint("/convex/jwks", {
+                 method: "GET",
+diff --git a/src/auth-options.ts b/src/auth-options.ts
+index 6281482f7..eda273f4f 100644
+--- a/src/auth-options.ts
++++ b/src/auth-options.ts
+@@ -5,7 +5,6 @@ import { emailOTP } from "better-auth/plugins/email-otp";
+ import { genericOAuth } from "better-auth/plugins/generic-oauth";
+ import { jwt } from "better-auth/plugins/jwt";
+ import { magicLink } from "better-auth/plugins/magic-link";
+-import { oidcProvider } from "better-auth/plugins/oidc-provider";
+ import { oneTimeToken } from "better-auth/plugins/one-time-token";
+ import { phoneNumber } from "better-auth/plugins/phone-number";
+ import { twoFactor } from "better-auth/plugins/two-factor";
+@@ -35,10 +34,6 @@ export const options = {
+         },
+       ],
+     }),
+-    oidcProvider({
+-      loginPage: "/login",
+-      __skipDeprecationWarning: true,
+-    }),
+     bearer(),
+     oneTimeToken(),
+     jwt(),
+diff --git a/src/plugins/convex/index.ts b/src/plugins/convex/index.ts
+index db4cce2ce..db937f52e 100644
+--- a/src/plugins/convex/index.ts
++++ b/src/plugins/convex/index.ts
+@@ -8,28 +8,12 @@ import {
+ import { bearer as bearerPlugin } from "better-auth/plugins/bearer";
+ import { jwt as jwtPlugin } from "better-auth/plugins/jwt";
+ import type { JwtOptions, Jwk } from "better-auth/plugins/jwt";
+-import { oidcProvider as oidcProviderPlugin } from "better-auth/plugins/oidc-provider";
+ import { omit } from "convex-helpers";
+ import type { AuthConfig, AuthProvider } from "convex/server";
+ import { VERSION } from "../../version.js";
+ 
+ export const JWT_COOKIE_NAME = "convex_jwt";
+ 
+-type BetterAuthAfterHooks = NonNullable<
+-  NonNullable<BetterAuthPlugin["hooks"]>["after"]
+->;
+-type BetterAuthAfterHook = BetterAuthAfterHooks[number];
+-type BetterAuthHookContext = Parameters<BetterAuthAfterHook["matcher"]>[0];
+-
+-const normalizeAfterHooks = <THook extends BetterAuthAfterHook>(
+-  hooks: THook[]
+-): BetterAuthAfterHooks => {
+-  return hooks.map((hook) => ({
+-    ...hook,
+-    matcher: (ctx: BetterAuthHookContext) => Boolean(hook.matcher(ctx)),
+-  }));
+-};
+-
+ const getJwksAlg = (authProvider: AuthProvider) => {
+   const isCustomJwt =
+     "type" in authProvider && authProvider.type === "customJwt";
+@@ -170,20 +154,12 @@ export const convex = (opts: {
+   jwksRotateOnTokenGenerationError?: boolean;
+   /**
+    * @param {BetterAuthOptions} options - Better Auth options. Not required,
+-   * currently used to pass the basePath to the oidcProvider plugin.
++   * used to set the basePath of the Convex JWKS discovery URL.
+    */
+   options?: BetterAuthOptions;
+ }) => {
+   const jwtExpirationSeconds =
+     opts.jwt?.expirationSeconds ?? opts.jwtExpirationSeconds ?? 60 * 15;
+-  const oidcProvider = oidcProviderPlugin({
+-    loginPage: "/not-used",
+-    metadata: {
+-      issuer: `${process.env.CONVEX_SITE_URL}`,
+-      jwks_uri: `${process.env.CONVEX_SITE_URL}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`,
+-    },
+-    __skipDeprecationWarning: true,
+-  });
+   const providerConfig = parseAuthConfig(opts.authConfig, opts);
+ 
+   const jwtOptions = {
+@@ -314,7 +290,6 @@ export const convex = (opts: {
+         },
+       ],
+       after: [
+-        ...normalizeAfterHooks(oidcProvider.hooks.after),
+         {
+           matcher: (ctx) => {
+             return Boolean(
+@@ -384,13 +359,28 @@ export const convex = (opts: {
+           // TODO: properly type this
+         },
+         async (ctx) => {
+-          const response = await oidcProvider.endpoints.getOpenIdConfig({
+-            ...ctx,
+-            asResponse: false,
+-            returnHeaders: false,
+-            returnStatus: false,
+-          });
+-          return response;
++          // Convex exposes JWT discovery, not an OAuth authorization server.
++          // Preserve the former discovery document without loading the removed OIDC plugin.
++          const baseURL = ctx.context.baseURL;
++          return {
++            issuer: `${process.env.CONVEX_SITE_URL}`,
++            authorization_endpoint: `${baseURL}/oauth2/authorize`,
++            token_endpoint: `${baseURL}/oauth2/token`,
++            userinfo_endpoint: `${baseURL}/oauth2/userinfo`,
++            jwks_uri: `${process.env.CONVEX_SITE_URL}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`,
++            registration_endpoint: `${baseURL}/oauth2/register`,
++            end_session_endpoint: `${baseURL}/oauth2/endsession`,
++            scopes_supported: ["openid", "profile", "email", "offline_access"],
++            response_types_supported: ["code"],
++            response_modes_supported: ["query"],
++            grant_types_supported: ["authorization_code", "refresh_token"],
++            acr_values_supported: ["urn:mace:incommon:iap:silver", "urn:mace:incommon:iap:bronze"],
++            subject_types_supported: ["public"],
++            id_token_signing_alg_values_supported: ["HS256"],
++            token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "none"],
++            code_challenge_methods_supported: ["S256"],
++            claims_supported: ["sub", "iss", "aud", "exp", "nbf", "iat", "jti", "email", "email_verified", "name"],
++          };
+         }
+       ),
+       getJwks: createAuthEndpoint(

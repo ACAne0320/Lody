@@ -17,6 +17,9 @@ export interface DeviceAuthPageProps {
   userCode: string;
   error?: string | null;
   success?: boolean;
+  denied?: boolean;
+  request?: { clientName: string; clientId: string; scope: string } | null;
+  onDeny?: (event: FormEvent) => void;
   countdown?: number;
   isVerifying?: boolean;
   canSubmit?: boolean;
@@ -48,6 +51,7 @@ const blink = stylex.keyframes({
 });
 
 const styles = stylex.create({
+  scopeValue: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
   field: {
     display: 'flex',
     flexDirection: 'column',
@@ -147,6 +151,9 @@ export function DeviceAuthPage({
   userCode,
   error = null,
   success = false,
+  denied = false,
+  request = null,
+  onDeny,
   countdown = 10,
   isVerifying = false,
   canSubmit = false,
@@ -163,6 +170,18 @@ export function DeviceAuthPage({
     .toUpperCase();
   const hasError = error !== null && error.length > 0;
   const [focused, setFocused] = useState(false);
+
+  if (denied) {
+    return (
+      <SecondaryPage
+        state="done"
+        from={mark}
+        markLabel={markLabel}
+        title={t('device.denied')}
+        description={t('device.windowHint')}
+      />
+    );
+  }
 
   if (success) {
     return (
@@ -193,16 +212,30 @@ export function DeviceAuthPage({
         description={t('device.description')}
         note={userLabel}
         actions={
-          <Button type="submit" size="large" disabled={!canSubmit || isVerifying}>
-            {isVerifying ? (
-              <>
-                <Spinner className="mr-2 h-4 w-4" />
-                {t('device.verifying')}
-              </>
-            ) : (
-              t('device.verifyButton')
-            )}
-          </Button>
+          <>
+            <Button type="submit" size="large" disabled={!canSubmit || isVerifying}>
+              {isVerifying ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" />
+                  {t('device.verifying')}
+                </>
+              ) : request ? (
+                t('device.approveButton')
+              ) : (
+                t('device.reviewButton')
+              )}
+            </Button>
+            {request ? (
+              <Button
+                type="button"
+                size="large"
+                disabled={isVerifying}
+                onClick={(event) => onDeny?.(event)}
+              >
+                {t('device.denyButton')}
+              </Button>
+            ) : null}
+          </>
         }
       >
         <div {...stylex.props(styles.field)}>
@@ -286,6 +319,23 @@ export function DeviceAuthPage({
             {t('device.codeHint')}
           </p>
         </div>
+        {request ? (
+          <div {...stylex.props(styles.field)}>
+            <p {...stylex.props(styles.label)}>
+              {t('device.client')}: {request.clientName} ({request.clientId})
+            </p>
+            <p {...stylex.props(styles.label)}>
+              {t('device.scope')}:{' '}
+              <span {...stylex.props(styles.scopeValue)}>
+                {request.scope || t('device.noScope')}
+              </span>
+            </p>
+            <p {...stylex.props(styles.hint)}>{t('device.sessionAccess')}</p>
+            <Alert.Root tone="danger">
+              <Alert.Description>{t('device.possessionWarning')}</Alert.Description>
+            </Alert.Root>
+          </div>
+        ) : null}
         {hasError ? (
           <Alert.Root tone="danger">
             <Alert.Description id="device-auth-error">{error}</Alert.Description>

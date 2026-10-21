@@ -5334,5 +5334,16 @@
   "e2ee.verify.result.theirsOlderUnconfirmed": "对方的核验码对应版本 {{version}}，比你的旧。请对方刷新后再比较。",
   "e2ee.control.help": "帮助",
   "e2ee.verify.codeTitle": "核验码",
-  "e2ee.verify.versionShort": "版本 {{version}}"
+  "e2ee.verify.versionShort": "版本 {{version}}",
+  "device.reviewButton": "查看请求",
+  "device.approveButton": "批准此设备",
+  "device.denyButton": "拒绝",
+  "device.denied": "已拒绝设备请求",
+  "device.client": "请求应用",
+  "device.lodyCli": "Lody CLI",
+  "device.scope": "请求的 scope（原始值）",
+  "device.noScope": "未请求 scope",
+  "device.sessionAccess": "此操作会让设备登录你的账户。产生的会话可访问你的账户；请求的 scope 不会限制会话权限。",
+  "device.possessionWarning": "仅批准你主动发起的请求，并确认你持有的设备此刻显示相同验证码。公开的客户端名称不能证明设备归谁所有。请拒绝意外请求或他人发来的验证码。",
+  "device.loadFailed": "无法核实此账户的待批准请求。请检查你设备上的验证码，然后重新查看请求。"
 }

@@ -71,7 +71,7 @@ function DeviceAuthRoute() {
     return null;
   }
 
-  return <DeviceAuthInner />;
+  return <DeviceAuthInner key={`${session?.user?.id}:${session?.session?.token}`} />;
 }
 
 function DeviceAuthInner() {
@@ -92,8 +92,21 @@ function DeviceAuthInner() {
   const [success, setSuccess] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [countdown, setCountdown] = useState(10);
+  const [request, setRequest] = useState<{ clientId: string; scope: string; code: string } | null>(
+    null
+  );
+  const [denied, setDenied] = useState(false);
+  const inFlight = useRef(false);
+  const currentIdentity = useRef({ token: session?.session?.token, code: '' });
 
-  const normalizedUserCode = userCode.replace(/-/g, '').toUpperCase();
+  const normalizedUserCode = userCode.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  currentIdentity.current = { token: session?.session?.token, code: normalizedUserCode };
+  useEffect(
+    () => () => {
+      currentIdentity.current = { token: undefined, code: '' };
+    },
+    []
+  );
 
   const viewedRef = useRef(false);
   useEffect(() => {
@@ -122,66 +135,77 @@ function DeviceAuthInner() {
     return () => clearTimeout(timer);
   }, [success, countdown, navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, deny = false) => {
     e.preventDefault();
+    if (inFlight.current || normalizedUserCode.length !== 8) return;
+    inFlight.current = true;
     setError(null);
     setIsVerifying(true);
-    capturePostHogEvent(postHog, 'auth/device_auth_submitted', {
-      has_prefilled_code: hasPrefilledCode,
-    });
-
+    const sessionToken = session?.session?.token;
+    const code = normalizedUserCode;
+    const stillCurrent = () =>
+      currentIdentity.current.token === sessionToken && currentIdentity.current.code === code;
     try {
-      const sessionToken = session?.session?.token;
-      if (!sessionToken) {
-        capturePostHogOutcome(postHog, 'auth/device_auth_failed', 'failed', {
-          error_status: 'missing_session_token',
-        });
-        throw new Error('Missing session token. Please refresh and try again.');
-      }
-
+      if (!sessionToken) throw new Error(t('device.loadFailed'));
       const authBaseUrl = requireCloudAuthBaseUrl('cloudAccount');
       const verificationUrl = new URL('/api/auth/device', authBaseUrl);
-      verificationUrl.searchParams.set('user_code', normalizedUserCode);
+      verificationUrl.searchParams.set('user_code', code);
       const verificationRes = await fetch(verificationUrl.toString(), {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${sessionToken}`,
-        },
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${sessionToken}` },
       });
-      if (!verificationRes.ok) {
-        capturePostHogOutcome(postHog, 'auth/device_auth_failed', 'failed', {
-          error_status: `verify_${verificationRes.status}`,
-        });
-        const text = await verificationRes.text().catch(() => '');
-        throw new Error(text || `Device verification failed (HTTP ${verificationRes.status})`);
+      if (!verificationRes.ok) throw new Error(t('device.loadFailed'));
+      const data: unknown = await verificationRes.json();
+      if (!stillCurrent()) return;
+      if (!data || typeof data !== 'object') throw new Error(t('device.loadFailed'));
+      const checked = data as Record<string, unknown>;
+      // Only this server-returned identifier can select the trusted display name.
+      // Public client IDs do not prove that a device is owned by the user.
+      if (
+        checked.status !== 'pending' ||
+        checked.user_code !== code ||
+        checked.client_id !== 'lody-cli' ||
+        (checked.scope !== undefined && typeof checked.scope !== 'string')
+      ) {
+        throw new Error(t('device.loadFailed'));
       }
-
-      const approveUrl = new URL('/api/cli/device/approve', authBaseUrl);
-      const res = await fetch(approveUrl.toString(), {
+      const verified = { clientId: checked.client_id, scope: checked.scope ?? '', code };
+      if (!request) {
+        setRequest(verified);
+        return;
+      }
+      // Recheck before approval; never approve changed or previously unseen details.
+      if (
+        request.code !== code ||
+        request.clientId !== verified.clientId ||
+        request.scope !== verified.scope
+      ) {
+        throw new Error(t('device.loadFailed'));
+      }
+      const url = new URL(deny ? '/api/auth/device/deny' : '/api/cli/device/approve', authBaseUrl);
+      const response = await fetch(url.toString(), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionToken}`,
-        },
-        body: JSON.stringify({
-          userCode: normalizedUserCode,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ userCode: code }),
       });
-      if (!res.ok) {
-        capturePostHogOutcome(postHog, 'auth/device_auth_failed', 'failed', {
-          error_status: res.status,
+      if (!response.ok) throw new Error(t('device.loadFailed'));
+      if (!stillCurrent()) return;
+      if (deny) setDenied(true);
+      else {
+        capturePostHogOutcome(postHog, 'auth/device_auth_succeeded', 'success', {
+          has_prefilled_code: hasPrefilledCode,
         });
-        const text = await res.text().catch(() => '');
-        throw new Error(text || `Request failed (HTTP ${res.status})`);
+        setSuccess(true);
       }
-      capturePostHogOutcome(postHog, 'auth/device_auth_succeeded', 'success', {
-        has_prefilled_code: hasPrefilledCode,
-      });
-      setSuccess(true);
-    } catch (err) {
-      setError((err as Error).message);
+    } catch {
+      if (stillCurrent()) {
+        setRequest(null);
+        setError(t('device.loadFailed'));
+      }
     } finally {
-      setIsVerifying(false);
+      inFlight.current = false;
+      if (stillCurrent()) setIsVerifying(false);
     }
   };
 
@@ -192,9 +216,22 @@ function DeviceAuthInner() {
       error={error}
       success={success}
       countdown={countdown}
+      denied={denied}
+      request={
+        request
+          ? { clientName: t('device.lodyCli'), clientId: request.clientId, scope: request.scope }
+          : null
+      }
+      onDeny={(event) => {
+        void handleSubmit(event, true);
+      }}
       isVerifying={isVerifying}
       canSubmit={normalizedUserCode.length === 8}
-      onUserCodeChange={(value) => setUserCode(value.toUpperCase())}
+      onUserCodeChange={(value) => {
+        setUserCode(value.toUpperCase());
+        setRequest(null);
+        setError(null);
+      }}
       onSubmit={(event) => {
         void handleSubmit(event);
       }}

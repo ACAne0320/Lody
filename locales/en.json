@@ -5334,5 +5334,16 @@
   "e2ee.verify.result.theirsOlderUnconfirmed": "Their code is for version {{version}}, older than yours. Ask them to refresh, then compare again.",
   "e2ee.control.help": "Help",
   "e2ee.verify.codeTitle": "Verification code",
-  "e2ee.verify.versionShort": "Version {{version}}"
+  "e2ee.verify.versionShort": "Version {{version}}",
+  "device.reviewButton": "Review request",
+  "device.approveButton": "Approve this device",
+  "device.denyButton": "Deny",
+  "device.denied": "Device request denied",
+  "device.client": "Requesting application",
+  "device.lodyCli": "Lody CLI",
+  "device.scope": "Requested scope (exact value)",
+  "device.noScope": "No scope requested",
+  "device.sessionAccess": "This signs the device into your account. The resulting session can access your account; requested scope does not limit its permissions.",
+  "device.possessionWarning": "Approve only a request you started, with this same code visible right now on a device you have. A public client name does not prove who owns the device. Reject unexpected requests or codes sent by someone else.",
+  "device.loadFailed": "Unable to verify this pending request for your account. Check the code on your device and review the request again."
 }
