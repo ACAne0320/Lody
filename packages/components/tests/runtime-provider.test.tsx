@@ -331,6 +331,67 @@ describe('RuntimeProvider warm workspace preparation', () => {
     }
   );
 
+  /** Storage refuses writes of one evidence record, as a full quota would. */
+  function refuseWrites(prefix: string) {
+    const setItem = Storage.prototype.setItem;
+    return vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string
+    ) {
+      if (key.startsWith(prefix)) throw new DOMException('Quota exceeded', 'QuotaExceededError');
+      setItem.call(this, key, value);
+    });
+  }
+
+  it('keeps a rejection for the session when storage refuses its marker', async () => {
+    ordinaryCloud();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const refused = refuseWrites('lody-e2ee-rejected-mode:');
+    try {
+      environment.e2eeWorkspaces!.describe = async () =>
+        ({ workspaceId: 'local:workspace', contentMode: 'future', contentModeVersion: 2 }) as never;
+      await render();
+      expect(store.get(runtimeAtom)).toBeNull();
+      expect(
+        localStorage.getItem('lody-e2ee-rejected-mode:local%3Auser:local%3Aworkspace')
+      ).toBeNull();
+      await act(async () => store.set(workspaceModeAdmissionRetryAtom, 1));
+      environment.mode = 'dual';
+      await render();
+      environment.mode = 'cloud';
+      await render();
+      expect(createWorkspaceRuntime).toHaveBeenCalledTimes(1);
+      expect(store.get(runtimeAtom)).toBeNull();
+      expect(store.get(workspaceRuntimeInitFailureAtom)).toMatchObject({ workspaceSlug: 'local' });
+    } finally {
+      refused.mockRestore();
+    }
+  });
+
+  it('fails closed when an encrypted answer cannot be recorded', async () => {
+    ordinaryCloud();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const refused = refuseWrites('lody-e2ee-known-mode:');
+    try {
+      environment.e2eeWorkspaces!.describe = async () => encryptedDescriptor('local:workspace');
+      await render();
+      expect(store.get(runtimeAtom)).toBeNull();
+      expect(prepared.disposed).toBe(true);
+      expect(store.get(workspaceContentModeAtom)).toBeNull();
+      expect(store.get(workspaceRuntimeInitFailureAtom)).toMatchObject({
+        workspaceSlug: 'local',
+        errorType: 'QuotaExceededError',
+      });
+      await act(async () => store.set(workspaceModeAdmissionRetryAtom, 1));
+      expect(createWorkspaceRuntime).toHaveBeenCalledTimes(1);
+      expect(store.get(runtimeAtom)).toBeNull();
+      expect(store.get(workspaceRuntimeInitFailureAtom)).toMatchObject({ workspaceSlug: 'local' });
+    } finally {
+      refused.mockRestore();
+    }
+  });
+
   it('retires a provisional runtime when the listing later marks the workspace encrypted', async () => {
     ordinaryCloud();
     environment.e2eeWorkspaces!.describe = () => new Promise(() => {});
