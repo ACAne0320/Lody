@@ -491,12 +491,12 @@ branch is rejected by the existing `ProjectRefSchema`. Local projections retain 
 
 ## UI implementation
 
-The UI calls this concept a "Project group"; "project" still means one local
-folder or GitHub repository, so existing Settings, sidebar and picker copy keeps
-its meaning. Type names in code are unchanged.
+In the UI this is simply a project with several repositories or folders (see
+"Revision: one project concept" below); type names in code are unchanged.
 
-- **Settings → Project groups**: the list and editor follow the Agent Role
-  pattern and write to the same workspace catalog document; a save is done once
+- **Settings → Projects**: "Several repositories or folders" in the add menu
+  opens the editor, and multi-repository projects are project rows there, placed
+  like the sidebar's. The editor writes to the workspace catalog document; a save is done once
   it is durable locally, and the upload is neither awaited nor reported. The
   member list is ordered as directories nest, so it doubles as a preview of the
   conversation's main directory. The UI reads a GitHub member's `.gitmodules`
@@ -504,18 +504,20 @@ its meaning. Type names in code are unchanged.
   members wait for a read-only daemon probe RPC. Detection only moves a default
   or previously detected placement, never one the user set by hand, and a
   detected result that would form a cycle is discarded. Only the creator can
-  edit or delete a group.
-- **Sidebar**: Project groups are a section above local projects. A defined
-  group is listed even with no conversations, so one can be started there;
+  edit or delete a project.
+- **Sidebar**: a multi-repository project is a project row. One with a
+  machine-bound member sits under that machine after its folders; one without
+  sits in GitHub Worktrees. A defined project is listed even with no
+  conversations, so one can be started there;
   conversations of a deleted group stay grouped under the name in their
   snapshot. A conversation with `projectRun` no longer appears under the local
   project or GitHub group of its first member. A group row behaves like a local
   project row: its mark turns into the fold chevron on hover, the row starts a
   conversation, and the hover controls are ⋯ (edit the group, archive its
   chats), new chat, and a drag handle; the order is saved per workspace like
-  local projects. The sidebar's view filter belongs to the first visible
-  section only. In the Updated view and Pinned, group conversations appear with
-  the group's mark and name.
+  local projects. A folded machine's mark counts its multi-repository projects'
+  conversations too. In the Updated view and Pinned, their conversations appear
+  with the project's mark and name.
 - **New conversation**: a group sits on top of the plain chat context, leaving
   the existing local/GitHub logic and the mobile views unchanged. Choosing a
   group lets its local members' machine decide the execution machine. A conversation always gets the whole group as configured; the composer only lists
@@ -871,4 +873,33 @@ only: once at the start, once per finished member, once for the submodule pass a
 once per setup script (2N+2 updates for N members, each under 200 bytes, on the
 session's single presence key). Older clients ignore the detail for this stage, and
 plain text from older daemons falls back to the generic message.
+
+## Revision: one project concept
+
+**Decision** (product owner, 2026-10-21). The UI drops "Project group" as a
+separate concept. A multi-repository project is a project with several Members
+and reuses the project surfaces instead of a section and a Settings tab of its own:
+
+- **Placement.** A project with a machine-bound Member is listed under that
+  machine after its folders; one without runs anywhere and is listed in GitHub
+  Worktrees (`placeProjectGroups`). A project bound to a machine the sidebar does
+  not list, or the conversations of a deleted project, also go to GitHub
+  Worktrees. Settings › Projects follows the same rule, with an "Any machine"
+  section for the second kind.
+- **Entry points.** Settings › Projects' add menu has "Several repositories or
+  folders". A folder row's context menu has "Edit project…", which opens the
+  same editor seeded with that folder (as a repository Member when its machine
+  publishes a remote); saving creates a new project and leaves the folder and its
+  conversations untouched, because existing conversations cannot change layout.
+  A multi-repository project row's menu edits it. One host
+  (`ProjectEditorHost`, driven by `projectEditorRequestAtom`) owns the editor and
+  the delete confirmation for every surface.
+- **Removed.** The Project groups Settings tab and route, the separate sidebar
+  section and its collapse state. Copy says "project" throughout; rows use the
+  stacked-folders mark.
+
+The shared contract, daemon and composer behavior are unchanged. GitHub
+repository rows have no context menu yet, so "Edit project…" is not offered there;
+mobile Settings keeps its previous list. Verified with unit tests and type checks;
+the sidebar placement was checked in Storybook, not against a real workspace.
 

@@ -359,11 +359,11 @@ describe('sidebar project group row', () => {
     expect(shop?.querySelector('button[aria-label="More actions"]')).toBeInstanceOf(
       HTMLButtonElement
     );
-    expect(shop?.querySelector('button[aria-label="Reorder project group"]')).toBeInstanceOf(
+    expect(shop?.querySelector('button[aria-label="Reorder project"]')).toBeInstanceOf(
       HTMLButtonElement
     );
     const newChat = shop?.querySelector<HTMLButtonElement>(
-      'button[aria-label="New chat in this project group"]'
+      'button[aria-label="New chat in this project"]'
     );
     flushSync(() => newChat?.click());
     expect(handlers.onNewInProjectGroup).toHaveBeenLastCalledWith('shop');
@@ -377,8 +377,8 @@ describe('sidebar project group row', () => {
     const { handlers, groupRow } = render();
     const old = groupRow('gone');
     expect(old).toBeInstanceOf(HTMLElement);
-    expect(old?.querySelector('button[aria-label="New chat in this project group"]')).toBeNull();
-    expect(old?.querySelector('button[aria-label="Reorder project group"]')).toBeNull();
+    expect(old?.querySelector('button[aria-label="New chat in this project"]')).toBeNull();
+    expect(old?.querySelector('button[aria-label="Reorder project"]')).toBeNull();
     flushSync(() => old?.click());
     expect(handlers.onNewInProjectGroup).not.toHaveBeenCalled();
   });

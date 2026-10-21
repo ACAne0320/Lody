@@ -33,9 +33,8 @@ import {
   PinOff,
   Plus,
   Users,
-  Boxes,
+  Folders,
   MoreHorizontal,
-  Settings2,
   SquarePen,
 } from 'lucide-react';
 import { Spinner } from '@lody/ui/spinner';
@@ -1462,7 +1461,7 @@ function ProjectGroupHeaderRow({
           onToggle?.();
         }}
       >
-        <Boxes
+        <Folders
           aria-hidden="true"
           className={cn(
             'absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-current transition-opacity duration-100',
@@ -1533,7 +1532,7 @@ function ProjectGroupHeaderRow({
           <ContextMenu.Trigger render={row} />
           <ContextMenu.Content className="min-w-[180px]">
             {onOpenSettings ? (
-              <ContextMenu.Item icon={Settings2} onClick={onOpenSettings}>
+              <ContextMenu.Item icon={Folders} onClick={onOpenSettings}>
                 {t('sidebar.projectGroups.settings', 'Edit project group')}
               </ContextMenu.Item>
             ) : null}
@@ -1782,7 +1781,7 @@ const SessionGroupSection = memo(function SessionGroupSection({
                 }
               >
                 {isProjectGroup ? (
-                  <Boxes
+                  <Folders
                     aria-hidden="true"
                     className={cn(
                       'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 opacity-70 transition-opacity duration-100',

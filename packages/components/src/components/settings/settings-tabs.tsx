@@ -4,7 +4,6 @@ import { useAppCapabilityCheck } from '../../lib/app-platform';
 import {
   Brain,
   Bot,
-  Boxes,
   Building2,
   ChartNoAxesCombined,
   CreditCard,
@@ -39,7 +38,6 @@ export type SettingsTabId =
   | 'prompt-shortcuts'
   | 'mcp'
   | 'projects'
-  | 'project-groups'
   | 'github'
   | 'ai-usage'
   | 'billing'
@@ -60,7 +58,6 @@ export type SettingsPath =
   | '/$workspaceName/settings/prompt-shortcuts'
   | '/$workspaceName/settings/mcp'
   | '/$workspaceName/settings/projects'
-  | '/$workspaceName/settings/project-groups'
   | '/$workspaceName/settings/github'
   | '/$workspaceName/settings/ai-usage'
   | '/$workspaceName/settings/billing'
@@ -187,16 +184,6 @@ export const SETTINGS_TAB_CONFIGS: SettingsTabConfig[] = [
     path: '/$workspaceName/settings/projects',
   },
   {
-    // Beside Projects: a project is one folder or repository, a group is
-    // several of them that one conversation works across.
-    id: 'project-groups',
-    section: 'workspace',
-    labelKey: 'settings.tabs.projectGroups',
-    descriptionKey: 'settings.categories.projectGroups.description',
-    icon: Boxes,
-    path: '/$workspaceName/settings/project-groups',
-  },
-  {
     id: 'github',
     section: 'workspace',
     labelKey: 'settings.tabs.github',
@@ -274,7 +261,6 @@ export function getActiveSettingsTabId(pathname: string): SettingsTabId | null {
     ['/settings/prompt-shortcuts', 'prompt-shortcuts'],
     ['/settings/mcp', 'mcp'],
     ['/settings/projects', 'projects'],
-    ['/settings/project-groups', 'project-groups'],
     ['/settings/github', 'github'],
     ['/settings/ai-usage', 'ai-usage'],
     ['/settings/stats', 'ai-usage'],

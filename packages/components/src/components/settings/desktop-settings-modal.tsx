@@ -42,7 +42,6 @@ import { IntegrationsSettingsComponent } from './integrations-setting';
 import { KeyboardShortcutsSetting } from './keyboard-shortcuts-setting';
 import { AboutSettingsComponent } from './about-setting';
 import { AgentRolesSetting } from './agent-roles-setting';
-import { ProjectGroupsSetting } from './project-groups-setting';
 import { PromptShortcutsSetting } from './prompt-shortcuts-setting';
 import { McpSetting } from './mcp-setting';
 import { ShareManagementSetting } from './share-management-setting';
@@ -577,8 +576,6 @@ function SettingsTabContent({ tabId }: { tabId: SettingsTabId }) {
       return <MemorySetting />;
     case 'agent-roles':
       return <AgentRolesSetting />;
-    case 'project-groups':
-      return <ProjectGroupsSetting />;
     case 'prompt-shortcuts':
       return <PromptShortcutsSetting />;
     case 'mcp':

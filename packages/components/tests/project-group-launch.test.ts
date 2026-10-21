@@ -15,6 +15,7 @@ import {
   getProjectGroupMachineAvailability,
   resolveProjectGroupLaunchTarget,
 } from '@/lib/project-group-launch';
+import { placeProjectGroups } from '@/lib/project-group-placement';
 
 const id = (value: string) => value as ProjectMemberId;
 const project: WorkspaceProject = {
@@ -174,5 +175,57 @@ describe('project group launch', () => {
       ],
     };
     expect(on(m1, split)).toEqual({ kind: 'conflict' });
+  });
+});
+
+describe('project placement in the sidebar', () => {
+  it('puts a machine-bound project under its listed machine and the rest with GitHub', () => {
+    const m1 = 'machine-1' as MachineId;
+    const portable = {
+      id: 'portable' as ProjectId,
+      members: [
+        {
+          id: id('web'),
+          source: { kind: 'github' as const, repoFullName: 'acme/web', preferLocal: true as const },
+          placement: { kind: 'root' as const, dir: 'web' },
+        },
+      ],
+    };
+    // `project` holds a local folder on machine-1.
+    const offList = {
+      id: 'elsewhere' as ProjectId,
+      members: [
+        {
+          id: id('ios'),
+          source: {
+            kind: 'local' as const,
+            machineId: 'machine-9' as MachineId,
+            localProjectId: 'ios' as LocalProjectId,
+          },
+          placement: { kind: 'root' as const, dir: 'ios' },
+        },
+      ],
+    };
+    const state = (projectId: string) => ({ projectId });
+    const row = (sessionId: string, projectGroupId: string) => ({
+      sessionId,
+      projectGroup: { id: projectGroupId },
+    });
+    const placed = placeProjectGroups({
+      projects: [project, portable, offList],
+      states: [state(project.id), state(portable.id), state(offList.id)],
+      sessions: [row('a', project.id), row('b', portable.id), row('c', 'deleted')],
+      listedMachineIds: new Set([m1]),
+    });
+    expect(placed.byMachine.get(m1)).toEqual({
+      states: [state(project.id)],
+      sessions: [row('a', project.id)],
+    });
+    // A machine the sidebar does not list cannot hold it; a deleted project's
+    // conversations have no machine either.
+    expect(placed.anywhere).toEqual({
+      states: [state(portable.id), state(offList.id)],
+      sessions: [row('b', portable.id), row('c', 'deleted')],
+    });
   });
 });

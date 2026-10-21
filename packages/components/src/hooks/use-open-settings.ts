@@ -9,7 +9,6 @@ import {
   settingsSelectedMachineIdAtom,
   settingsSelectedProjectKeyAtom,
 } from '@/atoms';
-import { settingsSelectedProjectGroupIdAtom } from '@/atoms/settings';
 import { SETTINGS_DEFAULT_TAB, type SettingsTabId } from '@/components/settings/settings-tabs';
 import { useAppCapability } from '@/lib/app-platform';
 import { useIsMobile } from './use-mobile';
@@ -17,8 +16,6 @@ import { useIsMobile } from './use-mobile';
 type OpenSettingsOptions = {
   machineId?: MachineId;
   projectKey?: string;
-  /** Opens this Project group's editor on the Project groups page. */
-  projectGroupId?: string;
 };
 
 /**
@@ -39,7 +36,6 @@ export function useOpenSettings() {
   const setActiveTab = useSetAtom(settingsActiveTabAtom);
   const setSelectedMachineId = useSetAtom(settingsSelectedMachineIdAtom);
   const setSelectedProjectKey = useSetAtom(settingsSelectedProjectKeyAtom);
-  const setSelectedProjectGroupId = useSetAtom(settingsSelectedProjectGroupIdAtom);
   const cloudAccountAvailable = useAppCapability('cloudAccount');
 
   const openSettings = useCallback(
@@ -50,7 +46,6 @@ export function useOpenSettings() {
       if (options) {
         setSelectedMachineId(options.machineId ?? null);
         setSelectedProjectKey(options.projectKey ?? null);
-        setSelectedProjectGroupId(options.projectGroupId ?? null);
       }
 
       if (!isMobile) {
@@ -105,9 +100,6 @@ export function useOpenSettings() {
             search: { machine: options?.machineId },
           });
           return;
-        case 'project-groups':
-          void router.navigate({ to: '/$workspaceName/settings/project-groups', params });
-          return;
         case 'agent-roles':
           void router.navigate({ to: '/$workspaceName/settings/agent-roles', params });
           return;
@@ -134,7 +126,6 @@ export function useOpenSettings() {
       setActiveTab,
       setOpen,
       setSelectedMachineId,
-      setSelectedProjectGroupId,
       setSelectedProjectKey,
       workspaceSlug,
     ]

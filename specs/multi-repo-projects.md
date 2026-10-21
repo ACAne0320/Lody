@@ -1,4 +1,4 @@
-# Multi-repository Project groups
+# Multi-repository projects
 
 Status: draft
 Translation: current
@@ -19,7 +19,7 @@ looks only at that branch.
 
 ## Concepts
 
-- **Project group** (code type `WorkspaceProject`, called Project below): a workspace-level group of **Members**. A Member can be
+- **Multi-repository project** (code type `WorkspaceProject`, called Project below): a workspace-level project made of **Members**. The UI has no separate concept for it: it is a project like a single folder or repository, only with several Members, and shares the project rows, menus and pickers. A Member can be
   a GitHub repository, a local Git repository (which may have no remote; it then
   gets a branch and backups, but no PR), or a local non-Git directory. A non-Git
   directory has no branch, backups or PR, and the conversation edits the original
@@ -43,6 +43,16 @@ looks only at that branch.
   existing conversations stay where they are, and do not move when the project
   joins a Project.
 - There is no product limit on the number of Members.
+- **Where it appears.** A Project with a machine-bound Member is listed under that
+  machine, with the machine's folders. A Project without one runs anywhere and is
+  listed with the GitHub repositories. This applies to the sidebar and to
+  Settings › Projects.
+- **Creating and editing.** Settings › Projects offers "Several repositories or
+  folders" beside adding a folder or a GitHub repository. A project row's context
+  menu offers "Edit project…": on a multi-repository Project it edits it; on a
+  single folder it opens the same editor seeded with that folder, which saves a new
+  Project and leaves the folder and its conversations as they are. The editor's
+  picker adds repositories and folders already known to the workspace.
 
 ## Flat layout
 

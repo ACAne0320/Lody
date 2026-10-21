@@ -1,12 +1,12 @@
-# 多仓库项目组（Project group）
+# 多仓库项目
 
 Status: draft
 Translation: current
 
 [English](multi-repo-projects.md)
 
-界面与 Agent 文案称为「项目组 / Project group」。代码类型名不变；下文 Project
-指项目组，现有「项目」仍指单个本地文件夹或 GitHub 仓库。
+界面上就叫「项目」，没有单独的「项目组」概念；代码类型名不变。下文 Project 指多仓库
+项目，单个本地文件夹或 GitHub 仓库仍是普通项目。
 
 ## 场景
 
@@ -19,7 +19,9 @@ Alice 的产品由本地文件夹 `web`（远端 `acme/web`）、`api`（远端 
 
 ## 概念
 
-- **Project**：工作区级的分组，由若干 **Member** 组成。Member 可以是 GitHub 仓库、
+- **多仓库项目**（代码类型 `WorkspaceProject`，下文称 Project）：工作区级的项目，由若干
+  **Member** 组成。界面上它就是项目，和单个文件夹或仓库共用项目行、菜单和选择器，只是
+  包含多个 Member。Member 可以是 GitHub 仓库、
   本地 Git 仓库（可以没有远端，此时有分支和备份，但没有 PR），或者本地非 Git 目录。
   非 Git 目录没有分支、备份和 PR，对话直接修改原目录，见「成员接入方式」。
 - Member 按**仓库身份**去重：GitHub 仓库（有数字 ID 时以 ID 为准），或者没有 GitHub
@@ -35,6 +37,14 @@ Alice 的产品由本地文件夹 `web`（远端 `acme/web`）、`api`（远端 
 - 现有的单个本地项目或 GitHub 仓库保持原样。它们原有的对话留在原来的位置，加入
   Project 后也不会移动。
 - Member 的数量没有产品上限。
+
+- **显示位置。** 含有绑定机器 Member 的 Project 显示在那台机器下，和它的文件夹放在
+  一起；不含的 Project 可以在任意机器上运行，和 GitHub 仓库放在一起。sidebar 和
+  设置 › 项目都按这个规则。
+- **创建与编辑。** 设置 › 项目的添加菜单里，在添加文件夹、添加 GitHub 仓库旁边提供
+  「多个仓库或文件夹」。项目行的右键菜单提供「编辑项目…」：对多仓库项目直接编辑；对
+  单个文件夹则打开同一个编辑器并预先加入这个文件夹，保存后得到一个新的 Project，原来
+  的文件夹和它的对话保持不变。编辑器的选择器添加工作区里已有的仓库和文件夹。
 
 ## 平铺布局
 

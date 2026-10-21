@@ -13,7 +13,7 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { startSessionMentionDrag } from '@/lib/session-mention-drag';
 import {
   Archive,
-  Boxes,
+  Folders,
   Folder,
   GitBranch,
   GitPullRequest,
@@ -693,7 +693,7 @@ function UpdatedItemProjectLine({ item }: { item: SidebarUpdatedItem }) {
   const repoFullName = item.repoFullName ?? (item.kind === 'github' ? label : null);
   const isGithub = item.kind === 'github';
   const mark = item.projectGroup ? (
-    <Boxes className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+    <Folders className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
   ) : isGithub ? (
     <UpdatedGitHubOwnerMark repoFullName={repoFullName} />
   ) : item.kind === 'local' ? (

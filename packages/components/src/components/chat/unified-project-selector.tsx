@@ -2,7 +2,7 @@ import { useDeferredValue, useMemo, useState, type ReactNode } from 'react';
 import type { LocalProjectId, MachineId } from '@lody/shared';
 import {
   ArrowUpRight,
-  Boxes,
+  Folders,
   ChevronDown,
   CircleSlash2,
   FolderOpen,
@@ -436,7 +436,7 @@ export function UnifiedProjectSelectorView({
           ]
             .filter(Boolean)
             .join(' · '),
-        icon: <Boxes className="h-4 w-4 shrink-0 opacity-70" />,
+        icon: <Folders className="h-4 w-4 shrink-0 opacity-70" />,
         selection: { kind: 'group', projectId: group.projectId },
         lastUsedAt: group.lastUsedAt,
         disabledReason: group.disabledReason,
@@ -486,7 +486,7 @@ export function UnifiedProjectSelectorView({
     (value.kind === 'github' ? (
       <GitHubOwnerAvatarIcon repoFullName={value.repoFullName} />
     ) : value.kind === 'group' ? (
-      <Boxes className="h-4 w-4 opacity-70" />
+      <Folders className="h-4 w-4 opacity-70" />
     ) : (
       <FolderOpen className="h-4 w-4 opacity-70" />
     ));

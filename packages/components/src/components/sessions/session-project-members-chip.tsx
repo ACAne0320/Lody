@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
-import { Boxes, Folder, GitBranch, Github } from 'lucide-react';
+import { Folders, Folder, GitBranch, Github } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SessionPullRequestCiState } from '@lody/shared';
 import { Tooltip } from '@lody/ui/tooltip';
@@ -108,7 +108,7 @@ export function SessionProjectMembersChip({
   const label = t('sessions.projectMembers.label', 'Repositories');
   return (
     <PopoverActionChip
-      icon={Boxes}
+      icon={Folders}
       label={label}
       value={String(rows.length)}
       defaultOpen={defaultOpen}
