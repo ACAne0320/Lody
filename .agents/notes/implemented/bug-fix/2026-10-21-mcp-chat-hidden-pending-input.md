@@ -122,3 +122,4 @@ all present before this change; it adds no errors or SHA-protected topics.
 - [Seen receipt race](2026-09-28-send-delivery-seen-race.md)
 - [Steer stop/recovery ownership](2026-09-16-steer-stop-recovery-ownership.md)
 - [Unsupported composer steering](2026-09-21-unsupported-steer-regular-queue.md)
+- [Draft PR #1771](https://github.com/LodyAI/Lody/pull/1771)

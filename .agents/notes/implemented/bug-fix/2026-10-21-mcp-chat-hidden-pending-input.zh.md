@@ -96,3 +96,4 @@ ledger。现有执行测试覆盖 Stop、回合结束、拒绝 steering 与迟�
 - [Seen 回执竞态](2026-09-28-send-delivery-seen-race.zh.md)
 - [Steer 停止与恢复所有权](2026-09-16-steer-stop-recovery-ownership.zh.md)
 - [不支持 Steer 时的输入框队列](2026-09-21-unsupported-steer-regular-queue.zh.md)
+- [草稿 PR #1771](https://github.com/LodyAI/Lody/pull/1771)
