@@ -13,8 +13,8 @@ import {
   workspaceRuntimeInitFailureAtom,
   type WorkspaceRuntimeInitFailure,
 } from '@/atoms/runtime';
-import { WorkspaceModeAdmissionTimeoutError } from '@/providers/workspace-mode-admission';
-import { E2eeClientUpgradeRequiredError } from '@/providers/cloud-e2ee-workspaces';
+import { WorkspaceModeAdmissionTimeoutError } from '../providers/workspace-mode-admission';
+import { E2eeClientUpgradeRequiredError } from '../providers/cloud-e2ee-workspaces';
 import {
   E2eeLocalEvidenceConflictError,
   E2eeLocalEvidenceCorruptError,
