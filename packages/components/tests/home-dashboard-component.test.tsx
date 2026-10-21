@@ -357,6 +357,8 @@ describe('HomeDashboard', () => {
 
       // A middling stage: the balance limit holds the board up off the composer.
       render({ defaultBoard: 'now', stage: { height: 700, rest: 100 } });
+      expect(byTestId('home-dashboard-slot')).toBeNull();
+      click(q('[data-segment="now"]')!);
       expect(hang()).toBeGreaterThan(0);
       expect(hang()).toBeLessThan((slotPx() + 6) * HOME_BOARD_HANG_SHARE);
       expect(gaps(700).above).toBeLessThanOrEqual(HOME_BOARD_MAX_TILT * gaps(700).below + 1);
