@@ -97,6 +97,7 @@ import {
   repairUnreadableE2eeCaches,
   retainWorkspaceModeProof,
   saveE2eeGenesisPin,
+  savePendingE2eeWorkspace,
 } from '../src/lib/e2ee-workspace-storage';
 import {
   runtimeAtom,
@@ -318,6 +319,40 @@ describe('RuntimeProvider warm workspace preparation', () => {
         workspaceSlug: 'local',
         modeAdmission: { knownEncrypted: false },
       });
+      // The rejection is sticky: Retry waits for authoritative admission and
+      // fails closed again instead of reopening a plaintext runtime.
+      await act(async () => store.set(workspaceModeAdmissionRetryAtom, 1));
+      expect(createWorkspaceRuntime).toHaveBeenCalledTimes(1);
+      expect(store.get(runtimeAtom)).toBeNull();
+      expect(store.get(workspaceContentModeAtom)).toBeNull();
+      expect(store.get(workspaceRuntimeInitFailureAtom)).toMatchObject({
+        modeAdmission: { knownEncrypted: false },
+      });
+    }
+  );
+
+  it('retires a provisional runtime when the listing later marks the workspace encrypted', async () => {
+    ordinaryCloud();
+    environment.e2eeWorkspaces!.describe = () => new Promise(() => {});
+    await render();
+    expect(store.get(runtimeAtom)).toBe(prepared);
+    await act(async () => listEncrypted());
+    expect(store.get(runtimeAtom)).toBeNull();
+    expect(prepared.disposed).toBe(true);
+    expect(store.get(workspaceContentModeAtom)).toBeNull();
+    expect(createWorkspaceRuntime).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['with', 'without'] as const)(
+    'before sign-in, opens provisionally only %s no other account holding encrypted evidence',
+    async (kind) => {
+      ordinaryCloud();
+      store.set(userAtom, null as never);
+      if (kind === 'with')
+        saveE2eeGenesisPin(localStorage, 'other-account', 'local:workspace', '11'.repeat(32));
+      await render();
+      expect(store.get(runtimeAtom)).toBe(kind === 'with' ? null : prepared);
+      expect(createWorkspaceRuntime).toHaveBeenCalledTimes(kind === 'with' ? 0 : 1);
     }
   );
 
@@ -425,25 +460,41 @@ describe('RuntimeProvider warm workspace preparation', () => {
     });
   });
 
-  it('still waits for authoritative admission when a genesis pin exists', async () => {
-    ordinaryCloud();
-    saveE2eeGenesisPin(localStorage, 'local:user', 'local:workspace', '11'.repeat(32));
-    environment.e2eeWorkspaces!.describe = () => new Promise(() => {});
-    vi.useFakeTimers();
-    try {
-      await render();
-      expect(store.get(runtimeAtom)).toBeNull();
-      expect(store.get(workspaceContentModeAtom)).toBeNull();
-      await act(async () => vi.advanceTimersByTimeAsync(15_000));
-      expect(store.get(workspaceRuntimeInitFailureAtom)).toMatchObject({
-        errorType: WorkspaceModeAdmissionTimeoutError.name,
-        modeAdmission: { knownEncrypted: true },
-      });
-      expect(createWorkspaceRuntime).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
+  it.each(['genesis pin', 'known-mode marker', 'pending creation for the slug'] as const)(
+    'still waits for authoritative admission when a %s exists',
+    async (evidence) => {
+      ordinaryCloud();
+      if (evidence === 'genesis pin')
+        saveE2eeGenesisPin(localStorage, 'local:user', 'local:workspace', '11'.repeat(32));
+      else if (evidence === 'known-mode marker')
+        localStorage.setItem(
+          'lody-e2ee-known-mode:local%3Auser:local%3Aworkspace',
+          '11'.repeat(32)
+        );
+      else
+        savePendingE2eeWorkspace(localStorage, {
+          accountId: 'local:user',
+          requestId: 'request-1',
+          name: 'Local',
+          slug: 'local',
+        });
+      environment.e2eeWorkspaces!.describe = () => new Promise(() => {});
+      vi.useFakeTimers();
+      try {
+        await render();
+        expect(store.get(runtimeAtom)).toBeNull();
+        expect(store.get(workspaceContentModeAtom)).toBeNull();
+        await act(async () => vi.advanceTimersByTimeAsync(15_000));
+        expect(store.get(workspaceRuntimeInitFailureAtom)).toMatchObject({
+          errorType: WorkspaceModeAdmissionTimeoutError.name,
+          modeAdmission: { knownEncrypted: true },
+        });
+        expect(createWorkspaceRuntime).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     }
-  });
+  );
 
   it('waits for the same account to authenticate, then preserves the runtime through auth refresh', async () => {
     ordinaryCloud();

@@ -58,6 +58,7 @@ import {
   hasPendingE2eeCreationForSlug,
   isWorkspaceModeStorageKey,
   readWorkspaceModeEvidence,
+  recordWorkspaceModeRejection,
   retainWorkspaceModeProof,
   type WorkspaceModeEvidence,
 } from '@/lib/e2ee-workspace-storage';
@@ -213,6 +214,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     ? (getCachedWorkspaceId(workspaceSlug) as WorkspaceId | null)
     : null;
   const [modeStorageRevision, setModeStorageRevision] = useState(0);
+  // Rejections whose durable marker storage refused; they hold for this session.
+  const sessionModeRejectionsRef = useRef(new Set<string>());
   const modeCloud = Boolean(platform.e2eeWorkspaces) && !isLocalPlatform;
   // Both candidate IDs are checked so neither a stale cache nor a stale server
   // id can hide this workspace's encrypted evidence. Equal IDs keep one key, so
@@ -245,8 +248,17 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         evidence.set(
           id,
           accountId
-            ? readWorkspaceModeEvidence(localStorage, accountId, id)
-            : { descriptor: null, encrypted: hasEncryptedEvidenceForAnyAccount(localStorage, id) }
+            ? (() => {
+                const read = readWorkspaceModeEvidence(localStorage, accountId, id);
+                return sessionModeRejectionsRef.current.has(JSON.stringify([accountId, id]))
+                  ? { ...read, rejected: true }
+                  : read;
+              })()
+            : {
+                descriptor: null,
+                encrypted: hasEncryptedEvidenceForAnyAccount(localStorage, id),
+                rejected: false,
+              }
         );
       }
       return {
@@ -277,13 +289,17 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   });
   const localEncryptedEvidence =
     savedMode.pendingCreation || [...savedMode.evidence.values()].some((item) => item.encrypted);
+  // A recorded non-plaintext answer demands admission without proving encryption,
+  // so failure wording stays generic unless encrypted creation is on.
+  const localRejection = [...savedMode.evidence.values()].some((item) => item.rejected);
   // Owner-approved availability trade-off: a workspace without local encrypted
   // evidence and not listed as encrypted opens through the pre-E2EE offline-first
   // path; its mode is verified in the background, which retires the runtime if
   // the workspace turns out to be encrypted. Workspaces with evidence keep
   // authoritative admission before any data plane.
   const requiresAdmission =
-    modeCloud && (localEncryptedEvidence || listedEncrypted || savedMode.error !== null);
+    modeCloud &&
+    (localEncryptedEvidence || localRejection || listedEncrypted || savedMode.error !== null);
   const knownEncrypted = localEncryptedEvidence || listedEncrypted;
   const effectiveWorkspaceId = isLocalPlatform
     ? workspaceSlug
@@ -525,7 +541,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       });
     };
 
-    const verifyInBackground = async (whenRetired: Promise<void>) => {
+    const verifyInBackground = async () => {
+      let notPlaintext = false;
       try {
         const descriptor = await describeAuthenticatedWorkspace(
           {
@@ -538,19 +555,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           null
         );
         if (disposed) return;
+        if (descriptor.workspaceId !== effectiveWorkspaceId) throw new WorkspaceModeMismatchError();
         if (isEncryptedDescriptor(descriptor)) {
           // Never keep the plaintext data plane for an encrypted workspace:
-          // retire it before recording the control-only admission.
-          if (descriptor.workspaceId !== effectiveWorkspaceId)
-            throw new WorkspaceModeMismatchError();
+          // retire it first, then record the mode synchronously as sticky
+          // evidence, so any re-initialization waits for admission.
+          notPlaintext = true;
           retire();
-          await whenRetired;
-          if (disposed) return;
         }
         admit(descriptor);
       } catch (error) {
-        if (disposed || initializationAbort.signal.aborted) return;
-        if (!isWorkspaceModeRejection(error)) {
+        if (disposed) return;
+        if (!notPlaintext && !isWorkspaceModeRejection(error)) {
           // Unclassified failures are not evidence of encryption; keep the
           // ordinary runtime and verify again on the next initialization.
           logRuntimeOperationError('background workspace mode verification', error);
@@ -558,16 +574,25 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         }
         logRuntimeOperationError('background workspace mode verification', error);
         retire();
+        // The server did not admit this workspace as plaintext (or its encrypted
+        // mode could not be recorded). Every later attempt, including Retry, must
+        // wait for authoritative admission instead of opening provisionally.
+        if (
+          !recordWorkspaceModeRejection(
+            localStorage,
+            accountId!,
+            effectiveWorkspaceId,
+            describeErrorType(error)
+          )
+        )
+          sessionModeRejectionsRef.current.add(JSON.stringify([accountId, effectiveWorkspaceId]));
         setContentMode(null);
         setRuntimeInitFailure(modeAdmissionFailure(error));
         setControlConnectionState('error');
+        setModeStorageRevision((value) => value + 1);
       }
     };
 
-    let resolveRetired!: () => void;
-    const whenRetired = new Promise<void>((resolve) => {
-      resolveRetired = resolve;
-    });
     const retire = () => {
       if (retired) return;
       retired = true;
@@ -577,9 +602,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       clearDocMetaCache();
       clearPresenceStates();
       previousShutdown.current = initialization.then(disposeRuntime);
-      void previousShutdown.current.then(resolveRetired, (error: unknown) => {
+      void previousShutdown.current.catch((error: unknown) => {
         logRuntimeOperationError('retire provisional runtime', error);
-        resolveRetired();
       });
     };
 
@@ -617,7 +641,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           admit(storedDescriptor);
           admitting = false;
         } else if (modeCloud && accountId) {
-          void verifyInBackground(whenRetired);
+          void verifyInBackground();
         }
         // If the user requested a cache clear before the last reload, delete all
         // lody* IndexedDB + Cache Storage now — before the runtime opens the repo

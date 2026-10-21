@@ -606,7 +606,8 @@ class WorkspaceModeCheckError extends Error {
 /** Unreadable local records cannot prove plaintext, so they count as evidence. */
 function hasLocalEncryptedEvidence(accountId: string, workspaceId: string): boolean {
   try {
-    return readWorkspaceModeEvidence(localStorage, accountId, workspaceId).encrypted;
+    const evidence = readWorkspaceModeEvidence(localStorage, accountId, workspaceId);
+    return evidence.encrypted || evidence.rejected;
   } catch {
     return true;
   }
