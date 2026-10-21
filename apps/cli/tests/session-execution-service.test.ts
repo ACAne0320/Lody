@@ -6902,7 +6902,8 @@ describe('SessionExecutionService', () => {
       userEmail: 'user@example.com',
     });
 
-    await vi.advanceTimersByTimeAsync(16000);
+    // Past the 30s replayable-history wait a context-free fallback runs out.
+    await vi.advanceTimersByTimeAsync(31_000);
     await execution;
     vi.useRealTimers();
 
