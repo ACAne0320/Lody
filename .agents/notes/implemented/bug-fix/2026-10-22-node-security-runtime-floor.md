@@ -47,9 +47,12 @@ it is source inspection, not a malicious-stream or exploit test.
 
 An offline synthetic probe of the installed 44.7.0 binary's `tls.checkServerIdentity`
 accepted fullwidth `１２７.0.0.1` with `DNS:127.0.0.1`; Node 22.23.4 rejected it,
-and canonical `127.0.0.1` with an IP SAN passed in both. This demonstrates the
-CVE-2026-105483 validation weakness without proving an exploitable product URL or
-network path. Node HTTPS/TLS clients in the embedded CLI remain relevant; Chromium
+and canonical `127.0.0.1` with an IP SAN passed in both. An independent probe
+also found Electron accepting `127。0.0.1`, `127.1`, `0x7f000001`, and `2130706433`
+with `DNS:127.0.0.1`; repaired Node 22.23.4 rejected all five non-canonical hosts,
+even with a matching IP SAN. These probes demonstrate the fullwidth and numeric
+hostname validation weaknesses relevant to CVE-2026-105483/CVE-2026-106069 without
+proving an exploitable product URL or network path. Node HTTPS/TLS clients in the embedded CLI remain relevant; Chromium
 renderer networking has a different certificate implementation.
 
 Electron [44.9.3 release notes](https://github.com/electron/electron/releases/tag/v44.9.3)

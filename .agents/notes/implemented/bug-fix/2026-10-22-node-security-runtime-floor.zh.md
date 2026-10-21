@@ -19,7 +19,7 @@ Translation: current
 
 Electron 44.7.0 内置 Node 24.21.0 与 Chromium 152.0.7977.130。其 [Node GN 补丁](https://github.com/electron/electron/blob/v44.7.0/patches/node/build_add_gn_build_files.patch)把 Brotli 链接到 Chromium 的 `//third_party/brotli:dec`，没有使用 Node 自带 Brotli。对应 Chromium [解码源码](https://chromium.googlesource.com/chromium/src/+/152.0.7977.130/third_party/brotli/dec/decode.c)已含 `BROTLI_DECODER_ERROR_FORMAT_BLOCK_SWITCH` 和 `BROTLI_SAFE_WITH_STATUS`，对应 [Node 解码器修复](https://github.com/nodejs/node/commit/49dff6f57aa72cbbe13e480cd41ff4e46837c8fc)。这支持纠正仅按 Node 版本认定该 Electron 构建存在 Brotli 漏洞的结论；证据是源码核对，不是恶意压缩流或漏洞利用测试。
 
-对本地安装的 44.7.0 二进制做离线合成探针：`tls.checkServerIdentity` 接受全角 `１２７.0.0.1` 配 `DNS:127.0.0.1`；Node 22.23.4 拒绝。正常 `127.0.0.1` 配 IP SAN 在两者中都通过。这证明 CVE-2026-105483 对应的校验弱点，尚未证明产品实际 URL 或网络路径可利用。嵌入 CLI 的 Node HTTPS/TLS 客户端仍需关注；Chromium 渲染器网络使用不同的证书实现。
+对本地安装的 44.7.0 二进制做离线合成探针：`tls.checkServerIdentity` 接受全角 `１２７.0.0.1` 配 `DNS:127.0.0.1`；Node 22.23.4 拒绝。正常 `127.0.0.1` 配 IP SAN 在两者中都通过。另一独立探针发现 Electron 还接受 `127。0.0.1`、`127.1`、`0x7f000001`、`2130706433` 配 `DNS:127.0.0.1`；已修复的 Node 22.23.4 拒绝全部五种非标准主机名，即使提供匹配的 IP SAN。这些探针展示了 CVE-2026-105483/CVE-2026-106069 对应的全角和数字主机名校验弱点，尚未证明产品实际 URL 或网络路径可利用。嵌入 CLI 的 Node HTTPS/TLS 客户端仍需关注；Chromium 渲染器网络使用不同的证书实现。
 
 [Electron 44.9.3 发布说明](https://github.com/electron/electron/releases/tag/v44.9.3)仅列 ANGLE、Chromium、PDFium、Skia、V8 回补；[DEPS](https://github.com/electron/electron/blob/v44.9.3/DEPS)仍固定 Node 24.22.0。Node 补丁列表未发现主机名验证回补。Electron 45.0.0 同样列出 Node 24.22.0，并有不兼容变化。本次不能将两者确认为安全 TLS 修复，因此不做猜测式升级。
 
