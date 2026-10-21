@@ -15,7 +15,8 @@ tokens. Local composition must not authenticate against the product cloud.
 External tools share business services with internal MCP. First-release writes
 create standalone Sessions or send input to the authorized user's Sessions on
 this machine. Reads provide authorized resource discovery, own-user/own-machine
-Session summaries, live status, bounded history and external request receipts.
+Session summaries, live status and bounded history. External access excludes
+`lody_operation_get` and `lody_mcp_list`; create/chat still return acceptance receipts.
 No internal caller identity, parent relation, automatic completion callback or
 ambient shell Session is inferred. Token possession authorizes these actions as
 the bound user; every authoring request rechecks the credential and daemon scope.

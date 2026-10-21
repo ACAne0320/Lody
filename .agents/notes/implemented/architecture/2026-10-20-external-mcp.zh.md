@@ -36,6 +36,9 @@ Session 工具认证的 daemon 入口调用已有命令服务。会话读写限�
 选项；不开放 Role、附件、父会话选择、批量、计划任务或目录修改等外部写能力。
 显式 `currentSessionId: null` 阻止环境中的 `LODY_SESSION_ID` 成为调用方或创建来源。
 
+外部目录不注册 `lody_operation_get` 和 `lody_mcp_list`，直接调用同样拒绝。
+创建/发送仍保留持久化去重并返回接受回执；客户端通过会话状态和历史检查执行结果。
+
 ## 请求归属与失败行为
 
 内部 Operation 存储按父 Session 定位请求，并负责自动 Inbox 续接；原样复用会

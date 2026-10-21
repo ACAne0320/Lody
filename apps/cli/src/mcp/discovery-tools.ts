@@ -9,7 +9,8 @@ import {
 
 export function registerDiscoveryTools(
   registerTool: ReturnType<typeof createSessionToolRegistrar>,
-  withDiscovery: <T>(read: (discovery: ResourceDiscovery) => Promise<T>) => Promise<T>
+  withDiscovery: <T>(read: (discovery: ResourceDiscovery) => Promise<T>) => Promise<T>,
+  resources: readonly DiscoveryResource[] = Object.keys(ResourceListSchemas) as DiscoveryResource[]
 ) {
   const descriptions: Record<DiscoveryResource, string> = {
     machine:
@@ -49,7 +50,7 @@ export function registerDiscoveryTools(
       };
     }
   };
-  for (const resource of Object.keys(ResourceListSchemas) as DiscoveryResource[]) {
+  for (const resource of resources) {
     registerTool(
       `lody_${resource}_list`,
       {

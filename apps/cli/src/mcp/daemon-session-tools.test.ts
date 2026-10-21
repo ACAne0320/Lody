@@ -182,6 +182,11 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
       await expect(
         executeExternalDaemonTool(token, 'lody_session_archive', { sessionId })
       ).rejects.toThrow('Unsupported external MCP tool');
+      for (const name of ['lody_operation_get', 'lody_mcp_list']) {
+        await expect(executeExternalDaemonTool(token, name, {})).rejects.toThrow(
+          'Unsupported external MCP tool'
+        );
+      }
       const other = await manager.createSession(machineId, 'custom', 'claude');
       await manager.repo.upsertDocMeta(getSessionRoomId(other), { userId: 'different-user' });
       const denied = await executeExternalDaemonTool(token, 'lody_session_history', {
@@ -225,6 +230,10 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
       expect(names).not.toContain('lody_session_archive');
       expect(names).not.toContain('lody_mcp_configure');
       expect(names).not.toContain('lody_session_create_many');
+      for (const name of ['lody_operation_get', 'lody_mcp_list']) {
+        expect(names).not.toContain(name);
+        await expect(client.callTool({ name, arguments: {} })).rejects.toThrow();
+      }
       const result = await client.callTool({ name: 'lody_session_list', arguments: {} });
       expect(result).toMatchObject({ content: [{ text: '{"items":[]}' }] });
       const invalid = await client.callTool({
@@ -305,7 +314,6 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
         (await backend.readHistory()).filter((turn) => turn.role === 'user').map((turn) => turn.id)
       ).toEqual([first.userTurnId, second.userTurnId]);
       expect(dispatched).toEqual([first.userTurnId, second.userTurnId]);
-      expect(await call('lody_operation_get', { operationId: 'external-chat' })).toEqual(second);
     });
   });
 
@@ -851,6 +859,9 @@ describe('daemon-hosted Session tools in the cloud composition', () => {
     try {
       await mcpServer.connect(serverTransport);
       await client.connect(clientTransport);
+      const names = (await client.listTools()).tools.map((tool) => tool.name);
+      expect(names).toContain('lody_mcp_list');
+      expect(names).toContain('lody_operation_get');
       const result = await runWithMcpSessionContext(
         { ...context(), localControlSocketPath: socketPath },
         () => client.callTool({ name: 'lody_operation_list', arguments: {} })

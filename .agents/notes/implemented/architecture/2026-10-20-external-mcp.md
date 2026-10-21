@@ -40,6 +40,10 @@ same bounded reader. Create/chat reuse existing command services through a daemo
 entry authenticated independently from Session tools. Reads/writes of Sessions
 are restricted to the bound user's Sessions on this machine. Creation requires an
 Agent config and optionally a local project, with model/mode/config options.
+The external catalog omits `lody_operation_get` and `lody_mcp_list`, including
+direct calls. Create/chat retain durable deduplication and return acceptance
+receipts; clients inspect Session status/history for execution results.
+
 No Roles, attachments, parent selection, batches, schedules or catalog mutations
 are exposed as external writes. Explicit `currentSessionId: null` prevents ambient
 `LODY_SESSION_ID` from supplying a caller or creation provenance.

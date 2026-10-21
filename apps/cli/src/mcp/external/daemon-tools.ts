@@ -187,11 +187,6 @@ export async function executeExternalDaemonTool(token: string, name: string, arg
       );
       return publicExternalReceipt(receipt);
     },
-    operation: async (input) => {
-      const receipt = await requests.get(access, input.operationId);
-      if (!receipt) throw new Error('Operation not found');
-      return publicExternalReceipt(receipt);
-    },
   };
   const handlers: SessionToolHandlers = new Map();
   const server = buildExternalMcpServer((_name, _args, execute) => execute(), services, handlers);

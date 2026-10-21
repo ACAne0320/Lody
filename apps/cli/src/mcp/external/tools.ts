@@ -45,7 +45,6 @@ export const ExternalHistorySchema = z
   })
   .strict();
 export const ExternalStatusSchema = z.object({ sessionIds: z.array(id).min(1).max(100) }).strict();
-export const ExternalOperationSchema = z.object({ operationId: id }).strict();
 
 export type ExternalToolServices = {
   discovery: () => Promise<ResourceDiscovery>;
@@ -54,7 +53,6 @@ export type ExternalToolServices = {
   list: (input: z.output<typeof ExternalListSchema>) => Promise<unknown>;
   history: (input: z.output<typeof ExternalHistorySchema>) => Promise<unknown>;
   status: (input: z.output<typeof ExternalStatusSchema>) => Promise<unknown>;
-  operation: (input: z.output<typeof ExternalOperationSchema>) => Promise<unknown>;
 };
 
 export function buildExternalMcpServer(
@@ -70,7 +68,7 @@ export function buildExternalMcpServer(
     { name: 'lody', version: '0.1.0' },
     {
       instructions:
-        'This local endpoint is scoped to one workspace and machine. Discover agentConfigId and localProjectId before creating work. Supply a stable operationId for each create/chat; reuse it and identical arguments on transport retry. An uncertain receipt must be inspected, never automatically resubmitted with a new id. There are no parent-session callbacks; use operation_get, session_status_many and session_history to inspect results.',
+        'This local endpoint is scoped to one workspace and machine. Discover agentConfigId and localProjectId before creating work. Supply a stable operationId for each create/chat; reuse it and identical arguments on transport retry. An uncertain receipt must be inspected, never automatically resubmitted with a new id. There are no parent-session callbacks; use session_status_many and session_history to inspect results.',
     }
   );
   const register = createSessionToolRegistrar(server, route, handlers);
@@ -78,7 +76,12 @@ export function buildExternalMcpServer(
     if (!services) throw new Error('External tools must execute in the daemon');
     return services;
   };
-  registerDiscoveryTools(register, async (read) => read(await requireServices().discovery()));
+  registerDiscoveryTools(register, async (read) => read(await requireServices().discovery()), [
+    'machine',
+    'project',
+    'agent_config',
+    'agent_role',
+  ]);
   const add = <S extends z.ZodObject>(
     name: string,
     schema: S,
@@ -141,13 +144,6 @@ export function buildExternalMcpServer(
     'Read live status of up to 100 Sessions on this machine.',
     true,
     (service, args) => service.status(args)
-  );
-  add(
-    'lody_operation_get',
-    ExternalOperationSchema,
-    'Read the receipt for an external request in this workspace. Use its Session/Turn ids to inspect execution results.',
-    true,
-    (service, args) => service.operation(args)
   );
   return server;
 }

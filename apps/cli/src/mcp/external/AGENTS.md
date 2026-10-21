@@ -8,6 +8,8 @@ implementation background in the [parent README](../README.md#http-and-loopback)
   and an allowlisted catalog. Recheck token and exact owner/workspace/machine
   scope in the daemon. Never trust internal Session headers or ambient
   `LODY_SESSION_ID`, and never open a second workspace replica.
+- Do not register `lody_operation_get` or `lody_mcp_list` externally. Create/chat
+  still return acceptance receipts; their persistence remains required for deduplication.
 - Tokens grant access as the bound user. Local composition performs no cloud
   authentication. External Session reads/writes are own-user and own-machine;
   catalog reads retain the shared resource authorization rules.

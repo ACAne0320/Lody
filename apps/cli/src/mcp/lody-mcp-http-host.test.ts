@@ -141,7 +141,8 @@ describe('external MCP HTTP authentication without network I/O', () => {
     const catalog = await request('/mcp/external', token, modernRequest(2, 'tools/list'), true);
     expect(catalog.status, catalog.wire).toBe(200);
     expect(catalog.wire).toContain('lody_session_create');
-    expect(catalog.wire).toContain('lody_operation_get');
+    expect(catalog.wire).not.toContain('lody_operation_get');
+    expect(catalog.wire).not.toContain('lody_mcp_list');
     expect(catalog.wire).not.toContain('lody_mcp_configure');
     expect(catalog.wire).not.toContain('lody_session_archive');
     await fs.rm(externalAccessPath());

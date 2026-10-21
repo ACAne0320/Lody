@@ -35,7 +35,9 @@ Only the port is exposed by the probe, never the internal MCP bearer token.
 
 External tools reuse discovery registration, history paging and Session command
 services. Their catalog covers resource discovery, own-machine/own-user Session
-list/status/history, standalone create, chat and external request receipts.
+list/status/history, standalone create and chat. `lody_operation_get` and
+`lody_mcp_list` are not exposed externally. Create/chat still return acceptance
+receipts; use Session status/history to inspect execution results.
 Creation accepts `agentConfigId`, optional `localProjectId`, and model/mode/config
 options. Roles, parent Sessions, attachments, batches, previews, schedules and
 catalog mutations are not external write capabilities in this release.
