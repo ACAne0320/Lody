@@ -287,9 +287,8 @@ describe('local platform zero-cloud integration', () => {
       });
       expect(history[0]?.inputConfig?.modelId).not.toBe('source-model');
       expect(history[0]?.inputConfig?.mcpServerIds).toEqual(['synthetic-mcp']);
-      expect(history[0]?.items).toEqual([
-        { type: 'text', text: 'Review carefully.\n\nCheck the change.' },
-      ]);
+      expect(history[0]?.items).toEqual([{ type: 'text', text: 'Check the change.' }]);
+      expect(history[0]?.inputConfig?.prompt).toBe('Review carefully.\n\nCheck the change.');
       expect(target?.meta.latestUserMsgId).toBe(history[0]?.id);
       await call('lody_session_create', input);
       expect(dispatched).toEqual([targetId]);
