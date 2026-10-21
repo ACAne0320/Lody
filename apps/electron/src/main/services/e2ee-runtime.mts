@@ -511,11 +511,13 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
             !page ||
             page.workspaceId !== workspaceId ||
             page.genesisHash !== creation.genesisHash ||
-            page.startIndex !== start ||
+            !Number.isSafeInteger(page.startIndex) ||
+            page.startIndex < 0 ||
+            page.startIndex > start ||
             !Array.isArray(page.recordsHex) ||
             page.recordsHex.length > 64 ||
             !Number.isSafeInteger(page.checkpoint?.length) ||
-            page.checkpoint.length < start ||
+            page.checkpoint.length < page.startIndex ||
             !/^[0-9a-f]{64}$/.test(page.checkpoint.headHash)
           )
             return yield* fail('invalid-input')
@@ -525,17 +527,23 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
               return unhex(value)
             })
           )
-          if (minimumPin && page.checkpoint.length < minimumPin.length)
-            return yield* fail('local-evidence-conflict')
-          const length = start + records.length
+          const length = page.startIndex + records.length
           if (
             length > page.checkpoint.length ||
             (page.nextCursor === null) !== (length === page.checkpoint.length)
           )
             return yield* fail('invalid-input')
+          const lastKnown =
+            records.length === 0 && length < start
+              ? yield* sql(() =>
+                  db.prepare('SELECT record FROM records WHERE position=?').get(length - 1)
+                )
+              : undefined
           const head = records.length
             ? hashRecordBytes(records[records.length - 1]!)
-            : state.view.head
+            : lastKnown
+              ? hashRecordBytes(lastKnown.record as Uint8Array)
+              : state.view.head
           if (length === page.checkpoint.length && hex(head.toBytes()) !== page.checkpoint.headHash)
             return yield* fail('invalid-ledger')
           // Validate locator binding without treating it as cryptographic authority.
@@ -544,12 +552,46 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
             !page.position.startsWith(`p1:${workspaceId}:${length}:`)
           )
             return yield* fail('invalid-input')
+          // A second window may have already verified this page. Only compare
+          // against the verified prefix, never against unverified journal suffixes.
+          const overlap = Math.max(0, Math.min(length, start) - page.startIndex)
+          if (overlap > 0) {
+            const known = yield* sql(
+              () =>
+                db
+                  .prepare(
+                    'SELECT position,record,locator FROM records WHERE position>=? AND position<? ORDER BY position'
+                  )
+                  .all(page.startIndex, page.startIndex + overlap) as unknown as HistoryRow[]
+            )
+            if (
+              known.length !== overlap ||
+              known.some((row, index) => !Buffer.from(row.record).equals(records[index]!))
+            )
+              return yield* fail('local-evidence-conflict')
+          }
+          if (page.checkpoint.length <= start) {
+            const known = yield* sql(() =>
+              db
+                .prepare('SELECT record FROM records WHERE position=?')
+                .get(page.checkpoint.length - 1)
+            )
+            if (
+              !known ||
+              hex(hashRecordBytes(known.record as Uint8Array).toBytes()) !==
+                page.checkpoint.headHash
+            )
+              return yield* fail('local-evidence-conflict')
+          }
+          if (page.startIndex < start && length <= start) return yield* status()
+          if (minimumPin && page.checkpoint.length < minimumPin.length)
+            return yield* fail('local-evidence-conflict')
           const accepted = yield* Effect.result(
             feed.accept(
               {
                 requestOffset: state.offset,
                 nextOffset: page.position,
-                records,
+                records: records.slice(overlap),
                 upToDate: page.nextCursor === null
               },
               { head, length }
@@ -619,11 +661,18 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
         run(
           Effect.flatMap(openWorkspace(workspaceId), (entry) =>
             entry.ingest(page).pipe(
-              Effect.onError(() =>
-                Effect.gen(function* () {
-                  yield* Scope.close(entry.scope, Exit.void)
-                  entries.delete(workspaceId)
-                })
+              Effect.onError((cause) =>
+                cause.reasons.every(
+                  (reason) =>
+                    reason._tag === 'Fail' &&
+                    reason.error instanceof DesktopE2eeRuntimeError &&
+                    reason.error.code === 'invalid-input'
+                )
+                  ? Effect.void
+                  : Effect.gen(function* () {
+                      yield* Scope.close(entry.scope, Exit.void)
+                      entries.delete(workspaceId)
+                    })
               )
             )
           )

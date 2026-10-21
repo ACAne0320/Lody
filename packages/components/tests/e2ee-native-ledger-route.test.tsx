@@ -32,6 +32,7 @@ vi.mock('@/components/pages/e2ee-workspace-control-page', () => ({
   E2eeWorkspaceControlPage: ({ history, failure }: { history: { view: { length: number }; upgradeRequiredAt?: number } | null; failure?: unknown }) =>
     createElement('p', null, failure ? 'failed' : history?.upgradeRequiredAt !== undefined ? 'upgrade' : history?.view.length ?? 'loading'),
 }));
+import { saveE2eeGenesisPin } from '../src/lib/e2ee-workspace-storage';
 import { Route } from '../src/routes/workspace/e2ee/$workspaceId';
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -182,3 +183,40 @@ for (const upgrade of [false, true]) {
     expect(pagesRead).toEqual(upgrade ? [undefined, 'page-2'] : [undefined, 'page-2', 'page-3']);
   });
 }
+
+it.each([
+  ['custody_unavailable', false, 'open', false],
+  ['custody_unavailable', true, 'open', false],
+  ['custody_unavailable', true, 'recordCreated', false],
+  ['account_unavailable', true, 'open', false],
+  ['missing-binding', true, 'open', false],
+  ['closed', true, 'open', false],
+  ['custody_unavailable', true, 'open', true],
+  ['local-evidence-conflict', true, 'open', false],
+  ['conflict', true, 'recordCreated', false],
+  ['corrupt', true, 'open', false],
+] as const)('keeps read-only verification for %s (pin=%s, at=%s, mismatched pin=%s)', async (code, pinned, at, mismatch) => {
+  if (pinned) saveE2eeGenesisPin(localStorage, 'account', workspaceId, mismatch ? 'a'.repeat(64) : genesisHash);
+  const fetched: string[] = [];
+  fixture.port = {
+    create: async () => { throw new Error('unused'); },
+    describe: async () => {
+      fetched.push('describe');
+      return { workspaceId, contentMode: 'e2ee', contentModeVersion: 1, genesisHash, cryptoOrgId: genesisHash, activation: 'control-only' };
+    },
+    history: async () => ({ workspaceId, genesisHash, checkpoint: { headHash: genesisHash, length: 1 }, startIndex: 0, recordsHex: [raw], position: local.status.position!, nextCursor: null }),
+    runtime: {
+      recordCreated: async () => { if (at === 'recordCreated') throw new Error(`e2ee_${code}`); },
+      open: async () => { throw new Error(`Error invoking remote method 'e2ee:open': Error: e2ee_${code}`); },
+      close: async () => {},
+      status: async () => local.status,
+      ledgerView: async () => { throw new Error('native view must not be used'); },
+      ingestLedgerRecords: async () => { throw new Error('native ingestion must not be used'); },
+    },
+  };
+  const Component = Route.options.component as () => ReturnType<typeof createElement>;
+  await act(async () => root.render(createElement(Component)));
+  const availability = ['custody_unavailable', 'account_unavailable', 'missing-binding', 'closed'].includes(code);
+  expect(container.textContent).toBe(availability && !mismatch ? '1' : 'failed');
+  expect(fetched).toEqual(availability ? ['describe'] : []);
+});

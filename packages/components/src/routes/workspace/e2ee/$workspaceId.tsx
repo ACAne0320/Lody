@@ -84,10 +84,14 @@ function WorkspaceControlRoute() {
         if (port.runtime) {
           const runtime = port.runtime;
           const pin = readE2eeGenesisPin(localStorage, accountId, workspaceId);
-          if (pin) await runtime.recordCreated({ workspaceId, genesisHash: pin });
           let status;
-          try { status = await runtime.open(workspaceId, readObservedLedgerCheckpoint(localStorage, accountId, workspaceId) ?? undefined); } catch (error) {
-            if (pin || !(error instanceof Error) || !error.message.includes('e2ee_missing-binding')) throw error;
+          try {
+            if (pin) await runtime.recordCreated({ workspaceId, genesisHash: pin });
+            status = await runtime.open(workspaceId, readObservedLedgerCheckpoint(localStorage, accountId, workspaceId) ?? undefined);
+          } catch (error) {
+            // Availability failures retain the original read-only verification path,
+            // including its genesis pin and observed-checkpoint checks.
+            if (!(error instanceof Error) || !/\be2ee_(?:missing-binding|custody_unavailable|account_unavailable|closed)\b/.test(error.message)) throw error;
           }
           if (status) {
           hostOpened = true;

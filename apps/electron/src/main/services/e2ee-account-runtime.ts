@@ -9,6 +9,7 @@ import { getIpcServiceDeps } from '../ipc/ipc-service-deps'
 
 // Lazy application boundary. Plain workspaces never create a Scope or touch custody.
 const serial = Semaphore.makeUnsafe(1)
+const accountFailure = (code: string) => Object.assign(new Error(`e2ee_${code}`), { code })
 type Account = {
   accountId: string
   scope: Scope.Closeable
@@ -42,18 +43,17 @@ export function withDesktopE2eeAccount<A>(
     Effect.uninterruptible(
       serial.withPermit(
         Effect.gen(function* () {
-          if (quitting) return yield* Effect.fail(new Error('e2ee_closed'))
-          const session = yield* Effect.tryPromise({
-            try: () => getIpcServiceDeps().authService.getBootstrapSession(),
-            catch: () => new Error('e2ee_account_unavailable')
-          })
-          if (!session?.userId) {
+          if (quitting) return yield* Effect.fail(accountFailure('closed'))
+          // Resolve trusted identity synchronously: no network can hold this resource lock.
+          const auth = getIpcServiceDeps().authService
+          const identity = auth.getCachedSessionIdentity()
+          if (!identity.userId) {
             yield* closeCurrent
-            return yield* Effect.fail(new Error('e2ee_account_unavailable'))
+            return yield* Effect.fail(accountFailure('account_unavailable'))
           }
-          if (current && current.accountId !== session.userId) yield* closeCurrent
+          if (current && current.accountId !== identity.userId) yield* closeCurrent
           if (!current) {
-            const accountId = session.userId
+            const accountId = identity.userId
             const directory = join(
               app.getPath('userData'),
               'e2ee-bootstrap',
@@ -62,7 +62,13 @@ export function withDesktopE2eeAccount<A>(
             const scope = yield* Scope.make()
             const opened = yield* Effect.exit(
               Effect.gen(function* () {
-                const custody = yield* makeElectronE2eeCustody(join(directory, 'custody'))
+                const custody = yield* makeElectronE2eeCustody(join(directory, 'custody')).pipe(
+                  Effect.mapError((error) =>
+                    error.code === 'unavailable' || error.code === 'basic-text'
+                      ? accountFailure('custody_unavailable')
+                      : error
+                  )
+                )
                 const bootstrap = yield* makeDesktopE2eeBootstrap({ directory, accountId, custody })
                 const runtime = yield* Effect.promise(() => import('./e2ee-runtime.mjs'))
                 const host = yield* runtime.makeDesktopE2eeRuntimeHost({
@@ -81,9 +87,15 @@ export function withDesktopE2eeAccount<A>(
             )
             if (Exit.isFailure(opened)) {
               yield* Scope.close(scope, Exit.void)
-              return yield* Effect.fail(new Error('e2ee_custody_unavailable'))
+              return yield* Effect.failCause(opened.cause)
             }
             current = opened.value
+          }
+          // Native open may yield while auth changes. Never hand the old account to work.
+          const latest = auth.getCachedSessionIdentity()
+          if (latest.userId !== identity.userId || latest.generation !== identity.generation) {
+            yield* closeCurrent
+            return yield* Effect.fail(accountFailure('account_unavailable'))
           }
           if (current.closeFailed) return yield* Effect.fail(new Error('e2ee_cleanup_failed'))
           return yield* work(current)
@@ -93,6 +105,8 @@ export function withDesktopE2eeAccount<A>(
   ).catch((error: unknown) => {
     const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
     const allowed = new Set([
+      'account_unavailable',
+      'custody_unavailable',
       'missing-binding',
       'conflict',
       'local-evidence-conflict',

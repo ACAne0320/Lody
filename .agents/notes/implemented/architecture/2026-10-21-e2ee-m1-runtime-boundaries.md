@@ -28,7 +28,7 @@ Ordinary workspaces neither open custody nor acquire a new network prerequisite.
   Web/mobile keep their existing reader. IPC admits product windows and explicit leased-workspace
   operations only; it returns public projections, never secrets or arbitrary signing.
 - Core-authenticated originals enter history.sqlite before feed commit and pin advancement.
-  Failed ingestion closes that owner; reopen reconciles originals. Cache recovery proves the pin and removes only the replaced disposable feed after successful rebuild. A crash between rebase and saving its envelope can also rebuild safely.
+  Verification or storage failures close that owner; reopen reconciles originals. Cache recovery proves the pin and removes only the replaced disposable feed after successful rebuild. A crash between rebase and saving its envelope can also rebuild safely.
 - Window leases keep other readers alive. Account handoff, logout and quit stop admission,
   await actual native operations, then release workspace stores and custody.
 - Node custody preserves existing blob formats, AAD, original publication and rewrap semantics.
@@ -62,3 +62,20 @@ Same-document navigation keeps its lease. Quit cleanup attempts E2EE and other i
 Retained origins compact after 64 added records across reopen. Successful, verified rebuilding closes the replaced feed scope and removes only its SQLite file/sidecars; originals, pins and conflicting evidence are preserved. IPC publishes the full ledger at initial local display and at the final page or an upgrade stop, rather than each page.
 
 Machine keyring operations run in a process-owned helper with a 10-second timeout and credentials on stdin. Timeout fallback requires confirmed process termination; mixed failure/release causes retain the recovery owner and prohibit fallback. Existing OS custody never downgrades. Windows validates the directory in one ACL process; initialization lock contention yields and retries for at most 60 seconds instead of blocking the JS owner.
+
+
+Account IPC reads main-auth's already resolved identity synchronously, with an identity/generation
+recheck after native open. No auth network holds the account lock. A cold start with no resolved
+main identity does not trust renderer accountId: the ledger uses its existing read-only verifier.
+Only unavailable custody/account, closed host, or missing binding permit this fallback, including
+when supplementing a binding from a renderer pin. Genesis/observed checks remain mandatory;
+conflicts, corrupt stores and verification failures still block. Diagnostics expose stable codes only.
+
+Two readers may ingest identical or partially overlapping pages. Compare at most 64 original
+records within the verified prefix, accept only the new suffix, and never rewind the offset/pin.
+An old endpoint must match its locally verified head. Gaps/malformed caller input leave the shared
+owner open; contradictory bytes and verification/storage failures close it and retain evidence.
+Behavior tests cover fallback with and without pins, conflicting pins, offline cached identity,
+account changes during open, definitive sign-out, duplicate/partial/empty old pages and gaps.
+Real OS keychains, interrupted Windows ACL initialization and packaged Electron remain unverified;
+CLI custody has no daemon consumer yet, and interrupted ACL initialization is a PR-10 prerequisite.

@@ -371,3 +371,54 @@ void test('rebases after 64 added records across reopen, without compacting each
     start = end
   }
 })
+
+void test('overlapping pages compare verified bytes, append only their suffix and keep input errors local', async (t) => {
+  const directory = await fixture(t)
+  await execute(
+    Effect.gen(function* () {
+      const owner = yield* ownerWithHost(directory)
+      const prepared = yield* bind(owner)
+      const records = yield* makeRecords(owner.custody, prepared, 7)
+      yield* owner.host.open(workspaceId)
+      const first = page(records.slice(0, 3), prepared.genesisHashHex, 0)
+      const initial = yield* owner.host.ingestLedgerRecords(workspaceId, first)
+      const gap = yield* Effect.result(
+        owner.host.ingestLedgerRecords(workspaceId, page(records, prepared.genesisHashHex, 4))
+      )
+      assert.equal(gap.failure.code, 'invalid-input')
+      // If invalid input closed the owner, reopening would trust this altered cache
+      // locator instead of retaining the live feed's position.
+      historyDb(directory, (db) =>
+        db.prepare('UPDATE records SET locator=? WHERE position=2').run('p1:changed')
+      )
+      assert.equal((yield* owner.host.status(workspaceId)).position, initial.position)
+      assert.deepEqual(yield* owner.host.ingestLedgerRecords(workspaceId, first), initial)
+      const overlapping = page(records, prepared.genesisHashHex, 1)
+      const advanced = yield* owner.host.ingestLedgerRecords(workspaceId, overlapping)
+      assert.equal(advanced.length, 7)
+      assert.equal(advanced.position, overlapping.position)
+      // A slower window's old endpoint is safe only because these exact bytes
+      // and its checkpoint already belong to the locally verified prefix.
+      assert.deepEqual(yield* owner.host.ingestLedgerRecords(workspaceId, first), advanced)
+      assert.deepEqual(
+        yield* owner.host.ingestLedgerRecords(
+          workspaceId,
+          page(records.slice(0, 3), prepared.genesisHashHex, 3)
+        ),
+        advanced
+      )
+      assert.equal(
+        historyDb(directory, (db) => db.prepare('SELECT COUNT(*) AS n FROM records').get().n),
+        7
+      )
+      const conflict = { ...first, recordsHex: [...first.recordsHex] }
+      conflict.recordsHex[1] = conflict.recordsHex[2]
+      const rejected = yield* Effect.result(owner.host.ingestLedgerRecords(workspaceId, conflict))
+      assert.equal(rejected.failure.code, 'local-evidence-conflict')
+      assert.equal(
+        historyDb(directory, (db) => db.prepare('SELECT COUNT(*) AS n FROM records').get().n),
+        7
+      )
+    })
+  )
+})
