@@ -238,7 +238,7 @@ export function GeneralSettingsComponent() {
       };
     }, []);
 
-  const readPushPushSubscriptionEnabled = useCallback(async (): Promise<boolean | undefined> => {
+  const readPushSubscriptionEnabled = useCallback(async (): Promise<boolean | undefined> => {
     if (typeof window === 'undefined' || isElectron) {
       return undefined;
     }
@@ -313,7 +313,7 @@ export function GeneralSettingsComponent() {
       return;
     }
 
-    const webPushSubscriptionEnabled = await readPushPushSubscriptionEnabled();
+    const webPushSubscriptionEnabled = await readPushSubscriptionEnabled();
     if (typeof webPushSubscriptionEnabled === 'boolean') {
       setNotificationsEnabled(webPushSubscriptionEnabled);
       return;
@@ -333,7 +333,7 @@ export function GeneralSettingsComponent() {
     isNative,
     pushClientReady,
     readElectronNotificationPermission,
-    readPushPushSubscriptionEnabled,
+    readPushSubscriptionEnabled,
   ]);
 
   useEffect(() => {
@@ -590,11 +590,12 @@ export function GeneralSettingsComponent() {
         if (user) {
           await pushClient.User.PushSubscription.optIn();
           await pushClient.login(user?.id);
-          setNotificationsEnabled(true);
+          const registered = await getPushSubscriptionOptedIn(pushClient);
+          setNotificationsEnabled(registered);
+          if (!registered) throw new Error('Push registration was not confirmed');
           // push/subscribed + push/token_registered (spec §8f.3, P0/P0): the
-          // user opted in and Push logged in the external id, so this
-          // install is now a registered push target. We never send the raw
-          // token; Push owns it.
+          // backend confirmed this installation for the current login.
+          // Never include the token in analytics.
           capturePostHogEvent(postHog, 'push/subscribed', {
             surface: pushSurface,
             source: 'settings',

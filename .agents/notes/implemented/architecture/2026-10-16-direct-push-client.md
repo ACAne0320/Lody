@@ -28,6 +28,14 @@ the actual native `bundleId` through the portable DTO so a host can route multip
 apps without putting provider credentials or configuration in shared code. The
 host must allowlist app identities; the client field is not app attestation.
 
+Permission and opt-in preference are distinct from confirmed registration.
+Settings report success only after a backend save in the current generation;
+native hosts await the initial OS token/upload and serialize local commands without
+queuing logout behind network uploads. Logout revokes native registration even
+before the authenticated port or delayed login exists, and invalidates scheduled
+login tasks. Hosts must bind subscriptions to the actual login session and reject
+sends after session revocation/expiry; bounded client cleanup alone is not authorization.
+
 Account changes invalidate old callbacks; sign-out stops local registration and
 attempts bounded server cleanup before auth state disappears. Web subscriptions
 use a dedicated worker scope; the hosted worker binds display and clicks to the
@@ -45,6 +53,7 @@ facade preserves the current settings contract without either dependency.
 ## Verification
 
 Behavioral tests cover native token upload, opt-out, late callbacks, Web
-permission/explicit opt-in gates, key rotation, refresh, and reload-before-login logout. Real APNs/FCM delivery and Xcode compilation
+permission/explicit opt-in gates, key rotation, refresh, reload-before-login logout,
+logout-cancelled deferred login, and failure versus confirmed registration. Real APNs/FCM delivery and Xcode compilation
 require the private host's credentials and Apple toolchain; these tests do not
 establish delivery. There is no automatic retry or exactly-once delivery claim.

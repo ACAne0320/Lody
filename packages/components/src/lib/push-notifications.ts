@@ -34,6 +34,7 @@ let port: PushPort | undefined;
 let userId: string | undefined;
 let generation = 0;
 let language = 'en';
+let registeredGeneration: number | undefined;
 let pending: Promise<unknown> = Promise.resolve();
 let writes: Promise<unknown> = Promise.resolve();
 const installationKey = 'lody:push-installation';
@@ -139,6 +140,7 @@ async function save(input: Omit<PushRegistration, 'installationId' | 'language'>
       if (!current || !userId || epoch !== generation || !enabled()) return;
       if (!isNativeAppShell() && !currentWebAccount(epoch)) return;
       await current.register({ ...input, installationId: id, language });
+      if (epoch === generation && enabled()) registeredGeneration = epoch;
     });
   writes = write;
   await write;
@@ -314,7 +316,7 @@ const client = {
         ]);
       },
       async getOptedIn() {
-        if (!enabled()) return false;
+        if (!enabled() || registeredGeneration !== generation) return false;
         if (isNativeAppShell()) return (await window.__LODY_PUSH__?.permission()) === 'granted';
         const reg = await navigator.serviceWorker.getRegistration('/push/lody/');
         return (
@@ -355,9 +357,11 @@ export function schedulePushTask(
   timeoutMs = 2000
 ) {
   const controller = new AbortController();
+  const scheduledGeneration = generation;
   const timer = setTimeout(() => {
     void withPush((value) => {
-      if (!controller.signal.aborted) return task(value, controller.signal);
+      if (!controller.signal.aborted && scheduledGeneration === generation)
+        return task(value, controller.signal);
     }).catch(() => console.error('Push setup failed'));
   }, timeoutMs);
   return () => {
@@ -367,14 +371,12 @@ export function schedulePushTask(
 }
 
 export async function logoutPush() {
-  // A reload loses in-memory login state, but the browser worker/subscription
-  // persists. Sign-out must revoke those even before delayed push setup runs.
+  // Persistent OS/browser registrations outlive the delayed in-memory login.
+  // Local revocation must also run when no authenticated port was mounted.
+  if (typeof window === 'undefined') return;
   if (
-    (!port || !userId) &&
-    (isNativeAppShell() ||
-      typeof navigator === 'undefined' ||
-      !('serviceWorker' in navigator) ||
-      !navigator.locks)
+    !isNativeAppShell() &&
+    (typeof navigator === 'undefined' || !('serviceWorker' in navigator) || !navigator.locks)
   )
     return;
   let timer: ReturnType<typeof setTimeout> | undefined;

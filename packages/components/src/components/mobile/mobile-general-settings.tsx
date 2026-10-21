@@ -171,7 +171,7 @@ export function MobileGeneralSettings() {
       };
     }, []);
 
-  const readPushPushSubscriptionEnabled = useCallback(async (): Promise<boolean | undefined> => {
+  const readPushSubscriptionEnabled = useCallback(async (): Promise<boolean | undefined> => {
     if (typeof window === 'undefined' || isElectron) {
       return undefined;
     }
@@ -246,7 +246,7 @@ export function MobileGeneralSettings() {
       return;
     }
 
-    const webPushSubscriptionEnabled = await readPushPushSubscriptionEnabled();
+    const webPushSubscriptionEnabled = await readPushSubscriptionEnabled();
     if (typeof webPushSubscriptionEnabled === 'boolean') {
       setNotificationsEnabled(webPushSubscriptionEnabled);
       return;
@@ -266,7 +266,7 @@ export function MobileGeneralSettings() {
     isNative,
     pushClientReady,
     readElectronNotificationPermission,
-    readPushPushSubscriptionEnabled,
+    readPushSubscriptionEnabled,
   ]);
 
   useEffect(() => {
@@ -523,7 +523,9 @@ export function MobileGeneralSettings() {
         if (user) {
           await pushClient.User.PushSubscription.optIn();
           await pushClient.login(user?.id);
-          setNotificationsEnabled(true);
+          const registered = await getPushSubscriptionOptedIn(pushClient);
+          setNotificationsEnabled(registered);
+          if (!registered) throw new Error('Push registration was not confirmed');
           // push/subscribed + push/token_registered (spec §8f.3, P0).
           capturePostHogEvent(postHog, 'push/subscribed', {
             surface: pushSurface,
