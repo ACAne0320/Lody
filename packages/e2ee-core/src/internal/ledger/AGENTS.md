@@ -45,8 +45,11 @@ Follow the package [boundary](../../../AGENTS.md) and [record/replay contract](R
   persist exact snapshot/suffix/position together. No SQL-chosen endorser, unknown
   prefix skipping or implied snapshot-only submission authorization.
 - Retained state (`exportVerifiedState`/`restoreVerifiedState`) restores only the
-  caller's own export: no signature, curve-point or digest recheck, no acceptance
-  from another party, no unretained fact invented. Restore results equal full replay.
+  caller's own export: no signature or curve-point recheck, no acceptance from
+  another party, no unretained fact invented. A supplied `stateDigest` is
+  recomputed from the bytes after decoding. Restore results equal full replay.
+- State formats (retained envelope, snapshot body, digest body and domain) are
+  versioned and current-only; changing `S` or an envelope bumps them together.
 - `VerifiedLedger` is the single rollback guard: genuine view, same workspace,
   continuation of the newest observed view, containment of the durable pin.
   Unchanged pins are not rewritten; failed pin writes keep the in-memory view.
