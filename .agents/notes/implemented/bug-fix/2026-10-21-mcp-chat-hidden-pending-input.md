@@ -112,6 +112,8 @@ there is no guaranteed model consumption or maximum time to act.
 Root workspace type checking and type-aware lint passed, as did public, platform
 and process boundary guards and i18n checks.
 
+Root `pnpm check` passed, including all repository test stages (CLI: 4471 passed, 4 skipped).
+
 Documentation check retains six broken links in the subagent-events note pair,
 all present before this change; it adds no errors or SHA-protected topics.
 
