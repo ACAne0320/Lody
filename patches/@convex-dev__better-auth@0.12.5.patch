@@ -21,6 +21,45 @@ index 1b67f02ec..d6eabd0f7 100644
          bearer(),
          oneTimeToken(),
          jwt(),
+diff --git a/dist/client/adapter-utils.js b/dist/client/adapter-utils.js
+index ed8f85781..e2726dcc8 100644
+--- a/dist/client/adapter-utils.js
++++ b/dist/client/adapter-utils.js
+@@ -22,14 +22,17 @@ export const adapterArgsValidator = v.object({
+     offset: v.optional(v.number()),
+ });
+ const isUniqueField = (betterAuthSchema, model, field) => {
+-    const fields = Object.values(betterAuthSchema).find((value) => value.modelName === model)?.fields;
+-    if (!fields) {
+-        return false;
+-    }
+-    return Object.entries(fields)
+-        .filter(([, value]) => value.unique)
+-        .map(([key]) => key)
+-        .includes(field);
++    const table = Object.values(betterAuthSchema).find((value) => value.modelName === model);
++    if (!table) return false;
++    // Better Auth 1.7 declares device code uniqueness as table-level indexes.
++    // A compound unique index does not make any individual field unique.
++    return Object.entries(table.fields).some(
++      ([key, value]) => value.unique && (value.fieldName ?? key) === field
++    ) || (table.indexes ?? []).some((index) => {
++      if (!index.unique || index.fields.length !== 1) return false;
++      const key = index.fields[0];
++      return (table.fields[key]?.fieldName ?? key) === field;
++    });
+ };
+ export const hasUniqueFields = (betterAuthSchema, model, input) => {
+     for (const field of Object.keys(input)) {
+@@ -153,7 +156,7 @@ export const checkUniqueFields = async (ctx, schema, betterAuthSchema, table, in
+             .withIndex(index.indexDescriptor, (q) => q.eq(field, input[field]))
+             .unique();
+         if (existingDoc && existingDoc._id !== doc?._id) {
+-            throw new Error(`${table} ${field} already exists`);
++            throw new Error(`Unique constraint violated: ${table} ${field} already exists`);
+         }
+     }
+ };
 diff --git a/dist/plugins/convex/index.d.ts b/dist/plugins/convex/index.d.ts
 index e316d163f..761935692 100644
 --- a/dist/plugins/convex/index.d.ts
@@ -146,6 +185,47 @@ index 6281482f7..eda273f4f 100644
      bearer(),
      oneTimeToken(),
      jwt(),
+diff --git a/src/client/adapter-utils.ts b/src/client/adapter-utils.ts
+index 7e04ffdf7..fc55242b0 100644
+--- a/src/client/adapter-utils.ts
++++ b/src/client/adapter-utils.ts
+@@ -63,16 +63,17 @@ const isUniqueField = (
+   model: string,
+   field: string
+ ) => {
+-  const fields = Object.values(betterAuthSchema).find(
+-    (value) => value.modelName === model
+-  )?.fields;
+-  if (!fields) {
+-    return false;
+-  }
+-  return Object.entries(fields)
+-    .filter(([, value]) => value.unique)
+-    .map(([key]) => key)
+-    .includes(field);
++  const table = Object.values(betterAuthSchema).find((value) => value.modelName === model);
++  if (!table) return false;
++  // Better Auth 1.7 declares device code uniqueness as table-level indexes.
++  // A compound unique index does not make any individual field unique.
++  return Object.entries(table.fields).some(
++    ([key, value]) => value.unique && (value.fieldName ?? key) === field
++  ) || (table.indexes ?? []).some((index) => {
++    if (!index.unique || index.fields.length !== 1) return false;
++    const key = index.fields[0];
++    return (table.fields[key]?.fieldName ?? key) === field;
++  });
+ };
+ export const hasUniqueFields = (
+   betterAuthSchema: BetterAuthDBSchema,
+@@ -270,7 +271,7 @@ export const checkUniqueFields = async <
+       )
+       .unique();
+     if (existingDoc && existingDoc._id !== doc?._id) {
+-      throw new Error(`${table} ${field} already exists`);
++      throw new Error(`Unique constraint violated: ${table} ${field} already exists`);
+     }
+   }
+ };
 diff --git a/src/plugins/convex/index.ts b/src/plugins/convex/index.ts
 index db4cce2ce..db937f52e 100644
 --- a/src/plugins/convex/index.ts

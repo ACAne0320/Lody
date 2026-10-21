@@ -19,6 +19,10 @@ Translation: current
 
 Convex 集成仍为 0.12.5，其 peer 范围声明为 Better Auth `<1.7.0`。为修复公告，本次升级越过了该官方兼容范围。使用云端的应用必须单独验证适配器与 schema；仅修改 peer 范围不能证明兼容。公共补丁保留 SDK 原有 discovery 文档，移除对 Better Auth 已删除 OIDC helper 的引用。这个 helper 从未注册为授权 provider，因此不是替换或删除实际启用的 provider。运行源码、生成声明和 schema 生成选项同步更新。client/react 入口、跨域 cookie、JWT 创建和 API-key 行为不变。托管适配器的原子操作和持久化 schema 仍由使用它的云端应用负责。重新生成 schema 时不能静默删除历史 OIDC 表。
 
+Better Auth 1.7 将 device/user code 的唯一约束从字段标记移到了表级索引。SDK 补丁也识别单字段唯一索引并映射 `fieldName`；复合索引不能让其中每个字段都被当成唯一字段。创建和更新仍在原 Convex mutation 内检查索引唯一性。已有重复数据会拒绝查询，而不是选择首条记录。新重复错误包含 `Unique constraint`，以便官方验证码生成器执行有次数上限的碰撞重试。补丁不重写记录或表。回归覆盖真实 component API、两类验证码碰撞和历史重复记录。独立反证另覆盖字段重命名与复合索引。
+
+公共审核：[LodyAI/Lody #1798](https://github.com/LodyAI/Lody/pull/1798)。
+
 ## 验证与发布边界
 
 路由回归覆盖明确查看、批准、拒绝，异常或不可信响应，网络失败，请求信息变化，账户变化和迟到响应。Storybook 包含确认、空 scope、拒绝状态。仓库 `pnpm check`、最终全量类型检查与 lint、CLI 和 Electron 生产构建、冻结离线锁文件校验、文档检查均通过。最终认证专项共 68 项测试通过，覆盖 discovery 与原生/跨域会话契约。依赖审计没有 Better Auth 告警，其余历史告警不在本次范围内。本地测试或公告消失都不能证明真实账户 OAuth、跨域 cookie、打包后的 Electron/Capacitor 登录。

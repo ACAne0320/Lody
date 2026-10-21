@@ -53,6 +53,19 @@ JWT creation and API-key behavior are unchanged. Hosted adapter atomic operation
 and persisted schema remain the responsibility of the consuming cloud application.
 A regenerated schema must not silently delete historical OIDC tables.
 
+Better Auth 1.7 moves device/user code uniqueness from field flags to table-level
+indexes. The SDK patch also recognizes single-field unique indexes and maps
+`fieldName`; compound indexes must not make individual fields unique. Creation
+and update retain their indexed uniqueness check inside the existing Convex
+mutation. Pre-existing duplicates fail closed rather than selecting the first row.
+New duplicate errors include `Unique constraint`, which the official device-code
+generator recognizes for its bounded collision retry. No records or tables are
+rewritten by this patch. The companion regression exercises the real component
+API, both code collisions and legacy duplicates. Independent counterexamples also
+cover renamed fields and compound indexes.
+
+Public review: [LodyAI/Lody #1798](https://github.com/LodyAI/Lody/pull/1798).
+
 ## Verification and rollout boundaries
 
 The owning route suite exercises explicit review, approval and denial, malformed
