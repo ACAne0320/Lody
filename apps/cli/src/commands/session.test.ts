@@ -1541,7 +1541,7 @@ describe('session command helpers', () => {
   });
 
   it.each(['archive', 'restore', 'delete'] as const)(
-    'synchronizes the %s snapshot before any mutation and preserves its cascade',
+    'synchronizes the %s snapshot and changes only the selected containment tree',
     async (operation) => {
       const root = createSessionMeta({
         id: 'sync-root' as SessionId,
@@ -1555,8 +1555,20 @@ describe('session command helpers', () => {
       const opened = createSessionMeta({
         id: 'sync-opened' as SessionId,
         openedBySessionId: child.id,
+        openedByRootSessionId: root.id,
         isArchived: root.isArchived,
       });
+      const openedChild = createSessionMeta({
+        id: 'sync-opened-child' as SessionId,
+        parentSessionId: opened.id,
+        isArchived: root.isArchived,
+      });
+      const directlyOpened = createSessionMeta({
+        id: 'sync-directly-opened' as SessionId,
+        openedBySessionId: root.id,
+        isArchived: root.isArchived,
+      });
+      const independentSessions = [opened, openedChild, directlyOpened];
       const repo = await LoroRepo.create({});
       try {
         await repo.upsertDocMeta(getSessionRoomId(root.id), root);
@@ -1570,7 +1582,7 @@ describe('session command helpers', () => {
             started.resolve();
             await sync.promise;
             if (failSync) throw new Error('metadata unavailable');
-            for (const session of [child, opened])
+            for (const session of [child, ...independentSessions])
               await repo.upsertDocMeta(getSessionRoomId(session.id), session);
           },
           waitUntilMetaSynced: async () => true,
@@ -1589,16 +1601,21 @@ describe('session command helpers', () => {
         failSync = false;
         await expect(
           runSessionOperationWithSyncedMetadata(manager, root.id, operation)
-        ).resolves.toEqual(operation === 'archive' ? [child.id, opened.id] : [child.id]);
-        for (const session of [root, child, opened]) {
+        ).resolves.toEqual([child.id]);
+        for (const session of [root, child]) {
           const entry = await repo.getDocMeta(getSessionRoomId(session.id));
-          if (operation === 'delete' && session !== opened) {
+          if (operation === 'delete') {
             expect(isLoroRepoDocDeleted(entry)).toBe(true);
           } else {
             expect(isLoroRepoDocDeleted(entry)).toBe(false);
-            expect(entry?.meta.isArchived).toBe(operation === 'archive' || session === opened);
+            expect(entry?.meta.isArchived).toBe(operation === 'archive');
             if (operation === 'archive') expect(entry?.meta.status).toEqual({ type: 'idle' });
           }
+        }
+        for (const session of independentSessions) {
+          const entry = await repo.getDocMeta(getSessionRoomId(session.id));
+          expect(isLoroRepoDocDeleted(entry)).toBe(false);
+          expect(entry?.meta).toEqual(session);
         }
         expect(cleaned).toEqual(operation === 'delete' ? [child.id, root.id] : []);
       } finally {

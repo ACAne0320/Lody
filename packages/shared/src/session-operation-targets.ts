@@ -43,11 +43,13 @@ export async function readSessionOperationTargets(
   }
 
   const descendants =
-    operation === 'archive' || operation === 'collaboration'
-      ? collectSessionArchiveTargets(sessionId, sessions)
-      : sessions.filter(
-          (session) => session.id !== sessionId && session.parentSessionId === sessionId
-        );
+    operation === 'collaboration'
+      ? collectSessionCollaborationTargets(sessionId, sessions)
+      : operation === 'archive'
+        ? collectSessionArchiveTargets(sessionId, sessions)
+        : sessions.filter(
+            (session) => session.id !== sessionId && session.parentSessionId === sessionId
+          );
   return [root, ...descendants];
 }
 
@@ -67,4 +69,29 @@ export async function isSessionCollaborationStopped(
     current = meta.parentSessionId ?? meta.openedBySessionId;
   }
   return false;
+}
+
+/** Explicit collaboration stop includes opened work, unlike archive/restore/delete. */
+function collectSessionCollaborationTargets(
+  sessionId: SessionId,
+  sessions: readonly SessionMeta[]
+): SessionMeta[] {
+  const children = new Map<SessionId, SessionMeta[]>();
+  for (const session of sessions) {
+    const parentId = session.parentSessionId ?? session.openedBySessionId;
+    if (!parentId) continue;
+    const siblings = children.get(parentId) ?? [];
+    siblings.push(session);
+    children.set(parentId, siblings);
+  }
+  const visited = new Set<SessionId>([sessionId]);
+  const targets: SessionMeta[] = [];
+  for (const parentId of visited) {
+    for (const child of children.get(parentId) ?? []) {
+      if (visited.has(child.id)) continue;
+      visited.add(child.id);
+      targets.push(child);
+    }
+  }
+  return targets;
 }

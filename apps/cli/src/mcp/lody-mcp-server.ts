@@ -4610,7 +4610,7 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
     {
       title: 'Archive a Lody session',
       description:
-        'Idempotently archive a Session. Archiving a parent cascades to child Sessions; pending Operation Deliveries remain pending until a human restores the Session.',
+        'Idempotently archive a Session and its contained child Tabs. Independently opened Sessions (openedBySessionId) are not archived. Pending Operation Deliveries remain pending until a human restores the Session.',
       inputSchema: SessionArchiveToolInputSchema,
     },
     async (args: SessionArchiveToolInput) => {

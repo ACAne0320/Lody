@@ -1,14 +1,14 @@
 import type { SessionMeta } from './schema';
 import type { SessionId } from './ids';
 
-/** Archive descendants without turning provenance into deletion ownership. */
+/** Archive contained Tabs only; opened-by provenance is not lifecycle ownership. */
 export function collectSessionArchiveTargets(
   sessionId: SessionId,
   sessions: readonly SessionMeta[]
 ): SessionMeta[] {
   const children = new Map<SessionId, SessionMeta[]>();
   for (const session of sessions) {
-    const owner = session.parentSessionId ?? session.openedBySessionId;
+    const owner = session.parentSessionId;
     if (!owner) continue;
     const siblings = children.get(owner) ?? [];
     siblings.push(session);
