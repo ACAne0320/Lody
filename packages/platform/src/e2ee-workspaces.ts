@@ -36,7 +36,9 @@ export interface PlatformE2eeWorkspaces {
    * same request, never generate another identity or silently create plaintext.
    */
   readonly create: (input: E2eeWorkspaceCreateRequest) => Promise<E2eeWorkspaceCreateResult>;
-  /** Resolve persisted mode or explicit legacy admission before cloud attachment.
+  /** Resolve persisted mode or explicit legacy admission. Workspaces with local
+   * encrypted evidence or an encrypted listing need it before cloud attachment;
+   * others open provisionally and are verified in the background.
    * Legacy admission does not classify a workspace as plaintext. Cached IDs,
    * missing fields and unknown modes are never inferred to be plaintext proof.
    */
