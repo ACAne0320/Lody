@@ -1,8 +1,14 @@
+import { Effect } from 'effect';
+import type {
+  LocalProbeClientService,
+  LocalProbeHealthResponse,
+} from '@lody/shared/node/local-ipc';
+import { readExternalMcpEndpoint } from './endpoint';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { authenticateExternalAccess, enableExternalAccess, readMcpEndpoint } from './access';
+import { authenticateExternalAccess, enableExternalAccess } from './access';
 import { ExternalRequests, publicExternalReceipt } from './requests';
 
 const scope = { userId: 'owner', workspaceId: 'workspace', machineId: 'machine' };
@@ -16,20 +22,37 @@ describe('external MCP credentials and write receipts', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('reports an unavailable endpoint with daemon startup guidance, then reads the published address', async () => {
-    const file = path.join(root, 'endpoint.json');
-    await expect(readMcpEndpoint(file)).rejects.toThrow('Start or restart the Lody daemon');
-    await fs.writeFile(file, JSON.stringify({ port: 45678 }));
-    expect(await readMcpEndpoint(file)).toBe('http://127.0.0.1:45678/mcp/external');
-  });
-
-  it('rejects malformed endpoint descriptors and distinguishes read failures', async () => {
-    const file = path.join(root, 'endpoint.json');
-    for (const contents of ['{', '{"port":0}', '{"port":65536}', '{"port":"45678"}']) {
-      await fs.writeFile(file, contents);
-      await expect(readMcpEndpoint(file)).rejects.toThrow('Local MCP endpoint is invalid');
-    }
-    await expect(readMcpEndpoint(root)).rejects.toThrow('Local MCP endpoint cannot be read');
+  it('reads current daemon state without retaining an old MCP address', async () => {
+    let health: LocalProbeHealthResponse = {
+      ok: true,
+      machineId: 'machine',
+      pid: 1,
+      cliVersion: 'test',
+      homeDir: '/synthetic',
+    };
+    const probe: LocalProbeClientService = {
+      health: () => Effect.succeed(health),
+      state: () => Effect.die('unused'),
+    };
+    await expect(Effect.runPromise(readExternalMcpEndpoint(probe))).rejects.toThrow(
+      'does not report'
+    );
+    health = { ...health, mcpHttpPort: null };
+    await expect(Effect.runPromise(readExternalMcpEndpoint(probe))).rejects.toThrow(
+      'host is unavailable'
+    );
+    health = { ...health, mcpHttpPort: 45678 };
+    await expect(Effect.runPromise(readExternalMcpEndpoint(probe))).resolves.toBe(
+      'http://127.0.0.1:45678/mcp/external'
+    );
+    health = { ...health, mcpHttpPort: null };
+    await expect(Effect.runPromise(readExternalMcpEndpoint(probe))).rejects.toThrow(
+      'host is unavailable'
+    );
+    health = { ...health, mcpHttpPort: 45679 };
+    await expect(Effect.runPromise(readExternalMcpEndpoint(probe))).resolves.toBe(
+      'http://127.0.0.1:45679/mcp/external'
+    );
   });
 
   it('binds the token to one scope and revokes it on rotation or removal', async () => {

@@ -22,9 +22,12 @@ callbacks.
 The selected deployment is the existing loopback HTTP host, using `/mcp/external`.
 `mcp access enable` issues a token shown once, `status` reports its endpoint, and
 `disable` revokes new calls. Only a hash and explicit user/workspace/machine binding
-are persisted. Rotation preserves external request identities. The host reuses its
-saved port where available; publishing the endpoint is best-effort so an external
-discovery failure cannot take down internal MCP.
+are persisted. Rotation preserves external request identities. The CLI queries the
+supervisor's current port through local IPC health, without an endpoint file or
+cross-daemon port persistence. The supervisor retains its preferred port in memory
+for host recovery; a daemon restart may change the client URL. Probe responses
+contain only the port, never the internal token. Missing support and a temporarily
+unavailable host remain distinct errors, and query failure cannot rotate a token.
 
 This is a new authentication/durability boundary requiring human review, recorded
 in the draft [external MCP Spec](../../../../specs/external-mcp.md). The existing
@@ -74,8 +77,6 @@ has an in-memory request/response test. CLI type checking and public/platform/
 local-writer/Inbox boundary guards pass. This does not claim testing with a
 third-party desktop client, a hosted cloud account, or power-loss fault injection.
 
-The endpoint descriptor is published by the HTTP host, not the access command.
-An older running host cannot publish it merely because a newer CLI is invoked.
-Missing descriptors now report startup/version/profile guidance; invalid descriptors
-and read failures report distinct errors. Filesystem tests cover these cases and
-a subsequent valid publication.
+Endpoint tests cover unsupported older daemons, unavailable/live/recovered hosts
+and fresh port reads. The existing IPC server suite verifies dynamic port changes
+through the real probe handler and shared client parser.

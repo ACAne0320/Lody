@@ -9,21 +9,22 @@ export interface LocalProbeConfig {
   cliVersion: string;
   logger: Logger;
   getRuntimeState: () => CliRuntimeState;
+  getMcpHttpPort?: () => number | null;
 }
 
 export function createLocalProbeRequestHandler(config: LocalProbeConfig): http.RequestListener {
-  const responseBody = JSON.stringify({
+  const responseBody = {
     ok: true,
     machineId: config.machineId,
     pid: process.pid,
     cliVersion: config.cliVersion,
     homeDir: os.homedir(),
-  });
+  };
 
   return (req, res) => {
     if (req.method === 'GET' && req.url === '/healthz') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(responseBody);
+      res.end(JSON.stringify({ ...responseBody, mcpHttpPort: config.getMcpHttpPort?.() ?? null }));
       return;
     }
 

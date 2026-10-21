@@ -18,8 +18,11 @@ PR: [#1766](https://github.com/LodyAI/Lody/pull/1766)
 
 采用现有 loopback HTTP host 的 `/mcp/external` 路由。`mcp access enable`
 签发仅展示一次的 token，`status` 显示地址，`disable` 撤销新调用。磁盘只保存
-token 哈希和明确的用户/workspace/机器绑定；轮换保留外部请求身份。host 尽量
-复用已保存端口，地址发布采用 best-effort，避免外部发现失败影响内部 MCP。
+token 哈希和明确的用户/workspace/机器绑定；轮换保留外部请求身份。CLI 通过
+本机 IPC health 查询 supervisor 当前端口，不读写地址文件，也不跨 daemon
+重启保存端口。supervisor 在内存中保留首选端口用于 host 恢复；daemon 重启后
+客户端 URL 可能改变。probe 只公开端口，不暴露内部 token；不支持查询与 host
+暂不可用分别报错，查询失败不会轮换 token。
 
 新增认证和持久性边界需要人工评审，记录在
 [外部 MCP Spec 草案](../../../../specs/external-mcp.zh.md)。
@@ -59,6 +62,5 @@ Effect feature/fix 评估：涉及的服务和 HTTP owner 仍依赖既有 Promis
 测试。CLI 类型检查及公开仓库/平台/local writer/Inbox 边界检查通过。
 不声称已经验证第三方桌面客户端、托管云账户或断电故障注入。
 
-地址描述文件由 HTTP host 写入，而非 access 命令生成。只运行新版 CLI
-不会让旧 host 生成该文件。文件缺失时给出启动、版本和安装配置提示，
-格式无效和读取失败分别报错；文件系统测试覆盖这些情况及随后成功发布地址。
+地址测试覆盖旧 daemon 不支持查询、host 不可用/可用/恢复以及端口实时更新。
+已有 IPC server 测试通过真实 probe handler 和共享 client parser 验证动态端口。

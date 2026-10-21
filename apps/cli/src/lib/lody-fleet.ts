@@ -53,7 +53,11 @@ import {
   type TerminalSessionMetaLookup,
 } from '@/lib/terminal-workdir-resolver';
 import { findWorkspacesBySelector, formatWorkspaceCandidate } from '@/lib/workspace-selector';
-import { startLodyMcpHttpServer, stopLodyMcpHttpServer } from '@/mcp/lody-mcp-http-server';
+import {
+  getLodyMcpHttpEndpoint,
+  startLodyMcpHttpServer,
+  stopLodyMcpHttpServer,
+} from '@/mcp/lody-mcp-http-server';
 import { MemoryPressureSampler } from '@/monitor/memory-pressure-sampler';
 import pkg from '@/pkg';
 import {
@@ -271,6 +275,10 @@ export class LodyFleet {
       cliVersion: pkg.version,
       logger: this.logger,
       getRuntimeState: () => this.runtimeStateReporter.snapshot(),
+      getMcpHttpPort: () => {
+        const endpoint = getLodyMcpHttpEndpoint();
+        return endpoint ? Number(new URL(endpoint.url).port) : null;
+      },
     };
 
     this.runtimeStateReporter.setStartupStage('fleet-start');

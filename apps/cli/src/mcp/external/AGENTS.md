@@ -19,3 +19,6 @@ implementation background in the [parent README](../README.md#http-and-loopback)
   Accepted means command return plus repo flush, not Agent completion.
 - Revocation rejects new admission; it does not cancel an admitted command.
   HTTP waiter cancellation does not establish that daemon work has stopped.
+
+- Discover the current MCP port through the daemon's local IPC health response.
+  Never persist a second endpoint snapshot or expose the internal host token.

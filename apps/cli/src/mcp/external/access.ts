@@ -16,7 +16,6 @@ const AccessSchema = z
   .strict();
 export type ExternalAccess = z.infer<typeof AccessSchema>;
 export const externalAccessPath = () => path.join(getLodyDataDir(), 'mcp-external-access.json');
-export const mcpEndpointPath = () => path.join(getLodyDataDir(), 'mcp-http-endpoint.json');
 export const hashAccessToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export async function syncPrivateDirectory(directory: string): Promise<void> {
@@ -83,32 +82,4 @@ export async function authenticateExternalAccess(token: string, file = externalA
   )
     ? access
     : null;
-}
-
-export async function readMcpEndpoint(file = mcpEndpointPath()): Promise<string> {
-  let contents: string;
-  try {
-    contents = await fs.readFile(file, 'utf8');
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      throw new Error(
-        'Local MCP endpoint is not available yet. Start or restart the Lody daemon using a version that supports external MCP access, then retry after the HTTP host starts. ' +
-          'The CLI and daemon must use the same LODY_PLATFORM and LODY_DATA_DIR settings; LODY_MCP_HTTP_DISABLED must not be 1.',
-        { cause: error }
-      );
-    }
-    throw new Error('Local MCP endpoint cannot be read; check the data directory permissions.', {
-      cause: error,
-    });
-  }
-  try {
-    const endpoint = z
-      .object({ port: z.number().int().min(1).max(65535) })
-      .parse(JSON.parse(contents));
-    return `http://127.0.0.1:${endpoint.port}/mcp/external`;
-  } catch (error) {
-    throw new Error('Local MCP endpoint is invalid. Restart the Lody daemon to republish it.', {
-      cause: error,
-    });
-  }
 }

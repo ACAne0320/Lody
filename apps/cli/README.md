@@ -78,11 +78,12 @@ workspace. `lody mcp access status` shows the current URL and
 `lody mcp access disable` revokes new calls. Re-enabling rotates the token.
 The endpoint remains loopback-only. See [supported tools and retry behavior](src/mcp/README.md#http-and-loopback).
 
-If the local MCP endpoint is unavailable, restart the daemon with that build and
-retry after its HTTP host starts. Running an updated CLI against an older daemon
-is insufficient. Use the same `LODY_PLATFORM` / `LODY_DATA_DIR` settings for both
-processes, and ensure `LODY_MCP_HTTP_DISABLED` is not `1`. The host publishes the
-endpoint file; do not create it manually.
+The CLI queries the running daemon for the current endpoint over local IPC;
+no MCP endpoint file is used. The port stays stable while the host runs. After a
+daemon restart, run `lody mcp access status` and update the client URL if needed.
+The CLI and daemon must use the same `LODY_PLATFORM` / `LODY_DATA_DIR` settings.
+If the daemon does not support this query, restart it with the updated build;
+if the host is unavailable, retry after startup and check `LODY_MCP_HTTP_DISABLED`.
 
 The cloud workspace CLI and Lody MCP share resource queries. Lists return 20 entries
 by default (maximum page size 100), `hasMore` and an optional `nextCursor`. Continue

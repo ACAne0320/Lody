@@ -8,12 +8,7 @@ import { getLocalControlSocketPath } from '@lody/shared/node/local-ipc';
 import { makeLocalControlClientAuto } from '@lody/shared/node/local-ipc';
 import { Effect } from 'effect';
 import { z } from 'zod';
-import {
-  authenticateExternalAccess,
-  mcpEndpointPath,
-  readMcpEndpoint,
-  writePrivateJson,
-} from './external/access';
+import { authenticateExternalAccess } from './external/access';
 import { buildExternalMcpServer } from './external/tools';
 import { createFileLogger, type Logger } from '@/utils/logger';
 import { formatErrorMessage } from '@/utils/format-error';
@@ -91,22 +86,10 @@ export async function runLodyMcpHttpHost(): Promise<void> {
     return;
   }
   const preferredPortRaw = process.env[MCP_HTTP_PREFERRED_PORT_ENV];
-  let preferredPort = preferredPortRaw ? Number.parseInt(preferredPortRaw, 10) : 0;
-  if (!preferredPort) {
-    try {
-      preferredPort = Number(new URL(await readMcpEndpoint()).port);
-    } catch {
-      // An absent previous endpoint needs no port reservation.
-    }
-  }
+  const preferredPort = preferredPortRaw ? Number.parseInt(preferredPortRaw, 10) : 0;
 
   const server = createMcpHttpServer(token, logger);
   const port = await listen(server, Number.isNaN(preferredPort) ? 0 : preferredPort);
-  try {
-    await writePrivateJson(mcpEndpointPath(), { port });
-  } catch {
-    logger.warn('[mcp-http-host] could not publish the local external endpoint');
-  }
   logger.info(`[mcp-http-host] listening on 127.0.0.1:${port}`);
 
   const handshake: McpHttpHostHandshake = { type: 'lody-mcp-http-listening', port };

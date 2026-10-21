@@ -162,7 +162,12 @@ describe('local IPC socket server', () => {
 
   it('serves probe and control requests over sockets and cleans the run-file', async () => {
     const paths = makePaths();
-    await startLocalIpcSocketServers(makeServerConfig(paths));
+    let mcpHttpPort: number | null = null;
+    const config = makeServerConfig(paths);
+    await startLocalIpcSocketServers({
+      ...config,
+      probe: { ...config.probe, getMcpHttpPort: () => mcpHttpPort },
+    });
 
     expect(readLocalDaemonRunFile(paths.runFilePath)).toMatchObject({
       pid: process.pid,
@@ -178,7 +183,13 @@ describe('local IPC socket server', () => {
       machineId: 'machine-1',
       pid: process.pid,
       cliVersion: '0.0.0-test',
+      mcpHttpPort: null,
     });
+    const probe = makeLocalProbeClientSocket({ socketPath: paths.probeSocketPath });
+    mcpHttpPort = 45678;
+    expect((await Effect.runPromise(probe.health())).mcpHttpPort).toBe(45678);
+    mcpHttpPort = null;
+    expect((await Effect.runPromise(probe.health())).mcpHttpPort).toBeNull();
 
     await expect(
       Effect.runPromise(

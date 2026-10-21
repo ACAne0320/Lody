@@ -68,6 +68,8 @@ const LocalProbeHealthResponseSchema = z.object({
   pid: z.number().int().positive(),
   cliVersion: z.string().min(1),
   homeDir: z.string().min(1),
+  // Absent on older daemons; null while the supervised MCP host is unavailable.
+  mcpHttpPort: z.number().int().min(1).max(65535).nullable().optional(),
 });
 
 export type LocalProbeHealthResponse = z.infer<typeof LocalProbeHealthResponseSchema>;

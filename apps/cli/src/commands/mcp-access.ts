@@ -1,3 +1,4 @@
+import { readExternalMcpEndpoint } from '@/mcp/external/endpoint';
 import { Command } from 'commander';
 import fs from 'node:fs/promises';
 import { Effect } from 'effect';
@@ -7,7 +8,6 @@ import {
   enableExternalAccess,
   externalAccessPath,
   readExternalAccess,
-  readMcpEndpoint,
 } from '@/mcp/external/access';
 
 export const mcpAccessCommand = new Command('access')
@@ -31,8 +31,8 @@ export const mcpAccessCommand = new Command('access')
               })),
             options.workspace
           );
-          // Require a published host endpoint before replacing a credential.
-          const url = await readMcpEndpoint();
+          // Query the running host before replacing a credential.
+          const url = await Effect.runPromise(readExternalMcpEndpoint());
           const { token } = await enableExternalAccess({
             userId: catalog.identity.userId,
             machineId: catalog.machine.machineId,
@@ -65,7 +65,7 @@ export const mcpAccessCommand = new Command('access')
               access
                 ? {
                     enabled: true,
-                    url: await readMcpEndpoint(),
+                    url: await Effect.runPromise(readExternalMcpEndpoint()),
                     workspaceId: access.workspaceId,
                   }
                 : { enabled: false }

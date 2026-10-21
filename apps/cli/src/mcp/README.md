@@ -26,8 +26,12 @@ token and prints its URL/header once. Only its hash and owner/workspace/machine
 scope are saved. `access status` reports the URL without credentials; enabling
 again rotates the token, and `access disable` revokes new requests. Previously
 accepted tasks continue. This token is a local capability, not a product CLI
-account token. The daemon must be running; the host reuses its saved port when
-available. If that port is taken, obtain the new URL from `access status`.
+account token. The CLI reads the current port from the daemon's local IPC health
+response; no endpoint file is written or read. The supervisor keeps its preferred
+port in memory for host recovery. A daemon restart may select a different port;
+obtain the current URL from `access status`. Older daemons without the health
+extension report unsupported; an unavailable host reports no current endpoint.
+Only the port is exposed by the probe, never the internal MCP bearer token.
 
 External tools reuse discovery registration, history paging and Session command
 services. Their catalog covers resource discovery, own-machine/own-user Session
