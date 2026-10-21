@@ -253,6 +253,8 @@ function FoldedGroupsSidebar({ folded, heading }: { folded: boolean; heading?: s
             <SessionList
               sessions={REPO_SESSIONS}
               repos={repos}
+              onEditRepoProject={() => undefined}
+              onArchiveRepoChats={() => undefined}
               onToggleRepoCollapsed={(repoFullName) =>
                 setRepos((prev) =>
                   prev.map((repo) =>

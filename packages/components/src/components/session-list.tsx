@@ -229,6 +229,9 @@ export type SessionListProps = {
   onArchiveProjectGroupChats?: (sessionIds: string[]) => void;
   /** Reorders Project groups; receives every listed group id in its new order. */
   onMoveProjectGroup?: (projectIds: string[]) => void;
+  /** A GitHub repository row's "Edit project…": the editor seeded with it. */
+  onEditRepoProject?: (repoFullName: string) => void;
+  onArchiveRepoChats?: (sessionIds: string[]) => void;
   onArchiveSession?: (sessionId: string) => void;
   onMarkSessionUnread?: (sessionId: string) => void;
   onRenameSession?: (sessionId: string, nextTitle: string) => void | Promise<void>;
@@ -583,6 +586,9 @@ type SessionGroupSectionProps = {
   onArchiveProjectGroupChats?: (sessionIds: string[]) => void;
   /** Reorders Project groups; receives every listed group id in its new order. */
   onMoveProjectGroup?: (projectIds: string[]) => void;
+  /** A GitHub repository row's "Edit project…": the editor seeded with it. */
+  onEditRepoProject?: (repoFullName: string) => void;
+  onArchiveRepoChats?: (sessionIds: string[]) => void;
   onArchiveSession?: (sessionId: string) => void;
   onMarkSessionUnread?: (sessionId: string) => void;
   onRenameSession?: (sessionId: string, nextTitle: string) => void | Promise<void>;
@@ -1568,6 +1574,8 @@ const SessionGroupSection = memo(function SessionGroupSection({
   onNewInProjectGroup,
   onOpenProjectGroupSettings,
   onArchiveProjectGroupChats,
+  onEditRepoProject,
+  onArchiveRepoChats,
   onArchiveSession,
   onMarkSessionUnread,
   onRenameSession,
@@ -1593,6 +1601,13 @@ const SessionGroupSection = memo(function SessionGroupSection({
   const { t } = useTranslation();
   const moreActionsLabel = t('sessions.moreActions', 'More actions');
   const isProjectGroup = group.kind === 'projectGroup';
+  // A repository row offers the menu a folder row does; touch has no hover menu.
+  const repoMenuEnabled =
+    group.kind === 'repo' &&
+    Boolean(group.repoFullName) &&
+    !isMobile &&
+    (Boolean(onEditRepoProject) || Boolean(onArchiveRepoChats));
+  const [repoMenuOpen, setRepoMenuOpen] = useState(false);
   const showGroupHeaderIcon = group.kind === 'repo' || isProjectGroup;
   const [renameTarget, setRenameTarget] = useState<RenameSessionDialogTarget | null>(null);
   const beginRename = useCallback((sessionId: string, currentTitle: string) => {
@@ -1722,114 +1737,178 @@ const SessionGroupSection = memo(function SessionGroupSection({
         />
       ) : (
         <div className={cn('group flex items-center', isGroupLabel ? 'h-[26px]' : 'h-7')}>
-          <div
-            role={canNavigate || canToggle ? 'button' : undefined}
-            tabIndex={canNavigate || canToggle ? 0 : -1}
-            data-id={`group:${group.key}`}
-            data-scope-item="row"
-            data-sidebar-group-key={group.key}
-            className={cn(
-              'relative flex w-full select-none items-center rounded-md px-2 text-left',
-              isGroupLabel ? 'h-[26px] gap-1.5' : cn('h-7', isMobile ? 'gap-1' : 'gap-0.5'),
-              'border border-transparent',
-              'min-w-0 flex-1 transition-colors',
-              headerTypographyClass,
-              showActiveGroupState
-                ? 'cursor-pointer border-sidebar-ring/30 bg-sidebar-selection text-sidebar-selection-foreground hover:bg-sidebar-selection'
-                : canNavigate
-                  ? cn(
-                      'cursor-pointer bg-transparent',
-                      headerBaseColorClass,
-                      !isMobile &&
-                        (isGroupLabel ? 'hover:text-sidebar-foreground' : 'hover:bg-sidebar-hover')
-                    )
-                  : canToggle
-                    ? cn('cursor-pointer bg-transparent', headerBaseColorClass)
-                    : cn('cursor-default bg-transparent', headerBaseColorClass)
-            )}
-            onClick={canNavigate ? handleNavigate : handleToggleGroup}
-            onKeyDown={
-              canNavigate
-                ? (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      handleNavigate();
-                    }
-                  }
-                : canToggle
-                  ? (e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleToggleGroup();
-                      }
-                    }
-                  : undefined
-            }
-          >
-            {showGroupHeaderIcon ? (
-              <button
-                type="button"
-                className="relative flex h-5 w-5 shrink-0 items-center justify-center"
-                onClick={
-                  canToggle
+          {(() => {
+            const headerRow = (
+              <div
+                role={canNavigate || canToggle ? 'button' : undefined}
+                tabIndex={canNavigate || canToggle ? 0 : -1}
+                data-id={`group:${group.key}`}
+                data-scope-item="row"
+                data-sidebar-group-key={group.key}
+                data-menu-open={repoMenuOpen ? '' : undefined}
+                className={cn(
+                  'relative flex w-full select-none items-center rounded-md px-2 text-left',
+                  isGroupLabel ? 'h-[26px] gap-1.5' : cn('h-7', isMobile ? 'gap-1' : 'gap-0.5'),
+                  'border border-transparent',
+                  'min-w-0 flex-1 transition-colors',
+                  headerTypographyClass,
+                  showActiveGroupState
+                    ? 'cursor-pointer border-sidebar-ring/30 bg-sidebar-selection text-sidebar-selection-foreground hover:bg-sidebar-selection'
+                    : canNavigate
+                      ? cn(
+                          'cursor-pointer bg-transparent',
+                          headerBaseColorClass,
+                          !isMobile &&
+                            (isGroupLabel
+                              ? 'hover:text-sidebar-foreground'
+                              : 'hover:bg-sidebar-hover')
+                        )
+                      : canToggle
+                        ? cn('cursor-pointer bg-transparent', headerBaseColorClass)
+                        : cn('cursor-default bg-transparent', headerBaseColorClass)
+                )}
+                onClick={canNavigate ? handleNavigate : handleToggleGroup}
+                onKeyDown={
+                  canNavigate
                     ? (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleToggleGroup();
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleNavigate();
+                        }
                       }
-                    : undefined
+                    : canToggle
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleToggleGroup();
+                          }
+                        }
+                      : undefined
                 }
               >
-                {isProjectGroup ? (
-                  <Folders
-                    aria-hidden="true"
-                    className={cn(
-                      'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 opacity-70 transition-opacity duration-100',
-                      canToggle && isMobile ? 'opacity-0' : cn(canToggle && 'group-hover:opacity-0')
+                {showGroupHeaderIcon ? (
+                  <button
+                    type="button"
+                    className="relative flex h-5 w-5 shrink-0 items-center justify-center"
+                    onClick={
+                      canToggle
+                        ? (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleToggleGroup();
+                          }
+                        : undefined
+                    }
+                  >
+                    {isProjectGroup ? (
+                      <Folders
+                        aria-hidden="true"
+                        className={cn(
+                          'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 opacity-70 transition-opacity duration-100',
+                          canToggle && isMobile
+                            ? 'opacity-0'
+                            : cn(canToggle && 'group-hover:opacity-0')
+                        )}
+                      />
+                    ) : (
+                      <GitHubOwnerIcon
+                        repoFullName={group.repoFullName}
+                        className={cn(
+                          // Left-anchored (not centered in the 20px button) so its left edge
+                          // lines up with the session rows' leading status slot below.
+                          'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 transition-opacity duration-100',
+                          // Mobile: chevron is always shown so the owner avatar must hide
+                          // permanently to avoid the two icons overlapping.
+                          canToggle && isMobile
+                            ? 'opacity-0'
+                            : cn(canToggle && 'group-hover:opacity-0')
+                        )}
+                      />
                     )}
-                  />
-                ) : (
-                  <GitHubOwnerIcon
-                    repoFullName={group.repoFullName}
-                    className={cn(
-                      // Left-anchored (not centered in the 20px button) so its left edge
-                      // lines up with the session rows' leading status slot below.
-                      'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 transition-opacity duration-100',
-                      // Mobile: chevron is always shown so the owner avatar must hide
-                      // permanently to avoid the two icons overlapping.
-                      canToggle && isMobile ? 'opacity-0' : cn(canToggle && 'group-hover:opacity-0')
+                    {canToggle && (
+                      <ChevronDown
+                        className={cn(
+                          'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4',
+                          'transition-[opacity,translate,scale,rotate] duration-150 ease-out',
+                          isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                          group.collapsed ? '-rotate-90' : 'rotate-0'
+                        )}
+                      />
                     )}
-                  />
-                )}
-                {canToggle && (
+                  </button>
+                ) : null}
+                <span className="min-w-0 truncate text-left">{group.label}</span>
+                {!showGroupHeaderIcon && canToggle ? (
                   <ChevronDown
                     className={cn(
-                      'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4',
+                      'h-3.5 w-3.5 shrink-0 text-current',
                       'transition-[opacity,translate,scale,rotate] duration-150 ease-out',
-                      isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                      group.collapsed || isMobile
+                        ? 'opacity-100'
+                        : 'opacity-0 group-hover:opacity-100',
+                      // Chats is a top-level sidebar section, so its collapsed chevron
+                      // stays visible without hover.
                       group.collapsed ? '-rotate-90' : 'rotate-0'
                     )}
+                    aria-hidden="true"
                   />
-                )}
-              </button>
-            ) : null}
-            <span className="min-w-0 truncate text-left">{group.label}</span>
-            {!showGroupHeaderIcon && canToggle ? (
-              <ChevronDown
-                className={cn(
-                  'h-3.5 w-3.5 shrink-0 text-current',
-                  'transition-[opacity,translate,scale,rotate] duration-150 ease-out',
-                  group.collapsed || isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-                  // Chats is a top-level sidebar section, so its collapsed chevron
-                  // stays visible without hover.
-                  group.collapsed ? '-rotate-90' : 'rotate-0'
-                )}
-                aria-hidden="true"
-              />
-            ) : null}
-            <span className="flex-1" aria-hidden="true" />
-            {collapsedActivity ? <SidebarGroupActivityMark activity={collapsedActivity} /> : null}
-          </div>
+                ) : null}
+                <span className="flex-1" aria-hidden="true" />
+                {repoMenuEnabled ? (
+                  <button
+                    type="button"
+                    className={cn(SIDEBAR_HOVER_ACTION_CLASS, SIDEBAR_MENU_TRIGGER_OPEN_CLASS)}
+                    aria-label={moreActionsLabel}
+                    onClick={(event) => {
+                      // Open the row's own right-click menu from a left click.
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      event.currentTarget.dispatchEvent(
+                        new MouseEvent('contextmenu', {
+                          bubbles: true,
+                          cancelable: true,
+                          clientX: Math.round(rect.left),
+                          clientY: Math.round(rect.bottom),
+                        })
+                      );
+                    }}
+                  >
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+                {collapsedActivity ? (
+                  <SidebarGroupActivityMark activity={collapsedActivity} />
+                ) : null}
+              </div>
+            );
+            if (!repoMenuEnabled || !group.repoFullName) return headerRow;
+            const repoFullName = group.repoFullName;
+            return (
+              <ContextMenu.Root onOpenChange={setRepoMenuOpen}>
+                <ContextMenu.Trigger render={headerRow} />
+                <ContextMenu.Content className="min-w-[180px]">
+                  {onEditRepoProject ? (
+                    <ContextMenu.Item
+                      icon={Folders}
+                      onClick={() => onEditRepoProject(repoFullName)}
+                    >
+                      {t('sidebar.localProjects.editProject', 'Edit project…')}
+                    </ContextMenu.Item>
+                  ) : null}
+                  {onArchiveRepoChats ? (
+                    <ContextMenu.Item
+                      icon={Archive}
+                      disabled={group.sessions.length === 0}
+                      onClick={() => onArchiveRepoChats(group.sessions.map((row) => row.sessionId))}
+                    >
+                      {t('sidebar.localProjects.archiveChats', 'Archive chats')}
+                    </ContextMenu.Item>
+                  ) : null}
+                </ContextMenu.Content>
+              </ContextMenu.Root>
+            );
+          })()}
 
           {resolvedTrailingContent}
 
@@ -2065,6 +2144,8 @@ export const SessionList = memo(function SessionList({
   onOpenProjectGroupSettings,
   onArchiveProjectGroupChats,
   onMoveProjectGroup,
+  onEditRepoProject,
+  onArchiveRepoChats,
   isLoading = false,
   chatsCollapsed = false,
   selectedSessionId,
@@ -2260,6 +2341,8 @@ export const SessionList = memo(function SessionList({
                     onNavigateSessionTab={onNavigateSessionTab}
                     onToggleRepoCollapsed={onToggleRepoCollapsed}
                     onToggleChatsCollapsed={onToggleChatsCollapsed}
+                    onEditRepoProject={onEditRepoProject}
+                    onArchiveRepoChats={onArchiveRepoChats}
                     onArchiveSession={onArchiveSession}
                     onMarkSessionUnread={onMarkSessionUnread}
                     onRenameSession={onRenameSession}

@@ -5107,5 +5107,6 @@
   "workspace.projects.repositoryCount": "{{count}} 个仓库",
   "workspace.projects.repositoryCount_other": "{{count}} 个仓库",
   "workspace.projects.anyMachineTitle": "任意机器",
-  "workspace.projects.anyMachineHint": "多仓库项目，在有副本的机器上运行"
+  "workspace.projects.anyMachineHint": "多仓库项目，在有副本的机器上运行",
+  "workspace.projects.editProjectHint": "加入更多仓库或文件夹，一起修改"
 }

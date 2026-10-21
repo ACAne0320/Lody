@@ -5113,5 +5113,6 @@
   "workspace.projects.repositoryCount_one": "{{count}} repository",
   "workspace.projects.repositoryCount_other": "{{count}} repositories",
   "workspace.projects.anyMachineTitle": "Any machine",
-  "workspace.projects.anyMachineHint": "Projects of several repositories, run wherever a copy is"
+  "workspace.projects.anyMachineHint": "Projects of several repositories, run wherever a copy is",
+  "workspace.projects.editProjectHint": "Add more repositories or folders to work on together"
 }

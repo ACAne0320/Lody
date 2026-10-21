@@ -2983,6 +2983,15 @@ export function LoroAppSidebar({
       }),
     [requestProjectEditor]
   );
+  const handleEditRepoProject = useCallback(
+    (repoFullName: string) =>
+      requestProjectEditor({
+        kind: 'create',
+        seedSourceKey: `github:${repoFullName.toLowerCase()}`,
+        seedName: repoFullName.split('/').pop() ?? repoFullName,
+      }),
+    [requestProjectEditor]
+  );
   const handleToggleProjectGroupCollapsed = useCallback(
     (groupKey: string) => {
       setRepoCollapseState((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }));
@@ -3617,6 +3626,8 @@ export function LoroAppSidebar({
       onOpenProjectGroupSettings: handleOpenProjectGroupSettings,
       onArchiveProjectGroupChats: handleArchiveProjectChats,
       onMoveProjectGroup: isMobile ? undefined : handleMoveProjectGroup,
+      onEditRepoProject: handleEditRepoProject,
+      onArchiveRepoChats: handleArchiveProjectChats,
       isLoading: githubWorktreesSectionCollapsed ? false : sessionsListLoading,
       selectedSessionId: selectedSessionId,
       activeGroupKey: activeNewSessionGroup,
@@ -3650,6 +3661,7 @@ export function LoroAppSidebar({
       handleNavigateToSession,
       handleToggleRepoCollapsed,
       handleArchiveProjectChats,
+      handleEditRepoProject,
       handleMoveProjectGroup,
       handleNewInProjectGroup,
       handleOpenProjectGroupSettings,

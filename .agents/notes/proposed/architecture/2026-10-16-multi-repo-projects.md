@@ -891,15 +891,20 @@ and reuses the project surfaces instead of a section and a Settings tab of its o
   same editor seeded with that folder (as a repository Member when its machine
   publishes a remote); saving creates a new project and leaves the folder and its
   conversations untouched, because existing conversations cannot change layout.
-  A multi-repository project row's menu edits it. One host
+  A GitHub repository row's context menu (and its hover ⋯) offers the same,
+  seeded with the repository. A multi-repository project row's menu edits it.
+  On a phone, a project's settings tab starts with an "Edit project…" row seeded
+  with that project, and mobile Settings › Projects lists multi-repository
+  projects by the same placement with a "Several repositories or folders" row.
+  One host
   (`ProjectEditorHost`, driven by `projectEditorRequestAtom`) owns the editor and
   the delete confirmation for every surface.
 - **Removed.** The Project groups Settings tab and route, the separate sidebar
   section and its collapse state. Copy says "project" throughout; rows use the
   stacked-folders mark.
 
-The shared contract, daemon and composer behavior are unchanged. GitHub
-repository rows have no context menu yet, so "Edit project…" is not offered there;
-mobile Settings keeps its previous list. Verified with unit tests and type checks;
+The shared contract, daemon and composer behavior are unchanged. Deleting a
+multi-repository project is desktop-only (Settings › Projects). Verified with unit
+tests and type checks;
 the sidebar placement was checked in Storybook, not against a real workspace.
 

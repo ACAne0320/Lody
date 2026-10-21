@@ -50,8 +50,10 @@ looks only at that branch.
 - **Creating and editing.** Settings › Projects offers "Several repositories or
   folders" beside adding a folder or a GitHub repository. A project row's context
   menu offers "Edit project…": on a multi-repository Project it edits it; on a
-  single folder it opens the same editor seeded with that folder, which saves a new
-  Project and leaves the folder and its conversations as they are. The editor's
+  single folder or GitHub repository it opens the same editor seeded with it, which
+  saves a new Project and leaves the original and its conversations as they are.
+  On a phone the same action is the first row of a project's settings tab, and
+  mobile Settings › Projects offers creating one. The editor's
   picker adds repositories and folders already known to the workspace.
 
 ## Flat layout

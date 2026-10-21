@@ -278,6 +278,7 @@ import {
   type UnifiedProjectSelection,
 } from './unified-project-selector';
 import { ProjectGroupMemberList } from './project-group-member-list';
+import { MobileProjectEditSection } from '@/components/mobile/mobile-project-edit-section';
 import { useWorkspaceProjects } from '@/hooks/use-workspace-projects';
 import {
   buildProjectGroupProjectRef,
@@ -6521,13 +6522,25 @@ function WorkspaceChatLanding({
              cleanup scripts. */
           settingsTabContent={
             mobileProjectContext.kind === 'local' ? (
-              <MobileLocalProjectSettings
-                machineId={mobileProjectContext.machineId}
-                projectId={mobileProjectContext.projectId}
-                onRemoved={handleMobileProjectBack}
-              />
+              <>
+                <MobileProjectEditSection
+                  seedSourceKey={`local:${mobileProjectContext.machineId}:${mobileProjectContext.projectId}`}
+                  seedName={mobileProjectContext.name}
+                />
+                <MobileLocalProjectSettings
+                  machineId={mobileProjectContext.machineId}
+                  projectId={mobileProjectContext.projectId}
+                  onRemoved={handleMobileProjectBack}
+                />
+              </>
             ) : (
-              <MobileGithubProjectSettings repoFullName={mobileProjectContext.fullName} />
+              <>
+                <MobileProjectEditSection
+                  seedSourceKey={`github:${mobileProjectContext.fullName.toLowerCase()}`}
+                  seedName={mobileProjectContext.name}
+                />
+                <MobileGithubProjectSettings repoFullName={mobileProjectContext.fullName} />
+              </>
             )
           }
         />
