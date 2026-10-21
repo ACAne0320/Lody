@@ -54,6 +54,11 @@ telemetry, or managed-runtime downloads, as routed by the root instructions.
 - Keep request identity and original genesis across unknown results. Never expose
   private keys, silently replace interrupted preparation, or infer plaintext from
   missing mode fields. A retained encrypted identity rejects mode downgrade.
+- E2EE stays invisible to ordinary users. A workspace without local encrypted
+  evidence or an encrypted listing opens via the pre-E2EE path while `describe`
+  runs in the background; an encrypted or contradicting answer retires that runtime
+  and fails closed. Evidence, pins and encrypted listings still require admission
+  before any data plane.
 - Control-only encrypted workspaces must not acquire ordinary content/execution
   transports. Before changing creation, mode admission, cache cleanup or ledger UI,
   read the [bootstrap guide](../../.agents/docs/e2ee-workspace-bootstrap.md).
