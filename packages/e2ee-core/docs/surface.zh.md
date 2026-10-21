@@ -39,7 +39,7 @@
 | 分组 | 导出 |
 | --- | --- |
 | 字节与编码 | `Bytes`, `encodeCbor`, `decodeCbor`, `CborValue`, `ValidationError`, `ValidationErrorCode`, `ContentError` |
-| 签名 | `verifySignature`, `verifyContentSignature`, `signVerified`, `nativeDeviceSigner`, `DeviceSigner` |
+| 签名 | `verifySignature`, `verifyContentSignature`, `signVerified`, `nativeDeviceSigner`, `DeviceSigner`, `ed25519WasmActive` |
 | 内容格式 | `encodeDocumentContext`, `encodeContentContext`, `encodeContentHeader`, `contentKeyInfo`, `contentHkdfSalt`, `contentAad`, `contentSigningBytes`, `inspectContentFrame`, `DocumentScope`, `ContentScope`, `ContentPurpose`, `ContentHeader`, `ContentMetadata` |
 | 文档 | `sealDocument`, `openDocument`, `authenticateDocument`, `admitDocument`, `deriveDocumentKey`, `scopedDocumentKey`, `importDocumentKey`, `exportDocumentKey`, `disposeDocumentKey`, `DocumentKey` |
 | 内容加密 | `deriveContentKey`, `disposeContentKey`, `sealContentAead`, `openContentAead`, `ContentKey`, `SealedContentAead` |
@@ -86,4 +86,4 @@
 
 ## `@lody/e2ee-core/cloudflare`
 
-`ed25519WasmActive`。在 Cloudflare Worker 中导入一次该入口即可：workerd 禁止在运行时从字节编译 WebAssembly，因此改由打包器编译包内的严格 Ed25519 模块。不导入时，core 仍会用纯 JS 正确验证，只是更慢。
+`ed25519WasmActive`。在 Cloudflare Worker 中导入一次该入口即可：workerd 禁止在运行时从字节编译 WebAssembly，因此改由打包器编译包内的严格 Ed25519 模块。不导入时，core 仍会用纯 JS 正确验证，只是更慢。`@lody/e2ee-core/protocol` 也导出 `ed25519WasmActive`（同一个状态），供无法打包本入口的宿主（如 Convex）上报当前是否使用 WebAssembly；它只读状态，不加载、替换或关闭任何验证后端。
