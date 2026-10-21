@@ -73,3 +73,9 @@ The real MCP client is exercised over in-memory transport, and HTTP admission
 has an in-memory request/response test. CLI type checking and public/platform/
 local-writer/Inbox boundary guards pass. This does not claim testing with a
 third-party desktop client, a hosted cloud account, or power-loss fault injection.
+
+The endpoint descriptor is published by the HTTP host, not the access command.
+An older running host cannot publish it merely because a newer CLI is invoked.
+Missing descriptors now report startup/version/profile guidance; invalid descriptors
+and read failures report distinct errors. Filesystem tests cover these cases and
+a subsequent valid publication.

@@ -58,3 +58,7 @@ Effect feature/fix 评估：涉及的服务和 HTTP owner 仍依赖既有 Promis
 真实 MCP client 使用内存 transport，HTTP 准入使用内存 request/response
 测试。CLI 类型检查及公开仓库/平台/local writer/Inbox 边界检查通过。
 不声称已经验证第三方桌面客户端、托管云账户或断电故障注入。
+
+地址描述文件由 HTTP host 写入，而非 access 命令生成。只运行新版 CLI
+不会让旧 host 生成该文件。文件缺失时给出启动、版本和安装配置提示，
+格式无效和读取失败分别报错；文件系统测试覆盖这些情况及随后成功发布地址。

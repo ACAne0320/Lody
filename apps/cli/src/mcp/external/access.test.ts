@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { authenticateExternalAccess, enableExternalAccess } from './access';
+import { authenticateExternalAccess, enableExternalAccess, readMcpEndpoint } from './access';
 import { ExternalRequests, publicExternalReceipt } from './requests';
 
 const scope = { userId: 'owner', workspaceId: 'workspace', machineId: 'machine' };
@@ -14,6 +14,22 @@ describe('external MCP credentials and write receipts', () => {
   });
   afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('reports an unavailable endpoint with daemon startup guidance, then reads the published address', async () => {
+    const file = path.join(root, 'endpoint.json');
+    await expect(readMcpEndpoint(file)).rejects.toThrow('Start or restart the Lody daemon');
+    await fs.writeFile(file, JSON.stringify({ port: 45678 }));
+    expect(await readMcpEndpoint(file)).toBe('http://127.0.0.1:45678/mcp/external');
+  });
+
+  it('rejects malformed endpoint descriptors and distinguishes read failures', async () => {
+    const file = path.join(root, 'endpoint.json');
+    for (const contents of ['{', '{"port":0}', '{"port":65536}', '{"port":"45678"}']) {
+      await fs.writeFile(file, contents);
+      await expect(readMcpEndpoint(file)).rejects.toThrow('Local MCP endpoint is invalid');
+    }
+    await expect(readMcpEndpoint(root)).rejects.toThrow('Local MCP endpoint cannot be read');
   });
 
   it('binds the token to one scope and revokes it on rotation or removal', async () => {
