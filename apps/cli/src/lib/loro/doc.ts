@@ -702,6 +702,7 @@ export class LoroDocumentManager {
     );
     this.remoteStreamsTokens = streamsTokens;
     const streamsTransport = await createCliStreamsTransport({
+      content: { mode: 'plaintext' },
       workspaceId: this.workspaceId,
       tokenProvider: streamsTokens.legacy,
       repo: this.repo,

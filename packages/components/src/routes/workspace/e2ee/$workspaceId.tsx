@@ -5,7 +5,7 @@ import { usePlatform, usePlatformSession } from '@lody/platform/react';
 import type { WorkspaceModeDescriptor } from '@lody/cloud-api';
 import { setWorkspaceContextAtom } from '@/atoms';
 import { E2eeWorkspaceControlPage } from '@/components/pages/e2ee-workspace-control-page';
-import { appendLedgerHistory, type VerifiedLedgerHistory } from '@/lib/e2ee-ledger-history';
+import { appendLedgerHistory, hostLedgerHistory, type VerifiedLedgerHistory } from '@/lib/e2ee-ledger-history';
 import {
   readE2eeGenesisPin,
   repairUnreadableE2eeCaches,
@@ -62,6 +62,8 @@ function WorkspaceControlRoute() {
   }>({ scope, identity, descriptor: null, history: null, loading: true, failure: null });
   useEffect(() => {
     let disposed = false;
+    let hostOpened = false;
+    const closeHost = () => { if (hostOpened && port?.runtime) { hostOpened = false; void port.runtime.close(workspaceId).catch(() => undefined); } };
     setState((previous) =>
       previous.identity === identity
         ? { ...previous, scope, loading: Boolean(port && accountId), failure: null }
@@ -79,6 +81,40 @@ function WorkspaceControlRoute() {
     readOwner.current = owner;
     void (async () => {
       try {
+        if (port.runtime) {
+          const runtime = port.runtime;
+          const pin = readE2eeGenesisPin(localStorage, accountId, workspaceId);
+          if (pin) await runtime.recordCreated({ workspaceId, genesisHash: pin });
+          let status;
+          try { status = await runtime.open(workspaceId, readObservedLedgerCheckpoint(localStorage, accountId, workspaceId) ?? undefined); } catch (error) {
+            if (pin || !(error instanceof Error) || !error.message.includes('e2ee_missing-binding')) throw error;
+          }
+          if (status) {
+          hostOpened = true;
+          if (disposed) { closeHost(); return; }
+          const descriptor = { workspaceId, contentMode: 'e2ee' as const, contentModeVersion: 1 as const, activation: 'control-only' as const, genesisHash: status.genesisHash, cryptoOrgId: status.genesisHash };
+          const publish = async () => {
+            const history = hostLedgerHistory(await runtime.ledgerView(workspaceId));
+            if (!history.continuityPending) retainObservedLedgerCheckpoint(localStorage, accountId, workspaceId, history);
+            if (!disposed) setState({ scope, identity, descriptor, history, loading: false, failure: null });
+          };
+          await publish();
+          // A saved local view is visible before the first network request.
+          const remote = await port.describe({ workspaceId });
+          if (disposed) return;
+          if (!('contentMode' in remote) || remote.contentMode !== 'e2ee' || remote.genesisHash !== status.genesisHash) throw new Error('e2ee_genesis_conflict');
+          retainEncryptedWorkspaceMode(localStorage, accountId, remote);
+          let page = await port.history({ workspaceId, ...(status.position ? { after: status.position } : {}) });
+          for (;;) {
+            if (disposed) break;
+            status = await runtime.ingestLedgerRecords(workspaceId, page);
+            await publish();
+            if (page.nextCursor === null || status.upgradeRequiredAt !== undefined) break;
+            page = await port.history({ workspaceId, cursor: page.nextCursor, checkpoint: page.checkpoint });
+          }
+          return;
+          }
+        }
         const descriptor = await port.describe({ workspaceId });
         if (disposed) return;
         if (
@@ -115,6 +151,7 @@ function WorkspaceControlRoute() {
     })();
     return () => {
       disposed = true;
+      closeHost();
       if (readOwner.current === owner) readOwner.current = null;
     };
   }, [scope, identity, port, workspaceId, accountId]);

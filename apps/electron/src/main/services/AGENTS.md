@@ -89,3 +89,11 @@ approval, quit awaits application disposal alongside CLI exit; retain failed pro
 owners for a later quit/recovery. Never substitute failure with null or bind a
 replacement before release. See the
 [decision](../../../../../.agents/notes/implemented/architecture/2026-10-10-effect-login-shell-probe.md).
+
+## E2EE runtime
+
+`e2ee-account-runtime.ts` lazily owns account custody; `e2ee-runtime.mts` owns each
+workspace's core feed/pin/keys. Window leases and account/quit serialization await
+native work before release. Originals commit before feed/pin; failed ingestion closes
+its owner. Retain old renderer checkpoints on first takeover; insufficient history
+stays pending. Full boundaries: [M1 note](../../../../../.agents/notes/implemented/architecture/2026-10-21-e2ee-m1-runtime-boundaries.md).

@@ -1,3 +1,4 @@
+import { closeDesktopE2eeAccount } from './services/e2ee-account-runtime'
 import { makeApplicationRuntime } from '@lody/shared/node/application-runtime'
 import {
   LoginShellCacheLive,
@@ -376,6 +377,7 @@ export function startApplication(executionHost?: DesktopExecutionHost): void {
         loroDataPlaneRelay.destroy()
         appUpdaterService.stop()
         publicBrowserService.destroyAll()
+        await closeDesktopE2eeAccount({ quit: true })
         const [cliResult, shellResult] = await Promise.allSettled([
           cliService.shutdownForQuit(),
           applicationRuntime.closeLegacy(),
