@@ -1,3 +1,4 @@
+import { TestCloudPlatformProvider } from './test-platform';
 import { openReaderView, flushReaderChanges } from './conversation-view-fixtures';
 // @vitest-environment jsdom
 import { act } from 'react';
@@ -488,8 +489,15 @@ describe('conversation view React readers', () => {
   });
 });
 
-vi.mock('../src/hooks/use-workspace-mcp-catalog', () => ({
-  useWorkspaceMcpCatalog: () => ({ servers: CATALOG, synced: true }),
+vi.mock('../src/hooks/use-workspace-catalog', () => ({
+  useWorkspaceCatalog: () => ({
+    servers: CATALOG,
+    roles: [],
+    projectMcpDefaults: {},
+    loaded: true,
+    failed: false,
+    synced: true,
+  }),
 }));
 const CATALOG = [{ id: 'default-mcp', name: 'Default', enabledByDefault: true }];
 // Deterministic (manual idle, an explicit `yieldToEventLoop` gate, fake timers)
@@ -551,7 +559,13 @@ it.each([false, true])(
       );
     }
     try {
-      await act(async () => root.render(<Composer />));
+      await act(async () =>
+        root.render(
+          <TestCloudPlatformProvider>
+            <Composer />
+          </TestCloudPlatformProvider>
+        )
+      );
       await act(async () => vi.runAllTimersAsync());
       act(() => host.querySelector('button')!.click());
       const before = sent;

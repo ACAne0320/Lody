@@ -1,3 +1,5 @@
+import { readProjectDefaultMcpIds, syncMcpCatalog } from '@/lib/workspace-mcp-store';
+import { normalizeMcpServerIdSelection, resolveSessionConversationConfig } from '@lody/shared';
 import {
   getMachineRoomId,
   machineSupportsProtocolCapability,
@@ -15,7 +17,6 @@ import { prepareSessionInputAttachments } from '@/lib/session-input-attachments'
 import { buildCommandInputBlocks, type SessionInputAttachment } from '@/lib/session-input-content';
 import { createCommandAttachmentTransfer } from '@/lib/cloud-cli-port';
 import { inputBlocksToHistoryItems, type SessionInputBlock } from '@lody/shared';
-import { resolveSessionConversationConfig } from '@lody/shared';
 import type { MessageAuthor, AgentMessageAuthor } from '@lody/shared';
 import {
   ACP_CAPABILITY_ROW_FAMILIES,
@@ -229,6 +230,7 @@ export type CreateOptions = CommonOptions &
     mode?: string;
     model?: string;
     configOption?: string[];
+    mcpServerIds?: string;
     env?: string[];
     wait?: boolean;
     timeout?: number;
@@ -258,6 +260,7 @@ export type ChatOptions = CommonOptions &
     mode?: string;
     model?: string;
     configOption?: string[];
+    mcpServerIds?: string;
     wait?: boolean;
     timeout?: number;
   };
@@ -1416,6 +1419,7 @@ export async function appendUserPromptHistory(args: {
 }
 
 function buildCliHistoryInputConfig(args: {
+  mcpServerIds?: string[];
   inputBlocks?: SessionInputBlock[];
   memory?: import('@lody/shared').MemoryBinding;
   prompt: string;
@@ -1428,6 +1432,7 @@ function buildCliHistoryInputConfig(args: {
   chainDepth?: number;
 }): NonNullable<SessionHistoryInput['inputConfig']> {
   return {
+    mcpServerIds: normalizeMcpServerIdSelection(args.mcpServerIds),
     memory: args.memory,
     ...(args.inputBlocks?.some((block) => block.type !== 'text')
       ? { inputBlocks: args.inputBlocks }
@@ -1447,6 +1452,7 @@ function buildCliHistoryInputConfig(args: {
 }
 
 export type ResolvedTurnDispatchConfig = {
+  mcpServerIds?: string[];
   memory?: import('@lody/shared').MemoryBinding;
   modeId?: string;
   modelId?: string;
@@ -1575,6 +1581,7 @@ export function resolveTurnDispatchConfig(args: {
   mode?: string;
   model?: string;
   configOption?: string[];
+  mcpServerIds?: string;
 }): ResolvedTurnDispatchConfig {
   const modeId = normalizeCliValue(args.mode);
   const modelId = normalizeCliValue(args.model);
@@ -1583,7 +1590,22 @@ export function resolveTurnDispatchConfig(args: {
     modeId: modeId ?? undefined,
     modelId: modelId ?? undefined,
     configOptionValues: parseConfigOptionAssignments(args.configOption),
+    ...(args.mcpServerIds !== undefined
+      ? { mcpServerIds: parseCliMcpServerIds(args.mcpServerIds) }
+      : {}),
   };
+}
+
+export function parseCliMcpServerIds(value: string): string[] {
+  const parsed: unknown = JSON.parse(value);
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length > 1000 ||
+    parsed.some((id) => typeof id !== 'string' || !id.trim() || id.length > 256)
+  ) {
+    throw new Error('--mcp-server-ids must be a JSON array of MCP ids (use [] for none).');
+  }
+  return normalizeMcpServerIdSelection(parsed) ?? [];
 }
 
 function findTurnConfigOptionByCategory(
@@ -1657,6 +1679,7 @@ function mergeTurnDispatchConfig(
     capability
   );
   return {
+    mcpServerIds: explicitConfig.mcpServerIds,
     memory: explicitConfig.memory ?? fallbackConfig?.memory,
     modeId: explicitConfig.modeId ?? fallbackConfig?.modeId,
     modelId: explicitConfig.modelId ?? fallbackConfig?.modelId,
@@ -3359,6 +3382,7 @@ export async function validateSessionCreateOptions(args: {
     manager: args.manager,
     workspaceId: args.workspace.id as WorkspaceId,
     agentConfig: resolved.agentConfig,
+    project: resolved.project,
     openedBySessionId: resolved.openedBySessionId,
     dispatchConfig: args.dispatchConfig ?? resolveTurnDispatchConfig({}),
   });
@@ -3368,6 +3392,7 @@ export async function resolveEffectiveSessionCreateDispatchConfig(args: {
   manager: LoroDocumentManager;
   workspaceId: WorkspaceId;
   agentConfig: AgentConfigMeta;
+  project?: ProjectRef;
   openedBySessionId?: SessionId;
   dispatchConfig: ResolvedTurnDispatchConfig;
   localOnly?: boolean;
@@ -3399,6 +3424,18 @@ export async function resolveEffectiveSessionCreateDispatchConfig(args: {
   // available during materialization so a newly advertised catalog can omit it.
   // Keep explicit modes and all other selections on their normal validation path.
   if (frozenBuiltinDefault) delete dispatchConfig.modeId;
+  const mcpServerIds =
+    dispatchConfig.mcpServerIds !== undefined
+      ? [...dispatchConfig.mcpServerIds]
+      : await (async () => {
+          if (!args.localOnly) await syncMcpCatalog(args.manager, args.workspaceId);
+          return readProjectDefaultMcpIds(
+            args.manager.repo,
+            args.workspaceId,
+            args.project,
+            args.agentConfig.machineId
+          );
+        })();
   if (dispatchConfig.memory) {
     const machine = (await listMachineMetasForWorkspace(args.manager)).find(
       (entry) => entry.id === args.agentConfig.machineId
@@ -3532,6 +3569,7 @@ export async function resolveEffectiveSessionCreateDispatchConfig(args: {
     ...(Object.keys(inheritedSnapshot).length
       ? { inheritedDispatchConfig: inheritedSnapshot }
       : {}),
+    mcpServerIds,
     inheritSessionDefaults: false,
   };
 }
@@ -3676,6 +3714,7 @@ export async function prepareSessionInput(
     manager,
     workspaceId: workspace.id as WorkspaceId,
     agentConfig,
+    project,
     ...(openedBySessionId ? { openedBySessionId } : {}),
     dispatchConfig,
     localOnly: ownerTarget !== undefined,
@@ -3769,6 +3808,7 @@ export async function prepareSessionInput(
         inputBlocks,
         cliType: agentConfig.cliType,
         agentType: agentConfig.agentType,
+        mcpServerIds: effectiveDispatchConfig.mcpServerIds,
         memory: effectiveDispatchConfig.memory,
         modeId: effectiveDispatchConfig.modeId ?? undefined,
         modelId: effectiveDispatchConfig.modelId ?? undefined,
@@ -4033,6 +4073,10 @@ export async function sendSessionChatResult(
     capability,
     freshness,
   });
+  effectiveDispatchConfig.mcpServerIds =
+    dispatchConfig.mcpServerIds !== undefined
+      ? [...dispatchConfig.mcpServerIds]
+      : (resolveSessionConversationConfig(historyForDefaults).mcpServerIds ?? []);
   // An unconfigured follow-up retains the target's selected Role, never the sender's.
   // Explicit execution changes clear it rather than claiming an unchanged preset.
   const roleSelection =
@@ -4076,6 +4120,7 @@ export async function sendSessionChatResult(
         prompt,
         cliType: session.cliType,
         agentType: session.agentType,
+        mcpServerIds: effectiveDispatchConfig.mcpServerIds,
         memory: effectiveDispatchConfig.memory,
         modeId: effectiveDispatchConfig.modeId,
         modelId: effectiveDispatchConfig.modelId,
@@ -4555,6 +4600,7 @@ const sessionCreateCommand = new Command('create')
   .option('--worktree', 'Create an isolated git worktree for --local-project')
   .option('--branch <name>', 'Git branch to use for GitHub repos or local git projects')
   .option('--mode <modeId>', 'ACP mode override')
+  .option('--mcp-server-ids <json>', 'MCP ids as a JSON array; [] disables all')
   .option('--model <modelId>', 'ACP model override')
   .option(
     '--config-option <keyValue>',
@@ -4619,6 +4665,9 @@ const sessionCreateCommand = new Command('create')
               model: options.model,
               configOption: options.configOption,
             });
+          }
+          if (options.mcpServerIds !== undefined) {
+            dispatchConfig.mcpServerIds = parseCliMcpServerIds(options.mcpServerIds);
           }
           const shouldWaitForCompletion = shouldWaitForSessionCompletion(options);
           const result = await createSessionResult(
@@ -4753,6 +4802,7 @@ const sessionChatCommand = new Command('chat')
   .description('Send a new user prompt to an existing session')
   .option('--workspace <selector>', 'Target workspace id, slug, or name')
   .option('--mode <modeId>', 'ACP mode override')
+  .option('--mcp-server-ids <json>', 'MCP ids as a JSON array; [] disables all')
   .option('--model <modelId>', 'ACP model override')
   .option(
     '--config-option <keyValue>',
@@ -4814,6 +4864,7 @@ const sessionChatCommand = new Command('chat')
             mode: options.mode,
             model: options.model,
             configOption: options.configOption,
+            mcpServerIds: options.mcpServerIds,
           });
           const shouldWaitForCompletion = shouldWaitForSessionCompletion(options);
           const result = await sendSessionChatResult(
@@ -5607,3 +5658,15 @@ export const sessionCommand = new Command('session')
   .addCommand(sessionRestoreCommand)
   .addCommand(sessionInboxRecoveryCommand)
   .addCommand(sessionDeleteCommand);
+
+export async function readSessionMcpIdsForAuthoring(
+  manager: LoroDocumentManager,
+  sessionId: SessionId,
+  explicitIds?: readonly string[]
+): Promise<string[]> {
+  if (explicitIds !== undefined) return [...explicitIds];
+  await syncDocForRead(manager, getSessionRoomId(sessionId), 'session-mcp-selection');
+  const doc = await manager.getOrCreateSessionDoc(sessionId);
+  const backend = await createSessionBackend(doc, await doc.getMetaState());
+  return resolveSessionConversationConfig(await backend.readHistory()).mcpServerIds ?? [];
+}

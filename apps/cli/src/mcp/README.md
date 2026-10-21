@@ -101,6 +101,15 @@ See the [decision and verification](../../../../.agents/notes/implemented/bug-fi
   incompatible inherited selectors; fill builtin mode only when still empty.
   ([note](../../../../.agents/notes/implemented/bug-fix/2026-09-17-chat-follow-up-inherits-target-run-config.md))
 
+MCP create/chat (including batches) accept optional `mcpServerIds`. Explicit `[]`
+selects none. Creation without ids resolves target-project defaults, or workspace
+defaults when the project has no preference; continuation without ids inherits the
+target conversation's selection. Acceptance records ids in the existing per-target
+Operation configuration, so materialization/recovery does not reread edited defaults.
+Role pins do not override an explicit MCP selection. CLI create/chat expose the same
+choice as `--mcp-server-ids '<JSON array>'`. See the
+[project default Spec](../../../../specs/project-default-mcp.md).
+
 ## Daemon routing
 
 - Session/catalog tools route through `session/call-tool` to the daemon's

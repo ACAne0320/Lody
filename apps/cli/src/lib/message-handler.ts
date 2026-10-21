@@ -317,7 +317,6 @@ import {
 import { getLodyOperationStorePath, LodyOperationStore } from '@/orchestration/operation-store';
 import {
   createSessionResult,
-  resolveTurnDispatchConfig,
   sendSessionChatResult,
   type CreateOptions,
   type ResolvedTurnDispatchConfig,
@@ -2672,6 +2671,7 @@ export class MessageHandler {
       const dispatchConfig =
         frozenTargetDispatchConfig ??
         ({
+          mcpServerIds: [],
           frozenInheritedInputConfig: frozenInputConfig,
           inheritSessionDefaults: false,
           ...(hasAgentRunConfigSelection(runConfig) ? { runConfig } : {}),
@@ -2714,14 +2714,10 @@ export class MessageHandler {
         }
         if (typeof context.branch === 'string') options.branch = context.branch;
       }
-      await createSessionResult(
-        auth,
-        workspace,
-        this.workspaceDocument,
-        prompt,
-        options,
-        dispatchConfig
-      );
+      await createSessionResult(auth, workspace, this.workspaceDocument, prompt, options, {
+        ...dispatchConfig,
+        mcpServerIds: dispatchConfig.mcpServerIds ?? [],
+      });
       return;
     }
 
@@ -2731,7 +2727,7 @@ export class MessageHandler {
       this.workspaceDocument,
       item.target.sessionId,
       prompt,
-      resolveTurnDispatchConfig({}),
+      operation.frozenContinuationConfig.targetDispatchConfigs?.[index] ?? { mcpServerIds: [] },
       undefined,
       delegatedRequester ? undefined : operation.requesterUserId,
       {

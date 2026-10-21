@@ -65,6 +65,7 @@ const FrozenConfigSchema = z
       .array(
         z
           .object({
+            mcpServerIds: z.array(z.string()).optional(),
             modeId: z.string().optional(),
             builtinDefaultModeId: z.string().optional(),
             inheritedBuiltinDefaultModeId: z.string().optional(),

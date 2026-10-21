@@ -23,6 +23,10 @@ import { FlockSyncTimeoutError } from '@/lib/loro/timeout-utils';
 import { FlockSyncUnavailableError } from '@/lib/loro/flock-sync-errors';
 import {
   getMachineFlockDocId,
+  getWorkspaceFlockDocId,
+  getProjectMcpKey,
+  writeWorkspaceMcpServerToFlock,
+  workspaceFlockKeys,
   ACP_CAPABILITY_CACHE_VERSION,
   getBuiltinRuntimeOverrideSourceVersionSuffix,
   getSessionRoomId,
@@ -47,7 +51,6 @@ import {
   type MachineAccessReaders,
   MachineFlockReadUnavailableError,
   readAgentAcpCapability,
-  resolveEffectiveSessionCreateDispatchConfig,
   applyAgentRunConfigSelection,
   runSessionOperationWithSyncedMetadata,
   assertSupportedParentDepth,
@@ -65,6 +68,8 @@ import {
   deriveSessionLiveStatus,
   ensureSessionCreateWorkspaceMetaFresh,
   resolveCreateAgentSelector,
+  resolveEffectiveSessionCreateDispatchConfig,
+  parseCliMcpServerIds,
   resolveCreateCurrentSessionId,
   resolveOpenedBySessionRelation,
   resolveSessionCreateOwnerUserId,
@@ -2337,6 +2342,102 @@ describe('delegated machine access', () => {
   });
 });
 
+describe('MCP selection at turn authoring', () => {
+  it('freezes project defaults and honors explicit opt-out through subsequent resolution', async () => {
+    const repo = await LoroRepo.create({});
+    try {
+      const workspaceId = 'workspace-mcp' as WorkspaceId;
+      const project = { kind: 'github' as const, repoFullName: 'Example/Repo', branch: 'main' };
+      const key = getProjectMcpKey(project);
+      if (!key) throw new Error('Expected a project identity');
+      const handle = await repo.openFlockDoc(getWorkspaceFlockDocId(workspaceId));
+      for (const id of ['global', 'project']) {
+        writeWorkspaceMcpServerToFlock(handle.flock, {
+          id: id as import('@lody/shared').McpServerId,
+          name: id,
+          transport: 'stdio',
+          connection: { transport: 'stdio', command: 'synthetic' },
+          enabledByDefault: id === 'global',
+          createdAt: 1,
+          updatedAt: 1,
+        });
+      }
+      handle.flock.set(workspaceFlockKeys.projectMcpDefault(key), {
+        ids: ['project' as import('@lody/shared').McpServerId],
+      });
+      handle.flock.commit();
+      const manager = {
+        repo,
+        syncFlockDocOrThrow: async () => {
+          await repo.flush();
+        },
+      } as unknown as import('../lib/loro/doc').LoroDocumentManager;
+      const args = {
+        manager,
+        workspaceId,
+        project,
+        agentConfig: {
+          id: 'agent',
+          name: 'Synthetic',
+          machineId: 'machine',
+          cliType: 'custom',
+          agentType: 'claude',
+        } as AgentConfigMeta,
+        dispatchConfig: {},
+      };
+      const frozen = await resolveEffectiveSessionCreateDispatchConfig(args);
+      expect(frozen.mcpServerIds).toEqual(['project']);
+      handle.flock.set(workspaceFlockKeys.projectMcpDefault(key), { ids: [] });
+      handle.flock.commit();
+      expect(
+        (await resolveEffectiveSessionCreateDispatchConfig({ ...args, dispatchConfig: frozen }))
+          .mcpServerIds
+      ).toEqual(['project']);
+      expect((await resolveEffectiveSessionCreateDispatchConfig(args)).mcpServerIds).toEqual([]);
+      expect(
+        (await resolveEffectiveSessionCreateDispatchConfig({ ...args, project: undefined }))
+          .mcpServerIds
+      ).toEqual(['global']);
+      expect(
+        (
+          await resolveEffectiveSessionCreateDispatchConfig({
+            ...args,
+            project: undefined,
+            dispatchConfig: { mcpServerIds: [] },
+          })
+        ).mcpServerIds
+      ).toEqual([]);
+      const unavailable = {
+        repo,
+        syncFlockDocOrThrow: async () => {
+          throw new Error('catalog unavailable');
+        },
+      } as unknown as import('../lib/loro/doc').LoroDocumentManager;
+      await expect(
+        resolveEffectiveSessionCreateDispatchConfig({ ...args, manager: unavailable })
+      ).rejects.toThrow('catalog unavailable');
+      expect(
+        (
+          await resolveEffectiveSessionCreateDispatchConfig({
+            ...args,
+            manager: unavailable,
+            dispatchConfig: { mcpServerIds: [] },
+          })
+        ).mcpServerIds
+      ).toEqual([]);
+    } finally {
+      await repo.destroy();
+    }
+  });
+
+  it('accepts CLI empty selection and rejects malformed selection inputs', () => {
+    expect(parseCliMcpServerIds('[]')).toEqual([]);
+    expect(parseCliMcpServerIds('["a", " a ", "b"]')).toEqual(['a', 'b']);
+    for (const value of ['{}', '[1]', '[""]', 'null'])
+      expect(() => parseCliMcpServerIds(value)).toThrow();
+  });
+});
+
 describe('prepared command attachment inputs', () => {
   const auth = {
     machineId: 'machine-1' as MachineId,
@@ -2391,7 +2492,7 @@ describe('prepared command attachment inputs', () => {
         manager as never,
         'Delegated work',
         { ...options, delegatedRequester },
-        { inheritSessionDefaults: false },
+        { inheritSessionDefaults: false, mcpServerIds: [] },
         ownerTarget
       )
     ).rejects.toThrow('missing Agent source identity');
@@ -2430,7 +2531,7 @@ describe('prepared command attachment inputs', () => {
         ...options,
         inputAttachments: [file],
       },
-      { inheritSessionDefaults: false },
+      { inheritSessionDefaults: false, mcpServerIds: [] },
       ownerTarget
     );
     expect(prepared.userTurn.items).toEqual([{ type: 'text', text: 'Analyze' }, file]);
@@ -2497,7 +2598,7 @@ describe('prepared command attachment inputs', () => {
         ...options,
         inputAttachments: [file],
       },
-      { inheritSessionDefaults: false },
+      { inheritSessionDefaults: false, mcpServerIds: [] },
       ownerTarget
     );
     expect(prepared.userTurn.items).toEqual([file]);
@@ -2511,7 +2612,7 @@ describe('prepared command attachment inputs', () => {
           ...options,
           inputAttachments: [],
         },
-        { inheritSessionDefaults: false },
+        { inheritSessionDefaults: false, mcpServerIds: [] },
         ownerTarget
       )
     ).rejects.toThrow('text');
@@ -2561,7 +2662,7 @@ describe('Machine Flock freshness fallback validation', () => {
       manager,
       workspaceId,
       agentConfig,
-      dispatchConfig,
+      dispatchConfig: { mcpServerIds: [], ...dispatchConfig },
       ...overrides,
     });
 

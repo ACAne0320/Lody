@@ -110,6 +110,7 @@ import {
   runSessionOperationWithSyncedMetadata,
   selectDefaultAgentConfigForCreate,
   resolveTurnDispatchConfig,
+  readSessionMcpIdsForAuthoring,
   sendSessionChatResult,
   validateSessionChatTarget,
   validateSessionCreateOptions,
@@ -395,6 +396,14 @@ const SessionCreateOptionsToolInputSchema = z
   })
   .strict();
 
+const McpServerIdsInputSchema = z
+  .array(z.string().trim().min(1).max(256))
+  .max(1000)
+  .optional()
+  .describe(
+    'Workspace MCP ids for this turn. Omit for project defaults on create or the target conversation selection on chat; [] selects none.'
+  );
+
 const InputAttachmentPathsSchema = z
   .array(z.string().min(1))
   .max(SESSION_FILE_MAX_COUNT)
@@ -404,6 +413,7 @@ const InputAttachmentPathsSchema = z
   );
 const SessionCreateCommandInputShape = {
   attachments: InputAttachmentPathsSchema,
+  mcpServerIds: McpServerIdsInputSchema,
   deadlineSeconds: z
     .number()
     .int()
@@ -580,6 +590,7 @@ const SessionCreateToolInputSchema = z
 
 const SessionChatToolInputSchema = z
   .object({
+    mcpServerIds: McpServerIdsInputSchema,
     operationId: LodyOperationIdSchema.optional().describe(
       'Caller-chosen durable Operation id. Required unless using the temporary wait=true compatibility adapter.'
     ),
@@ -636,6 +647,7 @@ const SessionChatToolInputSchema = z
   });
 
 const SessionCreateBatchItemShape = {
+  mcpServerIds: McpServerIdsInputSchema,
   prompt: z.string().trim().min(1).optional(),
   agentRoleId: z
     .string()
@@ -699,6 +711,7 @@ const SessionCreateBatchItemWithInheritedWorkContextSchema = z
 
 const SessionChatBatchItemSchema = z
   .object({
+    mcpServerIds: McpServerIdsInputSchema,
     sessionId: z.string().trim().min(1).optional(),
     prompt: z.string().trim().min(1).optional(),
     label: z.string().trim().min(1).max(128).optional(),
@@ -1230,6 +1243,7 @@ const buildStructuredOutputOptions = (
  * path. Explicit ACP selectors use the same validation as CLI --mode/--config-option.
  */
 const buildMcpTurnDispatchConfig = (input: {
+  mcpServerIds?: string[];
   modeId?: string;
   configOptionValues?: Record<string, string | boolean>;
   modelId?: string;
@@ -1245,6 +1259,7 @@ const buildMcpTurnDispatchConfig = (input: {
   };
   return {
     ...resolveTurnDispatchConfig({}),
+    ...(input.mcpServerIds !== undefined ? { mcpServerIds: input.mcpServerIds } : {}),
     ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
     ...(input.configOptionValues !== undefined
       ? { configOptionValues: input.configOptionValues }
@@ -1361,6 +1376,7 @@ const resolveMcpSessionCreate = (
     prompt: composeAgentRolePrompt(role.promptPrefix, input.prompt),
     dispatchConfig: {
       ...role.runConfig,
+      ...(input.mcpServerIds !== undefined ? { mcpServerIds: input.mcpServerIds } : {}),
       inheritSessionDefaults: false,
     },
     role,
@@ -1372,6 +1388,9 @@ const buildResolvedMcpCreateCanonicalCommand = (
   deadlineSeconds?: number
 ): Record<string, unknown> => ({
   prompt: resolved.prompt,
+  ...(resolved.input.mcpServerIds !== undefined
+    ? { mcpServerIds: resolved.input.mcpServerIds }
+    : {}),
   ...(resolved.input.attachments?.length ? { attachments: resolved.input.attachments } : {}),
   ...(resolved.input.machineId ? { machineId: resolved.input.machineId } : {}),
   ...(resolved.input.agentConfigId ? { agentConfigId: resolved.input.agentConfigId } : {}),
@@ -2877,6 +2896,7 @@ const startSessionChatOperation = async (args: SessionChatToolInput): Promise<un
     const canonicalCommand = {
       sessionId: args.sessionId,
       prompt: args.prompt,
+      ...(args.mcpServerIds !== undefined ? { mcpServerIds: args.mcpServerIds } : {}),
       ...(args.attachments?.length ? { attachments: args.attachments } : {}),
       ...(args.deadlineSeconds !== undefined ? { deadlineSeconds: args.deadlineSeconds } : {}),
     };
@@ -2927,6 +2947,13 @@ const startSessionChatOperation = async (args: SessionChatToolInput): Promise<un
       }
       throw new LodyOperationStoreError('COMMAND_REJECTED', formatMcpErrorMessage(error), false);
     }
+    const targetDispatchConfig = {
+      mcpServerIds: await readSessionMcpIdsForAuthoring(
+        manager,
+        targetSession.id,
+        args.mcpServerIds
+      ),
+    };
     const preallocatedUserTurnId = randomUUID();
     if (args.attachments?.length) {
       const sourceMachine = await manager.repo.getDocMeta(
@@ -2979,6 +3006,7 @@ const startSessionChatOperation = async (args: SessionChatToolInput): Promise<un
               : {}),
             inputConfig: invoking.frozenInputConfig,
             sourceTurnId: invoking.identity.sourceTurnId,
+            targetDispatchConfigs: [targetDispatchConfig],
             notificationOriginTurnIds: invoking.notificationOriginTurnIds,
           },
           initiatorChainDepth: invoking.chainDepth,
@@ -3002,7 +3030,7 @@ const startSessionChatOperation = async (args: SessionChatToolInput): Promise<un
         manager,
         pendingItem.target.sessionId,
         args.prompt,
-        resolveTurnDispatchConfig({}),
+        targetDispatchConfig,
         undefined,
         undefined,
         {
@@ -3592,6 +3620,19 @@ const startSessionChatManyOperation = async (args: SessionChatManyToolInput): Pr
         return activeOperationItem(target.id, randomUUID(), item.label);
       }
     );
+    const targetDispatchConfigs = await Promise.all(
+      initialItems.map(async (item, index) =>
+        item.status === 'active'
+          ? {
+              mcpServerIds: await readSessionMcpIdsForAuthoring(
+                manager,
+                item.target.sessionId,
+                expanded[index]?.mcpServerIds
+              ),
+            }
+          : null
+      )
+    );
     await freezeInvokingAuthor(manager, requester, invoking);
     const materializationClaimToken = randomUUID();
     const timing = operationDeadline(args.deadlineSeconds);
@@ -3610,6 +3651,7 @@ const startSessionChatManyOperation = async (args: SessionChatManyToolInput): Pr
             ...(requester.agentConfigId ? { agentConfigId: requester.agentConfigId } : {}),
             inputConfig: invoking.frozenInputConfig,
             sourceTurnId: invoking.identity.sourceTurnId,
+            targetDispatchConfigs,
             notificationOriginTurnIds: invoking.notificationOriginTurnIds,
           },
           initiatorChainDepth: invoking.chainDepth,
@@ -3650,7 +3692,7 @@ const startSessionChatManyOperation = async (args: SessionChatManyToolInput): Pr
             manager,
             storedItem.target.sessionId,
             expandedItem.prompt,
-            resolveTurnDispatchConfig({}),
+            targetDispatchConfigs[index] ?? { mcpServerIds: [] },
             undefined,
             undefined,
             {
@@ -4311,7 +4353,7 @@ export function buildSessionToolServer(handlers?: SessionToolHandlers): McpServe
             manager,
             sessionId,
             args.prompt,
-            resolveTurnDispatchConfig({}),
+            { mcpServerIds: args.mcpServerIds },
             buildStructuredOutputOptions(args),
             undefined,
             undefined,

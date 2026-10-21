@@ -633,6 +633,7 @@ describe('LodyOperationStore', () => {
               modeId: 'default',
               builtinDefaultModeId: 'default',
               modelId: 'gpt-5',
+              mcpServerIds: [],
               configOptionValues: { fast: true },
               inheritedDispatchConfig: { modelId: 'gpt-5', configOptionValues: { fast: true } },
               memory: { providerId: 'nowledge-mem', memoryId: 'reviewer' },
@@ -648,6 +649,7 @@ describe('LodyOperationStore', () => {
           modeId: 'default',
           builtinDefaultModeId: 'default',
           modelId: 'gpt-5',
+          mcpServerIds: [],
           configOptionValues: { fast: true },
           inheritedDispatchConfig: { modelId: 'gpt-5', configOptionValues: { fast: true } },
           memory: { providerId: 'nowledge-mem', memoryId: 'reviewer' },
@@ -693,7 +695,10 @@ describe('LodyOperationStore', () => {
       };
       return {
         resolve: (dispatchConfig: ResolvedTurnDispatchConfig) =>
-          resolveEffectiveSessionCreateDispatchConfig({ ...args, dispatchConfig }),
+          resolveEffectiveSessionCreateDispatchConfig({
+            ...args,
+            dispatchConfig: { mcpServerIds: [], ...dispatchConfig },
+          }),
         setCapability: (next: AcpCapabilityCacheEntry | undefined, confirmed: boolean) => {
           capability = next;
           freshnessConfirmed = confirmed;
