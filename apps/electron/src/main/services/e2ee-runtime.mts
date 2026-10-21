@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Context, Data, Effect, Exit, Layer, Result, Scope, Semaphore } from 'effect'
@@ -286,6 +286,8 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
         const cache = yield* sql(() =>
           db.prepare('SELECT name,origin FROM cache WHERE id=1').get()!
         )
+        let compactedAt = 1
+        let cachedScope: Scope.Closeable | undefined
         const cached = yield* Effect.result(
           Effect.gen(function* () {
             const origin = yield* sql(() =>
@@ -293,6 +295,7 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
                 ? restoreOrigin(JSON.parse(cache.origin))
                 : { kind: 'genesis' as const, record: creation.record }
             )
+            compactedAt = origin.kind === 'retained' ? origin.state.length : 1
             // A retained cache ahead of the independent pin is invalid, never new authority.
             if (origin.kind === 'retained' && (!pin || pin.length < origin.state.length))
               return yield* fail('corrupt')
@@ -301,13 +304,13 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
               origin,
               origin.kind === 'retained' ? (pin ?? endpoint) : endpoint
             )
+            cachedScope = opened.feedScope
             const state = yield* opened.feed.current()
             if (
               state.view.length !== endpoint.length ||
               !state.view.head.equals(endpoint.head) ||
               (state.bootstrap ? null : state.offset) !== currentLocator()
             ) {
-              yield* Scope.close(opened.feedScope, Exit.void)
               return yield* fail('corrupt')
             }
             return opened.feed
@@ -316,6 +319,8 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
         let feed: LedgerFeed['Service']
         if (Result.isSuccess(cached)) feed = cached.success
         else {
+          if (cachedScope) yield* Scope.close(cachedScope, Exit.void)
+          compactedAt = 1
           // Cache is disposable; prove the original history and pin before replacing it.
           const view = yield* verifyLedgerEffect({
             anchor: genesis,
@@ -366,6 +371,21 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
           }
           if (chunk.length > 0 && originals.length !== 1) return yield* fail('corrupt')
           yield* sql(() => db.prepare('UPDATE cache SET name=?,origin=NULL WHERE id=1').run(name))
+          // Only the replaced, verified-disposable feed is collected. Originals and pins remain.
+          if (
+            typeof cache.name === 'string' &&
+            /^ledger-feed(?:-[a-f0-9-]{36})?\.sqlite$/.test(cache.name)
+          ) {
+            yield* Effect.tryPromise({
+              try: async () => {
+                for (const suffix of ['', '-wal', '-shm'])
+                  await unlink(join(directory, cache.name as string) + suffix).catch((error) => {
+                    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+                  })
+              },
+              catch: () => fail('storage')
+            })
+          }
         }
         const observe = Effect.fnUntraced(function* (expected: ObservedCheckpoint) {
           if (
@@ -444,7 +464,6 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
           scope
         )
         let upgradeRequiredAt: number | undefined
-        let compactedAt = (yield* feed.current()).view.length
         const status = Effect.fnUntraced(function* (): Effect.fn.Return<
           E2eeRuntimeStatus,
           unknown
@@ -550,10 +569,7 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
             const view = yield* verified.current()
             minimumPin = { head: view.head, length: view.length }
           }
-          if (
-            !pending((yield* feed.current()).view) &&
-            (length - compactedAt >= 64 || (page.nextCursor === null && records.length > 0))
-          ) {
+          if (!pending((yield* feed.current()).view) && length - compactedAt >= 64) {
             const origin = yield* feed
               .rebase()
               .pipe(Effect.provideService(VerifiedLedger, verified))

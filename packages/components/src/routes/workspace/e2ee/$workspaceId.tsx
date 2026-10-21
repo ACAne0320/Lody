@@ -108,8 +108,10 @@ function WorkspaceControlRoute() {
           for (;;) {
             if (disposed) break;
             status = await runtime.ingestLedgerRecords(workspaceId, page);
-            await publish();
-            if (page.nextCursor === null || status.upgradeRequiredAt !== undefined) break;
+            if (page.nextCursor === null || status.upgradeRequiredAt !== undefined) {
+              await publish();
+              break;
+            }
             page = await port.history({ workspaceId, cursor: page.nextCursor, checkpoint: page.checkpoint });
           }
           return;

@@ -11,3 +11,8 @@
 - Keep common blob formats in core's node-custody adapter; no personal management operations,
   private exports, plaintext device files, or silent downgrade after keyring errors.
 - A future machine pairing flow must display file protection before the user approves it.
+
+- Native keyring calls run in a managed helper: 10-second timeout, secrets only on stdin.
+  Confirm termination before fallback; preserve process-release recovery owners.
+- Windows batches root/file ACL checks in one process. SQLite selection uses asynchronous
+  bounded retry on SQLITE_BUSY, never a blocking busy_timeout while awaiting keyring work.

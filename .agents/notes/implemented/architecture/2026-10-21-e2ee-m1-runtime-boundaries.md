@@ -28,8 +28,7 @@ Ordinary workspaces neither open custody nor acquire a new network prerequisite.
   Web/mobile keep their existing reader. IPC admits product windows and explicit leased-workspace
   operations only; it returns public projections, never secrets or arbitrary signing.
 - Core-authenticated originals enter history.sqlite before feed commit and pin advancement.
-  Failed ingestion closes that owner; reopen reconciles originals. Cache recovery preserves old
-  files and proves the pin. A crash between rebase and saving its envelope can also rebuild safely.
+  Failed ingestion closes that owner; reopen reconciles originals. Cache recovery proves the pin and removes only the replaced disposable feed after successful rebuild. A crash between rebase and saving its envelope can also rebuild safely.
 - Window leases keep other readers alive. Account handoff, logout and quit stop admission,
   await actual native operations, then release workspace stores and custody.
 - Node custody preserves existing blob formats, AAD, original publication and rewrap semantics.
@@ -55,3 +54,11 @@ history proves it, continuity remains pending and no key readiness or authority 
 The restriction is pinned durably and survives restart.
 
 The real-bundler startup tests locate the application by module ownership rather than a single facade shape. They still require dynamic-only import after startup ownership; shared dynamic entries may expose an application namespace. Production startup configuration is unchanged.
+
+## Review corrections
+
+Same-document navigation keeps its lease. Quit cleanup attempts E2EE and other independent resources together; sign-out proceeds after a failed E2EE close. A failed account Scope stays fenced even though subsequent Scope.close is idempotently successful; cancelled quit resumes admission only for healthy owners.
+
+Retained origins compact after 64 added records across reopen. Successful, verified rebuilding closes the replaced feed scope and removes only its SQLite file/sidecars; originals, pins and conflicting evidence are preserved. IPC publishes the full ledger at initial local display and at the final page or an upgrade stop, rather than each page.
+
+Machine keyring operations run in a process-owned helper with a 10-second timeout and credentials on stdin. Timeout fallback requires confirmed process termination; mixed failure/release causes retain the recovery owner and prohibit fallback. Existing OS custody never downgrades. Windows validates the directory in one ACL process; initialization lock contention yields and retries for at most 60 seconds instead of blocking the JS owner.

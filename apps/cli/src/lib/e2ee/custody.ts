@@ -1,10 +1,12 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { lstat, mkdir, open, readdir, link, unlink } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { constants } from 'node:fs';
-import { Effect } from 'effect';
-import { runCommandOk } from '@lody/shared/node/process';
+import { Cause, Effect, Result } from 'effect';
+import { runCommandOk, squashProcessFailure, type NodeProcessApi } from '@lody/shared/node/process';
 import { platformLayer } from '../../platform/process-options';
 import {
   makeNodeE2eeCustody,
@@ -20,13 +22,65 @@ export interface MachineKeyringEntry {
 }
 /** The entry factory is lazy: ordinary daemon startup never accesses a keyring. */
 export type MachineKeyring = (account: string) => Promise<MachineKeyringEntry>;
-const systemKeyring: MachineKeyring = async (account) => {
-  const { AsyncEntry } = await import('@napi-rs/keyring');
-  return new AsyncEntry('Lody E2EE Machine Custody', account, {
-    linux: { store: 'secret-service' },
+// Native keyring prompts cannot be cancelled in-process. The official process
+// owner terminates and joins this helper before a timeout can select file custody.
+const keyringHelper = `
+let input = '';
+for await (const chunk of process.stdin) input += chunk;
+try {
+  const { moduleUrl, account, operation, value } = JSON.parse(input);
+  const loaded = await import(moduleUrl);
+  const { AsyncEntry } = loaded.default ?? loaded;
+  const entry = new AsyncEntry('Lody E2EE Machine Custody', account, { linux: { store: 'secret-service' } });
+  let result = null;
+  if (operation === 'get') result = (await entry.getPassword()) ?? null;
+  else if (operation === 'set') await entry.setPassword(value);
+  else if (operation === 'delete') await entry.deleteCredential();
+  else throw new Error('invalid');
+  process.stdout.write(JSON.stringify(result));
+} catch {
+  process.stderr.write('e2ee_keyring_unavailable');
+  process.exitCode = 1;
+}
+`;
+/** One bounded native operation; caller supplies the official process Layer. */
+const machineKeyringOperation = (
+  account: string,
+  operation: 'get' | 'set' | 'delete',
+  value?: string
+) =>
+  Effect.gen(function* () {
+    const moduleUrl = yield* Effect.try({
+      try: () => pathToFileURL(createRequire(import.meta.url).resolve('@napi-rs/keyring')).href,
+      catch: () => failure('unavailable'),
+    });
+    const output = yield* runCommandOk({
+      command: process.execPath,
+      args: ['--input-type=module', '-e', keyringHelper],
+      env: { ...process.env },
+      input: JSON.stringify({ moduleUrl, account, operation, value }),
+      timeout: 10_000,
+      maxOutputBytes: 8192,
+    }).pipe(Effect.catchCause(processFailure));
+    return yield* Effect.try({
+      try: () => {
+        const result: unknown = JSON.parse(output.stdout.toString('utf8'));
+        if (result !== null && typeof result !== 'string') throw failure('corrupt');
+        return result === null ? undefined : result;
+      },
+      catch: () => failure('corrupt'),
+    });
   });
-};
 const failure = (code: NodeE2eeCustodyError['code']) => new NodeE2eeCustodyError({ code });
+// Effect 4.0.2's mapError/result can discard mixed Fail+Die causes. An unresolved
+// process tree is a recovery owner, never an ordinary keyring-unavailable result.
+const processFailure = (cause: Cause.Cause<unknown>) =>
+  cause.reasons.some(Cause.isDieReason)
+    ? Effect.die(squashProcessFailure(cause))
+    : cause.reasons.some(Cause.isInterruptReason)
+      ? Effect.interrupt
+      : Effect.fail(failure('unavailable'));
+
 const native = <A>(work: () => Promise<A>) =>
   Effect.uninterruptible(
     Effect.tryPromise({
@@ -54,10 +108,14 @@ $a.AddAccessRule($r)
 Set-Acl -LiteralPath $p -AclObject $a`
     : ''
 }
-$a = Get-Acl -LiteralPath $p
+$paths = @($p) + @(Get-ChildItem -LiteralPath $p -Force | ForEach-Object { $_.FullName })
+foreach ($path in $paths) {
+if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'link' }
+$a = Get-Acl -LiteralPath $path
 if ($a.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { throw 'owner' }
 foreach ($r in $a.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
   if ($r.AccessControlType -eq 'Allow' -and $r.IdentityReference.Value -ne $sid.Value) { throw 'access' }
+}
 }
 `;
   const systemRoot = process.env.SystemRoot;
@@ -72,11 +130,7 @@ foreach ($r in $a.GetAccessRules($true, $true, [Security.Principal.SecurityIdent
     ],
     maxOutputBytes: 1024,
     timeout: 15_000,
-  }).pipe(
-    Effect.provide(platformLayer({})),
-    Effect.asVoid,
-    Effect.mapError(() => failure('unavailable'))
-  );
+  }).pipe(Effect.provide(platformLayer({})), Effect.asVoid, Effect.catchCause(processFailure));
 }
 async function exists(path: string) {
   try {
@@ -133,6 +187,7 @@ async function readPrivate(path: string) {
 export const makeCliE2eeCustody = Effect.fn('CliE2eeCustody.open')(function* (options: {
   readonly directory: string;
   readonly keyring?: MachineKeyring;
+  readonly nodeProcess?: NodeProcessApi;
 }) {
   const directory = options.directory;
   if (!isAbsolute(directory)) return yield* failure('invalid-input');
@@ -143,33 +198,50 @@ export const makeCliE2eeCustody = Effect.fn('CliE2eeCustody.open')(function* (op
     return created;
   });
   yield* windowsAcl(directory, createdDirectory);
-  if (process.platform === 'win32') {
-    const names = yield* native(() => readdir(directory));
-    for (const name of names) yield* windowsAcl(join(directory, name));
-  }
   const lockPath = join(directory, 'selection.sqlite');
   const mutex = yield* Effect.acquireRelease(
-    native(async () => {
-      try {
-        const file = await open(lockPath, 'wx', 0o600);
-        await file.close();
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      }
-      await privatePath(lockPath);
-      const db = new DatabaseSync(lockPath);
-      try {
-        db.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE');
-        return db;
-      } catch {
-        db.close();
-        throw failure('unavailable');
+    Effect.gen(function* () {
+      for (let attempt = 0; ; attempt++) {
+        const db = yield* native(async () => {
+          try {
+            const file = await open(lockPath, 'wx', 0o600);
+            await file.close();
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+          }
+          await privatePath(lockPath);
+          const connection = new DatabaseSync(lockPath);
+          try {
+            connection.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE');
+            return connection;
+          } catch (error) {
+            connection.close();
+            if ([5, 6].includes((error as { errcode?: number }).errcode ?? -1)) return undefined;
+            throw error;
+          }
+        });
+        if (db) return db;
+        if (attempt >= 600) return yield* failure('unavailable');
+        // Yield the JS thread: another opener may be awaiting the native keyring.
+        yield* Effect.sleep('100 millis');
       }
     }),
     (db) => Effect.sync(() => db.close())
   );
   const marker = join(directory, 'protection');
-  const keyring = options.keyring ?? systemKeyring;
+  const callKeyring = (account: string, operation: 'get' | 'set' | 'delete', value?: string) =>
+    options.keyring
+      ? native(async () => {
+          const entry = await options.keyring!(account);
+          if (operation === 'get') return entry.getPassword();
+          if (operation === 'set') await entry.setPassword(value!);
+          else await entry.deleteCredential();
+          return undefined;
+        })
+      : machineKeyringOperation(account, operation, value).pipe(
+          Effect.provide(platformLayer({ nodeProcess: options.nodeProcess }))
+        );
+
   let protection: KekWrapper['protection'];
   let selected: Buffer | undefined;
   selected = yield* native(() =>
@@ -194,17 +266,17 @@ export const makeCliE2eeCustody = Effect.fn('CliE2eeCustody.open')(function* (op
     if (originals) return yield* failure('corrupt');
     const probeId = `probe:${randomBytes(16).toString('hex')}`;
     const probe = randomBytes(32).toString('hex');
-    const available = yield* native(async () => {
-      let entry: MachineKeyringEntry | undefined;
-      try {
-        entry = await keyring(probeId);
-        await entry.setPassword(probe);
-        return (await entry.getPassword()) === probe;
-      } catch {
-        return false;
-      } finally {
-        if (entry) await entry.deleteCredential().catch(() => undefined);
-      }
+    const available = yield* Effect.gen(function* () {
+      const probed = yield* Effect.result(
+        Effect.gen(function* () {
+          yield* callKeyring(probeId, 'set', probe);
+          return (yield* callKeyring(probeId, 'get')) === probe;
+        })
+      );
+      // A process-release defect bypasses this fallback; do not start another
+      // helper or publish file protection while the previous tree is unresolved.
+      yield* callKeyring(probeId, 'delete').pipe(Effect.catch(() => Effect.void));
+      return Result.isSuccess(probed) && probed.success;
     });
     protection = available ? 'os-keystore' : 'file';
     yield* native(() => publish(marker, protection));
@@ -220,27 +292,20 @@ export const makeCliE2eeCustody = Effect.fn('CliE2eeCustody.open')(function* (op
   let key: Uint8Array | undefined;
   yield* Effect.addFinalizer(() => Effect.sync(() => key?.fill(0)));
   if (protection === 'os-keystore') {
-    key = yield* native(async () => {
-      const account = createHash('sha256').update(directory).digest('hex');
-      const entry = await keyring(account);
-      let encoded = await entry.getPassword();
-      if (encoded === undefined) {
-        // A missing wrapper for existing encrypted originals is a loss, not a new identity.
-        try {
-          await lstat(join(directory, 'kek.safe-storage'));
-          throw failure('unavailable');
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
-        const original = randomBytes(32).toString('hex');
-        await entry.setPassword(original);
-        encoded = await entry.getPassword();
-        if (encoded !== original) throw failure('unavailable');
-      }
-      if (!/^[0-9a-f]{64}$/.test(encoded)) throw failure('corrupt');
-      return new Uint8Array(Buffer.from(encoded, 'hex'));
-    });
+    const account = createHash('sha256').update(directory).digest('hex');
+    let encoded = yield* callKeyring(account, 'get');
+    if (encoded === undefined) {
+      if (yield* native(() => exists(join(directory, 'kek.safe-storage'))))
+        return yield* failure('unavailable');
+      const original = randomBytes(32).toString('hex');
+      yield* callKeyring(account, 'set', original);
+      encoded = yield* callKeyring(account, 'get');
+      if (encoded !== original) return yield* failure('unavailable');
+    }
+    if (encoded === undefined || !/^[0-9a-f]{64}$/.test(encoded)) return yield* failure('corrupt');
+    key = new Uint8Array(Buffer.from(encoded, 'hex'));
   }
+
   const wrappingKey = key;
   if (protection === 'os-keystore' && !wrappingKey) return yield* failure('unavailable');
   const aad = new TextEncoder().encode('lody-e2ee/cli-kek-wrapper/v1\0');

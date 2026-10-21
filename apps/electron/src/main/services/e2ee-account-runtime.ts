@@ -14,16 +14,24 @@ type Account = {
   scope: Scope.Closeable
   bootstrap: Effect.Success<ReturnType<typeof makeDesktopE2eeBootstrap>>
   host: Effect.Success<ReturnType<typeof makeDesktopE2eeRuntimeHost>>
+  closeFailed?: boolean
   readers: Map<string, Map<number, number>>
 }
 let current: Account | undefined
 let quitting = false
 const closeCurrent = Effect.gen(function* () {
-  if (!current) return
+  if (!current) return undefined
   const owner = current
-  // Retain a failed owner; don't bind a replacement before its resources release.
-  yield* Scope.close(owner.scope, Exit.void)
+  // Scope.close is idempotent even after a failed finalizer. Preserve that failure:
+  // another close must not silently authorize a replacement owner.
+  if (owner.closeFailed) return yield* Effect.fail(new Error('e2ee_cleanup_failed'))
+  const closed = yield* Effect.exit(Scope.close(owner.scope, Exit.void))
+  if (Exit.isFailure(closed)) {
+    owner.closeFailed = true
+    return yield* Effect.fail(new Error('e2ee_cleanup_failed'))
+  }
   current = undefined
+  return undefined
 })
 
 /** Entry boundary; account and resources remain locked until the native operation settles. */
@@ -77,6 +85,7 @@ export function withDesktopE2eeAccount<A>(
             }
             current = opened.value
           }
+          if (current.closeFailed) return yield* Effect.fail(new Error('e2ee_cleanup_failed'))
           return yield* work(current)
         })
       )
@@ -109,12 +118,18 @@ export function closeDesktopE2eeAccount(options?: {
     Effect.uninterruptible(
       serial.withPermit(
         Effect.gen(function* () {
-          yield* closeCurrent
-          if (options?.signOut)
+          const closed = yield* Effect.exit(closeCurrent)
+          if (options?.signOut) {
+            if (Exit.isFailure(closed))
+              console.warn('[E2EE] Account cleanup failed', { code: 'e2ee_cleanup_failed' })
             yield* Effect.tryPromise({
               try: options.signOut,
               catch: () => new Error('e2ee_signout_failed')
             })
+          } else if (Exit.isFailure(closed)) {
+            return yield* Effect.fail(new Error('e2ee_cleanup_failed'))
+          }
+          return undefined
         })
       )
     )
@@ -139,4 +154,9 @@ export function releaseDesktopE2eeReader(senderId: number): void {
       )
     )
   ).catch(() => undefined)
+}
+
+/** The quit barrier can leave the application open; failed owners stay fenced. */
+export function resumeDesktopE2eeAccount(): void {
+  quitting = false
 }

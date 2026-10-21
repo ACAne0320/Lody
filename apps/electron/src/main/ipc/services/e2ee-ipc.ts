@@ -22,8 +22,8 @@ function sender() {
     const id = event.sender.id
     event.sender.once('destroyed', () => releaseDesktopE2eeReader(id))
     event.sender.on('render-process-gone', () => releaseDesktopE2eeReader(id))
-    event.sender.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
-      if (isMainFrame) releaseDesktopE2eeReader(id)
+    event.sender.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+      if (isMainFrame && !isInPlace) releaseDesktopE2eeReader(id)
     })
   }
   return event.sender.id

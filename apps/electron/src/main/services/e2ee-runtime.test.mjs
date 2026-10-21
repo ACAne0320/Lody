@@ -181,6 +181,7 @@ void test('binding is immutable, retained reopen asks only for a suffix, and cor
       yield* host.ingestLedgerRecords(workspaceId, empty)
     })
   )
+  const oldFeed = historyDb(directory, (db) => db.prepare('SELECT name FROM cache').get().name)
   historyDb(directory, (db) => db.prepare('UPDATE cache SET origin=?').run('{corrupt'))
   await execute(
     Effect.gen(function* () {
@@ -188,6 +189,9 @@ void test('binding is immutable, retained reopen asks only for a suffix, and cor
       assert.equal((yield* host.open(workspaceId)).length, 1000)
     })
   )
+  await assert.rejects(readFile(join(directory, 'workspaces', workspaceId, oldFeed)), {
+    code: 'ENOENT'
+  })
 })
 void test('a failed originals transaction never advances the pin; reopening retains the last accepted view', async (t) => {
   const directory = await fixture(t)
@@ -336,5 +340,34 @@ void test('closing waits for admitted native unprotect before releasing the runt
   } finally {
     release.resolve()
     await Effect.runPromise(Scope.close(scope, Exit.void))
+  }
+})
+
+void test('rebases after 64 added records across reopen, without compacting each final page', async (t) => {
+  const directory = await fixture(t)
+  let saved, records
+  await execute(
+    Effect.gen(function* () {
+      const owner = yield* ownerWithHost(directory)
+      saved = yield* bind(owner)
+      records = yield* makeRecords(owner.custody, saved, 66)
+    })
+  )
+  let start = 0
+  for (const end of [33, 64, 65, 66]) {
+    await execute(
+      Effect.gen(function* () {
+        const { host } = yield* ownerWithHost(directory)
+        yield* host.open(workspaceId)
+        yield* host.ingestLedgerRecords(
+          workspaceId,
+          page(records.slice(0, end), saved.genesisHashHex, start)
+        )
+        assert.equal((yield* host.status(workspaceId)).length, end)
+      })
+    )
+    const origin = historyDb(directory, (db) => db.prepare('SELECT origin FROM cache').get().origin)
+    assert.equal(origin === null ? null : JSON.parse(origin).length, end < 65 ? null : 65)
+    start = end
   }
 })
