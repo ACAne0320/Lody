@@ -305,6 +305,9 @@ importers:
       '@lody/code-review-helper':
         specifier: workspace:*
         version: link:../../packages/code-review-helper
+      '@lody/e2ee-core':
+        specifier: workspace:*
+        version: link:../../packages/e2ee-core
       '@lody/loro-streams-rpc':
         specifier: workspace:*
         version: link:../../packages/loro-streams-rpc
@@ -1601,8 +1604,8 @@ importers:
         version: 4.0.2
     devDependencies:
       '@loro-dev/streams-crdt':
-        specifier: 0.17.0
-        version: 0.17.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
+        specifier: 'catalog:'
+        version: 0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
       '@loro-dev/streams-client':
         specifier: 'catalog:'
         version: 0.9.0
@@ -1950,8 +1953,8 @@ importers:
         specifier: 'catalog:'
         version: 0.4.4
       '@loro-dev/streams-crdt':
-        specifier: 0.17.0
-        version: 0.17.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
+        specifier: 'catalog:'
+        version: 0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)
       loro-crdt:
         specifier: 'catalog:'
         version: 1.16.3
@@ -3929,18 +3932,6 @@ packages:
   '@loro-dev/streams-client@0.9.0':
     resolution: {integrity: sha512-Dlj78XQwugQS0IgKig6DL03U3QhSW10alBdopsFXPbVuKfDrGgL27TY02LnE2+1ptrX2BU7euWH5q4E/tFmR/Q==}
     engines: {node: '>=18'}
-
-  '@loro-dev/streams-crdt@0.17.0':
-    resolution: {integrity: sha512-gsuEZgWV86g37ILdGYZP5NlF1hqi4tJ7fpk6IiaRdi0lyFjdVgN88jjqESYPbhVL6ypFhAXiTpX5307mRqLNYg==}
-    peerDependencies:
-      '@loro-dev/flock-wasm': ^0.4.0
-      effect: 4.0.2
-      loro-crdt: ^1.10.3
-    peerDependenciesMeta:
-      '@loro-dev/flock-wasm':
-        optional: true
-      loro-crdt:
-        optional: true
 
   '@loro-dev/streams-crdt@0.19.1':
     resolution: {integrity: sha512-BGCcunydzZsbdVVInmJoUYNXkfGPBAsFyLmIzDio8y5k4fi76cy3rC9x5VTtJKEG9BBM0KiZT56kcX/TJDDtjQ==}
@@ -16639,14 +16630,6 @@ snapshots:
   '@loro-dev/streams-client@0.8.0': {}
 
   '@loro-dev/streams-client@0.9.0': {}
-
-  '@loro-dev/streams-crdt@0.17.0(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)':
-    dependencies:
-      '@loro-dev/streams-client': 0.10.0
-      effect: 4.0.2
-    optionalDependencies:
-      '@loro-dev/flock-wasm': 0.4.4
-      loro-crdt: 1.16.3
 
   '@loro-dev/streams-crdt@0.19.1(@loro-dev/flock-wasm@0.4.4)(effect@4.0.2)(loro-crdt@1.16.3)':
     dependencies:
