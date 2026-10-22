@@ -78,6 +78,12 @@ all open):
   `rejoin()` retries the save without reconnecting. Durable cursors still never pass
   unpersisted state. An earlier revision of #435 retried the save before every read,
   which stopped all live updates while storage failed; review rejected it.
+- A first join whose cursor save fails still completes and keeps reading, but it
+  reports first sync (`waitUntilSynced`, `catchup`, and so loro-repo's
+  `firstSyncedWithRemote`) only after a live read reaches the remote tail. A save can
+  fail between catch-up pages, and confirming then let the CLI catalog accept an
+  incomplete baseline. Waiters reject on close, a terminal persistence error or an
+  exhausted read budget.
 - Let the consumer mark barrier errors as terminal, and make `StaleReplicaError`
   one; tear down or rebind sessions bound to a replaced replica.
 - Reopen the IndexedDB connection after the browser closes it (#163). Without this,
