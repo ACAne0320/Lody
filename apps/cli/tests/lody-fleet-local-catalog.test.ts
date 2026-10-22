@@ -14,6 +14,10 @@ import {
 } from '../src/lib/local-workspace-catalog';
 import { Lody } from '../src/lib/lody';
 import { LodyFleet } from '../src/lib/lody-fleet';
+import * as projectMeta from '../src/lib/local-project-meta';
+import * as scheduleWorkspace from '../src/lib/schedules/schedule-workspace';
+import { createCloudPrAssociationPort } from '../src/lib/cloud-pr-association';
+import type { PrPollerWorkspaceHandle } from '../src/lib/pr-poller/pr-poller-workspace';
 import type { Logger } from '../src/utils/logger';
 
 const createTestCloudPort = (
@@ -83,7 +87,10 @@ const createCatalogStub = (
   upsertSession: () => Effect.die('not used'),
 });
 
-const createFleetHarness = (catalog: LocalWorkspaceCatalogService) => {
+const createFleetHarness = (
+  catalog: LocalWorkspaceCatalogService,
+  cloudPort = createTestCloudPort()
+) => {
   const started: string[] = [];
   const runtimeStateReporter = createRuntimeStateReporter();
   const fleet = new LodyFleet({
@@ -94,7 +101,7 @@ const createFleetHarness = (catalog: LocalWorkspaceCatalogService) => {
     machineId: 'machine-1' as MachineId,
     machineName: 'host',
     runtimeStateReporter: runtimeStateReporter as never,
-    cloudPort: createTestCloudPort(),
+    cloudPort,
     localWorkspaceCatalog: catalog,
     localFirstBootstrap: true,
     machineLifecycleCapability: {
@@ -529,4 +536,118 @@ it('production startup retry recovers the retained owner before attempting anoth
     create.mockRestore();
     vi.useRealTimers();
   }
+});
+
+describe('Fleet PR observation composition', () => {
+  it.each([undefined, 'plaintext', 'e2ee'] as const)(
+    'keeps hosted PR metadata out of %s encrypted composition while ordinary PR linkage still works',
+    async (contentMode) => {
+      const encrypted = contentMode === 'e2ee';
+      const requests: unknown[] = [];
+      const cloud = createTestCloudPort();
+      const association = createCloudPrAssociationPort({
+        token: 'synthetic-token',
+        authSiteUrl: 'https://synthetic.invalid',
+        logger: createSilentLogger(),
+        fetch: async (_url, init) => {
+          requests.push(JSON.parse(String(init?.body)));
+          return new Response('{}', { status: 200 });
+        },
+      });
+      Object.defineProperties(cloud, {
+        githubTokens: {
+          get: () => {
+            if (encrypted)
+              throw new Error('encrypted metadata must not acquire hosted credentials');
+            return null;
+          },
+        },
+        prAssociation: {
+          get: () => {
+            if (encrypted) throw new Error('encrypted metadata must not acquire hosted linkage');
+            return association;
+          },
+        },
+      });
+      const create = vi.spyOn(Lody, 'create').mockResolvedValue({
+        start: async () => {},
+        cleanup: async () => {},
+        documentManager: { repo: {} },
+        onSessionTerminated: () => () => {},
+        isControlPlaneReady: () => true,
+        isControlPlaneRecovering: () => false,
+        isRemoteBridgeAttached: () => false,
+        getActiveSessionCount: () => 0,
+        getConnectedRoomCount: () => 0,
+      } as never);
+      const reconcile = vi
+        .spyOn(projectMeta, 'reconcileMachineLocalProjectRootPaths')
+        .mockResolvedValue(undefined);
+      const schedules = vi.spyOn(scheduleWorkspace, 'createScheduleWorkspace').mockResolvedValue({
+        evaluate: async () => {},
+        dispose: async () => {},
+      });
+      const fleet = createFleetHarness(
+        createCatalogStub(() => Effect.succeed(catalogSnapshot({}))),
+        cloud
+      ).fleet as unknown as {
+        desiredWorkspaces: Map<string, unknown>;
+        runtimes: Map<string, { prPollerWorkspace: PrPollerWorkspaceHandle | null }>;
+        retryTimers: Map<string, ReturnType<typeof setTimeout>>;
+        startWorkspace(workspace: never): Promise<void>;
+        stopWorkspace(id: string): Promise<void>;
+        remoteBridge: null;
+        stopped: boolean;
+      };
+      // Exercise the production Fleet startup/cleanup, rather than only a
+      // helper's policy or the sanitized cloud port inside Lody.create.
+      delete (fleet as unknown as { startWorkspace?: unknown }).startWorkspace;
+      fleet.remoteBridge = null;
+      const workspace = {
+        id: 'metadata-boundary',
+        name: 'Synthetic',
+        slug: null,
+        role: 'owner',
+        ...(contentMode ? { contentMode } : {}),
+      };
+      fleet.desiredWorkspaces.set(workspace.id, workspace);
+      try {
+        await fleet.startWorkspace(workspace as never);
+        const runtime = fleet.runtimes.get(workspace.id);
+        expect(runtime).toBeDefined();
+        if (encrypted) {
+          expect(runtime?.prPollerWorkspace).toBeNull();
+          expect(requests).toEqual([]);
+        } else {
+          expect(
+            await runtime?.prPollerWorkspace?.associatePullRequest?.({
+              repoFullName: 'synthetic/repo',
+              branch: 'synthetic-branch',
+              prNumber: 1,
+              prUrl: 'https://github.com/synthetic/repo/pull/1',
+              status: 'open',
+              ownerSessionId: 'synthetic-session' as SessionId,
+            })
+          ).toBe(true);
+          expect(requests).toEqual([
+            expect.objectContaining({
+              path: 'github:associatePullRequestForCli',
+              args: expect.objectContaining({
+                repoFullName: 'synthetic/repo',
+                branch: 'synthetic-branch',
+              }),
+            }),
+          ]);
+        }
+        await fleet.stopWorkspace(workspace.id);
+        expect(fleet.runtimes.has(workspace.id)).toBe(false);
+      } finally {
+        fleet.stopped = true;
+        for (const timer of fleet.retryTimers.values()) clearTimeout(timer);
+        create.mockRestore();
+        reconcile.mockRestore();
+        schedules.mockRestore();
+      }
+    }
+  );
 });

@@ -101,3 +101,18 @@ never fall back. Originals commit before feed/pin; verification/storage failures
 the owner. Overlapping pages compare the verified original prefix and append only new
 records; malformed input does not close shared readers. Retain old renderer checkpoints on first takeover; insufficient history
 stays pending. Full boundaries: [M1 note](../../../../../.agents/notes/implemented/architecture/2026-10-21-e2ee-m1-runtime-boundaries.md).
+
+The optional `e2ee-cloud-client.mts` owns only fixed E2EE Convex references and
+adapts `KeyMailbox`. Construct it only for cloud E2EE accounts, and invoke its
+network Effects outside the account custody lock. Each request gets its own SDK
+auth/abort state and a bounded deadline; disposal aborts HTTP and prevents late
+auth completion from starting another request. Never retry an uncertain write by
+regenerating bytes: the caller retains and reconciles the original request. SDK
+logs and raw causes do not escape this adapter. Its wire validation is structural;
+core remains responsible for signatures, ledger authority, and envelope opening.
+
+`e2ee-local-pairing.mts` journals the main-generated session and exact signed
+admission before HTTP. Stage verifies the machine's session-bound credential and
+proof locally; only explicit approval signs. Confirm uses verified ledger originals,
+not a server hint. Pairing I/O and key distribution stay outside custody locks;
+activation waits for CLI key installation before content sync starts.

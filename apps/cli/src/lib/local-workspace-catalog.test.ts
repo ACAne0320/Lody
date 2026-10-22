@@ -93,6 +93,27 @@ describe('LocalWorkspaceCatalog', () => {
     ]);
   });
 
+  it('retains encrypted workspace evidence across restart without changing ordinary entries', async () => {
+    const normal = { id: 'ordinary', name: 'Ordinary', slug: null, role: 'owner' };
+    const encrypted = {
+      id: 'encrypted',
+      name: 'Encrypted',
+      slug: null,
+      role: 'owner',
+      contentMode: 'e2ee',
+      genesisHash: 'ab'.repeat(32),
+    };
+    await runCatalog(
+      makeCatalog().cacheRemoteWorkspaces({
+        identity: { userId: 'user-1' },
+        machine: { machineId: 'machine-1', machineName: 'host' },
+        workspaces: [normal, encrypted],
+      })
+    );
+    const reopened = await runCatalog(makeCatalog().listActiveWorkspaces());
+    expect(reopened.map(localCatalogWorkspaceToWorkspaceListItem)).toEqual([normal, encrypted]);
+  });
+
   it('records workspace access snapshots and preserves them across remote refreshes', async () => {
     const catalog = makeCatalog();
     await runCatalog(

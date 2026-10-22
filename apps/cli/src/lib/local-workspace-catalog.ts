@@ -58,6 +58,11 @@ const CatalogWorkspaceSchema = z.object({
   name: z.string(),
   slug: z.string().nullable(),
   role: z.string(),
+  contentMode: z.enum(['e2ee', 'plaintext']).optional(),
+  genesisHash: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
   state: z.enum(['active', 'remote_missing']),
   cachedAt: z.number(),
   remoteMissingAt: z.number().optional(),
@@ -121,6 +126,8 @@ export type CacheRemoteWorkspacesInput = {
     name: string;
     slug: string | null;
     role: string;
+    contentMode?: string;
+    genesisHash?: string;
   }>;
 };
 
@@ -367,6 +374,9 @@ export function makeLocalWorkspaceCatalog(
             name: workspace.name,
             slug: workspace.slug,
             role: workspace.role,
+            ...(workspace.contentMode === 'e2ee'
+              ? { contentMode: 'e2ee' as const, genesisHash: workspace.genesisHash }
+              : {}),
             state: 'active',
             cachedAt: now,
             machine: {
@@ -460,11 +470,16 @@ export function localCatalogWorkspaceToWorkspaceListItem(workspace: LocalCatalog
   name: string;
   slug: string | null;
   role: string;
+  contentMode?: string;
+  genesisHash?: string;
 } {
   return {
     id: workspace.workspaceId,
     name: workspace.name,
     slug: workspace.slug,
     role: workspace.role,
+    ...(workspace.contentMode
+      ? { contentMode: workspace.contentMode, genesisHash: workspace.genesisHash }
+      : {}),
   };
 }

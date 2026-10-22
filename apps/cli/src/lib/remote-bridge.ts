@@ -9,6 +9,8 @@ export type RemoteBridgeWorkspace = {
   name: string;
   slug: string | null;
   role: string;
+  contentMode?: string;
+  genesisHash?: string;
 };
 
 export type RemoteBridgeRuntime = {

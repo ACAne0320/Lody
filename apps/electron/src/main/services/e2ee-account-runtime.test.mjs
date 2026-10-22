@@ -6,6 +6,7 @@ import { runInNewContext } from 'node:vm'
 import test from 'node:test'
 import ts from 'typescript'
 import { Effect, Scope } from 'effect'
+import { makeOfflineAuthIdentityCache } from '../auth-storage.ts'
 const require = createRequire(import.meta.url)
 async function load(relative, dependencies, console = globalThis.console) {
   const source = await readFile(new URL(relative, import.meta.url), 'utf8')
@@ -30,7 +31,12 @@ async function load(relative, dependencies, console = globalThis.console) {
 }
 async function account(options = {}) {
   const identity = { userId: 'account', generation: 1 }
+  let identityListener = () => {}
   const auth = {
+    subscribeCachedSessionIdentity: (listener) => {
+      identityListener = listener
+      return () => {}
+    },
     getCachedSessionIdentity: () => ({ ...identity }),
     getBootstrapSession: () => new Promise(() => {})
   }
@@ -52,7 +58,16 @@ async function account(options = {}) {
     },
     { warn: (...args) => warnings.push(args) }
   )
-  return { api, warnings, identity }
+  return {
+    api,
+    warnings,
+    identity,
+    publishIdentity: (userId) => {
+      identity.userId = userId
+      identity.generation += 1
+      identityListener()
+    }
+  }
 }
 void test('failed account cleanup cannot block sign-out or authorize replacement on a second close', async () => {
   const { api, warnings } = await account()
@@ -110,6 +125,7 @@ void test('in-place and subframe navigation retain the ledger lease; document na
     host: { open: () => Effect.succeed('open'), status: () => Effect.succeed('ready') }
   }
   const { E2eeIpc } = await load('../ipc/services/e2ee-ipc.ts', {
+    '../ipc-service-deps': { getIpcServiceDeps: () => ({}) },
     'electron-ipc-decorator': {
       IpcService: class {},
       IpcMethod: () => (_target, _name, descriptor) => descriptor,
@@ -246,6 +262,11 @@ void test('main cached identity follows resolved sessions, transport failures an
     {
       electron: { app: {}, safeStorage: {}, shell: {} },
       '../auth': {
+        offlineAuthIdentity: makeOfflineAuthIdentityCache({
+          get: () => null,
+          set: () => {},
+          delete: () => {}
+        }),
         authClient: {
           getSession: async () => {
             if (offline) throw new Error('synthetic offline')
@@ -284,4 +305,106 @@ void test('main cached identity follows resolved sessions, transport failures an
   const after = service.getCachedSessionIdentity()
   assert.equal(after.userId, null)
   assert.ok(after.generation > before.generation)
+})
+
+void test('confirmed identity reopens offline after restart, matches bearer or cookie, and is revoked by logout', async () => {
+  const storage = new Map()
+  const offlineAuthIdentity = makeOfflineAuthIdentityCache({
+    get: (key) => storage.get(key),
+    set: (key, value) => storage.set(key, value),
+    delete: (key) => storage.delete(key)
+  })
+  let cookie = 'better-auth.session_token=synthetic-token'
+  let cookieUnavailable = false
+  let response = { data: { user: { id: 'account' }, session: { token: 'synthetic-token' } } }
+  let offline = false
+  const { AuthService } = await load(
+    './auth-service.ts',
+    {
+      electron: { app: {}, safeStorage: {}, shell: {} },
+      '../auth': {
+        offlineAuthIdentity,
+        authClient: {
+          getCookie: () => {
+            if (cookieUnavailable) throw new Error('synthetic locked cookie')
+            return cookie
+          },
+          getSession: async () => {
+            if (offline) throw new Error('synthetic offline')
+            return response
+          },
+          signOut: async () => {}
+        }
+      },
+      '../posthog-error-reporting': {},
+      './desktop-login': {
+        DesktopLogin: class {
+          cancel() {}
+        }
+      },
+      '../platform': { desktopInstallationProfile: { releaseChannel: 'stable' } },
+      '@lody/shared/electron-ipc': {}
+    },
+    { warn: () => {} }
+  )
+  const first = new AuthService()
+  await first.getSession()
+  assert.equal(first.getCachedSessionIdentity().source, 'network')
+  offline = true
+  // New service has no resolved session or auth request. The disk binding has
+  // no timestamp and survives any wall-clock change, including an eight-day gap.
+  const reopened = new AuthService()
+  assert.equal(reopened.getCachedSessionIdentity().userId, 'account')
+  assert.equal(reopened.getCachedSessionIdentity().source, 'offline')
+  const bearer = (token) => ({ fetchOptions: { headers: { Authorization: `Bearer ${token}` } } })
+  assert.equal(reopened.getCachedSessionIdentity(bearer('wrong-token')).userId, null)
+  cookie = ''
+  const bearerOnly = new AuthService()
+  assert.equal(bearerOnly.getCachedSessionIdentity().userId, null)
+  assert.equal(bearerOnly.getCachedSessionIdentity(bearer('synthetic-token')).userId, 'account')
+  assert.equal(bearerOnly.getCachedSessionIdentity().userId, 'account')
+  cookieUnavailable = true
+  assert.equal(bearerOnly.getCachedSessionIdentity().userId, 'account')
+  assert.equal(
+    new AuthService().getCachedSessionIdentity(bearer('synthetic-token')).userId,
+    'account'
+  )
+  cookieUnavailable = false
+  const observed = []
+  bearerOnly.subscribeCachedSessionIdentity(() =>
+    observed.push(bearerOnly.getCachedSessionIdentity().userId)
+  )
+  offline = false
+  response = { data: { user: { id: 'other-account' }, session: { token: 'other-token' } } }
+  await bearerOnly.getSession()
+  assert.deepEqual(observed, ['other-account'])
+  offline = true
+  await bearerOnly.getSession()
+  assert.deepEqual(observed, ['other-account'])
+  await bearerOnly.signOut()
+  assert.deepEqual(observed, ['other-account', null])
+  assert.equal(new AuthService().getCachedSessionIdentity(bearer('other-token')).userId, null)
+})
+
+void test('confirmed identity changes release old custody without waiting for another E2EE request', async () => {
+  const { api, publishIdentity } = await account()
+  const released = Promise.withResolvers()
+  await api.withDesktopE2eeAccount((owner) =>
+    Scope.addFinalizer(
+      owner.scope,
+      Effect.sync(() => released.resolve())
+    )
+  )
+  publishIdentity(null)
+  await released.promise
+  await assert.rejects(
+    () => api.withDesktopE2eeAccount(() => Effect.void),
+    /e2ee_account_unavailable/
+  )
+  publishIdentity('replacement-account')
+  assert.equal(
+    await api.withDesktopE2eeAccount((owner) => Effect.succeed(owner.accountId)),
+    'replacement-account'
+  )
+  await api.closeDesktopE2eeAccount()
 })

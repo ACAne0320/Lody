@@ -1,3 +1,4 @@
+import type { LocalE2eePairingRequest } from '@lody/shared/e2ee-local-pairing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -218,3 +219,71 @@ describe.each(['machine RPC', 'local daemon'] as const)(
     });
   }
 );
+
+describe('local E2EE pairing authority', () => {
+  const request: LocalE2eePairingRequest = {
+    type: 'activate',
+    accountId: 'account',
+    machineId: 'machine',
+    workspaceId: 'workspace',
+    genesisHash: '12'.repeat(32),
+  };
+  const workspace = { id: 'workspace', contentMode: 'e2ee', genesisHash: request.genesisHash };
+  const target = (overrides: Record<string, unknown> = {}) =>
+    Object.assign(Object.create(LodyFleet.prototype), {
+      stopped: false,
+      localPlatform: false,
+      userId: 'account',
+      cloudPort: { e2ee: {} },
+      desiredWorkspaces: new Map([['workspace', workspace]]),
+      runtimes: new Map([['workspace', { lody: { refreshEncryptedWorkspace: async () => {} } }]]),
+      startInFlight: new Map(),
+      e2eeActivationInFlight: new Map(),
+      startWorkspace: async () => {},
+      resolveWorkspaceRuntime: async () => ({
+        lody: { refreshEncryptedWorkspace: async () => {} },
+      }),
+      ...overrides,
+    }) as { dispatchLocalE2eePairing: (input: LocalE2eePairingRequest) => Promise<unknown> };
+  it('refuses another account, ordinary workspace, foreign genesis and OSS mode before starting anything', async () => {
+    for (const instance of [
+      target({ userId: 'other' }),
+      target({ localPlatform: true }),
+      target({
+        desiredWorkspaces: new Map([['workspace', { ...workspace, contentMode: 'plaintext' }]]),
+      }),
+      target({
+        desiredWorkspaces: new Map([['workspace', { ...workspace, genesisHash: '34'.repeat(32) }]]),
+      }),
+    ]) {
+      await expect(instance.dispatchLocalE2eePairing(request)).rejects.toThrow(
+        /e2ee_(account_unavailable|binding_conflict)/
+      );
+    }
+  });
+  it('keeps a temporary mailbox failure retryable and acknowledges only a later verified refresh', async () => {
+    let ready = false;
+    const instance = target({
+      runtimes: new Map([
+        [
+          'workspace',
+          {
+            lody: {
+              refreshEncryptedWorkspace: async () => {
+                if (!ready) throw new Error('e2ee_waiting_for_key');
+              },
+            },
+          },
+        ],
+      ]),
+    });
+    await expect(instance.dispatchLocalE2eePairing(request)).rejects.toThrow(
+      'e2ee_waiting_for_key'
+    );
+    ready = true;
+    expect(await instance.dispatchLocalE2eePairing(request)).toEqual({
+      ok: true,
+      type: 'activate',
+    });
+  });
+});

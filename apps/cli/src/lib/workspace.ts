@@ -9,6 +9,11 @@ export const WorkspaceSummarySchema = z.object({
   name: z.string(),
   slug: z.string().nullable(),
   role: z.string(),
+  contentMode: z.string().optional(),
+  genesisHash: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
 });
 
 export const WorkspaceGitHubRepositorySchema = z.object({

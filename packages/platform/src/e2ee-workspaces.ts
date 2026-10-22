@@ -21,6 +21,7 @@ export interface E2eeWorkspacePrepareInput {
 export interface E2eeWorkspacePrepared extends E2eeWorkspacePrepareInput {
   readonly genesisRecordHex: string;
   readonly genesisHashHex: string;
+  readonly deviceCredentialHash: string;
 }
 
 /** Control-plane access, independent of the ordinary document/execution runtime.
@@ -73,6 +74,18 @@ export interface E2eeRuntimeLedgerView {
 }
 /** Desktop-only purpose-limited IPC; opening an existing workspace never creates an identity. */
 export interface E2eeWorkspaceRuntime {
+  /** Local identity only; never authorizes a cloud request. */
+  account(options?: { token?: string }): Promise<{ userId: string; source: 'network' | 'offline' } | null>;
+  /** Device access credential only, never a content key or private signing key. */
+  deviceCredential(workspaceId: string): Promise<string>;
+  /** Prepare public same-user machine evidence; this never admits the device. */
+  prepareLocalAgent?(workspaceId: string): Promise<{ pairingSessionId: string; protection: 'os-keystore' | 'file'; admitted: boolean }>;
+  /** Explicit approval only; retries reconcile the persisted original ledger record. */
+  admitLocalAgent?(workspaceId: string, pairingSessionId: string): Promise<{ admitted: true; ready: boolean }>;
+  refresh(workspaceId: string): Promise<E2eeRuntimeStatus>;
+  contentStreamsToken(workspaceId: string, rejectedToken?: string): Promise<import('@lody/cloud-api').E2eeContentToken>;
+  seal(workspaceId: string, input: E2eeContentSeal): Promise<{ header: Uint8Array; sealed: Uint8Array }>;
+  openContent(workspaceId: string, input: E2eeContentOpen): Promise<Uint8Array>;
   recordCreated(input: { workspaceId: string; genesisHash: string; requestId?: string }): Promise<void>;
   open(workspaceId: string, observed?: { genesisHash: string; headHash: string; length: number }): Promise<E2eeRuntimeStatus>;
   close(workspaceId: string): Promise<void>;
@@ -80,3 +93,9 @@ export interface E2eeWorkspaceRuntime {
   ingestLedgerRecords(workspaceId: string, page: E2eeWorkspaceHistoryPage): Promise<E2eeRuntimeStatus>;
   ledgerView(workspaceId: string): Promise<E2eeRuntimeLedgerView>;
 }
+
+/** Purpose-bound IPC input. Functions, signing keys and document keys never cross. */
+export type E2eeContentRoom = { kind: 'meta' } | { kind: 'doc'; docId: string } | { kind: 'flock'; flockDocId: string };
+export type E2eeContentContext = { protocol: 'loro-streams-crdt-payload-protection'; version: 2; kind: 'update_batch' | 'snapshot'; continuationOffset?: string };
+export type E2eeContentSeal = { epoch: number; room: E2eeContentRoom; context: E2eeContentContext; plaintext: Uint8Array; additionalData: Uint8Array };
+export type E2eeContentOpen = { room: E2eeContentRoom; context: E2eeContentContext; sealed: Uint8Array; header: Uint8Array; additionalData: Uint8Array };
