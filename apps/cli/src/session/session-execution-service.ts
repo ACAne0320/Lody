@@ -3242,7 +3242,7 @@ export class SessionExecutionService {
         yield* self.ignoreWithWarning(
           options.sessionId,
           'Failed to refresh Code Collab v2 shared state for cancelled turn',
-          self.tryPromise(() => self.refreshCodeCollabSharedStateAfterTurn(options.sessionId))
+          Effect.sync(() => self.refreshCodeCollabSharedStateAfterTurn(options.sessionId))
         );
       }
 
@@ -3804,23 +3804,25 @@ export class SessionExecutionService {
       }
     }
 
-    await this.refreshCodeCollabSharedStateAfterTurn(sessionId);
+    this.refreshCodeCollabSharedStateAfterTurn(sessionId);
     await sessionDoc.waitUntilSynced();
     await sessionDoc.setStatus(SessionStatusFactory.idle());
   }
 
-  private async refreshCodeCollabSharedStateAfterTurn(sessionId: SessionId): Promise<void> {
+  private refreshCodeCollabSharedStateAfterTurn(sessionId: SessionId): void {
     const refresh = this.deps.turnFinalization.refreshCodeCollabSharedState;
     if (!refresh) {
       return;
     }
-    try {
-      await refresh(sessionId);
-    } catch (error) {
-      this.deps.logger.debug(
-        `[${sessionId}] Failed to refresh Code Collab v2 shared state after turn: ${formatErrorMessage(error)}`
-      );
-    }
+    // The Code Collab service owns cancellation, deadlines and publication repair.
+    // Optional file-view refresh must never retain the turn's execution/presence lease.
+    void Promise.resolve()
+      .then(() => refresh(sessionId))
+      .catch((error: unknown) => {
+        this.deps.logger.debug(
+          `[${sessionId}] Failed to refresh Code Collab v2 shared state after turn: ${formatErrorMessage(error)}`
+        );
+      });
   }
 
   private async persistCodeCollabTurnDiffsAfterACPFinalization(
@@ -4051,14 +4053,7 @@ export class SessionExecutionService {
       }
     }
 
-    await this.runTurnFinalizationStage(
-      sessionId,
-      turnId,
-      'refreshCodeCollabSharedState',
-      async () => {
-        await this.refreshCodeCollabSharedStateAfterTurn(sessionId);
-      }
-    );
+    this.refreshCodeCollabSharedStateAfterTurn(sessionId);
     await this.runTurnFinalizationStage(
       sessionId,
       turnId,
