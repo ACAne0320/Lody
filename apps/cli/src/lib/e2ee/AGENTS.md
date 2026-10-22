@@ -54,3 +54,4 @@
   CLI build and its source maps must still fit the fixed 2 GiB build heap.
 
 - Keep runtime key journals under the signing public key, so custody loss cannot reuse old KEK blobs. Retain old evidence. A same-genesis activation hint may follow a replacement key only after verified admission and installation; waiting for pairing is normal, without startup issue/timer or global offline status. Activation binds the approved key and drains a different live identity; retained cleanup uses its retry owner.
+- Only ENOENT opening an activation/binding file means waiting for pairing. Other file-open failures retain their original error and Fleet retry; never cache transient storage failures as missing pairing.

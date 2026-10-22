@@ -271,8 +271,9 @@ async function openWorkspace(options: CliE2eeWorkspaceOptions, requireActivation
     const marker = await open(
       join(directory, 'activation.json'),
       constants.O_RDONLY | constants.O_NOFOLLOW
-    ).catch(() => {
-      throw new Error('e2ee_pairing_required');
+    ).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      throw new Error('e2ee_pairing_required', { cause: error });
     });
     try {
       const info = await marker.stat();
@@ -286,8 +287,9 @@ async function openWorkspace(options: CliE2eeWorkspaceOptions, requireActivation
   const bindingFile = await open(
     join(directory, 'binding.json'),
     constants.O_RDONLY | constants.O_NOFOLLOW
-  ).catch(() => {
-    throw new Error('e2ee_pairing_required');
+  ).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    throw new Error('e2ee_pairing_required', { cause: error });
   });
   let binding: z.infer<typeof Binding>;
   try {

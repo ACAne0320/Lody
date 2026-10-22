@@ -587,6 +587,73 @@ it.each(['e2ee_pairing_required', 'e2ee_storage_failed'])(
   }
 );
 
+it.each(['EMFILE', 'EACCES'])(
+  'retries an encrypted workspace after %s clears without requiring activation',
+  async (code) => {
+    vi.useFakeTimers();
+    const failure = Object.assign(new Error('synthetic file open failure'), { code });
+    let unavailable = true;
+    const lody = {
+      start: async () => {},
+      cleanup: async () => {},
+      documentManager: { repo: {} },
+      onSessionTerminated: () => () => {},
+      isControlPlaneReady: () => true,
+      isControlPlaneRecovering: () => false,
+      isRemoteBridgeAttached: () => false,
+      getActiveSessionCount: () => 0,
+      getConnectedRoomCount: () => 0,
+    };
+    const create = vi.spyOn(Lody, 'create').mockImplementation(async () => {
+      if (unavailable) throw failure;
+      return lody as never;
+    });
+    const reconcile = vi
+      .spyOn(projectMeta, 'reconcileMachineLocalProjectRootPaths')
+      .mockResolvedValue(undefined);
+    const harness = createFleetHarness(
+      createCatalogStub(() => Effect.succeed(catalogSnapshot({})))
+    );
+    const fleet = harness.fleet as unknown as {
+      desiredWorkspaces: Map<string, unknown>;
+      runtimes: Map<string, { lody: unknown }>;
+      waitingForPairing: Set<string>;
+      retryTimers: Map<string, ReturnType<typeof setTimeout>>;
+      startWorkspace(workspace: never): Promise<void>;
+      stopWorkspace(id: string): Promise<void>;
+      stopped: boolean;
+    };
+    delete (fleet as unknown as { startWorkspace?: unknown }).startWorkspace;
+    const workspace = {
+      id: 'file-recovery',
+      name: 'File recovery',
+      slug: null,
+      role: 'owner',
+      contentMode: 'e2ee',
+    };
+    fleet.desiredWorkspaces.set(workspace.id, workspace);
+    try {
+      await fleet.startWorkspace(workspace as never);
+      expect(fleet.runtimes.has(workspace.id)).toBe(false);
+      expect(fleet.waitingForPairing.has(workspace.id)).toBe(false);
+      expect(fleet.retryTimers.has(workspace.id)).toBe(true);
+      unavailable = false;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fleet.runtimes.get(workspace.id)?.lody).toBe(lody);
+      expect(fleet.waitingForPairing.has(workspace.id)).toBe(false);
+      expect(fleet.retryTimers.has(workspace.id)).toBe(false);
+      await fleet.stopWorkspace(workspace.id);
+      expect(fleet.runtimes.has(workspace.id)).toBe(false);
+    } finally {
+      fleet.stopped = true;
+      for (const timer of fleet.retryTimers.values()) clearTimeout(timer);
+      create.mockRestore();
+      reconcile.mockRestore();
+      vi.useRealTimers();
+    }
+  }
+);
+
 describe('Fleet PR observation composition', () => {
   it.each([undefined, 'plaintext', 'e2ee'] as const)(
     'keeps hosted PR metadata out of %s encrypted composition while ordinary PR linkage still works',

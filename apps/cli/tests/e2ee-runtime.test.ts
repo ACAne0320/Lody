@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import * as fs from 'node:fs/promises';
 import { mkdtemp, rm, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -33,6 +34,12 @@ import type { CloudE2eePort } from '@lody/platform';
 import type { KeyMailbox } from '@lody/e2ee-core/services';
 import type { E2eeWorkspaceHistoryPage, E2eeMailboxRequests } from '@lody/cloud-api';
 import { getLodyDataDir } from '@lody/shared/node/installation-profile';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, open: vi.fn(actual.open) };
+});
+
 const hex = (value: Uint8Array) => Buffer.from(value).toString('hex');
 const wrappingKey = Buffer.alloc(32, 78);
 const wrapper: KekWrapper = {
@@ -730,6 +737,27 @@ describe('machine E2EE local runtime', () => {
       );
       deliverEnvelope = true;
       await activateCliE2eeWorkspaceLegacy(hostOptions);
+      const originalFs =
+        await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      for (const file of ['activation.json', 'binding.json']) {
+        const failure = Object.assign(new Error('synthetic file descriptor exhaustion'), {
+          code: 'EMFILE',
+        });
+        const failedPath = join(machineDirectory, '..', file);
+        const fileOpen = vi.spyOn(fs, 'open').mockImplementation((path, ...args) => {
+          if (path === failedPath) return Promise.reject(failure);
+          return originalFs.open(path, ...args);
+        });
+        try {
+          await expect(openCliE2eeWorkspaceLegacy(hostOptions)).rejects.toBe(failure);
+        } finally {
+          fileOpen.mockRestore();
+        }
+        host = await openCliE2eeWorkspaceLegacy(hostOptions);
+        expect((await host.status()).hasCurrentKey).toBe(true);
+        await host.close();
+        host = undefined;
+      }
       host = await openCliE2eeWorkspaceLegacy(hostOptions);
       await host.refresh();
       const status = await host.status();
