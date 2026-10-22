@@ -106,6 +106,7 @@ import {
 } from '@/hooks/use-chat-landing-keyboard-nav';
 import { useFireOncePerKey } from '@/hooks/use-fire-once';
 import {
+  isArchivedInputCleanupPendingError,
   isArchivedLocalProjectRestoreUnavailableError,
   SessionCreateBillingError,
   useSessionActions,
@@ -5403,7 +5404,14 @@ function WorkspaceChatLanding({
           return;
         }
         console.error('Failed to restore archived conversation', error);
-        toast.error(t('archive.restoreFailed', 'Failed to restore conversation.'));
+        toast.error(
+          isArchivedInputCleanupPendingError(error)
+            ? t(
+                'archive.restoreInputCleanupPending',
+                'Messages queued before archiving could not be canceled yet. Try restoring again shortly.'
+              )
+            : t('archive.restoreFailed', 'Failed to restore conversation.')
+        );
       });
     },
     [restoreSession, t]

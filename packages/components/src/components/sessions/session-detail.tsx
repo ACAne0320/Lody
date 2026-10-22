@@ -207,6 +207,7 @@ import { Drawer, DrawerContent, DrawerTitle } from '@/ui/drawer';
 import { VaulDrawerBody } from '@/components/mobile/vaul-drawer-edge-back-zone';
 import { Dialog } from '@/ui/dialog';
 import {
+  isArchivedInputCleanupPendingError,
   isArchivedLocalProjectRestoreUnavailableError,
   SessionCreateBillingError,
   useSessionActions,
@@ -2937,9 +2938,14 @@ const SessionDetail = ({
         }
         console.error('Failed to reopen session tab', error);
         toast.error(
-          restoresArchivedChild
-            ? t('archive.restoreFailed', 'Failed to restore conversation.')
-            : t('sessions.tabReopenFailed', 'Could not reopen this tab')
+          isArchivedInputCleanupPendingError(error)
+            ? t(
+                'archive.restoreInputCleanupPending',
+                'Messages queued before archiving could not be canceled yet. Try restoring again shortly.'
+              )
+            : restoresArchivedChild
+              ? t('archive.restoreFailed', 'Failed to restore conversation.')
+              : t('sessions.tabReopenFailed', 'Could not reopen this tab')
         );
       }
     },
@@ -3074,7 +3080,14 @@ const SessionDetail = ({
         return;
       }
       console.error('Failed to restore archived conversation', error);
-      toast.error(t('archive.restoreFailed', 'Failed to restore conversation.'));
+      toast.error(
+        isArchivedInputCleanupPendingError(error)
+          ? t(
+              'archive.restoreInputCleanupPending',
+              'Messages queued before archiving could not be canceled yet. Try restoring again shortly.'
+            )
+          : t('archive.restoreFailed', 'Failed to restore conversation.')
+      );
     }
   }, [activeSession, restoreSession, t]);
 

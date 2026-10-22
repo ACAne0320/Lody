@@ -176,6 +176,25 @@ export function isArchivedLocalProjectRestoreUnavailableError(
   return error instanceof ArchivedLocalProjectRestoreUnavailableError;
 }
 
+/**
+ * Archive cancels pending input after its commit. While a failed cancellation
+ * still cannot complete, un-archiving would make the surviving input deliverable,
+ * so restore refuses. Retrying succeeds once input storage recovers; `cause`
+ * keeps the original storage error.
+ */
+export class ArchivedInputCleanupPendingError extends Error {
+  constructor(cause: unknown) {
+    super('Messages queued before archiving could not be canceled yet.', { cause });
+    this.name = 'ArchivedInputCleanupPendingError';
+  }
+}
+
+export function isArchivedInputCleanupPendingError(
+  error: unknown
+): error is ArchivedInputCleanupPendingError {
+  return error instanceof ArchivedInputCleanupPendingError;
+}
+
 async function assertArchivedLocalProjectCanRestore(
   runtime: WorkspaceRuntime,
   sessionMeta: SessionMeta
@@ -982,7 +1001,11 @@ export function useSessionActions(): SessionActions {
       });
       if (cleanups.length > 0 && (await Promise.all(cleanups)).includes(false)) {
         const ids = restoreTargets.map((session) => session.id);
-        await runtime.pendingSends?.cancelSessions(ids);
+        try {
+          await runtime.pendingSends?.cancelSessions(ids);
+        } catch (error) {
+          throw new ArchivedInputCleanupPendingError(error);
+        }
         for (const id of ids) lifecycle.cleanups.delete(id);
       }
       if (store.get(activeWorkspaceRuntimeAtom) !== runtime) {

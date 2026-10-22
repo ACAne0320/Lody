@@ -72,7 +72,10 @@ Each archived Session records its cleanup in the runtime until the cleanup confi
   conversation whose owner write is still outstanding;
 - failed: it retries `cancelSessions`. While storage still fails, restore rejects
   with the original error and changes nothing; the next restore after recovery
-  succeeds.
+  succeeds. The refusal is an `ArchivedInputCleanupPendingError` that keeps
+  the storage error as `cause`; every restore entry point, including bulk restore
+  on the archive page, shows a localized "try again shortly" message instead of
+  the generic failure.
 
 Restores with no record, such as earlier archives or archives whose cleanup
 confirmed, never touch input storage, so a storage fault does not block them.

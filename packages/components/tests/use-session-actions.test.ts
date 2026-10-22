@@ -130,6 +130,7 @@ import {
 } from '../src/atoms/settings';
 import {
   countSessionMentions,
+  ArchivedInputCleanupPendingError,
   SessionCreateBillingError,
   resolveSessionChatType,
   useSessionActions,
@@ -2485,9 +2486,12 @@ describe('useSessionActions', () => {
       expect(metaRepo.getSession(session.id)).toMatchObject({ isArchived: true });
 
     // Un-archiving would make the surviving input deliverable again.
-    await expect(actions.restoreSession(tree.rootSession.id)).rejects.toThrow(
-      'Input storage is closed'
+    const refused = await actions.restoreSession(tree.rootSession.id).then(
+      () => undefined,
+      (error: unknown) => error
     );
+    expect(refused).toBeInstanceOf(ArchivedInputCleanupPendingError);
+    expect((refused as Error).cause).toEqual(new Error('Input storage is closed'));
     expect(metaRepo.getSession(tree.rootSession.id)).toMatchObject({ isArchived: true });
     expect(pendingSends.has(leftover.id)).toBe(true);
 
