@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, mkdir, open, readFile, unlink } from 'node:fs/promises';
+import { link, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Effect, Exit, Scope } from 'effect';
 import { z } from 'zod';
@@ -200,6 +200,7 @@ type CliE2eeWorkspaceOptions = {
   accountId: string;
   workspaceId: string;
   genesisHash: string;
+  expectedSigningPublicKey?: string;
   cloud: CloudE2eePort;
   onUnavailable: () => void;
   keyring?: MachineKeyring;
@@ -229,6 +230,11 @@ export async function activateCliE2eeWorkspaceLegacy(options: CliE2eeWorkspaceOp
   try {
     await pending.refresh();
     const status = await pending.status();
+    if (
+      options.expectedSigningPublicKey &&
+      options.expectedSigningPublicKey !== status.devicePublicKey
+    )
+      throw new Error('e2ee_binding_conflict');
     if (!status.hasCurrentKey) throw new Error('e2ee_waiting_for_key');
     marker = { genesisHash: options.genesisHash, signingPublicKey: status.devicePublicKey };
   } finally {
@@ -248,7 +254,10 @@ export async function activateCliE2eeWorkspaceLegacy(options: CliE2eeWorkspaceOp
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     });
     const actual = Activation.parse(JSON.parse(await readFile(destination, 'utf8')));
-    if (JSON.stringify(actual) !== JSON.stringify(marker)) throw new Error('e2ee_binding_conflict');
+    if (actual.genesisHash !== marker.genesisHash) throw new Error('e2ee_binding_conflict');
+    // This startup hint may follow a newly approved device after custody loss.
+    // Admission and key installation above, not the old hint, grant authority.
+    if (actual.signingPublicKey !== marker.signingPublicKey) await rename(temporary, destination);
   } finally {
     await handle.close().catch(() => undefined);
     await unlink(temporary).catch(() => undefined);
@@ -311,7 +320,7 @@ async function openWorkspace(options: CliE2eeWorkspaceOptions, requireActivation
         throw new Error('e2ee_binding_conflict');
       const credential = yield* custody.deviceCredential(genesis, device.publicKey);
       const runtime = yield* makeCliE2eeRuntime({
-        directory: join(directory, 'runtime'),
+        directory: join(directory, 'runtime', hex(device.publicKey.toBytes())),
         workspaceId: options.workspaceId,
         custody,
         device,

@@ -116,3 +116,5 @@ admission before HTTP. Stage verifies the machine's session-bound credential and
 proof locally; only explicit approval signs. Confirm uses verified ledger originals,
 not a server hint. Pairing I/O and key distribution stay outside custody locks;
 activation waits for CLI key installation before content sync starts.
+
+Pairing resets only unsigned or verified settled records (exact commit/competing parent); keep uncertain bytes. Re-prepare on retry; new sessions need consent. Missing credentials block preparation/approval; never export them via IPC.

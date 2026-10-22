@@ -29,7 +29,9 @@ export function E2eeLocalAgentApproval({
   enabled,
 }: {
   workspaceId: string;
-  runtime: Pick<E2eeWorkspaceRuntime, 'prepareLocalAgent' | 'admitLocalAgent'> | undefined;
+  runtime:
+    | Pick<E2eeWorkspaceRuntime, 'prepareLocalAgent' | 'admitLocalAgent' | 'status'>
+    | undefined;
   enabled: boolean;
 }) {
   const { t } = useTranslation();
@@ -39,6 +41,23 @@ export function E2eeLocalAgentApproval({
   const [admitted, setAdmitted] = useState(false);
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const approved = useRef(false);
+  const [available, setAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let current = true;
+    setAvailable(null);
+    if (enabled && runtime)
+      void runtime.status(workspaceId).then(
+        (status) => {
+          if (current) setAvailable(status.hasDeviceCredential === true);
+        },
+        () => {
+          if (current) setPhase('error');
+        }
+      );
+    return () => {
+      current = false;
+    };
+  }, [enabled, runtime, workspaceId]);
   const active = useRef(true);
   useEffect(() => {
     active.current = true;
@@ -46,7 +65,14 @@ export function E2eeLocalAgentApproval({
       active.current = false;
     };
   }, []);
-  if (!enabled || !runtime?.prepareLocalAgent || !runtime.admitLocalAgent || phase === 'ready')
+  if (
+    !enabled ||
+    available === false ||
+    (available === null && phase !== 'error') ||
+    !runtime?.prepareLocalAgent ||
+    !runtime.admitLocalAgent ||
+    phase === 'ready'
+  )
     return null;
   const prepareLocalAgent = runtime.prepareLocalAgent;
   const admitLocalAgent = runtime.admitLocalAgent;
@@ -66,18 +92,25 @@ export function E2eeLocalAgentApproval({
   };
   const prepare = async () => {
     if (busy) return;
-    if (approved.current && pairing) {
-      await admit(pairing);
-      return;
-    }
     setPhase('preparing');
     try {
+      const status = await runtime.status(workspaceId);
+      if (!active.current) return;
+      setAvailable(status.hasDeviceCredential === true);
+      if (!status.hasDeviceCredential) return;
       const material = await prepareLocalAgent(workspaceId);
       if (!active.current) return;
       setPairing(material);
       setAdmitted(material.admitted);
-      if (material.admitted) await admit(material);
-      else setPhase('confirm');
+      if (
+        material.admitted ||
+        (approved.current && pairing?.pairingSessionId === material.pairingSessionId)
+      )
+        await admit(material);
+      else {
+        approved.current = false;
+        setPhase('confirm');
+      }
     } catch {
       if (active.current) setPhase('error');
     }

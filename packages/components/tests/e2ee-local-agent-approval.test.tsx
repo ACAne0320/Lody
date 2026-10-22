@@ -13,8 +13,10 @@ describe('local encrypted agent approval', () => {
   let admitted = false;
   let ready = true;
   let admissionFails = false;
+  let session: string;
+  let hasCredential: boolean;
   let protection: 'file' | 'os-keystore' = 'file';
-  let runtime: Pick<E2eeWorkspaceRuntime, 'prepareLocalAgent' | 'admitLocalAgent'>;
+  let runtime: Pick<E2eeWorkspaceRuntime, 'prepareLocalAgent' | 'admitLocalAgent' | 'status'>;
   beforeEach(() => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     container = document.createElement('div');
@@ -23,13 +25,16 @@ describe('local encrypted agent approval', () => {
     prepared = admitted = admissionFails = false;
     ready = true;
     protection = 'file';
+    session = 'synthetic-session';
+    hasCredential = true;
     runtime = {
+      status: async () => ({ hasDeviceCredential: hasCredential }) as never,
       prepareLocalAgent: async () => {
         prepared = true;
-        return { pairingSessionId: 'synthetic-session', protection, admitted };
+        return { pairingSessionId: session, protection, admitted };
       },
-      admitLocalAgent: async (_workspace: string, session: string) => {
-        if (session !== 'synthetic-session') throw new Error('wrong session');
+      admitLocalAgent: async (_workspace: string, approvedSession: string) => {
+        if (approvedSession !== session) throw new Error('wrong session');
         if (admissionFails) throw new Error('temporary unavailable');
         admitted = true;
         return { admitted: true, ready };
@@ -58,6 +63,41 @@ describe('local encrypted agent approval', () => {
     expect(container.textContent).toBe('');
     expect(prepared).toBe(false);
     expect(admitted).toBe(false);
+  });
+  it('hides approval for an old workspace with no local credential', async () => {
+    hasCredential = false;
+    await render();
+    expect(container.textContent).toBe('');
+    expect(prepared).toBe(false);
+    expect(admitted).toBe(false);
+  });
+  it('recovers a temporary local status failure on retry', async () => {
+    const original = runtime.status;
+    runtime.status = async () => {
+      throw new Error('temporary');
+    };
+    await render();
+    expect(container.textContent).toContain('e2ee.localAgent.retryHelp');
+    runtime.status = original;
+    await click('common.tryAgain');
+    expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
+  });
+  it('asks again when a lost CLI identity starts a new session after approval', async () => {
+    ready = false;
+    await render();
+    await click('e2ee.localAgent.enable');
+    await click('e2ee.localAgent.allow');
+    session = 'replacement-session';
+    admitted = false;
+    await click('common.tryAgain');
+    expect(admitted).toBe(false);
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'e2ee.localAgent.fileProtection'
+    );
+    ready = true;
+    await click('e2ee.localAgent.allow');
+    expect(admitted).toBe(true);
+    expect(container.textContent).toBe('');
   });
   it('requires explicit approval and discloses file protection before admitting', async () => {
     await render();

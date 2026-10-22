@@ -345,7 +345,7 @@ export function createCloudCliPort(options: CloudCliPortOptions): CloudPort {
       watchWorkspaceAccess: (listener, onError) =>
         subscriptionClient.onUpdate(
           api.deviceAuth.listMyWorkspacesForCliToken,
-          { token: options.token },
+          { token: options.token, includeEncrypted: true },
           (result: WorkspaceListResult) => {
             const snapshot: CloudAccessSnapshot = result.valid
               ? {

@@ -770,10 +770,174 @@ void test('local machine approval retains its exact signed original across resta
       )
       assert.deepEqual(yield* owner.host.confirmLocalPairing(workspaceId, original.session), {
         machineId: original.material.machineId,
-        genesisHash: original.prepared.genesisHashHex
+        genesisHash: original.prepared.genesisHashHex,
+        signingPublicKey: original.material.signingPublicKey
       })
       assert.equal(yield* owner.host.approveLocalPairing(workspaceId, original.session), null)
       assert.equal((yield* owner.host.status(workspaceId)).length, 2)
     })
   )
 })
+
+void test('local status exposes only credential availability for old developer workspaces', async (t) => {
+  const directory = await fixture(t)
+  await execute(
+    Effect.gen(function* () {
+      const owner = yield* openOwner(directory)
+      yield* bind(owner)
+      const host = yield* makeDesktopE2eeRuntimeHost({
+        directory,
+        ...owner,
+        bootstrap: {
+          ...owner.bootstrap,
+          deviceCredential: () => Effect.fail(new Error('missing credential'))
+        }
+      })
+      const status = yield* host.open(workspaceId)
+      assert.equal(status.hasCurrentKey, true)
+      assert.equal(status.hasDeviceCredential, false)
+      assert.equal('credential' in status, false)
+    })
+  )
+})
+
+for (const outcome of ['unsigned', 'uncertain', 'committed', 'competing']) {
+  void test(`local machine pairing can replace lost material only after ${outcome} evidence`, async (t) => {
+    const directory = await fixture(t)
+    let original
+    await execute(
+      Effect.gen(function* () {
+        const owner = yield* ownerWithHost(directory)
+        const prepared = yield* bind(owner)
+        yield* owner.host.open(workspaceId)
+        const context = yield* owner.host.localPairingContext(workspaceId)
+        const genesis = Result.getOrThrow(
+          Bytes.genesisHash(Buffer.from(context.genesisHash, 'hex'))
+        )
+        const machine = yield* owner.custody.prepareDevice()
+        const credentialHash = new Uint8Array(32).fill(73)
+        const possession = yield* prepareDeviceAdmission({
+          genesis,
+          membershipId: Result.getOrThrow(
+            Bytes.membershipId(Buffer.from(context.membershipId, 'hex'))
+          ),
+          encryptionPublicKey: machine.enc,
+          kind: 'machine',
+          signer: machine
+        })
+        const signature = yield* signDeviceCredentialBinding({
+          genesis,
+          pairingSessionId: Buffer.from(context.pairingSessionId, 'hex'),
+          signingPublicKey: machine.publicKey,
+          credentialHash,
+          signer: machine
+        })
+        const material = {
+          ok: true,
+          type: 'prepare',
+          machineId: 'synthetic-machine',
+          pairingSessionId: context.pairingSessionId,
+          signingPublicKey: hex(machine.publicKey.toBytes()),
+          encryptionPublicKey: hex(machine.enc.toBytes()),
+          possessionSignature: hex(possession.possessionSignature.toBytes()),
+          credentialHash: hex(credentialHash),
+          bindingSignature: hex(signature.toBytes()),
+          protection: 'file'
+        }
+        yield* owner.host.stageLocalPairing(workspaceId, material)
+        const request =
+          outcome === 'unsigned'
+            ? null
+            : yield* owner.host.approveLocalPairing(workspaceId, context.pairingSessionId)
+        if (outcome === 'committed') {
+          yield* owner.host.ingestLedgerRecords(
+            workspaceId,
+            page(
+              [
+                Buffer.from(prepared.genesisRecordHex, 'hex'),
+                Buffer.from(request.recordHex, 'hex')
+              ],
+              prepared.genesisHashHex,
+              0
+            )
+          )
+        } else if (outcome === 'competing') {
+          // Include enough records to compact: terminal evidence must survive retained reopen.
+          const records = yield* makeRecords(owner.custody, prepared, 70)
+          for (let start = 0; start < records.length; start += 64)
+            yield* owner.host.ingestLedgerRecords(
+              workspaceId,
+              page(records, prepared.genesisHashHex, start, Math.min(start + 64, records.length))
+            )
+        }
+        original = { request, material, context }
+        yield* owner.custody.discardDevice(machine)
+      })
+    )
+    await execute(
+      Effect.gen(function* () {
+        const owner = yield* ownerWithHost(directory)
+        yield* owner.host.open(workspaceId)
+        const context = yield* owner.host.localPairingContext(workspaceId)
+        if (outcome === 'uncertain') {
+          assert.equal(context.pairingSessionId, original.context.pairingSessionId)
+          assert.deepEqual(
+            yield* owner.host.approveLocalPairing(workspaceId, context.pairingSessionId),
+            original.request
+          )
+          const conflict = yield* Effect.result(
+            owner.host.stageLocalPairing(workspaceId, {
+              ...original.material,
+              signingPublicKey: '11'.repeat(32)
+            })
+          )
+          assert.equal(conflict.failure.code, 'conflict')
+        } else {
+          assert.notEqual(context.pairingSessionId, original.context.pairingSessionId)
+          const stale = yield* Effect.result(
+            owner.host.approveLocalPairing(workspaceId, original.context.pairingSessionId)
+          )
+          assert.equal(stale.failure.code, 'conflict')
+          const replacement = yield* owner.custody.prepareDevice()
+          const genesis = Result.getOrThrow(
+            Bytes.genesisHash(Buffer.from(context.genesisHash, 'hex'))
+          )
+          const credentialHash = new Uint8Array(32).fill(74)
+          const possession = yield* prepareDeviceAdmission({
+            genesis,
+            membershipId: Result.getOrThrow(
+              Bytes.membershipId(Buffer.from(context.membershipId, 'hex'))
+            ),
+            encryptionPublicKey: replacement.enc,
+            kind: 'machine',
+            signer: replacement
+          })
+          const signature = yield* signDeviceCredentialBinding({
+            genesis,
+            pairingSessionId: Buffer.from(context.pairingSessionId, 'hex'),
+            signingPublicKey: replacement.publicKey,
+            credentialHash,
+            signer: replacement
+          })
+          const staged = yield* owner.host.stageLocalPairing(workspaceId, {
+            ...original.material,
+            pairingSessionId: context.pairingSessionId,
+            signingPublicKey: hex(replacement.publicKey.toBytes()),
+            encryptionPublicKey: hex(replacement.enc.toBytes()),
+            possessionSignature: hex(possession.possessionSignature.toBytes()),
+            credentialHash: hex(credentialHash),
+            bindingSignature: hex(signature.toBytes())
+          })
+          assert.equal(staged.admitted, false)
+          const request = yield* owner.host.approveLocalPairing(
+            workspaceId,
+            context.pairingSessionId
+          )
+          assert.ok(request)
+          assert.notEqual(request.requestId, original.request?.requestId)
+          yield* owner.custody.discardDevice(replacement)
+        }
+      })
+    )
+  })
+}

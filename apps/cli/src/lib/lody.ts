@@ -436,11 +436,14 @@ export class Lody {
   }
 
   /** Local pairing completion wakes ledger verification and key installation, never trusts a remote admission hint. */
-  async refreshEncryptedWorkspace(): Promise<void> {
+  async refreshEncryptedWorkspace(expectedSigningPublicKey: string): Promise<boolean> {
     if (!this.encryptedWorkspace) throw new Error('e2ee_workspace_unavailable');
+    if ((await this.encryptedWorkspace.status()).devicePublicKey !== expectedSigningPublicKey)
+      return false;
     await this.encryptedWorkspace.refresh();
     if (!(await this.encryptedWorkspace.status()).hasCurrentKey)
       throw new Error('e2ee_waiting_for_key');
+    return true;
   }
 
   async attachRemoteBridge(): Promise<void> {

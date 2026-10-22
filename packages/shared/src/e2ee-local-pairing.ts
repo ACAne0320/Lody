@@ -21,7 +21,7 @@ export const LocalE2eePrepareRequestSchema = z
   })
   .strict();
 export const LocalE2eeActivateRequestSchema = z
-  .object({ ...common, type: z.literal('activate') })
+  .object({ ...common, type: z.literal('activate'), signingPublicKey: hex32 })
   .strict();
 export const LocalE2eePairingRequestSchema = z.discriminatedUnion('type', [
   LocalE2eePrepareRequestSchema,

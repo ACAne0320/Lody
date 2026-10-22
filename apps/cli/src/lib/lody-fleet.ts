@@ -165,6 +165,7 @@ export class LodyFleet {
   private readonly e2eeActivationInFlight = new Map<string, Promise<void>>();
   private readonly retryTimers = new Map<string, NodeJS.Timeout>();
   private readonly desiredWorkspaces = new Map<string, WorkspaceListItem>();
+  private readonly waitingForPairing = new Set<string>();
   private readonly remoteRevokedWorkspaceIds = new Set<string>();
 
   private unsubscribeWorkspaces: (() => void) | null = null;
@@ -688,11 +689,13 @@ export class LodyFleet {
       ...this.runtimes.keys(),
       ...this.retryTimers.keys(),
       ...this.startInFlight.keys(),
+      ...this.waitingForPairing,
     ]);
 
     // Remove workspaces no longer present.
     for (const workspaceId of prevIds) {
       if (nextIds.has(workspaceId)) continue;
+      this.waitingForPairing.delete(workspaceId);
       if (options.retainRunningWorkspaceIds?.has(workspaceId) && this.runtimes.has(workspaceId)) {
         continue;
       }
@@ -703,7 +706,9 @@ export class LodyFleet {
 
     // Workspace repos are independent SQLite databases. Start a small bounded
     // batch concurrently so one slow workspace does not serialize fleet readiness.
-    const workspacesToStart = next.filter((workspace) => !this.runtimes.has(workspace.id));
+    const workspacesToStart = next.filter(
+      (workspace) => !this.runtimes.has(workspace.id) && !this.waitingForPairing.has(workspace.id)
+    );
     for (
       let index = 0;
       index < workspacesToStart.length;
@@ -981,6 +986,15 @@ export class LodyFleet {
       }
     })()
       .catch((error: unknown) => {
+        if (
+          workspace.contentMode === 'e2ee' &&
+          error instanceof Error &&
+          error.message === 'e2ee_pairing_required'
+        ) {
+          this.waitingForPairing.add(workspace.id);
+          this.runtimeStateReporter.clearIssue(`workspace_start_failed:${workspace.id}`);
+          return;
+        }
         const message = `[fleet] Failed to start workspace runtime ${workspace.id}: ${formatErrorMessage(
           error,
           { includeStack: true }
@@ -1132,7 +1146,9 @@ export class LodyFleet {
   }
 
   private refreshRuntimeState(): void {
-    const desiredCount = this.desiredWorkspaces.size;
+    const desiredCount = [...this.desiredWorkspaces.keys()].filter(
+      (id) => !this.waitingForPairing.has(id)
+    ).length;
     let connectedCount = 0;
     let reconnectingCount = 0;
     let totalActiveSessions = 0;
@@ -1737,16 +1753,21 @@ export class LodyFleet {
       return { ok: true, type: 'prepare', machineId: this.machineId, ...material };
     }
     await this.startInFlight.get(workspace.id);
+    if (this.cleanupOwners.has(workspace.id) || this.startupCleanupOwners.has(workspace.id))
+      await this.retryWorkspaceCleanup(workspace.id);
     const running = this.runtimes.get(workspace.id);
-    if (running) {
-      await running.lody.refreshEncryptedWorkspace();
+    if (running && (await running.lody.refreshEncryptedWorkspace(message.signingPublicKey))) {
+      return { ok: true, type: 'activate' };
     } else {
+      // A newly approved identity must not reuse an old live in-memory device.
+      if (running) await this.stopWorkspace(workspace.id);
       let activation = this.e2eeActivationInFlight.get(workspace.id);
       if (!activation) {
         activation = activateCliE2eeWorkspaceLegacy({
           accountId: this.userId,
           workspaceId: workspace.id,
           genesisHash: message.genesisHash,
+          expectedSigningPublicKey: message.signingPublicKey,
           cloud: this.cloudPort.e2ee,
           onUnavailable: () => this.logger.debug('e2ee_background_unavailable'),
         }).finally(() => {
@@ -1755,6 +1776,7 @@ export class LodyFleet {
         this.e2eeActivationInFlight.set(workspace.id, activation);
       }
       await activation;
+      this.waitingForPairing.delete(workspace.id);
       await this.startWorkspace(workspace);
       await this.resolveWorkspaceRuntime(workspace.id as WorkspaceId);
     }

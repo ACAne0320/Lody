@@ -929,7 +929,7 @@ export type CloudApi = {
   };
   deviceAuth: {
     listMyWorkspacesForCliToken: Query<
-      { token: string },
+      { token: string; includeEncrypted?: boolean },
       | { valid: false; userId: null; workspaces: WorkspaceSummary[] }
       | { valid: true; userId: string; workspaces: WorkspaceSummary[] }
     >;

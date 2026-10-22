@@ -6,7 +6,21 @@ import { E2eeLocalAgentApproval } from '@/components/e2ee-local-agent-approval';
 const native = (
   protection: 'file' | 'os-keystore',
   ready = true
-): Pick<E2eeWorkspaceRuntime, 'prepareLocalAgent' | 'admitLocalAgent'> => ({
+): Pick<E2eeWorkspaceRuntime, 'prepareLocalAgent' | 'admitLocalAgent' | 'status'> => ({
+  status: async () => ({
+    workspaceId: 'synthetic-workspace',
+    genesisHash: '00'.repeat(32),
+    length: 1,
+    headHash: '00'.repeat(32),
+    stateDigest: '00'.repeat(32),
+    position: null,
+    epoch: 0,
+    rotationRequired: false,
+    deviceKind: 'personal',
+    hasCurrentKey: true,
+    hasDeviceCredential: true,
+    continuityPending: false,
+  }),
   prepareLocalAgent: async () => ({
     pairingSessionId: 'synthetic-local-pairing',
     protection,
@@ -25,7 +39,7 @@ type Story = StoryObj<typeof meta>;
 export const Enable: Story = {};
 export const FileProtectionConfirmation: Story = {
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole('button'));
+    await userEvent.click(await within(canvasElement).findByRole('button'));
   },
 };
 export const OsProtectionConfirmation: Story = {
@@ -35,7 +49,7 @@ export const OsProtectionConfirmation: Story = {
 export const ApprovedWaitingForKey: Story = {
   args: { runtime: native('file', false) },
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole('button'));
+    await userEvent.click(await within(canvasElement).findByRole('button'));
     const dialog = await within(document.body).findByRole('alertdialog');
     const buttons = within(dialog).getAllByRole('button');
     await userEvent.click(buttons[buttons.length - 1]!);

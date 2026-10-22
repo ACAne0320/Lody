@@ -119,7 +119,10 @@ function createAuthConvexClient(): ConvexHttpClient {
 
 export async function listWorkspacesForToken(token: string): Promise<WorkspaceSummary[]> {
   const client = createAuthConvexClient();
-  const raw = await client.query(api.deviceAuth.listMyWorkspacesForCliToken, { token });
+  const raw = await client.query(api.deviceAuth.listMyWorkspacesForCliToken, {
+    token,
+    includeEncrypted: true,
+  });
   const parsed = WorkspaceListResultSchema.parse(raw);
   if (!parsed.valid) {
     throw new Error('CLI token is invalid or expired. Run `lody login` again.');

@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
@@ -21,6 +21,7 @@ import {
 import { makeNodeE2eeCustody, type KekWrapper } from '@lody/e2ee-core/adapters/node-custody';
 import { makeCliE2eeCustody } from '../src/lib/e2ee/custody';
 import { makeCliE2eeRuntime } from '../src/lib/e2ee/runtime';
+import { Lody } from '../src/lib/lody';
 import {
   openCliE2eeWorkspaceLegacy,
   openCliE2eePairingRuntimeLegacy,
@@ -202,6 +203,176 @@ const page = (records: Uint8Array[], start = 0, end = records.length) => ({
 });
 
 describe('machine E2EE local runtime', () => {
+  it('does not refresh or acknowledge an old live device as the approved replacement', async () => {
+    let refreshed = false;
+    const lody = Object.assign(Object.create(Lody.prototype), {
+      encryptedWorkspace: {
+        status: async () => ({ devicePublicKey: 'old-device' }),
+        refresh: async () => {
+          refreshed = true;
+        },
+      },
+    }) as Lody;
+    expect(await lody.refreshEncryptedWorkspace('new-device')).toBe(false);
+    expect(refreshed).toBe(false);
+  });
+
+  it.each(['staged', 'activated'] as const)(
+    'pairs again after %s machine custody loss, retaining old runtime evidence',
+    async (phase) => {
+      const directory = await mkdtemp(join(tmpdir(), 'cli-e2ee-repair-'));
+      vi.stubEnv('LODY_DATA_DIR', join(directory, 'profile'));
+      let host: Awaited<ReturnType<typeof openCliE2eeWorkspaceLegacy>> | undefined;
+      try {
+        const fixture = await execute(setup(directory));
+        const accountId = 'replacement-account';
+        const root = join(
+          getLodyDataDir(),
+          'e2ee',
+          createHash('sha256').update(accountId).digest('hex'),
+          'workspace'
+        );
+        let records = [...fixture.records];
+        let frame: Uint8Array | undefined;
+        let report = false;
+        const prepare = (session: string) =>
+          prepareCliE2eeMachineLegacy({
+            accountId,
+            workspaceId: 'workspace',
+            genesisHash: hex(fixture.genesis.toBytes()),
+            genesisRecordHex: hex(fixture.genesisRecord),
+            membershipId: '0a'.repeat(16),
+            pairingSessionId: session,
+            keyring: noKeyring,
+          });
+        const admit = (material: Awaited<ReturnType<typeof prepare>>) =>
+          execute(
+            Effect.gen(function* () {
+              const custody = yield* makeNodeE2eeCustody({
+                directory: join(directory, 'owner'),
+                wrapper,
+              });
+              const owner = yield* custody.openDevice(fixture.genesis);
+              let view = Result.getOrThrow(
+                verifyLedger({
+                  anchor: fixture.genesis,
+                  records,
+                  checkpoint: { length: records.length, head: hashRecordBytes(records.at(-1)!) },
+                })
+              );
+              const recipient = Result.getOrThrow(
+                Bytes.signingPublicKey(Buffer.from(material.signingPublicKey, 'hex'))
+              );
+              const record = yield* signLedgerRecord(
+                Result.getOrThrow(
+                  prepareLedgerCommand(view, owner.publicKey, {
+                    _tag: 'AdmitDevice',
+                    kind: 'machine',
+                    signingPublicKey: recipient,
+                    encryptionPublicKey: Result.getOrThrow(
+                      Bytes.encryptionPublicKey(Buffer.from(material.encryptionPublicKey, 'hex'))
+                    ),
+                    possessionSignature: Result.getOrThrow(
+                      Bytes.signature(Buffer.from(material.possessionSignature, 'hex'))
+                    ),
+                  })
+                ),
+                owner
+              );
+              records = [...records, record];
+              view = Result.getOrThrow(
+                extendLedger(view, [record], {
+                  length: records.length,
+                  head: hashRecordBytes(record),
+                })
+              );
+              frame = yield* prepareEpochEnvelope({
+                context: {
+                  genesis: fixture.genesis,
+                  epoch: Result.getOrThrow(Bytes.epochNumber(0)),
+                  sender: owner.publicKey,
+                  recipient,
+                },
+                key: Result.getOrThrow(Bytes.epochKey(new Uint8Array(32).fill(20))),
+                signer: owner,
+                ledger: () => Effect.succeed(view),
+              });
+              report = false;
+            })
+          );
+        const cloud = {
+          getHistory: async (input: Parameters<CloudE2eePort['getHistory']>[0]) => ({
+            ...page(records, input.after ? Number(input.after.split(':')[2]) : 0),
+            workspaceId: 'workspace',
+            genesisHash: hex(fixture.genesis.toBytes()),
+          }),
+          mailboxCall: async (
+            method: string,
+            input: E2eeMailboxRequests[keyof E2eeMailboxRequests]
+          ) => {
+            if (method === 'fetch')
+              return {
+                items: frame ? [{ sender: fixture.sender, frameHex: hex(frame) }] : [],
+                next: null,
+              };
+            if (method === 'status')
+              return {
+                ...(input as E2eeMailboxRequests['status']).slot,
+                revision: 0,
+                status: report ? 'InstallationReported' : 'EnvelopeStored',
+              };
+            if (method === 'report') {
+              report = true;
+              return null;
+            }
+            throw new Error('unexpected mailbox operation');
+          },
+        } as CloudE2eePort;
+        const options = {
+          accountId,
+          workspaceId: 'workspace',
+          genesisHash: hex(fixture.genesis.toBytes()),
+          cloud,
+          keyring: noKeyring,
+          onUnavailable: () => {},
+        };
+        const original = await prepare('01'.repeat(16));
+        if (phase === 'activated') {
+          await admit(original);
+          await activateCliE2eeWorkspaceLegacy(options);
+          host = await openCliE2eeWorkspaceLegacy(options);
+          await host.refresh();
+          expect((await host.status()).hasCurrentKey).toBe(true);
+          await host.close();
+          host = undefined;
+        } else {
+          const pending = await openCliE2eePairingRuntimeLegacy(options);
+          await pending.refresh();
+          await pending.close();
+        }
+        const oldRuntime = await readdir(join(root, 'runtime'));
+        await rm(join(root, 'custody'), { recursive: true });
+        const replacement = await prepare('02'.repeat(16));
+        expect(replacement.signingPublicKey).not.toBe(original.signingPublicKey);
+        await admit(replacement);
+        await activateCliE2eeWorkspaceLegacy(options);
+        expect(
+          JSON.parse(await readFile(join(root, 'activation.json'), 'utf8')).signingPublicKey
+        ).toBe(replacement.signingPublicKey);
+        host = await openCliE2eeWorkspaceLegacy(options);
+        await host.refresh();
+        expect((await host.status()).hasCurrentKey).toBe(true);
+        expect((await host.status()).devicePublicKey).toBe(replacement.signingPublicKey);
+        expect(await readdir(join(root, 'runtime'))).toEqual(expect.arrayContaining(oldRuntime));
+        expect(report).toBe(true);
+      } finally {
+        await host?.close();
+        vi.unstubAllEnvs();
+        await rm(directory, { recursive: true, force: true });
+      }
+    }
+  );
+
   it('reopens entirely offline with the same accepted position and credential', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cli-e2ee-runtime-'));
     try {

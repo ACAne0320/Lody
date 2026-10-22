@@ -108,5 +108,5 @@ Ancestor/scoped rules apply. `CLAUDE.md` links here; edit `AGENTS.md` only.
   worktrees and keep them by default. A completed cleanup is not pending removal and
   must be visibly acknowledged even when worktrees were kept or failed.
 
-E2EE: explicit approval and file-custody disclosure; same-session retries preserve admission.
+E2EE: explicit approval and file-custody disclosure; same-session retries preserve admission. Re-prepare on retry; a changed session needs fresh consent. Hide approval without a local credential; transient status failures remain retryable.
 Offline: same-account pins; preserve ready lists.

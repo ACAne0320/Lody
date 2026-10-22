@@ -4,6 +4,7 @@ import { Effect, Result } from 'effect'
 import {
   Bytes,
   hashRecordBytes,
+  decodeRecord,
   prepareLedgerCommand,
   signLedgerRecord,
   verifyDeviceCredentialBinding,
@@ -115,6 +116,24 @@ export function makeDesktopLocalPairing(input: {
       proposal: proposal.success
     }
   }
+  // Only verified original history can settle a signed journal. A missing
+  // device/current head alone cannot prove that an uncertain append lost CAS.
+  const settled = (row: PairingRow, view: LedgerView) => {
+    if (!row.record && !row.request_id) return true
+    if (!row.record || !row.request_id) throw failure('corrupt')
+    const signed = Result.getOrThrow(decodeRecord(row.record)).body
+    if (signed.type !== 'ordinary') throw failure('corrupt')
+    const hash = hex(hashRecordBytes(row.record).toBytes())
+    const originals = input.db
+      .prepare('SELECT record FROM records WHERE position < ?')
+      .all(view.length)
+    return originals.some((item) => {
+      const record = item.record as Uint8Array
+      if (hex(hashRecordBytes(record).toBytes()) === hash) return true
+      const body = Result.getOrThrow(decodeRecord(record)).body
+      return body.type === 'ordinary' && body.previousHash.equals(signed.previousHash)
+    })
+  }
   const context = Effect.fnUntraced(function* () {
     const view = yield* input.current()
     const membershipId = yield* sql(() => hex(membership(view).toBytes()))
@@ -122,7 +141,16 @@ export function makeDesktopLocalPairing(input: {
       input.db
         .prepare('INSERT OR IGNORE INTO local_pairing(id,session) VALUES(1,?)')
         .run(randomBytes(16).toString('hex'))
-      return read()!
+      const stored = read()!
+      if (stored.material && settled(stored, view)) {
+        input.db
+          .prepare(
+            'UPDATE local_pairing SET session=?,material=NULL,request_id=NULL,record=NULL WHERE id=1'
+          )
+          .run(randomBytes(16).toString('hex'))
+        return read()!
+      }
+      return stored
     })
     return {
       workspaceId: input.workspaceId,
@@ -200,7 +228,11 @@ export function makeDesktopLocalPairing(input: {
         )
           throw failure('local-evidence-conflict')
       }
-      return { machineId: checked.value.machineId, genesisHash: hex(input.genesis.toBytes()) }
+      return {
+        machineId: checked.value.machineId,
+        genesisHash: hex(input.genesis.toBytes()),
+        signingPublicKey: checked.value.signingPublicKey
+      }
     })
   })
   return { context, stage, approve, confirmed }

@@ -47,15 +47,6 @@ export class E2eeIpc extends IpcService {
       : null
   }
   @IpcMethod()
-  async deviceCredential(workspaceId: string) {
-    const id = sender()
-    return withDesktopE2eeAccount((owner) =>
-      owner.readers.get(workspaceId)?.has(id)
-        ? owner.bootstrap.deviceCredential(workspaceId)
-        : Effect.fail(new Error('e2ee_not_open'))
-    )
-  }
-  @IpcMethod()
   async refresh(workspaceId: string) {
     const id = sender()
     const access = await withDesktopE2eeAccount((owner) =>
@@ -109,6 +100,7 @@ export class E2eeIpc extends IpcService {
       Effect.gen(function* () {
         if (!owner.readers.get(workspaceId)?.has(id))
           return yield* Effect.fail(new Error('e2ee_not_open'))
+        yield* owner.bootstrap.deviceCredential(workspaceId)
         return {
           accountId: owner.accountId,
           ...(yield* owner.host.localPairingContext(workspaceId))

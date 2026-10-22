@@ -24,7 +24,6 @@ export function isIpcInvokeChannel(channel: string): boolean {
   if (group === 'e2ee')
     return new Set([
       'account',
-      'deviceCredential',
       'prepareLocalAgent',
       'admitLocalAgent',
       'seal',

@@ -538,6 +538,55 @@ it('production startup retry recovers the retained owner before attempting anoth
   }
 });
 
+it.each(['e2ee_pairing_required', 'e2ee_storage_failed'])(
+  'treats %s as waiting only for the exact pairing condition',
+  async (reason) => {
+    vi.useFakeTimers();
+    const create = vi.spyOn(Lody, 'create').mockRejectedValue(new Error(reason));
+    const harness = createFleetHarness(
+      createCatalogStub(() => Effect.succeed(catalogSnapshot({})))
+    );
+    const fleet = harness.fleet as unknown as {
+      desiredWorkspaces: Map<string, unknown>;
+      retryTimers: Map<string, ReturnType<typeof setTimeout>>;
+      startWorkspace(workspace: never): Promise<void>;
+      stopped: boolean;
+    };
+    delete (fleet as unknown as { startWorkspace?: unknown }).startWorkspace;
+    const workspace = {
+      id: 'waiting',
+      name: 'Waiting',
+      slug: null,
+      role: 'owner',
+      contentMode: 'e2ee',
+    };
+    fleet.desiredWorkspaces.set(workspace.id, workspace);
+    try {
+      await fleet.startWorkspace(workspace as never);
+      const waiting = reason === 'e2ee_pairing_required';
+      expect(fleet.retryTimers.has(workspace.id)).toBe(!waiting);
+      expect(
+        harness.runtimeStateReporter.upsertIssue.mock.calls.some(
+          ([issue]) => issue.code === `workspace_start_failed:${workspace.id}`
+        )
+      ).toBe(!waiting);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fleet.retryTimers.has(workspace.id)).toBe(!waiting);
+      // Explicit activation can call the same start entry again; waiting isn't a fence.
+      if (waiting) {
+        create.mockRejectedValue(new Error('e2ee_storage_failed'));
+        await fleet.startWorkspace(workspace as never);
+        expect(fleet.retryTimers.has(workspace.id)).toBe(true);
+      }
+    } finally {
+      fleet.stopped = true;
+      for (const timer of fleet.retryTimers.values()) clearTimeout(timer);
+      create.mockRestore();
+      vi.useRealTimers();
+    }
+  }
+);
+
 describe('Fleet PR observation composition', () => {
   it.each([undefined, 'plaintext', 'e2ee'] as const)(
     'keeps hosted PR metadata out of %s encrypted composition while ordinary PR linkage still works',

@@ -701,6 +701,9 @@ export const makeDesktopE2eeRuntimeHost = Effect.fn('DesktopE2eeRuntimeHost.open
             rotationRequired: publicState.epoch.rotationRequired,
             deviceKind: ownDevice?.kind ?? null,
             hasCurrentKey: Result.isSuccess(checked),
+            hasDeviceCredential: Result.isSuccess(
+              yield* Effect.result(options.bootstrap.deviceCredential(workspaceId))
+            ),
             continuityPending,
             ...(upgradeRequiredAt === undefined ? {} : { upgradeRequiredAt })
           }

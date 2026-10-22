@@ -405,7 +405,13 @@ describe('local E2EE pairing transport', () => {
       ...activation
     } = request;
     expect(
-      await Effect.runPromise(client.e2eeActivate({ ...activation, type: 'activate' }))
+      await Effect.runPromise(
+        client.e2eeActivate({
+          ...activation,
+          type: 'activate',
+          signingPublicKey: material.signingPublicKey,
+        })
+      )
     ).toEqual({ ok: true, type: 'activate' });
     expect(activated).toBe(true);
     const mismatch = await Effect.runPromise(
