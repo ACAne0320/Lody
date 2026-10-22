@@ -43,7 +43,8 @@ realistic event, not a hypothetical one.
   flag changes, and an archived session never starts work.
 - **Late Tabs.** The old order scanned targets after the join, so a Tab whose
   creation committed during the join was included. The tail now restores that
-  outcome. After the join it re-reads targets and archives Tabs absent from the
+  outcome. After the join it re-reads targets with the same operation (`archive`, or
+  `archive-tree` when the user chose to include opened Sessions) and archives Tabs absent from the
   original scan, but only while the root is still archived, so a restore in
   between is respected.
 

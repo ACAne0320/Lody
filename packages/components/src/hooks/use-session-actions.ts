@@ -212,10 +212,11 @@ async function assertArchivedLocalProjectCanRestore(
  */
 async function archiveLateCreatedTabs(
   runtime: WorkspaceRuntime,
-  archived: readonly [SessionMeta, ...SessionMeta[]]
+  archived: readonly [SessionMeta, ...SessionMeta[]],
+  operation: 'archive' | 'archive-tree'
 ): Promise<void> {
   const known = new Set(archived.map((session) => session.id));
-  const [root, ...tabs] = await runtime.readSessionOperationTargets(archived[0].id, 'archive');
+  const [root, ...tabs] = await runtime.readSessionOperationTargets(archived[0].id, operation);
   if (root.isArchived !== true) return;
   for (const tab of tabs) {
     if (known.has(tab.id) || tab.isArchived === true) continue;
@@ -291,7 +292,11 @@ export type SessionActions = {
   markSessionUnread: (sessionId: SessionId) => Promise<void>;
   /** Delete exactly the supplied Sessions without discovering related Sessions. */
   deleteSessions: (sessionIds: SessionId[]) => Promise<void>;
-  archiveSession: (sessionId: SessionId) => Promise<void>;
+  /** Archives contained Tabs; opened Sessions only with `includeOpenedSessions`. */
+  archiveSession: (
+    sessionId: SessionId,
+    options?: { includeOpenedSessions?: boolean }
+  ) => Promise<void>;
   setTreeCollaborationStopped: (sessionId: SessionId, stopped: boolean) => Promise<void>;
   setSessionTabClosed: (sessionId: SessionId, closed: boolean) => Promise<void>;
   restoreSession: (sessionId: SessionId) => Promise<void>;
@@ -826,8 +831,9 @@ export function useSessionActions(): SessionActions {
   );
 
   const archiveSession = useCallback(
-    async (sessionId: SessionId) => {
-      log('[session-archive] start', { sessionId });
+    async (sessionId: SessionId, options?: { includeOpenedSessions?: boolean }) => {
+      const includeOpenedSessions = options?.includeOpenedSessions === true;
+      log('[session-archive] start', { sessionId, includeOpenedSessions });
       if (!runtime) {
         throw new Error('Runtime not ready');
       }
@@ -847,7 +853,8 @@ export function useSessionActions(): SessionActions {
           return;
         }
       }
-      const archiveTargets = await runtime.readSessionOperationTargets(sessionId, 'archive');
+      const operation = includeOpenedSessions ? 'archive-tree' : 'archive';
+      const archiveTargets = await runtime.readSessionOperationTargets(sessionId, operation);
       if (store.get(activeWorkspaceRuntimeAtom) !== runtime) {
         throw new Error('Workspace changed before archiving');
       }
@@ -877,7 +884,7 @@ export function useSessionActions(): SessionActions {
         }
       } finally {
         void cancellation
-          ?.then(() => archiveLateCreatedTabs(runtime, archiveTargets))
+          ?.then(() => archiveLateCreatedTabs(runtime, archiveTargets, operation))
           .catch((error: unknown) => {
             // Restore re-runs this cancellation before un-archiving, so a failure
             // here never makes the input deliverable. Workspace teardown aborts it.

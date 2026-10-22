@@ -277,6 +277,7 @@ import {
 } from '@/components/sessions/desktop-run-config-menu';
 import { resolvePermissionModeFace } from '@/lib/permission-mode-face';
 import { SessionUsagePopover } from '@/components/sessions/session-usage-popover';
+import { useArchiveSessionWithConfirmation } from '@/components/sessions/session-archive-confirmation';
 import { MachinePairingDialog } from './machine-pairing-dialog';
 import {
   DATE_BUCKET_THIS_MONTH,
@@ -5377,13 +5378,14 @@ function WorkspaceChatLanding({
     },
     [setSessionPinned]
   );
+  const archiveSessionWithConfirmation = useArchiveSessionWithConfirmation(archiveSession);
   const handleMobileChatArchive = useCallback(
     (chatId: string) => {
-      void archiveSession(chatId as SessionId).catch((error: unknown) => {
+      void archiveSessionWithConfirmation(chatId as SessionId).catch((error: unknown) => {
         toast.error(error instanceof Error ? error.message : String(error));
       });
     },
-    [archiveSession]
+    [archiveSessionWithConfirmation]
   );
   /* Restore (un-archive) from the mobile archived-list swipe drawer.
      Same `restoreSession` the desktop archive view uses; the row drops
