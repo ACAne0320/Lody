@@ -66,7 +66,9 @@ attribution of the 76 GB to these rooms is inferred from the log, not measured.
 
 ## Decisions
 
-Upstream (requested in loro-dev/loro-streams and loro-dev/loro-repo; links pending):
+Upstream ([loro-streams#435](https://github.com/loro-dev/loro-streams/pull/435),
+streams-crdt 0.19.2; [loro-repo#162](https://github.com/loro-dev/loro-repo/pull/162),
+loro-repo 0.23.4; both open):
 
 - Reset read backoff only after durable progress, not when a connection opens.
 - Do not re-download applied updates when only the local barrier failed, and keep
@@ -91,7 +93,7 @@ revisit if they cannot keep applied progress.
 
 ## Remaining work and limits
 
-- Bump `@loro-dev/streams-crdt`, `@loro-dev/streams-client` and `loro-repo` in the
+- Bump `@loro-dev/streams-crdt` and `loro-repo` in the
   `pnpm-workspace.yaml` catalog with reviewed `minimumReleaseAgeExclude` entries once
   released.
 - A full disk still stops local persistence; this only bounds the traffic and log

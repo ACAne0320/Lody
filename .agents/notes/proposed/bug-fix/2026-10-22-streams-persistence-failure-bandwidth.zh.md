@@ -32,7 +32,7 @@ Translation: current
 
 ## 决定
 
-上游（已在 loro-dev/loro-streams 和 loro-dev/loro-repo 提出；链接待补）：
+上游（[loro-streams#435](https://github.com/loro-dev/loro-streams/pull/435)，streams-crdt 0.19.2；[loro-repo#162](https://github.com/loro-dev/loro-repo/pull/162)，loro-repo 0.23.4；均未合并）：
 
 - 只在有持久化进展后重置读取退避，不在连接打开时重置。
 - 只有本地屏障失败时不重新下载已应用的更新，并在 `rejoin()` 之间保留该进度；持久化游标仍然永远不越过未持久化的状态。
@@ -44,6 +44,6 @@ Lody（本次改动）：CLI 的 `uncaughtException` 处理器只运行一次致
 
 ## 剩余工作与局限
 
-- 上游发布后，在 `pnpm-workspace.yaml` catalog 中升级 `@loro-dev/streams-crdt`、`@loro-dev/streams-client` 和 `loro-repo`，并加上经审核的 `minimumReleaseAgeExclude` 条目。
+- 上游发布后，在 `pnpm-workspace.yaml` catalog 中升级 `@loro-dev/streams-crdt` 和 `loro-repo`，并加上经审核的 `minimumReleaseAgeExclude` 条目。
 - 磁盘满仍会让本地持久化停止；这里只限制它造成的流量和日志量。告知用户存储失败是另一项改动。
 - 未在报告者的机器上复现。
