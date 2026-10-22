@@ -103,10 +103,16 @@ export default defineConfig({
         explicitlyExternal.has(id) ||
         id.includes('/node_modules/@loro-dev/roost-node/'),
       output: {
+        // Vendor ownership must not pull application modules across chunk boundaries.
+        onlyExplicitManualChunks: true,
         // Keep dependency sourcemaps out of the large CLI entry so the build
         // fits the 2 GiB heap. Keep packages separate from application workers.
         manualChunks(id) {
           if (id === '\0commonjsHelpers.js') return 'commonjs-helpers';
+          // This large application module has no relative worker/asset lookups.
+          // Its own map keeps the main-entry map collapse within the 2 GiB heap.
+          if (id === path.resolve(__dirname, 'src/lib/message-handler.ts'))
+            return 'cli-message-handler';
           const dependency = id.split('/node_modules/').at(-1);
           if (!id.includes('/node_modules/') || !dependency) return undefined;
           const segments = dependency.split('/');

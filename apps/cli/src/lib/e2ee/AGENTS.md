@@ -48,3 +48,7 @@
 - The encrypted Lody cloud port also omits hosted GitHub tokens. SessionManager
   must use host git/gh credentials, without sending decrypted repository names
   through its separately owned credential broker.
+
+- Fleet, Lody and one-shot commands load `workspace-legacy` only inside the
+  encrypted branch. Keep native custody/core off the ordinary entry graph; the
+  CLI build and its source maps must still fit the fixed 2 GiB build heap.

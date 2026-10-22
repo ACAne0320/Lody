@@ -1,4 +1,3 @@
-import { openCliE2eeWorkspaceLegacy } from './e2ee/workspace-legacy';
 import { closeLoginShellApplicationLegacy } from '@/agent/login-shell-env';
 import { SYNC_CONFIRMATION_TIMEOUT_MS } from '@/lib/loro/timeout-utils';
 import {
@@ -398,7 +397,9 @@ export async function withWorkspaceManager<T>(
       let manager: LoroDocumentManager;
       const e2ee =
         workspace.contentMode === 'e2ee'
-          ? await openCliE2eeWorkspaceLegacy({
+          ? await (
+              await import('./e2ee/workspace-legacy')
+            ).openCliE2eeWorkspaceLegacy({
               accountId: commandAuth.userId,
               workspaceId: workspace.id,
               genesisHash: workspace.genesisHash ?? '',

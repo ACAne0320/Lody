@@ -3,10 +3,6 @@ import type {
   LocalE2eePrepareResponse,
   LocalE2eeActivateResponse,
 } from '@lody/shared/e2ee-local-pairing';
-import {
-  activateCliE2eeWorkspaceLegacy,
-  prepareCliE2eeMachineLegacy,
-} from './e2ee/workspace-legacy';
 import { workspaceSupports } from '@lody/shared/workspace-streams-content';
 import { initCliAnalytics } from '@/lib/analytics/posthog';
 import { ensureImplicitLocalWorkspace } from '@/lib/cli-platform';
@@ -1734,6 +1730,8 @@ export class LodyFleet {
       workspace.genesisHash !== message.genesisHash
     )
       throw new Error('e2ee_binding_conflict');
+    const { activateCliE2eeWorkspaceLegacy, prepareCliE2eeMachineLegacy } =
+      await import('./e2ee/workspace-legacy');
     if (message.type === 'prepare') {
       const material = await prepareCliE2eeMachineLegacy({ ...message });
       return { ok: true, type: 'prepare', machineId: this.machineId, ...material };

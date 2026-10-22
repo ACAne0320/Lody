@@ -1,5 +1,5 @@
 import { workspaceSupports } from '@lody/shared/workspace-streams-content';
-import { openCliE2eeWorkspaceLegacy, type CliE2eeWorkspaceLegacy } from './e2ee/workspace-legacy';
+import type { CliE2eeWorkspaceLegacy } from './e2ee/workspace-legacy';
 import { LoroDocumentManager } from '@/lib/loro/doc';
 import { MachineRuntime } from '@/lib/machine-runtime';
 import { Logger } from '@/utils/logger';
@@ -90,6 +90,7 @@ export class Lody {
     if (!workspaceSupports({ mode: encrypted ? 'protected' : 'plaintext' }, 'rpc')) {
       if (!options.genesisHash || !options.cloudPort.e2ee)
         throw new Error('e2ee_workspace_unavailable');
+      const { openCliE2eeWorkspaceLegacy } = await import('./e2ee/workspace-legacy');
       e2ee = await openCliE2eeWorkspaceLegacy({
         accountId: options.userId,
         workspaceId: options.workspaceId,
