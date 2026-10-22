@@ -3,6 +3,7 @@
 Status: proposed
 Type: feature
 Translation: current
+PR: [#1829](https://github.com/LodyAI/Lody/pull/1829)
 
 [中文](2026-10-22-desktop-disk-full-guard.zh.md)
 
