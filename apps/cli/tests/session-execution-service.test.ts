@@ -3553,103 +3553,137 @@ describe('SessionExecutionService', () => {
     expect(sessionManager.terminateSession).toHaveBeenCalledWith(sessionId, false);
   });
 
-  it('does not write legacy code-session tags when Code Collab is enabled for new turns', async () => {
-    let history: Array<Record<string, unknown>> = [
-      {
-        id: 'turn-user-1',
-        role: 'user',
-        status: 'pending',
-        read: false,
-      },
-    ];
-    const agentClient = {
-      isCreated: vi.fn(() => true),
-      cancel: vi.fn(async () => {}),
-      prompt: vi.fn(async () => ({})),
-      currentModel: undefined,
-    };
-    const exec = vi.fn(async (_cmd: string, args: string[]) => {
-      const key = args.join(' ');
-      if (key === 'rev-parse --is-inside-work-tree') return 'true\n';
-      if (key === 'rev-parse HEAD') return 'abc123\n';
-      return '';
-    });
-    const activeSession = {
-      sessionId: 'session-1' as SessionId,
-      acpSessionId: 'acp-1' as ACPSessionId,
-      agentClient,
-      terminalManager: {} as unknown,
-      getWorkdir: () => '/tmp',
-      getHostWorkdir: () => '/tmp',
-      getParentSessionId: () => undefined,
-      exec,
-      terminate: vi.fn(async () => {}),
-      updateGitIdentity: vi.fn(),
-      createAgent: vi.fn(async () => 'acp-1'),
-      applyExecutionPlaneLimits: vi.fn(async () => {}),
-    };
-    const sessionDoc = withHistoryPort({
-      getMetaState: vi.fn(async () => ({ isArchived: false })),
-      setStatus: vi.fn(async () => {}),
-      setBaseBranch: vi.fn(async () => {}),
-      getHistory: vi.fn(() => history),
-      updateHistory: vi.fn(async (updater: (prev: typeof history) => typeof history) => {
-        history = updater(history);
-      }),
-    });
-    const refreshCodeCollabSharedState = vi.fn(async () => {});
-    const deps = createBaseDeps({
-      sessionManager: {
-        getSession: vi.fn(() => activeSession),
-        getPendingSession: vi.fn(() => null),
-        createSession: vi.fn(),
-        setSessionError: vi.fn(),
-        terminateSession: vi.fn(),
-        validateSessionCredentials: vi.fn(async () => {}),
-      } as unknown as SessionManager,
-      workspaceDocument: {
-        repo: {
-          upsertDocMeta: vi.fn(async () => {}),
-          getDocMeta: vi.fn(async () => undefined),
+  it.each(['pending', 'rejecting'] as const)(
+    'releases the turn and runs the next input while Code Collab refresh is %s',
+    async (refreshOutcome) => {
+      let history: Array<Record<string, unknown>> = [
+        {
+          id: 'turn-user-1',
+          role: 'user',
+          status: 'pending',
+          read: false,
         },
-        getOrCreateSessionDoc: vi.fn(async () => sessionDoc),
-        updateAcpCapabilities: vi.fn(async () => {}),
-      } as unknown as LoroDocumentManager,
-      turnFinalization: {
-        finalizeACPState: vi.fn(async () => {}),
-        flushSessionUsage: vi.fn(async () => {}),
-        updateSessionDiffStats: vi.fn(async () => [{ filePath: 'src/a.ts', add: 1, del: 0 }]),
-        refreshCodeCollabSharedState,
-        detectAndAssociatePR: vi.fn(async () => ({ baseBranch: 'release/v2' })),
-        syncWorkspaceGitState: vi.fn(async () => {}),
-        onTurnOutcome: vi.fn(async () => {}),
-      },
-    });
+      ];
+      const agentClient = {
+        isCreated: vi.fn(() => true),
+        cancel: vi.fn(async () => {}),
+        prompt: vi.fn(async () => ({})),
+        currentModel: undefined,
+      };
+      const exec = vi.fn(async (_cmd: string, args: string[]) => {
+        const key = args.join(' ');
+        if (key === 'rev-parse --is-inside-work-tree') return 'true\n';
+        if (key === 'rev-parse HEAD') return 'abc123\n';
+        return '';
+      });
+      const activeSession = {
+        sessionId: 'session-1' as SessionId,
+        acpSessionId: 'acp-1' as ACPSessionId,
+        agentClient,
+        terminalManager: {} as unknown,
+        getWorkdir: () => '/tmp',
+        getHostWorkdir: () => '/tmp',
+        getParentSessionId: () => undefined,
+        exec,
+        terminate: vi.fn(async () => {}),
+        updateGitIdentity: vi.fn(),
+        createAgent: vi.fn(async () => 'acp-1'),
+        applyExecutionPlaneLimits: vi.fn(async () => {}),
+      };
+      const sessionDoc = withHistoryPort({
+        getMetaState: vi.fn(async () => ({ isArchived: false })),
+        setStatus: vi.fn(async () => {}),
+        setBaseBranch: vi.fn(async () => {}),
+        getHistory: vi.fn(() => history),
+        updateHistory: vi.fn(async (updater: (prev: typeof history) => typeof history) => {
+          history = updater(history);
+        }),
+      });
+      let releaseRefresh = () => {};
+      const refreshGate = new Promise<void>((resolve) => {
+        releaseRefresh = resolve;
+      });
+      const refreshCodeCollabSharedState = async () => {
+        if (refreshOutcome === 'rejecting') throw new Error('Synthetic refresh failure');
+        await refreshGate;
+      };
+      const presence = new Set<SessionId>();
+      const deps = createBaseDeps({
+        startSessionActivePresence: (id) => {
+          presence.add(id);
+        },
+        clearSessionActivePresence: (id) => {
+          presence.delete(id);
+        },
+        sessionManager: {
+          getSession: vi.fn(() => activeSession),
+          getPendingSession: vi.fn(() => null),
+          createSession: vi.fn(),
+          setSessionError: vi.fn(),
+          terminateSession: vi.fn(),
+          validateSessionCredentials: vi.fn(async () => {}),
+        } as unknown as SessionManager,
+        workspaceDocument: {
+          repo: {
+            upsertDocMeta: vi.fn(async () => {}),
+            getDocMeta: vi.fn(async () => undefined),
+          },
+          getOrCreateSessionDoc: vi.fn(async () => sessionDoc),
+          updateAcpCapabilities: vi.fn(async () => {}),
+        } as unknown as LoroDocumentManager,
+        turnFinalization: {
+          finalizeACPState: vi.fn(async () => {}),
+          flushSessionUsage: vi.fn(async () => {}),
+          updateSessionDiffStats: vi.fn(async () => [{ filePath: 'src/a.ts', add: 1, del: 0 }]),
+          refreshCodeCollabSharedState,
+          detectAndAssociatePR: vi.fn(async () => ({ baseBranch: 'release/v2' })),
+          syncWorkspaceGitState: vi.fn(async () => {}),
+          onTurnOutcome: vi.fn(async () => {}),
+        },
+      });
 
-    const service = new SessionExecutionService(deps);
-    await service.continueSession({
-      type: 'session/chat',
-      sessionId: 'session-1' as SessionId,
-      machineId: 'machine-1',
-      workspaceId: 'workspace-1' as WorkspaceId,
-      project: { kind: 'github', repoFullName: 'owner/repo', branch: 'main' },
-      acpSessionConfig: { prompt: 'hi', cliType: 'builtin', agentType: 'codex' },
-      userTurnId: 'turn-user-1',
-      userId: 'user-1',
-      userName: 'User',
-      userEmail: 'user@example.com',
-    });
+      const service = new SessionExecutionService(deps);
+      await service.continueSession({
+        type: 'session/chat',
+        sessionId: 'session-1' as SessionId,
+        machineId: 'machine-1',
+        workspaceId: 'workspace-1' as WorkspaceId,
+        project: { kind: 'github', repoFullName: 'owner/repo', branch: 'main' },
+        acpSessionConfig: { prompt: 'hi', cliType: 'builtin', agentType: 'codex' },
+        userTurnId: 'turn-user-1',
+        userId: 'user-1',
+        userName: 'User',
+        userEmail: 'user@example.com',
+      });
 
-    expect(deps.turnFinalization.updateSessionDiffStats).toHaveBeenCalledWith(
-      'session-1',
-      activeSession,
-      expect.objectContaining({
-        baseCommitHash: 'abc123',
-        preferredBaseBranch: 'release/v2',
-      })
-    );
-    expect(refreshCodeCollabSharedState).toHaveBeenCalledWith('session-1');
-  });
+      expect(deps.turnFinalization.updateSessionDiffStats).toHaveBeenCalledWith(
+        'session-1',
+        activeSession,
+        expect.objectContaining({
+          baseCommitHash: 'abc123',
+          preferredBaseBranch: 'release/v2',
+        })
+      );
+      expect(service.getExecutionSnapshot('session-1' as SessionId).hasActiveTurn).toBe(false);
+      expect(presence.size).toBe(0);
+      history.push({ id: 'turn-user-2', role: 'user', status: 'pending', read: false });
+      await service.continueSession({
+        type: 'session/chat',
+        sessionId: 'session-1' as SessionId,
+        machineId: 'machine-1',
+        workspaceId: 'workspace-1' as WorkspaceId,
+        project: { kind: 'github', repoFullName: 'owner/repo', branch: 'main' },
+        acpSessionConfig: { prompt: 'next', cliType: 'builtin', agentType: 'codex' },
+        userTurnId: 'turn-user-2',
+        userId: 'user-1',
+        userName: 'User',
+        userEmail: 'user@example.com',
+      });
+      expect(history.find((entry) => entry.id === 'turn-user-2')?.status).toBe('handled');
+      expect(service.getExecutionSnapshot('session-1' as SessionId).hasActiveTurn).toBe(false);
+      releaseRefresh();
+    }
+  );
 
   it.each(
     (
@@ -8578,6 +8612,11 @@ describe('SessionExecutionService', () => {
     deps.turnFinalization.onTurnOutcome = async (fact) => {
       notificationFacts.push(fact);
     };
+    let releaseRefresh = () => {};
+    const refresh = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    deps.turnFinalization.refreshCodeCollabSharedState = () => refresh;
     service = new SessionExecutionService(deps);
     await service.continueSession({
       type: 'session/chat',
@@ -8592,6 +8631,10 @@ describe('SessionExecutionService', () => {
       userEmail: 'user@example.com',
     });
 
+    expect(
+      service.getExecutionSnapshot('session-prompt-cancel-resolved' as SessionId).hasActiveTurn
+    ).toBe(false);
+    releaseRefresh();
     expect(notificationFacts.map((fact) => fact.outcome)).toEqual([{ kind: 'cancelled' }]);
     expect(agentClient.cancel).toHaveBeenCalledWith('acp-prompt-cancel-resolved');
     expect(deps.turnFinalization.finalizeACPState).toHaveBeenCalledTimes(2);
