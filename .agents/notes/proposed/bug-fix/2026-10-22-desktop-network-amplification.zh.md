@@ -11,7 +11,7 @@ Translation: current
 
 ## 范围与证据
 
-检查版本为 Lody `57bb469c2a31d43b4e9c830017504bc498ee2b5e`、`loro-repo` 0.23.3、`streams-crdt` 0.19.1、`streams-client` 0.12.1，以及真实 Loro 1.16.3。下载的 npm 包 SHA-512 与本仓库锁文件一致。实验使用合成内容、内存中的 HTTP 边界和明确的完成信号，没有测量用户网络或已部署服务。用户安装版本、上传下载比例和统计工具范围仍未知。
+检查版本为 Lody `57bb469c2a31d43b4e9c830017504bc498ee2b5e`、`loro-repo` 0.23.3、`streams-crdt` 0.19.1、`streams-client` 0.12.1，以及真实 Loro 1.16.3。下载的 npm 包 SHA-512 与调查时 checkout 的锁文件一致。实验使用合成内容、内存中的 HTTP 边界和明确的完成信号，没有测量用户网络或已部署服务。用户安装版本、上传下载比例和统计工具范围仍未知。
 
 ## 完整快照上传的放大
 
@@ -65,9 +65,9 @@ renderer 的 Chromium 网络与 daemon 的 Node 网络也分别管理代理。[`
 
 进一步源码检查和真实 Loro 1.16.3 实验确认了另一处持久化缺口：普通 snapshot 和全历史 update 导出不包含因缺少因果依赖而停放的远端更新。已有 `base|` 文档先收到 B、缺少前驱 A 时，B 进入 pending；不重启，补 A 后得到 `base|AB`；仅恢复普通 snapshot 再补 A，只得到 `base|A`；恢复 snapshot 并重新导入另存的 B 原始二进制后，再补 A，则得到 `base|AB`。这里指导入远端后的 pending，不是本地未提交事务。
 
-独立 [Loro 实现](https://github.com/loro-dev/loro/pull/1220)已 rebase 到核心 main `136b944f2501b16eb82ef1c51541627958199d75`，包含已发布的 Rust 1.16.2 修复，并提供 `exportPendingUpdates(): Uint8Array | undefined`，以及 Rust `export_pending_updates() -> Result<Option<Vec<u8>>, LoroEncodeError>`。它用现有 updates 格式重新编码解码后的 pending changes，不保留原始输入字节。空结果返回 undefined/None；非空二进制可通过普通 `import` 恢复。导出不消费 pending、不提交本地编辑、不推进已应用版本、不发事件。行为测试覆盖部分已应用范围、多 peer、未知 Lamport，以及重复、交叠和 counter 缺口，并验证补齐缺失依赖后收敛。`loro-dev/loro-ffi` 也已实现可选二进制接口，已完成真实 Swift/Python 恢复及类型化错误测试。审查分支固定引用的核心 Git revision 必须包含这些已发布修复，供其他机器直接验证；正式发包时仍需对齐已发布的核心版本。Rustdoc、JSDoc 与 `loro-dev/loro-docs` 已补充一致保存检查点的说明和限制。这些开发改动尚未发布，也没有改变当前 Lody checkout。
+独立 [Loro 实现](https://github.com/loro-dev/loro/pull/1220)已随 Rust 与 `loro-crdt` 1.17.0（`loro.js` 0.4.0）发布，并保留此前正式版的核心修复。它提供 `exportPendingUpdates(): Uint8Array | undefined`，以及 Rust `export_pending_updates() -> Result<Option<Vec<u8>>, LoroEncodeError>`，用现有 updates 格式重新编码解码后的 pending changes。空结果返回 undefined/None；非空二进制通过普通 `import` 恢复。导出不消费 pending、不提交本地编辑、不推进已应用版本、不发事件。测试覆盖已应用前缀、多 peer、Lamport、重复、交叠和 counter 缺口。[FFI #17](https://github.com/loro-dev/loro-ffi/pull/17)已合并并使用正式 Rust 依赖，真实 Swift/Python 恢复及类型化错误测试通过；这不代表对应 FFI 发行包已发布。Rustdoc、JSDoc 和已合并的[官网文档](https://github.com/loro-dev/loro-docs/pull/54)说明了一致检查点及其限制。
 
-后续 Repo/Streams 接入必须同时恢复普通快照和 pending 数据；空结果应清理已失效的旧 pending 记录。接入方案还应对持续的 pending 编码错误明确告警，并保留旧检查点，不能静默永久停留。只有对应的已应用数据与 pending 都可恢复后，才能保存表示“已收到字节已落盘”的检查点；它必须与已应用版本、完整性状态区分，不能据此发布完整远端快照或压缩日志。当前 Streams 0.19.1 在导入不完整时刻意不保存持久 cursor，因此单凭导出缺口不能证明该用户丢过数据。Repo 部分存储和原生路径已有原始 pending journal；Lody 现用 Promise 文档导出路径并不会让普通 snapshot/update 包含 pending。仅增加 Loro API 不会自动改变存储边界或修好 SDK 恢复递归。如果远端前驱永久缺失，仍需要补回真实数据或提供可用新快照，保存 pending 本身不能生成缺失操作。
+后续的 [Lody 接入](../../implemented/bug-fix/2026-10-22-loro-pending-persistence.zh.md)使用 Loro 1.17.0 与 LoroRepo 0.24.0，在现有存储日志中保留收到的 pending 输入，包含 Promise 文档路径。只有对应的已应用数据与 pending 都可恢复后，才能保存表示“已收到字节已落盘”的检查点；它必须与已应用版本、完整性状态区分，不能据此发布完整远端快照或压缩日志。导出错误必须保留上一份可恢复检查点，持续错误需要明确诊断。Streams 0.19.1 仍在导入不完整时不保存持久 cursor，因此单凭原始导出缺口不能证明该用户丢过数据。存储接入没有修好 SDK 恢复递归，也没有增加下载限额。如果远端前驱永久缺失，仍需要补回真实数据或提供可用新快照。
 
 建议在 SDK 做两层防护：bootstrap 自己的后续分页再次遇到不完整导入时，禁止再次进入 bootstrap；同时限制每个房间完整恢复的次数和累计下载字节。快照、尾部位置和缺失依赖都没变化时，不应无限重复全量读取。只增加 30 秒等待仍不足以限制大快照的总流量。保留本地文档、pending imports、未上传修改和安全 cursor，只隔离受影响的房间。即使快照没更新，远端尾部也可能补齐缺失前驱，因此可通过低成本的检查点观察，允许预算内的新尝试。唤醒、token 刷新和重连本身不能重置预算。耗尽后需要明确状态及恢复入口；预算策略仍是提议，尚未实现。
 
