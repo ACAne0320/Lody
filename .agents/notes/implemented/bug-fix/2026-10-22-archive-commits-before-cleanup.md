@@ -13,21 +13,22 @@ cancellations, which include joining in-flight owner writes, and then a flush of
 every dirty Repo document. Archive now commits its local `isArchived` writes first
 and returns. Cancellation runs as an observed tail whose failure cannot undo the
 archive. When that tail has joined in-flight creations, it archives any Tab they
-created late. Restore takes over the cancellation duty: it finishes the cancellation
-before un-archiving, and refuses only while that cannot complete. The local commit
-is the optimistic update, so no separate UI overlay or rollback state exists.
+created late. Persistence starts in the background instead of being awaited. Restore
+blocks only on a cleanup this runtime has not confirmed, and refuses only while that
+cleanup cannot complete. The local commit is the optimistic update, so no separate
+UI overlay or rollback state exists.
 
 ## Findings
 
 Each finding was traced through the real call chain. The trigger column names a
 realistic event, not a hypothetical one.
 
-| Finding                                      | Evidence                                                                                                                                                                                                                                | Trigger and impact                                                                                                                                   | Scope and recovery                                                                                                                                                                           |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Normal slow path blocked archive             | `cancelWhere` in `session-accepted-inputs.ts` joins `running` drains and waits for the per-session Web Lock. A remote `requestSessionHistoryWrite` has a 30 s deadline and ignores the abort signal (`workspace-machine-rpc-facade.ts`) | An input is in flight to a slow or offline owner, in this window or another. The row stayed visible and navigation waited for up to the RPC deadline | Only the archived conversation was blocked. Before: it recovered when the RPC settled. Now: archive does not wait                                                                            |
-| Auxiliary cleanup blocked the business write | `isArchived` was written only after both cancellations resolved. `cancelWhere` does IndexedDB `list`, `patch` and `remove`                                                                                                              | The input-storage IndexedDB is closed or over quota. Archive rejected and nothing was archived, even though archive state lives in the Loro Repo     | Every archive failed while storage failed; the next call recovered once storage did. Now the archive stands, the failure is recorded in `client-log`, and restore completes the cancellation |
-| Whole-Repo flush on the archive path         | `repo.flush()` drains every dirty session doc, Flock doc and meta, and loops while new work arrives. It was added with `sendJournal.refresh()` (#1104), which has since been removed                                                    | Another conversation is streaming. Navigation waited for unrelated persistence                                                                       | Removed. Meta persistence already schedules itself on change (`metaDebounceCommitMs: 0`, journal-scheduled flush) and sync subscribes to the meta Flock directly                             |
-| Rejections dropped at two entry points       | `void onArchive()` (header and mobile menu) and `void archiveSession()` (mobile swipe)                                                                                                                                                  | Any archive failure, such as metadata still loading                                                                                                  | The user saw nothing and the rejection went unhandled. These entry points now show the toast the sidebar already shows                                                                       |
+| Finding                                      | Evidence                                                                                                                                                                                                                                | Trigger and impact                                                                                                                                   | Scope and recovery                                                                                                                                                                                                                                        |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Normal slow path blocked archive             | `cancelWhere` in `session-accepted-inputs.ts` joins `running` drains and waits for the per-session Web Lock. A remote `requestSessionHistoryWrite` has a 30 s deadline and ignores the abort signal (`workspace-machine-rpc-facade.ts`) | An input is in flight to a slow or offline owner, in this window or another. The row stayed visible and navigation waited for up to the RPC deadline | Only the archived conversation was blocked. Before: it recovered when the RPC settled. Now: archive does not wait                                                                                                                                         |
+| Auxiliary cleanup blocked the business write | `isArchived` was written only after both cancellations resolved. `cancelWhere` does IndexedDB `list`, `patch` and `remove`                                                                                                              | The input-storage IndexedDB is closed or over quota. Archive rejected and nothing was archived, even though archive state lives in the Loro Repo     | Every archive failed while storage failed; the next call recovered once storage did. Now the archive stands, the failure is recorded in `client-log`, and restore completes the cancellation                                                              |
+| Whole-Repo flush on the archive path         | `repo.flush()` drains every dirty session doc, Flock doc and meta, and loops while new work arrives. It was added with `sendJournal.refresh()` (#1104), which has since been removed                                                    | Another conversation is streaming. Navigation waited for unrelated persistence                                                                       | No longer awaited. Sync reads the committed meta Flock directly, but local meta persistence otherwise waits for its 5 s default debounce and nothing flushes on unload. Archive therefore starts `repo.flush()` in the background and records its failure |
+| Rejections dropped at two entry points       | `void onArchive()` (header and mobile menu) and `void archiveSession()` (mobile swipe)                                                                                                                                                  | Any archive failure, such as metadata still loading                                                                                                  | The user saw nothing and the rejection went unhandled. These entry points now show the toast the sidebar already shows                                                                                                                                    |
 
 ## Why reordering is safe
 
@@ -45,8 +46,12 @@ realistic event, not a hypothetical one.
   creation committed during the join was included. The tail now restores that
   outcome. After the join it re-reads targets with the same operation (`archive`, or
   `archive-tree` when the user chose to include opened Sessions) and archives Tabs absent from the
-  original scan, but only while the root is still archived, so a restore in
-  between is respected.
+  original scan. It runs only when a held creation under those targets existed,
+  and only while the root is still archived, the workspace is still active and no
+  restore of the root has started. Restore bumps a per-root generation before its
+  first await, so a restore whose target read missed the late Tab also stops the
+  repair. Late Tabs go through the same write as the others, including closing
+  their terminal sessions.
 
 A new conversation joins its cancellation only while its metadata is still
 unwritten, because then the in-flight write decides whether there is anything to
@@ -59,13 +64,28 @@ A failed tail leaves stored input without its `canceled` mark. This window still
 skips it, because the in-memory `canceled` set covers it. But after a reload, or
 in another window, `resume` delivers it once the session is no longer archived.
 Un-archiving is therefore the only step that can make leftover input deliverable.
-`restoreSession` runs `cancelSessions` for its targets before clearing
-`isArchived`. If storage is still failing, restore rejects with the original error
-and nothing changes; the next restore after recovery succeeds. This gate covers
-restore only. Archive, sending and unrelated sessions do not wait on it. Its cost
-on the ordinary path is one input-storage read, because a completed archive leaves
-nothing to cancel. A tail aborted by workspace teardown is logged at `info`, so
-bug reports do not show it as a failure.
+Each archived Session records its cleanup in the runtime until the cleanup confirms.
+`restoreSession` consults only those records:
+
+- still running: it waits for that cleanup. This is normally milliseconds, and at
+  most the in-flight RPC deadline when a restore follows an archive of a
+  conversation whose owner write is still outstanding;
+- failed: it retries `cancelSessions`. While storage still fails, restore rejects
+  with the original error and changes nothing; the next restore after recovery
+  succeeds.
+
+Restores with no record, such as earlier archives or archives whose cleanup
+confirmed, never touch input storage, so a storage fault does not block them.
+
+The records live in memory. After a reload, or in another window, a failed cleanup
+is unknown, and leftover stored input meets `validateTarget` while archived:
+`queued` rows become `failed` and wait for an explicit retry, and `unknown` rows
+keep converging by lookup as designed. This residual risk is accepted rather than
+gating every restore on input storage.
+
+The cleanup handler attaches when the promise is created, so a fast rejection
+during the archive writes is never an unhandled rejection. Workspace teardown or a
+switch is logged at `info`.
 
 ## Verification
 
@@ -75,10 +95,13 @@ bug reports do not show it as a failure.
 - a Tab whose creation commits after the scan is archived by the tail;
 - a new conversation whose metadata exists archives while its first write is
   blocked, and the landed turn is never activated;
+- a restore that starts before a late Tab commits leaves that Tab unarchived
+  under the restored root;
 - a stalled `flush` plus a rejecting cancellation still leave the archive in
   place; restore refuses while the cancellation fails, keeps the session
   archived, and after the fault clears drops the surviving input before
-  un-archiving.
+  un-archiving; a later restore whose cleanup confirmed is not blocked by a
+  storage fault.
 
 Each new assertion fails without its change. Not verified: an Electron run measuring the latency
 on a real streaming workspace.

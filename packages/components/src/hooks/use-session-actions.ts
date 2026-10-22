@@ -206,24 +206,62 @@ async function assertArchivedLocalProjectCanRestore(
 }
 
 /**
+ * Archive cancels pending input after its commit. Per runtime, each archived
+ * Session keeps that cleanup's outcome until it is confirmed (`true`) or as a
+ * failure (`false`), and each restored root bumps a generation that fences the
+ * archive's late-Tab repair.
+ */
+type ArchiveLifecycle = {
+  readonly cleanups: Map<SessionId, Promise<boolean>>;
+  readonly restores: Map<SessionId, number>;
+};
+const archiveLifecycles = new WeakMap<WorkspaceRuntime, ArchiveLifecycle>();
+
+function archiveLifecycle(runtime: WorkspaceRuntime): ArchiveLifecycle {
+  let lifecycle = archiveLifecycles.get(runtime);
+  if (!lifecycle) {
+    lifecycle = { cleanups: new Map(), restores: new Map() };
+    archiveLifecycles.set(runtime, lifecycle);
+  }
+  return lifecycle;
+}
+
+async function writeSessionArchived(runtime: WorkspaceRuntime, sessionId: SessionId) {
+  // The archived state is the whole request: the owning machine observes
+  // it, releases the runtime, and reconciles the worktree directory.
+  await runtime.writer.upsertDocMeta(getSessionRoomId(sessionId), {
+    isArchived: true,
+    status: SessionStatusFactory.idle(),
+  } as Partial<SessionMeta>);
+  if (typeof window !== 'undefined') {
+    // Cleanup failure cannot undo the accepted archive state.
+    try {
+      sendIpc('terminal.closeSession', { sessionId });
+    } catch (error) {
+      log('[session-archive] terminal cleanup failed', { sessionId, error });
+    }
+  }
+}
+
+/**
  * A held Tab creation already past its abort check when the archive scanned can
- * still commit. Once the cancellation has joined it, archive the Tabs it created,
- * unless the root has been restored in the meantime.
+ * still commit. Once the cancellation has joined it, archive the Tabs it created
+ * while `stillArchived` holds: a restore of the root or a workspace switch ends it.
  */
 async function archiveLateCreatedTabs(
   runtime: WorkspaceRuntime,
   archived: readonly [SessionMeta, ...SessionMeta[]],
-  operation: 'archive' | 'archive-tree'
+  operation: 'archive' | 'archive-tree',
+  stillArchived: () => boolean
 ): Promise<void> {
+  const root = await runtime.repo.getDocMeta(getSessionRoomId(archived[0].id));
+  if (isLoroRepoDocDeleted(root) || root?.meta?.isArchived !== true || !stillArchived()) return;
   const known = new Set(archived.map((session) => session.id));
-  const [root, ...tabs] = await runtime.readSessionOperationTargets(archived[0].id, operation);
-  if (root.isArchived !== true) return;
+  const [, ...tabs] = await runtime.readSessionOperationTargets(archived[0].id, operation);
   for (const tab of tabs) {
     if (known.has(tab.id) || tab.isArchived === true) continue;
-    await runtime.writer.upsertDocMeta(getSessionRoomId(tab.id), {
-      isArchived: true,
-      status: SessionStatusFactory.idle(),
-    } as Partial<SessionMeta>);
+    if (!stillArchived()) return;
+    await writeSessionArchived(runtime, tab.id);
   }
 }
 
@@ -858,44 +896,59 @@ export function useSessionActions(): SessionActions {
       if (store.get(activeWorkspaceRuntimeAtom) !== runtime) {
         throw new Error('Workspace changed before archiving');
       }
+      const lifecycle = archiveLifecycle(runtime);
+      const generation = lifecycle.restores.get(sessionId) ?? 0;
+      const stillArchived = () =>
+        store.get(activeWorkspaceRuntimeAtom) === runtime &&
+        (lifecycle.restores.get(sessionId) ?? 0) === generation;
+      const targetIds = archiveTargets.map((session) => session.id);
+      // Only a held creation under these targets can commit a Tab after the scan.
+      const lateTabPossible =
+        runtime.pendingSends?.getSnapshot().some((send) => {
+          const parentId = send.creation?.parentSessionId;
+          return parentId !== undefined && targetIds.includes(parentId);
+        }) === true;
       // Cancellation aborts this window's held work synchronously, and the archived
       // flag makes every later Roost write refuse its target. Joining in-flight
       // owner writes (up to their RPC deadline) and the input-storage cleanup is the
       // tail; the archive does not wait for it, and its failure cannot undo it.
-      const cancellation = runtime.pendingSends?.cancelSessions(
-        archiveTargets.map((session) => session.id)
-      );
-      try {
-        for (const session of archiveTargets) {
-          // The archived state is the whole request: the owning machine observes
-          // it, releases the runtime, and reconciles the worktree directory.
-          await runtime.writer.upsertDocMeta(getSessionRoomId(session.id), {
-            isArchived: true,
-            status: SessionStatusFactory.idle(),
-          } as Partial<SessionMeta>);
-          if (typeof window !== 'undefined') {
-            // Cleanup failure cannot undo the accepted archive state.
-            try {
-              sendIpc('terminal.closeSession', { sessionId: session.id });
-            } catch (error) {
-              log('[session-archive] terminal cleanup failed', { sessionId: session.id, error });
-            }
-          }
+      const cleanup = (runtime.pendingSends?.cancelSessions(targetIds) ?? Promise.resolve()).then(
+        () => true,
+        (error: unknown) => {
+          // Restore finishes a failed cancellation before un-archiving. Teardown
+          // aborts the tail of a workspace that is going away.
+          const teardown =
+            (error instanceof DOMException && error.name === 'AbortError') ||
+            store.get(activeWorkspaceRuntimeAtom) !== runtime;
+          recordClientError(
+            'session.archive_cleanup_failed',
+            error,
+            { sessionId },
+            teardown ? 'info' : 'error'
+          );
+          return false;
         }
+      );
+      for (const id of targetIds) lifecycle.cleanups.set(id, cleanup);
+      void cleanup
+        .then(async (confirmed) => {
+          if (!confirmed) return;
+          for (const id of targetIds)
+            if (lifecycle.cleanups.get(id) === cleanup) lifecycle.cleanups.delete(id);
+          if (lateTabPossible)
+            await archiveLateCreatedTabs(runtime, archiveTargets, operation, stillArchived);
+        })
+        .catch((error: unknown) => {
+          recordClientError('session.archive_late_tabs_failed', error, { sessionId }, 'warn');
+        });
+      try {
+        for (const id of targetIds) await writeSessionArchived(runtime, id);
       } finally {
-        void cancellation
-          ?.then(() => archiveLateCreatedTabs(runtime, archiveTargets, operation))
-          .catch((error: unknown) => {
-            // Restore re-runs this cancellation before un-archiving, so a failure
-            // here never makes the input deliverable. Workspace teardown aborts it.
-            const aborted = error instanceof DOMException && error.name === 'AbortError';
-            recordClientError(
-              'session.archive_cleanup_failed',
-              error,
-              { sessionId },
-              aborted ? 'info' : 'error'
-            );
-          });
+        // Start persistence now rather than after the meta debounce; nothing waits
+        // for it, so unrelated dirty documents never delay the archive.
+        void runtime.repo.flush().catch((error: unknown) => {
+          recordClientError('session.archive_flush_failed', error, { sessionId }, 'warn');
+        });
       }
       log('[session-archive] archived', {
         sessionId,
@@ -912,13 +965,26 @@ export function useSessionActions(): SessionActions {
         throw new Error('Runtime not ready');
       }
 
+      // From here on, a late-Tab repair of an earlier archive of this root stops.
+      const lifecycle = archiveLifecycle(runtime);
+      lifecycle.restores.set(sessionId, (lifecycle.restores.get(sessionId) ?? 0) + 1);
+
       const restoreTargets = await runtime.readSessionOperationTargets(sessionId, 'restore');
       const [sessionMeta] = restoreTargets;
       await assertArchivedLocalProjectCanRestore(runtime, sessionMeta);
-      // Archive cancels pending input only after its commit. If that cancellation
-      // failed, stored input survives and un-archiving would make it deliverable;
-      // finish the cancellation first, and refuse restore while it cannot.
-      await runtime.pendingSends?.cancelSessions(restoreTargets.map((session) => session.id));
+      // Archive cancels pending input only after its commit. Only a cleanup this
+      // runtime has not confirmed can leave stored input that un-archiving would make
+      // deliverable: wait for one still running, retry a failed one, and refuse
+      // restore while it cannot complete. Other restores never touch input storage.
+      const cleanups = restoreTargets.flatMap((session) => {
+        const cleanup = lifecycle.cleanups.get(session.id);
+        return cleanup ? [cleanup] : [];
+      });
+      if (cleanups.length > 0 && (await Promise.all(cleanups)).includes(false)) {
+        const ids = restoreTargets.map((session) => session.id);
+        await runtime.pendingSends?.cancelSessions(ids);
+        for (const id of ids) lifecycle.cleanups.delete(id);
+      }
       if (store.get(activeWorkspaceRuntimeAtom) !== runtime) {
         throw new Error('Workspace changed before restoring');
       }
