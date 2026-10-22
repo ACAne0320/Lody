@@ -3005,7 +3005,12 @@ const SessionDetail = ({
   // Archive the parent session from the header menu (desktop)
   const handleArchiveCurrentSession = useCallback(async () => {
     if (!activeSession) return;
-    await archiveSession(activeSession.id);
+    try {
+      await archiveSession(activeSession.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+      return;
+    }
     handleBackToList();
   }, [activeSession, archiveSession, handleBackToList]);
 
@@ -3016,12 +3021,16 @@ const SessionDetail = ({
       closeDraftTab(activeDraftTab.id);
       return;
     }
-    if (activeTabSessionId && activeTabSessionId !== sessionId) {
-      await archiveSession(activeTabSessionId as SessionId);
-    } else {
-      // Archiving the parent
-      await archiveSession(activeSession.id);
-      handleBackToList();
+    try {
+      if (activeTabSessionId && activeTabSessionId !== sessionId) {
+        await archiveSession(activeTabSessionId as SessionId);
+      } else {
+        // Archiving the parent
+        await archiveSession(activeSession.id);
+        handleBackToList();
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
     }
   }, [
     activeDraftTab,

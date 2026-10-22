@@ -5379,7 +5379,9 @@ function WorkspaceChatLanding({
   );
   const handleMobileChatArchive = useCallback(
     (chatId: string) => {
-      void archiveSession(chatId as SessionId);
+      void archiveSession(chatId as SessionId).catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : String(error));
+      });
     },
     [archiveSession]
   );

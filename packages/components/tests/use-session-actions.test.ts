@@ -2081,6 +2081,11 @@ describe('useSessionActions', () => {
 
       const running = actions[action](tree.rootSession.id);
       await whenAborted(rootPreparation.signal);
+      if (action === 'archiveSession') {
+        // The archive is the local commit; joining the stalled upload is its tail.
+        await expect(running).resolves.toBeUndefined();
+        expect(metaRepo.getSession(tree.rootSession.id)).toMatchObject({ isArchived: true });
+      }
       rootPreparation[settle]();
       await expect(running).resolves.toBeUndefined();
 
@@ -2135,6 +2140,136 @@ describe('useSessionActions', () => {
     expect(metaRepo.getSession(tree.rootSession.id)).toMatchObject({ isArchived: true });
     for (const preparation of heldPreparations) preparation.finish();
     expect(await readHistory(runtime, childId)).toEqual([]);
+  });
+
+  it('archives a Tab whose in-flight creation commits after the archive scanned', async () => {
+    const tree = createContainmentSessions('late-tab', false);
+    const metaRepo = createSessionMetaRepo(tree.sessions);
+    const runtime = createRuntime({ repo: metaRepo.repo });
+    const actions = await renderActions(runtime);
+    const lateTabId = 'late-tab-created' as SessionId;
+    const creationStarted = createDeferred();
+    const releaseCreation = createDeferred();
+    const lateTabArchived = createDeferred();
+    let creationHeld = false;
+    const writer = runtime.writer as { upsertDocMeta: WorkspaceRuntime['writer']['upsertDocMeta'] };
+    const upsert = writer.upsertDocMeta.bind(writer);
+    writer.upsertDocMeta = async (roomId, patch) => {
+      if (roomId === getSessionRoomId(lateTabId) && !creationHeld) {
+        creationHeld = true;
+        creationStarted.resolve();
+        await releaseCreation.promise;
+      }
+      await upsert(roomId, patch);
+      if (roomId === getSessionRoomId(lateTabId) && patch.isArchived === true)
+        lateTabArchived.resolve();
+    };
+
+    await actions.startSession(
+      { ...createSessionPayload(lateTabId), parentSessionId: tree.rootSession.id },
+      userInput('late'),
+      [imageDraft('att-late')]
+    );
+    heldPreparations.at(-1)!.finish();
+    await creationStarted.promise;
+
+    await actions.archiveSession(tree.rootSession.id);
+    expect(metaRepo.getSession(tree.rootSession.id)).toMatchObject({ isArchived: true });
+    expect(metaRepo.getSession(lateTabId)).toBeUndefined();
+
+    releaseCreation.resolve();
+    await lateTabArchived.promise;
+    expect(metaRepo.getSession(lateTabId)).toMatchObject({
+      parentSessionId: tree.rootSession.id,
+      isArchived: true,
+    });
+    expect(await readHistory(runtime, lateTabId)).toEqual([]);
+  });
+
+  it('archives a new conversation whose metadata exists without joining its in-flight write', async () => {
+    const tree = createContainmentSessions('creation-in-flight', false);
+    const metaRepo = createSessionMetaRepo(tree.sessions);
+    // The archive's second target read is its tail, after joining the write.
+    const tailJoined = createDeferred();
+    let targetReads = 0;
+    const runtime = createRuntime({
+      repo: metaRepo.repo,
+      readSessionOperationTargets: async (id, operation) => {
+        const targets = await readSessionOperationTargets(metaRepo.repo, id, operation);
+        if (++targetReads === 2) tailJoined.resolve();
+        return targets;
+      },
+    });
+    const actions = await renderActions(runtime);
+    const sessionId = 'creation-in-flight-new' as SessionId;
+    const writing = createDeferred();
+    const releaseWrite = createDeferred();
+    const writer = runtime.writer as {
+      appendSessionTurn: WorkspaceRuntime['writer']['appendSessionTurn'];
+    };
+    const append = writer.appendSessionTurn.bind(writer);
+    writer.appendSessionTurn = async (id, entry) => {
+      if (id === sessionId) {
+        writing.resolve();
+        await releaseWrite.promise;
+      }
+      return append(id, entry);
+    };
+
+    await actions.startSession(createSessionPayload(sessionId), userInput('new'), [
+      imageDraft('att-new'),
+    ]);
+    heldPreparations.at(-1)!.finish();
+    await writing.promise;
+    expect(runtime.pendingSends?.hasPendingCreation(sessionId)).toBe(true);
+
+    await actions.archiveSession(sessionId);
+    expect(metaRepo.getSession(sessionId)).toMatchObject({ isArchived: true });
+
+    releaseWrite.resolve();
+    await tailJoined.promise;
+    // The turn already past its abort check lands, but an archived session never starts.
+    expect(metaRepo.getSession(sessionId)?.latestUserMsgId).toBeUndefined();
+  });
+
+  it('keeps the archive when cleanup fails, and restore finishes the cancellation first', async () => {
+    const tree = createContainmentSessions('cleanup-failure', false);
+    const metaRepo = createSessionMetaRepo(tree.sessions);
+    metaRepo.repo.flush = () => new Promise<void>(() => {});
+    const runtime = createRuntime({ repo: metaRepo.repo });
+    const pendingSends = runtime.pendingSends!;
+    const cancelSessions = pendingSends.cancelSessions;
+    const actions = await renderActions(runtime);
+    const leftover = await actions.addSessionHistory(tree.rootSession.id, userInput('left'), {
+      dispatch: true,
+      attachments: [imageDraft('att-left')],
+    });
+    const preparation = heldPreparations.at(-1)!;
+    pendingSends.cancelSessions = () => Promise.reject(new Error('Input storage is closed'));
+
+    await actions.archiveSession(tree.rootSession.id);
+    for (const session of [tree.rootSession, tree.tabSession])
+      expect(metaRepo.getSession(session.id)).toMatchObject({ isArchived: true });
+
+    // Un-archiving would make the surviving input deliverable again.
+    await expect(actions.restoreSession(tree.rootSession.id)).rejects.toThrow(
+      'Input storage is closed'
+    );
+    expect(metaRepo.getSession(tree.rootSession.id)).toMatchObject({ isArchived: true });
+    expect(pendingSends.has(leftover.id)).toBe(true);
+
+    // The next restore after the fault clears cancels it, then restores.
+    pendingSends.cancelSessions = cancelSessions;
+    await actions.restoreSession(tree.rootSession.id);
+    expect(metaRepo.getSession(tree.rootSession.id)).toMatchObject({ isArchived: false });
+    expect(preparation.signal.aborted).toBe(true);
+    expect(pendingSends.has(leftover.id)).toBe(false);
+    expect((await readHistory(runtime, tree.rootSession.id)).map((turn) => turn.id)).not.toContain(
+      leftover.id
+    );
+    await actions.archiveSession(tree.rootSession.id);
+    for (const session of [tree.rootSession, tree.tabSession])
+      expect(metaRepo.getSession(session.id)).toMatchObject({ isArchived: true });
   });
 
   it('deletes a conversation together with its held send', async () => {
