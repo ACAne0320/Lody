@@ -32,11 +32,12 @@ Translation: current
 
 ## 决定
 
-上游（[loro-streams#435](https://github.com/loro-dev/loro-streams/pull/435)，streams-crdt 0.19.2；[loro-repo#162](https://github.com/loro-dev/loro-repo/pull/162)，loro-repo 0.23.4；均未合并）：
+上游（[loro-streams#435](https://github.com/loro-dev/loro-streams/pull/435)，streams-crdt 0.19.2；[loro-repo#162](https://github.com/loro-dev/loro-repo/pull/162) 和 [loro-repo#163](https://github.com/loro-dev/loro-repo/pull/163)，loro-repo 0.23.4；均未合并）：
 
 - 只在有持久化进展后重置读取退避，不在连接打开时重置。
-- 只有本地屏障失败时不重新下载已应用的更新，并在 `rejoin()` 之间保留该进度；持久化游标仍然永远不越过未持久化的状态。
+- 只有持久化游标存盘失败时，继续读取和上传。每条更新只在内存中应用一次；只有持久化游标停住，它的存盘按 1–30 秒退避重试，直到存储恢复。期间房间报告 `error`，`rejoin()` 只重试存盘、不重连。持久化游标仍然永远不越过未持久化的状态。#435 的早期版本在每次读取前先重试存盘，存储失败期间所有实时更新都会停止；review 否决了这个做法。
 - 允许消费方把屏障错误标记为终态，并把 `StaleReplicaError` 标为终态；拆除或重绑绑定在已替换副本上的会话。
+- 浏览器关闭 IndexedDB 连接后重新打开（#163）。否则渲染进程的存储失败一次后，在重载前都无法再持久化。
 
 Lody（本次改动）：CLI 的 `uncaughtException` 处理器只运行一次致命路径。当 stdout/stderr 是读端已死的管道时，每次控制台写入都会在下一个 tick 触发新的 EPIPE `uncaughtException`；逐个处理又会再记日志、再写入，这条链饿死了 5 秒的清理定时器，进程因此到不了 `process.exit`。现在只记录第一个异常，之后的只计数（退出前写一行汇总），并且 EPIPE 不再回显到已断开的控制台。`tests/telemetry-process-handlers.test.ts` 写入 1,000 个 EPIPE 异常，期望两行致命日志；没有此改动时得到 1,000 行。
 

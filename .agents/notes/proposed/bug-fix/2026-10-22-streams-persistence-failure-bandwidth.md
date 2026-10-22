@@ -67,14 +67,21 @@ attribution of the 76 GB to these rooms is inferred from the log, not measured.
 ## Decisions
 
 Upstream ([loro-streams#435](https://github.com/loro-dev/loro-streams/pull/435),
-streams-crdt 0.19.2; [loro-repo#162](https://github.com/loro-dev/loro-repo/pull/162),
-loro-repo 0.23.4; both open):
+streams-crdt 0.19.2; [loro-repo#162](https://github.com/loro-dev/loro-repo/pull/162)
+and [loro-repo#163](https://github.com/loro-dev/loro-repo/pull/163), loro-repo 0.23.4;
+all open):
 
 - Reset read backoff only after durable progress, not when a connection opens.
-- Do not re-download applied updates when only the local barrier failed, and keep
-  that progress across `rejoin()`; durable cursors still never pass unpersisted state.
+- When only the durable cursor save fails, keep reading and uploading. Each update is
+  applied in memory once; only the durable cursor stops, and its save retries on a
+  1–30 s backoff until storage recovers. The room reports `error` meanwhile, and
+  `rejoin()` retries the save without reconnecting. Durable cursors still never pass
+  unpersisted state. An earlier revision of #435 retried the save before every read,
+  which stopped all live updates while storage failed; review rejected it.
 - Let the consumer mark barrier errors as terminal, and make `StaleReplicaError`
   one; tear down or rebind sessions bound to a replaced replica.
+- Reopen the IndexedDB connection after the browser closes it (#163). Without this,
+  a renderer whose storage failed once could not persist again until it reloaded.
 
 Lody (this change): the CLI `uncaughtException` handler runs the fatal path once.
 When stdout/stderr is a pipe whose reader died, each console write raised another
