@@ -206,17 +206,21 @@ export function SessionArchiveConfirmationView({
               <AlertDialog.Description>
                 {t('sessions.archiveSubConversations.description', {
                   count,
-                  defaultValue: 'This conversation opened {{count}} active sub-conversations.',
-                })}{' '}
-                {workingCount > 0
-                  ? t('sessions.archiveSubConversations.working', {
-                      count: workingCount,
-                      defaultValue: '{{count}} are still working; archiving them stops that work.',
-                    })
-                  : t(
-                      'sessions.archiveSubConversations.idle',
-                      'None of them is working right now.'
-                    )}
+                  // The status sentence is interpolated so each language owns its spacing.
+                  status:
+                    workingCount > 0
+                      ? t('sessions.archiveSubConversations.working', {
+                          count: workingCount,
+                          defaultValue:
+                            '{{count}} are still working; archiving them stops that work.',
+                        })
+                      : t(
+                          'sessions.archiveSubConversations.idle',
+                          'None of them is working right now.'
+                        ),
+                  defaultValue:
+                    'This conversation opened {{count}} active sub-conversations. {{status}}',
+                })}
               </AlertDialog.Description>
             </>
           )}
