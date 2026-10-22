@@ -30,7 +30,10 @@ import {
   type GitRunner,
   type GitWorkingTreeDiffBaseline,
 } from '@/lib/git/git-diff-stats';
-import { resolveWorkspaceLocalProjectRootPathWithRetry } from '@/lib/local-project-meta';
+import {
+  resolveWorkspaceLocalProjectRootPathWithRetry,
+  readLocalProjectRootResolveSyncTimeoutMs,
+} from '@/lib/local-project-meta';
 import type { LoroDocumentManager, SessionDocument } from '@/lib/loro/doc';
 import { subscribeSessionChanges } from '@/lib/loro/doc';
 import type {
@@ -38,7 +41,7 @@ import type {
   SessionActivePresencePhase,
   SessionInitializationStall,
 } from '@/lib/loro/session-active-presence';
-import { readTimeoutEnv, withTimeout } from '@/lib/loro/timeout-utils';
+import { SYNC_CONFIRMATION_TIMEOUT_MS, withTimeout } from '@/lib/loro/timeout-utils';
 import type { MemoryPressureEvictionResult } from '@/lib/session-gc-manager';
 import type { OperationInboxLegacy } from '@/orchestration/inbox/legacy';
 import {
@@ -116,6 +119,7 @@ import {
   type ReplayPromptResult,
   resolveBaseBranchPreference,
   resolveProjectGitHubRepo,
+  resolveSessionAuthoredText,
   resolveSessionExecutionInputBlocks,
   serializeCustomAcpLaunchSpec,
   SessionCancelRequestValidated,
@@ -199,7 +203,7 @@ const ACP_POST_AUTH_REFRESH_MAX_MS = 60_000;
  * re-join after a daemon restart, short enough that a genuinely broken uplink
  * fails the turn instead of holding the user's message.
  */
-const REPLAYABLE_HISTORY_SYNC_TIMEOUT_MS = 15_000;
+const REPLAYABLE_HISTORY_SYNC_TIMEOUT_MS = SYNC_CONFIRMATION_TIMEOUT_MS;
 
 /**
  * Shown when the agent's own session could not be resumed AND this machine has
@@ -3695,7 +3699,7 @@ export class SessionExecutionService {
         requestSync: () =>
           this.deps.workspaceDocument.syncMachineFlockDoc(this.deps.machineId, {
             reason: 'session-local-project-resolve',
-            timeoutMs: readTimeoutEnv('LODY_LOCAL_PROJECT_RESOLVE_SYNC_TIMEOUT_MS', 1_500),
+            timeoutMs: readLocalProjectRootResolveSyncTimeoutMs(),
           }),
         onRetry: (attempt, maxAttempts) =>
           this.deps.logger.debug(
@@ -6871,7 +6875,8 @@ export class SessionExecutionService {
               sessionId,
               sessionConfig.agentCliType,
               sessionConfig.agentType,
-              agentConfig.prompt,
+              // Name the user's task, not the composed Config/Role execution prompt.
+              resolveSessionAuthoredText(agentConfig),
               env,
               acpSessionConfig.customAcp,
               acpSessionConfig.runtimeOverrides
