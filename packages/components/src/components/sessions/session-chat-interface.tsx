@@ -1,4 +1,5 @@
 import { useIosSimulatorPreviewRequest } from './ios-simulator/use-ios-simulator-preview-request';
+import type { DocumentSelection } from '@/lib/document-selection';
 import { createLoroSyncErrorTools } from '@lody/shared/loro-sync-errors';
 import { RepoSyncError, RepoTransportError } from 'loro-repo';
 import { useSessionPendingMessages } from '@/components/chat/session-pending-messages';
@@ -30,6 +31,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useOpenSettings } from '../../hooks/use-open-settings';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -80,7 +82,6 @@ import {
   type SessionTurnAgentRoleSelection,
 } from './session-chat-input-area';
 import { useSessionMcpSelection } from '@/hooks/use-session-mcp-selection';
-import { useSessionMentionSource } from '@/hooks/use-session-mention-source';
 import {
   MessageQueueDisplay,
   shouldRequestNativeQueueSteer,
@@ -140,11 +141,13 @@ import {
   resolveBaseBranchPreference,
   resolveProjectGitHubRepo,
   decodeProjectPreparationProgress,
+  type McpServerId,
 } from '@lody/shared';
 import { useIsMobile } from '../../hooks/use-mobile';
 import { useStableCallback } from '@/hooks/use-stable-callback';
 import { useAppCapability } from '@/lib/app-platform';
 import { SessionShareDialog } from '@/components/sharing/session-share-dialog';
+import { SessionShareEditorPanel } from '@/components/sharing/session-share-panel';
 import { useSessionShareStatus } from '@/hooks/use-session-share-management';
 import {
   conversationFontSizeAtom,
@@ -212,6 +215,8 @@ import type { SessionSharingState } from '@/lib/session-sharing';
 import {
   SessionAccessControl,
   SessionArchivedBadge,
+  type SessionAccessAction,
+  type SessionShareEditorContext,
   getSessionSharingDescription,
   getSessionSharingLabel,
   type SessionSharingTranslator,
@@ -255,6 +260,7 @@ import {
   CAPACITY_RETRY_CONTINUATION_PROMPT,
   useCapacityAutoRetry,
 } from './use-capacity-auto-retry';
+import { useSessionDocStaleReport } from './use-session-doc-stale-report';
 import { buildFixCiErrorsPrompt, buildResolvePrConflictsPrompt } from './session-pr-prompts';
 import { resolveConflictsActionAtomFamily } from './session-pr-agent-action';
 import { setPreferredPrMergeMethod, usePreferredPrMergeMethod } from './pr-merge-method';
@@ -305,6 +311,7 @@ import { useAppStoreReviewPrompt } from '@/hooks/use-app-store-review-prompt';
 import {
   FloatingPermissionRequest,
   hasPendingPermissionRequest,
+  hasPendingAskUserQuestion,
 } from './floating-permission-request';
 import { SessionPin } from './session-pin';
 import { SessionPinContext, type SessionPinContextValue } from './session-pin-context';
@@ -1544,7 +1551,6 @@ export function SessionHeaderMenu({
 
               {showBranchInfo ? (
                 <Menu.Item
-                  className="items-start"
                   onClick={() =>
                     copyToClipboard(
                       branchDisplayValue,
@@ -1677,6 +1683,9 @@ export function SessionHeaderMenu({
             icon={MoveHorizontal}
             endContent={
               <Switch
+                // The menu row owns keyboard focus. A tabbable nested switch
+                // otherwise receives initial focus even when opened by mouse.
+                tabIndex={-1}
                 checked={conversationWide}
                 onCheckedChange={(checked) => setConversationWide(checked === true)}
                 onClick={(event) => event.stopPropagation()}
@@ -2145,12 +2154,14 @@ export function SessionSearchBar({
   );
 }
 
-interface SessionChatInterfaceProps {
+export interface SessionChatInterfaceProps {
   claimNavigationFocus?: () => boolean;
   session: SessionMeta;
   workspaceSession?: SessionMeta | null;
   className?: string;
   hideHeader?: boolean;
+  /** Renders the root conversation's existing header controller in the desktop tab row. */
+  toolbar?: SessionChatToolbar;
   onFileDiffClick?: (turnId: string, filePath: string) => void;
   onFilePathClick?: (filePath: string) => void;
   /** Opens an agent-uploaded HTML source path directly in rendered file preview. */
@@ -2225,10 +2236,9 @@ interface SessionChatInterfaceProps {
   /** Opens Browser without forcing a newly reported candidate navigation. */
   onOpenExistingBrowser?: () => void;
   /**
-   * 'page' renders the classic full header row. 'toolbar' (desktop
-   * `hideMessageArea` instance) renders ONLY the compact right-side controls
-   * (IDE launcher / browser / "…" menu / end slot) so session-detail can embed
-   * them in the tab row — no title, no PR badge (the context strip owns PR).
+   * 'page' renders the full header; 'toolbar' renders compact controls inline.
+   * Desktop SessionDetail uses `toolbar.container` to portal those controls from
+   * the conversation's existing controller into its tab row.
    */
   headerVariant?: 'page' | 'toolbar';
   /**
@@ -2260,7 +2270,30 @@ function SpinningLoaderIcon({ className }: { className?: string }) {
 
 const EMPTY_CHAT_STREAM_EMPTY_STATE = <></>;
 
+export type SessionChatToolbar = {
+  container: HTMLElement | null;
+  className?: string;
+  endSlot?: React.ReactNode;
+  actions: Pick<
+    SessionChatInterfaceProps,
+    | 'onArchiveSession'
+    | 'onRestoreSession'
+    | 'onDeleteSession'
+    | 'onOpenSearch'
+    | 'onCopyConversationHistory'
+    | 'onRequestRename'
+    | 'onForkSession'
+    | 'forkWorktreeAvailability'
+    | 'onForkWorktreeMenuOpen'
+    | 'forkingAssistantMessageId'
+    | 'sharing'
+    | 'onShareWithTeam'
+    | 'onShareAsImage'
+  >;
+};
+
 export type SessionChatInterfaceHandle = {
+  addDocumentSelection: (selection: DocumentSelection) => boolean;
   focusInput: () => void;
   addCommentReference: (reference: CommentReferencePayload) => boolean;
   toggleCommentReference: (reference: CommentReferencePayload) => boolean;
@@ -2302,6 +2335,8 @@ export type DispatchInputBlocksOptions = {
   configOptionValuesOverride?: Record<string, AcpConfigOptionValue>;
   /** Role identity frozen beside this Turn's run config; null is explicit None. */
   agentRole?: SessionTurnAgentRoleSelection;
+  /** The MCP selection captured when the user pressed send. */
+  mcpServerIds?: readonly McpServerId[];
 };
 
 function buildEditedMessageQueueItem(
@@ -2354,6 +2389,7 @@ export const SessionChatInterface = memo(
       workspaceSession,
       className,
       hideHeader = false,
+      toolbar,
       onFileDiffClick,
       onFilePathClick,
       onOpenHtmlFile,
@@ -2543,10 +2579,11 @@ export const SessionChatInterface = memo(
     // index for counts and timing, and the per-turn fact table for the few
     // readers that need something from anywhere in the conversation.
     const conversationVersion = useConversationVersion(conversationView);
-    const { turns: sessionTailHistory, from: sessionTailFrom } = useConversationTail(
-      conversationView,
-      { extendToLastUserTurn: true }
-    );
+    const {
+      turns: sessionTailHistory,
+      availableTurns: availableSessionTailHistory,
+      from: sessionTailFrom,
+    } = useConversationTail(conversationView, { extendToLastUserTurn: true });
     const conversationConfigSources = useMemo(
       () =>
         conversationView ? collectConversationConfigSources(conversationView, sessionTailFrom) : [],
@@ -2841,18 +2878,6 @@ export const SessionChatInterface = memo(
       >
     >(new Map());
     const isArchivedSession = session.isArchived === true;
-    /* The edit-and-resend editor shares the composer's mention pipeline: same
-       `@`/`$`/`/` sources, same before-send expansion. The provider is always
-       enabled here (unlike the composer, which gates on the draft containing
-       `@`) because the editor opens with the previous text already loaded and
-       must resolve its tokens on first paint. */
-    const editMentionSource = useSessionMentionSource({
-      session,
-      sessionLocalProjectRootPath: resolvedLocalProjectMeta?.rootPath ?? null,
-      isRepoPublic,
-      enableCodeCollabProvider: true,
-      debugLabel: 'session-edit:mention-provider',
-    });
     const editSkillAgent = useMemo(
       () =>
         !isArchivedSession && session.cliType && session.agentType
@@ -2866,11 +2891,24 @@ export const SessionChatInterface = memo(
     );
     const editMentionContext = useMemo<UserMessageEditMentionContext>(
       () => ({
-        mentionSource: isArchivedSession ? undefined : editMentionSource,
+        sessionSource: isArchivedSession
+          ? undefined
+          : {
+              session,
+              sessionLocalProjectRootPath: resolvedLocalProjectMeta?.rootPath ?? null,
+              isRepoPublic,
+            },
         availableCommands,
         skillAgent: editSkillAgent,
       }),
-      [availableCommands, editMentionSource, editSkillAgent, isArchivedSession]
+      [
+        availableCommands,
+        editSkillAgent,
+        isArchivedSession,
+        isRepoPublic,
+        resolvedLocalProjectMeta?.rootPath,
+        session,
+      ]
     );
     const [pendingGoalCommand, setPendingGoalCommand] = useState<{
       threadId: string;
@@ -3047,6 +3085,7 @@ export const SessionChatInterface = memo(
     const mcpSelection = useSessionMcpSelection(sessionConversationConfig.mcpServerIds, {
       existingSession: true,
       disabled: isArchivedSession,
+      scopeKey: session.id,
     });
     const executionTurnConfigOverrides = useMemo(
       () =>
@@ -4066,6 +4105,19 @@ export const SessionChatInterface = memo(
       isSessionWorking,
       isGoalActive,
     });
+    const peekSessionStore = useCallback(
+      () => runtime?.peekSessionStore?.(session.id),
+      [runtime, session.id]
+    );
+    useSessionDocStaleReport({
+      sessionId: session.id,
+      docReady: sessionDocReady && !hideMessageArea,
+      machineOnlineStatus: sessionMachineOnlineStatus,
+      agentBusy: isAgentBusy,
+      activeAssistantTurnId: activeAssistantTurnId ?? null,
+      lastMessageAt: session.lastMessageAt,
+      peekStore: peekSessionStore,
+    });
     const canStopAgent = canStopAgentEnabled({
       isContextCompacting,
       isSessionActive,
@@ -4200,21 +4252,32 @@ export const SessionChatInterface = memo(
       user: pendingSender,
       conversationFontSize,
     });
+    // Presence owns liveness; the same pending queue as the composer supplies
+    // the kind of human input. Core metadata works for every ACP provider.
+    const permissionSessionHistory = availableSessionTailHistory as unknown as Parameters<
+      typeof FloatingPermissionRequest
+    >[0]['sessionHistory'];
+    const isAwaitingQuestion = hasPendingAskUserQuestion(
+      liveSessionStatus ?? undefined,
+      permissionSessionHistory
+    );
     const agentActivityLabel =
       initStatusLabel && !isEmptyConversation
         ? initStatusLabel
         : isSessionActive
-          ? liveSessionStatus?.type === 'requestPermission'
-            ? t('sessions.statusIndicator.requestPermission')
-            : isFinalizing
-              ? t('sessions.statusIndicator.finalizing')
-              : runningActivity === 'imageGenerating'
-                ? t('sessions.statusIndicator.imageGenerating')
-                : // Reading, running and editing all read as "Working"; the
-                  // collapsed tool groups above already say which.
-                  runningActivity === 'exploring' || runningActivity === 'writing'
-                  ? t('sessions.working', 'Working')
-                  : t('sessions.statusIndicator.thinking')
+          ? isAwaitingQuestion
+            ? t('sessions.statusIndicator.waitingForAnswer')
+            : liveSessionStatus?.type === 'requestPermission'
+              ? t('sessions.statusIndicator.requestPermission')
+              : isFinalizing
+                ? t('sessions.statusIndicator.finalizing')
+                : runningActivity === 'imageGenerating'
+                  ? t('sessions.statusIndicator.imageGenerating')
+                  : // Reading, running and editing all read as "Working"; the
+                    // collapsed tool groups above already say which.
+                    runningActivity === 'exploring' || runningActivity === 'writing'
+                    ? t('sessions.working', 'Working')
+                    : t('sessions.statusIndicator.thinking')
           : hasPendingDispatch && statusStripState == null
             ? // Pre-start only while the turn can actually start: any
               // connection/machine problem (browser offline, machine removed or
@@ -4224,13 +4287,15 @@ export const SessionChatInterface = memo(
               ? t('sessions.sendStatus.sendingWithoutSize')
               : null;
     const agentActivityTone =
-      isSessionActive && liveSessionStatus?.type === 'requestPermission' ? 'warning' : 'primary';
+      isSessionActive && (isAwaitingQuestion || liveSessionStatus?.type === 'requestPermission')
+        ? 'warning'
+        : 'primary';
     // Waiting on the user is not work in progress: that status does not shimmer.
     const agentActivityShimmer = agentActivityTone !== 'warning';
     // Presence, not the history's `finished` flag: a turn whose daemon died
     // before finalizing stays unfinished forever but is not running.
     const liveTurnActivity: LiveTurnActivity | null = isSessionActive
-      ? liveSessionStatus?.type === 'requestPermission'
+      ? isAwaitingQuestion || liveSessionStatus?.type === 'requestPermission'
         ? 'awaitingUser'
         : 'working'
       : null;
@@ -4269,6 +4334,7 @@ export const SessionChatInterface = memo(
           modelIdOverride?: string | null;
           configOptionValuesOverride?: Record<string, AcpConfigOptionValue>;
           agentRole?: SessionTurnAgentRoleSelection;
+          mcpServerIds?: readonly McpServerId[];
         }
       ): Promise<boolean> => {
         try {
@@ -4290,7 +4356,7 @@ export const SessionChatInterface = memo(
             modelId: turnModelId,
             configOptionValues: turnConfigOptionValues,
             issuePRMentions,
-            mcpServerIds: mcpSelection.selectedIds,
+            mcpServerIds: [...(options?.mcpServerIds ?? mcpSelection.selectedIds)],
             agentRoleId:
               options?.agentRole?.agentRoleId ?? (options?.agentRole === null ? null : undefined),
             agentRoleRevision: options?.agentRole?.agentRoleRevision,
@@ -4427,6 +4493,7 @@ export const SessionChatInterface = memo(
           | 'configOptionValuesOverride'
           | 'agentRole'
           | 'attachments'
+          | 'mcpServerIds'
         >
       ): Promise<boolean> => {
         try {
@@ -4448,7 +4515,7 @@ export const SessionChatInterface = memo(
             modelId: turnModelId,
             configOptionValues: turnConfigOptionValues,
             issuePRMentions,
-            mcpServerIds: mcpSelection.selectedIds,
+            mcpServerIds: [...(options?.mcpServerIds ?? mcpSelection.selectedIds)],
             agentRoleId:
               options?.agentRole?.agentRoleId ?? (options?.agentRole === null ? null : undefined),
             agentRoleRevision: options?.agentRole?.agentRoleRevision,
@@ -4468,7 +4535,7 @@ export const SessionChatInterface = memo(
             modelId: inputConfig.modelId ?? undefined,
             configOptionValues: inputConfig.configOptionValues ?? undefined,
             issuePRMentions: inputConfig.issuePRMentions ?? undefined,
-            mcpServerIds: [...mcpSelection.selectedIds],
+            mcpServerIds: [...(options?.mcpServerIds ?? mcpSelection.selectedIds)],
             agentRoleId: inputConfig.agentRoleId,
             agentRoleRevision: inputConfig.agentRoleRevision,
             memory: inputConfig.memory,
@@ -4539,6 +4606,7 @@ export const SessionChatInterface = memo(
           | 'configOptionValuesOverride'
           | 'agentRole'
           | 'attachments'
+          | 'mcpServerIds'
         >
       ): Promise<boolean> => {
         const turnConfigOptionValues = options?.configOptionValuesOverride ?? configOptionValues;
@@ -4550,6 +4618,7 @@ export const SessionChatInterface = memo(
           configOptionValuesOverride: turnConfigOptionValues,
           agentRole: options?.agentRole,
           attachments: options?.attachments,
+          mcpServerIds: options?.mcpServerIds,
         });
       },
       [configOptionValues, enqueueInputBlocks]
@@ -4619,6 +4688,7 @@ export const SessionChatInterface = memo(
             configOptionValuesOverride: turnConfigOptionValues,
             agentRole: options?.agentRole,
             attachments: options?.attachments,
+            mcpServerIds: options?.mcpServerIds,
           });
           captureSessionEvent(
             accepted ? 'session/message_queued' : 'session/message_submit_failed',
@@ -4641,6 +4711,7 @@ export const SessionChatInterface = memo(
             configOptionValuesOverride: turnConfigOptionValues,
             agentRole: options?.agentRole,
             attachments: options?.attachments,
+            mcpServerIds: options?.mcpServerIds,
           });
           captureSessionEvent(
             accepted ? 'session/message_guide_requested' : 'session/message_submit_failed',
@@ -4671,6 +4742,7 @@ export const SessionChatInterface = memo(
           configOptionValuesOverride: turnConfigOptionValues,
           agentRole: options?.agentRole,
           attachments: options?.attachments,
+          mcpServerIds: options?.mcpServerIds,
         });
         // A held send (attachments still preparing) dispatches itself later;
         // the composer is free again now.
@@ -5616,6 +5688,8 @@ export const SessionChatInterface = memo(
     useImperativeHandle(
       ref,
       () => ({
+        addDocumentSelection: (selection) =>
+          inputAreaRef.current?.addDocumentSelection(selection) ?? false,
         focusInput: () => {
           inputAreaRef.current?.focusInput();
         },
@@ -6460,10 +6534,6 @@ export const SessionChatInterface = memo(
 
     const headerGitHubActions = headerActionsSlot !== undefined ? headerActionsSlot : prBadge;
 
-    // Pending permission requests live in the active (latest) assistant turn.
-    const permissionSessionHistory = sessionHistory as unknown as Parameters<
-      typeof FloatingPermissionRequest
-    >[0]['sessionHistory'];
     const shouldReplaceComposerWithPermission = hasPendingPermissionRequest(
       liveSessionStatus ?? undefined,
       permissionSessionHistory
@@ -6549,6 +6619,15 @@ export const SessionChatInterface = memo(
         )}
       </>
     );
+    const toolbarActions = toolbar?.actions;
+    const headerSharing = toolbarActions ? toolbarActions.sharing : sharing;
+    const headerShareWithTeam = toolbarActions ? toolbarActions.onShareWithTeam : onShareWithTeam;
+    const headerShareAsImage = toolbarActions ? toolbarActions.onShareAsImage : onShareAsImage;
+    const headerCopyConversation = toolbarActions
+      ? toolbarActions.onCopyConversationHistory
+      : hideMessageArea && onCopyConversationHistoryExternal
+        ? onCopyConversationHistoryExternal
+        : handleCopyConversationHistory;
     const headerMenuNode = (
       <SessionHeaderMenu
         key={`${workspaceId}:${session.id}`}
@@ -6559,39 +6638,55 @@ export const SessionChatInterface = memo(
         localProjectMeta={resolvedLocalProjectMeta}
         workspacePath={sessionWorkspacePath}
         machineName={sessionMachine?.name}
-        onCopyConversationHistory={
-          hideMessageArea && onCopyConversationHistoryExternal
-            ? onCopyConversationHistoryExternal
-            : () => {
-                void handleCopyConversationHistory();
-              }
-        }
+        onCopyConversationHistory={headerCopyConversation}
         onCopyUrl={() => {
           void handleCopySessionLink();
         }}
-        sharing={sharing}
-        onShareWithTeam={onShareWithTeam}
-        onShareAsImage={onShareAsImage}
-        onOpenSearch={hideMessageArea ? onOpenSearchExternal : openSearch}
-        onFork={canForkFromMenu ? handleForkFromMenu : undefined}
-        isForking={forkingAssistantMessageId !== null && forkingAssistantMessageId !== undefined}
-        forkWorktreeAvailability={forkWorktreeAvailability}
-        onForkMenuOpen={onForkWorktreeMenuOpen}
+        sharing={headerSharing}
+        onShareWithTeam={headerShareWithTeam}
+        onShareAsImage={headerShareAsImage}
+        onOpenSearch={
+          toolbarActions
+            ? toolbarActions.onOpenSearch
+            : hideMessageArea
+              ? onOpenSearchExternal
+              : openSearch
+        }
+        onFork={
+          toolbarActions
+            ? toolbarActions.onForkSession
+            : canForkFromMenu
+              ? handleForkFromMenu
+              : undefined
+        }
+        isForking={
+          toolbarActions
+            ? toolbarActions.forkingAssistantMessageId != null
+            : forkingAssistantMessageId != null
+        }
+        forkWorktreeAvailability={
+          toolbarActions ? toolbarActions.forkWorktreeAvailability : forkWorktreeAvailability
+        }
+        onForkMenuOpen={
+          toolbarActions ? toolbarActions.onForkWorktreeMenuOpen : onForkWorktreeMenuOpen
+        }
         onRename={
-          headerVariant === 'toolbar'
-            ? onRequestRename
-            : () => {
-                setRenameDialogTarget({
-                  sessionId: session.id,
-                  initialTitle: session.title ?? '',
-                });
-              }
+          toolbarActions
+            ? toolbarActions.onRequestRename
+            : headerVariant === 'toolbar'
+              ? onRequestRename
+              : () => {
+                  setRenameDialogTarget({
+                    sessionId: session.id,
+                    initialTitle: session.title ?? '',
+                  });
+                }
         }
         owner={ownerMenuState}
         openedByRelations={openedByRelations}
-        onArchive={onArchiveSession}
-        onRestore={onRestoreSession}
-        onDelete={onDeleteSession}
+        onArchive={toolbarActions ? toolbarActions.onArchiveSession : onArchiveSession}
+        onRestore={toolbarActions ? toolbarActions.onRestoreSession : onRestoreSession}
+        onDelete={toolbarActions ? toolbarActions.onDeleteSession : onDeleteSession}
         openInIde={
           shouldShowOpenInIdeButton && isElectronRendererForPathLaunch
             ? {
@@ -6611,23 +6706,76 @@ export const SessionChatInterface = memo(
     // `sharing` — a solo workspace resolves no team visibility but can still
     // publish — and an absent editor, which is the local build.
     const headerPublicShare = publicShareWorkspaceId
-      ? { status: publicShareStatus, onOpen: () => setPublicShareSessionId(session.id) }
+      ? {
+          status: publicShareStatus,
+          // The panel hosts the editor itself; the `⋯` menu's "Share" still opens the dialog.
+          renderEditor: ({ onClose, onBusyChange }: SessionShareEditorContext) => (
+            <SessionShareEditorPanel
+              workspaceId={publicShareWorkspaceId}
+              session={session}
+              onClose={onClose}
+              onBusyChange={onBusyChange}
+            />
+          ),
+        }
       : undefined;
+    // What leaves the conversation: the same handlers as the `⋯` menu's Copy
+    // submenu and "Share as image…". Path and base branch describe the working
+    // directory, not the conversation, so they stay in `⋯` only.
+    const headerExportActions: SessionAccessAction[] = [
+      {
+        id: 'copy-markdown',
+        label: t('sessions.copyAsMarkdown', 'Copy as Markdown'),
+        icon: Copy,
+        onSelect: () => headerCopyConversation?.(),
+      },
+      ...(headerShareAsImage
+        ? [
+            {
+              id: 'share-image',
+              label: t('sessions.shareAsImage', 'Share as image…'),
+              icon: Image,
+              onSelect: headerShareAsImage,
+            },
+          ]
+        : []),
+    ];
     const headerAccessNode =
-      !isMobile && (sharing || headerPublicShare) ? (
+      !isMobile && (headerSharing || headerPublicShare) ? (
         <div {...stylex.props(styles.headerPills)}>
           <SessionAccessControl
-            state={sharing}
-            onShareWithTeam={onShareWithTeam}
+            state={headerSharing}
+            onShareWithTeam={headerShareWithTeam}
             publicShare={headerPublicShare}
+            onCopyLink={handleCopySessionLink}
+            exportActions={headerExportActions}
           />
         </div>
       ) : null;
     const headerArchivedNode = session.isArchived === true ? <SessionArchivedBadge /> : null;
 
+    const toolbarNode = (
+      <ErrorBoundary name="SessionChatHeader" variant="inline" resetKeys={[session.id]}>
+        <div {...stylex.props(styles.toolbarHeader)}>
+          {headerLauncherActions}
+          {headerArchivedNode}
+          {headerAccessNode}
+          {headerMenuNode}
+          {toolbar ? toolbar.endSlot : headerEndSlot}
+        </div>
+      </ErrorBoundary>
+    );
+
     return (
       <PrLinkProvider prUrl={latestPr?.url} onOpenPrTab={prLinkHandler}>
         <SessionLinkProvider enabled={!!onNavigateSession}>
+          {toolbar?.container &&
+            createPortal(
+              <SessionConversationPage className={toolbar.className} hideMessageArea>
+                {toolbarNode}
+              </SessionConversationPage>,
+              toolbar.container
+            )}
           {isVisible &&
             !preparingWindow &&
             onOpenBrowser &&
@@ -6661,15 +6809,7 @@ export const SessionChatInterface = memo(
                 /* Compact toolbar for the merged desktop tab row: right-side
                  controls only — no title (the context strip owns identity) and
                  no PR badge (the strip owns PR). */
-                <ErrorBoundary name="SessionChatHeader" variant="inline" resetKeys={[session.id]}>
-                  <div {...stylex.props(styles.toolbarHeader)}>
-                    {headerLauncherActions}
-                    {headerArchivedNode}
-                    {headerAccessNode}
-                    {headerMenuNode}
-                    {headerEndSlot}
-                  </div>
-                </ErrorBoundary>
+                toolbarNode
               ) : (
                 <ErrorBoundary name="SessionChatHeader" variant="inline" resetKeys={[session.id]}>
                   <SessionConversationPageHeader

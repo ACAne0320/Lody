@@ -40,7 +40,6 @@ import {
   makeLocalProbeClientAuto
 } from '@lody/shared/node/local-ipc'
 import { getLodyDataDir } from '@lody/shared/node/installation-profile'
-import { ACP_CAPABILITIES_REFRESH_CLIENT_BACKSTOP_MS } from '@lody/shared/acp-startup-budget'
 import type {
   LocalProjectControlRequest,
   LocalProjectControlResponse,
@@ -70,10 +69,14 @@ import type { BootstrapSession } from './auth-service'
 import { desktopInstallationProfile, isLocalPlatform, mainPlatformKind } from '../platform'
 import { getDesktopLog } from '../desktop-log'
 import { createCliProbeTrace } from '../desktop-log-core'
-import type { DesktopExecutionHost } from './desktop-execution-host'
+import {
+  DESKTOP_HOST_ACCESS_DENIED_MESSAGE,
+  type DesktopExecutionHost
+} from './desktop-execution-host'
 import { getUserShellEnvCachedLegacy, shouldUseWindowsShell } from './shell-env'
 import { applyProxyEnvFallback, resolveSystemProxyEnv } from './system-proxy-env'
 import type { CliOutputEvent, CliRunResult } from '../types'
+import { resolveLocalSessionControlTimeoutMs } from './local-session-control-budget'
 
 const CLI_OUTPUT_BUFFER_MAX_EVENTS = 2000
 // How long to wait for the embedded CLI to exit on SIGTERM during app quit before
@@ -108,20 +111,6 @@ const CLI_ELECTRON_BOOTSTRAP_ENV = 'LODY_ELECTRON_BOOTSTRAP'
 const CLI_ELECTRON_SESSION_TOKEN_ENV = 'LODY_ELECTRON_SESSION_TOKEN'
 // See apps/cli/src/commands/start.ts:ELECTRON_SESSION_USER_ID_ENV for rationale.
 const CLI_ELECTRON_SESSION_USER_ID_ENV = 'LODY_ELECTRON_SESSION_USER_ID'
-const LOCAL_SESSION_CONTROL_TIMEOUT_MS = 10_000
-// The machine owns this deadline and answers with its own failure reason. This
-// is only a backstop for a daemon that died without replying, so it is derived
-// from the machine's worst case rather than set to a second, smaller number:
-// a 120s socket timeout here expired requests the CLI was still working on
-// (a cold `npx` init alone may run 300s) and reported them as our timeout.
-const LOCAL_SESSION_CONTROL_ACP_REFRESH_TIMEOUT_MS = ACP_CAPABILITIES_REFRESH_CLIENT_BACKSTOP_MS
-// Downloading + unpacking a registry agent binary can take minutes on a slow
-// link, so the local-control request must outlive the default before falling
-// back to Streams RPC.
-const LOCAL_SESSION_CONTROL_BINARY_INSTALL_TIMEOUT_MS = 300_000
-// Local file handoff hashes + copies up to 8 files (≤100 MB each) into the blob
-// store before responding; give it well beyond the default 10s.
-const LOCAL_SESSION_CONTROL_FILE_SEND_LOCAL_TIMEOUT_MS = 120_000
 const LOCAL_PROJECT_CONTROL_TIMEOUT_MS = 20_000
 const LOCAL_PROJECT_CONTROL_LIST_FILES_TIMEOUT_MS = 120_000
 const LOCAL_PROBE_TIMEOUT_MS = 3000
@@ -274,22 +263,6 @@ function resolveLocalProjectControlTimeoutMs(type: LocalProjectControlRequest['t
     return LOCAL_PROJECT_CONTROL_LIST_FILES_TIMEOUT_MS
   }
   return LOCAL_PROJECT_CONTROL_TIMEOUT_MS
-}
-
-function resolveLocalSessionControlTimeoutMs(type: LocalSessionControlRequest['type']): number {
-  if (type === 'machine/acp-capabilities-refresh') {
-    return LOCAL_SESSION_CONTROL_ACP_REFRESH_TIMEOUT_MS
-  }
-  if (type === 'machine/acp-authenticate') {
-    return LOCAL_SESSION_CONTROL_BINARY_INSTALL_TIMEOUT_MS
-  }
-  if (type === 'machine/acp-binary-install') {
-    return LOCAL_SESSION_CONTROL_BINARY_INSTALL_TIMEOUT_MS
-  }
-  if (type === 'session/file-send-local') {
-    return LOCAL_SESSION_CONTROL_FILE_SEND_LOCAL_TIMEOUT_MS
-  }
-  return LOCAL_SESSION_CONTROL_TIMEOUT_MS
 }
 
 function resolveBundledCliEntry(): string | null {
@@ -530,6 +503,8 @@ export class CliService {
   private readonly executionHost: DesktopExecutionHost | undefined
   private readonly supervisorToken = `${randomUUID()}${randomUUID()}`
   private hostLease: LocalCliHostLease | null = null
+  /** The last Host acquisition was refused by an endpoint this process may not open. */
+  private hostAccessDenied = false
   private lastTracedSupervisorState = ''
   private readonly cliProbeTrace = createCliProbeTrace({
     getLog: getDesktopLog,
@@ -589,6 +564,13 @@ export class CliService {
             signal,
             endpoint: LOCAL_CLI_HOST_ENDPOINT
           })
+          this.hostAccessDenied = result.status === 'occupied' && result.accessDenied === true
+          if (this.hostAccessDenied) {
+            return {
+              status: 'inaccessible' as const,
+              description: DESKTOP_HOST_ACCESS_DENIED_MESSAGE
+            }
+          }
           if (result.status === 'occupied') {
             return {
               status: 'occupied' as const,
@@ -827,7 +809,7 @@ export class CliService {
       return { ok: false, error: 'invalid_request' }
     }
 
-    const timeoutMs = resolveLocalSessionControlTimeoutMs(message.type)
+    const timeoutMs = resolveLocalSessionControlTimeoutMs(message)
 
     try {
       return await Effect.runPromise(
@@ -1253,6 +1235,9 @@ export class CliService {
       runtime: supervisorState.runtime,
       runtimeOwnership: supervisorState.runtimeOwnership,
       message: supervisorState.message,
+      ...(supervisorState.phase === 'fatal' && this.hostAccessDenied
+        ? { hostAccessDenied: true as const }
+        : {}),
       retryAttempt: supervisorState.retryAttempt,
       retryInMs: supervisorState.retryInMs,
       lastExitCode: supervisorState.lastExitCode,

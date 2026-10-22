@@ -14,6 +14,7 @@ export const MACHINE_PROTOCOL_CAPABILITIES = {
   operationInbox: 'operationInbox',
   magpieImport: 'magpieImport',
   dshProviderIsolation: 'dshProviderIsolation',
+  terminalNotifications: 'terminalNotifications',
   memoryProviders: 'memoryProviders',
   mcpToolDiscovery: 'mcpToolDiscovery',
   localProjectHistoryProvider: 'localProjectHistoryProvider',
@@ -29,6 +30,7 @@ export const MACHINE_PROTOCOL_CAPABILITIES = {
   preparedSessionInput: 'preparedSessionInput',
   sessionInputAttachments: 'sessionInputAttachments',
   localFileResources: 'localFileResources',
+  markdownFileLinks: 'markdownFileLinks',
   acpProtocolAuthentication: 'acpProtocolAuthentication',
   previewControl: 'previewControl',
   iosSimulator: 'iosSimulator',
@@ -37,10 +39,15 @@ export const MACHINE_PROTOCOL_CAPABILITIES = {
   piExtensions: 'piExtensions',
   acpCapabilityRefreshCache: 'acpCapabilityRefreshCache',
   providerRateLimitsRefresh: 'providerRateLimitsRefresh',
+  codeCollabAllChangesScope: 'codeCollabAllChangesScope',
   sessionHistory: 'sessionHistory',
+  sessionHistoryIncremental: 'sessionHistoryIncremental',
+  sessionHistoryWatch: 'sessionHistoryWatch',
+  sessionHistoryPatches: 'sessionHistoryPatches',
   sessionInputAcceptance: 'sessionInputAcceptance',
   sessionInputDispatch: 'sessionInputDispatch',
   sessionCollaborationControl: 'sessionCollaborationControl',
+  bugReportClientLog: 'bugReportClientLog',
 } as const;
 
 export const OPERATION_INBOX_PROTOCOL_VERSION = 2;
@@ -65,9 +72,15 @@ export const IOS_SIMULATOR_PROTOCOL_VERSION = 1;
 export const IOS_SIMULATOR_CONTROLS_PROTOCOL_VERSION = 1;
 export const PI_EXTENSIONS_PROTOCOL_VERSION = 1;
 export const ACP_CAPABILITY_REFRESH_CACHE_PROTOCOL_VERSION = 1;
+export const CODE_COLLAB_ALL_CHANGES_SCOPE_PROTOCOL_VERSION = 1;
 export const SESSION_HISTORY_PROTOCOL_VERSION = 2;
+export const SESSION_HISTORY_INCREMENTAL_PROTOCOL_VERSION = 1;
+export const SESSION_HISTORY_WATCH_PROTOCOL_VERSION = 1;
+export const SESSION_HISTORY_PATCHES_PROTOCOL_VERSION = 1;
 export const SESSION_INPUT_ACCEPTANCE_PROTOCOL_VERSION = 1;
 export const SESSION_INPUT_DISPATCH_PROTOCOL_VERSION = 1;
+/** `machine/bug-report` accepts an optional `clientLog` and merges it into the upload. */
+export const BUG_REPORT_CLIENT_LOG_PROTOCOL_VERSION = 1;
 
 type MachineProtocolCapabilityCarrier = {
   protocolCapabilities?: MachineProtocolCapabilities;
@@ -129,6 +142,7 @@ export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities 
   providerRateLimitsRefresh: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.magpieImport]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.dshProviderIsolation]: 1,
+  [MACHINE_PROTOCOL_CAPABILITIES.terminalNotifications]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.sessionCollaborationControl]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.memoryProviders]: MEMORY_PROVIDERS_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.mcpToolDiscovery]: MCP_TOOL_DISCOVERY_PROTOCOL_VERSION,
@@ -148,6 +162,7 @@ export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities 
   [MACHINE_PROTOCOL_CAPABILITIES.sessionInputAttachments]:
     SESSION_INPUT_ATTACHMENTS_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.localFileResources]: LOCAL_FILE_RESOURCES_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.markdownFileLinks]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.acpProtocolAuthentication]: ACP_PROTOCOL_AUTHENTICATION_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.previewControl]: PREVIEW_CONTROL_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.iosSimulator]: IOS_SIMULATOR_PROTOCOL_VERSION,
@@ -155,10 +170,31 @@ export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities 
   [MACHINE_PROTOCOL_CAPABILITIES.iosSimulatorExterior]: 1,
   [MACHINE_PROTOCOL_CAPABILITIES.acpCapabilityRefreshCache]:
     ACP_CAPABILITY_REFRESH_CACHE_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.codeCollabAllChangesScope]:
+    CODE_COLLAB_ALL_CHANGES_SCOPE_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.sessionHistory]: SESSION_HISTORY_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryPatches]: SESSION_HISTORY_PATCHES_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryIncremental]:
+    SESSION_HISTORY_INCREMENTAL_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryWatch]: SESSION_HISTORY_WATCH_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.sessionInputAcceptance]: SESSION_INPUT_ACCEPTANCE_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.sessionInputDispatch]: SESSION_INPUT_DISPATCH_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.bugReportClientLog]: BUG_REPORT_CLIENT_LOG_PROTOCOL_VERSION,
 };
+
+/**
+ * Whether `machine/bug-report` may carry `clientLog`. Its request schema is
+ * strict, so an older daemon rejects the whole report when the field is present.
+ */
+export function machineSupportsBugReportClientLog(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return machineSupportsProtocolCapability(
+    machine,
+    MACHINE_PROTOCOL_CAPABILITIES.bugReportClientLog,
+    BUG_REPORT_CLIENT_LOG_PROTOCOL_VERSION
+  );
+}
 
 export function machineSupportsSessionInputDispatch(
   machine: MachineProtocolCapabilityCarrier | null | undefined
@@ -167,6 +203,18 @@ export function machineSupportsSessionInputDispatch(
     machine,
     MACHINE_PROTOCOL_CAPABILITIES.sessionInputDispatch,
     SESSION_INPUT_DISPATCH_PROTOCOL_VERSION
+  );
+}
+
+export function machineSupportsSessionHistoryWatch(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return (
+    machineSupportsProtocolCapability(
+      machine,
+      MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryWatch,
+      SESSION_HISTORY_WATCH_PROTOCOL_VERSION
+    ) && machineSupportsSessionHistoryIncremental(machine)
   );
 }
 
@@ -427,5 +475,28 @@ export function machineSupportsProjectRepositoryMembers(
     machine,
     MACHINE_PROTOCOL_CAPABILITIES.projectRepositoryMembers,
     PROJECT_REPOSITORY_MEMBERS_PROTOCOL_VERSION
+  );
+}
+
+export function machineSupportsSessionHistoryIncremental(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return machineSupportsProtocolCapability(
+    machine,
+    MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryIncremental,
+    SESSION_HISTORY_INCREMENTAL_PROTOCOL_VERSION
+  );
+}
+
+export function machineSupportsSessionHistoryPatches(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return (
+    machineSupportsSessionHistoryIncremental(machine) &&
+    machineSupportsProtocolCapability(
+      machine,
+      MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryPatches,
+      SESSION_HISTORY_PATCHES_PROTOCOL_VERSION
+    )
   );
 }

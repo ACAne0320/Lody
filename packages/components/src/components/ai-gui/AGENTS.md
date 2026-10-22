@@ -26,8 +26,8 @@ Ownership: [README.md](README.md).
   caches can hide the first user row. Keep activity labels/tones and one header inset.
 - Creation cards: [contract](README.md#creation-progress). Bind status to the
   target Turn and subscribe only to its title; `progressMessageId` prevents
-  duplicates. Consecutive creation records share a five-card scroller with
-  disclosure; retain their full hydration range. Legacy successes keep cards.
+  duplicates. Share a five-card scroller; retain full hydration.
+  Keep concrete cards; hide contentless successes and their empty batch rows.
 
 ## Turn Folding And Layout
 
@@ -82,10 +82,10 @@ Ownership: [README.md](README.md).
 
 ## Content Contracts
 
-- Child cancel needs subagentCancellation v1 and an exact parent turn; never
-  Stop the parent or invent terminal state. Runs also need subagentEvents v1
-  and `support.cancel`. Dialogs share turn renderers/grouping and one scroller:
-  [task rows and dialog](README.md#subagent-tasks).
+- Child cancel requires subagentCancellation/subagentEvents v1, `support.cancel`
+  and an exact parent turn; never Stop the parent or invent state. Dialogs reuse
+  parent renderers/grouping, one scroller, and read run bodies only while open:
+  [task/dialog contract](README.md#subagent-tasks).
 
 - Text roles: `@lody/ui`; prose: `conversation.readingLeading`; compact prose/code:
   subheadline, no nested `em`. Message sizes: `conversation-font-size-classes.ts`;

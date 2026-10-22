@@ -1,3 +1,5 @@
+import { AgentRoleProposalNotice } from './agent-role-proposal-notice';
+import type { AgentRoleProposalMeta } from '@lody/shared';
 import { MessageAuthorIdentity } from './message-author-identity';
 import * as stylex from '@stylexjs/stylex';
 import { space, text as textScale } from '@lody/ui/tokens/scales.stylex';
@@ -95,7 +97,7 @@ import { authTokenAtom, runtimeAtom } from '@/atoms/runtime';
 import { machineSupportsSubagentCancellation, machineSupportsSubagentEvents } from '@lody/shared';
 import { scrollDebug } from '@/hooks/scroll-debug-log';
 import { readSessionTurnTokenUsage, type SessionTurnTokenUsage } from '@lody/shared/session-data';
-import { formatCompactNumber } from '@/lib/format-compact-number';
+import { formatCompactNumber, formatUsdAmount } from '@/lib/format-compact-number';
 import { toIntlLocaleOrEn } from '@/lib/intl-locale';
 import type { EngineRow } from '@/lib/conversation-scroll/types';
 import { EngineConversationScroller } from './conversation-list/engine-conversation-scroller';
@@ -182,7 +184,7 @@ import { SubagentRunMessageList } from './subagent-run-history';
 import { styles as subagentHistoryStyles } from './subagent-run-history.stylex';
 import { SessionReadonlyContext } from './session-readonly-context';
 import { normalizeSessionLinksForExport } from '@lody/shared/session-link-export';
-import { UserMessageEditor } from './user-message-editor';
+import { UserMessageEditor, type UserMessageEditorProps } from './user-message-editor';
 import type { MentionProjectSource } from '@/components/mentions/mention-project-file-source';
 import type { SkillMentionAgent } from '@/components/mentions/mention-skill-source';
 import type { Mention as MentionRange } from '@/ui/mention/index';
@@ -278,6 +280,10 @@ import { SessionPlanBar } from '@/components/sessions/session-plan-bar';
 import { ContainerQueryProvider } from './container-query-provider';
 import { ScheduleProposalNotice } from '@/components/schedules/schedule-proposal-notice';
 import { isOperationSurfaceItem, shouldRenderSystemRowItem } from './message-content-guards';
+import {
+  getOperationCompletionItems,
+  hasVisibleOperationContent,
+} from './operation-completion-visibility';
 import { getChatFailedDiagnosticCopy } from './chat-failed-diagnostic-copy';
 import {
   buildChatFailedErrorReport,
@@ -527,6 +533,7 @@ export type UserMessageEditSubmission = {
  * editor degrades to a plain textarea.
  */
 export type UserMessageEditMentionContext = {
+  sessionSource?: UserMessageEditorProps['sessionSource'];
   mentionSource?: MentionProjectSource;
   availableCommands?: AcpCommandSummary[];
   skillAgent?: SkillMentionAgent;
@@ -767,7 +774,11 @@ const AgentActivityStatus = ({
           shimmer && 'agent-shimmer'
         )}
       >
-        {message ? <LiveActivityLabel label={label} message={message} /> : label}
+        {message && tone !== 'warning' ? (
+          <LiveActivityLabel label={label} message={message} />
+        ) : (
+          label
+        )}
       </span>
     </div>
   );
@@ -1183,6 +1194,12 @@ export const buildChatVirtualRows = ({
     // Rows speak in absolute turn indexes so outline anchors and scroll
     // targets are independent of which turns happen to be hydrated.
     const messageIndex = item.turnIndex;
+    if (
+      item.message.role === 'system' &&
+      item.message.items.length > 0 &&
+      !item.message.items.some(hasVisibleOperationContent)
+    )
+      continue;
     if (item.message.role !== 'assistant') {
       const groupedItems = [item];
       if (groupCreatedSessions && getCreatedSessionCards(item.message)) {
@@ -1592,6 +1609,7 @@ const engineRowOf = (row: ChatVirtualRow): EngineRow => {
     return {
       ...base,
       turnId: row.item.type === 'message' ? row.item.message.id : null,
+      groupTurnIds: row.groupedItems?.slice(1).map((entry) => entry.message.id),
       estimate: ENGINE_ROW_ESTIMATE_PX.standard,
     };
   }
@@ -2832,7 +2850,9 @@ const SystemMessageRowView = ({
     return <CreatedSessionList cards={creationCards} onNavigateSession={onNavigateSession} />;
   }
   const systemItems = message.items.flatMap((item, itemIndex) =>
-    shouldRenderSystemRowItem(item) ? [{ item, itemIndex }] : []
+    shouldRenderSystemRowItem(item) && hasVisibleOperationContent(item)
+      ? [{ item, itemIndex }]
+      : []
   );
 
   if (systemItems.length === 0) {
@@ -2842,7 +2862,15 @@ const SystemMessageRowView = ({
   return (
     <div className="flex flex-col gap-2">
       {systemItems.map(({ item, itemIndex }) =>
-        item.type === 'system_notice' && item.name === 'schedule_proposal' && item.meta ? (
+        item.type === 'system_notice' && item.name === 'agent_role_proposal' && item.meta ? (
+          <AgentRoleProposalNotice
+            key={`role-proposal-${itemIndex}`}
+            meta={item.meta as AgentRoleProposalMeta}
+            sessionId={sessionId}
+            entryId={message.id}
+            itemIndex={itemIndex}
+          />
+        ) : item.type === 'system_notice' && item.name === 'schedule_proposal' && item.meta ? (
           <ScheduleProposalNotice
             key={`schedule-proposal-${itemIndex}`}
             meta={item.meta as ScheduleProposalMeta}
@@ -2899,6 +2927,7 @@ const OperationCompletionBatchView = ({
   onNavigateSession?: (target: SessionNavigationTarget) => void;
 }) => {
   const { t } = useTranslation();
+  if (!hasVisibleOperationContent(batch)) return null;
   return (
     <div className="flex flex-col gap-1.5">
       <div>
@@ -2915,7 +2944,7 @@ const OperationCompletionBatchView = ({
           }
         )}
       </div>
-      {(batch.members ?? []).map((member) => (
+      {(batch.members ?? []).filter(hasVisibleOperationContent).map((member) => (
         <OperationCompletionView
           key={member.deliveryId}
           completion={member}
@@ -2934,21 +2963,14 @@ const OperationCompletionView = ({
   onNavigateSession?: (target: SessionNavigationTarget) => void;
 }) => {
   const { t } = useTranslation();
-  const resultItems =
-    completion.completion.type === 'result'
-      ? completion.completion.value.items
-      : completion.completion.type === 'cancelled'
-        ? (completion.completion.partial?.items ?? [])
-        : [];
+  if (!hasVisibleOperationContent(completion)) return null;
   const failedCompletion = completion.completion.type === 'error';
   const cancelledCompletion = completion.completion.type === 'cancelled';
   const StatusIcon = failedCompletion ? AlertCircle : cancelledCompletion ? Circle : CheckCircle2;
   const createsSessions =
     completion.operationKind === 'session_create' ||
     completion.operationKind === 'session_create_many';
-  // A create Operation that published progress already shows each target as a
-  // live card above; repeating them here would duplicate every Session.
-  const targetCards = createsSessions && completion.progressMessageId ? [] : resultItems;
+  const targetCards = getOperationCompletionItems(completion);
   const cards = targetCards.flatMap((item) =>
     item.target
       ? [
@@ -2984,10 +3006,9 @@ const OperationCompletionView = ({
       : []
   );
   // The status card carries only what the cards cannot: a whole-Operation
-  // failure or cancellation, targetless failures, or
-  // the plain outcome when there is no Session to show.
+  // failure or cancellation, or targetless problems.
   const showStatusCard =
-    cards.length === 0 || failedCompletion || cancelledCompletion || untargetedProblems.length > 0;
+    failedCompletion || cancelledCompletion || untargetedProblems.length > 0;
 
   return (
     <div className="flex flex-col gap-2" data-operation-completion={completion.operationKind}>
@@ -3309,13 +3330,7 @@ const SystemNoticeView = ({
       return null;
   }
 
-  const meta = notice.meta as
-    | {
-        truncated?: boolean;
-        terminalOmitted?: boolean;
-        thinkingOmitted?: boolean;
-      }
-    | undefined;
+  const meta = notice.meta as { truncated?: boolean } | undefined;
 
   // Build the main message
   let mainMessage = t(
@@ -3331,65 +3346,16 @@ const SystemNoticeView = ({
     )}`;
   }
 
-  // Build tooltip content
-  const tooltipContent = t(
-    'sessions.systemNotices.resumeFromExternalChatHistory.tooltip',
-    'Native ACP resume is not yet supported (WIP). Context is restored from chat history.'
-  );
-
   return (
     <div className="relative flex items-center gap-3 py-4">
       {/* Left divider line */}
       <div className="flex-1 h-px bg-border" />
 
-      {/* Center content */}
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 border border-border/60">
-        <Tooltip.Provider>
-          <Tooltip.Root>
-            <Tooltip.Trigger
-              delay={500}
-              render={<Info className="h-4 w-4 text-muted-foreground cursor-help" />}
-            />
-            <Tooltip.Content side="top" className="max-w-xs text-center">
-              <p>{tooltipContent}</p>
-              {meta?.terminalOmitted && (
-                <p
-                  className={cn(
-                    stylex.props(activityTypography.footnote).className,
-                    'mt-1 opacity-80'
-                  )}
-                >
-                  {t(
-                    'sessions.systemNotices.resumeFromExternalChatHistory.terminalOmitted',
-                    'Terminal output was omitted to fit context.'
-                  )}
-                </p>
-              )}
-              {meta?.thinkingOmitted && (
-                <p
-                  className={cn(
-                    stylex.props(activityTypography.footnote).className,
-                    'mt-1 opacity-80'
-                  )}
-                >
-                  {t(
-                    'sessions.systemNotices.resumeFromExternalChatHistory.thinkingOmitted',
-                    'Agent thinking was omitted to fit context.'
-                  )}
-                </p>
-              )}
-            </Tooltip.Content>
-          </Tooltip.Root>
-        </Tooltip.Provider>
-        <span
-          className={cn(
-            stylex.props(activityTypography.footnote).className,
-            'text-muted-foreground'
-          )}
-        >
-          {mainMessage}
-        </span>
-      </div>
+      <span
+        className={cn(stylex.props(activityTypography.footnote).className, 'text-muted-foreground')}
+      >
+        {mainMessage}
+      </span>
 
       {/* Right divider line */}
       <div className="flex-1 h-px bg-border" />
@@ -4087,6 +4053,7 @@ const UserMessageRowView = ({
                       isSaving={isSavingEdit}
                       conversationFontSize={conversationFontSize}
                       mentionSource={editMentionContext?.mentionSource}
+                      sessionSource={editMentionContext?.sessionSource}
                       availableCommands={editMentionContext?.availableCommands}
                       skillAgent={editMentionContext?.skillAgent}
                       currentSessionId={sessionId}
@@ -4365,12 +4332,32 @@ const ResendUndeliveredDialog = ({
   );
 };
 
-/** Tokens this turn consumed, in compact product-language units (1.2K / 1.2万). */
-const AssistantTurnTokenUsageRows = ({ usage }: { usage: SessionTurnTokenUsage }) => {
+type AssistantTurnUsageRow = {
+  key: string;
+  label: string;
+  value: number;
+  detail?: string;
+  /** Preformatted value for rows whose unit is not a compact token count. */
+  display?: string;
+  title?: string;
+};
+
+/** Tokens and estimated cost this turn consumed, in compact product-language units. */
+const AssistantTurnUsageRows = ({ usage }: { usage: SessionTurnTokenUsage }) => {
   const { t, i18n } = useTranslation();
   const locale = toIntlLocaleOrEn(i18n.resolvedLanguage ?? i18n.language);
   const exact = new Intl.NumberFormat(locale);
-  const rows = [
+  const costUSD = usage.costUSD;
+  /* Per-turn costs are small enough that cents hide the number; keep two
+     fraction digits and spend more only where they carry information. */
+  const formatCost = (value: number): string => {
+    const abs = Math.abs(value);
+    return formatUsdAmount(value, locale, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: abs > 0 && abs < 0.01 ? 8 : abs < 1 ? 4 : 2,
+    });
+  };
+  const rows: AssistantTurnUsageRow[] = [
     {
       key: 'input',
       label: t('sessions.turnConfig.inputTokens', 'Input'),
@@ -4398,6 +4385,20 @@ const AssistantTurnTokenUsageRows = ({ usage }: { usage: SessionTurnTokenUsage }
         write: exact.format(usage.cacheCreationInputTokens),
       }),
     },
+    ...(typeof costUSD === 'number'
+      ? [
+          {
+            key: 'cost',
+            label: t('sessions.turnConfig.costEstimate', 'Cost estimate'),
+            value: costUSD,
+            display: formatCost(costUSD),
+            title: t(
+              'sessions.turnConfig.costHint',
+              "Estimated from the provider's reported usage, not an invoice."
+            ),
+          },
+        ]
+      : []),
   ];
   return (
     <div className="border-t border-border/60 px-3 py-2.5">
@@ -4413,6 +4414,7 @@ const AssistantTurnTokenUsageRows = ({ usage }: { usage: SessionTurnTokenUsage }
         {rows.map((row) => (
           <div
             key={row.key}
+            data-turn-cost={row.key === 'cost' ? '' : undefined}
             className={cn(
               stylex.props(activityTypography.caption).className,
               'flex items-start justify-between gap-3 '
@@ -4421,9 +4423,9 @@ const AssistantTurnTokenUsageRows = ({ usage }: { usage: SessionTurnTokenUsage }
             <dt className="shrink-0 text-muted-foreground">{row.label}</dt>
             <dd
               className="text-right font-medium tabular-nums text-foreground"
-              title={[exact.format(row.value), row.detail].filter(Boolean).join(' · ')}
+              title={row.title ?? [exact.format(row.value), row.detail].filter(Boolean).join(' · ')}
             >
-              {formatCompactNumber(row.value, locale)}
+              {row.display ?? formatCompactNumber(row.value, locale)}
             </dd>
           </div>
         ))}
@@ -4730,7 +4732,7 @@ const AssistantTurnConfigInfoButton = ({
           ) : null}
         </dl>
         <AssistantTurnTimingRows message={message} isLive={isLive} />
-        {tokenUsage ? <AssistantTurnTokenUsageRows usage={tokenUsage} /> : null}
+        {tokenUsage ? <AssistantTurnUsageRows usage={tokenUsage} /> : null}
       </Popover.Content>
     </Popover.Root>
   );

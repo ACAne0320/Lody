@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
-import React from 'react';
-import { flushSync } from 'react-dom';
+import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -16,6 +15,12 @@ import { LocalProjectItem } from '../src/components/loro-app-sidebar';
 import { SessionList, type SessionListRow } from '../src/components/session-list';
 import { initI18n } from '../src/i18n';
 import { Tooltip } from '@lody/ui/tooltip';
+
+// Under `act`, React drains effects and scheduled work before each call returns,
+// so nothing is left to run after the jsdom environment is torn down.
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 // A project hosted on a machine a teammate shared with the workspace. The row
 // must behave exactly like one on this user's own device: clicking it steers the
@@ -70,7 +75,7 @@ describe('sidebar local project row', () => {
 
   afterEach(() => {
     if (root) {
-      flushSync(() => root?.unmount());
+      act(() => root?.unmount());
     }
     root = undefined;
     container?.remove();
@@ -88,7 +93,7 @@ describe('sidebar local project row', () => {
     collapsed?: boolean;
     liveSessionStatuses?: ReadonlyMap<string, SessionStatus>;
   }) {
-    flushSync(() => {
+    act(() => {
       root?.render(
         <Tooltip.Provider>
           <LocalProjectItem
@@ -138,12 +143,12 @@ describe('sidebar local project row', () => {
     expect(row?.getAttribute('role')).toBe('button');
     expect(row?.getAttribute('aria-disabled')).toBeNull();
 
-    flushSync(() => row?.click());
+    act(() => row?.click());
     expect(onNavigateProject).toHaveBeenCalledWith(machineId, project.id);
 
     const newChatButton = row?.querySelector<HTMLButtonElement>('button[aria-label="New chat"]');
     expect(newChatButton).toBeInstanceOf(HTMLButtonElement);
-    flushSync(() => newChatButton?.click());
+    act(() => newChatButton?.click());
     expect(onNewChatInProject).toHaveBeenCalledWith(machineId, project.id);
     // Starting a fresh chat must not double as a plain row activation.
     expect(onNavigateProject).toHaveBeenCalledTimes(1);
@@ -157,7 +162,7 @@ describe('sidebar local project row', () => {
     expect(row?.getAttribute('role')).toBeNull();
     expect(row?.getAttribute('aria-disabled')).toBe('true');
 
-    flushSync(() => row?.click());
+    act(() => row?.click());
     expect(onNavigateProject).not.toHaveBeenCalled();
     expect(row?.querySelector('button[aria-label="New chat"]')).toBeNull();
   });
@@ -188,7 +193,7 @@ describe('sidebar local project row', () => {
     );
     expect(showAll?.textContent).toBe('Show all (7)');
 
-    flushSync(() => showAll?.click());
+    act(() => showAll?.click());
     expect(onToggleFullList).toHaveBeenCalledWith('local-project:machine-teammate:project-shared');
 
     render({ ...baseOptions, whetherShowFullList: true });
@@ -301,7 +306,7 @@ describe('sidebar project group row', () => {
   });
 
   afterEach(() => {
-    if (root) flushSync(() => root?.unmount());
+    if (root) act(() => root?.unmount());
     root = undefined;
     container?.remove();
     container = undefined;
@@ -330,7 +335,7 @@ describe('sidebar project group row', () => {
       onArchiveProjectGroupChats: vi.fn(),
       onMoveProjectGroup: vi.fn(),
     };
-    flushSync(() => {
+    act(() => {
       root?.render(
         <SessionList
           sessions={[
@@ -365,9 +370,9 @@ describe('sidebar project group row', () => {
     const newChat = shop?.querySelector<HTMLButtonElement>(
       'button[aria-label="New chat in this project"]'
     );
-    flushSync(() => newChat?.click());
+    act(() => newChat?.click());
     expect(handlers.onNewInProjectGroup).toHaveBeenLastCalledWith('shop');
-    flushSync(() => shop?.click());
+    act(() => shop?.click());
     expect(handlers.onNewInProjectGroup).toHaveBeenCalledTimes(2);
     // No second, GitHub-style "+" beside the row.
     expect(container?.querySelector('button[aria-label="New session"]')).toBeNull();
@@ -379,14 +384,14 @@ describe('sidebar project group row', () => {
     expect(old).toBeInstanceOf(HTMLElement);
     expect(old?.querySelector('button[aria-label="New chat in this project"]')).toBeNull();
     expect(old?.querySelector('button[aria-label="Reorder project"]')).toBeNull();
-    flushSync(() => old?.click());
+    act(() => old?.click());
     expect(handlers.onNewInProjectGroup).not.toHaveBeenCalled();
   });
 
   it('gives a GitHub repository row the project menu, seeded with that repository', () => {
     const onEditRepoProject = vi.fn();
     const onArchiveRepoChats = vi.fn();
-    flushSync(() => {
+    act(() => {
       root?.render(
         <SessionList
           sessions={[{ ...row('web-1', { id: 'x', name: 'x' }), projectGroup: undefined }]}
@@ -401,7 +406,7 @@ describe('sidebar project group row', () => {
     expect(repoRow?.querySelector('button[aria-label="More actions"]')).toBeInstanceOf(
       HTMLButtonElement
     );
-    flushSync(() => {
+    act(() => {
       repoRow?.dispatchEvent(
         new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })
       );
@@ -410,7 +415,7 @@ describe('sidebar project group row', () => {
       Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((node) =>
         node.textContent?.includes(text)
       );
-    flushSync(() => item('Edit project')?.click());
+    act(() => item('Edit project')?.click());
     expect(onEditRepoProject).toHaveBeenCalledWith('acme/web');
   });
 });

@@ -23,10 +23,6 @@ import type {
   SessionCancelResponse,
   SessionChatResponse,
   SessionDispatchTurnResponse,
-  SessionPreparationCancelSpec,
-  SessionPreparationSpec,
-  SessionPrepareCancelResponse,
-  SessionPrepareResponse,
   SessionSteerResponse,
   SessionGoalAction,
   SessionGoalResponse,
@@ -49,6 +45,7 @@ import type {
   MachineAcpBinaryStatusResponse,
   MachineAcpBinaryInstallResponse,
   MachineAcpBinaryProgressMessage,
+  BugReportClientLog,
   MachineBugReportResponse,
   SessionPreviewCreateResponse,
   SessionPreviewEndpointAcquireResponse,
@@ -135,6 +132,29 @@ export type SessionDocStore = {
    * background join/SSE work instead of keeping it alive until it settles.
    */
   waitUntilSynced: (signal?: AbortSignal) => Promise<void>;
+  /**
+   * Bounded diagnostics for a conversation that looks stale. Ids, states and
+   * timestamps only. The pending-upload probe waits for this replica's
+   * queued uploads and settles within `uploadProbeTimeoutMs`.
+   */
+  inspectSync: (options: { uploadProbeTimeoutMs: number }) => Promise<SessionSyncInspection>;
+};
+
+export type SessionSyncInspection = {
+  /** The plane whose binding gates this room's readiness. */
+  readonly transportId: string;
+  /** `null` while no join has produced a subscription. */
+  readonly bindingStatus: string | null;
+  readonly syncState: RoomSyncState;
+  readonly openedAt: number;
+  /** Last time a remote import landed in this doc; `null` if none since open. */
+  readonly lastRemoteImportAt: number | null;
+  /**
+   * `waitFor('pending-upload-empty')` outcome; `null` without a subscription.
+   * `complete` also when nothing was pending, so it never proves inbound
+   * applies are flowing; `timeout` means local changes stayed unsent.
+   */
+  readonly pendingUploadProbe: string | null;
 };
 
 export type PreviewVisualCommentDocUpdater =
@@ -382,16 +402,6 @@ export type WorkspaceRuntime = {
     },
     options?: { timeoutMs?: number }
   ) => Promise<SessionDispatchTurnResponse | null>;
-  requestSessionPrepare: (
-    machineId: MachineId,
-    spec: SessionPreparationSpec,
-    options?: { timeoutMs?: number }
-  ) => Promise<SessionPrepareResponse | null>;
-  requestSessionPrepareCancel: (
-    machineId: MachineId,
-    args: SessionPreparationCancelSpec,
-    options?: { timeoutMs?: number }
-  ) => Promise<SessionPrepareCancelResponse | null>;
   requestSessionPreviewCreate: (
     machineId: MachineId,
     sessionId: SessionId,
@@ -529,7 +539,13 @@ export type WorkspaceRuntime = {
   ) => Promise<McpToolListResult>;
   requestMachineBugReport: (
     machineId: MachineId,
-    args: { description: string; reporterUserId: string; requestToken: string },
+    args: {
+      description: string;
+      reporterUserId: string;
+      requestToken: string;
+      /** Dropped for a machine that does not advertise `bugReportClientLog`. */
+      clientLog?: BugReportClientLog;
+    },
     options?: { timeoutMs?: number }
   ) => Promise<MachineBugReportResponse | null>;
   requestMemoryProvider: (
@@ -561,9 +577,18 @@ export const runtimeAtom = atom<WorkspaceRuntime | null>(null);
  * Why the last attempt to create a runtime rejected, kept until the next
  * attempt. Only the error name is kept: a message can carry stream URLs.
  */
-export type WorkspaceRuntimeInitFailure = { workspaceSlug: string; errorType: string };
+export type WorkspaceRuntimeInitFailure = {
+  workspaceSlug: string;
+  errorType: string;
+  /** Present only when content-mode admission failed. Encryption wording is shown
+   * only when the workspace is known to be encrypted or encrypted creation is on. */
+  modeAdmission?: { knownEncrypted: boolean };
+};
 
 export const workspaceRuntimeInitFailureAtom = atom<WorkspaceRuntimeInitFailure | null>(null);
+
+/** Reattempt first workspace mode admission without reloading the whole app. */
+export const workspaceModeAdmissionRetryAtom = atom(0);
 
 export type ActiveWorkspaceRuntimeState =
   | { status: 'ready'; runtime: WorkspaceRuntime }

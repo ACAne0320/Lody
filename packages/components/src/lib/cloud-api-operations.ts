@@ -90,10 +90,12 @@ export interface SharingReviewReconcileResult extends SharingReviewState {
 }
 
 function capabilityForOperation(name: string): PlatformCapability {
+  if (name.startsWith('e2eeWorkspaces:')) return 'multiWorkspace';
   if (name.startsWith('promptShortcuts:')) return 'cloudAccount';
   if (name.startsWith('billing:')) return 'billing';
   if (name.startsWith('usage:')) return 'usageAnalytics';
-  if (name.startsWith('github:')) return 'githubIntegration';
+  if (name.startsWith('github:') || name.startsWith('githubPersonalAuthorization:'))
+    return 'githubIntegration';
   if (name.startsWith('activity:')) return 'telemetry';
   if (name.startsWith('deviceAuth:') || name === 'auth:getUserById') return 'cloudAccount';
   if (name.startsWith('auth:')) return 'multiWorkspace';
@@ -136,6 +138,11 @@ const action = <Reference extends FunctionReference<'action'>>(
  * public cloud client contract, never from generated server API declarations.
  */
 export const cloudOperations = {
+  e2eeWorkspaces: {
+    create: action<ConvexApi['e2eeWorkspaces']['create']>('e2eeWorkspaces:create'),
+    describe: query<ConvexApi['e2eeWorkspaces']['describe']>('e2eeWorkspaces:describe'),
+    history: action<ConvexApi['e2eeWorkspaces']['history']>('e2eeWorkspaces:history'),
+  },
   promptShortcuts: {
     stageDocument: mutation<ConvexApi['promptShortcuts']['stageDocument']>(
       'promptShortcuts:stageDocument'
@@ -298,6 +305,12 @@ export const cloudOperations = {
   github: {
     createGitHubInstallState: action<ConvexApi['github']['createGitHubInstallState']>(
       'github:createGitHubInstallState'
+    ),
+    beginPersonalAuthorization: action<ConvexApi['githubPersonalAuthorization']['begin']>(
+      'githubPersonalAuthorization:begin'
+    ),
+    completePersonalAuthorization: action<ConvexApi['githubPersonalAuthorization']['complete']>(
+      'githubPersonalAuthorization:complete'
     ),
     getPersonalOperationSettings: query<ConvexApi['github']['getPersonalOperationSettings']>(
       'github:getPersonalOperationSettings'
