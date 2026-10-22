@@ -113,6 +113,13 @@ export default defineConfig({
           // Its own map keeps the main-entry map collapse within the 2 GiB heap.
           if (id === path.resolve(__dirname, 'src/lib/message-handler.ts'))
             return 'cli-message-handler';
+          // Keep the deadline leaf with execution: its top-level constant must
+          // initialize before the entry's static import cycle reaches this chunk.
+          if (
+            id === path.resolve(__dirname, 'src/session/session-execution-service.ts') ||
+            id === path.resolve(__dirname, 'src/lib/loro/timeout-utils.ts')
+          )
+            return 'cli-session-execution';
           const dependency = id.split('/node_modules/').at(-1);
           if (!id.includes('/node_modules/') || !dependency) return undefined;
           const segments = dependency.split('/');
