@@ -6421,7 +6421,7 @@ function WorkspaceChatLanding({
               command: 'npx lody daemon start',
               commandHint: t(
                 'chat.mobileHome.onboarding.commandHint',
-                'Run it on a server, VM, or your own computer (Node.js 22.14+). It signs the machine into your account — a machine without a browser prints a link you can open on this phone.'
+                'Run it on a server, VM, or your own computer (Node.js 22.23.4+ (22.x), 24.22.1+ (24.x), or 26.12.1+ (26.x)). It signs the machine into your account — a machine without a browser prints a link you can open on this phone.'
               ),
               copyCommandLabel: t('chat.mobileHome.onboarding.copyCommand', 'Copy command'),
               shareCommandLabel: t('chat.mobileHome.onboarding.shareCommand', 'Send to computer'),
