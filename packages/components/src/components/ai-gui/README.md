@@ -312,6 +312,14 @@ scroll and a sideways swipe dragged the session away. So inside a
 `[data-vaul-drawer]` the dialog mounts in the drawer, `data-vaul-no-drag`,
 with a no-drag layer over its backdrop (`InMobileDrawer` story).
 
+The Loro conversation view carries display-only task metadata and a bounded latest
+step, not every child transcript. The task's non-enumerable `history` capability
+reads one exact owned run only after its detail mounts. Activity shows loading or
+retry until that read completes; a preview must never masquerade as the full run.
+Changing the selected task or closing the dialog discards late results and releases
+the full body. Static shares and other readers without this capability keep their
+already complete task data. Export/copy/replay use authoritative full readers.
+
 ## Creation progress
 
 `created-session-operation-card.tsx` owns each navigable child card and its title
