@@ -3,6 +3,7 @@
 Status: proposed
 Type: bug-fix
 Translation: current
+PR: [#1831](https://github.com/LodyAI/Lody/pull/1831)
 
 [English](2026-10-23-storage-recovery-release-adoption.md)
 
