@@ -16,7 +16,8 @@ const marker: SessionForkOperationMarker = {
   targetSessionId: 'target-session',
   operationId: 'session-fork:target-session',
   createdAt: '2026-08-16T00:00:00.000Z',
-  title: '(fork) Original',
+  title: 'Original',
+  sourceSessionId: 'source-session',
   cleanup: {
     project: { kind: 'local', localProjectId: 'local-project-1' as never },
     branch: 'main',

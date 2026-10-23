@@ -44,6 +44,17 @@ type ForkWarning = SessionForkResponse['warnings'][number];
 /** Recovery opens only store-listed docs; keep even that small fan-out bounded. */
 const FORK_RECOVERY_CONCURRENCY = 4;
 
+const LEGACY_FORK_TITLE_PREFIX = /^(?:\(fork\)\s*)+/i;
+
+/**
+ * Older daemons titled forks `(fork) <source title>`, so chained forks piled
+ * prefixes up. Forks now record `forkedFromSessionId` instead; drop any legacy
+ * prefixes so a fork of an old fork gets the clean title.
+ */
+export function stripLegacyForkTitlePrefix(title: string): string {
+  return title.replace(LEGACY_FORK_TITLE_PREFIX, '').trim() || title;
+}
+
 type ForkRuntimeConfig = Omit<SessionAcpRuntimeConfigSnapshot, 'acpSessionId' | 'revision'>;
 
 type WorktreeForkPreparedInput = {
@@ -425,6 +436,9 @@ export class SessionForkService {
         lastMessageAt: getServerNow(),
         title: marker.title,
         titleSource: 'generated',
+        ...(marker.sourceSessionId
+          ? { forkedFromSessionId: marker.sourceSessionId as SessionId }
+          : {}),
         userId: marker.cleanup.requesterUserId,
         status: SessionStatusFactory.idle(),
         isArchived: false,
@@ -570,7 +584,10 @@ export class SessionForkService {
     const sourceTitle = source.title?.trim() || 'Untitled session';
     // One expression shared by the target meta and the recovery marker so a
     // repaired session can never drift from a normally-forked one's title.
-    const forkTitle = `(fork) ${sourceTitle}`;
+    // The fork relation lives in `forkedFromSessionId` (rendered as an icon),
+    // so the title stays the source's own title. Strip prefixes written by
+    // older versions so forking a legacy fork does not carry them forward.
+    const forkTitle = stripLegacyForkTitlePrefix(sourceTitle);
     const historyResult = cloneHistoryThroughTurn(
       [...sourceSnapshot.history],
       spec.sourceTurnId,
@@ -721,6 +738,7 @@ export class SessionForkService {
         lastMessageAt: now,
         title: forkTitle,
         titleSource: 'generated',
+        forkedFromSessionId: sourceSessionId,
         userId: spec.requestedByUserId,
         status: SessionStatusFactory.initializing(undefined, 'Creating fork worktree'),
         isArchived: false,
@@ -745,6 +763,7 @@ export class SessionForkService {
         operationId: operation.id,
         createdAt: operation.createdAt,
         title: forkTitle,
+        sourceSessionId,
         historyBackend: targetMeta.historyBackend,
         cleanup: {
           project: targetProject,
@@ -837,6 +856,7 @@ export class SessionForkService {
       lastMessageAt: now,
       title: forkTitle,
       titleSource: 'generated',
+      forkedFromSessionId: sourceSessionId,
       userId: spec.requestedByUserId,
       status: SessionStatusFactory.initializing(),
       isArchived: false,

@@ -26,9 +26,9 @@ Read parent rules and linked context.
 - A Side Chat is a durable child Session (`childSessionPlacement: 'side-panel'`):
   no top tab, no sidebar row, but it still rolls up into the parent row. Only explicit
   tab close deletes it; mount it lazily.
-- `SessionMeta.openedBySessionId` is presentation-only provenance: never
-  `parentSessionId`, never rolled into the opener, never filtered out of the
-  list. Navigation carries root + exact tab ids.
+- `SessionMeta.openedBySessionId`/`forkedFromSessionId`: display-only provenance,
+  never `parentSessionId`, rolled up or filtered out. Navigate by root + exact
+  tab ids. Forks never prefix titles.
 - The collapsed side panel stays mounted: anything polling or connected in it
   must take an on-screen prop and pause itself.
 - Panel mount is not preview ownership — never release an endpoint or revoke a

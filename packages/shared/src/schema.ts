@@ -1083,6 +1083,12 @@ export type SessionMeta = {
    * metadata has not synced yet.
    */
   openedByRootSessionId?: SessionId;
+  /**
+   * Session (or child Tab) this conversation was forked from. Presentation-only
+   * provenance: clients show a fork mark before the title that links back to
+   * the source instead of baking a "(fork)" prefix into `title`.
+   */
+  forkedFromSessionId?: SessionId;
   /** Project binding for this session (GitHub repo or local project). */
   project?: ProjectRef;
   repoFullName?: string;

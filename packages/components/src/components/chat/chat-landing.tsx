@@ -4786,6 +4786,7 @@ function WorkspaceChatLanding({
             mobileOpenerRowResolver(session.openedBySessionId) ??
             session.openedBySessionId ??
             null,
+          forkedFromSessionId: session.forkedFromSessionId ?? null,
           projectKey,
           projectLabel,
           projectAvatarUrl,
@@ -5695,6 +5696,7 @@ function WorkspaceChatLanding({
             mobileOpenerRowResolver(session.openedBySessionId) ??
             session.openedBySessionId ??
             null,
+          forkedFromSessionId: session.forkedFromSessionId ?? null,
           projectAvatarUrl,
           isWorktree: kind === 'local' && session.isWorktree === true,
           /* Owner avatar — see the home Chat-tab builder for rationale.

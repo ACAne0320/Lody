@@ -125,6 +125,7 @@ const SESSION_LIST_VISIBLE_KEYS: readonly (keyof SessionMeta)[] = [
   'childSessionPlacement',
   'openedBySessionId',
   'openedByRootSessionId',
+  'forkedFromSessionId',
   'latestUserMsgId',
   'awaitingUserSince',
   'lastCanceledTurn',

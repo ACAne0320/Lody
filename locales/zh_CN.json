@@ -1574,6 +1574,8 @@
   "sessions.forkNoAssistant": "没有可用于分叉的助手回复",
   "sessions.forkOpenFailed": "会话已分叉，但无法加载其对话内容",
   "sessions.forkPartial": "会话已分叉，但部分历史内容不可用",
+  "sessions.forkedFrom": "分叉自 {{title}}",
+  "sessions.forkedFromUnknown": "分叉的对话",
   "sessions.forkDestination.title": "分叉对话",
   "sessions.forkDestination.newTab": "分叉到新标签页",
   "sessions.forkDestination.newTabHint": "在当前会话中打开新标签页，在同一目录下工作，共享文件和未提交的改动。",

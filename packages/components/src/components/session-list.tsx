@@ -106,6 +106,7 @@ import {
 } from '@/components/sidebar-row-shared';
 import { sessionSendStatesAtom } from '@/atoms/session-send-status';
 import { SessionInfoHoverCard } from '@/components/session-info-hover-card';
+import { SessionForkMark } from '@/components/sessions/session-fork-mark';
 import type { SessionSharingState } from '@/lib/session-sharing';
 import {
   RenameSessionDialogView,
@@ -141,6 +142,11 @@ export type SessionListRow = {
    * Falls back to `openedBySessionId` when the caller did not resolve it.
    */
   openedByRowSessionId?: string | null;
+  /**
+   * Fork source (`SessionMeta.forkedFromSessionId`). Rendered as a fork mark
+   * before the title; presentation-only, never nesting or parentage.
+   */
+  forkedFromSessionId?: string | null;
   /** Machine the session runs on; the sidebar resolves it to `machineName`. */
   machineId?: MachineId;
   /** Resolved machine display name, surfaced in the desktop hover info card. */
@@ -1052,6 +1058,20 @@ const SessionGroupRow = memo(function SessionGroupRow({
             }}
           >
             <SessionRowAuthorAvatar author={session.owner} />
+            {session.forkedFromSessionId ? (
+              <SessionForkMark
+                forkedFromSessionId={session.forkedFromSessionId}
+                interactive={!isMobile}
+                onNavigate={
+                  onSelectSession
+                    ? (id, tabId) => {
+                        if (tabId && onNavigateSessionTab) onNavigateSessionTab(id, tabId);
+                        else onSelectSession(id);
+                      }
+                    : undefined
+                }
+              />
+            ) : null}
             {session.isPinned ? (
               <Pin
                 aria-hidden="true"

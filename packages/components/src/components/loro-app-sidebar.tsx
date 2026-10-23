@@ -2676,6 +2676,7 @@ export function LoroAppSidebar({
         owner: task.owner ?? null,
         openedBySessionId: task.openedBySessionId ?? null,
         openedByRowSessionId: task.openedByRowSessionId ?? null,
+        forkedFromSessionId: task.forkedFromSessionId ?? null,
         sharing: task.sharing,
       });
     }
@@ -2708,6 +2709,7 @@ export function LoroAppSidebar({
         owner: task.owner ?? null,
         openedBySessionId: task.openedBySessionId ?? null,
         openedByRowSessionId: task.openedByRowSessionId ?? null,
+        forkedFromSessionId: task.forkedFromSessionId ?? null,
         addedLines: task.addedLines,
         deletedLines: task.deletedLines,
         sharing: task.sharing,
@@ -2761,6 +2763,7 @@ export function LoroAppSidebar({
             openedBySessionId: session.openedBySessionId ?? null,
             openedByRowSessionId:
               session.openedByRootSessionId ?? resolveOpenerRowId(session.openedBySessionId),
+            forkedFromSessionId: session.forkedFromSessionId ?? null,
             sharing: sessionSharingById.get(session.id),
           });
         }

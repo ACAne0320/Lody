@@ -80,6 +80,8 @@ const SessionForkOperationMarkerSchema = z
     createdAt: z.string().min(1),
     /** Target session title, for republishing meta after a mid-commit crash. */
     title: z.string().min(1),
+    /** Source session id, republished as the target's `forkedFromSessionId`. */
+    sourceSessionId: z.string().min(1).optional(),
     /** History backend selected by the source session, for crash-safe target repair. */
     historyBackend: z.enum(['loro', 'roost']).optional(),
     /**

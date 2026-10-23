@@ -326,6 +326,7 @@ export function mapSessionMetaToSessionListRow(
       resolveOpenerRowId?.(session.openedBySessionId) ??
       session.openedBySessionId ??
       null,
+    forkedFromSessionId: session.forkedFromSessionId ?? null,
     machineId: session.machineId,
     historyBackend: resolveSessionHistoryBackendKind(session),
     repoFullName: repoFullNameRaw ? repoFullNameRaw : null,

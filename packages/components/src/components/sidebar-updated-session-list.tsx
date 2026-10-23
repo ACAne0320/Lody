@@ -84,6 +84,7 @@ import type {
 } from '@lody/shared';
 import type { SessionListPullRequestOpen, SessionListRowOwner } from '@/components/session-list';
 import type { SessionSharingState } from '@/lib/session-sharing';
+import { SessionForkMark } from '@/components/sessions/session-fork-mark';
 import {
   RenameSessionDialogView,
   type RenameSessionDialogTarget,
@@ -111,6 +112,8 @@ export type SidebarUpdatedItem = {
    * and an unpinned opened Session (different sections) both stay top-level.
    */
   openedByRowSessionId?: string | null;
+  /** Fork source (`SessionMeta.forkedFromSessionId`), shown as a fork mark. */
+  forkedFromSessionId?: string | null;
   /**
    * Section the item lives in under the Workspace organize mode.
    * Surfaces in the row's hover tooltip (desktop only).
@@ -1003,6 +1006,15 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
         {item.owner ? (
           <span className={cn('flex shrink-0 items-center', SIDEBAR_ROW_LINE_CLASS)}>
             <SessionRowAuthorAvatar author={item.owner} />
+          </span>
+        ) : null}
+        {item.forkedFromSessionId ? (
+          <span className={cn('flex shrink-0 items-center', SIDEBAR_ROW_LINE_CLASS)}>
+            <SessionForkMark
+              forkedFromSessionId={item.forkedFromSessionId}
+              interactive={!isMobile}
+              onNavigate={onSelect}
+            />
           </span>
         ) : null}
         {showPinnedIcon && item.isPinned ? (

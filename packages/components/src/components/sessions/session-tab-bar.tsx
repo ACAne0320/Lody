@@ -42,6 +42,7 @@ import {
 } from '@/lib/session-read-receipt';
 import { isArchivedOutsideWorkspace, isSessionTabClosed } from '@/lib/session-tab-url';
 import { AdaptiveTabStrip, AdaptiveTabStripItem } from './adaptive-tab-strip';
+import { SessionForkMark } from './session-fork-mark';
 import { SESSION_PAGE_CONTAINER_CLASS } from './session-conversation-page';
 import {
   armSessionMentionDrag,
@@ -435,6 +436,7 @@ function TabContent({
   cancelRename,
   solo,
   html5MentionDrag = false,
+  groupSessionIds,
   t,
 }: {
   session: SessionMeta;
@@ -450,6 +452,8 @@ function TabContent({
   onTabSelect: (tabId: string) => MaybePromiseVoid;
   onTabRename?: (sessionId: SessionId, title: string) => MaybePromiseVoid;
   onTabClose?: (tabId: string) => MaybePromiseVoid;
+  /** Session ids in this tab group: a fork source among them is one click away. */
+  groupSessionIds: ReadonlySet<string>;
   setEditDraft: (v: string) => void;
   setEditingTabId: (v: SessionId | null) => void;
   commitRename: () => void;
@@ -558,7 +562,21 @@ function TabContent({
           {...stylex.props(styles.editInput)}
         />
       ) : (
-        <span {...stylex.props(styles.truncate)}>{label}</span>
+        <>
+          {session.forkedFromSessionId ? (
+            <SessionForkMark
+              forkedFromSessionId={session.forkedFromSessionId}
+              className="text-current opacity-70"
+              onNavigate={
+                groupSessionIds.has(session.forkedFromSessionId)
+                  ? (_sessionId, tabSessionId) =>
+                      void onTabSelect(tabSessionId ?? session.forkedFromSessionId!)
+                  : undefined
+              }
+            />
+          ) : null}
+          <span {...stylex.props(styles.truncate)}>{label}</span>
+        </>
       )}
       {showClose && (
         <button
@@ -976,6 +994,10 @@ export const SessionTabBar = memo(function SessionTabBar({
     clearSessionMentionDrag();
   }, []);
 
+  const groupSessionIds = useMemo(
+    () => new Set<string>([parentSession.id, ...childSessions.map((child) => child.id)]),
+    [parentSession.id, childSessions]
+  );
   const sharedTabProps = {
     defaultTitle,
     editDraft,
@@ -983,6 +1005,7 @@ export const SessionTabBar = memo(function SessionTabBar({
     onTabSelect,
     onTabRename,
     onTabClose,
+    groupSessionIds,
     setEditDraft,
     setEditingTabId,
     commitRename,

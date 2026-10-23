@@ -1574,6 +1574,8 @@
   "sessions.forkNoAssistant": "No assistant response is available to fork",
   "sessions.forkOpenFailed": "Session forked, but its conversation could not be loaded",
   "sessions.forkPartial": "Session forked with some historical content unavailable",
+  "sessions.forkedFrom": "Forked from {{title}}",
+  "sessions.forkedFromUnknown": "Forked conversation",
   "sessions.forkDestination.title": "Fork conversation",
   "sessions.forkDestination.newTab": "Fork to new tab",
   "sessions.forkDestination.newTabHint": "Opens a new tab in this session that works in the same directory, sharing its files and uncommitted changes.",

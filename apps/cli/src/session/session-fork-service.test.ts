@@ -20,7 +20,11 @@ import {
   type SessionSnapshot,
   type SessionTurn,
 } from '@lody/shared/session-data';
-import { cloneHistoryThroughTurn, SessionForkService } from './session-fork-service';
+import {
+  cloneHistoryThroughTurn,
+  SessionForkService,
+  stripLegacyForkTitlePrefix,
+} from './session-fork-service';
 import { createSessionBackend } from './session-backend';
 import type {
   SessionForkOperationCleanup,
@@ -426,6 +430,18 @@ const importedHistory: NonNullable<SessionMeta['externalHistory']> = {
   status: 'synced',
 };
 
+describe('stripLegacyForkTitlePrefix', () => {
+  it('drops every stacked legacy prefix so chained forks keep the source title', () => {
+    expect(stripLegacyForkTitlePrefix('(fork) (fork) Fix login')).toBe('Fix login');
+    expect(stripLegacyForkTitlePrefix('(FORK)(fork)Fix login')).toBe('Fix login');
+    expect(stripLegacyForkTitlePrefix('Fix (fork) login')).toBe('Fix (fork) login');
+  });
+
+  it('keeps a title that is nothing but the legacy prefix', () => {
+    expect(stripLegacyForkTitlePrefix('(fork)')).toBe('(fork)');
+  });
+});
+
 describe('SessionForkService durability boundary', () => {
   it('refuses a conflicted imported source before creating a target', async () => {
     const h = createForkHarness(undefined, {
@@ -604,6 +620,8 @@ describe('SessionForkService durability boundary', () => {
       1,
       expect.any(String),
       expect.objectContaining({
+        title: 'Original',
+        forkedFromSessionId: sourceSessionId,
         parentSessionId: sourceSessionId,
         childSessionPlacement: 'side-panel',
       })
@@ -956,7 +974,8 @@ describe('SessionForkService fork operation recovery', () => {
     targetSessionId,
     operationId: preparingOperation.id,
     createdAt: preparingOperation.createdAt,
-    title: '(fork) Original',
+    title: 'Original',
+    sourceSessionId,
     branchName: 'lody/target-ses',
     cleanup: cleanupPayload,
   };
@@ -1089,7 +1108,8 @@ describe('SessionForkService fork operation recovery', () => {
     expect(republished).toMatchObject({
       id: targetSessionId,
       machineId,
-      title: '(fork) Original',
+      title: 'Original',
+      forkedFromSessionId: sourceSessionId,
       branchName: 'lody/target-ses',
       userId: 'user-1',
       isWorktree: true,

@@ -3,6 +3,8 @@ import { createStore, Provider } from 'jotai';
 import { SessionList } from '@/components/session-list';
 import type { SessionListProps } from '@/components/session-list';
 import { sidebarCollapsedOpenedBySessionsAtom } from '@/atoms/focus-layer';
+import { sessionMetaCacheAtom } from '@/atoms/doc-meta';
+import { getSessionRoomId, type MachineId, type SessionId, type SessionMeta } from '@lody/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const meta = {
@@ -21,6 +23,8 @@ type TaskListDemoProps = SessionListProps & {
   containerClassName?: string;
   /** Seeds the shared sidebar collapse atom so a story can show a folded opener. */
   collapsedOpenedBySessionIds?: Record<string, boolean>;
+  /** Seeds session meta so fork marks can resolve their source titles. */
+  knownSessions?: SessionMeta[];
 };
 
 function TaskListDemo({
@@ -30,6 +34,7 @@ function TaskListDemo({
   selectedSessionId,
   containerClassName,
   collapsedOpenedBySessionIds,
+  knownSessions,
 }: TaskListDemoProps) {
   const [selectedId, setSelectedId] = useState<string | null>(selectedSessionId ?? null);
   const [repoState, setRepoState] = useState(repos);
@@ -111,8 +116,14 @@ function TaskListDemo({
     if (collapsedOpenedBySessionIds) {
       next.set(sidebarCollapsedOpenedBySessionsAtom, collapsedOpenedBySessionIds);
     }
+    if (knownSessions) {
+      next.set(
+        sessionMetaCacheAtom,
+        Object.fromEntries(knownSessions.map((session) => [getSessionRoomId(session.id), session]))
+      );
+    }
     return next;
-  }, [collapsedOpenedBySessionIds]);
+  }, [collapsedOpenedBySessionIds, knownSessions]);
 
   return (
     <div className={frameClassName}>
@@ -270,6 +281,52 @@ const DEFAULT_ARGS: SessionListProps = {
 export const Default: Story = {
   args: DEFAULT_ARGS,
   render: (args) => <TaskListDemo {...args} />,
+};
+
+const storySessionMeta = (id: string, title: string): SessionMeta => ({
+  id: id as SessionId,
+  machineId: 'machine-1' as MachineId,
+  createdAt: '2026-10-01T00:00:00.000Z',
+  userId: 'user-1',
+  status: { type: 'idle' },
+  cliType: 'builtin',
+  agentType: 'codex',
+  title,
+});
+
+/** Forks carry the source's plain title plus a fork mark; hover names the source, click opens it. */
+export const ForkedSessions: Story = {
+  args: {
+    ...DEFAULT_ARGS,
+    sessions: [
+      ...DEFAULT_ARGS.sessions,
+      {
+        ...DEFAULT_ARGS.sessions[1]!,
+        sessionId: 'task-2-fork',
+        forkedFromSessionId: 'task-2',
+      },
+      {
+        ...DEFAULT_ARGS.sessions[1]!,
+        sessionId: 'task-2-fork-of-fork',
+        forkedFromSessionId: 'task-2-fork',
+      },
+      {
+        ...DEFAULT_ARGS.sessions[1]!,
+        sessionId: 'task-deleted-source-fork',
+        title: 'Source was deleted',
+        forkedFromSessionId: 'deleted-session',
+      },
+    ],
+  },
+  render: (args) => (
+    <TaskListDemo
+      {...args}
+      knownSessions={[
+        storySessionMeta('task-2', 'Flock meta persistence'),
+        storySessionMeta('task-2-fork', 'Flock meta persistence'),
+      ]}
+    />
+  ),
 };
 
 export const LongTitles: Story = {
