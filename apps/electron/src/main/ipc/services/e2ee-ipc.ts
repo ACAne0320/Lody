@@ -34,6 +34,9 @@ function sender() {
 /** Explicit operations only: no arbitrary signing, secret export or unbound identity generation. */
 export class E2eeIpc extends IpcService {
   static override readonly groupName = 'e2ee'
+  // The decorator logs rejected errors. Retain only the latest local diagnostic
+  // here, never on the cause-bearing Error passed to that logging/IPC boundary.
+  private pairingFailure: unknown
   @IpcMethod()
   async account(options?: { token?: string }) {
     sender()
@@ -95,6 +98,7 @@ export class E2eeIpc extends IpcService {
   }
   @IpcMethod()
   async prepareLocalAgent(workspaceId: string) {
+    this.pairingFailure = undefined
     const id = sender()
     const context = await withDesktopE2eeAccount((owner) =>
       Effect.gen(function* () {
@@ -110,7 +114,19 @@ export class E2eeIpc extends IpcService {
     const cli = getIpcServiceDeps().cliService
     const machineId = await cli.getLocalMachineId()
     if (!machineId) throw new Error('e2ee_local_agent_unavailable')
-    const material = await cli.prepareLocalE2eeDevice({ type: 'prepare', machineId, ...context })
+    let material
+    try {
+      material = await cli.prepareLocalE2eeDevice({ type: 'prepare', machineId, ...context })
+    } catch (error) {
+      this.pairingFailure = error
+      // Original retained above; attaching it would leak raw causes through the IPC logger.
+      // eslint-disable-next-line preserve-caught-error
+      throw new Error(
+        error instanceof Error && error.message === 'e2ee_local_agent_pending'
+          ? 'e2ee_local_agent_pending'
+          : 'e2ee_local_agent_unavailable'
+      )
+    }
     if (material.machineId !== machineId || material.pairingSessionId !== context.pairingSessionId)
       throw new Error('e2ee_conflict')
     return withDesktopE2eeAccount((owner) =>
@@ -121,6 +137,7 @@ export class E2eeIpc extends IpcService {
   }
   @IpcMethod()
   async admitLocalAgent(workspaceId: string, pairingSessionId: string) {
+    this.pairingFailure = undefined
     const id = sender()
     if (typeof pairingSessionId !== 'string' || !/^[0-9a-f]{32}$/.test(pairingSessionId))
       throw new Error('e2ee_invalid-input')
@@ -134,24 +151,53 @@ export class E2eeIpc extends IpcService {
         }
       })
     )
+    let appendFailure: unknown
     if (pending.request) {
       const cloud = await desktopE2eeCloudClient()
       if (cloud.accountId !== pending.accountId) throw new Error('e2ee_account_mismatch')
       // Even an uncertain append is reconciled through verified readback below.
       // Its journal retains the same request and signature for the next attempt.
-      await Effect.runPromise(cloud.client.appendRecord(pending.request)).catch(() => undefined)
+      try {
+        await Effect.runPromise(cloud.client.appendRecord(pending.request))
+      } catch (error) {
+        appendFailure = error
+      }
     }
     let distributed = true
     try {
       await this.refresh(workspaceId)
-    } catch {
+    } catch (error) {
+      this.pairingFailure = error
       distributed = false
     }
-    const confirmed = await withDesktopE2eeAccount((owner) =>
-      owner.accountId === pending.accountId && owner.readers.get(workspaceId)?.has(id)
-        ? owner.host.confirmLocalPairing(workspaceId, pairingSessionId)
-        : Effect.fail(new Error('e2ee_account_mismatch'))
-    )
+    let confirmed
+    try {
+      confirmed = await withDesktopE2eeAccount((owner) =>
+        owner.accountId === pending.accountId && owner.readers.get(workspaceId)?.has(id)
+          ? owner.host.confirmLocalPairing(workspaceId, pairingSessionId)
+          : Effect.fail(new Error('e2ee_account_mismatch'))
+      )
+    } catch (error) {
+      // Keep both failures in main for diagnosis. Only a stable message crosses
+      // IPC; never log SDK/raw causes or let an old error undo verified success.
+      if (appendFailure !== undefined) {
+        this.pairingFailure = new AggregateError(
+          [
+            appendFailure,
+            ...(this.pairingFailure === undefined ? [] : [this.pairingFailure]),
+            error
+          ],
+          'e2ee_append_unconfirmed',
+          {
+            cause: appendFailure
+          }
+        )
+        // Original retained above; the IPC decorator logs rejected Error causes.
+        // eslint-disable-next-line preserve-caught-error
+        throw new Error('e2ee_append_unconfirmed')
+      }
+      throw error
+    }
     if (!distributed) return { admitted: true as const, ready: false }
     try {
       await getIpcServiceDeps().cliService.activateLocalE2eeDevice({
@@ -161,7 +207,8 @@ export class E2eeIpc extends IpcService {
         ...confirmed
       })
       return { admitted: true as const, ready: true }
-    } catch {
+    } catch (error) {
+      this.pairingFailure = error
       // Approval is already committed. A delayed mailbox or CLI must not undo it.
       return { admitted: true as const, ready: false }
     }

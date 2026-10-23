@@ -21,6 +21,7 @@ async function load(relative, dependencies, console = globalThis.console) {
     }).outputText,
     {
       exports,
+      Error,
       setTimeout,
       clearTimeout,
       console,
@@ -146,6 +147,148 @@ void test('in-place and subframe navigation retain the ledger lease; document na
   assert.equal(await ipc.status('workspace'), 'ready')
   sender.emit('did-start-navigation', {}, 'synthetic-reload', false, true)
   await assert.rejects(ipc.status('workspace'), /e2ee_not_open/)
+})
+
+void test('uncertain admission preserves append and reconciliation failures, then accepts verified retry', async () => {
+  const sender = Object.assign(new EventEmitter(), { id: 17 })
+  const appendFailure = new Error('synthetic sanitized append failure')
+  const reconciliationFailure = new Error('e2ee_invalid-input')
+  const request = { workspaceId: 'workspace', requestId: 'stable-request', recordHex: 'aabb' }
+  const submitted = []
+  let committed = false
+  const owner = {
+    accountId: 'account',
+    bootstrap: { deviceCredential: () => Effect.succeed('synthetic-credential') },
+    readers: new Map([['workspace', new Set([sender.id])]]),
+    host: {
+      localPairingContext: () => Effect.succeed({ pairingSessionId: '44'.repeat(16) }),
+      approveLocalPairing: () => Effect.succeed(request),
+      confirmLocalPairing: () =>
+        committed
+          ? Effect.succeed({ genesisHash: '11'.repeat(32), signingPublicKey: '22'.repeat(32) })
+          : Effect.fail(reconciliationFailure)
+    }
+  }
+  const warnings = []
+  const localTimeout = new Error('e2ee_local_agent_pending', {
+    cause: new Error('synthetic sensitive local payload')
+  })
+  const { E2eeIpc } = await load(
+    '../ipc/services/e2ee-ipc.ts',
+    {
+      '../ipc-service-deps': {
+        getIpcServiceDeps: () => ({
+          cliService: {
+            getLocalMachineId: async () => 'machine',
+            prepareLocalE2eeDevice: async () => {
+              throw localTimeout
+            },
+            activateLocalE2eeDevice: async () => {}
+          }
+        })
+      },
+      'electron-ipc-decorator': {
+        IpcService: class {},
+        IpcMethod: () => (_target, _name, descriptor) => descriptor,
+        getIpcContext: () => ({ event: { sender } })
+      },
+      '../../platform': { isLocalPlatform: () => false },
+      '../../services/e2ee-bootstrap.mjs': {},
+      '../../services/e2ee-account-runtime': {
+        withDesktopE2eeAccount: (work) => Effect.runPromise(work(owner)),
+        desktopE2eeCloudClient: async () => ({
+          accountId: 'account',
+          client: {
+            appendRecord: (value) => {
+              submitted.push(structuredClone(value))
+              return Effect.fail(appendFailure)
+            }
+          }
+        })
+      },
+      '../assert-sender': { assertProductWindowSender: () => {} }
+    },
+    { warn: (...args) => warnings.push(args) }
+  )
+  const ipc = new E2eeIpc()
+  ipc.refresh = async () => {}
+  const session = '44'.repeat(16)
+  await assert.rejects(ipc.prepareLocalAgent('workspace'), (error) => {
+    assert.equal(error.message, 'e2ee_local_agent_pending')
+    assert.equal(error.cause, undefined)
+    assert.equal(ipc.pairingFailure, localTimeout)
+    return true
+  })
+  await assert.rejects(ipc.admitLocalAgent('workspace', session), (error) => {
+    assert.equal(error.message, 'e2ee_append_unconfirmed')
+    assert.equal(error.cause, undefined)
+    assert.equal(ipc.pairingFailure.cause, appendFailure)
+    assert.equal(ipc.pairingFailure.errors.length, 2)
+    assert.equal(ipc.pairingFailure.errors[0], appendFailure)
+    assert.equal(ipc.pairingFailure.errors[1], reconciliationFailure)
+    assert.ok(!error.message.includes(appendFailure.message))
+    return true
+  })
+  // The same signed request can have committed despite the failed response.
+  // Verified readback on retry wins over that attempt's lost acknowledgement.
+  committed = true
+  const result = await ipc.admitLocalAgent('workspace', session)
+  assert.equal(result.admitted, true)
+  assert.equal(result.ready, true)
+  assert.equal(ipc.pairingFailure, undefined)
+  assert.deepEqual(submitted, [request, request])
+  assert.deepEqual(warnings, [])
+})
+
+void test('local pairing timeout remains an unknown outcome and does not poison a later CLI request', async () => {
+  const { IpcTimeoutError, IpcConnectError } = await import('@lody/shared/node/local-ipc')
+  const { CliService } = await load('./cli-service.ts', {
+    electron: { app: {}, powerSaveBlocker: {} },
+    '../platform': { mainPlatformKind: 'cloud' },
+    '@lody/shared/node/installation-profile': { getLodyDataDir: () => '/synthetic-data' },
+    '@lody/shared/node/local-cli-host-lease': { getLocalCliHostEndpoint: () => '/synthetic-host' },
+    '@lody/shared/node/local-ipc': { getLocalDaemonRunFilePath: () => '/synthetic-run' },
+    '@lody/shared/node/process': {},
+    '@lody/shared/node/local-session-control': {},
+    '@lody/shared/node/local-project-control': {},
+    '@lody/shared/node/local-cli-supervisor': {},
+    '@lody/shared/local-machine-rpc': {},
+    '@lody/cli-supervisor': {},
+    './shell-env': {},
+    './system-proxy-env': {},
+    '../desktop-log': {},
+    '../desktop-log-core': {},
+    './desktop-execution-host': {},
+    './local-session-control-budget': {}
+  })
+  // Use the actual service methods without starting its unrelated supervisor.
+  const service = Object.create(CliService.prototype)
+  service.cliAutoStartEnabled = true
+  const timeout = new IpcTimeoutError({
+    message: 'synthetic slow local request',
+    timeoutMs: 30_000
+  })
+  let failure = timeout
+  service.localControlClient = {
+    e2eePrepare: () => (failure ? Effect.fail(failure) : Effect.succeed('prepared')),
+    e2eeActivate: () => (failure ? Effect.fail(failure) : Effect.succeed('activated'))
+  }
+  for (const method of ['prepareLocalE2eeDevice', 'activateLocalE2eeDevice']) {
+    await assert.rejects(service[method]({}), (error) => {
+      assert.equal(error.message, 'e2ee_local_agent_pending')
+      assert.equal(error.cause, timeout)
+      return true
+    })
+  }
+  failure = new IpcConnectError({ message: 'synthetic unavailable socket' })
+  await assert.rejects(service.prepareLocalE2eeDevice({}), (error) => {
+    assert.equal(error.message, 'e2ee_local_agent_unavailable')
+    assert.equal(error.cause, failure)
+    return true
+  })
+  failure = undefined
+  assert.equal(await service.prepareLocalE2eeDevice({}), 'prepared')
+  assert.equal(await service.activateLocalE2eeDevice({}), 'activated')
 })
 
 void test('cached identity admits offline work and replaces or closes owners on account transitions', async () => {

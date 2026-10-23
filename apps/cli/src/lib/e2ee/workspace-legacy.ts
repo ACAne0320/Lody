@@ -301,6 +301,18 @@ async function openWorkspace(options: CliE2eeWorkspaceOptions, requireActivation
   }
   if (binding.workspaceId !== options.workspaceId || binding.genesisHash !== options.genesisHash)
     throw new Error('e2ee_binding_conflict');
+  // A stale activation hint survives custody loss. Check the actual device
+  // original before opening custody (which could otherwise initialize a new
+  // empty store and probe the keyring). Only a missing original needs pairing;
+  // permission, descriptor and corrupt-file failures keep their normal errors.
+  const original = await open(
+    join(directory, 'custody', `${binding.genesisHash}.machine.device`),
+    constants.O_RDONLY | constants.O_NOFOLLOW
+  ).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    throw new Error('e2ee_pairing_required', { cause: error });
+  });
+  await original.close();
   const scope = Effect.runSync(Scope.make());
   const run = <A, E>(work: Effect.Effect<A, E, Scope.Scope>) =>
     Effect.runPromise(work.pipe(Scope.provide(scope)));
@@ -340,6 +352,7 @@ async function openWorkspace(options: CliE2eeWorkspaceOptions, requireActivation
   let latestEpoch = writeEpoch;
   let keyUpdateRequired = initialStatus.rotationRequired;
   let ledgerBlocked = false;
+  let retryLedgerOnSeal = false;
   let closed = false;
   let refresh: Promise<void> | undefined;
   let pending = false;
@@ -371,6 +384,11 @@ async function openWorkspace(options: CliE2eeWorkspaceOptions, requireActivation
       return {
         maxSealOverheadBytes: 4096,
         seal: async (input) => {
+          // Streams retries failed writes without reconnecting its healthy read
+          // stream. A temporary local storage failure must therefore use that
+          // next write attempt to refresh the ledger again. Security/validation
+          // failures remain fenced until an explicit normal refresh succeeds.
+          if (ledgerBlocked && retryLedgerOnSeal) await refreshInBackground();
           if (ledgerBlocked) throw new Error('e2ee_invalid_ledger');
           if (keyUpdateRequired || latestEpoch !== writeEpoch)
             throw new Error('e2ee_key_update_required');
@@ -420,11 +438,24 @@ async function openWorkspace(options: CliE2eeWorkspaceOptions, requireActivation
           });
           if (closed) return;
           checkpoint ??= { ...page.checkpoint };
-          status = await run(opened.runtime.ingest(page)).catch((error) => {
+          retryLedgerOnSeal = false;
+          status = await run(
+            opened.runtime.ingest(page).pipe(
+              Effect.tapError((error) =>
+                Effect.sync(() => {
+                  ledgerBlocked = true;
+                  retryLedgerOnSeal = 'code' in error && error.code === 'storage';
+                })
+              )
+            )
+          ).catch((error) => {
+            // Unexpected defects are fenced too, without classifying them as
+            // transient storage or weakening the verification boundary.
             ledgerBlocked = true;
             throw error;
           });
           ledgerBlocked = false;
+          retryLedgerOnSeal = false;
           latestEpoch = status.epoch;
           keyUpdateRequired ||= status.rotationRequired || latestEpoch !== writeEpoch;
           cursor = page.nextCursor ?? undefined;

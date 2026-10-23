@@ -75,13 +75,12 @@ Replacement contract: [shared rules](../../../shared/AGENTS.md#session-history).
 - Repo storage, LoroDoc cursors and eager-sync high-water state share a per-renderer
   cache namespace. Independently persisted replicas must not share checkpoints.
   Meta/Flock cursors stay repo-owned; delete Meta progress via `repo.getReplicaCheckpointStore`.
-- E2EE opens native/IndexedDB locally before background sync. Native-only keys,
-  dedicated bucket, Loro history, no plaintext side channels; retain waiting-key leases.
-  See [M2 boundaries](../../../../.agents/notes/proposed/architecture/2026-10-22-e2ee-m2-product-integration.md).
-- M2 pins its write epoch. Epoch changes or rotation-required stop new sends, retain
-  local edits and show a key-update notice. Full drain/restart/rejoin waits for M3.
-- Required Streams protection rejects missing providers or plaintext rooms
-  ([contract](../../../../specs/workspace-streams-content.md)).
+- E2EE must open locally before background sync; keep native-only keys, dedicated
+  bucket, Loro history and waiting-key leases, without plaintext side channels.
+  Epoch/rotation changes stop sends and retain edits with a key-update notice;
+  M3 owns resumption. Reject missing protection/plaintext rooms. Forward rejected
+  tokens for exact cache eviction. Read [M2 boundaries](../../../../.agents/notes/proposed/architecture/2026-10-22-e2ee-m2-product-integration.md)
+  and the [transport contract](../../../../specs/workspace-streams-content.md) before changes.
 - Select transport per room, never merge. Use `getReadinessTransportForRoom`;
   hooks without the router use `src/lib/room-readiness.ts`. Keep rules aligned.
 - The local renderer identity comes atomically from the Electron local-platform snapshot

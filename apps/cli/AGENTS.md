@@ -23,9 +23,9 @@ Root `AGENTS.md` applies; this file adds CLI context. Build, PR-poller, and adap
   never runtime env vars. File/hybrid log init records it at debug level.
 - Keep `prepare:acp-adapters` before `dev-build.mjs` and Vite: skipping it can launch stale
   adapter capabilities from an old `dist/`.
-- `engines.node` is pinned to `>=22.14.0 <23 || >=23.6.0` by better-sqlite3's `NAPI_VERSION=10`, and
-  `src/utils/sqlite-runtime-support.ts` must stay the FIRST import in `src/index.ts` — older Node
-  segfaults on the SQLite binding instead of throwing.
+- Keep the [Node security floors](../../.agents/notes/implemented/bug-fix/2026-10-22-node-security-runtime-floor.md)
+  aligned across engines/preinstall/CLI. `sqlite-runtime-support.ts` stays first.
+  Electron skips only the version floor.
 - Read [apps/electron/AGENTS.md](../electron/AGENTS.md) — embedded packaging, native deps/ABI,
   child runtime env, and the three places the Node pin moves together — before changing runtime
   deps, bundle externals, or spawning `process.execPath` with a filtered environment.

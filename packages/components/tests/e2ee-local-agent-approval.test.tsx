@@ -82,6 +82,26 @@ describe('local encrypted agent approval', () => {
     await click('common.tryAgain');
     expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
   });
+  it('keeps a timed-out preparation pending and retries without granting approval', async () => {
+    const prepare = runtime.prepareLocalAgent!;
+    runtime.prepareLocalAgent = async () => {
+      // Electron prefixes the stable main-process error on invoke rejection.
+      throw new Error('Error invoking remote method: Error: e2ee_local_agent_pending');
+    };
+    await render();
+    await click('e2ee.localAgent.enable');
+    expect(container.textContent).toContain('e2ee.localAgent.preparationPending');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(admitted).toBe(false);
+    runtime.prepareLocalAgent = prepare;
+    await render();
+    await click('common.tryAgain');
+    expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(admitted).toBe(false);
+    await click('e2ee.localAgent.allow');
+    expect(admitted).toBe(true);
+    expect(container.textContent).toBe('');
+  });
   it('asks again when a lost CLI identity starts a new session after approval', async () => {
     ready = false;
     await render();

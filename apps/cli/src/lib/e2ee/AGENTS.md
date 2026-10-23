@@ -54,4 +54,24 @@
   CLI build and its source maps must still fit the fixed 2 GiB build heap.
 
 - Keep runtime key journals under the signing public key, so custody loss cannot reuse old KEK blobs. Retain old evidence. A same-genesis activation hint may follow a replacement key only after verified admission and installation; waiting for pairing is normal, without startup issue/timer or global offline status. Activation binds the approved key and drains a different live identity; retained cleanup uses its retry owner.
-- Only ENOENT opening an activation/binding file means waiting for pairing. Other file-open failures retain their original error and Fleet retry; never cache transient storage failures as missing pairing.
+- Only ENOENT opening an activation/binding file or the machine device original means waiting for pairing. Check the original before initializing custody; a stale activation hint cannot justify a new keyring probe. Other file-open failures retain their original error and Fleet retry; never cache transient storage failures as missing pairing.
+- A ledger ingest storage failure fences writes until a successful verified refresh. Streams write retries do not reconnect healthy readers, so the next seal coalesces one refresh for that storage failure. Validation/conflict failures stay fenced until an explicit normal refresh succeeds; do not auto-recover them through seal.
+
+## Catalog and Fleet containment
+
+- `local-workspace-catalog.ts` keeps encrypted discovery in the account/machine-bound
+  `workspace-catalog.json.e2ee` sidecar. The released v1 catalog's `workspaces`
+  array contains ordinary workspaces only: older CLI schemas discard `contentMode`
+  and would otherwise start an encrypted workspace as plaintext. Keep one catalog
+  lock around both durable writes; old ordinary-catalog rewrites cannot erase the sidecar.
+  An unreadable sidecar leaves ordinary rows available, retains the original error
+  in the in-memory snapshot, and cannot be overwritten. Ordinary-only mutations
+  never rewrite the encrypted slice; Fleet reports only a scoped recoverable issue.
+  Remote-list reconciliation returns an explicit degraded cache receipt after
+  persisting ordinary rows, so current remote authorization and revocations still
+  apply. Publish the account/machine-bound `workspace-catalog.json.e2ee-invalid`
+  marker atomically before updating the encrypted slice; old v1 writers cannot
+  erase it. Keep it through failed writes and cleanup until healthy publication
+  clears it. The in-memory unavailable flag derives from this marker, never from
+  an unknown field in the ordinary v1 file; stale sidecar rows cannot bootstrap.
+  Fleet retains its bounded retry and pending signature until that receipt is healthy.

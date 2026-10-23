@@ -1,6 +1,6 @@
 import type { PayloadProtectionProvider } from '@loro-dev/streams-crdt';
 import type { E2eeWorkspaceRuntime } from '@lody/platform';
-import { createLoroStreamsTokenProviderLegacy } from '@lody/shared';
+import { createLoroStreamsTokenProviderLegacy, LoroStreamsTokenRequestSchema } from '@lody/shared';
 import {
   encryptedWorkspaceNamespace,
   encryptedWorkspaceResolver,
@@ -65,7 +65,13 @@ export function createDesktopE2eeContent(input: {
           fetchImpl: async (_url, init) => {
             const requestSignal = init?.signal ? AbortSignal.any([signal, init.signal]) : signal;
             requestSignal.throwIfAborted();
-            const response = await input.runtime.contentStreamsToken(input.workspaceId);
+            const request = LoroStreamsTokenRequestSchema.parse(JSON.parse(String(init?.body)));
+            if (request.workspaceId !== input.workspaceId)
+              throw new Error('e2ee_content_configuration');
+            const response = await input.runtime.contentStreamsToken(
+              input.workspaceId,
+              request.rejectedToken
+            );
             requestSignal.throwIfAborted();
             if (
               !response.bucketId ||

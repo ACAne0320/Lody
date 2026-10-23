@@ -429,6 +429,21 @@ export class LodyFleet {
       return;
     }
 
+    if (snapshot.encryptedCatalogError || snapshot.encryptedCatalogUnavailable) {
+      this.logger.warn(
+        '[fleet] Encrypted workspace catalog unavailable; ordinary cached workspaces remain usable.'
+      );
+      this.runtimeStateReporter.upsertIssue({
+        code: 'encrypted_workspace_catalog_unavailable',
+        severity: 'warning',
+        recoverable: true,
+        message:
+          'Encrypted workspace cache is unavailable. Its files have been preserved; retry after local storage recovers.',
+      });
+    } else {
+      this.runtimeStateReporter.clearIssue('encrypted_workspace_catalog_unavailable');
+    }
+
     const workspaces = snapshot.workspaces.filter((workspace) => workspace.state === 'active');
     if (workspaces.length === 0) {
       this.logger.debug('[fleet] Local workspace catalog is empty');
@@ -749,6 +764,7 @@ export class LodyFleet {
     // any pending offline grace timer before it detaches the data plane.
     this.cancelScheduledRemoteBridgeOffline();
     let revokedRunningWorkspaceIds = new Set<string>();
+    let encryptedCacheUnavailable = false;
     if (signature !== this.lastCachedWorkspaceSignature) {
       const reconcile = await remoteBridge.reconcileOnline({
         workspaces: [...result.workspaces],
@@ -761,7 +777,22 @@ export class LodyFleet {
       for (const workspaceId of revokedRunningWorkspaceIds) {
         this.remoteRevokedWorkspaceIds.add(workspaceId);
       }
-      this.lastCachedWorkspaceSignature = signature;
+      encryptedCacheUnavailable = !!reconcile.encryptedCatalogError;
+      if (encryptedCacheUnavailable) {
+        // Authorization/revocation already used the current remote result.
+        // Only the failed encrypted cache remains pending, without preventing
+        // healthy workspaces from starting or attaching.
+        this.runtimeStateReporter.upsertIssue({
+          code: 'encrypted_workspace_catalog_unavailable',
+          severity: 'warning',
+          recoverable: true,
+          message:
+            'Encrypted workspace cache is unavailable. Its files have been preserved; retry after local storage recovers.',
+        });
+      } else {
+        this.lastCachedWorkspaceSignature = signature;
+        this.runtimeStateReporter.clearIssue('encrypted_workspace_catalog_unavailable');
+      }
     }
     await this.applyWorkspaceList([...result.workspaces], {
       retainRunningWorkspaceIds: this.remoteRevokedWorkspaceIds,
@@ -769,7 +800,8 @@ export class LodyFleet {
     await remoteBridge.attachAllowedRuntimes(result.workspaces.map((workspace) => workspace.id));
     this.refreshRuntimeState();
     // A full apply succeeded; drop any pending reconcile retry + reset backoff.
-    this.clearReconcileRetry();
+    if (encryptedCacheUnavailable) this.scheduleReconcileRetry();
+    else this.clearReconcileRetry();
     this.runtimeStateReporter.clearIssue('workspace_list_apply_failed');
   }
 
@@ -847,6 +879,7 @@ export class LodyFleet {
       try {
         lody = await Lody.create({
           logger: workspaceLogger,
+          onStorageWriteFailure: () => this.runtimeStateReporter.reportStorageWriteFailure(),
           builtinAgentConfigCliTypes: this.builtinAgentConfigCliTypes,
           supportRegistryAgentTypes: this.supportRegistryAgentTypes,
           workspaceId: workspace.id as WorkspaceId,

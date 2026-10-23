@@ -6,14 +6,22 @@ import {
   type SessionId,
 } from '@lody/shared';
 import { Effect } from 'effect';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { getLodyDataDir } from '@lody/shared/node/installation-profile';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CatalogPermissionError,
+  makeLocalWorkspaceCatalog,
   type LocalWorkspaceCatalogService,
   type LocalWorkspaceCatalogSnapshot,
 } from '../src/lib/local-workspace-catalog';
 import { Lody } from '../src/lib/lody';
 import { LodyFleet } from '../src/lib/lody-fleet';
+import { RemoteBridge, type RemoteBridgeRuntime } from '../src/lib/remote-bridge';
+import { fileLocksLegacy } from '../src/utils/file-lock';
 import * as projectMeta from '../src/lib/local-project-meta';
 import * as scheduleWorkspace from '../src/lib/schedules/schedule-workspace';
 import { createCloudPrAssociationPort } from '../src/lib/cloud-pr-association';
@@ -135,6 +143,160 @@ const activeWorkspace = (
 });
 
 describe('LodyFleet local catalog bootstrap', () => {
+  it('reconciles ordinary starts and revocations through a failed encrypted sidecar, then repairs with unchanged remote input', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'fleet-e2ee-cache-reconcile-'));
+    const filePath = join(directory, 'workspace-catalog.json');
+    const sidecar = `${filePath}.e2ee`;
+    const catalog = makeLocalWorkspaceCatalog({
+      filePath,
+      lockName: `cache-${basename(directory)}`,
+      cacheTtlMs: 0,
+    });
+    const ordinary = { id: 'ordinary', name: 'Ordinary', slug: null, role: 'owner' };
+    const removed = { id: 'removed', name: 'Removed', slug: null, role: 'owner' };
+    const encrypted = {
+      id: 'encrypted',
+      name: 'Encrypted',
+      slug: null,
+      role: 'owner',
+      contentMode: 'e2ee',
+      genesisHash: 'ab'.repeat(32),
+    };
+    const identity = { userId: 'user-1' };
+    const machine = { machineId: 'machine-1', machineName: 'host' };
+    await fileLocksLegacy.runPromise(
+      catalog.cacheRemoteWorkspaces({ identity, machine, workspaces: [removed, encrypted] })
+    );
+    const healthy = await readFile(sidecar, 'utf8');
+    const damaged = '{preserve damaged encrypted discovery';
+    await writeFile(sidecar, damaged);
+    const harness = createFleetHarness(catalog);
+    const events: string[] = [];
+    const issues = new Set<string>();
+    harness.runtimeStateReporter.upsertIssue.mockImplementation((issue) => {
+      issues.add(issue.code);
+    });
+    harness.runtimeStateReporter.clearIssue.mockImplementation((code) => {
+      issues.delete(code);
+    });
+    const state = (workspace: typeof ordinary) => {
+      let attached = false;
+      return {
+        workspace,
+        lody: {
+          isControlPlaneReady: () => true,
+          isControlPlaneRecovering: () => false,
+          isRemoteBridgeAttached: () => attached,
+          getActiveSessionCount: () => 0,
+          getConnectedRoomCount: () => 0,
+          attachRemoteBridge: async () => {
+            attached = true;
+            events.push(`${workspace.id}:attach`);
+          },
+          detachRemoteBridge: async () => {
+            attached = false;
+          },
+          handleRemoteAccessRevoked: async () => {
+            attached = false;
+            events.push(`${workspace.id}:revoked`);
+          },
+        },
+      };
+    };
+    const fleet = harness.fleet as unknown as {
+      runtimes: Map<string, ReturnType<typeof state>>;
+      waitingForPairing: Set<string>;
+      remoteBridge: RemoteBridge;
+      startWorkspace(workspace: typeof ordinary & { contentMode?: string }): Promise<void>;
+      applyRemoteWorkspaceList(input: unknown): Promise<void>;
+      lastCachedWorkspaceSignature: string | null;
+      lastValidWorkspaceListResult: unknown;
+      reconcileRetryTimer: ReturnType<typeof setTimeout> | null;
+      clearReconcileRetry(): void;
+    };
+    fleet.runtimes.set(removed.id, state(removed));
+    fleet.startWorkspace = async (workspace) => {
+      if (workspace.contentMode === 'e2ee') {
+        fleet.waitingForPairing.add(workspace.id);
+        return;
+      }
+      events.push(`${workspace.id}:start`);
+      fleet.runtimes.set(workspace.id, state(workspace));
+    };
+    fleet.remoteBridge = new RemoteBridge({
+      logger: createSilentLogger(),
+      catalog,
+      userId: 'user-1',
+      machineId: 'machine-1' as MachineId,
+      machineName: 'host',
+      getRuntime: (id) => fleet.runtimes.get(id)?.lody as RemoteBridgeRuntime | undefined,
+    });
+    const remote = { status: 'authorized', userId: 'user-1', workspaces: [ordinary, encrypted] };
+    fleet.lastValidWorkspaceListResult = remote;
+    try {
+      await fleet.applyRemoteWorkspaceList(remote);
+      expect(events).toEqual(['removed:revoked', 'ordinary:start', 'ordinary:attach']);
+      expect(issues.has('encrypted_workspace_catalog_unavailable')).toBe(true);
+      expect(fleet.lastCachedWorkspaceSignature).toBeNull();
+      expect(fleet.reconcileRetryTimer).not.toBeNull();
+      // Cancel the real scheduled retry synchronously; drive its same entry
+      // explicitly after repair, without faking the native Effect scheduler.
+      fleet.clearReconcileRetry();
+      expect(await readFile(sidecar, 'utf8')).toBe(damaged);
+      expect(
+        (
+          await fileLocksLegacy.runPromise(makeLocalWorkspaceCatalog({ filePath }).read())
+        ).workspaces.map((workspace) => workspace.workspaceId)
+      ).toEqual(['ordinary', 'removed']);
+      await writeFile(sidecar, healthy);
+      await fleet.applyRemoteWorkspaceList(remote);
+      expect(issues.has('encrypted_workspace_catalog_unavailable')).toBe(false);
+      expect(fleet.lastCachedWorkspaceSignature).not.toBeNull();
+      expect(fleet.reconcileRetryTimer).toBeNull();
+      expect(
+        (
+          await fileLocksLegacy.runPromise(makeLocalWorkspaceCatalog({ filePath }).read())
+        ).workspaces.map((workspace) => workspace.workspaceId)
+      ).toEqual(['ordinary', 'removed', 'encrypted']);
+    } finally {
+      fleet.clearReconcileRetry();
+      fleet.remoteBridge.shutdown();
+      vi.useRealTimers();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('starts ordinary offline rows and clears its scoped issue after the encrypted index recovers', async () => {
+    let broken = true;
+    const original = new CatalogPermissionError({
+      path: '/synthetic/workspace-catalog.json.e2ee',
+      cause: new Error('synthetic EACCES'),
+    });
+    const { fleet, started, runtimeStateReporter } = createFleetHarness(
+      createCatalogStub(() =>
+        Effect.succeed({
+          ...catalogSnapshot({
+            workspaces: [activeWorkspace('ordinary', 'Ordinary', null, 'owner')],
+          }),
+          ...(broken ? { encryptedCatalogError: original } : {}),
+        })
+      )
+    );
+    const issues = new Set<string>();
+    runtimeStateReporter.upsertIssue.mockImplementation((issue) => {
+      issues.add(issue.code);
+    });
+    runtimeStateReporter.clearIssue.mockImplementation((code) => {
+      issues.delete(code);
+    });
+    await fleet.bootstrapFromLocalCatalog();
+    expect(started).toEqual(['ordinary']);
+    expect(issues.has('encrypted_workspace_catalog_unavailable')).toBe(true);
+    broken = false;
+    await fleet.bootstrapFromLocalCatalog();
+    expect(issues.has('encrypted_workspace_catalog_unavailable')).toBe(false);
+  });
+
   it('starts cached local workspaces before remote reconcile', async () => {
     const catalog = createCatalogStub(() =>
       Effect.succeed(
@@ -586,6 +748,86 @@ it.each(['e2ee_pairing_required', 'e2ee_storage_failed'])(
     }
   }
 );
+
+it('waits silently for pairing when an activated machine has lost its custody', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'fleet-e2ee-custody-loss-'));
+  vi.stubEnv('LODY_DATA_DIR', directory);
+  const { openCliE2eeWorkspaceLegacy } = await import('../src/lib/e2ee/workspace-legacy');
+  const workspace = {
+    id: 'lost-custody',
+    name: 'Lost custody',
+    slug: null,
+    role: 'owner',
+    contentMode: 'e2ee',
+    genesisHash: 'ab'.repeat(32),
+  };
+  const root = join(
+    getLodyDataDir(),
+    'e2ee',
+    createHash('sha256').update('user-1').digest('hex'),
+    workspace.id
+  );
+  await mkdir(root, { recursive: true });
+  await writeFile(
+    join(root, 'binding.json'),
+    JSON.stringify({
+      workspaceId: workspace.id,
+      genesisHash: workspace.genesisHash,
+      genesisRecordHex: 'aa',
+    })
+  );
+  await writeFile(
+    join(root, 'activation.json'),
+    JSON.stringify({ genesisHash: workspace.genesisHash, signingPublicKey: 'cd'.repeat(32) })
+  );
+  const create = vi.spyOn(Lody, 'create').mockImplementation(async () => {
+    await openCliE2eeWorkspaceLegacy({
+      accountId: 'user-1',
+      workspaceId: workspace.id,
+      genesisHash: workspace.genesisHash,
+      cloud: {} as never,
+      onUnavailable: () => {},
+      keyring: async () => {
+        throw new Error('missing custody must not probe the keyring');
+      },
+    });
+    throw new Error('missing original must not open a runtime');
+  });
+  const harness = createFleetHarness(createCatalogStub(() => Effect.succeed(catalogSnapshot({}))));
+  const issues = new Set<string>();
+  harness.runtimeStateReporter.upsertIssue.mockImplementation((issue) => {
+    issues.add(issue.code);
+  });
+  harness.runtimeStateReporter.clearIssue.mockImplementation((code) => {
+    issues.delete(code);
+  });
+  const fleet = harness.fleet as unknown as {
+    desiredWorkspaces: Map<string, unknown>;
+    retryTimers: Map<string, ReturnType<typeof setTimeout>>;
+    waitingForPairing: Set<string>;
+    startWorkspace(workspace: never): Promise<void>;
+    stopped: boolean;
+  };
+  delete (fleet as unknown as { startWorkspace?: unknown }).startWorkspace;
+  fleet.desiredWorkspaces.set(workspace.id, workspace);
+  vi.useFakeTimers();
+  try {
+    await fleet.startWorkspace(workspace as never);
+    expect(fleet.waitingForPairing.has(workspace.id)).toBe(true);
+    expect(fleet.retryTimers.size).toBe(0);
+    expect(issues.has(`workspace_start_failed:${workspace.id}`)).toBe(false);
+    expect(issues.has('workspace_runtime_retrying')).toBe(false);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fleet.retryTimers.size).toBe(0);
+    await expect(stat(join(root, 'custody'))).rejects.toHaveProperty('code', 'ENOENT');
+  } finally {
+    fleet.stopped = true;
+    create.mockRestore();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 it.each(['EMFILE', 'EACCES'])(
   'retries an encrypted workspace after %s clears without requiring activation',

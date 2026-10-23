@@ -51,6 +51,7 @@ import type {
   LocalSessionControlResponse
 } from '@lody/shared/message'
 import type {
+  CliRuntimeState,
   ElectronCliState,
   RestartCliResult,
   SendLocalMachineRpcResult,
@@ -252,6 +253,8 @@ type MachineIdLookupOptions = {
 type CliServiceOptions = {
   resolveBootstrapSession?: () => Promise<BootstrapSession | null>
   executionHost?: DesktopExecutionHost
+  /** Every runtime-state snapshot the Supervisor observes. */
+  onRuntimeState?: (runtime: CliRuntimeState) => void
 }
 
 function resolveLocalProjectControlTimeoutMs(type: LocalProjectControlRequest['type']): number {
@@ -505,6 +508,7 @@ export class CliService {
   private supervisor: CliSupervisor | null = null
   private readonly supervisorInstanceId: string
   private readonly executionHost: DesktopExecutionHost | undefined
+  private readonly onRuntimeState: ((runtime: CliRuntimeState) => void) | undefined
   private readonly supervisorToken = `${randomUUID()}${randomUUID()}`
   private hostLease: LocalCliHostLease | null = null
   /** The last Host acquisition was refused by an endpoint this process may not open. */
@@ -518,6 +522,7 @@ export class CliService {
   constructor(options: CliServiceOptions = {}) {
     this.resolveBootstrapSession = options.resolveBootstrapSession
     this.executionHost = options.executionHost
+    this.onRuntimeState = options.onRuntimeState
     this.supervisorInstanceId = options.executionHost?.instanceId ?? randomUUID()
     const settings = readElectronSettings()
     if (typeof settings.preventSleepEnabled === 'boolean') {
@@ -600,6 +605,7 @@ export class CliService {
         if (runtime?.machineId) {
           this.cachedMachineId = runtime.machineId
         }
+        if (runtime) this.onRuntimeState?.(runtime)
         this.publishCliState()
         this.updatePowerSaveBlocker()
       }
@@ -806,19 +812,39 @@ export class CliService {
   async prepareLocalE2eeDevice(message: LocalE2eePrepareRequest) {
     if (!this.cliAutoStartEnabled) throw new Error('e2ee_local_agent_disabled')
     return Effect.runPromise(
-      this.localControlClient.e2eePrepare(message, { timeoutMs: 30_000 })
-    ).catch(() => {
-      throw new Error('e2ee_local_agent_unavailable')
-    })
+      this.localControlClient
+        .e2eePrepare(message, { timeoutMs: 30_000 })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new Error(
+                error._tag === 'IpcTimeoutError'
+                  ? 'e2ee_local_agent_pending'
+                  : 'e2ee_local_agent_unavailable',
+                { cause: error }
+              )
+          )
+        )
+    )
   }
 
   async activateLocalE2eeDevice(message: LocalE2eeActivateRequest) {
     if (!this.cliAutoStartEnabled) throw new Error('e2ee_local_agent_disabled')
     return Effect.runPromise(
-      this.localControlClient.e2eeActivate(message, { timeoutMs: 30_000 })
-    ).catch(() => {
-      throw new Error('e2ee_local_agent_unavailable')
-    })
+      this.localControlClient
+        .e2eeActivate(message, { timeoutMs: 30_000 })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new Error(
+                error._tag === 'IpcTimeoutError'
+                  ? 'e2ee_local_agent_pending'
+                  : 'e2ee_local_agent_unavailable',
+                { cause: error }
+              )
+          )
+        )
+    )
   }
 
   async sendLocalSessionControl(

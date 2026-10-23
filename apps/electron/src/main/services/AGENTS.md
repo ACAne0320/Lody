@@ -29,6 +29,11 @@ access without a new capability/security decision in the owning
 [Spec](../../../../../specs/desktop-devbar.md) and
 [Agent Note](../../../../../.agents/notes/implemented/feature/2026-09-16-devbar-hub-ui.md).
 
+The disk-full guard (`storage-guard.ts`) blocks only after a Lody storage write failed
+AND a volume holding Lody data is then found short of space; never block on space alone.
+It leaves only by relaunch or quit, and never pauses background agents
+([decision](../../../../../.agents/notes/proposed/feature/2026-10-22-desktop-disk-full-guard.md)).
+
 ## Public browser
 
 - The public browser (`services/public-browser-service.ts`) has NO network guard:
@@ -92,29 +97,27 @@ replacement before release. See the
 
 ## E2EE runtime
 
-`e2ee-account-runtime.ts` lazily owns account custody; `e2ee-runtime.mts` owns each
-workspace's core feed/pin/keys. Window leases and account/quit serialization await
-native work before release. Use only main-auth cached identity for E2EE IPC; never
-wait for auth network under the account lock. Recheck identity/generation after native
-open. Availability-only failures retain the pinned renderer read path; evidence conflicts
-never fall back. Originals commit before feed/pin; verification/storage failures close
-the owner. Overlapping pages compare the verified original prefix and append only new
-records; malformed input does not close shared readers. Retain old renderer checkpoints on first takeover; insufficient history
-stays pending. Full boundaries: [M1 note](../../../../../.agents/notes/implemented/architecture/2026-10-21-e2ee-m1-runtime-boundaries.md).
+For E2EE changes, read [M1 boundaries](../../../../../.agents/notes/implemented/architecture/2026-10-21-e2ee-m1-runtime-boundaries.md)
+and [M2 boundaries](../../../../../.agents/notes/proposed/architecture/2026-10-22-e2ee-m2-product-integration.md).
+Account custody is lazy; native work settles before release. Use cached main-auth
+identity, rechecking identity/generation after native open; never wait for network
+under custody locks. Availability may use pinned renderer reads; evidence conflicts
+never fall back. Persist originals before feed/pin. Verification/storage failure
+closes its owner; malformed input does not close shared readers. Compare overlapping
+verified originals, retain renderer checkpoints on takeover, and wait for missing history.
 
-The optional `e2ee-cloud-client.mts` owns only fixed E2EE Convex references and
-adapts `KeyMailbox`. Construct it only for cloud E2EE accounts, and invoke its
-network Effects outside the account custody lock. Each request gets its own SDK
-auth/abort state and a bounded deadline; disposal aborts HTTP and prevents late
-auth completion from starting another request. Never retry an uncertain write by
-regenerating bytes: the caller retains and reconciles the original request. SDK
-logs and raw causes do not escape this adapter. Its wire validation is structural;
-core remains responsible for signatures, ledger authority, and envelope opening.
+Cloud calls use fixed E2EE references and per-request auth/abort/deadlines;
+disposal blocks late requests. Keep
+network/key distribution outside custody locks. Caller journals retain exact bytes
+for uncertain writes. Wire checks are structural; core owns signatures/authority.
+SDK logs and raw causes cannot cross the adapter/IPC logging boundary.
 
-`e2ee-local-pairing.mts` journals the main-generated session and exact signed
-admission before HTTP. Stage verifies the machine's session-bound credential and
-proof locally; only explicit approval signs. Confirm uses verified ledger originals,
-not a server hint. Pairing I/O and key distribution stay outside custody locks;
-activation waits for CLI key installation before content sync starts.
-
-Pairing resets only unsigned or verified settled records (exact commit/competing parent); keep uncertain bytes. Re-prepare on retry; new sessions need consent. Missing credentials block preparation/approval; never export them via IPC.
+Pairing journals its main-generated session and exact admission before HTTP.
+Verify machine proofs locally; explicit consent precedes signing. Confirm from
+verified originals, then await CLI current-key installation before content sync.
+Reset only unsigned or verified settled records (exact commit/competing parent);
+keep uncertain bytes. Re-prepare retries; new sessions require consent. Missing
+credentials block preparation/approval; never export them via IPC. A socket deadline
+bounds waiting, not completion: timeout is pending, never rejection or approval.
+Keep original append/confirmation errors in main; verified readback wins over a
+lost ack, and only stable cause-free errors cross renderer IPC.

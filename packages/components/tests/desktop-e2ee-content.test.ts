@@ -10,6 +10,49 @@ const context = {
 } as const;
 
 describe('desktop E2EE content epoch safety', () => {
+  it('replaces a gateway-rejected cached token through the native token capability', async () => {
+    let cached = 'cached-token';
+    const rejected: Array<string | undefined> = [];
+    const runtime = {
+      contentStreamsToken: async (workspaceId: string, rejectedToken?: string) => {
+        expect(workspaceId).toBe('workspace');
+        rejected.push(rejectedToken);
+        if (rejectedToken === cached) cached = 'replacement-token';
+        return {
+          token: cached,
+          bucketId: 'encrypted-content',
+          gatewayBaseUrl: 'https://streams.example.com',
+          expiresIn: 900,
+          expiresAt: 1_900_000_000_000,
+        };
+      },
+    } as unknown as E2eeWorkspaceRuntime;
+    const access = createDesktopE2eeContent({
+      runtime,
+      workspaceId: 'workspace',
+      genesisHash: '11'.repeat(32),
+      epoch: 0,
+      authToken: () => 'account-token',
+    });
+    const provider = access.e2ee.createTokenProvider(new AbortController().signal);
+    const authenticate = provider.createAuthCallback();
+    try {
+      expect(await authenticate({ reason: 'request' })).toBe('cached-token');
+      // This is the callback the Streams transport uses after a gateway 401.
+      expect(await authenticate({ reason: 'unauthorized', previousToken: 'cached-token' })).toBe(
+        'replacement-token'
+      );
+      expect(rejected).toEqual([undefined, 'cached-token']);
+      // A delayed rejection of the old token cannot replace the healthy token.
+      expect(await authenticate({ reason: 'unauthorized', previousToken: 'cached-token' })).toBe(
+        'replacement-token'
+      );
+      expect(cached).toBe('replacement-token');
+    } finally {
+      await provider.close();
+    }
+  });
+
   it.each([
     { epoch: 1, rotationRequired: false },
     { epoch: 0, rotationRequired: true },

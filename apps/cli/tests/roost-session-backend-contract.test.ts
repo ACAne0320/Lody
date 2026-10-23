@@ -2534,19 +2534,50 @@ describe('Production Roost history semantics', () => {
         const finalText = chunks.join('');
         const visible = peerDocs.map(() => Promise.withResolvers<void>());
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-        const ticks: number[] = [];
+        type Timer = Parameters<typeof clearTimeout>[0];
+        const recoveryTimers = new Map<Timer, () => void>();
+        const watchTimeouts = new Map<Timer, () => void>();
         let timerReady = Promise.withResolvers<void>();
         const setTimer = globalThis.setTimeout;
+        const clearTimer = globalThis.clearTimeout;
         vi.spyOn(globalThis, 'setTimeout').mockImplementation((...args) => {
-          const timer = setTimer(...args);
-          // Advance scheduled recovery explicitly, without expiring a parked
-          // 15-second owner watch or relying on native I/O scheduling speed.
-          if (args[1] === 0 || args[1] === 500) {
-            ticks.push(args[1]);
-            timerReady.resolve();
-          }
+          const scheduled =
+            args[1] === 0 || args[1] === 500
+              ? recoveryTimers
+              : args[1] === 15_000
+                ? watchTimeouts
+                : undefined;
+          if (!scheduled) return setTimer(...args);
+          const run = () => {
+            if (!scheduled.delete(timer)) return;
+            clearTimer(timer);
+            args[0](...args.slice(2));
+          };
+          const timer = setTimer(run, args[1]);
+          scheduled.set(timer, run);
+          if (scheduled === recoveryTimers) timerReady.resolve();
           return timer;
         });
+        vi.spyOn(globalThis, 'clearTimeout').mockImplementation((timer) => {
+          recoveryTimers.delete(timer);
+          watchTimeouts.delete(timer);
+          clearTimer(timer);
+        });
+        const driveRecoveryUntil = async (completed: Promise<unknown>) => {
+          for (;;) {
+            const outcome = await Promise.race([
+              completed.then(() => 'completed' as const),
+              (recoveryTimers.size ? Promise.resolve() : timerReady.promise).then(
+                () => 'recovery' as const
+              ),
+            ]);
+            if (outcome === 'completed') return;
+            timerReady = Promise.withResolvers<void>();
+            // Nested zero-delay timers can land at fake now + 1. Drive live
+            // callbacks, not requested delays, without expiring RPC deadlines.
+            recoveryTimers.values().next().value?.();
+          }
+        };
         for (const [index, peerDoc] of peerDocs.entries()) {
           const peer = createRemoteRoostSessionDataFactory({
             accountId: `synthetic-peer-${index}`,
@@ -2588,8 +2619,8 @@ describe('Production Roost history semantics', () => {
           stops.push(observation.unsubscribe);
           await observation.initial;
         }
-        await vi.advanceTimersByTimeAsync(0);
-        await parked.promise;
+        await driveRecoveryUntil(parked.promise);
+        expect(watchTimeouts.size).toBe(2);
         host.enqueueACPUpdate(sessionId, {
           sessionId,
           update: {
@@ -2626,18 +2657,14 @@ describe('Production Roost history semantics', () => {
         }
         await host.flushACPUpdatesNow(sessionId);
         expect(host.store.get(sessionId).acpUpdateBuffer).toEqual([]);
-        const displayed = Promise.all(visible.map((result) => result.promise));
-        for (;;) {
-          const outcome = await Promise.race([
-            displayed.then(() => 'displayed' as const),
-            (ticks.length ? Promise.resolve() : timerReady.promise).then(() => 'tick' as const),
-          ]);
-          if (outcome === 'displayed') break;
-          timerReady = Promise.withResolvers<void>();
-          const delay = ticks.shift();
-          if (delay === undefined) throw new Error('Missing scheduled recovery');
-          await vi.advanceTimersByTimeAsync(delay);
+        if (lostNativeReply) {
+          // A committed write whose reply is lost can miss the owner wakeup.
+          // Release the already parked watches through their timeout callback:
+          // fake time must not leave this production recovery path frozen, and
+          // advancing the global clock could expire unrelated RPC deadlines.
+          [...watchTimeouts.values()].forEach((expire) => expire());
         }
+        await driveRecoveryUntil(Promise.all(visible.map((result) => result.promise)));
         const expected = {
           id: assistantId,
           items: [

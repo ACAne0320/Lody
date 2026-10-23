@@ -1,5 +1,9 @@
 import { useWorkspaceFeature } from '@/hooks/use-workspace-feature';
 import { FileLinkCandidateDialog } from './file-link-candidate-dialog';
+import {
+  useArchiveConfirmationRequest,
+  useArchiveSessionWithConfirmation,
+} from './session-archive-confirmation';
 import type { FileLinkCandidate } from '@lody/shared';
 import { getIpcServices } from '@/lib/electron-ipc-client';
 import { buildDraftUserHistoryEntry } from '@/lib/session-attachment-draft';
@@ -1060,9 +1064,12 @@ const SessionDetail = ({
   const windowsCaptionBorderedRowPadClass = useWindowsCaptionRowPadClass({
     bottomBorder: true,
   });
-  const macTrafficLightRowPadClass = useMacTrafficLightRowPadClass();
+  const macTrafficLightRowPadClass = useMacTrafficLightRowPadClass({
+    insideWorkspaceFrame: true,
+  });
   const macTrafficLightBorderedRowPadClass = useMacTrafficLightRowPadClass({
     bottomBorder: true,
+    insideWorkspaceFrame: true,
   });
   // Publish ephemeral "viewing this session" presence (drives the owning
   // machine's PR poller priority); actively cleared on switch/hide/unmount.
@@ -3008,37 +3015,47 @@ const SessionDetail = ({
     [router, workspaceSlug]
   );
 
+  const archiveSessionWithConfirmation = useArchiveSessionWithConfirmation(archiveSession);
+  const requestArchiveConfirmation = useArchiveConfirmationRequest();
   // Archive the parent session from the header menu (desktop)
   const handleArchiveCurrentSession = useCallback(async () => {
     if (!activeSession) return;
-    await archiveSession(activeSession.id);
+    if (!(await archiveSessionWithConfirmation(activeSession.id))) return;
     handleBackToList();
-  }, [activeSession, archiveSession, handleBackToList]);
+  }, [activeSession, archiveSessionWithConfirmation, handleBackToList]);
 
-  // Archive the active tab (mobile more menu) — archives child if child is active, parent otherwise
-  const handleArchiveActiveTab = useCallback(async () => {
-    if (!activeSession || isEmptyConversation) return;
-    if (activeDraftTab) {
-      closeDraftTab(activeDraftTab.id);
-      return;
-    }
-    if (activeTabSessionId && activeTabSessionId !== sessionId) {
-      await archiveSession(activeTabSessionId as SessionId);
-    } else {
-      // Archiving the parent
-      await archiveSession(activeSession.id);
-      handleBackToList();
-    }
-  }, [
-    activeDraftTab,
-    activeSession,
-    activeTabSessionId,
-    archiveSession,
-    closeDraftTab,
-    handleBackToList,
-    isEmptyConversation,
-    sessionId,
-  ]);
+  // Archive the active tab (mobile more menu, keyboard shortcut) — archives child if
+  // child is active, parent otherwise. `confirm` always asks (the shortcut is easy to
+  // fire by accident); the one shared dialog then also carries the sub-conversation
+  // choice, so it never stacks a second confirmation.
+  const handleArchiveActiveTab = useCallback(
+    async (options?: { confirm?: boolean }) => {
+      if (!activeSession || isEmptyConversation) return;
+      if (activeDraftTab) {
+        if (options?.confirm && (await requestArchiveConfirmation()) === null) return;
+        closeDraftTab(activeDraftTab.id);
+        return;
+      }
+      if (activeTabSessionId && activeTabSessionId !== sessionId) {
+        await archiveSessionWithConfirmation(activeTabSessionId as SessionId, options);
+      } else {
+        // Archiving the parent
+        if (!(await archiveSessionWithConfirmation(activeSession.id, options))) return;
+        handleBackToList();
+      }
+    },
+    [
+      activeDraftTab,
+      activeSession,
+      activeTabSessionId,
+      archiveSessionWithConfirmation,
+      requestArchiveConfirmation,
+      closeDraftTab,
+      handleBackToList,
+      isEmptyConversation,
+      sessionId,
+    ]
+  );
 
   // Restore the current archived session from the header menu. Restore is a
   // lifecycle action only; every tab keeps its close state.
@@ -3063,12 +3080,6 @@ const SessionDetail = ({
 
   // Confirmation state for permanently deleting the current archived session
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-
-  // Confirmation state for archiving the current chat via the keyboard shortcut. The
-  // shortcut is easy to fire by accident, so it asks before archiving (Enter confirms,
-  // Esc cancels). Menu/button archive actions stay immediate.
-  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
-  const archiveConfirmButtonRef = useRef<HTMLButtonElement>(null);
 
   // Rename dialog target for the mobile header more menu
   const [renameDialogTarget, setRenameDialogTarget] = useState<RenameSessionDialogTarget | null>(
@@ -4886,7 +4897,7 @@ const SessionDetail = ({
     when: () =>
       Boolean(activeTabSession) && !isEmptyConversation && activeSession?.isArchived !== true,
     run: () => {
-      setArchiveConfirmOpen(true);
+      void handleArchiveActiveTab({ confirm: true });
     },
   });
 
@@ -5867,42 +5878,6 @@ const SessionDetail = ({
     </Dialog.Root>
   );
 
-  const archiveConfirmDialog = (
-    <Dialog.Root open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
-      <Dialog.Content
-        className={cn(isMobile ? '' : 'max-w-sm')}
-        // Focus the confirm button on open so Enter archives; Esc still cancels (Radix
-        // default close-on-escape). Rejected onKeyDown-on-content: it double-fires when a
-        // button already has focus.
-        initialFocus={() => archiveConfirmButtonRef.current}
-      >
-        <Dialog.Header>
-          <Dialog.Title>{t('sessions.archiveConfirm.title', 'Archive chat?')}</Dialog.Title>
-          <Dialog.Description>
-            {t(
-              'sessions.archiveConfirm.description',
-              'This chat will move to the archive. You can restore it later.'
-            )}
-          </Dialog.Description>
-        </Dialog.Header>
-        <Dialog.Footer>
-          <Button variant="secondary" onClick={() => setArchiveConfirmOpen(false)}>
-            {t('common.cancel', 'Cancel')}
-          </Button>
-          <Button
-            ref={archiveConfirmButtonRef}
-            onClick={() => {
-              setArchiveConfirmOpen(false);
-              void handleArchiveActiveTab();
-            }}
-          >
-            {t('sessions.archiveConfirm.confirm', 'Archive')}
-          </Button>
-        </Dialog.Footer>
-      </Dialog.Content>
-    </Dialog.Root>
-  );
-
   const worktreeForkObservers = Object.entries(pendingForks)
     .filter(
       ([, pending]) => pending.placement === 'worktree' && pending.phase === 'awaiting-history'
@@ -5997,6 +5972,7 @@ const SessionDetail = ({
         htmlPreviewRequestSeq={tab.htmlPreviewRequestSeq}
         saveRequestSeq={viewerTabSaveStates[tab.id]?.saveRequestSeq ?? 0}
         copyMarkdownRequestSeq={viewerTabSaveStates[tab.id]?.copyMarkdownRequestSeq ?? 0}
+        sessionLinksEnabled={!!handleNavigateSession}
         defaultHtmlPreview={isMobile}
         preferNativeMarkdownSelection={isMobile}
         onAddSelectionToChat={
@@ -6887,7 +6863,6 @@ const SessionDetail = ({
         </Drawer>
         {fileQuickOpenDialog}
         {deleteConfirmDialog}
-        {archiveConfirmDialog}
         {dirtyForkDialog}
         {fileLinkDialog}
         {worktreeForkObservers}
@@ -7085,11 +7060,9 @@ const SessionDetail = ({
         ).className,
         // The macOS traffic lights sit over the LEFT sidebar (or, when it is
         // collapsed, over the horizontally-cleared `pl-[4.5rem]` gap below),
-        // never over this top bar — so it must not reserve vertical inset.
-        //
-        // Flush with the window/sidebar top so this h-11 row shares y=0 with
-        // the sidebar header; the macOS row pad centers its controls on the
-        // traffic-light centerline. Re-derive if the row or pill height changes.
+        // never over this top bar. The row begins below WorkspaceCard's thin
+        // top rim, so its frame-aware pad lifts controls onto the same y=23
+        // centreline without removing their visual clearance from the card.
         macTrafficLightRowPadClass,
         windowsCaptionRowPadClass,
         !isSidebarVisible && windowsCaptionPadClass
@@ -7368,10 +7341,9 @@ const SessionDetail = ({
         sidebarRestoreSeq={sidebarRestoreSeq}
       />
       {/* These dialogs live at the desktop root too (the mobile branch renders its own
-          copies) so the `session.renameCurrent` / `session.archiveCurrent` keyboard
-          shortcuts have a mounted target on desktop. They portal out, so tree position
+          copies) so keyboard shortcuts such as `session.renameCurrent` have a mounted
+          target on desktop. They portal out, so tree position
           doesn't matter. */}
-      {archiveConfirmDialog}
       {dirtyForkDialog}
       {fileLinkDialog}
       {worktreeForkObservers}

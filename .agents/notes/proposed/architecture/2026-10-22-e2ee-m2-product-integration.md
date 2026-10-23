@@ -48,4 +48,26 @@ Backend interfaces must deploy before dependent client merges; public-pointer ad
 
 Local terminal entry preserves ordinary running/degraded behavior. During aggregate reconnecting it requires a running local agent with completed native startup and the active workspace in its runtime snapshot; another workspace's retry cannot disable that terminal. Missing target runtimes, unavailable processes and incomplete startup remain blocked. Native session authorization is unchanged. Component tests drive actual CLI-state IPC through the daemon hook and dock to terminal-open IPC, including target recovery without remounting.
 
-CLI discovery opts into encrypted candidates explicitly; released clients retain their plaintext-only catalog contract. Unsigned pairing materials may be replaced. Signed materials remain immutable until verified original history proves their exact commit or a competing child at the signed parent; retained-state reopen uses the persisted verified prefix. A new session invalidates old approval and requires new consent. After machine custody loss, per-device runtime stores retain old evidence without attempting to decrypt it under the replacement KEK. Only verified admission and current-key installation allow replacing a same-genesis activation hint. Waiting for pairing creates no startup issue, global offline status or timed retry; list updates do not retry it. Only ENOENT opening an activation/binding file enters that wait: other file-open failures retain the original error and existing Fleet retry, so restored file access can recover without activation or restart. Symlink, malformed-file and genesis checks still reject unsafe state. Tests inject file-open failure with real installed keys, then reopen after recovery; fake-clock Fleet tests verify retry reaches a live runtime. Activation binds the verified approved key, releases a different live device before installing its replacement, and retries a retained failed cleanup through its existing owner before starting new work. These changes do not grant cloud or ledger authority from a local hint.
+CLI discovery opts into encrypted candidates explicitly; released clients retain their plaintext-only catalog contract. Unsigned pairing materials may be replaced. Signed materials remain immutable until verified original history proves their exact commit or a competing child at the signed parent; retained-state reopen uses the persisted verified prefix. A new session invalidates old approval and requires new consent. After machine custody loss, per-device runtime stores retain old evidence without attempting to decrypt it under the replacement KEK. Only verified admission and current-key installation allow replacing a same-genesis activation hint. Waiting for pairing creates no startup issue, global offline status or timed retry; list updates do not retry it. Only ENOENT opening an activation/binding file or approved device original enters that wait: other file-open failures retain the original error and existing Fleet retry, so restored file access can recover without activation or restart. Symlink, malformed-file and genesis checks still reject unsafe state. Tests inject file-open failure with real installed keys, then reopen after recovery; fake-clock Fleet tests verify retry reaches a live runtime. Activation binds the verified approved key, releases a different live device before installing its replacement, and retries a retained failed cleanup through its existing owner before starting new work. These changes do not grant cloud or ledger authority from a local hint.
+
+
+Machine startup checks the approved device original before opening custody. A missing
+original waits for pairing without probing the keystore or scheduling Fleet retries;
+corruption and other I/O failures retain their original error. Ordinary catalog rows
+remain in the version-1 file; encrypted rows use a separate account/machine-bound
+file that released clients cannot read. An encrypted cache failure preserves its
+bytes and diagnostic while ordinary discovery, remote authorization and revocation
+continue. A persisted cache fence prevents stale encrypted rows from being adopted
+offline until a healthy reconciliation repairs the cache.
+
+Desktop token renewal forwards the rejected token to invalidate the corresponding
+server cache entry. Pairing readback determines the business result: a verified
+commit wins over a lost append acknowledgement. If confirmation also fails, main
+retains both original failures locally and exposes only a stable cause-free IPC
+error. A bounded local-agent timeout reports pending work, with explicit retry
+rather than claiming cancellation or successful activation.
+
+A temporary local ledger storage failure is retried through the existing coalesced
+refresh when the SDK retries a pending send; it does not depend on a network
+reconnect. Signature, pin and epoch failures keep sends blocked. Local edits remain
+durable throughout, and failed cleanup remains owned by the original owner.

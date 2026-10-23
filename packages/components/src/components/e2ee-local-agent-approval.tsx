@@ -86,8 +86,13 @@ export function E2eeLocalAgentApproval({
         setAdmitted(true);
         setPhase(result.ready ? 'ready' : 'waiting');
       }
-    } catch {
-      if (active.current) setPhase('error');
+    } catch (error) {
+      if (active.current)
+        setPhase(
+          error instanceof Error && error.message.includes('e2ee_local_agent_pending')
+            ? 'waiting'
+            : 'error'
+        );
     }
   };
   const prepare = async () => {
@@ -111,8 +116,13 @@ export function E2eeLocalAgentApproval({
         approved.current = false;
         setPhase('confirm');
       }
-    } catch {
-      if (active.current) setPhase('error');
+    } catch (error) {
+      if (active.current)
+        setPhase(
+          error instanceof Error && error.message.includes('e2ee_local_agent_pending')
+            ? 'waiting'
+            : 'error'
+        );
     }
   };
   return (
@@ -121,7 +131,9 @@ export function E2eeLocalAgentApproval({
         <p {...stylex.props(styles.message)} role={phase === 'error' ? 'alert' : 'status'}>
           {t(
             phase === 'waiting'
-              ? 'e2ee.localAgent.waiting'
+              ? admitted
+                ? 'e2ee.localAgent.waiting'
+                : 'e2ee.localAgent.preparationPending'
               : phase === 'error'
                 ? admitted
                   ? 'e2ee.localAgent.admittedRetry'

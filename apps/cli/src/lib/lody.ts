@@ -53,6 +53,7 @@ interface LodyOptions {
     localProjectId: LocalProjectId
   ) => Promise<void>;
   onFatalAuthFailure?: (error: Error) => void;
+  onStorageWriteFailure?: (error: Error) => void;
   onProcessLifecycleAction?: (action: MachineProcessLifecycleAction) => void;
   workspaceWatchCoordinator?: WorkspaceWatchCoordinatorApi;
   cloudPort: CloudPort;
@@ -151,6 +152,7 @@ export class Lody {
           encryptedWorkspace: e2ee,
           cloudBilling: options.cloudPort.billing,
           ownerHistoryRouter,
+          onStorageWriteFailure: options.onStorageWriteFailure,
         })
     ).catch(async (error) => {
       await e2ee?.close();
