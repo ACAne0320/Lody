@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   getLodySessionPresenceKey,
   getServerNow,
+  getSessionRoomId,
   type AgentConfigId,
   type LodyPresenceInstanceId,
   type LocalProjectId,
@@ -13,6 +14,7 @@ import {
   type SessionMeta,
 } from '@lody/shared';
 
+import { sessionMetaCacheAtom } from '@/atoms/doc-meta';
 import { lodyPresenceStatesAtom } from '@/atoms/presence';
 import { SessionAccessControl } from '@/components/session-sharing';
 import { SessionHeaderMenu } from '@/components/sessions/session-chat-interface';
@@ -293,6 +295,8 @@ type StoryShellProps = React.ComponentProps<typeof SessionTabBar> & {
   presence?: StoryPresence;
   /** Wire close/select/reorder/new-tab to local state so the bar is clickable. */
   interactive?: boolean;
+  /** Seeds session meta so fork marks can resolve their source titles. */
+  knownSessions?: SessionMeta[];
 };
 
 function StoryShell({
@@ -300,11 +304,18 @@ function StoryShell({
   reservedRightWidth = 0,
   presence = DEFAULT_STORY_PRESENCE,
   interactive = false,
+  knownSessions,
   ...props
 }: StoryShellProps) {
   const [store] = useState(() => {
     const nextStore = createStore();
     nextStore.set(lodyPresenceStatesAtom, buildPresenceStates(presence));
+    if (knownSessions) {
+      nextStore.set(
+        sessionMetaCacheAtom,
+        Object.fromEntries(knownSessions.map((session) => [getSessionRoomId(session.id), session]))
+      );
+    }
     return nextStore;
   });
   const [activeTabSessionId, setActiveTabSessionId] = useState(props.activeTabSessionId);
@@ -778,6 +789,46 @@ export const UnreadChildTabs: Story = {
           'request (outranks everything), and a caught-up child (plain agent icon).',
       },
     },
+  },
+};
+
+/* ── Forked tabs ─────────────────────────────────────────────────────────
+   A fork keeps the source's plain title and shows a fork mark. The first fork's
+   source is in this tab group, so clicking the mark selects that tab; the
+   second fork's source lives elsewhere, so its mark is tooltip-only. */
+const outsideForkSource: SessionMeta = {
+  ...parentSession,
+  id: 'session-outside-source' as SessionId,
+  title: 'Investigate login race',
+};
+
+const forkedChildSessions: SessionMeta[] = [
+  {
+    ...childSessions[0]!,
+    id: 'session-fork-in-group' as SessionId,
+    title: parentSession.title,
+    forkedFromSessionId: parentSession.id,
+    parentSessionId: parentSession.id,
+  },
+  {
+    ...childSessions[1]!,
+    id: 'session-fork-outside' as SessionId,
+    title: outsideForkSource.title,
+    forkedFromSessionId: outsideForkSource.id,
+    parentSessionId: parentSession.id,
+  },
+];
+
+export const ForkedTabs: Story = {
+  args: {
+    childSessions: forkedChildSessions,
+    draftTabs: [],
+    archivedChildSessions: [],
+    tabOrder: forkedChildSessions.map((session) => session.id),
+    activeTabSessionId: forkedChildSessions[0]!.id,
+    presence: {},
+    knownSessions: [parentSession, outsideForkSource, ...forkedChildSessions],
+    frameWidth: 960,
   },
 };
 
