@@ -2,6 +2,7 @@
 
 Status: implemented
 Translation: current
+PR: [#1819](https://github.com/LodyAI/Lody/pull/1819)
 
 [中文](2026-10-22-archive-commits-before-cleanup.zh.md)
 
@@ -80,6 +81,14 @@ Each archived Session records its cleanup in the runtime until the cleanup confi
 Restores with no record, such as earlier archives or archives whose cleanup
 confirmed, never touch input storage, so a storage fault does not block them.
 
+If writing the durable cancellation mark fails, the drain must skip inputs in
+this window's `canceled` set without counting that skip as progress. Otherwise it
+re-lists the same row forever while holding the session lease, preventing the next
+cancellation from finishing even after storage recovers. The drain releases its
+lease; a later cancellation still owns marking and removing the retained row.
+The fix retains the existing native send-resource scope and Promise ports rather
+than migrating the whole input coordinator for this local progress condition.
+
 The records live in memory. After a reload, or in another window, a failed cleanup
 is unknown, and leftover stored input meets `validateTarget` while archived:
 `queued` rows become `failed` and wait for an explicit retry, and `unknown` rows
@@ -106,5 +115,16 @@ switch is logged at `info`.
   un-archiving; a later restore whose cleanup confirmed is not blocked by a
   storage fault.
 
-Each new assertion fails without its change. Not verified: an Electron run measuring the latency
-on a real streaming workspace.
+`tests/session-accepted-inputs.test.ts` also exercises real IndexedDB storage
+through `fake-indexeddb`: a failed cancellation mark keeps the input fenced,
+the drain releases an exclusive session lease, and the next cancellation removes
+the retained row after recovery. A second runtime resuming a stored input for an
+archived conversation persists a refusal without appending history or delivering it.
+The two focused suites pass together (118 tests).
+
+The held-queue assertions were checked against the previous implementation or
+with their specific guard removed. The disposable Electron probe only completed
+partial idle measurements: four closed rows disappeared in 27–44 ms; three open
+conversations disappeared in 51–68 ms and navigated in 77–115 ms. The browser closed
+before the streaming cases finished. No baseline comparison or streaming latency
+conclusion is available; the probe scripts remain outside the PR.
