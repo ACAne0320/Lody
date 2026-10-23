@@ -1,0 +1,2373 @@
+diff --git a/dist/storage/indexeddb.cjs b/dist/storage/indexeddb.cjs
+index 82dc33177..8269f02ba 100644
+--- a/dist/storage/indexeddb.cjs
++++ b/dist/storage/indexeddb.cjs
+@@ -107,6 +107,167 @@ function classifyIndexedDBError(cause) {
+ 	return "unknown";
+ }
+ var IndexedDBStorageAdaptor = class {
++async deleteFlockDocUntracked(flockDocId) {
++        const db = await this.ensureDb();
++        const key = this.checkpointKey(flockDocId);
++        await this.runInStoresTransaction(db, [this.flockDocStore, this.flockDocUpdateStore, CHECKPOINT_STORE], "readwrite", async (getStore) => {
++            const store = getStore(CHECKPOINT_STORE);
++            await Promise.all([
++                this.wrapRequest(getStore(this.flockDocStore).delete(flockDocId), "delete"),
++                this.wrapRequest(getStore(this.flockDocUpdateStore).delete(flockDocId), "delete"),
++                this.wrapRequest(store.delete(key), "delete"),
++            ]);
++        });
++    }
++
++async deleteDocUntracked(docId) {
++        const db = await this.ensureDb();
++        // One transaction over both stores. Two separate ones leave a window in
++        // which a concurrent `loadDoc` write-back is ordered after the snapshot
++        // delete and before the queue delete: it then sees an absent snapshot
++        // (which `optionalBytesEqual` cannot tell from "never had one") plus the
++        // queue it just read, and re-creates a snapshot for the deleted document.
++        // `deleteFlockDoc` and the SQLite store already delete in one transaction.
++        await this.runInStoresTransaction(db, [this.docStore, this.docUpdateStore], "readwrite", async (getStore) => {
++            await Promise.all([
++                this.wrapRequest(getStore(this.docStore).delete(docId), "delete"),
++                this.wrapRequest(getStore(this.docUpdateStore).delete(docId), "delete"),
++            ]);
++        });
++    }
++
++async saveBatch(batch) {
++        if (batch.stores.size === 0)
++            return;
++        const db = await this.ensureDb();
++        await this.runInStoresTransaction(db, [...batch.stores].map((store) => this.storeName(store)), "readwrite", async (getStore) => {
++            const writes = [];
++            for (const [docId, snapshots] of batch.docSnapshots) {
++                writes.push(this.mergeDocSnapshotsInTransaction(getStore(this.docStore), docId, snapshots));
++            }
++            for (const [docId, updates] of batch.docUpdates) {
++                writes.push(this.appendDocUpdatesInTransaction(getStore(this.docUpdateStore), docId, updates));
++            }
++            for (const [flockDocId, items] of batch.flockDocs) {
++                writes.push(this.writeFlockPayloadsInTransaction(getStore, flockDocId, items));
++            }
++            if (batch.meta.length > 0) {
++                writes.push(this.writeMetaPayloadsInTransaction(getStore, batch.meta));
++            }
++            await Promise.all(writes);
++        });
++    }
++
++async discardIncompleteMigrationUntracked(migrationId) {
++        if (!this.writerToken)
++            throw new require_meta_snapshot.RepoWriterLocked(undefined);
++        const names = [
++            this.docStore,
++            this.docUpdateStore,
++            this.flockDocStore,
++            this.flockDocUpdateStore,
++            this.metaStore,
++            this.metaUpdateStore,
++            CHECKPOINT_STORE,
++        ];
++        await this.runInStoresTransaction(await this.ensureDb(), names, "readwrite", async (getStore) => {
++            const local = getStore(CHECKPOINT_STORE);
++            if ((await this.wrapRequest(local.get('migration-incomplete'), "read")) !== migrationId)
++                throw new Error('Matching incomplete migration required');
++            for (const name of names) {
++                if (name !== CHECKPOINT_STORE)
++                    await this.wrapRequest(getStore(name).clear(), "delete");
++            }
++            for (const key of await this.wrapRequest(local.getAllKeys(), "read")) {
++                if (key !== 'exclusive-writer' && key !== 'migration-incomplete')
++                    await this.wrapRequest(local.delete(key), "delete");
++            }
++            await this.wrapRequest(local.delete('migration-incomplete'), "delete");
++        });
++    }
++
++async acquireWriterLeaseUntracked() {
++        const db = await this.ensureDb();
++        if (!this.lockManager)
++            throw new Error('Exclusive IndexedDB storage requires Web Locks');
++        const name = `loro-repo:idb-writer:${this.dbName}`;
++        // Snapshot is only a fast refusal for an already-live owner. Queue arbitration,
++        // not this query, grants ownership and handles a shared transaction racing us.
++        const snapshot = await this.lockManager.query?.();
++        if (snapshot?.held.some((lock) => lock.name === name && lock.mode === 'exclusive'))
++            throw new require_meta_snapshot.RepoWriterLocked(false);
++        const controller = new AbortController();
++        const deadline = setTimeout(() => controller.abort(new DOMException('IndexedDB writer acquisition timed out', 'TimeoutError')), this.writerLockTimeoutMs);
++        let unlock;
++        let acquired;
++        let denied;
++        const held = new Promise((resolve) => {
++            unlock = resolve;
++        });
++        const ready = new Promise((resolve, reject) => {
++            acquired = resolve;
++            denied = reject;
++        });
++        let lock;
++        try {
++            lock = this.lockManager.request(name, { mode: 'exclusive', signal: controller.signal }, async (owner) => {
++                if (!owner)
++                    throw new require_meta_snapshot.RepoWriterLocked(false);
++                clearTimeout(deadline);
++                acquired();
++                await held;
++            });
++        }
++        catch (error) {
++            clearTimeout(deadline);
++            throw require_meta_snapshot.RepoWriterLocked.is(error) ? error : new require_meta_snapshot.RepoWriterLocked(undefined, error);
++        }
++        void lock.catch((error) => denied(require_meta_snapshot.RepoWriterLocked.is(error) ? error : new require_meta_snapshot.RepoWriterLocked(undefined, error)));
++        try {
++            await ready;
++        }
++        finally {
++            clearTimeout(deadline);
++        }
++        const token = `weblocks-v1:${this.randomKeyPart()}`;
++        try {
++            await this.runInStoresTransaction(db, [CHECKPOINT_STORE], 'readwrite', async (getStore) => {
++                const store = getStore(CHECKPOINT_STORE);
++                const previous = await this.wrapRequest(store.get('exclusive-writer'), 'read');
++                if (previous &&
++                    (typeof previous !== 'string' || !previous.startsWith('weblocks-v1:')))
++                    throw new Error('Unknown legacy writer fence; cannot establish ownership');
++                await this.wrapRequest(store.put(token, 'exclusive-writer'), 'write');
++            }, true);
++        }
++        catch (error) {
++            unlock();
++            await lock;
++            throw error;
++        }
++        this.writerToken = token;
++        let released = false;
++        return {
++            token,
++            release: async () => {
++                if (released)
++                    return;
++                await this.trackWrite(() => this.runInStoresTransaction(db, [CHECKPOINT_STORE], 'readwrite', async (getStore) => {
++                    const store = getStore(CHECKPOINT_STORE);
++                    if ((await this.wrapRequest(store.get('exclusive-writer'), 'read')) !== token)
++                        throw new Error('Storage writer fence lost');
++                    await this.wrapRequest(store.delete('exclusive-writer'), 'delete');
++                }, true));
++                released = true;
++                this.writerToken = undefined;
++                unlock();
++                await lock;
++            },
++        };
++    }
++
++trackWrite;
++
+ 	idb;
+ 	lockManager;
+ 	writerLockTimeoutMs;
+@@ -124,112 +285,37 @@ var IndexedDBStorageAdaptor = class {
+ 	closed = false;
+ 	metaUpdateCounter = 0;
+ 	constructor(options = {}) {
+-		const idbFactory = globalThis.indexedDB;
+-		if (!idbFactory) throw new require_meta_snapshot.RepoStorageError("IndexedDB is not available in this environment", { code: "unavailable" });
+-		this.idb = idbFactory;
+-		this.lockManager = options.lockManager ?? globalThis.navigator?.locks;
+-		this.writerLockTimeoutMs = options.writerLockTimeoutMs ?? 5e3;
+-		if (!(Number.isFinite(this.writerLockTimeoutMs) && this.writerLockTimeoutMs > 0)) throw new RangeError("writerLockTimeoutMs must be positive and finite");
+-		this.dbName = options.dbName ?? DEFAULT_DB_NAME;
+-		this.version = Math.max(options.version ?? DEFAULT_DB_VERSION, DEFAULT_DB_VERSION);
+-		this.docStore = options.docStoreName ?? DEFAULT_DOC_STORE;
+-		this.docUpdateStore = options.docUpdateStoreName ?? DEFAULT_DOC_UPDATE_STORE;
+-		this.flockDocStore = options.flockDocStoreName ?? DEFAULT_FLOCK_DOC_STORE;
+-		this.flockDocUpdateStore = options.flockDocUpdateStoreName ?? DEFAULT_FLOCK_DOC_UPDATE_STORE;
+-		this.metaStore = options.metaStoreName ?? DEFAULT_META_STORE;
+-		this.metaUpdateStore = options.metaUpdateStoreName ?? DEFAULT_META_UPDATE_STORE;
+-		this.metaKey = options.metaKey ?? DEFAULT_META_KEY;
+-		this.durability = options.durability ?? "strict";
+-	}
++        const idbFactory = globalThis.indexedDB;
++        if (!idbFactory) {
++            throw new require_meta_snapshot.RepoStorageError("IndexedDB is not available in this environment", { code: "unavailable" });
++        }
++        this.idb = idbFactory;
++        this.lockManager =
++            options.lockManager ??
++                globalThis.navigator?.locks;
++        this.writerLockTimeoutMs = options.writerLockTimeoutMs ?? 5000;
++        if (!(Number.isFinite(this.writerLockTimeoutMs) && this.writerLockTimeoutMs > 0))
++            throw new RangeError('writerLockTimeoutMs must be positive and finite');
++        this.dbName = options.dbName ?? DEFAULT_DB_NAME;
++        this.version = Math.max(options.version ?? DEFAULT_DB_VERSION, DEFAULT_DB_VERSION);
++        this.docStore = options.docStoreName ?? DEFAULT_DOC_STORE;
++        this.docUpdateStore = options.docUpdateStoreName ?? DEFAULT_DOC_UPDATE_STORE;
++        this.flockDocStore = options.flockDocStoreName ?? DEFAULT_FLOCK_DOC_STORE;
++        this.flockDocUpdateStore =
++            options.flockDocUpdateStoreName ?? DEFAULT_FLOCK_DOC_UPDATE_STORE;
++        this.metaStore = options.metaStoreName ?? DEFAULT_META_STORE;
++        this.metaUpdateStore = options.metaUpdateStoreName ?? DEFAULT_META_UPDATE_STORE;
++        this.metaKey = options.metaKey ?? DEFAULT_META_KEY;
++        this.durability = options.durability ?? "strict";
++        this.trackWrite = createWriteFailureReporter(options.onWriteFailure, (error) => error instanceof require_meta_snapshot.RepoStorageError, "IndexedDB storage");
++    }
+ 	writerToken;
+-	async acquireWriterLease() {
+-		const db = await this.ensureDb();
+-		if (!this.lockManager) throw new Error("Exclusive IndexedDB storage requires Web Locks");
+-		const name = `loro-repo:idb-writer:${this.dbName}`;
+-		if ((await this.lockManager.query?.())?.held.some((lock$1) => lock$1.name === name && lock$1.mode === "exclusive")) throw new require_meta_snapshot.RepoWriterLocked(false);
+-		const controller = new AbortController();
+-		const deadline = setTimeout(() => controller.abort(new DOMException("IndexedDB writer acquisition timed out", "TimeoutError")), this.writerLockTimeoutMs);
+-		let unlock;
+-		let acquired;
+-		let denied;
+-		const held = new Promise((resolve) => {
+-			unlock = resolve;
+-		});
+-		const ready = new Promise((resolve, reject) => {
+-			acquired = resolve;
+-			denied = reject;
+-		});
+-		let lock;
+-		try {
+-			lock = this.lockManager.request(name, {
+-				mode: "exclusive",
+-				signal: controller.signal
+-			}, async (owner) => {
+-				if (!owner) throw new require_meta_snapshot.RepoWriterLocked(false);
+-				clearTimeout(deadline);
+-				acquired();
+-				await held;
+-			});
+-		} catch (error) {
+-			clearTimeout(deadline);
+-			throw require_meta_snapshot.RepoWriterLocked.is(error) ? error : new require_meta_snapshot.RepoWriterLocked(void 0, error);
+-		}
+-		lock.catch((error) => denied(require_meta_snapshot.RepoWriterLocked.is(error) ? error : new require_meta_snapshot.RepoWriterLocked(void 0, error)));
+-		try {
+-			await ready;
+-		} finally {
+-			clearTimeout(deadline);
+-		}
+-		const token = `weblocks-v1:${this.randomKeyPart()}`;
+-		try {
+-			await this.runInStoresTransaction(db, [CHECKPOINT_STORE], "readwrite", async (getStore) => {
+-				const store = getStore(CHECKPOINT_STORE);
+-				const previous = await this.wrapRequest(store.get("exclusive-writer"), "read");
+-				if (previous && (typeof previous !== "string" || !previous.startsWith("weblocks-v1:"))) throw new Error("Unknown legacy writer fence; cannot establish ownership");
+-				await this.wrapRequest(store.put(token, "exclusive-writer"), "write");
+-			}, true);
+-		} catch (error) {
+-			unlock();
+-			await lock;
+-			throw error;
+-		}
+-		this.writerToken = token;
+-		let released = false;
+-		return {
+-			token,
+-			release: async () => {
+-				if (released) return;
+-				await this.runInStoresTransaction(db, [CHECKPOINT_STORE], "readwrite", async (getStore) => {
+-					const store = getStore(CHECKPOINT_STORE);
+-					if (await this.wrapRequest(store.get("exclusive-writer"), "read") !== token) throw new Error("Storage writer fence lost");
+-					await this.wrapRequest(store.delete("exclusive-writer"), "delete");
+-				}, true);
+-				released = true;
+-				this.writerToken = void 0;
+-				unlock();
+-				await lock;
+-			}
+-		};
+-	}
+-	async discardIncompleteMigration(migrationId) {
+-		if (!this.writerToken) throw new require_meta_snapshot.RepoWriterLocked(void 0);
+-		const names = [
+-			this.docStore,
+-			this.docUpdateStore,
+-			this.flockDocStore,
+-			this.flockDocUpdateStore,
+-			this.metaStore,
+-			this.metaUpdateStore,
+-			CHECKPOINT_STORE
+-		];
+-		await this.runInStoresTransaction(await this.ensureDb(), names, "readwrite", async (getStore) => {
+-			const local = getStore(CHECKPOINT_STORE);
+-			if (await this.wrapRequest(local.get("migration-incomplete"), "read") !== migrationId) throw new Error("Matching incomplete migration required");
+-			for (const name of names) if (name !== CHECKPOINT_STORE) await this.wrapRequest(getStore(name).clear(), "delete");
+-			for (const key of await this.wrapRequest(local.getAllKeys(), "read")) if (key !== "exclusive-writer" && key !== "migration-incomplete") await this.wrapRequest(local.delete(key), "delete");
+-			await this.wrapRequest(local.delete("migration-incomplete"), "delete");
+-		});
+-	}
++	acquireWriterLease() {
++        return this.trackWrite(() => this.acquireWriterLeaseUntracked());
++    }
++	discardIncompleteMigration(migrationId) {
++        return this.trackWrite(() => this.discardIncompleteMigrationUntracked(migrationId));
++    }
+ 	async inventory() {
+ 		const db = await this.ensureDb();
+ 		return this.runInStoresTransaction(db, [
+@@ -260,19 +346,17 @@ var IndexedDBStorageAdaptor = class {
+ 	* transaction completes and every payload is durable, or it aborts and
+ 	* none is written.
+ 	*/
+-	async saveMany(payloads) {
+-		const batch = collectPayloads(payloads);
+-		if (batch.stores.size === 0) return;
+-		const db = await this.ensureDb();
+-		await this.runInStoresTransaction(db, [...batch.stores].map((store) => this.storeName(store)), "readwrite", async (getStore) => {
+-			const writes = [];
+-			for (const [docId, snapshots] of batch.docSnapshots) writes.push(this.mergeDocSnapshotsInTransaction(getStore(this.docStore), docId, snapshots));
+-			for (const [docId, updates] of batch.docUpdates) writes.push(this.appendDocUpdatesInTransaction(getStore(this.docUpdateStore), docId, updates));
+-			for (const [flockDocId, items] of batch.flockDocs) writes.push(this.writeFlockPayloadsInTransaction(getStore, flockDocId, items));
+-			if (batch.meta.length > 0) writes.push(this.writeMetaPayloadsInTransaction(getStore, batch.meta));
+-			await Promise.all(writes);
+-		});
+-	}
++	saveMany(payloads) {
++        // Copy synchronously: the caller may reuse its buffers once we yield.
++        let batch;
++        try {
++            batch = collectPayloads(payloads);
++        }
++        catch (error) {
++            return Promise.reject(error);
++        }
++        return this.trackWrite(() => this.saveBatch(batch));
++    }
+ 	storeName(store) {
+ 		switch (store) {
+ 			case "doc": return this.docStore;
+@@ -283,13 +367,20 @@ var IndexedDBStorageAdaptor = class {
+ 			case "meta-update": return this.metaUpdateStore;
+ 		}
+ 	}
+-	async compactMeta() {
+-		const db = await this.ensureDb();
+-		await this.compactMetaSnapshot(db);
+-	}
+-	async compactFlockDoc(flockDocId) {
+-		await this.readFlockDoc(flockDocId, "throw");
+-	}
++	compactMeta() {
++        return this.trackWrite(async () => {
++            const db = await this.ensureDb();
++            await this.compactMetaSnapshot(db);
++        });
++    }
++	compactFlockDoc(flockDocId) {
++        // Compaction *is* the write, so its failure has to reach the caller: the
++        // Flock doc manager resets its byte counter when this resolves, and would
++        // otherwise defer the retry by a full threshold.
++        return this.trackWrite(async () => {
++            await this.readFlockDoc(flockDocId, "throw");
++        });
++    }
+ 	async loadDoc(docId) {
+ 		const db = await this.ensureDb();
+ 		const { snapshot, pendingUpdates } = await this.runInStoresTransaction(db, [this.docStore, this.docUpdateStore], "readonly", async (getStore) => {
+@@ -328,38 +419,39 @@ var IndexedDBStorageAdaptor = class {
+ 		return doc;
+ 	}
+ 	migrationState = {
+-		load: async () => this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readonly", async (store) => await this.wrapRequest(store.get("migration-incomplete"), "read")),
+-		save: async (id) => this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
+-			if (id === void 0) await this.wrapRequest(store.delete("migration-incomplete"), "delete");
+-			else {
+-				if (await this.wrapRequest(store.get("migration-incomplete"), "read")) throw new Error("Migration already marked");
+-				await this.wrapRequest(store.put(id, "migration-incomplete"), "write");
+-			}
+-		})
+-	};
++        load: async () => this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readonly", async (store) => (await this.wrapRequest(store.get('migration-incomplete'), "read"))),
++        save: (id) => this.trackWrite(async () => this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
++            if (id === undefined)
++                await this.wrapRequest(store.delete('migration-incomplete'), "delete");
++            else {
++                if (await this.wrapRequest(store.get('migration-incomplete'), "read"))
++                    throw new Error('Migration already marked');
++                await this.wrapRequest(store.put(id, 'migration-incomplete'), "write");
++            }
++        })),
++    };
+ 	docCursorIndex = {
+-		load: async (id) => {
+-			return this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readonly", async (store) => await this.wrapRequest(store.get(`doc-cursor-index:${id}`), "read") ?? []);
+-		},
+-		add: async (id, url) => {
+-			await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
+-				const key = `doc-cursor-index:${id}`;
+-				const urls = await this.wrapRequest(store.get(key), "read") ?? [];
+-				if (!urls.includes(url)) await this.wrapRequest(store.put([...urls, url], key), "write");
+-			});
+-		},
+-		delete: async (id) => {
+-			await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
+-				await this.wrapRequest(store.delete(`doc-cursor-index:${id}`), "delete");
+-			});
+-		}
+-	};
+-	async deleteDoc(docId) {
+-		const db = await this.ensureDb();
+-		await this.runInStoresTransaction(db, [this.docStore, this.docUpdateStore], "readwrite", async (getStore) => {
+-			await Promise.all([this.wrapRequest(getStore(this.docStore).delete(docId), "delete"), this.wrapRequest(getStore(this.docUpdateStore).delete(docId), "delete")]);
+-		});
+-	}
++        load: async (id) => {
++            return this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readonly", async (store) => (await this.wrapRequest(store.get(`doc-cursor-index:${id}`), "read")) ??
++                []);
++        },
++        add: (id, url) => this.trackWrite(async () => {
++            await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
++                const key = `doc-cursor-index:${id}`;
++                const urls = (await this.wrapRequest(store.get(key), "read")) ?? [];
++                if (!urls.includes(url))
++                    await this.wrapRequest(store.put([...urls, url], key), "write");
++            });
++        }),
++        delete: (id) => this.trackWrite(async () => {
++            await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
++                await this.wrapRequest(store.delete(`doc-cursor-index:${id}`), "delete");
++            });
++        }),
++    };
++	deleteDoc(docId) {
++        return this.trackWrite(() => this.deleteDocUntracked(docId));
++    }
+ 	async loadFlockDoc(flockDocId) {
+ 		return this.readFlockDoc(flockDocId, "log");
+ 	}
+@@ -406,22 +498,9 @@ var IndexedDBStorageAdaptor = class {
+ 		}
+ 		return flock;
+ 	}
+-	async deleteFlockDoc(flockDocId) {
+-		const db = await this.ensureDb();
+-		const key = this.checkpointKey(flockDocId);
+-		await this.runInStoresTransaction(db, [
+-			this.flockDocStore,
+-			this.flockDocUpdateStore,
+-			CHECKPOINT_STORE
+-		], "readwrite", async (getStore) => {
+-			const store = getStore(CHECKPOINT_STORE);
+-			await Promise.all([
+-				this.wrapRequest(getStore(this.flockDocStore).delete(flockDocId), "delete"),
+-				this.wrapRequest(getStore(this.flockDocUpdateStore).delete(flockDocId), "delete"),
+-				this.wrapRequest(store.delete(key), "delete")
+-			]);
+-		});
+-	}
++	deleteFlockDoc(flockDocId) {
++        return this.trackWrite(() => this.deleteFlockDocUntracked(flockDocId));
++    }
+ 	loadMetaReplica() {
+ 		return this.loadReplica();
+ 	}
+@@ -445,92 +524,135 @@ var IndexedDBStorageAdaptor = class {
+ 		return `${META_LINEAGE_KEY_PREFIX}${this.metaKey}`;
+ 	}
+ 	async loadReplica(flockDocId) {
+-		const db = await this.ensureDb();
+-		const isMeta = flockDocId === void 0;
+-		const baseStore = isMeta ? this.metaStore : this.flockDocStore;
+-		const logStore = isMeta ? this.metaUpdateStore : this.flockDocUpdateStore;
+-		const dataKey = flockDocId ?? this.metaKey;
+-		const checkpointKey = this.checkpointKey(flockDocId);
+-		const capture = (mode, rebind) => this.runInStoresTransaction(db, [
+-			baseStore,
+-			logStore,
+-			CHECKPOINT_STORE
+-		], mode, async (getStore) => {
+-			const metaUpdates = isMeta ? await this.readMetaUpdatesFromStore(getStore(logStore)) : void 0;
+-			const [base, namedQueue, record] = await Promise.all([
+-				this.wrapRequest(getStore(baseStore).get(dataKey), "read"),
+-				isMeta ? Promise.resolve(void 0) : this.wrapRequest(getStore(logStore).get(dataKey), "read"),
+-				this.wrapRequest(getStore(CHECKPOINT_STORE).get(checkpointKey), "read")
+-			]);
+-			let snapshot = this.normalizeBinarySync(base);
+-			let checkpoint = require_replica_checkpoints.normalizeCheckpointRecord(record);
+-			const lineage = isMeta ? metaUpdates?.lineage : queueLineage(namedQueue);
+-			if (!(checkpoint !== void 0 && lineage === checkpoint.generation && (isMeta || snapshot !== void 0))) {
+-				checkpoint = void 0;
+-				if (rebind) {
+-					checkpoint = {
+-						generation: this.randomKeyPart(),
+-						cursors: []
+-					};
+-					const { generation: generation$1 } = checkpoint;
+-					const writes = [this.wrapRequest(getStore(CHECKPOINT_STORE).put(checkpoint, checkpointKey), "write")];
+-					if (isMeta) writes.push(this.wrapRequest(getStore(logStore).put({ lineage: generation$1 }, this.metaLineageKey()), "write"));
+-					else {
+-						if (!snapshot) {
+-							snapshot = new __loro_dev_flock_wasm.Flock().exportFile();
+-							writes.push(this.wrapRequest(getStore(baseStore).put(snapshot, dataKey), "write"));
+-						}
+-						writes.push(this.wrapRequest(getStore(logStore).put({
+-							updates: this.updateQueueEntries(namedQueue),
+-							lineage: generation$1
+-						}, dataKey), "write"));
+-					}
+-					await Promise.all(writes);
+-				}
+-			}
+-			return {
+-				snapshot,
+-				updates: metaUpdates?.updates ?? this.normalizeUpdateQueueSync(namedQueue),
+-				metaUpdates,
+-				record: checkpoint
+-			};
+-		});
+-		let captured = await capture("readonly", false);
+-		if (!captured.record) captured = await capture("readwrite", true);
+-		if (!captured.record) throw new Error("Failed to create Flock checkpoint");
+-		let flock;
+-		let loadedJsonUpdate = false;
+-		try {
+-			({flock, loadedJsonUpdate} = require_meta_snapshot.hydrateMetaSnapshots(captured.snapshot, captured.updates));
+-		} catch (error) {
+-			throw this.createError(flockDocId === void 0 ? "Failed to hydrate metadata snapshot" : `Failed to hydrate Flock document "${flockDocId}"`, error);
+-		}
+-		if (flock && isMeta && captured.metaUpdates) await this.compactLoadedMeta(db, captured.snapshot, captured.metaUpdates, loadedJsonUpdate, flock).catch(require_logging.logAsyncError("metadata load compaction"));
+-		else if (flock && !isMeta && captured.updates.length > 0) {
+-			const consolidated = await require_flock_snapshot.exportFlockFileSnapshot(flock);
+-			await this.applyWriteFailurePolicy(this.writeConsolidatedSnapshotIfUnchanged(db, {
+-				snapshotStore: this.flockDocStore,
+-				updateStore: this.flockDocUpdateStore
+-			}, flockDocId, captured.snapshot, captured.updates, consolidated), "log", `Flock replica consolidation for "${flockDocId}"`);
+-		}
+-		const { generation } = captured.record;
+-		const checkpointStore = require_replica_checkpoints.createBoundCheckpointStore(captured.record, {
+-			isClosed: () => this.closed,
+-			commit: async (streamUrl, cursor) => {
+-				await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
+-					const cursors = require_replica_checkpoints.mergeCheckpointCursor(require_replica_checkpoints.normalizeCheckpointRecord(await this.wrapRequest(store.get(checkpointKey), "read")), generation, streamUrl, cursor);
+-					await this.wrapRequest(store.put({
+-						generation,
+-						cursors
+-					}, checkpointKey), "write");
+-				});
+-			}
+-		});
+-		return {
+-			flock: flock ?? new __loro_dev_flock_wasm.Flock(),
+-			checkpointStore
+-		};
+-	}
++        const db = await this.ensureDb();
++        const isMeta = flockDocId === undefined;
++        const baseStore = isMeta ? this.metaStore : this.flockDocStore;
++        const logStore = isMeta ? this.metaUpdateStore : this.flockDocUpdateStore;
++        const dataKey = flockDocId ?? this.metaKey;
++        const checkpointKey = this.checkpointKey(flockDocId);
++        // A checkpoint is bound to its data only through a lineage marker stored
++        // where binaries without checkpoint support remove it whenever they
++        // delete or rewrite that data (they never touch `replica-checkpoints`):
++        //
++        // - named Flock: a `lineage` field on the update-queue record. Their
++        //   `deleteFlockDoc` deletes the record; every rewrite of it (append,
++        //   snapshot save, consolidation) writes a bare `{ updates }`.
++        // - Meta: a `lineage:<metaKey>` row in `meta-updates`, skipped by their
++        //   reader. Their destructive `writeMetaSnapshot` `clear()`s the store;
++        //   their appends and key-bounded compaction leave it in place.
++        //
++        // A named marker also requires a base: their `deleteFlockDoc` removes base
++        // and queue in two transactions, so a capture between them must not
++        // accept a queue that still carries the marker without its base. Setting
++        // a marker therefore writes an empty base when there is none; this code
++        // never deletes a base without the marker.
++        //
++        // A missing or foreign marker discards the cursors and rotates the
++        // generation, which also rejects every store bound to the old one.
++        const capture = (mode, rebind) => this.runInStoresTransaction(db, [baseStore, logStore, CHECKPOINT_STORE], mode, async (getStore) => {
++            const metaUpdates = isMeta
++                ? await this.readMetaUpdatesFromStore(getStore(logStore))
++                : undefined;
++            const [base, namedQueue, record] = await Promise.all([
++                this.wrapRequest(getStore(baseStore).get(dataKey), "read"),
++                isMeta
++                    ? Promise.resolve(undefined)
++                    : this.wrapRequest(getStore(logStore).get(dataKey), "read"),
++                this.wrapRequest(getStore(CHECKPOINT_STORE).get(checkpointKey), "read"),
++            ]);
++            let snapshot = this.normalizeBinarySync(base);
++            let checkpoint = require_replica_checkpoints.normalizeCheckpointRecord(record);
++            const lineage = isMeta ? metaUpdates?.lineage : queueLineage(namedQueue);
++            const bound = checkpoint !== undefined &&
++                lineage === checkpoint.generation &&
++                (isMeta || snapshot !== undefined);
++            if (!bound) {
++                checkpoint = undefined;
++                if (rebind) {
++                    checkpoint = { generation: this.randomKeyPart(), cursors: [] };
++                    const { generation } = checkpoint;
++                    const writes = [
++                        this.wrapRequest(getStore(CHECKPOINT_STORE).put(checkpoint, checkpointKey), "write"),
++                    ];
++                    if (isMeta) {
++                        writes.push(this.wrapRequest(getStore(logStore).put({ lineage: generation }, this.metaLineageKey()), "write"));
++                    }
++                    else {
++                        if (!snapshot) {
++                            snapshot = new __loro_dev_flock_wasm.Flock().exportFile();
++                            writes.push(this.wrapRequest(getStore(baseStore).put(snapshot, dataKey), "write"));
++                        }
++                        // Entries are written back verbatim, including any this
++                        // reader skips, so marking the queue never drops data.
++                        writes.push(this.wrapRequest(getStore(logStore).put({
++                            updates: this.updateQueueEntries(namedQueue),
++                            lineage: generation,
++                        }, dataKey), "write"));
++                    }
++                    await Promise.all(writes);
++                }
++            }
++            return {
++                snapshot,
++                updates: metaUpdates?.updates ?? this.normalizeUpdateQueueSync(namedQueue),
++                metaUpdates,
++                record: checkpoint,
++            };
++        });
++        // Bound replicas take the read-only hot path. A legacy/empty resource, or
++        // one whose marker is missing or foreign, is recaptured while rebinding it
++        // in one write transaction. That capture checks again, so a concurrent
++        // instance that already rebound it is reused, not rotated a second time,
++        // and a purge between the two attempts changes the second capture rather
++        // than splitting generation setup from loaded data.
++        let captured = await capture("readonly", false);
++        if (!captured.record)
++            captured = await capture("readwrite", true);
++        // The write capture above always creates a valid record.
++        if (!captured.record)
++            throw new Error("Failed to create Flock checkpoint");
++        // All bytes and progress belong to one completed capture transaction.
++        // Never replace this object with the result of a later compaction/read.
++        let flock;
++        let loadedJsonUpdate = false;
++        try {
++            ({ flock, loadedJsonUpdate } = require_meta_snapshot.hydrateMetaSnapshots(captured.snapshot, captured.updates));
++        }
++        catch (error) {
++            throw this.createError(flockDocId === undefined
++                ? "Failed to hydrate metadata snapshot"
++                : `Failed to hydrate Flock document "${flockDocId}"`, error);
++        }
++        if (flock && isMeta && captured.metaUpdates) {
++            // Opportunistic, as in `loadMeta`: the replica is already captured and
++            // hydrated, so a failed rewrite must not fail the open. The returned
++            // object is never replaced by the compacted state.
++            await this.compactLoadedMeta(db, captured.snapshot, captured.metaUpdates, loadedJsonUpdate, flock).catch(require_logging.logAsyncError("metadata load compaction"));
++        }
++        else if (flock && !isMeta && captured.updates.length > 0) {
++            // `exportFlockFileSnapshot` yields to the macrotask queue, so it is
++            // awaited here, outside any transaction callback.
++            const consolidated = await require_flock_snapshot.exportFlockFileSnapshot(flock);
++            await this.applyWriteFailurePolicy(this.writeConsolidatedSnapshotIfUnchanged(db, {
++                snapshotStore: this.flockDocStore,
++                updateStore: this.flockDocUpdateStore,
++            }, flockDocId, captured.snapshot, captured.updates, consolidated), "log", `Flock replica consolidation for "${flockDocId}"`);
++        }
++        const { generation } = captured.record;
++        const checkpointStore = require_replica_checkpoints.createBoundCheckpointStore(captured.record, {
++            isClosed: () => this.closed,
++            // The recovery connection can be closed by another tab's
++            // `versionchange`. Resolve the adapter's current handle for every
++            // later checkpoint mutation.
++            commit: (streamUrl, cursor) => this.trackWrite(async () => {
++                await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
++                    const cursors = require_replica_checkpoints.mergeCheckpointCursor(require_replica_checkpoints.normalizeCheckpointRecord(await this.wrapRequest(store.get(checkpointKey), "read")), generation, streamUrl, cursor);
++                    await this.wrapRequest(store.put({ generation, cursors }, checkpointKey), "write");
++                });
++            }),
++        });
++        return { flock: flock ?? new __loro_dev_flock_wasm.Flock(), checkpointStore };
++    }
+ 	async loadMeta() {
+ 		const db = await this.ensureDb();
+ 		const { snapshot, metaUpdates } = await this.runInStoresTransaction(db, [this.metaStore, this.metaUpdateStore], "readonly", async (getStore) => {
+@@ -1112,4 +1234,43 @@ function updatesStartWith(current, expectedPrefix) {
+ //#endregion
+ exports.IndexedDBStorageAdaptor = IndexedDBStorageAdaptor;
+ exports.RepoStorageError = require_meta_snapshot.RepoStorageError;
+-//# sourceMappingURL=indexeddb.cjs.map
+\ No newline at end of file
++//# sourceMappingURL=indexeddb.cjs.map
++/**
++ * Wraps storage write operations so a host can observe their failures — for
++ * example to tell the user the disk is full — without matching log text.
++ *
++ * `track(operation)` runs one write operation. If it rejects with an error
++ * `isReportable` accepts, `listener` is called synchronously with that exact
++ * error object, then the same object is rethrown: the operation's result and
++ * error classification are unchanged, and nothing is retried. Each error
++ * object is reported at most once, so a write operation built from another
++ * tracked one still reports a single failure.
++ *
++ * A throwing listener is logged and otherwise ignored; it can never replace
++ * or suppress the storage error.
++ */
++function createWriteFailureReporter(listener, isReportable, context) {
++    if (!listener)
++        return (operation) => operation();
++    const reported = new WeakSet();
++    const report = (error) => {
++        if (!isReportable(error) || reported.has(error))
++            return;
++        reported.add(error);
++        try {
++            listener(error);
++        }
++        catch (listenerError) {
++            require_logging.logAsyncError(`${context} onWriteFailure listener`)(listenerError);
++        }
++    };
++    return async (operation) => {
++        try {
++            return await operation();
++        }
++        catch (error) {
++            report(error);
++            throw error;
++        }
++    };
++}
+diff --git a/dist/storage/indexeddb.d.cts b/dist/storage/indexeddb.d.cts
+index d0b9cd871..4698d1620 100644
+--- a/dist/storage/indexeddb.d.cts
++++ b/dist/storage/indexeddb.d.cts
+@@ -54,6 +54,8 @@ interface IndexedDBStorageAdaptorOptions {
+    * persisted. LoroDoc and read transactions always use the browser default.
+    */
+   readonly durability?: IndexedDBDurability;
++  /** Observes failed writes without changing the thrown error. Backport of loro-repo#164. */
++  readonly onWriteFailure?: (error: RepoStorageError) => void;
+ }
+ declare class IndexedDBStorageAdaptor implements StorageAdapter {
+   private readonly idb;
+diff --git a/dist/storage/indexeddb.d.ts b/dist/storage/indexeddb.d.ts
+index 5ad189549..830abdba2 100644
+--- a/dist/storage/indexeddb.d.ts
++++ b/dist/storage/indexeddb.d.ts
+@@ -54,6 +54,8 @@ interface IndexedDBStorageAdaptorOptions {
+    * persisted. LoroDoc and read transactions always use the browser default.
+    */
+   readonly durability?: IndexedDBDurability;
++  /** Observes failed writes without changing the thrown error. Backport of loro-repo#164. */
++  readonly onWriteFailure?: (error: RepoStorageError) => void;
+ }
+ declare class IndexedDBStorageAdaptor implements StorageAdapter {
+   private readonly idb;
+diff --git a/dist/storage/indexeddb.js b/dist/storage/indexeddb.js
+index 21857a1ae..e8e5c0d7b 100644
+--- a/dist/storage/indexeddb.js
++++ b/dist/storage/indexeddb.js
+@@ -104,6 +104,167 @@ function classifyIndexedDBError(cause) {
+ 	return "unknown";
+ }
+ var IndexedDBStorageAdaptor = class {
++async deleteFlockDocUntracked(flockDocId) {
++        const db = await this.ensureDb();
++        const key = this.checkpointKey(flockDocId);
++        await this.runInStoresTransaction(db, [this.flockDocStore, this.flockDocUpdateStore, CHECKPOINT_STORE], "readwrite", async (getStore) => {
++            const store = getStore(CHECKPOINT_STORE);
++            await Promise.all([
++                this.wrapRequest(getStore(this.flockDocStore).delete(flockDocId), "delete"),
++                this.wrapRequest(getStore(this.flockDocUpdateStore).delete(flockDocId), "delete"),
++                this.wrapRequest(store.delete(key), "delete"),
++            ]);
++        });
++    }
++
++async deleteDocUntracked(docId) {
++        const db = await this.ensureDb();
++        // One transaction over both stores. Two separate ones leave a window in
++        // which a concurrent `loadDoc` write-back is ordered after the snapshot
++        // delete and before the queue delete: it then sees an absent snapshot
++        // (which `optionalBytesEqual` cannot tell from "never had one") plus the
++        // queue it just read, and re-creates a snapshot for the deleted document.
++        // `deleteFlockDoc` and the SQLite store already delete in one transaction.
++        await this.runInStoresTransaction(db, [this.docStore, this.docUpdateStore], "readwrite", async (getStore) => {
++            await Promise.all([
++                this.wrapRequest(getStore(this.docStore).delete(docId), "delete"),
++                this.wrapRequest(getStore(this.docUpdateStore).delete(docId), "delete"),
++            ]);
++        });
++    }
++
++async saveBatch(batch) {
++        if (batch.stores.size === 0)
++            return;
++        const db = await this.ensureDb();
++        await this.runInStoresTransaction(db, [...batch.stores].map((store) => this.storeName(store)), "readwrite", async (getStore) => {
++            const writes = [];
++            for (const [docId, snapshots] of batch.docSnapshots) {
++                writes.push(this.mergeDocSnapshotsInTransaction(getStore(this.docStore), docId, snapshots));
++            }
++            for (const [docId, updates] of batch.docUpdates) {
++                writes.push(this.appendDocUpdatesInTransaction(getStore(this.docUpdateStore), docId, updates));
++            }
++            for (const [flockDocId, items] of batch.flockDocs) {
++                writes.push(this.writeFlockPayloadsInTransaction(getStore, flockDocId, items));
++            }
++            if (batch.meta.length > 0) {
++                writes.push(this.writeMetaPayloadsInTransaction(getStore, batch.meta));
++            }
++            await Promise.all(writes);
++        });
++    }
++
++async discardIncompleteMigrationUntracked(migrationId) {
++        if (!this.writerToken)
++            throw new RepoWriterLocked(undefined);
++        const names = [
++            this.docStore,
++            this.docUpdateStore,
++            this.flockDocStore,
++            this.flockDocUpdateStore,
++            this.metaStore,
++            this.metaUpdateStore,
++            CHECKPOINT_STORE,
++        ];
++        await this.runInStoresTransaction(await this.ensureDb(), names, "readwrite", async (getStore) => {
++            const local = getStore(CHECKPOINT_STORE);
++            if ((await this.wrapRequest(local.get('migration-incomplete'), "read")) !== migrationId)
++                throw new Error('Matching incomplete migration required');
++            for (const name of names) {
++                if (name !== CHECKPOINT_STORE)
++                    await this.wrapRequest(getStore(name).clear(), "delete");
++            }
++            for (const key of await this.wrapRequest(local.getAllKeys(), "read")) {
++                if (key !== 'exclusive-writer' && key !== 'migration-incomplete')
++                    await this.wrapRequest(local.delete(key), "delete");
++            }
++            await this.wrapRequest(local.delete('migration-incomplete'), "delete");
++        });
++    }
++
++async acquireWriterLeaseUntracked() {
++        const db = await this.ensureDb();
++        if (!this.lockManager)
++            throw new Error('Exclusive IndexedDB storage requires Web Locks');
++        const name = `loro-repo:idb-writer:${this.dbName}`;
++        // Snapshot is only a fast refusal for an already-live owner. Queue arbitration,
++        // not this query, grants ownership and handles a shared transaction racing us.
++        const snapshot = await this.lockManager.query?.();
++        if (snapshot?.held.some((lock) => lock.name === name && lock.mode === 'exclusive'))
++            throw new RepoWriterLocked(false);
++        const controller = new AbortController();
++        const deadline = setTimeout(() => controller.abort(new DOMException('IndexedDB writer acquisition timed out', 'TimeoutError')), this.writerLockTimeoutMs);
++        let unlock;
++        let acquired;
++        let denied;
++        const held = new Promise((resolve) => {
++            unlock = resolve;
++        });
++        const ready = new Promise((resolve, reject) => {
++            acquired = resolve;
++            denied = reject;
++        });
++        let lock;
++        try {
++            lock = this.lockManager.request(name, { mode: 'exclusive', signal: controller.signal }, async (owner) => {
++                if (!owner)
++                    throw new RepoWriterLocked(false);
++                clearTimeout(deadline);
++                acquired();
++                await held;
++            });
++        }
++        catch (error) {
++            clearTimeout(deadline);
++            throw RepoWriterLocked.is(error) ? error : new RepoWriterLocked(undefined, error);
++        }
++        void lock.catch((error) => denied(RepoWriterLocked.is(error) ? error : new RepoWriterLocked(undefined, error)));
++        try {
++            await ready;
++        }
++        finally {
++            clearTimeout(deadline);
++        }
++        const token = `weblocks-v1:${this.randomKeyPart()}`;
++        try {
++            await this.runInStoresTransaction(db, [CHECKPOINT_STORE], 'readwrite', async (getStore) => {
++                const store = getStore(CHECKPOINT_STORE);
++                const previous = await this.wrapRequest(store.get('exclusive-writer'), 'read');
++                if (previous &&
++                    (typeof previous !== 'string' || !previous.startsWith('weblocks-v1:')))
++                    throw new Error('Unknown legacy writer fence; cannot establish ownership');
++                await this.wrapRequest(store.put(token, 'exclusive-writer'), 'write');
++            }, true);
++        }
++        catch (error) {
++            unlock();
++            await lock;
++            throw error;
++        }
++        this.writerToken = token;
++        let released = false;
++        return {
++            token,
++            release: async () => {
++                if (released)
++                    return;
++                await this.trackWrite(() => this.runInStoresTransaction(db, [CHECKPOINT_STORE], 'readwrite', async (getStore) => {
++                    const store = getStore(CHECKPOINT_STORE);
++                    if ((await this.wrapRequest(store.get('exclusive-writer'), 'read')) !== token)
++                        throw new Error('Storage writer fence lost');
++                    await this.wrapRequest(store.delete('exclusive-writer'), 'delete');
++                }, true));
++                released = true;
++                this.writerToken = undefined;
++                unlock();
++                await lock;
++            },
++        };
++    }
++
++trackWrite;
++
+ 	idb;
+ 	lockManager;
+ 	writerLockTimeoutMs;
+@@ -121,112 +282,37 @@ var IndexedDBStorageAdaptor = class {
+ 	closed = false;
+ 	metaUpdateCounter = 0;
+ 	constructor(options = {}) {
+-		const idbFactory = globalThis.indexedDB;
+-		if (!idbFactory) throw new RepoStorageError("IndexedDB is not available in this environment", { code: "unavailable" });
+-		this.idb = idbFactory;
+-		this.lockManager = options.lockManager ?? globalThis.navigator?.locks;
+-		this.writerLockTimeoutMs = options.writerLockTimeoutMs ?? 5e3;
+-		if (!(Number.isFinite(this.writerLockTimeoutMs) && this.writerLockTimeoutMs > 0)) throw new RangeError("writerLockTimeoutMs must be positive and finite");
+-		this.dbName = options.dbName ?? DEFAULT_DB_NAME;
+-		this.version = Math.max(options.version ?? DEFAULT_DB_VERSION, DEFAULT_DB_VERSION);
+-		this.docStore = options.docStoreName ?? DEFAULT_DOC_STORE;
+-		this.docUpdateStore = options.docUpdateStoreName ?? DEFAULT_DOC_UPDATE_STORE;
+-		this.flockDocStore = options.flockDocStoreName ?? DEFAULT_FLOCK_DOC_STORE;
+-		this.flockDocUpdateStore = options.flockDocUpdateStoreName ?? DEFAULT_FLOCK_DOC_UPDATE_STORE;
+-		this.metaStore = options.metaStoreName ?? DEFAULT_META_STORE;
+-		this.metaUpdateStore = options.metaUpdateStoreName ?? DEFAULT_META_UPDATE_STORE;
+-		this.metaKey = options.metaKey ?? DEFAULT_META_KEY;
+-		this.durability = options.durability ?? "strict";
+-	}
++        const idbFactory = globalThis.indexedDB;
++        if (!idbFactory) {
++            throw new RepoStorageError("IndexedDB is not available in this environment", { code: "unavailable" });
++        }
++        this.idb = idbFactory;
++        this.lockManager =
++            options.lockManager ??
++                globalThis.navigator?.locks;
++        this.writerLockTimeoutMs = options.writerLockTimeoutMs ?? 5_000;
++        if (!(Number.isFinite(this.writerLockTimeoutMs) && this.writerLockTimeoutMs > 0))
++            throw new RangeError('writerLockTimeoutMs must be positive and finite');
++        this.dbName = options.dbName ?? DEFAULT_DB_NAME;
++        this.version = Math.max(options.version ?? DEFAULT_DB_VERSION, DEFAULT_DB_VERSION);
++        this.docStore = options.docStoreName ?? DEFAULT_DOC_STORE;
++        this.docUpdateStore = options.docUpdateStoreName ?? DEFAULT_DOC_UPDATE_STORE;
++        this.flockDocStore = options.flockDocStoreName ?? DEFAULT_FLOCK_DOC_STORE;
++        this.flockDocUpdateStore =
++            options.flockDocUpdateStoreName ?? DEFAULT_FLOCK_DOC_UPDATE_STORE;
++        this.metaStore = options.metaStoreName ?? DEFAULT_META_STORE;
++        this.metaUpdateStore = options.metaUpdateStoreName ?? DEFAULT_META_UPDATE_STORE;
++        this.metaKey = options.metaKey ?? DEFAULT_META_KEY;
++        this.durability = options.durability ?? "strict";
++        this.trackWrite = createWriteFailureReporter(options.onWriteFailure, (error) => error instanceof RepoStorageError, "IndexedDB storage");
++    }
+ 	writerToken;
+-	async acquireWriterLease() {
+-		const db = await this.ensureDb();
+-		if (!this.lockManager) throw new Error("Exclusive IndexedDB storage requires Web Locks");
+-		const name = `loro-repo:idb-writer:${this.dbName}`;
+-		if ((await this.lockManager.query?.())?.held.some((lock$1) => lock$1.name === name && lock$1.mode === "exclusive")) throw new RepoWriterLocked(false);
+-		const controller = new AbortController();
+-		const deadline = setTimeout(() => controller.abort(new DOMException("IndexedDB writer acquisition timed out", "TimeoutError")), this.writerLockTimeoutMs);
+-		let unlock;
+-		let acquired;
+-		let denied;
+-		const held = new Promise((resolve) => {
+-			unlock = resolve;
+-		});
+-		const ready = new Promise((resolve, reject) => {
+-			acquired = resolve;
+-			denied = reject;
+-		});
+-		let lock;
+-		try {
+-			lock = this.lockManager.request(name, {
+-				mode: "exclusive",
+-				signal: controller.signal
+-			}, async (owner) => {
+-				if (!owner) throw new RepoWriterLocked(false);
+-				clearTimeout(deadline);
+-				acquired();
+-				await held;
+-			});
+-		} catch (error) {
+-			clearTimeout(deadline);
+-			throw RepoWriterLocked.is(error) ? error : new RepoWriterLocked(void 0, error);
+-		}
+-		lock.catch((error) => denied(RepoWriterLocked.is(error) ? error : new RepoWriterLocked(void 0, error)));
+-		try {
+-			await ready;
+-		} finally {
+-			clearTimeout(deadline);
+-		}
+-		const token = `weblocks-v1:${this.randomKeyPart()}`;
+-		try {
+-			await this.runInStoresTransaction(db, [CHECKPOINT_STORE], "readwrite", async (getStore) => {
+-				const store = getStore(CHECKPOINT_STORE);
+-				const previous = await this.wrapRequest(store.get("exclusive-writer"), "read");
+-				if (previous && (typeof previous !== "string" || !previous.startsWith("weblocks-v1:"))) throw new Error("Unknown legacy writer fence; cannot establish ownership");
+-				await this.wrapRequest(store.put(token, "exclusive-writer"), "write");
+-			}, true);
+-		} catch (error) {
+-			unlock();
+-			await lock;
+-			throw error;
+-		}
+-		this.writerToken = token;
+-		let released = false;
+-		return {
+-			token,
+-			release: async () => {
+-				if (released) return;
+-				await this.runInStoresTransaction(db, [CHECKPOINT_STORE], "readwrite", async (getStore) => {
+-					const store = getStore(CHECKPOINT_STORE);
+-					if (await this.wrapRequest(store.get("exclusive-writer"), "read") !== token) throw new Error("Storage writer fence lost");
+-					await this.wrapRequest(store.delete("exclusive-writer"), "delete");
+-				}, true);
+-				released = true;
+-				this.writerToken = void 0;
+-				unlock();
+-				await lock;
+-			}
+-		};
+-	}
+-	async discardIncompleteMigration(migrationId) {
+-		if (!this.writerToken) throw new RepoWriterLocked(void 0);
+-		const names = [
+-			this.docStore,
+-			this.docUpdateStore,
+-			this.flockDocStore,
+-			this.flockDocUpdateStore,
+-			this.metaStore,
+-			this.metaUpdateStore,
+-			CHECKPOINT_STORE
+-		];
+-		await this.runInStoresTransaction(await this.ensureDb(), names, "readwrite", async (getStore) => {
+-			const local = getStore(CHECKPOINT_STORE);
+-			if (await this.wrapRequest(local.get("migration-incomplete"), "read") !== migrationId) throw new Error("Matching incomplete migration required");
+-			for (const name of names) if (name !== CHECKPOINT_STORE) await this.wrapRequest(getStore(name).clear(), "delete");
+-			for (const key of await this.wrapRequest(local.getAllKeys(), "read")) if (key !== "exclusive-writer" && key !== "migration-incomplete") await this.wrapRequest(local.delete(key), "delete");
+-			await this.wrapRequest(local.delete("migration-incomplete"), "delete");
+-		});
+-	}
++	acquireWriterLease() {
++        return this.trackWrite(() => this.acquireWriterLeaseUntracked());
++    }
++	discardIncompleteMigration(migrationId) {
++        return this.trackWrite(() => this.discardIncompleteMigrationUntracked(migrationId));
++    }
+ 	async inventory() {
+ 		const db = await this.ensureDb();
+ 		return this.runInStoresTransaction(db, [
+@@ -257,19 +343,17 @@ var IndexedDBStorageAdaptor = class {
+ 	* transaction completes and every payload is durable, or it aborts and
+ 	* none is written.
+ 	*/
+-	async saveMany(payloads) {
+-		const batch = collectPayloads(payloads);
+-		if (batch.stores.size === 0) return;
+-		const db = await this.ensureDb();
+-		await this.runInStoresTransaction(db, [...batch.stores].map((store) => this.storeName(store)), "readwrite", async (getStore) => {
+-			const writes = [];
+-			for (const [docId, snapshots] of batch.docSnapshots) writes.push(this.mergeDocSnapshotsInTransaction(getStore(this.docStore), docId, snapshots));
+-			for (const [docId, updates] of batch.docUpdates) writes.push(this.appendDocUpdatesInTransaction(getStore(this.docUpdateStore), docId, updates));
+-			for (const [flockDocId, items] of batch.flockDocs) writes.push(this.writeFlockPayloadsInTransaction(getStore, flockDocId, items));
+-			if (batch.meta.length > 0) writes.push(this.writeMetaPayloadsInTransaction(getStore, batch.meta));
+-			await Promise.all(writes);
+-		});
+-	}
++	saveMany(payloads) {
++        // Copy synchronously: the caller may reuse its buffers once we yield.
++        let batch;
++        try {
++            batch = collectPayloads(payloads);
++        }
++        catch (error) {
++            return Promise.reject(error);
++        }
++        return this.trackWrite(() => this.saveBatch(batch));
++    }
+ 	storeName(store) {
+ 		switch (store) {
+ 			case "doc": return this.docStore;
+@@ -280,13 +364,20 @@ var IndexedDBStorageAdaptor = class {
+ 			case "meta-update": return this.metaUpdateStore;
+ 		}
+ 	}
+-	async compactMeta() {
+-		const db = await this.ensureDb();
+-		await this.compactMetaSnapshot(db);
+-	}
+-	async compactFlockDoc(flockDocId) {
+-		await this.readFlockDoc(flockDocId, "throw");
+-	}
++	compactMeta() {
++        return this.trackWrite(async () => {
++            const db = await this.ensureDb();
++            await this.compactMetaSnapshot(db);
++        });
++    }
++	compactFlockDoc(flockDocId) {
++        // Compaction *is* the write, so its failure has to reach the caller: the
++        // Flock doc manager resets its byte counter when this resolves, and would
++        // otherwise defer the retry by a full threshold.
++        return this.trackWrite(async () => {
++            await this.readFlockDoc(flockDocId, "throw");
++        });
++    }
+ 	async loadDoc(docId) {
+ 		const db = await this.ensureDb();
+ 		const { snapshot, pendingUpdates } = await this.runInStoresTransaction(db, [this.docStore, this.docUpdateStore], "readonly", async (getStore) => {
+@@ -325,38 +416,39 @@ var IndexedDBStorageAdaptor = class {
+ 		return doc;
+ 	}
+ 	migrationState = {
+-		load: async () => this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readonly", async (store) => await this.wrapRequest(store.get("migration-incomplete"), "read")),
+-		save: async (id) => this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
+-			if (id === void 0) await this.wrapRequest(store.delete("migration-incomplete"), "delete");
+-			else {
+-				if (await this.wrapRequest(store.get("migration-incomplete"), "read")) throw new Error("Migration already marked");
+-				await this.wrapRequest(store.put(id, "migration-incomplete"), "write");
+-			}
+-		})
+-	};
++        load: async () => this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readonly", async (store) => (await this.wrapRequest(store.get('migration-incomplete'), "read"))),
++        save: (id) => this.trackWrite(async () => this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
++            if (id === undefined)
++                await this.wrapRequest(store.delete('migration-incomplete'), "delete");
++            else {
++                if (await this.wrapRequest(store.get('migration-incomplete'), "read"))
++                    throw new Error('Migration already marked');
++                await this.wrapRequest(store.put(id, 'migration-incomplete'), "write");
++            }
++        })),
++    };
+ 	docCursorIndex = {
+-		load: async (id) => {
+-			return this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readonly", async (store) => await this.wrapRequest(store.get(`doc-cursor-index:${id}`), "read") ?? []);
+-		},
+-		add: async (id, url) => {
+-			await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
+-				const key = `doc-cursor-index:${id}`;
+-				const urls = await this.wrapRequest(store.get(key), "read") ?? [];
+-				if (!urls.includes(url)) await this.wrapRequest(store.put([...urls, url], key), "write");
+-			});
+-		},
+-		delete: async (id) => {
+-			await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
+-				await this.wrapRequest(store.delete(`doc-cursor-index:${id}`), "delete");
+-			});
+-		}
+-	};
+-	async deleteDoc(docId) {
+-		const db = await this.ensureDb();
+-		await this.runInStoresTransaction(db, [this.docStore, this.docUpdateStore], "readwrite", async (getStore) => {
+-			await Promise.all([this.wrapRequest(getStore(this.docStore).delete(docId), "delete"), this.wrapRequest(getStore(this.docUpdateStore).delete(docId), "delete")]);
+-		});
+-	}
++        load: async (id) => {
++            return this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readonly", async (store) => (await this.wrapRequest(store.get(`doc-cursor-index:${id}`), "read")) ??
++                []);
++        },
++        add: (id, url) => this.trackWrite(async () => {
++            await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
++                const key = `doc-cursor-index:${id}`;
++                const urls = (await this.wrapRequest(store.get(key), "read")) ?? [];
++                if (!urls.includes(url))
++                    await this.wrapRequest(store.put([...urls, url], key), "write");
++            });
++        }),
++        delete: (id) => this.trackWrite(async () => {
++            await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
++                await this.wrapRequest(store.delete(`doc-cursor-index:${id}`), "delete");
++            });
++        }),
++    };
++	deleteDoc(docId) {
++        return this.trackWrite(() => this.deleteDocUntracked(docId));
++    }
+ 	async loadFlockDoc(flockDocId) {
+ 		return this.readFlockDoc(flockDocId, "log");
+ 	}
+@@ -403,22 +495,9 @@ var IndexedDBStorageAdaptor = class {
+ 		}
+ 		return flock;
+ 	}
+-	async deleteFlockDoc(flockDocId) {
+-		const db = await this.ensureDb();
+-		const key = this.checkpointKey(flockDocId);
+-		await this.runInStoresTransaction(db, [
+-			this.flockDocStore,
+-			this.flockDocUpdateStore,
+-			CHECKPOINT_STORE
+-		], "readwrite", async (getStore) => {
+-			const store = getStore(CHECKPOINT_STORE);
+-			await Promise.all([
+-				this.wrapRequest(getStore(this.flockDocStore).delete(flockDocId), "delete"),
+-				this.wrapRequest(getStore(this.flockDocUpdateStore).delete(flockDocId), "delete"),
+-				this.wrapRequest(store.delete(key), "delete")
+-			]);
+-		});
+-	}
++	deleteFlockDoc(flockDocId) {
++        return this.trackWrite(() => this.deleteFlockDocUntracked(flockDocId));
++    }
+ 	loadMetaReplica() {
+ 		return this.loadReplica();
+ 	}
+@@ -442,92 +521,135 @@ var IndexedDBStorageAdaptor = class {
+ 		return `${META_LINEAGE_KEY_PREFIX}${this.metaKey}`;
+ 	}
+ 	async loadReplica(flockDocId) {
+-		const db = await this.ensureDb();
+-		const isMeta = flockDocId === void 0;
+-		const baseStore = isMeta ? this.metaStore : this.flockDocStore;
+-		const logStore = isMeta ? this.metaUpdateStore : this.flockDocUpdateStore;
+-		const dataKey = flockDocId ?? this.metaKey;
+-		const checkpointKey = this.checkpointKey(flockDocId);
+-		const capture = (mode, rebind) => this.runInStoresTransaction(db, [
+-			baseStore,
+-			logStore,
+-			CHECKPOINT_STORE
+-		], mode, async (getStore) => {
+-			const metaUpdates = isMeta ? await this.readMetaUpdatesFromStore(getStore(logStore)) : void 0;
+-			const [base, namedQueue, record] = await Promise.all([
+-				this.wrapRequest(getStore(baseStore).get(dataKey), "read"),
+-				isMeta ? Promise.resolve(void 0) : this.wrapRequest(getStore(logStore).get(dataKey), "read"),
+-				this.wrapRequest(getStore(CHECKPOINT_STORE).get(checkpointKey), "read")
+-			]);
+-			let snapshot = this.normalizeBinarySync(base);
+-			let checkpoint = normalizeCheckpointRecord(record);
+-			const lineage = isMeta ? metaUpdates?.lineage : queueLineage(namedQueue);
+-			if (!(checkpoint !== void 0 && lineage === checkpoint.generation && (isMeta || snapshot !== void 0))) {
+-				checkpoint = void 0;
+-				if (rebind) {
+-					checkpoint = {
+-						generation: this.randomKeyPart(),
+-						cursors: []
+-					};
+-					const { generation: generation$1 } = checkpoint;
+-					const writes = [this.wrapRequest(getStore(CHECKPOINT_STORE).put(checkpoint, checkpointKey), "write")];
+-					if (isMeta) writes.push(this.wrapRequest(getStore(logStore).put({ lineage: generation$1 }, this.metaLineageKey()), "write"));
+-					else {
+-						if (!snapshot) {
+-							snapshot = new Flock().exportFile();
+-							writes.push(this.wrapRequest(getStore(baseStore).put(snapshot, dataKey), "write"));
+-						}
+-						writes.push(this.wrapRequest(getStore(logStore).put({
+-							updates: this.updateQueueEntries(namedQueue),
+-							lineage: generation$1
+-						}, dataKey), "write"));
+-					}
+-					await Promise.all(writes);
+-				}
+-			}
+-			return {
+-				snapshot,
+-				updates: metaUpdates?.updates ?? this.normalizeUpdateQueueSync(namedQueue),
+-				metaUpdates,
+-				record: checkpoint
+-			};
+-		});
+-		let captured = await capture("readonly", false);
+-		if (!captured.record) captured = await capture("readwrite", true);
+-		if (!captured.record) throw new Error("Failed to create Flock checkpoint");
+-		let flock;
+-		let loadedJsonUpdate = false;
+-		try {
+-			({flock, loadedJsonUpdate} = hydrateMetaSnapshots(captured.snapshot, captured.updates));
+-		} catch (error) {
+-			throw this.createError(flockDocId === void 0 ? "Failed to hydrate metadata snapshot" : `Failed to hydrate Flock document "${flockDocId}"`, error);
+-		}
+-		if (flock && isMeta && captured.metaUpdates) await this.compactLoadedMeta(db, captured.snapshot, captured.metaUpdates, loadedJsonUpdate, flock).catch(logAsyncError("metadata load compaction"));
+-		else if (flock && !isMeta && captured.updates.length > 0) {
+-			const consolidated = await exportFlockFileSnapshot(flock);
+-			await this.applyWriteFailurePolicy(this.writeConsolidatedSnapshotIfUnchanged(db, {
+-				snapshotStore: this.flockDocStore,
+-				updateStore: this.flockDocUpdateStore
+-			}, flockDocId, captured.snapshot, captured.updates, consolidated), "log", `Flock replica consolidation for "${flockDocId}"`);
+-		}
+-		const { generation } = captured.record;
+-		const checkpointStore = createBoundCheckpointStore(captured.record, {
+-			isClosed: () => this.closed,
+-			commit: async (streamUrl, cursor) => {
+-				await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
+-					const cursors = mergeCheckpointCursor(normalizeCheckpointRecord(await this.wrapRequest(store.get(checkpointKey), "read")), generation, streamUrl, cursor);
+-					await this.wrapRequest(store.put({
+-						generation,
+-						cursors
+-					}, checkpointKey), "write");
+-				});
+-			}
+-		});
+-		return {
+-			flock: flock ?? new Flock(),
+-			checkpointStore
+-		};
+-	}
++        const db = await this.ensureDb();
++        const isMeta = flockDocId === undefined;
++        const baseStore = isMeta ? this.metaStore : this.flockDocStore;
++        const logStore = isMeta ? this.metaUpdateStore : this.flockDocUpdateStore;
++        const dataKey = flockDocId ?? this.metaKey;
++        const checkpointKey = this.checkpointKey(flockDocId);
++        // A checkpoint is bound to its data only through a lineage marker stored
++        // where binaries without checkpoint support remove it whenever they
++        // delete or rewrite that data (they never touch `replica-checkpoints`):
++        //
++        // - named Flock: a `lineage` field on the update-queue record. Their
++        //   `deleteFlockDoc` deletes the record; every rewrite of it (append,
++        //   snapshot save, consolidation) writes a bare `{ updates }`.
++        // - Meta: a `lineage:<metaKey>` row in `meta-updates`, skipped by their
++        //   reader. Their destructive `writeMetaSnapshot` `clear()`s the store;
++        //   their appends and key-bounded compaction leave it in place.
++        //
++        // A named marker also requires a base: their `deleteFlockDoc` removes base
++        // and queue in two transactions, so a capture between them must not
++        // accept a queue that still carries the marker without its base. Setting
++        // a marker therefore writes an empty base when there is none; this code
++        // never deletes a base without the marker.
++        //
++        // A missing or foreign marker discards the cursors and rotates the
++        // generation, which also rejects every store bound to the old one.
++        const capture = (mode, rebind) => this.runInStoresTransaction(db, [baseStore, logStore, CHECKPOINT_STORE], mode, async (getStore) => {
++            const metaUpdates = isMeta
++                ? await this.readMetaUpdatesFromStore(getStore(logStore))
++                : undefined;
++            const [base, namedQueue, record] = await Promise.all([
++                this.wrapRequest(getStore(baseStore).get(dataKey), "read"),
++                isMeta
++                    ? Promise.resolve(undefined)
++                    : this.wrapRequest(getStore(logStore).get(dataKey), "read"),
++                this.wrapRequest(getStore(CHECKPOINT_STORE).get(checkpointKey), "read"),
++            ]);
++            let snapshot = this.normalizeBinarySync(base);
++            let checkpoint = normalizeCheckpointRecord(record);
++            const lineage = isMeta ? metaUpdates?.lineage : queueLineage(namedQueue);
++            const bound = checkpoint !== undefined &&
++                lineage === checkpoint.generation &&
++                (isMeta || snapshot !== undefined);
++            if (!bound) {
++                checkpoint = undefined;
++                if (rebind) {
++                    checkpoint = { generation: this.randomKeyPart(), cursors: [] };
++                    const { generation } = checkpoint;
++                    const writes = [
++                        this.wrapRequest(getStore(CHECKPOINT_STORE).put(checkpoint, checkpointKey), "write"),
++                    ];
++                    if (isMeta) {
++                        writes.push(this.wrapRequest(getStore(logStore).put({ lineage: generation }, this.metaLineageKey()), "write"));
++                    }
++                    else {
++                        if (!snapshot) {
++                            snapshot = new Flock().exportFile();
++                            writes.push(this.wrapRequest(getStore(baseStore).put(snapshot, dataKey), "write"));
++                        }
++                        // Entries are written back verbatim, including any this
++                        // reader skips, so marking the queue never drops data.
++                        writes.push(this.wrapRequest(getStore(logStore).put({
++                            updates: this.updateQueueEntries(namedQueue),
++                            lineage: generation,
++                        }, dataKey), "write"));
++                    }
++                    await Promise.all(writes);
++                }
++            }
++            return {
++                snapshot,
++                updates: metaUpdates?.updates ?? this.normalizeUpdateQueueSync(namedQueue),
++                metaUpdates,
++                record: checkpoint,
++            };
++        });
++        // Bound replicas take the read-only hot path. A legacy/empty resource, or
++        // one whose marker is missing or foreign, is recaptured while rebinding it
++        // in one write transaction. That capture checks again, so a concurrent
++        // instance that already rebound it is reused, not rotated a second time,
++        // and a purge between the two attempts changes the second capture rather
++        // than splitting generation setup from loaded data.
++        let captured = await capture("readonly", false);
++        if (!captured.record)
++            captured = await capture("readwrite", true);
++        // The write capture above always creates a valid record.
++        if (!captured.record)
++            throw new Error("Failed to create Flock checkpoint");
++        // All bytes and progress belong to one completed capture transaction.
++        // Never replace this object with the result of a later compaction/read.
++        let flock;
++        let loadedJsonUpdate = false;
++        try {
++            ({ flock, loadedJsonUpdate } = hydrateMetaSnapshots(captured.snapshot, captured.updates));
++        }
++        catch (error) {
++            throw this.createError(flockDocId === undefined
++                ? "Failed to hydrate metadata snapshot"
++                : `Failed to hydrate Flock document "${flockDocId}"`, error);
++        }
++        if (flock && isMeta && captured.metaUpdates) {
++            // Opportunistic, as in `loadMeta`: the replica is already captured and
++            // hydrated, so a failed rewrite must not fail the open. The returned
++            // object is never replaced by the compacted state.
++            await this.compactLoadedMeta(db, captured.snapshot, captured.metaUpdates, loadedJsonUpdate, flock).catch(logAsyncError("metadata load compaction"));
++        }
++        else if (flock && !isMeta && captured.updates.length > 0) {
++            // `exportFlockFileSnapshot` yields to the macrotask queue, so it is
++            // awaited here, outside any transaction callback.
++            const consolidated = await exportFlockFileSnapshot(flock);
++            await this.applyWriteFailurePolicy(this.writeConsolidatedSnapshotIfUnchanged(db, {
++                snapshotStore: this.flockDocStore,
++                updateStore: this.flockDocUpdateStore,
++            }, flockDocId, captured.snapshot, captured.updates, consolidated), "log", `Flock replica consolidation for "${flockDocId}"`);
++        }
++        const { generation } = captured.record;
++        const checkpointStore = createBoundCheckpointStore(captured.record, {
++            isClosed: () => this.closed,
++            // The recovery connection can be closed by another tab's
++            // `versionchange`. Resolve the adapter's current handle for every
++            // later checkpoint mutation.
++            commit: (streamUrl, cursor) => this.trackWrite(async () => {
++                await this.runInTransaction(await this.ensureDb(), CHECKPOINT_STORE, "readwrite", async (store) => {
++                    const cursors = mergeCheckpointCursor(normalizeCheckpointRecord(await this.wrapRequest(store.get(checkpointKey), "read")), generation, streamUrl, cursor);
++                    await this.wrapRequest(store.put({ generation, cursors }, checkpointKey), "write");
++                });
++            }),
++        });
++        return { flock: flock ?? new Flock(), checkpointStore };
++    }
+ 	async loadMeta() {
+ 		const db = await this.ensureDb();
+ 		const { snapshot, metaUpdates } = await this.runInStoresTransaction(db, [this.metaStore, this.metaUpdateStore], "readonly", async (getStore) => {
+@@ -1108,4 +1230,43 @@ function updatesStartWith(current, expectedPrefix) {
+ 
+ //#endregion
+ export { IndexedDBStorageAdaptor, RepoStorageError };
+-//# sourceMappingURL=indexeddb.js.map
+\ No newline at end of file
++//# sourceMappingURL=indexeddb.js.map
++/**
++ * Wraps storage write operations so a host can observe their failures — for
++ * example to tell the user the disk is full — without matching log text.
++ *
++ * `track(operation)` runs one write operation. If it rejects with an error
++ * `isReportable` accepts, `listener` is called synchronously with that exact
++ * error object, then the same object is rethrown: the operation's result and
++ * error classification are unchanged, and nothing is retried. Each error
++ * object is reported at most once, so a write operation built from another
++ * tracked one still reports a single failure.
++ *
++ * A throwing listener is logged and otherwise ignored; it can never replace
++ * or suppress the storage error.
++ */
++function createWriteFailureReporter(listener, isReportable, context) {
++    if (!listener)
++        return (operation) => operation();
++    const reported = new WeakSet();
++    const report = (error) => {
++        if (!isReportable(error) || reported.has(error))
++            return;
++        reported.add(error);
++        try {
++            listener(error);
++        }
++        catch (listenerError) {
++            logAsyncError(`${context} onWriteFailure listener`)(listenerError);
++        }
++    };
++    return async (operation) => {
++        try {
++            return await operation();
++        }
++        catch (error) {
++            report(error);
++            throw error;
++        }
++    };
++}
+diff --git a/dist/storage/sqlite.cjs b/dist/storage/sqlite.cjs
+index 0542835ca..29de38c99 100644
+--- a/dist/storage/sqlite.cjs
++++ b/dist/storage/sqlite.cjs
+@@ -51,6 +51,38 @@ const BUSY_RETRY_MAX_DELAY_MS = 100;
+ * using the IndexedDB adapter.
+ */
+ var SqliteRepoStore = class SqliteRepoStore {
++async acquireWriterLeaseUntracked() {
++        this.ensureOpen();
++        const token = await require_writer_recovery.newWriterToken();
++        await this.runDb(() => this.db.transaction(() => {
++            const owner = this.writerOwner.get();
++            if (owner)
++                throw new require_meta_snapshot.RepoWriterLocked(require_writer_recovery.writerRecoveryStatus(owner.token));
++            this.db.prepare(`INSERT INTO "${this.prefix}writer_owner" (id, token) VALUES (1, ?)`)
++                .run(token);
++        })
++            .immediate());
++        this.writerToken = token;
++        let released = false;
++        return {
++            token,
++            release: async () => {
++                if (released)
++                    return;
++                await this.trackWrite(() => this.runDb(() => this.db.transaction(() => {
++                    this.assertWriter();
++                    this.db.prepare(`DELETE FROM "${this.prefix}writer_owner" WHERE id = 1 AND token = ?`)
++                        .run(token);
++                })
++                    .immediate()));
++                released = true;
++                this.writerToken = undefined;
++            },
++        };
++    }
++
++trackWrite;
++
+ 	db;
+ 	ownsDatabase;
+ 	prefix;
+@@ -106,48 +138,58 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 		});
+ 	}
+ 	constructor(options = {}) {
+-		if (options.database) {
+-			this.db = options.database;
+-			this.ownsDatabase = false;
+-		} else {
+-			this.db = new better_sqlite3.default(options.path ?? ":memory:");
+-			this.ownsDatabase = true;
+-		}
+-		this.prefix = validateTablePrefix(options.tablePrefix ?? "");
+-		this.busyTimeoutMs = validateMilliseconds("busyTimeoutMs", options.busyTimeoutMs ?? (this.ownsDatabase ? 0 : OPEN_BUSY_TIMEOUT_MS));
+-		this.busyRetryMs = validateMilliseconds("busyRetryMs", options.busyRetryMs ?? DEFAULT_BUSY_RETRY_MS);
+-		this.db.pragma(`busy_timeout = ${OPEN_BUSY_TIMEOUT_MS}`);
+-		if (options.wal !== false) {
+-			this.db.pragma("journal_mode = WAL");
+-			this.db.pragma("synchronous = NORMAL");
+-		}
+-		this.db.exec(`CREATE TABLE IF NOT EXISTS "${this.prefix}writer_owner" (id INTEGER PRIMARY KEY CHECK(id = 1), token TEXT NOT NULL)`);
+-		this.writerOwner = this.db.prepare(`SELECT token FROM "${this.prefix}writer_owner" WHERE id = 1`);
+-		try {
+-			if (options.recoverStaleWriter) this.recoverStaleWriterBody();
+-			this.assertWriter();
+-		} catch (error) {
+-			if (this.ownsDatabase) this.db.close();
+-			throw error;
+-		}
+-		this.db.exec(`CREATE TABLE IF NOT EXISTS "${this.prefix}maintenance" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+-		this.runMigrations();
+-		this.stmts = this.prepareStatements();
+-		this.loadDocAtomic = this.transaction((docId) => this.loadDocBody(docId));
+-		this.loadFlockDocAtomic = this.transaction((flockDocId) => this.loadFlockDocBody(flockDocId));
+-		this.loadMetaAtomic = this.transaction(() => this.loadMetaBody());
+-		this.captureReplicaAtomic = this.transaction((flockDocId, create) => this.captureReplicaBody(flockDocId, create));
+-		this.writeCheckpointAtomic = this.transaction((resourceKey, generation, streamUrl, cursor) => this.writeCheckpointBody(resourceKey, generation, streamUrl, cursor));
+-		this.saveDocSnapshotAtomic = this.transaction((docId, incoming, now) => this.saveDocSnapshotBody(docId, incoming, now));
+-		this.saveFlockDocSnapshotAtomic = this.transaction((flockDocId, incoming, now) => this.saveFlockDocSnapshotBody(flockDocId, incoming, now));
+-		this.saveMetaSnapshotAtomic = this.transaction((incoming, now) => this.saveMetaSnapshotBody(incoming, now));
+-		this.saveManyAtomic = this.transaction((payloads, now) => {
+-			for (const payload of payloads) this.savePayload(payload, now);
+-		});
+-		this.storage = this.createStorageAdapter();
+-		this.cursorStore = this.createCursorStore();
+-		this.db.pragma(`busy_timeout = ${this.busyTimeoutMs}`);
+-	}
++        if (options.database) {
++            this.db = options.database;
++            this.ownsDatabase = false;
++        }
++        else {
++            const path = options.path ?? ":memory:";
++            this.db = new better_sqlite3.default(path);
++            this.ownsDatabase = true;
++        }
++        this.prefix = validateTablePrefix(options.tablePrefix ?? "");
++        this.busyTimeoutMs = validateMilliseconds("busyTimeoutMs", options.busyTimeoutMs ?? (this.ownsDatabase ? 0 : OPEN_BUSY_TIMEOUT_MS));
++        this.busyRetryMs = validateMilliseconds("busyRetryMs", options.busyRetryMs ?? DEFAULT_BUSY_RETRY_MS);
++        this.trackWrite = createWriteFailureReporter(options.onWriteFailure, isSqliteStorageFailure, "SQLite storage");
++        // Give concurrent writers a fair chance to release the lock during the
++        // synchronous schema setup below; steady-state work retries
++        // asynchronously instead (see `runDb`).
++        this.db.pragma(`busy_timeout = ${OPEN_BUSY_TIMEOUT_MS}`);
++        if (options.wal !== false) {
++            this.db.pragma("journal_mode = WAL");
++            this.db.pragma("synchronous = NORMAL");
++        }
++        this.db.exec(`CREATE TABLE IF NOT EXISTS "${this.prefix}writer_owner" (id INTEGER PRIMARY KEY CHECK(id = 1), token TEXT NOT NULL)`);
++        this.writerOwner = this.db.prepare(`SELECT token FROM "${this.prefix}writer_owner" WHERE id = 1`);
++        try {
++            if (options.recoverStaleWriter)
++                this.recoverStaleWriterBody();
++            this.assertWriter();
++        }
++        catch (error) {
++            if (this.ownsDatabase)
++                this.db.close();
++            throw error;
++        }
++        this.db.exec(`CREATE TABLE IF NOT EXISTS "${this.prefix}maintenance" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
++        this.runMigrations();
++        this.stmts = this.prepareStatements();
++        this.loadDocAtomic = this.transaction((docId) => this.loadDocBody(docId));
++        this.loadFlockDocAtomic = this.transaction((flockDocId) => this.loadFlockDocBody(flockDocId));
++        this.loadMetaAtomic = this.transaction(() => this.loadMetaBody());
++        this.captureReplicaAtomic = this.transaction((flockDocId, create) => this.captureReplicaBody(flockDocId, create));
++        this.writeCheckpointAtomic = this.transaction((resourceKey, generation, streamUrl, cursor) => this.writeCheckpointBody(resourceKey, generation, streamUrl, cursor));
++        this.saveDocSnapshotAtomic = this.transaction((docId, incoming, now) => this.saveDocSnapshotBody(docId, incoming, now));
++        this.saveFlockDocSnapshotAtomic = this.transaction((flockDocId, incoming, now) => this.saveFlockDocSnapshotBody(flockDocId, incoming, now));
++        this.saveMetaSnapshotAtomic = this.transaction((incoming, now) => this.saveMetaSnapshotBody(incoming, now));
++        this.saveManyAtomic = this.transaction((payloads, now) => {
++            for (const payload of payloads)
++                this.savePayload(payload, now);
++        });
++        this.storage = this.createStorageAdapter();
++        this.cursorStore = this.createCursorStore();
++        this.db.pragma(`busy_timeout = ${this.busyTimeoutMs}`);
++    }
+ 	/**
+ 	* Closes the underlying database connection if it was created by this
+ 	* instance. If `database` was supplied to the constructor, the caller is
+@@ -388,29 +430,9 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 			}
+ 		}
+ 	}
+-	async acquireWriterLease() {
+-		this.ensureOpen();
+-		const token = await require_writer_recovery.newWriterToken();
+-		await this.runDb(() => this.db.transaction(() => {
+-			const owner = this.writerOwner.get();
+-			if (owner) throw new require_meta_snapshot.RepoWriterLocked(require_writer_recovery.writerRecoveryStatus(owner.token));
+-			this.db.prepare(`INSERT INTO "${this.prefix}writer_owner" (id, token) VALUES (1, ?)`).run(token);
+-		}).immediate());
+-		this.writerToken = token;
+-		let released = false;
+-		return {
+-			token,
+-			release: async () => {
+-				if (released) return;
+-				await this.runDb(() => this.db.transaction(() => {
+-					this.assertWriter();
+-					this.db.prepare(`DELETE FROM "${this.prefix}writer_owner" WHERE id = 1 AND token = ?`).run(token);
+-				}).immediate());
+-				released = true;
+-				this.writerToken = void 0;
+-			}
+-		};
+-	}
++	acquireWriterLease() {
++        return this.trackWrite(() => this.acquireWriterLeaseUntracked());
++    }
+ 	async inventory() {
+ 		this.ensureOpen();
+ 		return this.runDb(() => this.transaction(() => ({
+@@ -442,52 +464,63 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 		this.metaSnapshotDigest = void 0;
+ 	}
+ 	createStorageAdapter() {
+-		const table = `"${this.prefix}doc_cursor_urls"`;
+-		return {
+-			migrationState: {
+-				load: async () => {
+-					this.ensureOpen();
+-					return this.runDb(() => this.db.prepare(`SELECT value FROM "${this.prefix}maintenance" WHERE key = 'migration'`).get()?.value);
+-				},
+-				save: async (id) => {
+-					this.ensureOpen();
+-					await this.runDb(() => this.transaction(() => {
+-						if (id === void 0) this.db.prepare(`DELETE FROM "${this.prefix}maintenance" WHERE key = 'migration'`).run();
+-						else this.db.prepare(`INSERT INTO "${this.prefix}maintenance" (key, value) VALUES ('migration', ?)`).run(id);
+-					}).immediate());
+-				}
+-			},
+-			discardIncompleteMigration: (id) => this.discardIncompleteMigration(id),
+-			acquireWriterLease: () => this.acquireWriterLease(),
+-			inventory: () => this.inventory(),
+-			docCursorIndex: {
+-				load: async (id) => {
+-					this.ensureOpen();
+-					return this.runDb(() => this.db.prepare(`SELECT stream_url FROM ${table} WHERE doc_id = ?`).all(id).map((row) => row.stream_url));
+-				},
+-				add: async (id, url) => {
+-					this.ensureOpen();
+-					await this.runDb(() => this.transaction(() => this.db.prepare(`INSERT OR IGNORE INTO ${table} (doc_id, stream_url) VALUES (?, ?)`).run(id, url)).immediate());
+-				},
+-				delete: async (id) => {
+-					this.ensureOpen();
+-					await this.runDb(() => this.transaction(() => this.db.prepare(`DELETE FROM ${table} WHERE doc_id = ?`).run(id)).immediate());
+-				}
+-			},
+-			save: (payload) => this.saveStorage(payload),
+-			saveMany: (payloads) => this.saveManyStorage(payloads),
+-			compactMeta: () => this.compactMeta(),
+-			compactFlockDoc: (flockDocId) => this.compactFlockDoc(flockDocId),
+-			loadDoc: (docId) => this.loadDoc(docId),
+-			loadFlockDoc: (flockDocId) => this.loadFlockDoc(flockDocId),
+-			deleteDoc: (docId) => this.deleteDoc(docId),
+-			deleteFlockDoc: (flockDocId) => this.deleteFlockDoc(flockDocId),
+-			loadMeta: () => this.loadMeta(),
+-			loadMetaReplica: () => this.loadReplica(),
+-			loadFlockDocReplica: (flockDocId) => this.loadReplica(flockDocId),
+-			close: () => this.close()
+-		};
+-	}
++        const table = `"${this.prefix}doc_cursor_urls"`;
++        return {
++            migrationState: {
++                load: async () => {
++                    this.ensureOpen();
++                    return this.runDb(() => this.db.prepare(`SELECT value FROM "${this.prefix}maintenance" WHERE key = 'migration'`)
++                        .get()?.value);
++                },
++                save: (id) => this.trackWrite(async () => {
++                    this.ensureOpen();
++                    await this.runDb(() => this.transaction(() => {
++                        if (id === undefined)
++                            this.db.prepare(`DELETE FROM "${this.prefix}maintenance" WHERE key = 'migration'`)
++                                .run();
++                        else
++                            this.db.prepare(`INSERT INTO "${this.prefix}maintenance" (key, value) VALUES ('migration', ?)`)
++                                .run(id);
++                    }).immediate());
++                }),
++            },
++            discardIncompleteMigration: (id) => this.trackWrite(() => this.discardIncompleteMigration(id)),
++            acquireWriterLease: () => this.acquireWriterLease(),
++            inventory: () => this.inventory(),
++            docCursorIndex: {
++                load: async (id) => {
++                    this.ensureOpen();
++                    return this.runDb(() => this.db.prepare(`SELECT stream_url FROM ${table} WHERE doc_id = ?`).all(id).map((row) => row.stream_url));
++                },
++                add: (id, url) => this.trackWrite(async () => {
++                    this.ensureOpen();
++                    await this.runDb(() => this.transaction(() => this.db.prepare(`INSERT OR IGNORE INTO ${table} (doc_id, stream_url) VALUES (?, ?)`)
++                        .run(id, url)).immediate());
++                }),
++                delete: (id) => this.trackWrite(async () => {
++                    this.ensureOpen();
++                    await this.runDb(() => this.transaction(() => this.db.prepare(`DELETE FROM ${table} WHERE doc_id = ?`).run(id)).immediate());
++                }),
++            },
++            save: (payload) => this.trackWrite(() => this.saveStorage(payload)),
++            saveMany: (payloads) => this.trackWrite(() => this.saveManyStorage(payloads)),
++            compactMeta: () => this.trackWrite(() => this.compactMeta()),
++            compactFlockDoc: (flockDocId) => this.trackWrite(() => this.compactFlockDoc(flockDocId)),
++            loadDoc: (docId) => this.loadDoc(docId),
++            loadFlockDoc: (flockDocId) => this.loadFlockDoc(flockDocId),
++            deleteDoc: (docId) => this.trackWrite(() => this.deleteDoc(docId)),
++            deleteFlockDoc: (flockDocId) => this.trackWrite(() => this.deleteFlockDoc(flockDocId)),
++            loadMeta: () => this.loadMeta(),
++            loadMetaReplica: () => this.loadReplica(),
++            loadFlockDocReplica: (flockDocId) => this.loadReplica(flockDocId),
++            // `LoroRepo.destroy()` invokes `storageAdapter.close?.()`. Without this
++            // hook the underlying connection (and its WAL/SHM file handles) would
++            // outlive a normal repo lifecycle unless the caller remembered to call
++            // `store.close()` separately. `store.close()` is idempotent so the
++            // belt-and-suspenders call from user code remains safe.
++            close: () => this.close(),
++        };
++    }
+ 	async saveStorage(payload) {
+ 		this.ensureOpen();
+ 		await this.runDb(() => this.savePayload(payload, Date.now()));
+@@ -710,24 +743,39 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 	* saves; it never re-reads progress another instance or process writes.
+ 	*/
+ 	async loadReplica(flockDocId) {
+-		this.ensureOpen();
+-		const captured = await this.runDb(() => this.captureReplicaAtomic.deferred(flockDocId, false) ?? this.captureReplicaAtomic.immediate(flockDocId, true));
+-		const state = this.hydrateFlockRows(flockDocId, captured);
+-		if (state?.needsCompaction) await this.compactLoaded(flockDocId, state).catch(require_logging.logAsyncError(flockDocId === void 0 ? "metadata replica consolidation" : `Flock replica consolidation for "${flockDocId}"`));
+-		else if (state && flockDocId === void 0 && captured.snapshotRow) {
+-			const snapshotRow = captured.snapshotRow;
+-			await this.runDb(() => this.rememberMetaDigest(snapshotRow)).catch(require_logging.logAsyncError("metadata digest backfill"));
+-		}
+-		const resourceKey = checkpointResourceKey(flockDocId);
+-		const { generation } = captured.record;
+-		return {
+-			flock: state?.flock ?? new __loro_dev_flock_wasm.Flock(),
+-			checkpointStore: require_replica_checkpoints.createBoundCheckpointStore(captured.record, {
+-				isClosed: () => this.closed,
+-				commit: (streamUrl, cursor) => this.runDb(() => this.writeCheckpointAtomic.immediate(resourceKey, generation, streamUrl, cursor))
+-			})
+-		};
+-	}
++        this.ensureOpen();
++        // Existing generations take the deferred read path. Legacy or empty
++        // resources are recaptured while creating a generation in one IMMEDIATE
++        // transaction, so a purge in between changes the second capture instead
++        // of splitting generation setup from the loaded data.
++        const captured = await this.runDb(() => this.captureReplicaAtomic.deferred(flockDocId, false) ??
++            // Creating always yields a capture.
++            this.captureReplicaAtomic.immediate(flockDocId, true));
++        const state = this.hydrateFlockRows(flockDocId, captured);
++        if (state?.needsCompaction) {
++            // Opportunistic: the replica is already captured and hydrated, and the
++            // compaction never replaces the object returned below.
++            await this.compactLoaded(flockDocId, state).catch(require_logging.logAsyncError(flockDocId === undefined
++                ? "metadata replica consolidation"
++                : `Flock replica consolidation for "${flockDocId}"`));
++        }
++        else if (state && flockDocId === undefined && captured.snapshotRow) {
++            const snapshotRow = captured.snapshotRow;
++            await this.runDb(() => this.rememberMetaDigest(snapshotRow)).catch(require_logging.logAsyncError("metadata digest backfill"));
++        }
++        const resourceKey = checkpointResourceKey(flockDocId);
++        const { generation } = captured.record;
++        return {
++            flock: state?.flock ?? new __loro_dev_flock_wasm.Flock(),
++            checkpointStore: require_replica_checkpoints.createBoundCheckpointStore(captured.record, {
++                isClosed: () => this.closed,
++                // Data saves run on this connection in request order and resolve
++                // only once committed, so every data barrier the transport awaited
++                // has committed before this IMMEDIATE transaction begins.
++                commit: (streamUrl, cursor) => this.trackWrite(() => this.runDb(() => this.writeCheckpointAtomic.immediate(resourceKey, generation, streamUrl, cursor))),
++            }),
++        };
++    }
+ 	captureReplicaBody(flockDocId, create) {
+ 		const resourceKey = checkpointResourceKey(flockDocId);
+ 		let record = parseCheckpointRow(this.stmts.selectCheckpoint.get(resourceKey));
+@@ -812,12 +860,12 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 		await this.loadMeta();
+ 	}
+ 	createCursorStore() {
+-		return {
+-			load: (streamUrl) => this.loadCursor(streamUrl),
+-			save: (cursor) => this.saveCursor(cursor),
+-			delete: (streamUrl) => this.removeCursor(streamUrl)
+-		};
+-	}
++        return {
++            load: (streamUrl) => this.loadCursor(streamUrl),
++            save: (cursor) => this.trackWrite(() => this.saveCursor(cursor)),
++            delete: (streamUrl) => this.trackWrite(() => this.removeCursor(streamUrl)),
++        };
++    }
+ 	parseCursorServerLowerBoundVersion(value) {
+ 		try {
+ 			const parsed = JSON.parse(value);
+@@ -899,4 +947,52 @@ function hashSnapshot(bytes) {
+ 
+ //#endregion
+ exports.SqliteRepoStore = SqliteRepoStore;
+-//# sourceMappingURL=sqlite.cjs.map
+\ No newline at end of file
++//# sourceMappingURL=sqlite.cjs.map
++/**
++ * Wraps storage write operations so a host can observe their failures — for
++ * example to tell the user the disk is full — without matching log text.
++ *
++ * `track(operation)` runs one write operation. If it rejects with an error
++ * `isReportable` accepts, `listener` is called synchronously with that exact
++ * error object, then the same object is rethrown: the operation's result and
++ * error classification are unchanged, and nothing is retried. Each error
++ * object is reported at most once, so a write operation built from another
++ * tracked one still reports a single failure.
++ *
++ * A throwing listener is logged and otherwise ignored; it can never replace
++ * or suppress the storage error.
++ */
++function createWriteFailureReporter(listener, isReportable, context) {
++    if (!listener)
++        return (operation) => operation();
++    const reported = new WeakSet();
++    const report = (error) => {
++        if (!isReportable(error) || reported.has(error))
++            return;
++        reported.add(error);
++        try {
++            listener(error);
++        }
++        catch (listenerError) {
++            require_logging.logAsyncError(`${context} onWriteFailure listener`)(listenerError);
++        }
++    };
++    return async (operation) => {
++        try {
++            return await operation();
++        }
++        catch (error) {
++            report(error);
++            throw error;
++        }
++    };
++}
++function isSqliteStorageFailure(error) {
++    if (error instanceof require_meta_snapshot.RepoStorageError)
++        return true;
++    if (!(error instanceof Error))
++        return false;
++    const code = error.code;
++    return (typeof code === "string" &&
++        (code.startsWith("SQLITE_") || /^E[A-Z0-9]+$/.test(code)));
++}
+diff --git a/dist/storage/sqlite.d.cts b/dist/storage/sqlite.d.cts
+index 954e7aac1..13ad4df6b 100644
+--- a/dist/storage/sqlite.d.cts
++++ b/dist/storage/sqlite.d.cts
+@@ -42,6 +42,8 @@ interface SqliteRepoStoreOptions {
+    * one starts its budget when it reaches the head. Defaults to `5000`.
+    */
+   readonly busyRetryMs?: number;
++  /** Observes failed writes without changing the thrown error. Backport of loro-repo#164. */
++  readonly onWriteFailure?: (error: Error) => void;
+ }
+ /**
+  * SQLite-backed persistence for a {@link LoroRepo}. A single database
+diff --git a/dist/storage/sqlite.d.ts b/dist/storage/sqlite.d.ts
+index 1fa05996c..2c1b1b64d 100644
+--- a/dist/storage/sqlite.d.ts
++++ b/dist/storage/sqlite.d.ts
+@@ -42,6 +42,8 @@ interface SqliteRepoStoreOptions {
+    * one starts its budget when it reaches the head. Defaults to `5000`.
+    */
+   readonly busyRetryMs?: number;
++  /** Observes failed writes without changing the thrown error. Backport of loro-repo#164. */
++  readonly onWriteFailure?: (error: Error) => void;
+ }
+ /**
+  * SQLite-backed persistence for a {@link LoroRepo}. A single database
+diff --git a/dist/storage/sqlite.js b/dist/storage/sqlite.js
+index ed2b45861..fad053fbb 100644
+--- a/dist/storage/sqlite.js
++++ b/dist/storage/sqlite.js
+@@ -1,3 +1,4 @@
++import { s as RepoStorageError } from "../meta-snapshot.js";
+ import { i as normalizeCheckpointRecord, r as mergeCheckpointCursor, t as createBoundCheckpointStore } from "../replica-checkpoints.js";
+ import { i as metaLayoutNeedsRewrite, n as hydrateMetaSnapshots, u as RepoWriterLocked } from "../meta-snapshot.js";
+ import { t as applyStoredDocUpdates } from "../doc-updates.js";
+@@ -46,6 +47,38 @@ const BUSY_RETRY_MAX_DELAY_MS = 100;
+ * using the IndexedDB adapter.
+ */
+ var SqliteRepoStore = class SqliteRepoStore {
++async acquireWriterLeaseUntracked() {
++        this.ensureOpen();
++        const token = await newWriterToken();
++        await this.runDb(() => this.db.transaction(() => {
++            const owner = this.writerOwner.get();
++            if (owner)
++                throw new RepoWriterLocked(writerRecoveryStatus(owner.token));
++            this.db.prepare(`INSERT INTO "${this.prefix}writer_owner" (id, token) VALUES (1, ?)`)
++                .run(token);
++        })
++            .immediate());
++        this.writerToken = token;
++        let released = false;
++        return {
++            token,
++            release: async () => {
++                if (released)
++                    return;
++                await this.trackWrite(() => this.runDb(() => this.db.transaction(() => {
++                    this.assertWriter();
++                    this.db.prepare(`DELETE FROM "${this.prefix}writer_owner" WHERE id = 1 AND token = ?`)
++                        .run(token);
++                })
++                    .immediate()));
++                released = true;
++                this.writerToken = undefined;
++            },
++        };
++    }
++
++trackWrite;
++
+ 	db;
+ 	ownsDatabase;
+ 	prefix;
+@@ -101,48 +134,58 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 		});
+ 	}
+ 	constructor(options = {}) {
+-		if (options.database) {
+-			this.db = options.database;
+-			this.ownsDatabase = false;
+-		} else {
+-			this.db = new BetterSqlite3(options.path ?? ":memory:");
+-			this.ownsDatabase = true;
+-		}
+-		this.prefix = validateTablePrefix(options.tablePrefix ?? "");
+-		this.busyTimeoutMs = validateMilliseconds("busyTimeoutMs", options.busyTimeoutMs ?? (this.ownsDatabase ? 0 : OPEN_BUSY_TIMEOUT_MS));
+-		this.busyRetryMs = validateMilliseconds("busyRetryMs", options.busyRetryMs ?? DEFAULT_BUSY_RETRY_MS);
+-		this.db.pragma(`busy_timeout = ${OPEN_BUSY_TIMEOUT_MS}`);
+-		if (options.wal !== false) {
+-			this.db.pragma("journal_mode = WAL");
+-			this.db.pragma("synchronous = NORMAL");
+-		}
+-		this.db.exec(`CREATE TABLE IF NOT EXISTS "${this.prefix}writer_owner" (id INTEGER PRIMARY KEY CHECK(id = 1), token TEXT NOT NULL)`);
+-		this.writerOwner = this.db.prepare(`SELECT token FROM "${this.prefix}writer_owner" WHERE id = 1`);
+-		try {
+-			if (options.recoverStaleWriter) this.recoverStaleWriterBody();
+-			this.assertWriter();
+-		} catch (error) {
+-			if (this.ownsDatabase) this.db.close();
+-			throw error;
+-		}
+-		this.db.exec(`CREATE TABLE IF NOT EXISTS "${this.prefix}maintenance" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+-		this.runMigrations();
+-		this.stmts = this.prepareStatements();
+-		this.loadDocAtomic = this.transaction((docId) => this.loadDocBody(docId));
+-		this.loadFlockDocAtomic = this.transaction((flockDocId) => this.loadFlockDocBody(flockDocId));
+-		this.loadMetaAtomic = this.transaction(() => this.loadMetaBody());
+-		this.captureReplicaAtomic = this.transaction((flockDocId, create) => this.captureReplicaBody(flockDocId, create));
+-		this.writeCheckpointAtomic = this.transaction((resourceKey, generation, streamUrl, cursor) => this.writeCheckpointBody(resourceKey, generation, streamUrl, cursor));
+-		this.saveDocSnapshotAtomic = this.transaction((docId, incoming, now) => this.saveDocSnapshotBody(docId, incoming, now));
+-		this.saveFlockDocSnapshotAtomic = this.transaction((flockDocId, incoming, now) => this.saveFlockDocSnapshotBody(flockDocId, incoming, now));
+-		this.saveMetaSnapshotAtomic = this.transaction((incoming, now) => this.saveMetaSnapshotBody(incoming, now));
+-		this.saveManyAtomic = this.transaction((payloads, now) => {
+-			for (const payload of payloads) this.savePayload(payload, now);
+-		});
+-		this.storage = this.createStorageAdapter();
+-		this.cursorStore = this.createCursorStore();
+-		this.db.pragma(`busy_timeout = ${this.busyTimeoutMs}`);
+-	}
++        if (options.database) {
++            this.db = options.database;
++            this.ownsDatabase = false;
++        }
++        else {
++            const path = options.path ?? ":memory:";
++            this.db = new BetterSqlite3(path);
++            this.ownsDatabase = true;
++        }
++        this.prefix = validateTablePrefix(options.tablePrefix ?? "");
++        this.busyTimeoutMs = validateMilliseconds("busyTimeoutMs", options.busyTimeoutMs ?? (this.ownsDatabase ? 0 : OPEN_BUSY_TIMEOUT_MS));
++        this.busyRetryMs = validateMilliseconds("busyRetryMs", options.busyRetryMs ?? DEFAULT_BUSY_RETRY_MS);
++        this.trackWrite = createWriteFailureReporter(options.onWriteFailure, isSqliteStorageFailure, "SQLite storage");
++        // Give concurrent writers a fair chance to release the lock during the
++        // synchronous schema setup below; steady-state work retries
++        // asynchronously instead (see `runDb`).
++        this.db.pragma(`busy_timeout = ${OPEN_BUSY_TIMEOUT_MS}`);
++        if (options.wal !== false) {
++            this.db.pragma("journal_mode = WAL");
++            this.db.pragma("synchronous = NORMAL");
++        }
++        this.db.exec(`CREATE TABLE IF NOT EXISTS "${this.prefix}writer_owner" (id INTEGER PRIMARY KEY CHECK(id = 1), token TEXT NOT NULL)`);
++        this.writerOwner = this.db.prepare(`SELECT token FROM "${this.prefix}writer_owner" WHERE id = 1`);
++        try {
++            if (options.recoverStaleWriter)
++                this.recoverStaleWriterBody();
++            this.assertWriter();
++        }
++        catch (error) {
++            if (this.ownsDatabase)
++                this.db.close();
++            throw error;
++        }
++        this.db.exec(`CREATE TABLE IF NOT EXISTS "${this.prefix}maintenance" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
++        this.runMigrations();
++        this.stmts = this.prepareStatements();
++        this.loadDocAtomic = this.transaction((docId) => this.loadDocBody(docId));
++        this.loadFlockDocAtomic = this.transaction((flockDocId) => this.loadFlockDocBody(flockDocId));
++        this.loadMetaAtomic = this.transaction(() => this.loadMetaBody());
++        this.captureReplicaAtomic = this.transaction((flockDocId, create) => this.captureReplicaBody(flockDocId, create));
++        this.writeCheckpointAtomic = this.transaction((resourceKey, generation, streamUrl, cursor) => this.writeCheckpointBody(resourceKey, generation, streamUrl, cursor));
++        this.saveDocSnapshotAtomic = this.transaction((docId, incoming, now) => this.saveDocSnapshotBody(docId, incoming, now));
++        this.saveFlockDocSnapshotAtomic = this.transaction((flockDocId, incoming, now) => this.saveFlockDocSnapshotBody(flockDocId, incoming, now));
++        this.saveMetaSnapshotAtomic = this.transaction((incoming, now) => this.saveMetaSnapshotBody(incoming, now));
++        this.saveManyAtomic = this.transaction((payloads, now) => {
++            for (const payload of payloads)
++                this.savePayload(payload, now);
++        });
++        this.storage = this.createStorageAdapter();
++        this.cursorStore = this.createCursorStore();
++        this.db.pragma(`busy_timeout = ${this.busyTimeoutMs}`);
++    }
+ 	/**
+ 	* Closes the underlying database connection if it was created by this
+ 	* instance. If `database` was supplied to the constructor, the caller is
+@@ -383,29 +426,9 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 			}
+ 		}
+ 	}
+-	async acquireWriterLease() {
+-		this.ensureOpen();
+-		const token = await newWriterToken();
+-		await this.runDb(() => this.db.transaction(() => {
+-			const owner = this.writerOwner.get();
+-			if (owner) throw new RepoWriterLocked(writerRecoveryStatus(owner.token));
+-			this.db.prepare(`INSERT INTO "${this.prefix}writer_owner" (id, token) VALUES (1, ?)`).run(token);
+-		}).immediate());
+-		this.writerToken = token;
+-		let released = false;
+-		return {
+-			token,
+-			release: async () => {
+-				if (released) return;
+-				await this.runDb(() => this.db.transaction(() => {
+-					this.assertWriter();
+-					this.db.prepare(`DELETE FROM "${this.prefix}writer_owner" WHERE id = 1 AND token = ?`).run(token);
+-				}).immediate());
+-				released = true;
+-				this.writerToken = void 0;
+-			}
+-		};
+-	}
++	acquireWriterLease() {
++        return this.trackWrite(() => this.acquireWriterLeaseUntracked());
++    }
+ 	async inventory() {
+ 		this.ensureOpen();
+ 		return this.runDb(() => this.transaction(() => ({
+@@ -437,52 +460,63 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 		this.metaSnapshotDigest = void 0;
+ 	}
+ 	createStorageAdapter() {
+-		const table = `"${this.prefix}doc_cursor_urls"`;
+-		return {
+-			migrationState: {
+-				load: async () => {
+-					this.ensureOpen();
+-					return this.runDb(() => this.db.prepare(`SELECT value FROM "${this.prefix}maintenance" WHERE key = 'migration'`).get()?.value);
+-				},
+-				save: async (id) => {
+-					this.ensureOpen();
+-					await this.runDb(() => this.transaction(() => {
+-						if (id === void 0) this.db.prepare(`DELETE FROM "${this.prefix}maintenance" WHERE key = 'migration'`).run();
+-						else this.db.prepare(`INSERT INTO "${this.prefix}maintenance" (key, value) VALUES ('migration', ?)`).run(id);
+-					}).immediate());
+-				}
+-			},
+-			discardIncompleteMigration: (id) => this.discardIncompleteMigration(id),
+-			acquireWriterLease: () => this.acquireWriterLease(),
+-			inventory: () => this.inventory(),
+-			docCursorIndex: {
+-				load: async (id) => {
+-					this.ensureOpen();
+-					return this.runDb(() => this.db.prepare(`SELECT stream_url FROM ${table} WHERE doc_id = ?`).all(id).map((row) => row.stream_url));
+-				},
+-				add: async (id, url) => {
+-					this.ensureOpen();
+-					await this.runDb(() => this.transaction(() => this.db.prepare(`INSERT OR IGNORE INTO ${table} (doc_id, stream_url) VALUES (?, ?)`).run(id, url)).immediate());
+-				},
+-				delete: async (id) => {
+-					this.ensureOpen();
+-					await this.runDb(() => this.transaction(() => this.db.prepare(`DELETE FROM ${table} WHERE doc_id = ?`).run(id)).immediate());
+-				}
+-			},
+-			save: (payload) => this.saveStorage(payload),
+-			saveMany: (payloads) => this.saveManyStorage(payloads),
+-			compactMeta: () => this.compactMeta(),
+-			compactFlockDoc: (flockDocId) => this.compactFlockDoc(flockDocId),
+-			loadDoc: (docId) => this.loadDoc(docId),
+-			loadFlockDoc: (flockDocId) => this.loadFlockDoc(flockDocId),
+-			deleteDoc: (docId) => this.deleteDoc(docId),
+-			deleteFlockDoc: (flockDocId) => this.deleteFlockDoc(flockDocId),
+-			loadMeta: () => this.loadMeta(),
+-			loadMetaReplica: () => this.loadReplica(),
+-			loadFlockDocReplica: (flockDocId) => this.loadReplica(flockDocId),
+-			close: () => this.close()
+-		};
+-	}
++        const table = `"${this.prefix}doc_cursor_urls"`;
++        return {
++            migrationState: {
++                load: async () => {
++                    this.ensureOpen();
++                    return this.runDb(() => this.db.prepare(`SELECT value FROM "${this.prefix}maintenance" WHERE key = 'migration'`)
++                        .get()?.value);
++                },
++                save: (id) => this.trackWrite(async () => {
++                    this.ensureOpen();
++                    await this.runDb(() => this.transaction(() => {
++                        if (id === undefined)
++                            this.db.prepare(`DELETE FROM "${this.prefix}maintenance" WHERE key = 'migration'`)
++                                .run();
++                        else
++                            this.db.prepare(`INSERT INTO "${this.prefix}maintenance" (key, value) VALUES ('migration', ?)`)
++                                .run(id);
++                    }).immediate());
++                }),
++            },
++            discardIncompleteMigration: (id) => this.trackWrite(() => this.discardIncompleteMigration(id)),
++            acquireWriterLease: () => this.acquireWriterLease(),
++            inventory: () => this.inventory(),
++            docCursorIndex: {
++                load: async (id) => {
++                    this.ensureOpen();
++                    return this.runDb(() => this.db.prepare(`SELECT stream_url FROM ${table} WHERE doc_id = ?`).all(id).map((row) => row.stream_url));
++                },
++                add: (id, url) => this.trackWrite(async () => {
++                    this.ensureOpen();
++                    await this.runDb(() => this.transaction(() => this.db.prepare(`INSERT OR IGNORE INTO ${table} (doc_id, stream_url) VALUES (?, ?)`)
++                        .run(id, url)).immediate());
++                }),
++                delete: (id) => this.trackWrite(async () => {
++                    this.ensureOpen();
++                    await this.runDb(() => this.transaction(() => this.db.prepare(`DELETE FROM ${table} WHERE doc_id = ?`).run(id)).immediate());
++                }),
++            },
++            save: (payload) => this.trackWrite(() => this.saveStorage(payload)),
++            saveMany: (payloads) => this.trackWrite(() => this.saveManyStorage(payloads)),
++            compactMeta: () => this.trackWrite(() => this.compactMeta()),
++            compactFlockDoc: (flockDocId) => this.trackWrite(() => this.compactFlockDoc(flockDocId)),
++            loadDoc: (docId) => this.loadDoc(docId),
++            loadFlockDoc: (flockDocId) => this.loadFlockDoc(flockDocId),
++            deleteDoc: (docId) => this.trackWrite(() => this.deleteDoc(docId)),
++            deleteFlockDoc: (flockDocId) => this.trackWrite(() => this.deleteFlockDoc(flockDocId)),
++            loadMeta: () => this.loadMeta(),
++            loadMetaReplica: () => this.loadReplica(),
++            loadFlockDocReplica: (flockDocId) => this.loadReplica(flockDocId),
++            // `LoroRepo.destroy()` invokes `storageAdapter.close?.()`. Without this
++            // hook the underlying connection (and its WAL/SHM file handles) would
++            // outlive a normal repo lifecycle unless the caller remembered to call
++            // `store.close()` separately. `store.close()` is idempotent so the
++            // belt-and-suspenders call from user code remains safe.
++            close: () => this.close(),
++        };
++    }
+ 	async saveStorage(payload) {
+ 		this.ensureOpen();
+ 		await this.runDb(() => this.savePayload(payload, Date.now()));
+@@ -705,24 +739,39 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 	* saves; it never re-reads progress another instance or process writes.
+ 	*/
+ 	async loadReplica(flockDocId) {
+-		this.ensureOpen();
+-		const captured = await this.runDb(() => this.captureReplicaAtomic.deferred(flockDocId, false) ?? this.captureReplicaAtomic.immediate(flockDocId, true));
+-		const state = this.hydrateFlockRows(flockDocId, captured);
+-		if (state?.needsCompaction) await this.compactLoaded(flockDocId, state).catch(logAsyncError(flockDocId === void 0 ? "metadata replica consolidation" : `Flock replica consolidation for "${flockDocId}"`));
+-		else if (state && flockDocId === void 0 && captured.snapshotRow) {
+-			const snapshotRow = captured.snapshotRow;
+-			await this.runDb(() => this.rememberMetaDigest(snapshotRow)).catch(logAsyncError("metadata digest backfill"));
+-		}
+-		const resourceKey = checkpointResourceKey(flockDocId);
+-		const { generation } = captured.record;
+-		return {
+-			flock: state?.flock ?? new Flock(),
+-			checkpointStore: createBoundCheckpointStore(captured.record, {
+-				isClosed: () => this.closed,
+-				commit: (streamUrl, cursor) => this.runDb(() => this.writeCheckpointAtomic.immediate(resourceKey, generation, streamUrl, cursor))
+-			})
+-		};
+-	}
++        this.ensureOpen();
++        // Existing generations take the deferred read path. Legacy or empty
++        // resources are recaptured while creating a generation in one IMMEDIATE
++        // transaction, so a purge in between changes the second capture instead
++        // of splitting generation setup from the loaded data.
++        const captured = await this.runDb(() => this.captureReplicaAtomic.deferred(flockDocId, false) ??
++            // Creating always yields a capture.
++            this.captureReplicaAtomic.immediate(flockDocId, true));
++        const state = this.hydrateFlockRows(flockDocId, captured);
++        if (state?.needsCompaction) {
++            // Opportunistic: the replica is already captured and hydrated, and the
++            // compaction never replaces the object returned below.
++            await this.compactLoaded(flockDocId, state).catch(logAsyncError(flockDocId === undefined
++                ? "metadata replica consolidation"
++                : `Flock replica consolidation for "${flockDocId}"`));
++        }
++        else if (state && flockDocId === undefined && captured.snapshotRow) {
++            const snapshotRow = captured.snapshotRow;
++            await this.runDb(() => this.rememberMetaDigest(snapshotRow)).catch(logAsyncError("metadata digest backfill"));
++        }
++        const resourceKey = checkpointResourceKey(flockDocId);
++        const { generation } = captured.record;
++        return {
++            flock: state?.flock ?? new Flock(),
++            checkpointStore: createBoundCheckpointStore(captured.record, {
++                isClosed: () => this.closed,
++                // Data saves run on this connection in request order and resolve
++                // only once committed, so every data barrier the transport awaited
++                // has committed before this IMMEDIATE transaction begins.
++                commit: (streamUrl, cursor) => this.trackWrite(() => this.runDb(() => this.writeCheckpointAtomic.immediate(resourceKey, generation, streamUrl, cursor))),
++            }),
++        };
++    }
+ 	captureReplicaBody(flockDocId, create) {
+ 		const resourceKey = checkpointResourceKey(flockDocId);
+ 		let record = parseCheckpointRow(this.stmts.selectCheckpoint.get(resourceKey));
+@@ -807,12 +856,12 @@ var SqliteRepoStore = class SqliteRepoStore {
+ 		await this.loadMeta();
+ 	}
+ 	createCursorStore() {
+-		return {
+-			load: (streamUrl) => this.loadCursor(streamUrl),
+-			save: (cursor) => this.saveCursor(cursor),
+-			delete: (streamUrl) => this.removeCursor(streamUrl)
+-		};
+-	}
++        return {
++            load: (streamUrl) => this.loadCursor(streamUrl),
++            save: (cursor) => this.trackWrite(() => this.saveCursor(cursor)),
++            delete: (streamUrl) => this.trackWrite(() => this.removeCursor(streamUrl)),
++        };
++    }
+ 	parseCursorServerLowerBoundVersion(value) {
+ 		try {
+ 			const parsed = JSON.parse(value);
+@@ -894,4 +943,52 @@ function hashSnapshot(bytes) {
+ 
+ //#endregion
+ export { SqliteRepoStore };
+-//# sourceMappingURL=sqlite.js.map
+\ No newline at end of file
++//# sourceMappingURL=sqlite.js.map
++/**
++ * Wraps storage write operations so a host can observe their failures — for
++ * example to tell the user the disk is full — without matching log text.
++ *
++ * `track(operation)` runs one write operation. If it rejects with an error
++ * `isReportable` accepts, `listener` is called synchronously with that exact
++ * error object, then the same object is rethrown: the operation's result and
++ * error classification are unchanged, and nothing is retried. Each error
++ * object is reported at most once, so a write operation built from another
++ * tracked one still reports a single failure.
++ *
++ * A throwing listener is logged and otherwise ignored; it can never replace
++ * or suppress the storage error.
++ */
++function createWriteFailureReporter(listener, isReportable, context) {
++    if (!listener)
++        return (operation) => operation();
++    const reported = new WeakSet();
++    const report = (error) => {
++        if (!isReportable(error) || reported.has(error))
++            return;
++        reported.add(error);
++        try {
++            listener(error);
++        }
++        catch (listenerError) {
++            logAsyncError(`${context} onWriteFailure listener`)(listenerError);
++        }
++    };
++    return async (operation) => {
++        try {
++            return await operation();
++        }
++        catch (error) {
++            report(error);
++            throw error;
++        }
++    };
++}
++function isSqliteStorageFailure(error) {
++    if (error instanceof RepoStorageError)
++        return true;
++    if (!(error instanceof Error))
++        return false;
++    const code = error.code;
++    return (typeof code === "string" &&
++        (code.startsWith("SQLITE_") || /^E[A-Z0-9]+$/.test(code)));
++}
