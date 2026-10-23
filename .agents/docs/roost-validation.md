@@ -7,6 +7,15 @@ does not require rediscovering them. Runtime contracts remain in
 Run expensive measurements manually; timing is never a CI assertion.
 
 For the current coordinated release, use the [PR stack integration review](../notes/proposed/testing/2026-10-22-roost-pr-stack-integration.md) for exact heads, dependency order and release gates.
+The [append CPU report](../notes/proposed/architecture/2026-10-23-roost-append-cpu-structure.md#completed-local-optimization-acceptance--2026-10-23)
+records request reduction, paired resource results and retained read-time outliers.
+The [Native publication report](../notes/proposed/architecture/2026-10-23-roost-native-publication-boundary.md#final-local-resource-measurements)
+records the coordinated command/head/observer unit, complete resource tables and
+retained RSS-limit failures. These local results do not imply release acceptance.
+The [control storage study](../notes/proposed/architecture/2026-10-23-roost-control-storage.md)
+records the minimal notification change and rejected storage experiments. Ordinary
+Roost KV values already have independent compression; check the current source
+and retained-byte/page breakdown before proposing the same optimization again.
 
 ## Prepare once per source revision
 
@@ -68,6 +77,11 @@ If needed, scope it to one Native test/benchmark command. A local source link
 does not make published dependency CI green; release and pin the matching SDK
 before removing that release blocker.
 
+For a Native storage change, the owning integration command is
+`node --test tests/native.test.mjs` from `node/native` after building the addon.
+The package-wide `pnpm test` additionally runs release-script fixtures; those
+are a separate boundary and must not replace the Native storage suite.
+
 ## Select checks from the changed boundary
 
 During iteration, run the owning row below. After a fix, rerun its failed case and
@@ -76,15 +90,16 @@ root `corepack pnpm check` and `corepack pnpm format` once before committing, th
 `corepack pnpm run docs check`. Subsequent documentation-only edits need docs and
 format checks, not another complete runtime run.
 
-| Change                                                  | Owning checks                                                                                                                                                 | Additional evidence when relevant                                                                                            |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Text notification semantics / immutable plans           | CLI `acp-apply-notification-on-history.test.ts`                                                                                                               | Split Unicode, prompt markers, thinking/plan tags, snapshot/overlap behavior, malformed stored scalars, caller mutation      |
-| History actions / state projection                      | Shared `session-history-actions.test.ts`; CLI `roost-message-state.test.ts`                                                                                   | Finish/permission semantics, borrowed snapshot ownership, bounded resumed-state programs, Native scalar offsets and own keys |
-| Lody commit, projection, receipt or branch behavior     | CLI `roost-session-backend-contract.test.ts`, `roost-history-local-writes.test.ts`, `roost-history-local-branch.test.ts`, `roost-history-local-owner.test.ts` | Retry/lost reply, foreign/pending events, reopen, reader ownership, pagination and retained overlays                         |
-| SDK history/checkpoint/index behavior                   | Roost `ts` type/build; Native `tests/native.test.mjs`; SDK `lody-history.test.mjs` and `node-history-index.test.mjs`                                          | Browser IndexedDB and Native/process paths; copied/altered proof, stale CAS, non-applied derived group                       |
-| Rust storage, events, transaction or signature behavior | Matching Roost Rust integration suites, fmt and clippy; Native integration                                                                                    | Crash/reopen, export identity, partial replica, seal/owner/sequence rules; rebuild addon                                     |
-| Packed consumer or release layout                       | Existing Roost consumer/release checks and platform CI                                                                                                        | Installed tarball, optional platform package and supported Node floor                                                        |
-| Performance-sensitive path                              | Owning correctness suites, then one applicable manual benchmark below                                                                                         | Same host, workload, durability, read-consumer behavior and source hashes                                                    |
+| Change                                                  | Owning checks                                                                                                                                                                                                          | Additional evidence when relevant                                                                                            |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Text notification semantics / immutable plans           | CLI `acp-apply-notification-on-history.test.ts`                                                                                                                                                                        | Split Unicode, prompt markers, thinking/plan tags, snapshot/overlap behavior, malformed stored scalars, caller mutation      |
+| History actions / state projection                      | Shared `session-history-actions.test.ts`; CLI `roost-message-state.test.ts`                                                                                                                                            | Finish/permission semantics, borrowed snapshot ownership, bounded resumed-state programs, Native scalar offsets and own keys |
+| Lody commit, projection, receipt or branch behavior     | CLI `roost-session-backend-contract.test.ts`, `roost-history-local-writes.test.ts`, `roost-history-local-branch.test.ts`, `roost-history-local-owner.test.ts`                                                          | Retry/lost reply, foreign/pending events, reopen, reader ownership, pagination and retained overlays                         |
+| SDK history/checkpoint/index behavior                   | Roost `ts` type/build; Native `tests/native.test.mjs`; SDK `lody-history.test.mjs` and `node-history-index.test.mjs`                                                                                                   | Browser IndexedDB and Native/process paths; copied/altered proof, stale CAS, non-applied derived group                       |
+| Rust storage, events, transaction or signature behavior | Matching Roost Rust integration suites, fmt and clippy; Native integration                                                                                                                                             | Crash/reopen, export identity, partial replica, seal/owner/sequence rules; rebuild addon                                     |
+| Packed consumer or release layout                       | Existing Roost consumer/release checks and platform CI                                                                                                                                                                 | Installed tarball, optional platform package and supported Node floor                                                        |
+| History RPC / protocol / observation / cache            | Shared `machine-protocol-capabilities.test.ts`; CLI `message-handler-machine-registration.test.ts`, `roost-session-backend.test.ts`; components `conversation-session-backend-factory.test.ts` (including cache cases) | Advertised capability version, coherent checkpoints, bootstrap/close, reconnect and offline cache                            |
+| Performance-sensitive path                              | Owning correctness suites, then one applicable manual benchmark below                                                                                                                                                  | Same host, workload, durability, read-consumer behavior and source hashes                                                    |
 
 Run the CLI suites from `apps/cli`:
 
@@ -92,6 +107,10 @@ Run the CLI suites from `apps/cli`:
 corepack pnpm exec vitest run tests/acp-apply-notification-on-history.test.ts
 corepack pnpm exec vitest run tests/roost-session-backend-contract.test.ts tests/roost-history-local-writes.test.ts tests/roost-history-local-branch.test.ts tests/roost-history-local-owner.test.ts --maxWorkers=2
 ```
+
+Use the package's `corepack pnpm typecheck` for static validation. The CLI selects
+`tsgo --noEmit -p tsconfig.typecheck.json`; a raw `tsc -p tsconfig.json` also includes
+test/renderer declarations outside that configured check and is not its substitute.
 
 Run SDK history suites from Roost's `ts` after building. On a constrained host,
 serialize browser files; the existing test-name filter selects the browser:
@@ -112,6 +131,14 @@ SDK built. For the complete Native/sync/release-unit suite, use `npm test`: the
 publisher fixtures require npm's executable path and do not accept a direct
 `node --test tests/release.test.mjs` invocation. It requires the addon; subprocess-only tests use the matching owner
 binary. Follow that checkout's Native README/CI for Rust and package checks.
+
+Desktop staging fixtures resolve the host platform package from the Native wrapper's
+real path. Use an installed package or a staged copy of the matching local runtime
+with its exact-version platform dependency pins and host package/addon. The main
+wrapper carries no adjacent `.node` in the split layout. A bare source-checkout symlink can
+lack that package and makes recursive fixture copies include the Rust target tree.
+Record staged runtime/addon hashes, retain setup failures, and restore dependency
+links afterwards. A local candidate does not prove published npm dependency compatibility.
 
 ## Choose a fixed manual benchmark
 
@@ -356,6 +383,11 @@ declaring the performance objective complete.
   changed dependency link/source file in a `finally` block and verify restoration
   if an archived workspace was used. Prefer isolated clones so swapping source
   files is unnecessary. A successful benchmark never authorizes deployment.
+
+Reserve seed-copy bytes above the minimum free-space budget before cloning a
+large prepared prefix. A refusal before stage start is a coordinator limit;
+retain it separately from product test failures. Reclaim only owned synthetic
+copies through byte-verified recoverable archives, without relaxing the budget.
 
 Update this guide and its owning benchmark when a repeatable setup issue is found.
 Keep per-change conclusions in the owning Agent Note rather than creating a new

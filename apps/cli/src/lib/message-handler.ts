@@ -81,8 +81,6 @@ import {
   getMachineRoomId,
   getSessionIdFromRoomId,
   getSessionRoomId,
-  SessionHistoryChangeSchema,
-  type SessionHistoryChange,
   type IssuePRMention,
   type SessionImageGroupContent,
   type SessionInputBlock,
@@ -7013,7 +7011,8 @@ export class MessageHandler {
         // The read and its revision must straddle no unpublished history write.
         // These are local durability barriers, never remote synchronization.
         await backend.flushLocalWrites();
-        const before = await sessionDoc.getRoostHistoryCursor();
+        if (!history.getPublication) throw new Error('Native history publication is unavailable');
+        const before = await history.getPublication();
         let result: unknown;
         let pageTurns: SessionHistoryReadResponse['pageTurns'];
         switch (query.kind) {
@@ -7130,8 +7129,12 @@ export class MessageHandler {
             break;
         }
         await backend.flushLocalWrites();
-        const after = await sessionDoc.getRoostHistoryCursor();
-        if (before?.historyRevision !== after?.historyRevision) continue;
+        const after = await history.getPublication();
+        if (
+          before.checkpoint !== after.checkpoint ||
+          before.historyRevision !== after.historyRevision
+        )
+          continue;
         const protectedRead =
           query.kind === 'readChanges' ||
           ((query.kind === 'readLatestPage' || query.kind === 'readOlderPage') &&
@@ -7147,19 +7150,6 @@ export class MessageHandler {
           if (current !== expected)
             throw Object.assign(new Error('History checkpoint was superseded'), { code: 'stale' });
         }
-        if (after?.historyRevision === undefined || after.historyCount === undefined) {
-          throw new Error('Roost history has no durable revision');
-        }
-        let historyChange: SessionHistoryReadResponse['historyChange'];
-        if (after.historyChangeJson) {
-          try {
-            historyChange = SessionHistoryChangeSchema.nullable().parse(
-              JSON.parse(after.historyChangeJson)
-            );
-          } catch {
-            historyChange = { kind: 'structure', from: 0, to: after.historyCount };
-          }
-        }
         return {
           type: 'session/history-read_response',
           sessionId,
@@ -7167,7 +7157,7 @@ export class MessageHandler {
           result,
           historyRevision: after.historyRevision,
           historyCount: after.historyCount,
-          historyChange,
+          historyChange: after.historyChange,
           ...(pageTurns ? { pageTurns } : {}),
         };
       }
@@ -7301,36 +7291,19 @@ export class MessageHandler {
           break;
         }
       }
-      const historyCursor = await sessionDoc.getRoostHistoryCursor();
-      let historyChange: SessionHistoryChange | null = null;
-      if (historyCursor?.historyChangeJson) {
-        try {
-          historyChange = SessionHistoryChangeSchema.nullable().parse(
-            JSON.parse(historyCursor.historyChangeJson)
-          );
-        } catch {
-          historyChange = {
-            kind: 'structure',
-            from: 0,
-            to: historyCursor.historyCount ?? 0,
-          };
-        }
-      }
+      await backend.flushLocalWrites();
+      if (!backend.history.getPublication)
+        throw new Error('Native history publication is unavailable');
+      const historyCursor = await backend.history.getPublication();
       return {
         type: 'session/history-write_response',
         sessionId,
         operation,
         success: true,
         ...(result === undefined ? {} : { result }),
-        ...(historyCursor?.historyRevision === undefined
-          ? {}
-          : {
-              historyRevision: historyCursor.historyRevision,
-              ...(historyCursor.historyCount === undefined
-                ? {}
-                : { historyCount: historyCursor.historyCount }),
-              ...(historyChange === undefined ? {} : { historyChange }),
-            }),
+        historyRevision: historyCursor.historyRevision,
+        historyCount: historyCursor.historyCount,
+        historyChange: historyCursor.historyChange,
       };
     } catch (error) {
       const detail =
