@@ -6,6 +6,8 @@ Translation: current
 
 [中文](2026-10-22-streams-persistence-failure-bandwidth.zh.md)
 
+Release update (2026-10-23): [official SDK adoption](2026-10-23-storage-recovery-release-adoption.md) uses streams-crdt 0.19.2 and Repo 0.25.0, replacing the unreleased-dependency and temporary-patch limitations described below.
+
 ## Abstract
 
 A desktop user downloaded about 76 GB overnight (roughly 10 GB per hour) while their

@@ -7,6 +7,8 @@ PR: [#1829](https://github.com/LodyAI/Lody/pull/1829)
 
 [中文](2026-10-22-desktop-disk-full-guard.zh.md)
 
+Release update (2026-10-23): [official SDK adoption](../bug-fix/2026-10-23-storage-recovery-release-adoption.md) uses streams-crdt 0.19.2 and Repo 0.25.0, replacing the unreleased-dependency and temporary-patch limitations described below.
+
 ## Abstract
 
 A full disk can prevent Lody from persisting data while leaving the interface usable without explaining the failure. The desktop now observes renderer and local CLI repository write failures, confirms low space, and displays a dialog that cannot be dismissed. Users can free space and restart, or quit; background agents continue until those actions. The released dependency lacks the observer API, so a versioned patch backports the upstream implementation without upgrading the storage or synchronization packages. Real storage fault tests exercise the signal paths; this has not been tried with an actual full filesystem.
