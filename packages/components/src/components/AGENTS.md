@@ -108,5 +108,4 @@ Ancestor/scoped rules apply. `CLAUDE.md` links here; edit `AGENTS.md` only.
   worktrees and keep them by default. A completed cleanup is not pending removal and
   must be visibly acknowledged even when worktrees were kept or failed.
 
-Before changing E2EE approval, read [E2EE UI rules](e2ee/AGENTS.md).
-Offline: same-account pins; preserve ready lists.
+E2EE/terminals: read [rules](e2ee/AGENTS.md).
