@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { LoroRepo } from 'loro-repo';
 import { LoroDoc } from 'loro-crdt';
 import { Cause, Effect, Exit, Fiber } from 'effect';
@@ -65,7 +66,7 @@ import {
   applySessionHistoryPatches,
   type HistoryImportInput,
 } from '@lody/shared/session-data';
-import { Identity } from '@loro-dev/roost';
+import { decodeBatch, Identity } from '@loro-dev/roost';
 import { RoostNativeClient, RoostHostError } from '@loro-dev/roost-node';
 import { describeRoostHistoryFailure } from '../src/session/roost-history-diagnostics';
 import { RoostHistoryGeneration } from '../src/session/roost-history-generation';
@@ -1430,15 +1431,40 @@ describe('Production Roost history semantics', () => {
     finally { capture.mockRestore(); }
     if (!primaryId) throw new Error('Expected primary');
     await fixture.backend.applyHistoryAction({ kind: 'finish-assistant', turnId: turn.id, endedAt: 42 });
-    const updates = () => {
-      const db = new Database(join(nativeDirectory, 'history.db'), { readonly: true });
+    const updates = async () => {
+      const dbPath = join(nativeDirectory, 'history.db');
+      const seed = await loadRoostOwnerSeedLegacy(dbPath);
+      const reader = new RoostNativeClient({
+        dbPath,
+        seed,
+        allowedOwners: [Identity.fromSeed(seed).owner()],
+        maxQueuedRequests: 32,
+        maxQueuedBytes: 8 * 1024 * 1024,
+      });
       try {
-        const kv = '(SELECT roost_spaces.name AS space, key, value FROM roost_kv JOIN roost_spaces ON roost_spaces.id = roost_kv.space_id)';
-        return db.prepare(`SELECT key, value FROM ${kv} WHERE space LIKE ?`)
-          .all(`%${fixture.doc.sessionId}%:updates`) as { key: Buffer; value: Buffer }[];
-      } finally { db.close(); }
+        await reader.ready;
+        const stream = reader.stream(`lody-session:${fixture.doc.sessionId}`);
+        const headers = await stream.latestTurnHeaders(256n);
+        expect(headers.length).toBeLessThan(256);
+        const rows: { key: Buffer; value: Buffer }[] = [];
+        for (const header of headers) {
+          expect(header.nextSeq).toBeLessThan(4096n);
+          for (let seq = 0n; seq < header.nextSeq; seq++) {
+            const value = Buffer.from(await stream.exportUpdates(header.turnId, seq, 1n));
+            expect(decodeBatch(value)).toHaveLength(1);
+            const key = Buffer.alloc(24);
+            key.set(header.turnId);
+            key.writeBigUInt64BE(seq, 16);
+            rows.push({ key, value });
+          }
+        }
+        return rows;
+      } finally {
+        await reader.close();
+      }
     };
-    const before = new Map(updates().map(row => [row.key.toString('hex'), row.value]));
+    const before = new Map((await updates()).map(row => [row.key.toString('hex'), row.value]));
+    expect(before.size).toBeGreaterThan(0);
     let items = turn.items;
     const batch = NodeLodyHistory.prototype.commitHistoryBatch;
     const lost = vi.spyOn(NodeLodyHistory.prototype, 'commitHistoryBatch').mockImplementationOnce(async function (...args) {
@@ -1456,13 +1482,14 @@ describe('Production Roost history semantics', () => {
       await fixture.backend.applyHistoryAction({ kind: 'assistant-items', turnId: turn.id, mode: 'replace', items });
     }
     await fixture.backend.flushLocalWrites();
-    const after = updates();
+    const after = await updates();
     for (const row of after) {
       const old = before.get(row.key.toString('hex'));
       if (old) expect(row.value.equals(old)).toBe(true);
     }
     expect(after.filter(row => before.has(row.key.toString('hex'))).length).toBe(before.size);
     const added = after.filter(row => !before.has(row.key.toString('hex')));
+    expect(added.length).toBeGreaterThan(0);
     expect(added.reduce((sum, row) => sum + row.value.length, 0)).toBeLessThan(128 * 1024);
     for (const row of added) {
       expect(row.key.subarray(0, 16).equals(Buffer.from(primaryId))).toBe(false);
@@ -2895,29 +2922,62 @@ describe('Production Roost history semantics', () => {
       expect(text).toBe(output);
       expect(streamed.turn.items?.[0]).toMatchObject({ rawOutput: { text: untouched } });
     }
-    const db = new Database(join(nativeDirectory, 'history.db'), { readonly: true });
+    const dbPath = join(nativeDirectory, 'history.db');
+    const seed = await loadRoostOwnerSeedLegacy(dbPath);
+    const reader = new RoostNativeClient({
+      dbPath,
+      seed,
+      allowedOwners: [Identity.fromSeed(seed).owner()],
+      maxQueuedRequests: 32,
+      maxQueuedBytes: 8 * 1024 * 1024,
+    });
     try {
-      const kvRows = `(SELECT roost_spaces.name AS space, key, value
-        FROM roost_kv JOIN roost_spaces ON roost_spaces.id = roost_kv.space_id)`;
-      const stats = db
-        .prepare(`SELECT COUNT(*) AS rows, SUM(LENGTH(key) + LENGTH(value)) AS bytes
-        FROM ${kvRows} WHERE space LIKE ?`)
-        .get(`%${fixture.doc.sessionId}%:updates`) as { rows: number; bytes: number };
-      expect(stats.rows).toBeGreaterThan(128);
-      expect(stats.bytes).toBeLessThan(1024 * 1024);
-      const receipts = db
-        .prepare(`SELECT COUNT(*) AS count, SUM(LENGTH(key) + LENGTH(value)) AS bytes
-          FROM ${kvRows} WHERE space LIKE ?`)
-        .get(`%${fixture.doc.sessionId}%:${AGENT_RECEIPTS_TABLE}`);
-      expect(receipts).toEqual({ count: 128, bytes: 128 * 82 });
-      const projection = db
-        .prepare(`SELECT COUNT(*) AS count FROM ${kvRows} WHERE space LIKE ?`)
-        .get(`%${fixture.doc.sessionId}%:projection`) as { count: number };
-      expect(projection.count).toBeGreaterThan(0);
-      expect(projection.count).toBeLessThan(1000);
+      await reader.ready;
+      const stream = reader.stream(`lody-session:${fixture.doc.sessionId}`);
+      const headers = await stream.latestTurnHeaders(256n);
+      expect(headers.length).toBeLessThan(256);
+      expect(headers.reduce((count, header) => count + header.nextSeq, 0n)).toBeGreaterThan(128n);
+      let updateBytes = 0;
+      for (const header of headers) {
+        expect(header.nextSeq).toBeLessThan(4096n);
+        const exported = await stream.exportUpdates(header.turnId, 0n, 4096n);
+        expect(BigInt(decodeBatch(exported).length)).toBe(header.nextSeq);
+        updateBytes += exported.byteLength;
+      }
+      // Measure decoded/exported history: compression must not conceal repeated
+      // full-body updates or dropped idempotency records behind fewer SQL rows.
+      expect(updateBytes).toBeGreaterThan(0);
+      expect(updateBytes).toBeLessThan(1024 * 1024);
+      const receipts = await stream.scanIndex(AGENT_RECEIPTS_TABLE, new Uint8Array(), 129n);
+      expect(receipts).toHaveLength(128);
+      expect(
+        receipts.reduce((bytes, row) => bytes + row.key.byteLength + row.value.byteLength, 0)
+      ).toBe(128 * 82);
     } finally {
-      db.close();
+      await reader.close();
     }
+    // A second SQLite library must not open/close the live Native-owned file in
+    // this process: its close() can cancel the other library's POSIX file locks.
+    const projection = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `import { DatabaseSync } from 'node:sqlite';
+           const db = new DatabaseSync(process.argv[1], { readOnly: true });
+           try {
+             const row = db.prepare('SELECT COUNT(*) AS count FROM roost_kv JOIN roost_spaces ON roost_spaces.id = roost_kv.space_id WHERE name LIKE ?').get('%' + process.argv[2] + '%:projection');
+             process.stdout.write(JSON.stringify(row));
+           } finally { db.close(); }`,
+          dbPath,
+          fixture.doc.sessionId,
+        ],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      )
+    ) as { count: number };
+    expect(projection.count).toBeGreaterThan(0);
+    expect(projection.count).toBeLessThan(1000);
     const sessionId = fixture.doc.sessionId;
     await fixture.close();
     const reopened = await nativeFixture(sessionId);
