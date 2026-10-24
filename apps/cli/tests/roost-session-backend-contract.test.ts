@@ -2443,9 +2443,24 @@ describe('Production Roost history semantics', () => {
       // Substitute only delivery. Both production RPC endpoints still serialize,
       // encrypt, validate and decrypt every request/result.
       const receivers = new Map<string, LoroJsonLiveBatchHandler>();
+      const replyStarted = Promise.withResolvers<void>();
+      const releaseReply = Promise.withResolvers<void>();
+      let holdNextReply = false;
       const streams: LoroStreamsJsonStreamClient = {
         ensureJsonStream: async () => undefined,
         appendJson: async (streamId, value) => {
+          if (
+            holdNextReply &&
+            streamId.includes(':rpc:res') &&
+            typeof value === 'object' &&
+            value !== null &&
+            'method' in value &&
+            value.method === 'session/history-read'
+          ) {
+            holdNextReply = false;
+            replyStarted.resolve();
+            await releaseReply.promise;
+          }
           const receive = receivers.get(streamId);
           if (!receive) throw new Error('Synthetic stream has no receiver');
           await receive({ messages: [JSON.parse(JSON.stringify(value))], upToDate: true });
@@ -2546,7 +2561,6 @@ describe('Production Roost history semantics', () => {
         const setTimer = globalThis.setTimeout;
         const clearTimer = globalThis.clearTimeout;
         vi.spyOn(globalThis, 'setTimeout').mockImplementation((...args) => {
-          if (lostNativeReply && lostReadReplies === 0) console.log('DEBUG_TIMER', args[1]);
           const scheduled =
             // The two lost reads below need both the first and second retry.
             // Do not drive longer timers that also serve as RPC deadlines.
@@ -2699,13 +2713,24 @@ describe('Production Roost history semantics', () => {
           {},
         ]);
         if (!lostNativeReply) expect(receivedContentPatches).toBe(true);
+        // Force a reply to overlap teardown rather than relying on native I/O timing.
+        holdNextReply = true;
+        const finalRead = client.requestSessionHistoryRead({
+          sessionId,
+          query: { kind: 'readAll' },
+        });
+        await replyStarted.promise;
         stops.forEach((stop) => stop());
         peers.forEach((peer) => peer.dispose?.());
         server.stop();
-        client.stop();
+        releaseReply.resolve();
+        // Keep the response receiver alive until in-flight server replies settle.
+        // Removing it first makes appendResponse retry on a frozen fake timer.
         await Promise.all(
           (server as unknown as { inFlightRequests: Set<Promise<void>> }).inFlightRequests
         );
+        expect(await finalRead).toMatchObject({ success: true });
+        client.stop();
         vi.restoreAllMocks();
         vi.useRealTimers();
         await fixture.close();
@@ -2719,10 +2744,13 @@ describe('Production Roost history semantics', () => {
         stops.forEach((stop) => stop());
         peers.forEach((peer) => peer.dispose?.());
         server.stop();
-        client.stop();
+        releaseReply.resolve();
+        // Keep the response receiver alive until in-flight server replies settle.
+        // Removing it first makes appendResponse retry on a frozen fake timer.
         await Promise.all(
           (server as unknown as { inFlightRequests: Set<Promise<void>> }).inFlightRequests
         );
+        client.stop();
         vi.restoreAllMocks();
         vi.useRealTimers();
         vi.unstubAllGlobals();
