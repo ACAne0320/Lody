@@ -39,16 +39,17 @@
 | 分组 | 导出 |
 | --- | --- |
 | 字节与编码 | `Bytes`, `encodeCbor`, `decodeCbor`, `CborValue`, `ValidationError`, `ValidationErrorCode`, `ContentError` |
-| 签名 | `verifySignature`, `verifyContentSignature`, `signVerified`, `nativeDeviceSigner`, `DeviceSigner` |
+| 签名 | `verifySignature`, `verifyContentSignature`, `signVerified`, `nativeDeviceSigner`, `DeviceSigner`, `ed25519WasmActive` |
 | 内容格式 | `encodeDocumentContext`, `encodeContentContext`, `encodeContentHeader`, `contentKeyInfo`, `contentHkdfSalt`, `contentAad`, `contentSigningBytes`, `inspectContentFrame`, `DocumentScope`, `ContentScope`, `ContentPurpose`, `ContentHeader`, `ContentMetadata` |
 | 文档 | `sealDocument`, `openDocument`, `authenticateDocument`, `admitDocument`, `deriveDocumentKey`, `scopedDocumentKey`, `importDocumentKey`, `exportDocumentKey`, `disposeDocumentKey`, `DocumentKey` |
 | 内容加密 | `deriveContentKey`, `disposeContentKey`, `sealContentAead`, `openContentAead`, `ContentKey`, `SealedContentAead` |
 | 纪元 HPKE | `epochHpkeAad`, `sealEpochKeyHpke`, `openEpochKeyHpke`, `HpkePrimitiveError`, `EpochHpkeContext`, `SealedEpochHpke` |
 | 记录 | `decodeRecord`, `hashRecordBytes`, `recordSigningBytes`, `joinRequestSigningBytes`, `possessionSigningBytes`, `DecodedRecord`, `RecordBody`, `Operation`, `JoinRequest`, `Role`, `DeviceKind`, `LedgerError`, `LedgerErrorCode` |
 | 重放与视图 | `verifyLedger`, `verifyLedgerEffect`, `extendLedger`, `extendLedgerEffect`, `requireLedgerContinuation`, `hasVerifiedRecordHash`, `hasVerifiedCheckpoint`, `contentPermissions`, `epochHistoryPacket`, `epochPublicationRecord`, `LedgerView`, `LedgerCheckpoint`, `LedgerState`, `Member`, `Device`, `ContentPermissions`, `EpochHistoryPacket`, `HistoricalContentAuthor` |
+| 保留状态 | `exportVerifiedState`, `restoreVerifiedState`, `RetainedLedgerState` |
 | 记录签名 | `prepareLedgerRecord`, `signLedgerRecord`, `PreparedLedgerRecord` |
 | 准入与创世 | `prepareJoinRequest`, `prepareDeviceAdmission`, `prepareLedgerCommand`, `signGenesisRecord`, `LedgerCommand` |
-| 快照 | `verifyLedgerSnapshot`, `prepareLedgerSnapshot`, `signLedgerSnapshot`, `snapshotTrustFromView`, `authenticateLedgerSnapshotEvidence`, `encodeSignedSnapshot`, `snapshotSigningBytes`, `headAttestationSigningBytes`, `historicalContentIdentity`, `comparisonNote`, `compareNotes`, `confirmIndependentComparison`, `SnapshotTrust`, `VerifiedViewSnapshotTrust`, `SnapshotIdentityPin`, `SnapshotEvidence`, `SnapshotProposal`, `ComparisonNote`, `Comparison`, `IndependentConfirmation`, `HistoricalContentIdentity` |
+| 快照 | `verifyLedgerSnapshot`, `prepareLedgerSnapshot`, `signLedgerSnapshot`, `snapshotTrustFromView`, `authenticateLedgerSnapshotEvidence`, `encodeSignedSnapshot`, `snapshotSigningBytes`, `headAttestationSigningBytes`, `historicalContentIdentity`, `comparisonNote`, `ledgerStateDigest`, `compareNotes`, `confirmIndependentComparison`, `SnapshotTrust`, `VerifiedViewSnapshotTrust`, `SnapshotIdentityPin`, `SnapshotEvidence`, `SnapshotProposal`, `ComparisonNote`, `Comparison`, `IndependentConfirmation`, `HistoricalContentIdentity` |
 | Feed 分页 | `prepareLedgerPage`, `prepareLedgerPageEffect`, `frameLedgerRecord`, `validLedgerOffset`, `LedgerFeedError`, `LedgerFeedState`, `LedgerReadPage` |
 | 纪元密钥 | `commitEpochKey`, `sealHistoryPacket`, `openHistoryPacket`, `recoverLedgerHistory`, `EpochKeyError` |
 | 信封 | `prepareEpochEnvelope`, `openEpochEnvelope`, `authenticateEpochEnvelope`, `authenticateEpochEnvelopeSignature`, `epochDeliveryId`, `EpochEnvelopeContext` |
@@ -82,3 +83,15 @@
 `LedgerSubmissionStream`, `streamsLedgerFeedSource`, `makeLedgerStreamReader`,
 `LedgerStreamReader`, `streamsDocumentBinding`, `StreamsDocumentBindingOptions`,
 `makeStreamsUpdateBinding`.
+
+## `@lody/e2ee-core/cloudflare`
+
+`ed25519WasmActive`。在 Cloudflare Worker 中导入一次该入口即可：workerd 禁止在运行时从字节编译 WebAssembly，因此改由打包器编译包内的严格 Ed25519 模块。不导入时，core 仍会用纯 JS 正确验证，只是更慢。`@lody/e2ee-core/protocol` 也导出 `ed25519WasmActive`（同一个状态），供无法打包本入口的宿主（如 Convex）上报当前是否使用 WebAssembly；首次调用时可能会实例化内嵌模块，与第一次验签的行为相同（失败则回退到纯 JS）；它不会替换或关闭任何验证后端。
+
+## `@lody/e2ee-core/adapters/node-custody`
+
+`KekWrapper`、`NodeE2eeCustodyError`、`PreparedNodeE2eeDevice`、`NodeE2eeDevice`、
+`makeNodeE2eeCustody`、`NodeE2eeCustody`、`nodeE2eePorts`。
+
+仅 Node 可用，由显式 Scope 持有。宿主负责核对 KEK 包装器的实际保护能力；
+文件保护只能创建机器身份，个人身份必须使用系统安全存储。

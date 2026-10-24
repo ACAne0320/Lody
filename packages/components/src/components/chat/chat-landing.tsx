@@ -207,6 +207,7 @@ import { wrapPastedTextChipLabel } from '@/components/mentions/mention-chips';
 
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ChatLandingView, type ChatLandingHintType } from './chat-landing-view';
+import { HomeDashboardHost } from './home/home-dashboard-host';
 import { getSessionCreationNavigation } from './submission/use-composer-navigation-focus';
 import { BranchSelector } from './chat-landing-selectors';
 import { composerSurface } from '@/components/shared/composer-surface';
@@ -259,6 +260,7 @@ import { getChatComposerPromptPlaceholderKey } from '@/lib/chat-composer-placeho
 import { selectPastedClipboardFiles, splitImageAndFileAttachments } from '@/lib/file-drop';
 import { canShowSubscriptionRateLimits } from '@/lib/session-usage';
 import { canShowCodexResetForecast } from '@/lib/codex-reset-forecast';
+import { buildHomeWeekUsage, type HomeWeekUsageOption } from '@/lib/home-week-usage';
 import { createMachinePairing } from '@/lib/cli-api-key';
 import { ContextSwitch, type SessionContextType } from './context-switch';
 import {
@@ -275,6 +277,7 @@ import {
 } from '@/components/sessions/desktop-run-config-menu';
 import { resolvePermissionModeFace } from '@/lib/permission-mode-face';
 import { SessionUsagePopover } from '@/components/sessions/session-usage-popover';
+import { useArchiveSessionWithConfirmation } from '@/components/sessions/session-archive-confirmation';
 import { MachinePairingDialog } from './machine-pairing-dialog';
 import {
   DATE_BUCKET_THIS_MONTH,
@@ -312,6 +315,7 @@ import {
   type MobileNewChatSheetContentProps,
 } from '@/components/mobile/mobile-new-chat-sheet';
 import { MobileWorkspaceSwitcherSheet } from '@/components/mobile/mobile-workspace-switcher-sheet';
+import { isListedEncryptedWorkspace } from '@/components/e2ee/encrypted-workspace-mark';
 import { MobileCreateWorkspaceSheet } from '@/components/mobile/mobile-create-workspace-sheet';
 import { MobileSessionRunConfig } from '@/components/mobile/mobile-session-run-config';
 import { ChatComposer } from '@/components/chat/chat-composer';
@@ -1039,7 +1043,6 @@ function WorkspaceChatLanding({
   const [selectedMachineId, setSelectedMachineId] = useState<MachineId | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentSelection | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const mcpSelection = useSessionMcpSelection(undefined, { disabled: submitting });
   // The project selector always uses the machine-aware picker so multi-machine
   // workspaces can choose the target explicitly. Standalone Electron entry
   // points such as the sidebar and onboarding may still use the native dialog.
@@ -1168,6 +1171,20 @@ function WorkspaceChatLanding({
   machinesRef.current = machines;
   const selectedLocalProjectMachineId = selectedLocalProject?.machineId ?? null;
   const activeLocalProjectId = selectedLocalProject?.localProjectId ?? null;
+  // A new conversation starts from its target project's defaults. Branch and
+  // worktree are not part of the project's identity, so they are left out.
+  const mcpSelection = useSessionMcpSelection(undefined, {
+    disabled: submitting,
+    defaultsTarget:
+      contextType === 'local' && activeLocalProjectId
+        ? {
+            project: { kind: 'local', localProjectId: activeLocalProjectId },
+            machineId: selectedLocalProjectMachineId,
+          }
+        : contextType === 'github' && selectedRepo
+          ? { project: { kind: 'github', repoFullName: selectedRepo, branch: '' } }
+          : { project: null },
+  });
   const hasWorkspaceRuntime = Boolean(runtime);
   const canUseSelectedLocalProjectDesktopControl = useMemo(
     () =>
@@ -1719,6 +1736,59 @@ function WorkspaceChatLanding({
       agentType: selectedConfig.agentType,
       config: selectedConfig,
     });
+  // A row on the new-chat page's "now" board opens its session, as a sidebar row does.
+  const handleOpenHomeSession = useCallback(
+    (sessionId: string) => {
+      void navigate({
+        to: '/$workspaceName/sessions/$sessionId',
+        params: { workspaceName: workspaceSlug, sessionId: sessionId as SessionId },
+      });
+    },
+    [navigate, workspaceSlug]
+  );
+  // The new-chat page's usage tile: every provider on the selected machine that reports a
+  // plan, each read the way the composer's usage popover reads it. The composer's own
+  // provider uses the selected model; the others have none selected.
+  const homeWeekUsageOptions = useMemo<HomeWeekUsageOption[]>(() => {
+    if (!selectedMachine) return [];
+    return executorConfigs.flatMap((config) => {
+      if (config.machineId !== selectedMachine.id) return [];
+      if (
+        !canShowSubscriptionRateLimits({
+          cliType: config.cliType,
+          agentType: config.agentType,
+          config,
+          capability: selectedMachine.acpCapabilities?.[config.id]?.rateLimits,
+        })
+      ) {
+        return [];
+      }
+      const usage = buildHomeWeekUsage({
+        rateLimits: selectedMachine.raceLimits,
+        agentType: config.agentType,
+        agentConfigId: config.id,
+        modelId: config.id === selectedConfig?.id ? selectedModelId : null,
+      });
+      return usage
+        ? [
+            {
+              source: {
+                id: config.id,
+                cliType: config.cliType,
+                agentType: config.agentType,
+                name: config.name,
+              },
+              usage,
+              codexForecast: canShowCodexResetForecast({
+                cliType: config.cliType,
+                agentType: config.agentType,
+                config,
+              }),
+            },
+          ]
+        : [];
+    });
+  }, [executorConfigs, selectedMachine, selectedConfig?.id, selectedModelId]);
   const selectedModelLabel = modelOptions.find((option) => option.value === selectedModelId)?.label;
   /* The Role the composer IS, not the one last clicked. The footer names a Role
      only while every value that Role pins is still what will run, so moving a
@@ -2819,7 +2889,8 @@ function WorkspaceChatLanding({
         | 'missing_context'
         | 'local_project_git_state_failed'
         | 'missing_branch'
-        | 'missing_project',
+        | 'missing_project'
+        | 'mcp_defaults_not_ready',
       extra?: Record<string, unknown>
     ) => {
       capturePostHogEvent(postHog, 'session/input_blocked', {
@@ -2883,6 +2954,20 @@ function WorkspaceChatLanding({
     if (!selectedAgent || !selectedConfig) {
       captureSessionInputBlocked('missing_agent_config');
       setComposerError(t('chat.validation.missingAgent'));
+      return;
+    }
+    // The selection still comes from defaults that were never read; sending now
+    // would create the conversation with no MCP servers instead of its defaults.
+    if (!mcpSelection.ready) {
+      captureSessionInputBlocked('mcp_defaults_not_ready');
+      setComposerError(
+        mcpSelection.defaultsFailed
+          ? t(
+              'chat.validation.mcpDefaultsFailed',
+              'Default MCP servers couldn’t be read, so this conversation can’t be created yet.'
+            )
+          : t('chat.validation.mcpDefaultsLoading', 'Loading this project’s default MCP servers…')
+      );
       return;
     }
     const scopedMachineId =
@@ -4211,6 +4296,7 @@ function WorkspaceChatLanding({
     isRuntimeInitializing: runtimeInitializing,
     isLoadingLocalGitState: loadingLocalGitState,
     hasLocalGitStateError: Boolean(localGitStateError),
+    mcpDefaultsPending: !mcpSelection.ready && !mcpSelection.defaultsFailed,
   });
   const selectedMachineHasVisibleLocalProject = useMemo(
     () =>
@@ -4289,6 +4375,7 @@ function WorkspaceChatLanding({
         name: organization.name,
         avatarUrl: resolveWorkspaceIdentityLogo(organization.logo, multiWorkspaceAvailable),
         isActive: organization.id === activeOrganization?.id,
+        encrypted: isListedEncryptedWorkspace(organization),
       })),
     [activeOrganization?.id, multiWorkspaceAvailable, organizations]
   );
@@ -5291,11 +5378,12 @@ function WorkspaceChatLanding({
     },
     [setSessionPinned]
   );
+  const archiveSessionWithConfirmation = useArchiveSessionWithConfirmation(archiveSession);
   const handleMobileChatArchive = useCallback(
     (chatId: string) => {
-      void archiveSession(chatId as SessionId);
+      void archiveSessionWithConfirmation(chatId as SessionId);
     },
-    [archiveSession]
+    [archiveSessionWithConfirmation]
   );
   /* Restore (un-archive) from the mobile archived-list swipe drawer.
      Same `restoreSession` the desktop archive view uses; the row drops
@@ -6335,7 +6423,7 @@ function WorkspaceChatLanding({
               command: 'npx lody daemon start',
               commandHint: t(
                 'chat.mobileHome.onboarding.commandHint',
-                'Run it on a server, VM, or your own computer (Node.js 22.14+). It signs the machine into your account — a machine without a browser prints a link you can open on this phone.'
+                'Run it on a server, VM, or your own computer (Node.js 22.23.4+ (22.x), 24.22.1+ (24.x), or 26.12.1+ (26.x)). It signs the machine into your account — a machine without a browser prints a link you can open on this phone.'
               ),
               copyCommandLabel: t('chat.mobileHome.onboarding.copyCommand', 'Copy command'),
               shareCommandLabel: t('chat.mobileHome.onboarding.shareCommand', 'Send to computer'),
@@ -6469,6 +6557,13 @@ function WorkspaceChatLanding({
         availableCommands={availableCommands}
         skillAgent={skillAgent}
         title={title}
+        ambient={
+          <HomeDashboardHost
+            usageOptions={homeWeekUsageOptions}
+            composerAgentId={selectedConfig?.id ?? null}
+            onOpenSession={handleOpenHomeSession}
+          />
+        }
         promptValue={prompt}
         onPromptChange={setPrompt}
         onPromptKeyDown={handlePromptKeyDown}
@@ -6506,8 +6601,10 @@ function WorkspaceChatLanding({
         submittingLabel={t('chat.submitting')}
         hintType={hintType}
         noMachineVariant={isElectron ? 'daemon-starting' : 'download-client'}
+        hintDownloadClientTitle={t('chat.cliHint.downloadClientTitle')}
         hintDownloadClientMessage={t('chat.cliHint.downloadClient')}
         hintDownloadClientLabel={t('chat.cliHint.downloadClientButton')}
+        hintDaemonStartingTitle={t('chat.cliHint.daemonStartingTitle')}
         hintDaemonStartingMessage={t('chat.cliHint.daemonStarting')}
         hintReportBugLabel={t('chat.cliHint.reportBug')}
         hintNoAgentConfigMessage={t('chat.cliHint.noAgentConfig')}
