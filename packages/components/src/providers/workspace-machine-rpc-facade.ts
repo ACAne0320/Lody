@@ -1,6 +1,8 @@
 import {
   MemoryProviderResponseSchema,
+  machineSupportsBugReportClientLog,
   machineSupportsMemoryProviders,
+  type BugReportClientLog,
   type MemoryProviderRequest,
   type MemoryProviderResponse,
 } from '@lody/shared';
@@ -64,10 +66,6 @@ import {
   type SessionCancelResponse,
   type SessionDispatchTurnResponse,
   type SessionId,
-  type SessionPreparationCancelSpec,
-  type SessionPreparationSpec,
-  type SessionPrepareCancelResponse,
-  type SessionPrepareResponse,
   type SessionPreviewCreateResponse,
   type SessionPreviewEndpointAcquireResponse,
   type SessionPreviewEndpointReleaseResponse,
@@ -270,6 +268,17 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
    * so a transport failure surfaces as a typed `FilePreviewV3Error` instead of a
    * Code Collab error the preview UI would have to translate.
    */
+  const supportsMarkdownLinks = async (machineId: MachineId) =>
+    machineSupportsProtocolCapability(
+      { protocolCapabilities: await deps.getMachineProtocolCapabilities(machineId) },
+      MACHINE_PROTOCOL_CAPABILITIES.markdownFileLinks
+    );
+  const unsupportedMarkdownLinks = () =>
+    filePreviewV3Error('unsupported_protocol', {
+      message: 'The agent machine does not support Markdown link resolution.',
+      retryable: false,
+    });
+
   const requestFilePreview = async (
     machineId: MachineId,
     request: Omit<FilePreviewV3Request, 'v'>,
@@ -279,6 +288,7 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
       v: FILE_PREVIEW_PROTOCOL_VERSION,
       sessionId: request.sessionId,
       path: request.path,
+      ...(request.resolveMarkdownLink ? { resolveMarkdownLink: true as const } : {}),
       ...(request.knownDigest === undefined ? {} : { knownDigest: request.knownDigest }),
       ...(request.maxBytes === undefined ? {} : { maxBytes: request.maxBytes }),
     };
@@ -294,6 +304,7 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
             machineId,
             path: request.path,
             workspaceRoot: options?.workspaceRoot ?? null,
+            ...(request.resolveMarkdownLink ? { resolveMarkdownLink: true as const } : {}),
           });
           if (local !== null) return local;
           const plane = await resolveMachineTargetPlane(machineId);
@@ -303,6 +314,8 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
               path: request.path,
             });
           }
+          if (request.resolveMarkdownLink && !(await supportsMarkdownLinks(machineId)))
+            return unsupportedMarkdownLinks();
           const client = await getMachineRpcClient(machineId);
           return await client.requestFilePreview({
             ...params,
@@ -310,6 +323,8 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
             timeoutMs: options?.timeoutMs ?? 30_000,
           });
         }
+        if (request.resolveMarkdownLink && !(await supportsMarkdownLinks(machineId)))
+          return unsupportedMarkdownLinks();
         const client = await getMachineRpcClient(machineId);
         return await client.requestFilePreview({
           ...params,
@@ -718,94 +733,6 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
         sessionId: args.sessionId,
         userTurnId: args.userTurnId,
         accepted: false,
-        disposition: 'error',
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  };
-
-  const requestSessionPrepare = async (
-    machineId: MachineId,
-    spec: SessionPreparationSpec,
-    options?: { timeoutMs?: number }
-  ): Promise<SessionPrepareResponse | null> => {
-    try {
-      if (await canUseLocalMachineRpc(machineId)) {
-        const response = await getLocalMachineRpcSender()?.({
-          machineId,
-          workspaceId,
-          method: 'session/prepare',
-          params: spec,
-          timeoutMs: options?.timeoutMs ?? 5_000,
-        });
-        if (response && !response.ok) {
-          return {
-            type: 'session/prepare_response',
-            preparationId: spec.preparationId,
-            sessionId: spec.sessionId,
-            accepted: false,
-            disposition: 'error',
-            error: response.error,
-          };
-        }
-        if (response?.ok) return response.result as SessionPrepareResponse;
-      }
-      return await (
-        await getMachineRpcClient(machineId)
-      ).requestSessionPrepare({
-        ...spec,
-        timeoutMs: options?.timeoutMs ?? 5_000,
-      });
-    } catch (error) {
-      return {
-        type: 'session/prepare_response',
-        preparationId: spec.preparationId,
-        sessionId: spec.sessionId,
-        accepted: false,
-        disposition: 'error',
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  };
-
-  const requestSessionPrepareCancel = async (
-    machineId: MachineId,
-    args: SessionPreparationCancelSpec,
-    options?: { timeoutMs?: number }
-  ): Promise<SessionPrepareCancelResponse | null> => {
-    try {
-      if (await canUseLocalMachineRpc(machineId)) {
-        const response = await getLocalMachineRpcSender()?.({
-          machineId,
-          workspaceId,
-          method: 'session/prepare-cancel',
-          params: args,
-          timeoutMs: options?.timeoutMs ?? 5_000,
-        });
-        if (response && !response.ok) {
-          return {
-            type: 'session/prepare-cancel_response',
-            preparationId: args.preparationId,
-            sessionId: args.sessionId,
-            cancelled: false,
-            disposition: 'error',
-            error: response.error,
-          };
-        }
-        if (response?.ok) return response.result as SessionPrepareCancelResponse;
-      }
-      return await (
-        await getMachineRpcClient(machineId)
-      ).requestSessionPrepareCancel({
-        ...args,
-        timeoutMs: options?.timeoutMs ?? 5_000,
-      });
-    } catch (error) {
-      return {
-        type: 'session/prepare-cancel_response',
-        preparationId: args.preparationId,
-        sessionId: args.sessionId,
-        cancelled: false,
         disposition: 'error',
         error: error instanceof Error ? error.message : String(error),
       };
@@ -1514,14 +1441,28 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
 
   const requestMachineBugReport = async (
     machineId: MachineId,
-    args: { description: string; reporterUserId: string; requestToken: string },
+    args: {
+      description: string;
+      reporterUserId: string;
+      requestToken: string;
+      clientLog?: BugReportClientLog;
+    },
     options?: { timeoutMs?: number }
   ): Promise<MachineBugReportResponse | null> => {
     try {
+      const { clientLog, ...report } = args;
+      // The request schema is strict: an older daemon rejects the whole report
+      // when the field is present, so the client log goes only where it is understood.
+      const sendClientLog =
+        clientLog !== undefined &&
+        machineSupportsBugReportClientLog({
+          protocolCapabilities: await deps.getMachineProtocolCapabilities(machineId),
+        });
       return await (
         await getMachineRpcClient(machineId)
       ).requestMachineBugReport({
-        ...args,
+        ...report,
+        ...(sendClientLog ? { clientLog } : {}),
         timeoutMs: options?.timeoutMs ?? 120_000,
       });
     } catch (error) {
@@ -1565,8 +1506,6 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
     requestSessionFork,
     requestSessionEditAndResend,
     requestSessionDispatchTurn,
-    requestSessionPrepare,
-    requestSessionPrepareCancel,
     requestSessionHistoryRead,
     requestSessionHistoryWrite,
     requestFilePreview,
