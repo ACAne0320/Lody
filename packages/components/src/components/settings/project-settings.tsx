@@ -16,6 +16,7 @@ import {
   Download,
   Ellipsis,
   ExternalLink,
+  Folder,
   FolderPlus,
   Folders,
   Github,
@@ -25,6 +26,7 @@ import {
   Search,
   TerminalSquare,
   Wrench,
+  type LucideIcon,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Spinner } from '@lody/ui/spinner';
@@ -354,7 +356,9 @@ const styles = stylex.create({
     outlineStyle: 'none',
   },
   lineText: { display: 'flex', flexDirection: 'column', gap: '2px', flexGrow: 1, minWidth: 0 },
+  lineTitle: { display: 'flex', alignItems: 'center', gap: space[2], minWidth: 0 },
   lineName: {
+    minWidth: 0,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -1315,7 +1319,8 @@ function ProjectSettingsDesktop({
     <ProjectLine
       key={`multi:${project.id}`}
       title={project.name}
-      caption={t('workspace.projects.repositoryCount', '{{count}} repositories', {
+      icon={Folders}
+      caption={t('workspace.projects.repositoryCount', '{{count}} repositories or folders', {
         count: project.memberCount,
       })}
       canRemove={project.canManage && Boolean(onDeleteMultiRepoProject)}
@@ -1398,6 +1403,7 @@ function ProjectSettingsDesktop({
                         <ProjectLine
                           key={row.key}
                           title={row.project.name}
+                          icon={Folder}
                           caption={projectPathTail(row.project.rootPath)}
                           shared={row.sharedWithTeam}
                           conversationCount={row.conversationCount}
@@ -1449,6 +1455,7 @@ function ProjectSettingsDesktop({
                   <ProjectLine
                     key={row.key}
                     title={row.name}
+                    icon={Github}
                     privateRepo={row.private}
                     onOpen={() => setEditingProjectKey(row.key)}
                   />
@@ -1498,6 +1505,7 @@ function ProjectSettingsDesktop({
  */
 function ProjectLine({
   title,
+  icon: Icon,
   caption,
   shared = false,
   privateRepo = false,
@@ -1508,6 +1516,7 @@ function ProjectLine({
   onOpen,
 }: {
   readonly title: string;
+  readonly icon: LucideIcon;
   /** Where it lives, when its section does not already say. */
   readonly caption?: string;
   readonly shared?: boolean;
@@ -1539,7 +1548,10 @@ function ProjectLine({
     <div {...stylex.props(styles.line, surface.pressableLine)}>
       <button type="button" onClick={onOpen} {...stylex.props(styles.lineButton)}>
         <span {...stylex.props(styles.lineText)}>
-          <span {...stylex.props(styles.lineName)}>{title}</span>
+          <span {...stylex.props(styles.lineTitle)}>
+            <Icon aria-hidden="true" {...stylex.props(styles.editorTitleIcon)} />
+            <span {...stylex.props(styles.lineName)}>{title}</span>
+          </span>
           {caption ? <span {...stylex.props(styles.lineCaption)}>{caption}</span> : null}
         </span>
         {meta.length > 0 ? (

@@ -133,7 +133,7 @@ export function MobileProjectSettings({
               {project.name}
             </span>
             <span className="mt-0.5 block truncate text-[0.78rem] leading-tight text-muted-foreground">
-              {t('workspace.projects.repositoryCount', '{{count}} repositories', {
+              {t('workspace.projects.repositoryCount', '{{count}} repositories or folders', {
                 count: project.memberCount,
               })}
             </span>
