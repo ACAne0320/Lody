@@ -180,7 +180,10 @@ export function normalizeWorkspaceProject(value: unknown): WorkspaceProject | un
   return result.success ? result.data : undefined;
 }
 export const SessionProjectMemberSchema = z.object({
-  repoFullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/).optional(),
+  repoFullName: z
+    .string()
+    .regex(/^[\w.-]+\/[\w.-]+$/)
+    .optional(),
   o: z.number().int().nonnegative(),
   src: ProjectMemberSourceSchema,
   placement: ProjectMemberPlacementSchema,

@@ -188,10 +188,15 @@ describe('MessageHandler machine registration', () => {
       multiRepoProject: 1,
       operationInbox: 2,
       providerRateLimitsRefresh: 1,
+      codeCollabAllChangesScope: 1,
       magpieImport: 1,
       dshProviderIsolation: 1,
+      terminalNotifications: 1,
       memoryProviders: 1,
-      sessionHistory: 2,
+      sessionHistory: 3,
+      sessionHistoryIncremental: 1,
+      sessionHistoryWatch: 1,
+      sessionHistoryPatches: 1,
       sessionInputAcceptance: 1,
       sessionInputDispatch: 1,
       mcpToolDiscovery: 1,
@@ -207,6 +212,7 @@ describe('MessageHandler machine registration', () => {
       localProjectCreateDirectory: 1,
       localProjectHistoryProvider: 1,
       localFileResources: 1,
+      markdownFileLinks: 1,
       providerSetup: 1,
       acpProtocolAuthentication: 2,
       acpCapabilityRefreshCache: 1,
@@ -216,6 +222,7 @@ describe('MessageHandler machine registration', () => {
       preparedSessionInput: 1,
       sessionInputAttachments: 1,
       sessionCollaborationControl: 1,
+      bugReportClientLog: 1,
     });
 
     await handler.cleanup();

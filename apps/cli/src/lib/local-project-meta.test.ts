@@ -415,23 +415,29 @@ describe('resolveWorkspaceLocalProjectRootPathWithRetry', () => {
     expect(sleep).toHaveBeenCalledTimes(2);
   });
 
-  it('stops retrying when speculative preparation is cancelled', async () => {
-    const flock = new FakeMachineFlock();
-    const { repo } = createRepo(flock);
-    const controller = new AbortController();
-    const sleep = instantSleep();
-    const requestSync = vi.fn(async () => {
-      controller.abort(new Error('preparation cancelled'));
-    });
+  it('gives a row that is still syncing at least 30s by default before failing', async () => {
+    vi.useFakeTimers();
+    try {
+      const flock = new FakeMachineFlock();
+      const { repo } = createRepo(flock);
+      const requestSync = vi.fn(() => new Promise<never>(() => {}));
+      let settled = false;
+      const resolving = resolveWorkspaceLocalProjectRootPathWithRetry(
+        repo,
+        workspaceId,
+        machineId,
+        localProjectId,
+        { requestSync, sleep: instantSleep() }
+      ).finally(() => {
+        settled = true;
+      });
 
-    await expect(
-      resolveWorkspaceLocalProjectRootPathWithRetry(repo, workspaceId, machineId, localProjectId, {
-        requestSync,
-        sleep,
-        signal: controller.signal,
-      })
-    ).rejects.toThrow('preparation cancelled');
-    expect(requestSync).toHaveBeenCalledTimes(1);
-    expect(sleep).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await resolving).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

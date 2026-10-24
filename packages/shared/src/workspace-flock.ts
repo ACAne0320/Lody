@@ -3,9 +3,15 @@ import {
   type WorkspaceProject,
   type ProjectId,
 } from './workspace-project';
-import { normalizeAgentRole, type AgentRole } from './agent-role';
+import { normalizeAgentRole, serializeAgentRoleRow, type AgentRole } from './agent-role';
 import type { AgentRoleId, McpServerId, WorkspaceId } from './ids';
-import { isWorkspaceMcpServerMeta, type WorkspaceMcpServerMeta } from './workspace-mcp';
+import {
+  isWorkspaceMcpServerMeta,
+  isProjectMcpKey,
+  normalizeProjectMcpDefault,
+  type ProjectMcpDefault,
+  type WorkspaceMcpServerMeta,
+} from './workspace-mcp';
 
 export const WORKSPACE_FLOCK_DOC_STREAM_SEGMENT = 'wf';
 const WORKSPACE_FLOCK_DOC_NAME = 'workspace';
@@ -16,10 +22,12 @@ export const getWorkspaceFlockDocId = (workspaceId: WorkspaceId): string =>
 export type WorkspaceFlockMcpServerKey = ['mcpServer', McpServerId];
 export type WorkspaceFlockAgentRoleKey = ['agentRole', AgentRoleId];
 export type WorkspaceFlockProjectKey = ['project', ProjectId];
+export type WorkspaceFlockProjectMcpDefaultKey = ['projectMcpDefault', string];
 export type WorkspaceFlockKey =
   | WorkspaceFlockProjectKey
   | WorkspaceFlockMcpServerKey
-  | WorkspaceFlockAgentRoleKey;
+  | WorkspaceFlockAgentRoleKey
+  | WorkspaceFlockProjectMcpDefaultKey;
 
 /**
  * Every family stored in the one workspace document.
@@ -30,16 +38,26 @@ export type WorkspaceFlockKey =
  * data moved between documents and no window where a Role exists in both or
  * neither.
  */
-export const WORKSPACE_FLOCK_ROW_FAMILIES = ['mcpServer', 'agentRole', 'project'] as const;
+export const WORKSPACE_FLOCK_ROW_FAMILIES = [
+  'mcpServer',
+  'agentRole',
+  'project',
+  'projectMcpDefault',
+] as const;
 
 export const workspaceFlockKeys = {
   project: (id: ProjectId): WorkspaceFlockProjectKey => ['project', id],
+  projectMcpDefault: (projectKey: string): WorkspaceFlockProjectMcpDefaultKey => [
+    'projectMcpDefault',
+    projectKey,
+  ],
   mcpServer: (id: McpServerId): WorkspaceFlockMcpServerKey => ['mcpServer', id],
   agentRole: (id: AgentRoleId): WorkspaceFlockAgentRoleKey => ['agentRole', id],
 } as const;
 
 export type ParsedWorkspaceFlockKey =
   | { kind: 'project'; key: WorkspaceFlockProjectKey; projectId: ProjectId }
+  | { kind: 'projectMcpDefault'; key: WorkspaceFlockProjectMcpDefaultKey; projectKey: string }
   | {
       kind: 'mcpServer';
       key: WorkspaceFlockMcpServerKey;
@@ -65,6 +83,13 @@ export const parseWorkspaceFlockKey = (
     const projectId = id as ProjectId;
     return { kind: 'project', key: workspaceFlockKeys.project(projectId), projectId };
   }
+  if (key[0] === 'projectMcpDefault' && isProjectMcpKey(id)) {
+    return {
+      kind: 'projectMcpDefault',
+      key: workspaceFlockKeys.projectMcpDefault(id),
+      projectKey: id,
+    };
+  }
   if (key[0] === 'mcpServer') {
     const mcpServerId = id as McpServerId;
     return { kind: 'mcpServer', key: workspaceFlockKeys.mcpServer(mcpServerId), mcpServerId };
@@ -85,10 +110,15 @@ export type WorkspaceFlockAgentRoleRow = {
   value: AgentRole;
 };
 export type WorkspaceFlockProjectRow = { key: WorkspaceFlockProjectKey; value: WorkspaceProject };
+export type WorkspaceFlockProjectMcpDefaultRow = {
+  key: WorkspaceFlockProjectMcpDefaultKey;
+  value: ProjectMcpDefault;
+};
 export type WorkspaceFlockRow =
   | WorkspaceFlockProjectRow
   | WorkspaceFlockMcpServerRow
-  | WorkspaceFlockAgentRoleRow;
+  | WorkspaceFlockAgentRoleRow
+  | WorkspaceFlockProjectMcpDefaultRow;
 export type WorkspaceFlockRowId = string & { __brand: 'WorkspaceFlockRowId' };
 export type WorkspaceFlockRowMap = Record<WorkspaceFlockRowId, WorkspaceFlockRow>;
 
@@ -121,6 +151,10 @@ export const parseWorkspaceFlockRow = (
   if (parsedKey.kind === 'project') {
     const project = normalizeWorkspaceProject(value);
     return project?.id === parsedKey.projectId ? { key: parsedKey.key, value: project } : undefined;
+  }
+  if (parsedKey.kind === 'projectMcpDefault') {
+    const preference = normalizeProjectMcpDefault(value);
+    return preference ? { key: parsedKey.key, value: preference } : undefined;
   }
   if (parsedKey.kind === 'mcpServer') {
     if (!isWorkspaceMcpServerMeta(value) || value.id !== parsedKey.mcpServerId) {
@@ -226,7 +260,7 @@ const writeWorkspaceFlockRow = (
   if (workspaceFlockRowsEqual(previous, row)) {
     return false;
   }
-  flock.set(row.key, row.value);
+  flock.set(row.key, isAgentRoleRow(row) ? serializeAgentRoleRow(row.value) : row.value);
   flock.commit();
   return true;
 };
@@ -304,3 +338,17 @@ export const deleteWorkspaceProjectFromFlock = (
   flock: WorkspaceFlockWritableFlock,
   id: ProjectId
 ): boolean => deleteWorkspaceFlockRow(flock, workspaceFlockKeys.project(id));
+
+export const getProjectMcpDefaults = (
+  rows: WorkspaceFlockRowMap
+): Record<string, ProjectMcpDefault> => {
+  const defaults: Record<string, ProjectMcpDefault> = {};
+  for (const row of Object.values(rows)) {
+    if (isProjectMcpDefaultRow(row)) defaults[row.key[1]] = row.value;
+  }
+  return defaults;
+};
+
+const isProjectMcpDefaultRow = (
+  row: WorkspaceFlockRow
+): row is WorkspaceFlockProjectMcpDefaultRow => row.key[0] === 'projectMcpDefault';

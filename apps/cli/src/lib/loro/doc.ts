@@ -1,6 +1,8 @@
 import { projectRunMetaPatch } from '@/session/project-run-state';
 import type { LodyRateLimitsCapability } from 'acp-extension-core';
+import { terminalNotificationSchema, type TerminalNotification } from '@lody/shared/notifications';
 import { createSessionAgentWrites, type SessionAgentWrites } from './session-agent-writes';
+import { WorkspaceCatalogSyncLegacy } from './workspace-catalog-sync-legacy';
 import { createSessionBackend, disposeSessionBackend } from '@/session/session-backend';
 import type { SessionBackend, SessionBackendFactory } from '@/session/session-backend';
 import { readLatestTurn } from '@lody/shared/session-data';
@@ -42,7 +44,6 @@ import {
   SessionPullRequestMeta,
   SessionPlanEntry,
   type SessionExternalHistoryCursorDocState,
-  type SessionRoostHistoryCursorDocState,
   ACP_CAPABILITY_CACHE_VERSION,
   MessageQueueItem,
   SessionTitleSource,
@@ -230,11 +231,13 @@ function installStreamsDiagnostics(): void {
     if (typeof args[0] === 'string' && args[0].startsWith('[streams-crdt]')) {
       const detail = args.length > 1 ? ` ${JSON.stringify(args[1])}` : '';
       getLogger().debug(`[loro-streams-diag] ${args[0]}${detail}`);
+      if (mentionsSqliteBusy(args)) void sqliteLockReporterLegacy.reportBusy('streams-crdt');
       return;
     }
     if (typeof args[0] === 'string' && args[0].startsWith('[loro-repo]')) {
       const detail = args.length > 1 ? ` ${args[1]}` : '';
       getLogger().debug(`[loro-streams-diag] ${args[0]}${detail}`);
+      if (mentionsSqliteBusy(args)) void sqliteLockReporterLegacy.reportBusy('loro-repo');
       return;
     }
     origConsoleError.apply(console, args);
@@ -294,10 +297,16 @@ class ProxiedWebSocket extends WebSocketOriginal {
 
 (globalThis as unknown as GlobalWithWebSocket).WebSocket = ProxiedWebSocket;
 
-import { FlockSyncTimeoutError, readTimeoutEnv, withTimeout } from './timeout-utils';
+import {
+  FlockSyncTimeoutError,
+  readTimeoutEnv,
+  SYNC_CONFIRMATION_TIMEOUT_MS,
+  withTimeout,
+} from './timeout-utils';
 import { FlockSyncUnavailableError } from './flock-sync-errors';
 import { ConcurrentQueue } from '../concurrent-queue';
 import type { CliSqliteRepoStore } from './sqlite-repo-store';
+import { mentionsSqliteBusy, sqliteLockReporterLegacy } from './sqlite-lock-diagnostics';
 import type { CloudBillingPort, CloudStreamsTokenPort } from '@lody/platform';
 
 /**
@@ -339,6 +348,8 @@ export interface LoroDocumentManagerOptions {
   cloudBilling?: CloudBillingPort | null;
   /** One-shot clients route history to the owner; daemons use installed local factories. */
   sessionHistoryFactory?: SessionBackendFactory;
+  /** Daemon-only Roost routing that leaves this machine's execution policies unchanged. */
+  ownerHistoryRouter?: SessionBackendFactory;
 }
 
 export type LoroRepoPersistReason =
@@ -382,6 +393,17 @@ export class LoroDocumentManager {
   private readonly streamsTokens: CloudStreamsTokenPort | null;
   public readonly cloudBilling: CloudBillingPort | null;
   private readonly sessionHistoryFactory?: SessionBackendFactory;
+  private readonly ownerHistoryRouter?: SessionBackendFactory;
+  private catalogSync?: WorkspaceCatalogSyncLegacy;
+
+  /** Reader interest belongs to the daemon, never to a discovery request. */
+  async holdCatalogFlockDoc(flockDocId: string): Promise<void> {
+    await this.catalogSync?.hold(flockDocId);
+  }
+
+  async catalogBaselineReady(flockDocId: string | undefined, timeoutMs: number): Promise<boolean> {
+    return this.catalogSync ? this.catalogSync.ready(flockDocId, timeoutMs) : true;
+  }
 
   static async create(
     workspaceId: WorkspaceId,
@@ -389,6 +411,8 @@ export class LoroDocumentManager {
     logger: Logger,
     options: {
       attachRemoteOnCreate?: boolean;
+      /** Daemon-only reader lease; one-shot commands retain explicit sync ownership. */
+      keepWorkspaceCatalogJoined?: boolean;
       /**
        * Only the daemon passes `shared-durable`; see `DocumentCursorScope`.
        * The default keeps LoroDoc progress in this process's memory.
@@ -397,6 +421,8 @@ export class LoroDocumentManager {
       streamsTokens?: CloudStreamsTokenPort | null;
       cloudBilling?: CloudBillingPort | null;
       sessionHistoryFactory?: SessionBackendFactory;
+      ownerHistoryRouter?: SessionBackendFactory;
+      onStorageWriteFailure?: (error: Error) => void;
     } = {}
   ): Promise<LoroDocumentManager> {
     // Configure the CLI's global HTTP dispatcher once (proxy/H2/diagnostics). This
@@ -410,7 +436,7 @@ export class LoroDocumentManager {
       logger,
       'startup.loro_sqlite_store',
       { workspaceId },
-      async () => await createCliSqliteRepoStore(workspaceId)
+      async () => await createCliSqliteRepoStore(workspaceId, options.onStorageWriteFailure)
     );
     const createRepoTimeoutMs = readTimeoutEnv('LODY_LORO_CREATE_REPO_TIMEOUT_MS', 30_000);
     const joinMetaTimeoutMs = readTimeoutEnv('LODY_LORO_JOIN_META_TIMEOUT_MS', 30_000);
@@ -495,7 +521,16 @@ export class LoroDocumentManager {
         streamsTokens: options.streamsTokens ?? null,
         cloudBilling: options.cloudBilling ?? null,
         sessionHistoryFactory: options.sessionHistoryFactory,
+        ownerHistoryRouter: options.ownerHistoryRouter,
       });
+      if (options.keepWorkspaceCatalogJoined) {
+        manager.catalogSync = new WorkspaceCatalogSyncLegacy(
+          createdRepo,
+          workspaceId,
+          logger,
+          options.streamsTokens != null
+        );
+      }
     } catch (error) {
       const failures: unknown[] = [error];
       try {
@@ -535,6 +570,7 @@ export class LoroDocumentManager {
       // long-lived daemon path attaches later via the remote bridge.
       try {
         await manager.attachRemoteStreamsTransport();
+        // Continues in degraded mode on timeout, so this stays a short wait.
         const syncMetaTimeoutMs = readTimeoutEnv('LODY_LORO_SYNC_META_TIMEOUT_MS', 20_000);
         const synced = await manager.waitUntilMetaSynced({
           timeoutMs: syncMetaTimeoutMs,
@@ -573,6 +609,7 @@ export class LoroDocumentManager {
     this.streamsTokens = options.streamsTokens ?? null;
     this.cloudBilling = options.cloudBilling ?? null;
     this.sessionHistoryFactory = options.sessionHistoryFactory;
+    this.ownerHistoryRouter = options.ownerHistoryRouter;
     this.remoteStreamsGeneration = this.remoteStreamsAttached ? 1 : 0;
     this.presenceRuntime = options.presenceRuntime ?? null;
     this.machineMonitorRuntime = options.machineMonitorRuntime ?? null;
@@ -672,6 +709,7 @@ export class LoroDocumentManager {
     );
     this.remoteStreamsTokens = streamsTokens;
     const streamsTransport = await createCliStreamsTransport({
+      content: { mode: 'plaintext' },
       workspaceId: this.workspaceId,
       tokenProvider: streamsTokens.legacy,
       repo: this.repo,
@@ -948,13 +986,37 @@ export class LoroDocumentManager {
   // failure, preserving the throw-on-failure contract below. With ZERO
   // transports attached (offline, nothing registered) `repo.sync()` resolves
   // vacuously — same as the old local placeholder member, so parity holds.
-  async syncMetaOrThrow(options: { timeoutMs?: number; reason?: string } = {}): Promise<void> {
+  async syncMetaOrThrow(
+    options: { timeoutMs?: number; reason?: string; requireRemoteConfirmation?: boolean } = {}
+  ): Promise<void> {
     const reason = options.reason ?? 'explicit-sync';
-    const timeoutMs = options.timeoutMs ?? readTimeoutEnv('LODY_LORO_SYNC_META_TIMEOUT_MS', 20_000);
+    const timeoutMs =
+      options.timeoutMs ??
+      readTimeoutEnv('LODY_LORO_SYNC_META_TIMEOUT_MS', SYNC_CONFIRMATION_TIMEOUT_MS);
     const timeoutMessage = `Timeout waiting for workspace metadata sync (workspace=${this.workspaceId})`;
 
     try {
-      await withTimeout(this.repo.sync({ scope: 'meta' }), timeoutMs, timeoutMessage);
+      const generation = this.remoteStreamsGeneration;
+      const report = await withTimeout(
+        this.repo.sync({ scope: 'meta' }),
+        timeoutMs,
+        timeoutMessage
+      );
+      if (options.requireRemoteConfirmation) {
+        if (!report.ok) throw new RepoSyncError(report);
+        if (this.streamsTokens !== null || this.remoteStreamsGeneration > 0) {
+          if (
+            !report.transports.some(
+              (transport) => transport.transportId === 'streams' && transport.ok
+            )
+          ) {
+            throw new Error('No remote Streams route confirmed metadata synchronization');
+          }
+          if (!this.remoteStreamsAttached || generation !== this.remoteStreamsGeneration) {
+            throw new Error('Remote Streams transport changed during metadata synchronization');
+          }
+        }
+      }
       this.initialMetaSyncCompleted = true;
     } catch (error) {
       throw new Error(`Workspace metadata sync failed (${reason}): ${formatErrorMessage(error)}`, {
@@ -968,7 +1030,9 @@ export class LoroDocumentManager {
     options: { timeoutMs?: number; reason?: string } = {}
   ): Promise<void> {
     const reason = options.reason ?? 'explicit-sync';
-    const timeoutMs = options.timeoutMs ?? readTimeoutEnv('LODY_LORO_SYNC_DOC_TIMEOUT_MS', 8_000);
+    const timeoutMs =
+      options.timeoutMs ??
+      readTimeoutEnv('LODY_LORO_SYNC_DOC_TIMEOUT_MS', SYNC_CONFIRMATION_TIMEOUT_MS);
     const timeoutMessage = `Timeout waiting for document sync (doc=${docId})`;
 
     try {
@@ -1020,7 +1084,8 @@ export class LoroDocumentManager {
   ): Promise<void> {
     const reason = options.reason ?? 'explicit-sync';
     const timeoutMs =
-      options.timeoutMs ?? readTimeoutEnv('LODY_LORO_SYNC_MACHINE_FLOCK_TIMEOUT_MS', 8_000);
+      options.timeoutMs ??
+      readTimeoutEnv('LODY_LORO_SYNC_MACHINE_FLOCK_TIMEOUT_MS', SYNC_CONFIRMATION_TIMEOUT_MS);
     const timeoutMessage = `Timeout waiting for Flock document sync (doc=${flockDocId})`;
 
     let activeSync = this.activeFlockDocSyncs.get(flockDocId);
@@ -1374,7 +1439,7 @@ export class LoroDocumentManager {
         sessionId,
         (sessionDocId) => this.unloadDocRoom(sessionDocId),
         this.logger,
-        this.sessionHistoryFactory
+        this.sessionHistoryFactory ?? this.ownerHistoryRouter
       );
       const meta = options.historyBackend ? undefined : await this.repo.getDocMeta(docId);
       const historyBackend =
@@ -1428,7 +1493,7 @@ export class LoroDocumentManager {
         sessionId,
         (snapshotDocId) => this.unloadDocRoom(snapshotDocId),
         this.logger,
-        this.sessionHistoryFactory
+        this.sessionHistoryFactory ?? this.ownerHistoryRouter
       );
       const meta = await this.repo.getDocMeta(docId);
       const historyBackend = !isLoroRepoDocDeleted(meta)
@@ -1761,19 +1826,26 @@ export class LoroDocumentManager {
     this.logger.debug(`Started watching document existence for machine ${machineId}`);
   }
 
-  /** Cleanup errors elsewhere must not fence a workspace whose presence already ended. */
-  isPresenceReleased(): boolean {
-    return this.presenceRuntime?.isReleased() ?? true;
-  }
-
   async cleanUp(options: { fast?: boolean; preserveSessionStatus?: boolean } = {}) {
     this.cleaningUp = true;
     let presenceCleanupFailure: unknown;
+    try {
+      await this.catalogSync?.close();
+    } catch (error) {
+      presenceCleanupFailure = error;
+    }
     this.localDocRoomBridgeGeneration += 1;
     for (const docId of [...this.localDocRoomBridges.keys()]) {
       this.cancelLocalDocRoomBridge(docId);
     }
-    await this.localLoroDataPlaneServer?.disposeLegacy();
+    try {
+      await this.localLoroDataPlaneServer?.disposeLegacy();
+    } catch (error) {
+      // Still stop presence: a live owner left behind would refuse every later
+      // owner of this workspace, while a stopped one can be retired.
+      await this.presenceRuntime?.stop().catch(() => undefined);
+      throw error;
+    }
     try {
       await this.machineMonitorRuntime?.stop();
     } catch (error) {
@@ -1785,7 +1857,9 @@ export class LoroDocumentManager {
       try {
         await this.detachRemoteStreamsTransport();
       } catch (error) {
-        presenceCleanupFailure = error;
+        presenceCleanupFailure = presenceCleanupFailure
+          ? new AggregateError([presenceCleanupFailure, error], 'Workspace cleanup failed')
+          : error;
       }
     }
     try {
@@ -2185,15 +2259,6 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     return this.mirror.subscribe(listener);
   }
 
-  subscribeRoostHistoryCursor(listener: () => void): () => void {
-    if (!this.handle) throw new Error('SessionDocument not initialized');
-    return this.handle.doc.subscribe((batch) => {
-      if (batch.events.some((event) => String(event.path[0]) === 'roostHistoryCursor')) {
-        listener();
-      }
-    });
-  }
-
   async init(options: { skipAutoRead?: boolean; historyBackend?: SessionHistoryBackendKind } = {}) {
     this.destroyed = false;
     try {
@@ -2381,6 +2446,8 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
         if (binding.status === 'detached') {
           return;
         }
+        // Best effort: a timeout continues offline-first, so this keeps a
+        // short budget rather than SYNC_CONFIRMATION_TIMEOUT_MS.
         const syncDocTimeoutMs = readTimeoutEnv('LODY_LORO_SYNC_DOC_TIMEOUT_MS', 8_000);
         const timeoutMessage = `Timeout waiting for session doc initial sync (room=${this.roomId})`;
         await withTimeout(binding.firstSyncedWithRemote, syncDocTimeoutMs, timeoutMessage);
@@ -2486,9 +2553,9 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
       humanInputReceipts: state.humanInputReceipts as SessionDocMeta['humanInputReceipts'],
       cancelRequest: state.cancelRequest as SessionDocMeta['cancelRequest'],
       forkOperation: state.forkOperation as SessionDocMeta['forkOperation'],
+      notification: state.notification,
       preview: state.preview as SessionDocMeta['preview'],
       externalHistoryCursor: state.externalHistoryCursor as SessionDocMeta['externalHistoryCursor'],
-      roostHistoryCursor: state.roostHistoryCursor as SessionDocMeta['roostHistoryCursor'],
       acpRuntimeConfig: state.acpRuntimeConfig as SessionDocMeta['acpRuntimeConfig'],
     };
   }
@@ -3049,6 +3116,35 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     this.logger.debug(`[${this.sessionId}] setStatus: upsertDocMeta complete`);
   }
 
+  /** Publish the latest terminal projection, not a delivery queue. The UUID
+   * index makes only this changed document discoverable without history scans.
+   */
+  async publishTerminalNotification(notification: TerminalNotification): Promise<void> {
+    if (!this.mirror) throw new Error('Mirror not initialized');
+    terminalNotificationSchema.parse(notification);
+    const current = await this.repo.getDocMeta(this.roomId);
+    if (!current || isLoroRepoDocDeleted(current)) return;
+    this.mirror.setState((prev) => ({
+      ...prev,
+      notification: {
+        ...notification,
+        presentation: notification.presentation
+          ? {
+              kind: notification.presentation.kind,
+              conversationTitle: notification.presentation.conversationTitle,
+              scheduleName: notification.presentation.scheduleName,
+              projectName: notification.presentation.projectName,
+              pullRequestNumber: notification.presentation.pullRequestNumber,
+            }
+          : undefined,
+      },
+    }));
+    // Commit the control document before exposing its activation index. This is
+    // best effort across independently synced documents, not a delivery barrier.
+    this.handle?.doc.commit();
+    await this.repo.upsertDocMeta(this.roomId, { notificationId: notification.id });
+  }
+
   async getPreviewState(): Promise<SessionPreviewDocState | undefined> {
     if (!this.mirror) {
       return undefined;
@@ -3083,18 +3179,6 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
       ...prev,
       externalHistoryCursor: cursor,
     }));
-  }
-
-  async getRoostHistoryCursor(): Promise<SessionRoostHistoryCursorDocState | undefined> {
-    if (!this.mirror) return undefined;
-    return this.mirror.getState().roostHistoryCursor as
-      | SessionRoostHistoryCursorDocState
-      | undefined;
-  }
-
-  async setRoostHistoryCursor(cursor: SessionRoostHistoryCursorDocState): Promise<void> {
-    if (!this.mirror) throw new Error('Mirror not initialized');
-    this.mirror.setState((prev) => ({ ...prev, roostHistoryCursor: cursor }));
   }
 
   /**
