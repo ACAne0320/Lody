@@ -1,7 +1,11 @@
 import { probeLocalProjectMember } from './project-member-probe';
 import { NodeFileSystem } from '@effect/platform-node-shared';
 import { checkoutProjectSubmodule, persistProjectSubmoduleBranch } from './project-submodules';
-import { FileLockCleanupFailed, LockReleaseFailed } from '@lody/shared/node/file-lock';
+import {
+  FileLockCleanupFailed,
+  LockOwnershipLost,
+  LockReleaseFailed,
+} from '@lody/shared/node/file-lock';
 import { Effect } from 'effect';
 import {
   ProcessCleanupFailed,
@@ -86,7 +90,8 @@ export function rethrowWorktreeGitInfrastructureFailure(error: unknown): void {
       current instanceof ProcessCleanupFailed ||
       current instanceof ProcessReleaseFailed ||
       current instanceof FileLockCleanupFailed ||
-      current instanceof LockReleaseFailed
+      current instanceof LockReleaseFailed ||
+      current instanceof LockOwnershipLost
     )
       throw error;
     current = (current as { cause?: unknown }).cause;

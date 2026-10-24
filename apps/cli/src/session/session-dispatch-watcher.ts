@@ -79,10 +79,6 @@ type SessionDispatchWatcherDeps = {
   // instead of the daemon host's git config.
   userResolver: SessionUserResolverLike;
   accessPolicy?: SessionAccessPolicyService;
-  getPreparedSessionLaunchConfig?: (input: {
-    sessionMeta: SessionMeta;
-    requesterUserId: string;
-  }) => { config: SessionLaunchConfig | undefined } | null;
   // Three-way result (allowed / definitive deny / indeterminate). The
   // indeterminate case is what keeps a transient outage from dropping the turn —
   // see {@link verifyMachineAccessWithRetry}.
@@ -1482,23 +1478,14 @@ export class SessionDispatchWatcher {
         requesterUserId,
         localProjectId,
       });
-      const preparedLaunchConfig =
-        dispatchAction.mode === 'create'
-          ? this.deps.getPreparedSessionLaunchConfig?.({
-              sessionMeta: freshMeta,
-              requesterUserId,
-            })
-          : null;
-      const launchConfigPromise = preparedLaunchConfig
-        ? Promise.resolve(preparedLaunchConfig.config)
-        : dispatchTurnPromise.then((turn) =>
-            traceAsync(
-              this.deps.logger,
-              'dispatch.resolve_launch_config',
-              { sessionId, userTurnId: turn.nextUserTurn.id },
-              async () => await this.resolveSessionLaunchConfig(turn.freshMeta)
-            )
-          );
+      const launchConfigPromise = dispatchTurnPromise.then((turn) =>
+        traceAsync(
+          this.deps.logger,
+          'dispatch.resolve_launch_config',
+          { sessionId, userTurnId: turn.nextUserTurn.id },
+          async () => await this.resolveSessionLaunchConfig(turn.freshMeta)
+        )
+      );
       void launchConfigPromise.catch(() => undefined);
       const userResolution = this.startUserResolution(sessionId, nextUserTurn.id, requesterUserId);
       const userForRequestPromise = dispatchTurnPromise.then((turn) =>
