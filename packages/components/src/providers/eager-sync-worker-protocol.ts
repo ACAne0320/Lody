@@ -1,5 +1,6 @@
-import type { StreamsTransportOptions } from 'loro-repo/effect/streams';
-import type { LocalLoroDataPlaneConnection } from '@lody/shared/local-loro-data-plane';
+import type { WorkspaceStreamsMode } from '@lody/shared/workspace-streams-content';
+import type { StreamsTransportAdapter } from 'loro-repo/transport/streams';
+import type { LocalLoroDataPlaneConnection } from '@lody/shared/local-loro-transport';
 
 export type LocalSyncMessage = Parameters<LocalLoroDataPlaneConnection['send']>[0];
 export type LocalSyncEvent = Parameters<
@@ -11,7 +12,7 @@ export type EagerSyncTransport =
   | {
       plane: 'cloud';
       options: Pick<
-        StreamsTransportOptions,
+        ConstructorParameters<typeof StreamsTransportAdapter>[0],
         'bucketId' | 'metaStreamId' | 'baseUrl' | 'shardUrls'
       >;
       streamId: string;
@@ -38,6 +39,7 @@ export type EagerSyncAuthContext = {
 export type EagerSyncWorkerInput =
   | {
       type: 'start';
+      content: WorkspaceStreamsMode;
       scope: string;
       workspaceId: string;
       roomId: string;

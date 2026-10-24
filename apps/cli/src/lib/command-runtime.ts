@@ -1,4 +1,5 @@
 import { closeLoginShellApplicationLegacy } from '@/agent/login-shell-env';
+import { SYNC_CONFIRMATION_TIMEOUT_MS } from '@/lib/loro/timeout-utils';
 import {
   createServerTimeFetcher,
   getLoroStreamsShardUrls,
@@ -8,8 +9,8 @@ import {
   resolveNewSessionHistoryBackend,
   type MachineMeta,
   getSessionIdFromRoomId,
-  SESSION_DOC_PREFIX,
   isLoroRepoDocDeleted,
+  isSessionDocRoomId,
   isTimeSynced,
   syncTime,
   type LocalSessionControlRequest,
@@ -324,7 +325,7 @@ export function createCommandSessionHistoryFactory(
         return response;
       },
       write: async (operation, payload) => {
-        if (!(await manager.waitUntilMetaSynced()))
+        if (!(await manager.waitUntilMetaSynced({ timeoutMs: SYNC_CONFIRMATION_TIMEOUT_MS })))
           throw new Error('Session metadata has not reached its history owner');
         const response = await withRpc(target, (client) =>
           client.requestSessionHistoryWrite({
@@ -422,7 +423,10 @@ export async function ensureWorkspaceMetaSynced(
   manager: Pick<LoroDocumentManager, 'waitUntilMetaSynced'>,
   reason: string
 ): Promise<void> {
-  const synced = await manager.waitUntilMetaSynced({ reason });
+  const synced = await manager.waitUntilMetaSynced({
+    reason,
+    timeoutMs: SYNC_CONFIRMATION_TIMEOUT_MS,
+  });
   if (!synced) {
     throw new Error(
       `Workspace metadata changes were not confirmed by Loro Streams (${reason}). Retry the command after checking network connectivity.`
@@ -491,24 +495,13 @@ export async function listAliveDocMetas<Meta>(
  * must not be trusted for discovery or identity.
  */
 export async function listAliveSessionMetas(
-  manager: Pick<LoroDocumentManager, 'repo'>
+  manager: LoroDocumentManager
 ): Promise<Array<{ roomId: string; meta: SessionMeta }>> {
-  const rows = await manager.repo.runLegacy(
-    manager.repo.native.listDoc({ prefix: SESSION_DOC_PREFIX })
-  );
-  return rows
-    .flatMap((row) => {
-      const id = getSessionIdFromRoomId(row.docId);
-      return row.deleted || id === null
-        ? []
-        : [{ roomId: row.docId, meta: { ...row.meta, id } as SessionMeta }];
-    })
-    .sort((left, right) => {
-      const activity = (row: SessionMeta) => row.lastMessageAt ?? (Date.parse(row.createdAt) || 0);
-      return (
-        activity(right.meta) - activity(left.meta) || right.meta.id.localeCompare(left.meta.id)
-      );
-    });
+  const rows = await listAliveDocMetas<SessionMeta>(manager, isSessionDocRoomId);
+  return rows.flatMap(({ roomId, meta }) => {
+    const id = getSessionIdFromRoomId(roomId);
+    return id === null ? [] : [{ roomId, meta: { ...meta, id } }];
+  });
 }
 
 function readLocalControlTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {

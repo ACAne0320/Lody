@@ -49,6 +49,7 @@ interface LodyOptions {
     localProjectId: LocalProjectId
   ) => Promise<void>;
   onFatalAuthFailure?: (error: Error) => void;
+  onStorageWriteFailure?: (error: Error) => void;
   onProcessLifecycleAction?: (action: MachineProcessLifecycleAction) => void;
   workspaceWatchCoordinator?: WorkspaceWatchCoordinatorApi;
   cloudPort: CloudPort;
@@ -107,9 +108,11 @@ export class Lody {
           // The daemon is the only process that resumes LoroDoc rooms from the
           // shared SQLite cursors; one-shot commands keep theirs in memory.
           documentCursorScope: 'shared-durable',
+          keepWorkspaceCatalogJoined: true,
           streamsTokens: options.cloudPort.streamsTokens,
           cloudBilling: options.cloudPort.billing,
           ownerHistoryRouter,
+          onStorageWriteFailure: options.onStorageWriteFailure,
         })
     );
     return new Lody(options, manager);

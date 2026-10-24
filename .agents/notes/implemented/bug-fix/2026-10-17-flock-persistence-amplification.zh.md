@@ -40,6 +40,16 @@ Translation: current
 - 在 Lody 里用 `pnpm patch`：不采用。缺陷和它的测试都属于 Repo，应由 Repo 发补丁版本。
 - 把渲染进程退回 Promise Repo：不采用。为一个范围明确的持久化缺陷撤销整个 #1607 不值得。
 
+## 后续：0.23.2
+
+对 0.23.1 的对抗式审查发现，新增的兜底定时器整理可能与一次保存触发的阈值整理同时运行。在没有「比较后写入」的适配器（`FileSystemStorageAdaptor`）上，较旧的那次捕获最后完成时，会覆盖较新的底稿，并删掉已落盘的行。Lody 使用的 IndexedDB 和 SQLite 适配器本来就会拒绝这种过时写入。[loro-dev/loro-repo#156](https://github.com/loro-dev/loro-repo/pull/156)（0.23.2）让每个副本同一时间最多只有一个整理，并且 release 开始后不再启动新的整理。它还修复了三处会影响 Lody 渲染进程的连带问题：
+
+- 低于阈值的保存不再等待正在运行的整理；
+- 定时器加入的整理失败后，仍会安排重试；
+- 长时间整理期间写入的行，仍受 60 秒上限约束。
+
+一个早已存在的文件系统 detached 读取竞态记录在 [loro-dev/loro-repo#157](https://github.com/loro-dev/loro-repo/issues/157)。
+
 ## 验证
 
 - 在 0.23.0 上，原有 19 个日志用例中 18 个失败，4 个整理失败用例全部失败；在 0.23.1 上全部通过。每个用例都使用真实 IndexedDB 适配器和真实 Flock，覆盖 Meta 和命名 Flock 两条路径。
@@ -52,4 +62,6 @@ Translation: current
 - 重复投递虽然不再写盘，每次仍要导入一遍（大 Meta 约几十毫秒）。只读调查没有在 Lody 中找到周期为两秒的调用方。当某个 Streams API 分片返回落后的 next offset、而 SDK 不做单调性检查就采用时，可以复现这个节奏；但这一点没有在真实服务上验证。
 - 对于存储永久拒绝的原样字节，原生 Repo 没有整本文件兜底：payload 会一直留在队列里，游标一直被挡住，但不会丢数据。
 
-Lody 升级：[#1672](https://github.com/LodyAI/Lody/pull/1672)。相关：[原生工作区 Repo](../../proposed/architecture/2026-10-16-native-workspace-repo.zh.md)。
+Lody 升级：[#1672](https://github.com/LodyAI/Lody/pull/1672)（0.23.1），0.23.2 见后续升级。相关：[原生工作区 Repo](../../proposed/architecture/2026-10-16-native-workspace-repo.zh.md)。
+
+当前边界（2026-10-19）：已撤回原生消费者及其后续应用补丁，仍选择 Repo 0.23.2；恢复的 Promise transport 自带远端 Stream 创建行为。见[撤回决策](../simplification/2026-10-19-repo-upgrade-without-consumer-migration.zh.md)。

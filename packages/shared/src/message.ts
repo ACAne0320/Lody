@@ -34,6 +34,7 @@ import type {
 } from './preview';
 import type { ProjectSkillsResult } from './acp/skills';
 import type { RpcSecretPublicKey } from './rpc-secret';
+import type { SessionHistoryContentPatch } from './session-data/history-patches';
 import type { BugReportClientLog } from './bug-report';
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk';
 
@@ -805,6 +806,7 @@ export type SessionHistoryReadQuery =
       readonly kind: 'watchChanges';
       readonly checkpoint: string;
       readonly includeBodiesFrom?: number;
+      readonly withPatches?: true;
       readonly waitMs: number;
     }
   | { readonly kind: 'inputAcceptance'; readonly entry: unknown }
@@ -829,6 +831,7 @@ export type SessionHistoryReadQuery =
       readonly kind: 'readChanges';
       readonly checkpoint: string;
       readonly includeBodiesFrom?: number;
+      readonly withPatches?: true;
     }
   | { readonly kind: 'readAll' }
   | { readonly kind: 'readTurnOutput'; readonly userTurnId: string };
@@ -840,6 +843,13 @@ export type SessionHistoryChanges =
       readonly checkpoint: string;
       readonly from?: number;
       readonly ids: readonly string[];
+      readonly patches?: {
+        readonly baseCheckpoint: string;
+        readonly turns: readonly {
+          readonly turnId: string;
+          readonly operations: readonly SessionHistoryContentPatch[];
+        }[];
+      };
       readonly bodies?: {
         readonly changed: readonly SessionHistoryInput[];
         readonly from?: number;
