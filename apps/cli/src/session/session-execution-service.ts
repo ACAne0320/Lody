@@ -49,7 +49,17 @@ import {
   type InboxInput,
 } from '@/orchestration/inbox/model';
 import { sessionExecutionResource } from '@/orchestration/platform/session-resources';
-import { formatErrorMessage } from '@/utils/format-error';
+import { formatErrorMessage, formatReportedError } from '@/utils/format-error';
+import {
+  describeSessionStartFailure,
+  hadIncompleteStartCleanup,
+  isTransientSessionStartError,
+  jitterSessionStartRetryDelay,
+  SESSION_START_RETRY_DELAYS_MS,
+  sessionStartRetryMode,
+  takeSessionStartRetry,
+  type SessionStartStage,
+} from './session-start-stage';
 import type { Logger } from '@/utils/logger';
 import { startTraceSpan, traceAsync } from '@/utils/trace-span';
 import type { ContentBlock } from '@agentclientprotocol/sdk';
@@ -128,7 +138,7 @@ import {
   localProjectsLegacy,
 } from '@lody/shared/node/local-project';
 import { findProgressMessageId } from '@lody/shared/session-data';
-import { Cause, Data, Effect, Exit, Fiber, Scope } from 'effect';
+import { Cause, Clock, Data, Effect, Exit, Fiber, Random, Scope } from 'effect';
 import { createHash, randomUUID } from 'node:crypto';
 import { getCodexProfileStore, type ResolvedCodexProfile } from '../agent/codex-profile-store';
 import {
@@ -309,6 +319,8 @@ type TurnRuntimeState = {
   /** Publish-once latch for the workspace git-state flags; both cancel routes read it. */
   workspaceGitStateSynced: boolean;
   prePromptFailureRecorded: boolean;
+  /** Start step in progress; cleared once a Session is bound, so later failures name none. */
+  startStage?: SessionStartStage;
   cancelRequested: boolean;
   pendingInputOnCancel: PendingInputCancellationPolicy;
   releaseFailure?: unknown;
@@ -937,6 +949,8 @@ export class SessionExecutionService {
   private readonly canceledTurnBySession = new Map<SessionId, string>();
   private readonly currentTurnBySession = new Map<SessionId, string>();
   private readonly turnRuntimeBySession = new Map<SessionId, TurnRuntimeState>();
+  /** Start times of recent start retries, shared by every Session this service runs. */
+  private readonly startRetryStartedAt: number[] = [];
   private readonly rewriteBarrierSessions = new Set<SessionId>();
   private readonly rewriteConflictLeaseSessions = new Set<SessionId>();
   private readonly turnReleaseWaiters = new Map<SessionId, Map<string, Set<() => void>>>();
@@ -3242,7 +3256,7 @@ export class SessionExecutionService {
       return;
     }
     runtime.prePromptFailureRecorded = true;
-    const message = formatErrorMessage(error);
+    const message = describeSessionStartFailure(runtime.startStage, formatReportedError(error));
     if (isGitExecutableNotFoundError(error)) {
       await this.deps.recordChatFailure(
         sessionDoc,
@@ -3391,6 +3405,74 @@ export class SessionExecutionService {
       `safety margin ${marginMb}). The turn was not started; ` +
       'free memory and retry.'
     );
+  }
+
+  /**
+   * Runs one Session start and repeats it after a temporary system failure, before
+   * any agent output exists. Each repeat is a new start (the failed one already
+   * released its process and credentials); a start that already finished the
+   * worktree setup script repeats as a resume so the script never runs twice.
+   */
+  private startWithTransientRetry(options: {
+    sessionId: SessionId;
+    runtime: TurnRuntimeState;
+    config: SessionConfig;
+    abortIfCancelled: () => Effect.Effect<void, unknown, never>;
+    start: () => Effect.Effect<ISession, unknown, never>;
+  }): Effect.Effect<ISession, unknown, never> {
+    const self = this;
+    const { sessionId, runtime, config } = options;
+    const attempts = SESSION_START_RETRY_DELAYS_MS.length + 1;
+    const attempt = (index: number): Effect.Effect<ISession, unknown, never> =>
+      Effect.suspend(() => {
+        // Each attempt reports its own steps; a stale one would misname a failure
+        // that happens before the next report and choose the wrong retry mode.
+        runtime.startStage = undefined;
+        return options.start();
+      }).pipe(
+        Effect.catch((error) => {
+          const delayMs = SESSION_START_RETRY_DELAYS_MS[index];
+          const mode = sessionStartRetryMode(runtime.startStage, config.resume === true);
+          if (
+            delayMs === undefined ||
+            mode === 'none' ||
+            runtime.cancelRequested ||
+            runtime.initializationStalled ||
+            !isTransientSessionStartError(error) ||
+            hadIncompleteStartCleanup(error)
+          ) {
+            return Effect.fail(error);
+          }
+          return Effect.gen(function* () {
+            const failure = describeSessionStartFailure(
+              runtime.startStage,
+              formatReportedError(error)
+            );
+            if (!takeSessionStartRetry(self.startRetryStartedAt, yield* Clock.currentTimeMillis)) {
+              self.deps.logger.warn(
+                `[${sessionId}] Session start hit a temporary system error (${failure}); not retrying because this daemon's start retry budget is spent`
+              );
+              return yield* Effect.fail(error);
+            }
+            const waitMs = jitterSessionStartRetryDelay(delayMs, yield* Random.next);
+            self.deps.logger.warn(
+              `[${sessionId}] Session start hit a temporary system error (${failure}); starting attempt ${index + 2} of ${attempts} in ${waitMs}ms`
+            );
+            if (self.turnRuntimeBySession.get(sessionId) === runtime) {
+              self.deps.setSessionActivePresencePhase(
+                sessionId,
+                'initializing',
+                'Retrying after a temporary system error'
+              );
+            }
+            yield* Effect.sleep(waitMs);
+            yield* options.abortIfCancelled();
+            if (mode === 'resume') config.resume = true;
+            return yield* attempt(index + 1);
+          });
+        })
+      );
+    return attempt(0);
   }
 
   private recordKnownChatFailureAndHaltEffect(options: {
@@ -4220,6 +4302,7 @@ export class SessionExecutionService {
               }
               runtime.session = nextSession;
               runtime.pendingSession = undefined;
+              runtime.startStage = undefined;
             };
 
             const trackPendingSession = Effect.fnUntraced(function* (
@@ -5427,6 +5510,10 @@ export class SessionExecutionService {
           )
             self.deps.setSessionActivePresencePhase(sessionId, phase, detail);
         },
+        onStartStage: (stage) => {
+          if (self.turnRuntimeBySession.get(sessionId) === ctx.runtime)
+            ctx.runtime.startStage = stage;
+        },
       };
 
       const restoreAttempt = Effect.gen(function* () {
@@ -5436,13 +5523,20 @@ export class SessionExecutionService {
         self.deps.logger.debug(
           `[${sessionId}] Session restore createSession started (resumeSessionId=${resumeSessionId ?? 'none'})`
         );
-        const restoredSession = yield* ctx.trackPendingSession(
-          () =>
-            self.deps.sessionManager.createSession(restoreConfig, {
-              resumeSessionId,
-            }),
-          { terminateOnCancel: true }
-        );
+        const restoredSession = yield* self.startWithTransientRetry({
+          sessionId,
+          runtime: ctx.runtime,
+          config: restoreConfig,
+          abortIfCancelled: ctx.abortIfCancelled,
+          start: () =>
+            ctx.trackPendingSession(
+              () =>
+                self.deps.sessionManager.createSession(restoreConfig, {
+                  resumeSessionId,
+                }),
+              { terminateOnCancel: true }
+            ),
+        });
         self.deps.logger.debug(
           `[${sessionId}] Session restore createSession returned (acpSessionId=${restoredSession.acpSessionId ?? 'null'})`
         );
@@ -5576,18 +5670,26 @@ export class SessionExecutionService {
                 Effect.catch((fallbackError) =>
                   Effect.gen(function* () {
                     yield* ctx.abortIfCancelled();
-                    const fallbackErrMessage = formatErrorMessage(fallbackError);
+                    const fallbackNeedsAuthentication =
+                      fallbackError instanceof AcpAuthenticationRequiredError ||
+                      isAuthenticationRequiredACPError(fallbackError);
+                    const fallbackErrMessage = fallbackNeedsAuthentication
+                      ? formatReportedError(fallbackError)
+                      : describeSessionStartFailure(
+                          ctx.runtime.startStage,
+                          formatReportedError(fallbackError)
+                        );
                     self.deps.logger.error(
-                      `[${sessionId}] Fallback restore also failed: ${fallbackErrMessage}`
+                      `[${sessionId}] Fallback restore also failed: ${fallbackErrMessage}`,
+                      fallbackError
                     );
                     return yield* self.recordKnownChatFailureAndHaltEffect({
                       sessionId,
                       sessionDoc,
                       userTurnId: executionUserTurnId,
-                      reason:
-                        fallbackError instanceof AcpAuthenticationRequiredError
-                          ? 'acp_auth_required'
-                          : 'session_restore_failed',
+                      reason: fallbackNeedsAuthentication
+                        ? 'acp_auth_required'
+                        : 'session_restore_failed',
                       message: fallbackErrMessage,
                     });
                   })
@@ -5596,8 +5698,12 @@ export class SessionExecutionService {
             }
 
             yield* acpReplaySuppression.release;
+            const failureMessage = needsAuthentication
+              ? errMessage
+              : describeSessionStartFailure(ctx.runtime.startStage, formatReportedError(error));
             self.deps.logger.error(
-              `[${sessionId}] Failed to restore session for chat: ${errMessage}`
+              `[${sessionId}] Failed to restore session for chat: ${failureMessage}`,
+              error
             );
             return yield* self.recordKnownChatFailureAndHaltEffect({
               sessionId,
@@ -5607,7 +5713,7 @@ export class SessionExecutionService {
               // arrives wrapped as `[ACP_RESUME_FAILED] …`; without it the UI
               // reports a generic restore failure and offers no way to sign in.
               reason: needsAuthentication ? 'acp_auth_required' : 'session_restore_failed',
-              message: errMessage,
+              message: failureMessage,
             });
           })
         )
@@ -5817,11 +5923,17 @@ export class SessionExecutionService {
                 `[${sessionId}] ACP prompt failed because the connection was stale; restoring session before one retry`
               );
               yield* abortIfCancelled();
-              yield* self.ignoreWithWarning(
-                sessionId,
-                'Failed to terminate stale ACP session before prompt retry',
-                self.tryPromise(() => self.deps.sessionManager.terminateSession(sessionId, true))
+              // Replacing this runtime continues the same logical turn. Ordinary
+              // termination publishes agent-death events that finalize its history
+              // owner before the replacement prompt can produce output. Keep the
+              // old runtime bound until retirement succeeds, so failed cleanup is
+              // still owned by the disconnected-execution finalizer.
+              runtime.disconnectedTransport = true;
+              yield* self.tryPromise(() =>
+                self.deps.sessionManager.retireSessionForReconfiguration(activeSession)
               );
+              runtime.disconnectedTransport = false;
+              runtime.cancellationDrain = undefined;
               session = null;
               runtime.session = undefined;
               runtime.pendingSession = undefined;
@@ -6216,7 +6328,6 @@ export class SessionExecutionService {
     const shouldPrepareWorktree =
       (project?.kind === 'github' && !!githubRepoFullName) ||
       (project?.kind === 'local' && project.useWorktree === true);
-    // Logical first use also covers adoption of a speculatively prepared worktree.
     // Shared child workspaces and restored ACP sessions retain their branch identity.
     const newWorktree =
       shouldPrepareWorktree &&
@@ -6513,11 +6624,20 @@ export class SessionExecutionService {
             )
               self.deps.setSessionActivePresencePhase(sessionId, phase, detail);
           };
+          sessionConfig.onStartStage = (stage) => {
+            if (self.turnRuntimeBySession.get(sessionId) === runtime) runtime.startStage = stage;
+          };
           sessionConfig.worktreeScriptHistoryInsertBeforeEntryId = turnId;
-          const session = yield* trackPendingSession(
-            () => self.deps.sessionManager.createSession(sessionConfig),
-            { terminateOnCancel: true }
-          );
+          const session = yield* self.startWithTransientRetry({
+            sessionId,
+            runtime,
+            config: sessionConfig,
+            abortIfCancelled,
+            start: () =>
+              trackPendingSession(() => self.deps.sessionManager.createSession(sessionConfig), {
+                terminateOnCancel: true,
+              }),
+          });
           bindSession(session);
           self.scheduleCreatedSessionCapabilityUpdate(session, sessionConfig);
           yield* abortIfCancelled({ terminateSession: true });

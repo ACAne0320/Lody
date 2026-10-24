@@ -32,7 +32,6 @@ import {
   type ImageGenerationEndEvent,
   type AcpStartupStageEvent,
   type AcpStartupTimeoutOptions,
-  type AcpSessionStartTarget,
 } from './agent-client';
 import { getLoginShellEnvLegacy } from './login-shell-env';
 import {
@@ -126,7 +125,6 @@ export type CreateAcpClientOptions = {
   sessionId?: SessionId;
   startupTimeouts?: AcpStartupTimeoutOptions;
   startupAbort?: Promise<never>;
-  resolveSessionStart?: () => Promise<AcpSessionStartTarget>;
 };
 
 export const createAcpClient = async (options: CreateAcpClientOptions) => {
@@ -167,7 +165,6 @@ export const createAcpClient = async (options: CreateAcpClientOptions) => {
     options.resumeSessionId,
     options.startupTimeouts,
     options.startupAbort,
-    options.resolveSessionStart,
     options.forkSessionId,
     options.forkSessionTurnId
   );
