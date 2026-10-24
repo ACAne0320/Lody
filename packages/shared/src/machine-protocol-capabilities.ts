@@ -38,9 +38,12 @@ export const MACHINE_PROTOCOL_CAPABILITIES = {
   acpCapabilityRefreshCache: 'acpCapabilityRefreshCache',
   providerRateLimitsRefresh: 'providerRateLimitsRefresh',
   sessionHistory: 'sessionHistory',
+  sessionHistoryIncremental: 'sessionHistoryIncremental',
+  sessionHistoryWatch: 'sessionHistoryWatch',
   sessionInputAcceptance: 'sessionInputAcceptance',
   sessionInputDispatch: 'sessionInputDispatch',
   sessionCollaborationControl: 'sessionCollaborationControl',
+  bugReportClientLog: 'bugReportClientLog',
 } as const;
 
 export const OPERATION_INBOX_PROTOCOL_VERSION = 2;
@@ -66,8 +69,12 @@ export const IOS_SIMULATOR_CONTROLS_PROTOCOL_VERSION = 1;
 export const PI_EXTENSIONS_PROTOCOL_VERSION = 1;
 export const ACP_CAPABILITY_REFRESH_CACHE_PROTOCOL_VERSION = 1;
 export const SESSION_HISTORY_PROTOCOL_VERSION = 2;
+export const SESSION_HISTORY_INCREMENTAL_PROTOCOL_VERSION = 1;
+export const SESSION_HISTORY_WATCH_PROTOCOL_VERSION = 1;
 export const SESSION_INPUT_ACCEPTANCE_PROTOCOL_VERSION = 1;
 export const SESSION_INPUT_DISPATCH_PROTOCOL_VERSION = 1;
+/** `machine/bug-report` accepts an optional `clientLog` and merges it into the upload. */
+export const BUG_REPORT_CLIENT_LOG_PROTOCOL_VERSION = 1;
 
 type MachineProtocolCapabilityCarrier = {
   protocolCapabilities?: MachineProtocolCapabilities;
@@ -154,9 +161,27 @@ export const CURRENT_MACHINE_PROTOCOL_CAPABILITIES: MachineProtocolCapabilities 
   [MACHINE_PROTOCOL_CAPABILITIES.acpCapabilityRefreshCache]:
     ACP_CAPABILITY_REFRESH_CACHE_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.sessionHistory]: SESSION_HISTORY_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryIncremental]:
+    SESSION_HISTORY_INCREMENTAL_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryWatch]: SESSION_HISTORY_WATCH_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.sessionInputAcceptance]: SESSION_INPUT_ACCEPTANCE_PROTOCOL_VERSION,
   [MACHINE_PROTOCOL_CAPABILITIES.sessionInputDispatch]: SESSION_INPUT_DISPATCH_PROTOCOL_VERSION,
+  [MACHINE_PROTOCOL_CAPABILITIES.bugReportClientLog]: BUG_REPORT_CLIENT_LOG_PROTOCOL_VERSION,
 };
+
+/**
+ * Whether `machine/bug-report` may carry `clientLog`. Its request schema is
+ * strict, so an older daemon rejects the whole report when the field is present.
+ */
+export function machineSupportsBugReportClientLog(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return machineSupportsProtocolCapability(
+    machine,
+    MACHINE_PROTOCOL_CAPABILITIES.bugReportClientLog,
+    BUG_REPORT_CLIENT_LOG_PROTOCOL_VERSION
+  );
+}
 
 export function machineSupportsSessionInputDispatch(
   machine: MachineProtocolCapabilityCarrier | null | undefined
@@ -165,6 +190,18 @@ export function machineSupportsSessionInputDispatch(
     machine,
     MACHINE_PROTOCOL_CAPABILITIES.sessionInputDispatch,
     SESSION_INPUT_DISPATCH_PROTOCOL_VERSION
+  );
+}
+
+export function machineSupportsSessionHistoryWatch(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return (
+    machineSupportsProtocolCapability(
+      machine,
+      MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryWatch,
+      SESSION_HISTORY_WATCH_PROTOCOL_VERSION
+    ) && machineSupportsSessionHistoryIncremental(machine)
   );
 }
 
@@ -425,5 +462,15 @@ export function machineSupportsProjectRepositoryMembers(
     machine,
     MACHINE_PROTOCOL_CAPABILITIES.projectRepositoryMembers,
     PROJECT_REPOSITORY_MEMBERS_PROTOCOL_VERSION
+  );
+}
+
+export function machineSupportsSessionHistoryIncremental(
+  machine: MachineProtocolCapabilityCarrier | null | undefined
+): boolean {
+  return machineSupportsProtocolCapability(
+    machine,
+    MACHINE_PROTOCOL_CAPABILITIES.sessionHistoryIncremental,
+    SESSION_HISTORY_INCREMENTAL_PROTOCOL_VERSION
   );
 }

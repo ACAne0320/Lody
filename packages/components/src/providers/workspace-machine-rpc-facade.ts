@@ -3,7 +3,9 @@ import {
   MAIN_SESSION_FILE_ROOT_ID,
   MemoryProviderResponseSchema,
   ProjectProbeLocalMemberResultSchema,
+  machineSupportsBugReportClientLog,
   machineSupportsMemoryProviders,
+  type BugReportClientLog,
   type MemoryProviderRequest,
   type MemoryProviderResponse,
   type ProjectProbeLocalMemberResult,
@@ -68,10 +70,6 @@ import {
   type SessionCancelResponse,
   type SessionDispatchTurnResponse,
   type SessionId,
-  type SessionPreparationCancelSpec,
-  type SessionPreparationSpec,
-  type SessionPrepareCancelResponse,
-  type SessionPrepareResponse,
   type SessionPreviewCreateResponse,
   type SessionPreviewEndpointAcquireResponse,
   type SessionPreviewEndpointReleaseResponse,
@@ -744,94 +742,6 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
         sessionId: args.sessionId,
         userTurnId: args.userTurnId,
         accepted: false,
-        disposition: 'error',
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  };
-
-  const requestSessionPrepare = async (
-    machineId: MachineId,
-    spec: SessionPreparationSpec,
-    options?: { timeoutMs?: number }
-  ): Promise<SessionPrepareResponse | null> => {
-    try {
-      if (await canUseLocalMachineRpc(machineId)) {
-        const response = await getLocalMachineRpcSender()?.({
-          machineId,
-          workspaceId,
-          method: 'session/prepare',
-          params: spec,
-          timeoutMs: options?.timeoutMs ?? 5_000,
-        });
-        if (response && !response.ok) {
-          return {
-            type: 'session/prepare_response',
-            preparationId: spec.preparationId,
-            sessionId: spec.sessionId,
-            accepted: false,
-            disposition: 'error',
-            error: response.error,
-          };
-        }
-        if (response?.ok) return response.result as SessionPrepareResponse;
-      }
-      return await (
-        await getMachineRpcClient(machineId)
-      ).requestSessionPrepare({
-        ...spec,
-        timeoutMs: options?.timeoutMs ?? 5_000,
-      });
-    } catch (error) {
-      return {
-        type: 'session/prepare_response',
-        preparationId: spec.preparationId,
-        sessionId: spec.sessionId,
-        accepted: false,
-        disposition: 'error',
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  };
-
-  const requestSessionPrepareCancel = async (
-    machineId: MachineId,
-    args: SessionPreparationCancelSpec,
-    options?: { timeoutMs?: number }
-  ): Promise<SessionPrepareCancelResponse | null> => {
-    try {
-      if (await canUseLocalMachineRpc(machineId)) {
-        const response = await getLocalMachineRpcSender()?.({
-          machineId,
-          workspaceId,
-          method: 'session/prepare-cancel',
-          params: args,
-          timeoutMs: options?.timeoutMs ?? 5_000,
-        });
-        if (response && !response.ok) {
-          return {
-            type: 'session/prepare-cancel_response',
-            preparationId: args.preparationId,
-            sessionId: args.sessionId,
-            cancelled: false,
-            disposition: 'error',
-            error: response.error,
-          };
-        }
-        if (response?.ok) return response.result as SessionPrepareCancelResponse;
-      }
-      return await (
-        await getMachineRpcClient(machineId)
-      ).requestSessionPrepareCancel({
-        ...args,
-        timeoutMs: options?.timeoutMs ?? 5_000,
-      });
-    } catch (error) {
-      return {
-        type: 'session/prepare-cancel_response',
-        preparationId: args.preparationId,
-        sessionId: args.sessionId,
-        cancelled: false,
         disposition: 'error',
         error: error instanceof Error ? error.message : String(error),
       };
@@ -1576,14 +1486,28 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
 
   const requestMachineBugReport = async (
     machineId: MachineId,
-    args: { description: string; reporterUserId: string; requestToken: string },
+    args: {
+      description: string;
+      reporterUserId: string;
+      requestToken: string;
+      clientLog?: BugReportClientLog;
+    },
     options?: { timeoutMs?: number }
   ): Promise<MachineBugReportResponse | null> => {
     try {
+      const { clientLog, ...report } = args;
+      // The request schema is strict: an older daemon rejects the whole report
+      // when the field is present, so the client log goes only where it is understood.
+      const sendClientLog =
+        clientLog !== undefined &&
+        machineSupportsBugReportClientLog({
+          protocolCapabilities: await deps.getMachineProtocolCapabilities(machineId),
+        });
       return await (
         await getMachineRpcClient(machineId)
       ).requestMachineBugReport({
-        ...args,
+        ...report,
+        ...(sendClientLog ? { clientLog } : {}),
         timeoutMs: options?.timeoutMs ?? 120_000,
       });
     } catch (error) {
@@ -1627,8 +1551,6 @@ export function createWorkspaceMachineRpcFacade(deps: WorkspaceMachineRpcFacadeD
     requestSessionFork,
     requestSessionEditAndResend,
     requestSessionDispatchTurn,
-    requestSessionPrepare,
-    requestSessionPrepareCancel,
     requestSessionHistoryRead,
     requestSessionHistoryWrite,
     requestFilePreview,
