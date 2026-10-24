@@ -2546,6 +2546,7 @@ describe('Production Roost history semantics', () => {
         const setTimer = globalThis.setTimeout;
         const clearTimer = globalThis.clearTimeout;
         vi.spyOn(globalThis, 'setTimeout').mockImplementation((...args) => {
+          if (lostNativeReply && lostReadReplies === 0) console.log('DEBUG_TIMER', args[1]);
           const scheduled =
             // The two lost reads below need both the first and second retry.
             // Do not drive longer timers that also serve as RPC deadlines.
