@@ -32,11 +32,9 @@ returned bytes, rather than rerun encryption. No pending store is introduced.
 
 `authenticateDocument` returns only historical author/signature evidence relative
 to that verified view and caller scope. It authenticates revoked admitted authors;
-the returned author is a discriminated identity: full available history gives
-`kind: member` with the original actor/membership; snapshot replay-prevention
-facts for a retired device give only `kind: device-only`, device and
-`missing-history-context`. No original user is guessed and no new write right
-is restored. This does not establish current publication permission, ciphertext validity, global
+the returned author is `kind: member` with the original actor/membership, from
+full history, an endorsed snapshot or retained state alike, since all carry the
+device history. No new write right is restored. This does not establish current publication permission, ciphertext validity, global
 freshness or prior host admission. `openDocument` additionally verifies the AEAD
 and returns an owned plaintext buffer. Untrusted metadata cannot choose the
 trusted genesis/resource/purpose. Context, signature or tag failure returns no
@@ -66,7 +64,7 @@ sleeps, real keys or physical-device claims are involved.
 · [Source fingerprints](https://github.com/LodyAI/Lody/blob/5f97599e60700d6185834632df85922ea0d73ec6/packages/e2ee-core/src/content/provenance.json).
 
 `makeStreamsUpdateBinding` (and its services-based form `streamsDocumentBinding`) is an Effect-native header3 update
-and header4 snapshot codec, consumed by released streams-crdt0.17 in the Lab. Its initialization Scope closes
+and header4 snapshot codec, consumed by released streams-crdt at the current catalog version in the Lab. Its initialization Scope closes
 admission, awaits active operations and rejects late output. The independently
 selected Org/resource/model and fixed signer are captured once. A numeric
 `writeEpoch` remains fixed; explicit `writeEpoch: 'current'` selects the genuine
@@ -98,7 +96,7 @@ and streams-binding seals instead require `maySealNewContent` and the exact
 current epoch, before encryption and again after asynchronous signing. Revoked,
 removed, Guest or Recovery writers still cannot upload; historical
 `authenticateDocument` remains separate and grants no upload permission.
-`admitStreamsUpdateBatch` checks released streams-crdt0.17 framing and header3,
+`admitStreamsUpdateBatch` checks released streams-crdt at the current catalog version framing and header3,
 rejecting the entire batch if any frame is invalid before the host forwards
 unchanged original bytes. A batch may contain valid frames from different
 published epochs; retries never reseal an older frame.

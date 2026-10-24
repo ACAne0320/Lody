@@ -1,4 +1,3 @@
-import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import {
   deleteMachineFlockRowFromFlock,
   getMachineFlockDocId,
@@ -16,6 +15,7 @@ import {
   writeMachineFlockRowToFlock,
 } from '@lody/shared';
 import type { MachineLegacyMetaFields } from '@lody/shared';
+import type { LoroRepo } from 'loro-repo';
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { localProjectsLegacy } from '@lody/shared/node/local-project';
 
@@ -88,7 +88,7 @@ function readLegacyMachineLocalProjects(
 }
 
 export async function readMachineLocalProjects(
-  repo: WorkspaceRepoLegacy,
+  repo: LoroRepo,
   workspaceId: WorkspaceId,
   machineId: MachineId
 ): Promise<Record<LocalProjectId, LocalProjectMeta>> {
@@ -110,7 +110,7 @@ export async function readMachineLocalProjects(
 }
 
 export async function upsertMachineLocalProject(
-  repo: WorkspaceRepoLegacy,
+  repo: LoroRepo,
   workspaceId: WorkspaceId,
   machineId: MachineId,
   project: LocalProjectMeta,
@@ -160,7 +160,7 @@ export async function upsertMachineLocalProject(
 
 /** Startup-only reconciliation of canonical paths and daemon-observed GitHub remotes. */
 export async function reconcileMachineLocalProjectRootPaths(
-  repo: WorkspaceRepoLegacy,
+  repo: LoroRepo,
   workspaceId: WorkspaceId,
   machineId: MachineId,
   sync: MachineFlockSyncScheduler
@@ -185,7 +185,7 @@ export async function reconcileMachineLocalProjectRootPaths(
 }
 
 export async function removeMachineLocalProject(
-  repo: WorkspaceRepoLegacy,
+  repo: LoroRepo,
   workspaceId: WorkspaceId,
   machineId: MachineId,
   localProjectId: LocalProjectId,
@@ -219,11 +219,11 @@ export async function removeMachineLocalProject(
   }
   await repo.upsertDocMeta(machineRoomId, {
     localProjects: undefined,
-  } as Parameters<WorkspaceRepoLegacy['upsertDocMeta']>[1]);
+  } as Parameters<LoroRepo['upsertDocMeta']>[1]);
 }
 
 export async function resolveWorkspaceLocalProjectRootPath(
-  repo: WorkspaceRepoLegacy,
+  repo: LoroRepo,
   workspaceId: WorkspaceId,
   machineId: MachineId,
   localProjectId: LocalProjectId
@@ -243,7 +243,7 @@ export async function resolveWorkspaceLocalProjectRootPath(
 }
 
 export async function resolveWorkspaceLocalProject(
-  repo: WorkspaceRepoLegacy,
+  repo: LoroRepo,
   workspaceId: WorkspaceId,
   machineId: MachineId,
   localProjectId: LocalProjectId
@@ -270,10 +270,9 @@ export type ResolveLocalProjectRootPathRetryOptions = {
   /** Wait between attempts. Default: LODY_LOCAL_PROJECT_RESOLVE_RETRY_DELAY_MS or 400. */
   retryDelayMs?: number;
   /**
-   * Bound on each `requestSync` await. Needed on the caller side because the
-   * coordinator dedupes onto an in-flight sync whose own timeout (default 8s)
-   * may be much larger than the turn-dispatch budget. Default:
-   * LODY_LOCAL_PROJECT_RESOLVE_SYNC_TIMEOUT_MS or 1500.
+   * Bound on each `requestSync` await. The coordinator dedupes onto an
+   * in-flight sync with its own deadline, so each attempt is bounded here.
+   * Default: LODY_LOCAL_PROJECT_RESOLVE_SYNC_TIMEOUT_MS or 10000.
    */
   syncTimeoutMs?: number;
   /** Injectable for tests; defaults to setTimeout. */
@@ -286,7 +285,7 @@ const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function resolveWorkspaceLocalProjectWithSyncOnMiss(
-  repo: WorkspaceRepoLegacy,
+  repo: LoroRepo,
   workspaceId: WorkspaceId,
   machineId: MachineId,
   localProjectId: LocalProjectId,
@@ -312,6 +311,14 @@ export async function resolveWorkspaceLocalProjectWithSyncOnMiss(
 }
 
 /**
+ * Per-attempt Machine Flock sync budget for root-path resolution. A miss fails
+ * the turn's session init, so the three syncs between four reads give a row
+ * that has not synced down yet about 30s in total.
+ */
+export const readLocalProjectRootResolveSyncTimeoutMs = (): number =>
+  readTimeoutEnv('LODY_LOCAL_PROJECT_RESOLVE_SYNC_TIMEOUT_MS', 10_000);
+
+/**
  * Session create/restore resolves a local project's workdir from the machine
  * Flock doc — synced CRDT state that a single point-in-time read can miss
  * transiently (cold start before the first remote sync, or a row written by a
@@ -321,7 +328,7 @@ export async function resolveWorkspaceLocalProjectWithSyncOnMiss(
  * The happy path (row already local) still costs exactly one read.
  */
 export async function resolveWorkspaceLocalProjectRootPathWithRetry(
-  repo: WorkspaceRepoLegacy,
+  repo: LoroRepo,
   workspaceId: WorkspaceId,
   machineId: MachineId,
   localProjectId: LocalProjectId,
@@ -333,8 +340,7 @@ export async function resolveWorkspaceLocalProjectRootPathWithRetry(
   );
   const retryDelayMs =
     options.retryDelayMs ?? readTimeoutEnv('LODY_LOCAL_PROJECT_RESOLVE_RETRY_DELAY_MS', 400);
-  const syncTimeoutMs =
-    options.syncTimeoutMs ?? readTimeoutEnv('LODY_LOCAL_PROJECT_RESOLVE_SYNC_TIMEOUT_MS', 1_500);
+  const syncTimeoutMs = options.syncTimeoutMs ?? readLocalProjectRootResolveSyncTimeoutMs();
   const sleep = options.sleep ?? defaultSleep;
 
   for (let attempt = 1; ; attempt += 1) {

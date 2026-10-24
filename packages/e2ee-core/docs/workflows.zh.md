@@ -138,8 +138,25 @@ results() / acknowledge()   已完成任务保留到确认为止
 
 - **Loro / streams-crdt**：`streamsDocumentBinding({ resource, model, writeEpoch })`（`@lody/e2ee-core/adapters/loro-streams`）是 `@loro-dev/streams-crdt` 文档的载荷保护绑定。它封装更新（头部 3）与快照（头部 4，续读 offset 位于签名头部内），并打开读到的内容。签名器、账本视图与密钥分别取自 `DeviceIdentity`、`VerifiedLedger` 与 `InstalledEpochHistory`。
 - **其他传输**：`sealDocument`、`openDocument` 与 `authenticateDocument`（`/protocol`）接收文档密钥、签名器和已验证视图的查询函数。新的封装要求在确切的当前纪元具有当前写权限，加密前与签名后各检查一次；每次执行都重新加密，因此重试必须重发返回的字节。
-- 读取时先认证历史作者再解密：被吊销作者的旧内容仍可打开并归属（`member`，或快照之后的 `device-only`），但这不授予当前写权限。
+- 读取时先认证历史作者再解密：被吊销作者的旧内容仍可打开并归属到原成员（快照之后同样如此），但这不授予当前写权限。
 
 ## 投递（分发器内部）
 
 `deliverEpochEnvelope`（内部）执行一轮 put 与回读。outbox 中已保存的字节优先于新生成的字节。后端 `unavailable` 时投递保持 `Pending`，原始字节不变；其他后端失败会向上传播。
+
+### 保留状态起点
+
+retained 起点包含本调用方导出的完整 v2 状态，以及紧接其后的数据源 `offset`。
+恢复保留“完整历史 / 背书快照”的来源。损坏、未知版本或其他 genesis 返回
+`retained-cache-invalid`，可用独立验证的原始记录重建可选缓存。缓存长度超过 pin
+也属于缓存无效；长度相等必须 head 相等。pin 更长时提供 `LedgerFeedSource`，
+打开过程先验证后缀并证明 pin 位置的哈希，再保存新增记录。缺失或冲突的证据返回
+`local-evidence-conflict`，不能据此重置 pin。
+
+建议每新增至少 64 条记录调用一次 `rebase()`，提供运行时共用的 `VerifiedLedger`。
+它先推进 pin，再在一次存储事务中 CAS 替换起点并删除已覆盖的 feed 行；保存返回的
+起点供下次打开。界面需要的原始历史另行保留。压缩中断后可从原件重建，或读取后缀
+证明已有 pin，不得降低 pin。
+
+`InstalledEpochKeys.check(epoch)` 检查已安装密钥的当前资格和承诺，随后释放临时
+密钥材料；状态读取方无需领取秘密。
