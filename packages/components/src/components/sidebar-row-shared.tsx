@@ -367,8 +367,6 @@ export function SidebarSessionTitleText({
  */
 /** A filter, not opacity: the mark keeps its full lightness, only its hue is muted. */
 const SIDEBAR_PR_ICON_COMPACT_CLASS = 'saturate-[0.55]';
-/** Sidebar PR marks read as one quiet glyph; only the CI verdict keeps a hue. */
-const SIDEBAR_PR_ICON_COMPACT_TONE_CLASS = 'text-sidebar-foreground-muted';
 
 export function SessionPrIcon({
   prStatus,
@@ -411,7 +409,7 @@ export function SessionPrIcon({
       <MaskedPrCiIcon
         BaseIcon={BaseIcon}
         VerdictIcon={VerdictIcon}
-        baseToneClassName={compact ? SIDEBAR_PR_ICON_COMPACT_TONE_CLASS : meta.iconColorClassName}
+        baseToneClassName={meta.iconColorClassName}
         verdict={verdict}
         className={cn(
           compact && SIDEBAR_PR_ICON_COMPACT_CLASS,
@@ -427,7 +425,7 @@ export function SessionPrIcon({
       className={cn(
         compact ? ['h-3 w-3', SIDEBAR_PR_ICON_COMPACT_CLASS] : 'h-3.5 w-3.5',
         'shrink-0',
-        compact ? SIDEBAR_PR_ICON_COMPACT_TONE_CLASS : meta.iconColorClassName,
+        meta.iconColorClassName,
         className
       )}
       strokeWidth={2.25}
