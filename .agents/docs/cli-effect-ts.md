@@ -106,13 +106,12 @@ its consumers and deletion condition. Extend the owning behavioral suite for
 failure, interruption and release paths with explicit signals and injected clocks.
 Pure reducers, CRDT codecs and synchronous calculations remain ordinary functions.
 
-Workspace durable data now uses the released native Repo and Streams SDK.
-`packages/shared/src/workspace-data/repo-legacy.ts` is its one deprecated execution
-door for CLI managers, renderer stores, shortcut grants and snapshot migration
-readers; the same Repo owns every borrowed replica. Remove it as those consumers
-accept native Services and caller Scopes. The local v7 client and eager worker are
-native; upper Session/Turn workflows, grant acquisition, host server and RPC remain
-separate units. See [ownership and acceptance](../notes/proposed/architecture/2026-10-16-native-workspace-repo.md).
+Workspace durable data uses the published Promise Repo and Streams transport.
+The native workspace consumer adoption from #1607 and its stacked Session
+residency work were withdrawn while retaining Repo 0.23.2, CRDT 0.19.0 and
+Client 0.12.0. Presence, tokens and the local writer keep their independent
+Effect boundaries. Future Repo consumer migration is separate work; see the
+[rollback decision](../notes/implemented/simplification/2026-10-19-repo-upgrade-without-consumer-migration.md).
 
 When migration would pull in unfinished dependencies or substantially expand the
 task, complete the requested feature/fix and schedule that migration separately.
@@ -394,7 +393,9 @@ renderer and Machine RPC callers use the sole
 `createTokenProviderLegacy` port/type. Renderer teardown and CLI cloud-port
 shutdown await provider close. CLI durable transport and machine monitor borrow the
 workspace-native provider through `{provider, executor}` in that same facade,
-creating no extra runtime/cache. This is token ownership, not completion of upper
+creating no extra runtime/cache. In the CLI port those providers and Machine RPC's
+are views of one kernel per workspace (`loro/streams-token-shares.ts`): a view's
+close ends only its reads, and the last one closes the kernel. This is token ownership, not completion of upper
 Loro/daemon lifecycles. [API and decision](../../packages/shared/src/loro-streams-token/README.md).
 
 Native getToken/auth preserve terminal typed failure; only the explicit Legacy

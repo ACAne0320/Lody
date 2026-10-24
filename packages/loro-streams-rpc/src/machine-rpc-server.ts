@@ -1580,6 +1580,7 @@ export class LoroStreamsMachineRpcServer {
               kind: 'readChanges',
               checkpoint: query.checkpoint,
               includeBodiesFrom: query.includeBodiesFrom,
+              ...(query.withPatches ? { withPatches: true as const } : {}),
             };
             await this.requestConcurrency.acquire();
             readPermit = true;
@@ -1713,6 +1714,7 @@ export class LoroStreamsMachineRpcServer {
           const response = await this.deps.openCodeCollabCurrentDiff({
             sessionId: params.sessionId as SessionId,
             path: params.path,
+            ...(params.scope === undefined ? {} : { scope: params.scope }),
           });
           await this.appendResultResponse(request.replyTo, request.id, request.method, response, {
             codeCollabOwnerSessionId: decoded.ownerSessionId,
@@ -1734,6 +1736,7 @@ export class LoroStreamsMachineRpcServer {
           const response = await this.deps.openCodeCollabAllChangesDiff({
             sessionId: params.sessionId as SessionId,
             ...(params.focusPath === undefined ? {} : { focusPath: params.focusPath }),
+            ...(params.scope === undefined ? {} : { scope: params.scope }),
           });
           await this.appendResultResponse(request.replyTo, request.id, request.method, response, {
             codeCollabOwnerSessionId: decoded.ownerSessionId,

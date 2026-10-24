@@ -1,4 +1,3 @@
-import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import type {
   MemoryProviderRequest,
   MemoryProviderResponse,
@@ -10,7 +9,7 @@ import type { LocalFilePreviewResource } from '@lody/shared/local-file-preview';
 import type { SessionData } from '@lody/shared/session-data';
 import { atom } from 'jotai';
 import type { LoroDoc } from 'loro-crdt';
-
+import type { LoroRepo } from 'loro-repo';
 import type { ConversationView } from '@/lib/conversation-view';
 import type {
   McpToolListResult,
@@ -123,7 +122,7 @@ export type SessionDocStore = {
   readonly history: ConversationView;
   /** CRDT-neutral history reads, commands and stored-copy capabilities. */
   readonly sessionData: SessionData;
-  dispose: () => void | Promise<void>;
+  dispose: () => void;
   /**
    * Resolves when all pending local CRDT changes have been flushed to the server.
    * Returns immediately if there are no pending changes or transport is not ready.
@@ -133,6 +132,29 @@ export type SessionDocStore = {
    * background join/SSE work instead of keeping it alive until it settles.
    */
   waitUntilSynced: (signal?: AbortSignal) => Promise<void>;
+  /**
+   * Bounded diagnostics for a conversation that looks stale. Ids, states and
+   * timestamps only. The pending-upload probe waits for this replica's
+   * queued uploads and settles within `uploadProbeTimeoutMs`.
+   */
+  inspectSync: (options: { uploadProbeTimeoutMs: number }) => Promise<SessionSyncInspection>;
+};
+
+export type SessionSyncInspection = {
+  /** The plane whose binding gates this room's readiness. */
+  readonly transportId: string;
+  /** `null` while no join has produced a subscription. */
+  readonly bindingStatus: string | null;
+  readonly syncState: RoomSyncState;
+  readonly openedAt: number;
+  /** Last time a remote import landed in this doc; `null` if none since open. */
+  readonly lastRemoteImportAt: number | null;
+  /**
+   * `waitFor('pending-upload-empty')` outcome; `null` without a subscription.
+   * `complete` also when nothing was pending, so it never proves inbound
+   * applies are flowing; `timeout` means local changes stayed unsent.
+   */
+  readonly pendingUploadProbe: string | null;
 };
 
 export type PreviewVisualCommentDocUpdater =
@@ -150,7 +172,7 @@ export type PreviewVisualCommentDocStore = {
   getState: () => PreviewVisualCommentDocState;
   setState: (updater: PreviewVisualCommentDocUpdater) => void;
   subscribe: (listener: (state: PreviewVisualCommentDocState) => void) => () => void;
-  dispose: () => void | Promise<void>;
+  dispose: () => void;
   waitUntilSynced: () => Promise<void>;
 };
 
@@ -159,7 +181,7 @@ export type ScheduleDocStore = {
   readonly firstSynced: Promise<void>;
   getState: () => import('@lody/shared').ScheduleDocument | null;
   subscribe: (listener: () => void) => () => void;
-  dispose: () => void | Promise<void>;
+  dispose: () => void;
   waitUntilSynced: () => Promise<void>;
 };
 
@@ -188,7 +210,7 @@ export type WorkspaceRuntime = {
    * (its route needs the network and the browser is offline).
    */
   isMachineRpcUnreachable?: (machineId: MachineId) => boolean;
-  readonly repo: WorkspaceRepoLegacy;
+  readonly repo: LoroRepo;
   /** Read targets from the ready metadata source, independently of UI projection. */
   readSessionOperationTargets: (
     sessionId: SessionId,
@@ -555,9 +577,18 @@ export const runtimeAtom = atom<WorkspaceRuntime | null>(null);
  * Why the last attempt to create a runtime rejected, kept until the next
  * attempt. Only the error name is kept: a message can carry stream URLs.
  */
-export type WorkspaceRuntimeInitFailure = { workspaceSlug: string; errorType: string };
+export type WorkspaceRuntimeInitFailure = {
+  workspaceSlug: string;
+  errorType: string;
+  /** Present only when content-mode admission failed. Encryption wording is shown
+   * only when the workspace is known to be encrypted or encrypted creation is on. */
+  modeAdmission?: { knownEncrypted: boolean };
+};
 
 export const workspaceRuntimeInitFailureAtom = atom<WorkspaceRuntimeInitFailure | null>(null);
+
+/** Reattempt first workspace mode admission without reloading the whole app. */
+export const workspaceModeAdmissionRetryAtom = atom(0);
 
 export type ActiveWorkspaceRuntimeState =
   | { status: 'ready'; runtime: WorkspaceRuntime }

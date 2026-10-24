@@ -308,6 +308,8 @@ export function resolveFilePreviewPath(args: {
   readonly workspaceRoot: string | null;
   readonly requestedPath: string;
   readonly sessionRoots?: readonly SessionFileRoot[];
+  /** Resolution base only; authorization remains anchored to workspaceRoot. */
+  readonly relativeBase?: string;
   readonly extraRoots?: readonly string[];
   readonly options?: FilePreviewPathPolicyOptions;
 }): FilePreviewPathResolution {
@@ -334,7 +336,11 @@ export function resolveFilePreviewPath(args: {
       },
     };
   }
-  const lexicalCandidates = buildLexicalCandidates(requested, workspaceRoot, homeDir);
+  const lexicalCandidates = buildLexicalCandidates(
+    requested,
+    args.relativeBase ?? workspaceRoot,
+    homeDir
+  );
   if (!lexicalCandidates.length) {
     return {
       ok: false,
