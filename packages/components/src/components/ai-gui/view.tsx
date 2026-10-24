@@ -5238,7 +5238,9 @@ const AssistantThoughtVirtualRow = memo(function AssistantThoughtVirtualRow({
   fontSize: ConversationFontSize;
 }) {
   const { t } = useTranslation();
-  /* The thought is prose on the rail, with no glyph: it is the agent's own
+  /* Only builtin DSH exposes these thought rows. Reuse answer typography,
+     preserving thought search identity and the separate disclosure label.
+     The thought is prose on the rail, with no glyph: it is the agent's own
      words, and an icon beside every paragraph of it read as a list of
      objects. The group header already says "Thought". */
   return (
@@ -5248,11 +5250,9 @@ const AssistantThoughtVirtualRow = memo(function AssistantThoughtVirtualRow({
           ? t('sessions.toolActivity.thinking', 'Thinking…')
           : t('sessions.toolActivity.thought', 'Thought')}
       </span>
-      <MarkdownRenderer
+      <MarkdownBlock
         text={text}
         size={fontSize}
-        compact
-        className={ACTIVITY_STEP_BODY_CLASS}
         isStreaming={isStreaming}
         searchBlockId={getThoughtSearchBlockId(messageId, itemIndex)}
       />
