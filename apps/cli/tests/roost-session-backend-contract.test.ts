@@ -2455,7 +2455,7 @@ describe('Production Roost history semantics', () => {
             typeof value === 'object' &&
             value !== null &&
             'method' in value &&
-            value.method === 'session/history-read'
+            value.method === 'session/history-write'
           ) {
             holdNextReply = false;
             replyStarted.resolve();
@@ -2715,9 +2715,10 @@ describe('Production Roost history semantics', () => {
         if (!lostNativeReply) expect(receivedContentPatches).toBe(true);
         // Force a reply to overlap teardown rather than relying on native I/O timing.
         holdNextReply = true;
-        const finalRead = client.requestSessionHistoryRead({
+        const finalWrite = client.requestSessionHistoryWrite({
           sessionId,
-          query: { kind: 'readAll' },
+          operation: 'apply_action',
+          payload: { action: { kind: 'user-status', turnId: 'replica-user', status: 'handled' } },
         });
         await replyStarted.promise;
         stops.forEach((stop) => stop());
@@ -2729,7 +2730,7 @@ describe('Production Roost history semantics', () => {
         await Promise.all(
           (server as unknown as { inFlightRequests: Set<Promise<void>> }).inFlightRequests
         );
-        expect(await finalRead).toMatchObject({ success: true });
+        expect(await finalWrite).toMatchObject({ success: true });
         client.stop();
         vi.restoreAllMocks();
         vi.useRealTimers();
@@ -2740,6 +2741,10 @@ describe('Production Roost history semantics', () => {
           turn: expected,
         });
         expect(await reopened.backend.readHistoryCount()).toBe(2);
+        expect(await reopened.backend.readTurn('replica-user')).toMatchObject({
+          state: 'ready',
+          turn: { status: 'handled' },
+        });
       } finally {
         stops.forEach((stop) => stop());
         peers.forEach((peer) => peer.dispose?.());
