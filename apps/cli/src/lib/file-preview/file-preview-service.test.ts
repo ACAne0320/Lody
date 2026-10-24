@@ -114,6 +114,22 @@ describe('FilePreviewService', () => {
     ).toMatchObject({ status: 'error', code: 'path_not_allowed' });
   });
 
+  it('resolves links without reading oversized content, then previews the selected identity normally', async () => {
+    const workspaceRoot = await makeDir('preview-link-');
+    await writeFile(path.join(workspaceRoot, 'large.txt'), 'larger than the preview budget');
+    const service = createService({ workspaceRoot, limits: { maxTextBytes: 1 } });
+    const request = { v: 3 as const, sessionId: SESSION_ID, path: 'large.txt' };
+    const resolution = await service.previewFile({ ...request, resolveMarkdownLink: true });
+    expect(resolution).toMatchObject({
+      status: 'resolved-link',
+      candidates: [{ path: 'large.txt' }],
+    });
+    expect(await service.previewFile(request)).toMatchObject({
+      status: 'error',
+      code: 'too_large',
+    });
+  });
+
   it('reads a workspace text file as plain UTF-8 with its digest and EOL', async () => {
     const workspaceRoot = await makeDir('preview-ws-');
     await mkdir(path.join(workspaceRoot, 'src'), { recursive: true });

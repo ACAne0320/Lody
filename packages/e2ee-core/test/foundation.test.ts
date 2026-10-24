@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { setEd25519WasmEnabled } from '../src/internal/foundation/ed25519-wasm';
 import { Cause, Effect, Exit, Fiber, Result } from 'effect';
 import { Point } from '@noble/ed25519';
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
@@ -271,6 +272,9 @@ describe('strict Ed25519', () => {
 });
 
 describe('fixed native Ed25519 verification', () => {
+  // These cover the Web Crypto fallback used when WebAssembly is unavailable.
+  beforeAll(() => setEd25519WasmEnabled(false));
+  afterAll(() => setEd25519WasmEnabled(true));
   const privateKey = createPrivateKey({
     format: 'der',
     type: 'pkcs8',

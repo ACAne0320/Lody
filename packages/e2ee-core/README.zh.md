@@ -35,6 +35,7 @@
 | `@lody/e2ee-core/host` | 后端必须执行的规则、暂存线上格式（不依赖 Node API） | 公开 |
 | `@lody/e2ee-core/adapters/node-sqlite` | 每个本地存储的 SQLite 实现、参考邮箱后端 | 公开 |
 | `@lody/e2ee-core/adapters/loro-streams` | 基于 Loro / Durable Streams 控制流的 `LedgerLog` / `LedgerFeedSource` | 公开 |
+| `@lody/e2ee-core/cloudflare` | 在 Cloudflare Worker 中导入一次，使严格 Ed25519 在 WebAssembly 中运行（workerd 禁止运行时编译）；其他运行时无需导入 | 公开 |
 | `@lody/e2ee-core/internal` | 供本仓库测试和 Lab 使用的内部实现 | **不稳定** |
 
 ## 一屏看懂组合方式
@@ -138,3 +139,6 @@ pnpm --filter @lody/e2ee-core check:docs  # 公开导出、命名空间与 servi
 测试使用固定的合成向量、真实 SQLite、真实 Ed25519/HPKE 和子进程；`test/generate-*.py` 用于（可选地）重新生成向量。
 
 [非门禁基准测试](bench/README.md)输出带环境信息的 JSON。
+
+Streams 适配器与 Lab 使用当前 workspace catalog 版本。Node 宿主可共用
+[node-custody](docs/surface.zh.md) 保管实现，并分别提供经过核对的系统包装器。

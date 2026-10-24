@@ -16,6 +16,7 @@ import {
   type LodyExtensionCapabilities,
   type LodyElicitationMeta,
   type LodyGoalCapability,
+  type LodySessionActivityUpdate,
   type LodySubagentSnapshot,
   type RateLimit,
   type RateLimitsGetRequest,
@@ -610,6 +611,9 @@ export interface AgentClientOptions {
   onWriteTextFile?(event: AcpWriteTextFileEvidence): void | Promise<void>;
 }
 
+/** See {@link AgentClient.getNativeWork}. */
+export type NativeAgentWork = 'running' | 'background' | null;
+
 export type AcpWriteTextFileEvidence = {
   readonly path: string;
   readonly oldText: string | null;
@@ -631,6 +635,8 @@ export class AgentClient implements acp.Client {
   private supportsForkAtTurn = false;
   private lodyExtensionCapabilities: LodyExtensionCapabilities = {};
   private readonly subagentSnapshots = new Map<string, LodySubagentSnapshot>();
+  /** Latest Core activity level, kept with the ACP session it describes. */
+  private nativeActivity: LodySessionActivityUpdate | null = null;
   private readonly devinSubagentTaskIds = new Set<string>();
   private worktreeProject?: LodyWorktreeProject;
   private additionalDirectories: string[] = [];
@@ -1177,11 +1183,10 @@ export class AgentClient implements acp.Client {
       this.options.onImageGenerationBegin?.({ acpSessionId, callId });
     }
 
-    // Any notification that arrives after begin (or a fresh `tool_call` with
-    // a terminal status, which upstream emits when the begin event was lost
-    // on session resume) carries the end-state payload.
-    const carriesEndPayload = !isBegin || isTerminalStatus || Array.isArray(update.content);
-    if (carriesEndPayload && status) {
+    // Publish status on begin as well as updates, even when content is omitted.
+    // This callback also carries in-progress state; it must not depend on the
+    // history schema manufacturing an empty content list.
+    if (status) {
       const contentFields = extractImageGenerationContentFields(update.content);
       const image =
         contentFields.image ??
@@ -1583,6 +1588,15 @@ export class AgentClient implements acp.Client {
         );
         return;
       }
+      case 'sessionActivity':
+        if (
+          this.reportsSessionActivity() &&
+          this.acpSessionId !== null &&
+          event.update.sessionId === this.acpSessionId
+        ) {
+          this.nativeActivity = event.update;
+        }
+        return;
       case 'rateLimits':
         for (const rateLimit of event.snapshot.rateLimits) {
           this.options.onRateLimitUpdate?.(rateLimit);
@@ -2606,6 +2620,25 @@ export class AgentClient implements acp.Client {
         signal.removeEventListener('abort', abortListener);
       }
     }
+  }
+
+  /**
+   * What the agent does that no Lody turn accounts for, from the Core
+   * `sessionActivity` level: `running` while it works by itself or waits on a
+   * permission request, else `background` while background tasks it will be
+   * woken by are live. Null when it is idle, reported nothing for the current
+   * ACP session, or does not advertise the capability.
+   */
+  /** Whether the agent advertised the Core `sessionActivity` level. */
+  reportsSessionActivity(): boolean {
+    return this.lodyExtensionCapabilities.sessionActivity?.version === 1;
+  }
+
+  getNativeWork(): NativeAgentWork {
+    const activity = this.nativeActivity;
+    if (!activity || activity.sessionId !== this.acpSessionId) return null;
+    if (activity.state !== 'idle') return 'running';
+    return activity.backgroundTaskCount > 0 ? 'background' : null;
   }
 
   /** Raw prompts and steer submissions remain owned after their local waits end. */
