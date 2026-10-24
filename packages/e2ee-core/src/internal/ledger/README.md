@@ -33,6 +33,24 @@ forks; callers own those trust and freshness checks. There is no arbitrary-state
 starting point in the record/replay entry. The explicit snapshot entry below has
 separate qualification and provenance.
 
+`exportVerifiedState` and `restoreVerifiedState` let a party resume from **its
+own** earlier verified view. Export returns the canonical state bytes (the
+comparison-note state plus the view's verification origin), position and the
+comparison-note `stateDigest`. Restore decodes: it checks structure and the
+caller's stored genesis/length/head, but neither signatures nor curve points,
+because the bytes come from the caller's own storage. When the caller also passes
+the stored `stateDigest`, restore recomputes it from the bytes (one SHA-256, no
+second encoding) after they decode and fails with `state-digest-mismatch` on a
+difference; this catches corrupted or mismatched rows, not a writer who can
+replace both. The digest covers position and state but not the trailing
+verification byte. The restored view
+extends exactly like the exported one; the next record must name its head. It
+keeps every device's historical author but reports original epoch publication
+records as unavailable. Never restore another party's bytes;
+that is what endorsed snapshots are for. Retained bytes are current-format only
+(envelope version 2); any other version fails with `unknown-version`, and the
+caller rebuilds them by one full replay.
+
 Preserved candidate v1 arrays/domains: genesis, admit Member, set role, admit own
 device, revoke own device, transfer Owner, publish epoch. Owner/Admin personal
 devices may invite and rotate; only Owner personal devices change roles or transfer
@@ -41,7 +59,13 @@ only its target, records never create an approval ancestry tree, and Owner retai
 a personal/recovery path. Retired signing/encryption keys, member IDs, closed join
 requests and epoch commitments remain replay facts. Legacy tag 2 removal is rejected:
 it violates the already adopted atomic removal/rotation rule; [P12](../../../README.md) owns the current tag8 transition.
-No new tag or protocol policy is defined here.
+Tag 9 declares capabilities: Owner/Admin personal devices list strictly ascending
+nonzero u32 codes, monotonically. This verifier implements none, so a genuine
+declaration ends verification at its position with `upgrade-required` rather than
+an invalid-ledger code. The v1 arrays and domains above become permanent at the
+first production creation; see the
+[frozen vector](../../../test/ledger-v1-vector.json) and
+[format compatibility](../../../../../specs/e2ee-foundations.md#format-compatibility).
 
 Join `expiresAt` remains a signed nullable field; pure historical replay does not
 consult a current wall clock. Online request expiry/admission belongs to a future
@@ -52,9 +76,9 @@ packet copy; epoch zero uses an empty previous-key packet. Unknown/future epochs
 fail rather than fabricate a key. Decryption belongs to the key workflow.
 
 The explicit snapshot entry's `historicalContentIdentity(view, device)` is the
-single historical-author query. Full history returns admission-bound user/member
-identity even after revocation; an endorsed retired device without member history
-returns `device-only`, never guessed user attribution. Unknown/fake views fail.
+single historical-author query. Every source keeps every device ever admitted,
+so it returns the admission-bound user/member identity even after revocation,
+also from an endorsed snapshot or retained state. Unknown/fake views fail.
 `contentPermissions(view, device)` separates current host write admission from
 honest new-content sealing: active non-Guest personal/machine devices may write,
 Recovery never writes, and a pending rotation additionally blocks new seals.
@@ -93,8 +117,9 @@ and [source/destination fingerprints](https://github.com/LodyAI/Lody/blob/5f9759
 
 ## Authenticated permission snapshots
 
-The snapshot functions preserve v1 complete-state
-CBOR and snapshot/v1/head-attest/v1/snapshot-digest/v1 domains. Caller-pinned
+The snapshot functions use snapshot body version 2
+(the compact state; any other version is `unknown-version`) and the snapshot/v1,
+head-attest/v1 and snapshot-digest/v2 domains. Caller-pinned
 external qualification must include genesis, exact head/count, endorser key,
 membership, Owner/Admin role and personal kind. Missing role facts never default
 from signed self-claims or journal data. These are externally confirmed facts; the
@@ -113,9 +138,8 @@ offset, without invented pre-snapshot history. `extendLedger` checks every suffi
 record and its previous hash/count. Continuation cannot skip an unknown prefix.
 Full audit remains `verifyLedger`; signatures/endorsement are not that audit.
 
-`historicalContentIdentity` distinguishes retained original member attribution from
-a snapshot-only device with missing history context. The strict author query stays
-strict. Current document workflow fallback consumption is still a separate owner.
+`historicalContentIdentity` answers from the device and membership history that
+full replay, snapshot import and retained restore all carry; an unknown device fails.
 
 `signLedgerSnapshot` borrows DeviceSigner, signs/verifies the canonical body and
 head attestation, then checks a real continuation and current management eligibility.

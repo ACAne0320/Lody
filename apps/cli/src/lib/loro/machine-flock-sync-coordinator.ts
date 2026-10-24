@@ -1,7 +1,5 @@
-import type { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
 import { getMachineFlockDocId, type MachineId, type WorkspaceId } from '@lody/shared';
-import type { RepoTransportRoomStatus } from 'loro-repo';
-import type { WorkspaceRoom as TransportSubscription } from '@lody/shared/workspace-data/repo-legacy';
+import type { LoroRepo, RepoTransportRoomStatus, TransportSubscription } from 'loro-repo';
 
 import { formatErrorMessage } from '@/utils/format-error';
 import type { Logger } from '@/utils/logger';
@@ -12,7 +10,7 @@ import {
   streamsRoomBinding,
   type StreamsRoomBinding,
 } from './streams-room-binding';
-import { readTimeoutEnv, withTimeout } from './timeout-utils';
+import { readTimeoutEnv, SYNC_CONFIRMATION_TIMEOUT_MS, withTimeout } from './timeout-utils';
 
 type MachineFlockSyncState = {
   machineId: MachineId;
@@ -32,7 +30,7 @@ type MachineFlockSyncState = {
 };
 
 export type MachineFlockSyncCoordinatorOptions = {
-  repo: WorkspaceRepoLegacy;
+  repo: LoroRepo;
   workspaceId: WorkspaceId;
   logger: Logger;
   retryBaseDelayMs?: number;
@@ -52,7 +50,7 @@ export type MachineFlockSyncRequestOptions = {
 const isRecoverableMachineFlockRoomStatus = isRecoverableStreamsRoomStatus;
 
 export class MachineFlockSyncCoordinator {
-  private readonly repo: WorkspaceRepoLegacy;
+  private readonly repo: LoroRepo;
   private readonly workspaceId: WorkspaceId;
   private readonly logger: Logger;
   private readonly random: () => number;
@@ -179,7 +177,8 @@ export class MachineFlockSyncCoordinator {
 
     const syncVersion = state.dirtyVersion;
     const timeoutMs =
-      options.timeoutMs ?? readTimeoutEnv('LODY_LORO_SYNC_MACHINE_FLOCK_TIMEOUT_MS', 8_000);
+      options.timeoutMs ??
+      readTimeoutEnv('LODY_LORO_SYNC_MACHINE_FLOCK_TIMEOUT_MS', SYNC_CONFIRMATION_TIMEOUT_MS);
     const timeoutMessage = `Timeout waiting for machine Flock doc sync (doc=${state.docId})`;
 
     try {

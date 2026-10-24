@@ -16,9 +16,7 @@ import { Flock } from '@loro-dev/flock-wasm';
 import { LoroDoc } from 'loro-crdt';
 import { getLoroMetaStreamId, type WorkspaceId } from '@lody/shared';
 import type { LoroStreamsTokenProviderLegacy } from '@lody/platform';
-import { WorkspaceRepoLegacy as LoroRepo } from '@lody/shared/workspace-data/repo-legacy';
-import { Effect } from 'effect';
-import { nativeTransportHarness } from '../../../packages/shared/test-support/workspace-transport';
+import { LoroRepo } from 'loro-repo';
 import {
   createCliSqliteRepoStore,
   createDocumentRemoteCursorStore,
@@ -26,7 +24,6 @@ import {
   type DocumentCursorScope,
 } from '../src/lib/loro/sqlite-repo-store';
 import { createCliStreamsTransport } from '../src/lib/loro/streams-transport';
-import type { getLoroSnapshotDiagnostic } from '@lody/shared/loro-sync-errors';
 import type { Logger } from '../src/utils/logger';
 
 const workspaceId = 'ws-replica-checkpoints' as WorkspaceId;
@@ -55,19 +52,11 @@ const metaSnapshotWithA = (): Uint8Array => {
 /** Streams serving `snapshot` at offset 100; catch-up from 100 has nothing new. */
 function createStreamsServer(snapshot: Uint8Array) {
   const requests: URL[] = [];
-  const uploads: { byteLength: number; requestId: string | null }[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(input instanceof Request ? input.url : input);
       requests.push(url);
-      if (init?.method === 'PUT' && url.pathname.includes('/snapshot/')) {
-        uploads.push({
-          byteLength: (await new Response(init.body).arrayBuffer()).byteLength,
-          requestId: new Headers(init.headers).get('X-Request-ID'),
-        });
-        return new Response(null, { status: 204 });
-      }
       if (init?.method === 'POST') {
         const headers = new Headers(init.headers);
         return new Response(null, {
@@ -96,34 +85,6 @@ function createStreamsServer(snapshot: Uint8Array) {
           }
         );
       }
-      if (url.searchParams.get('live') === 'sse') {
-        const stream = new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(
-              new TextEncoder().encode(
-                `event: control\ndata: ${JSON.stringify({ streamNextOffset: tail100, upToDate: true })}\n\n`
-              )
-            );
-            init?.signal?.addEventListener(
-              'abort',
-              () => {
-                try {
-                  controller.close();
-                } catch {
-                  /* Reader cancellation already closed it. */
-                }
-              },
-              { once: true }
-            );
-          },
-        });
-        return new Response(stream, {
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Stream-SSE-Data-Encoding': 'base64',
-          },
-        });
-      }
       return new Response(null, {
         headers: {
           'Content-Type': 'application/octet-stream',
@@ -134,7 +95,7 @@ function createStreamsServer(snapshot: Uint8Array) {
     })
   );
   const bootstraps = () => requests.filter((url) => url.pathname.endsWith('/bootstrap')).length;
-  return { bootstraps, uploads };
+  return { bootstraps };
 }
 
 type CliProcess = {
@@ -150,15 +111,14 @@ const originalDataDir = process.env.LODY_DATA_DIR;
 /** One daemon or one-shot command: its own connection and in-memory replica. */
 async function openCliProcess(scope: DocumentCursorScope = 'shared-durable'): Promise<CliProcess> {
   const store = await createCliSqliteRepoStore(workspaceId);
-  const documentRemoteCursorStore = createDocumentRemoteCursorStore(store, scope);
   const repo = await LoroRepo.create({
-    documentRemoteCursorStore,
     storageAdapter: store.storageAdapter,
+    metaDebounceCommitMs: 0,
   });
   const cliProcess = {
     store,
     repo,
-    documentRemoteCursorStore,
+    documentRemoteCursorStore: createDocumentRemoteCursorStore(store, scope),
   };
   openProcesses.add(cliProcess);
   return cliProcess;
@@ -172,20 +132,20 @@ async function closeCliProcess(cliProcess: CliProcess): Promise<void> {
 
 async function withTransport<T>(
   cliProcess: CliProcess,
-  run: (adapter: ReturnType<typeof nativeTransportHarness>) => Promise<T>
+  run: (adapter: Awaited<ReturnType<typeof createCliStreamsTransport>>['adapter']) => Promise<T>
 ): Promise<T> {
   const { adapter } = await createCliStreamsTransport({
+    content: { mode: 'plaintext' },
     workspaceId,
     tokenProvider,
-    auth: () => Effect.succeed('streams-jwt'),
+    repo: cliProcess.repo,
     documentRemoteCursorStore: cliProcess.documentRemoteCursorStore,
     logger: silentLogger,
   });
-  const transport = nativeTransportHarness(cliProcess.repo, adapter);
   try {
-    return await run(transport);
+    return await run(adapter);
   } finally {
-    await transport.close();
+    await adapter.close();
   }
 }
 
@@ -209,63 +169,52 @@ afterEach(async () => {
 });
 
 describe('CLI Streams checkpoints are bound to the replica that loaded them', () => {
-  it('logs native snapshot stages, request correlation and encoded length without private content', async () => {
-    const secret = 'synthetic-private-cli-document-body';
-    const remote = new LoroDoc();
-    remote.getMap('data').set('private', secret);
-    remote.commit();
-    const server = createStreamsServer(remote.export({ mode: 'snapshot' }));
-    const cliProcess = await openCliProcess();
-    const doc = (await cliProcess.repo.openPersistedDoc('doc-a')).doc;
-    const lines: string[] = [];
-    const logger = new Proxy(silentLogger, {
-      get: (target, key) =>
-        key === 'debug' || key === 'warn'
-          ? (message: string) => {
-              lines.push(message);
-            }
-          : Reflect.get(target, key),
-    });
-    const { adapter } = await createCliStreamsTransport({
-      workspaceId,
-      tokenProvider,
-      auth: () => Effect.succeed('streams-jwt'),
-      documentRemoteCursorStore: cliProcess.documentRemoteCursorStore,
-      logger,
-    });
-    const transport = nativeTransportHarness(cliProcess.repo, adapter);
-    try {
-      expect((await transport.syncDoc('doc-a', doc)).ok).toBe(true);
-      expect(await transport.uploadSnapshot({ kind: 'doc', id: 'doc-a' })).toBe(true);
-      const events = lines.map(
-        (line) =>
-          JSON.parse(line.slice('Streams snapshot '.length)) as ReturnType<
-            typeof getLoroSnapshotDiagnostic
-          >
-      );
-      expect(new Set(events.map((event) => event.stage))).toEqual(
-        new Set(['permission', 'auth', 'head', 'export', 'encode', 'put'])
-      );
-      const completed = events.find(
-        (event) => event.stage === 'put' && event.outcome === 'succeeded'
-      );
-      expect(completed).toMatchObject({
-        snapshotId: expect.any(String),
-        requestOperation: 'put-snapshot',
-        requestId: server.uploads[0]?.requestId,
-        snapshotByteLength: server.uploads[0]?.byteLength,
-        elapsedMs: 0,
-        snapshotElapsedMs: 0,
-        uploadMode: 'total-only',
-      });
-      expect(completed?.snapshotByteLength).toBeGreaterThan(0);
-      expect(completed?.requestId).toEqual(expect.any(String));
-      for (const privateValue of [secret, 'streams-jwt', gatewayBaseUrl, 'fullCause'])
-        expect(lines.join('\n')).not.toContain(privateValue);
-    } finally {
-      await transport.close();
+  it.each(['import', 'importBatch'] as const)(
+    'preserves pending-only %s updates across a SQLite restart',
+    async (method) => {
+      const remote = new LoroDoc();
+      remote.setPeerId(1n);
+      remote.getText('t').insert(0, 'base|');
+      const snapshot = remote.export({ mode: 'snapshot' });
+      const beforeA = remote.oplogVersion();
+      remote.getText('t').push('A');
+      const updateA = remote.export({ mode: 'update', from: beforeA });
+      const beforeB = remote.oplogVersion();
+      remote.getText('t').push('B');
+      const updateB = remote.export({ mode: 'update', from: beforeB });
+
+      const daemon = await openCliProcess();
+      const docId = `session-pending-${method}`;
+      const doc = (await daemon.repo.openPersistedDoc(docId)).doc;
+      doc.import(snapshot);
+      await daemon.repo.flush();
+      const applied = doc.oplogVersion().encode();
+
+      const imported = method === 'import' ? doc.import(updateB) : doc.importBatch([updateB]);
+      // B has been received, but cannot emit an applied change before A arrives.
+      expect(imported.success.size).toBe(0);
+      expect(imported.pending?.size).toBeGreaterThan(0);
+      expect(doc.getText('t').toString()).toBe('base|');
+      expect(doc.oplogVersion().encode()).toEqual(applied);
+      await daemon.repo.flush();
+      await closeCliProcess(daemon);
+
+      const restarted = await openCliProcess();
+      const restored = (await restarted.repo.openPersistedDoc(docId)).doc;
+      expect(restored.getText('t').toString()).toBe('base|');
+      expect(restored.oplogVersion().encode()).toEqual(applied);
+      restored.import(updateA);
+      expect(restored.getText('t').toString()).toBe('base|AB');
+      expect(restored.oplogVersion().encode()).toEqual(remote.oplogVersion().encode());
+      await restarted.repo.flush();
+      await closeCliProcess(restarted);
+
+      const reopened = await openCliProcess();
+      const complete = (await reopened.repo.openPersistedDoc(docId)).doc;
+      expect(complete.getText('t').toString()).toBe('base|AB');
+      expect(complete.oplogVersion().encode()).toEqual(remote.oplogVersion().encode());
     }
-  });
+  );
 
   it('bootstraps a process that hydrated before another process advanced the shared file', async () => {
     const server = createStreamsServer(metaSnapshotWithA());

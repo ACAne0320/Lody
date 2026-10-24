@@ -166,6 +166,7 @@ describe('WorkspaceGitService', () => {
     await withRepo(async (root, git) => {
       await git(['remote', 'add', 'origin', 'git@github.com:acme/api.git']);
       expect(await worktreeGitLegacy.probeLocalProjectMember(root)).toEqual({
+        isGit: true,
         repoFullName: 'acme/api',
         submodules: [],
       });
@@ -174,6 +175,7 @@ describe('WorkspaceGitService', () => {
       await writeFile(join(root, '.gitmodules'), modules);
       const config = await readFile(join(root, '.git/config'), 'utf8');
       expect(await worktreeGitLegacy.probeLocalProjectMember(root)).toEqual({
+        isGit: true,
         repoFullName: 'acme/api',
         submodules: [
           { path: 'deps/proto', url: '../proto.git', repoFullName: 'acme/proto' },
