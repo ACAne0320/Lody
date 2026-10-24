@@ -693,6 +693,14 @@ export const sessionHistorySchema = schema.LoroMap({
   permissionWaitMs: schema.Number({ required: false }),
   role: schema.String<Role>(),
   status: schema.String<SessionHistoryStatus>({ required: false }),
+  scheduleRun: schema.LoroMap(
+    {
+      scheduleId: schema.String(),
+      turnId: schema.String(),
+      title: schema.String(),
+    },
+    { required: false }
+  ),
   cancellationReason: schema.String<'user_stop'>({ required: false }),
   inputConfig: acpSessionConfigSchema,
   /**
@@ -703,8 +711,9 @@ export const sessionHistorySchema = schema.LoroMap({
   userId: schema.String({ required: false }),
   author: schema.Any({ required: false }),
   modelInfo: schema.Any({ required: false }),
-  // Assistant turns: tokens this turn consumed, summed from adapter usage deltas.
-  // A primitive JSON value (`SessionTurnTokenUsage`), replaced whole on each write.
+  // Assistant turns: tokens and optional estimated cost this turn consumed,
+  // summed from adapter usage deltas. A primitive JSON value
+  // (`SessionTurnTokenUsage`), replaced whole on each write.
   tokenUsage: schema.Any({ required: false }),
   // FileDiff 此次对话有哪些文件变更，和具体变更行数
   fileDiff: schema.Any(),
@@ -884,31 +893,10 @@ export type SessionExternalHistoryCursorDocState = {
   storedHistoryBaseline?: string;
 };
 
-/** Durable notification cursor for a Roost-backed session history. The cursor
- * lives in the session control document so every renderer can observe a
- * history commit without polling the history store. */
+/** Logical changes in an owner history publication. */
 export type SessionHistoryChange =
   | { readonly kind: 'structure'; readonly from: number; readonly to: number }
   | { readonly kind: 'changed'; readonly ids: readonly string[] };
-
-export type SessionRoostHistoryCursorDocState = {
-  cursor: string;
-  operationId?: string;
-  historyRevision?: number;
-  historyCount?: number;
-  historyChangeJson?: string;
-};
-
-const sessionRoostHistoryCursorDocSchema = schema.LoroMap(
-  {
-    cursor: schema.String(),
-    operationId: schema.String({ required: false }),
-    historyRevision: schema.Number({ required: false }),
-    historyCount: schema.Number({ required: false }),
-    historyChangeJson: schema.String({ required: false }),
-  },
-  { required: false }
-);
 
 /**
  * Legacy/fallback launch config shape. New writers must not persist this per session;
@@ -1024,6 +1012,8 @@ export type SessionMeta = {
   createdAt: string;
   /** Feedback post id bound at session start, when the session originates from lody-feedback. */
   fromFeedbackPostId?: string;
+  /** 36-byte UUID activation index; content lives in the session control doc. */
+  notificationId?: string;
   lastMessageAt?: number;
   lastReadAt?: number;
   /**
@@ -1367,9 +1357,28 @@ export const sessionDocSchema = schema({
   ),
   /** Temporary durable state for an asynchronous Session fork. Removed on success. */
   forkOperation: sessionForkOperationDocSchema,
+  notification: schema.LoroMap(
+    {
+      id: schema.String(),
+      recipientId: schema.String(),
+      turnId: schema.String(),
+      outcome: schema.String(),
+      presentation: schema.LoroMap(
+        {
+          kind: schema.String<'conversation' | 'schedule'>(),
+          conversationTitle: schema.String({ required: false }),
+          scheduleName: schema.String({ required: false }),
+          projectName: schema.String({ required: false }),
+          pullRequestNumber: schema.Number({ required: false }),
+        },
+        { required: false }
+      ),
+      createdAt: schema.Number(),
+    },
+    { required: false }
+  ),
   preview: sessionPreviewDocSchema,
   externalHistoryCursor: sessionExternalHistoryCursorDocSchema,
-  roostHistoryCursor: sessionRoostHistoryCursorDocSchema,
   acpRuntimeConfig: sessionAcpRuntimeConfigDocSchema,
 });
 
