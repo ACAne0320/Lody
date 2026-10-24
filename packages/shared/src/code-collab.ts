@@ -328,11 +328,18 @@ export const CodeCollabV2SaveTextResponseSchema = z.discriminatedUnion('status',
 ]);
 export type CodeCollabV2SaveTextResponse = z.infer<typeof CodeCollabV2SaveTextResponseSchema>;
 
+// Workspace comparison scope for All Changes. `branch` compares against the resolved
+// merge-base (committed branch changes + uncommitted + untracked); `uncommitted`
+// compares HEAD against the working tree (staged + unstaged + untracked).
+export const CodeCollabAllChangesScopeSchema = z.enum(['branch', 'uncommitted']);
+export type CodeCollabAllChangesScope = z.infer<typeof CodeCollabAllChangesScopeSchema>;
+
 export const CodeCollabV2OpenCurrentDiffRequestSchema = z
   .object({
     rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
     path: z.string().min(1),
+    scope: CodeCollabAllChangesScopeSchema.optional(),
   })
   .strict();
 export type CodeCollabV2OpenCurrentDiffRequest = z.infer<
@@ -368,7 +375,14 @@ export const CodeCollabV2OpenCurrentDiffResponseSchema = z.discriminatedUnion('s
     .object({
       status: z.literal('unavailable'),
       path: z.string().min(1),
-      reason: z.enum(['base_unavailable', 'not_changed', 'transient_io', 'unsupported_binary']),
+      reason: z.enum([
+        'base_unavailable',
+        'not_changed',
+        'transient_io',
+        'unsupported_binary',
+        'not_a_git_worktree',
+        'no_commits',
+      ]),
       message: z.string().min(1).optional(),
     })
     .strict(),
@@ -379,14 +393,16 @@ export type CodeCollabV2OpenCurrentDiffResponse = z.infer<
 
 // Batched All Changes diff: one request returns every changed file's current diff
 // (disk vs base) in a single response. The file set + base match `computeAllChanges`
-// (tracked vs merge-base + untracked). Files too large to inline come back `deferred`
-// and are lazily fetched via `open-current-diff`.
+// (tracked vs merge-base + untracked by default; HEAD vs disk when `scope` is
+// `uncommitted`). Files too large to inline come back `deferred` and are lazily
+// fetched via `open-current-diff` with the same scope.
 export const CodeCollabV2OpenAllChangesDiffRequestSchema = z
   .object({
     rootId: SessionFileRootIdSchema.optional(),
     sessionId: z.string().trim().min(1),
     // Inline this file first (the file the user clicked) regardless of size ordering.
     focusPath: z.string().min(1).optional(),
+    scope: CodeCollabAllChangesScopeSchema.optional(),
   })
   .strict();
 export type CodeCollabV2OpenAllChangesDiffRequest = z.infer<
@@ -444,7 +460,7 @@ export const CodeCollabV2OpenAllChangesDiffResponseSchema = z.discriminatedUnion
   z
     .object({
       status: z.literal('unavailable'),
-      reason: z.enum(['base_unavailable', 'transient_io']),
+      reason: z.enum(['base_unavailable', 'transient_io', 'not_a_git_worktree', 'no_commits']),
       message: z.string().min(1).optional(),
     })
     .strict(),

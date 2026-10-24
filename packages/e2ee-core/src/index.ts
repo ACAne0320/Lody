@@ -14,6 +14,7 @@
  * | `@lody/e2ee-core/host` | backend rules and wire schemas |
  * | `@lody/e2ee-core/adapters/node-sqlite` | SQLite local stores, reference mailbox |
  * | `@lody/e2ee-core/adapters/loro-streams` | Loro/Durable Streams ledger log |
+ * | `@lody/e2ee-core/cloudflare` | bundle-time strict Ed25519 WebAssembly for Workers |
  * | `@lody/e2ee-core/internal` | unstable; tests and the Lab only |
  *
  * @module

@@ -47,6 +47,7 @@ import type {
   LocalSessionControlResponse
 } from '@lody/shared/message'
 import type {
+  CliRuntimeState,
   ElectronCliState,
   RestartCliResult,
   SendLocalMachineRpcResult,
@@ -69,7 +70,10 @@ import type { BootstrapSession } from './auth-service'
 import { desktopInstallationProfile, isLocalPlatform, mainPlatformKind } from '../platform'
 import { getDesktopLog } from '../desktop-log'
 import { createCliProbeTrace } from '../desktop-log-core'
-import type { DesktopExecutionHost } from './desktop-execution-host'
+import {
+  DESKTOP_HOST_ACCESS_DENIED_MESSAGE,
+  type DesktopExecutionHost
+} from './desktop-execution-host'
 import { getUserShellEnvCachedLegacy, shouldUseWindowsShell } from './shell-env'
 import { applyProxyEnvFallback, resolveSystemProxyEnv } from './system-proxy-env'
 import type { CliOutputEvent, CliRunResult } from '../types'
@@ -245,6 +249,8 @@ type MachineIdLookupOptions = {
 type CliServiceOptions = {
   resolveBootstrapSession?: () => Promise<BootstrapSession | null>
   executionHost?: DesktopExecutionHost
+  /** Every runtime-state snapshot the Supervisor observes. */
+  onRuntimeState?: (runtime: CliRuntimeState) => void
 }
 
 function resolveLocalProjectControlTimeoutMs(type: LocalProjectControlRequest['type']): number {
@@ -498,8 +504,11 @@ export class CliService {
   private supervisor: CliSupervisor | null = null
   private readonly supervisorInstanceId: string
   private readonly executionHost: DesktopExecutionHost | undefined
+  private readonly onRuntimeState: ((runtime: CliRuntimeState) => void) | undefined
   private readonly supervisorToken = `${randomUUID()}${randomUUID()}`
   private hostLease: LocalCliHostLease | null = null
+  /** The last Host acquisition was refused by an endpoint this process may not open. */
+  private hostAccessDenied = false
   private lastTracedSupervisorState = ''
   private readonly cliProbeTrace = createCliProbeTrace({
     getLog: getDesktopLog,
@@ -509,6 +518,7 @@ export class CliService {
   constructor(options: CliServiceOptions = {}) {
     this.resolveBootstrapSession = options.resolveBootstrapSession
     this.executionHost = options.executionHost
+    this.onRuntimeState = options.onRuntimeState
     this.supervisorInstanceId = options.executionHost?.instanceId ?? randomUUID()
     const settings = readElectronSettings()
     if (typeof settings.preventSleepEnabled === 'boolean') {
@@ -559,6 +569,13 @@ export class CliService {
             signal,
             endpoint: LOCAL_CLI_HOST_ENDPOINT
           })
+          this.hostAccessDenied = result.status === 'occupied' && result.accessDenied === true
+          if (this.hostAccessDenied) {
+            return {
+              status: 'inaccessible' as const,
+              description: DESKTOP_HOST_ACCESS_DENIED_MESSAGE
+            }
+          }
           if (result.status === 'occupied') {
             return {
               status: 'occupied' as const,
@@ -584,6 +601,7 @@ export class CliService {
         if (runtime?.machineId) {
           this.cachedMachineId = runtime.machineId
         }
+        if (runtime) this.onRuntimeState?.(runtime)
         this.publishCliState()
         this.updatePowerSaveBlocker()
       }
@@ -1223,6 +1241,9 @@ export class CliService {
       runtime: supervisorState.runtime,
       runtimeOwnership: supervisorState.runtimeOwnership,
       message: supervisorState.message,
+      ...(supervisorState.phase === 'fatal' && this.hostAccessDenied
+        ? { hostAccessDenied: true as const }
+        : {}),
       retryAttempt: supervisorState.retryAttempt,
       retryInMs: supervisorState.retryInMs,
       lastExitCode: supervisorState.lastExitCode,

@@ -74,6 +74,24 @@ Alternatives considered:
 - Reverting the renderer to the Promise Repo: rejected because it would undo #1607
   for a contained persistence defect.
 
+## Follow-up: 0.23.2
+
+An adversarial review of 0.23.1 found that the new fallback-timer compaction
+could overlap a save's threshold compaction. On an adapter without
+compare-and-write (`FileSystemStorageAdaptor`), an older capture finishing last
+overwrites the newer base and deletes durable rows. Lody's IndexedDB and SQLite
+adapters already rejected the stale write.
+[loro-dev/loro-repo#156](https://github.com/loro-dev/loro-repo/pull/156)
+(0.23.2) runs at most one compaction per replica and starts none after release
+has begun. It also fixes three side effects that do reach Lody's renderer:
+
+- a save below the threshold no longer waits for a running compaction;
+- a failed compaction that the timer joined still schedules its retry;
+- rows written during a long compaction keep the 60-second bound.
+
+A pre-existing filesystem detached-read race is tracked in
+[loro-dev/loro-repo#157](https://github.com/loro-dev/loro-repo/issues/157).
+
 ## Verification
 
 - Against 0.23.0, 18 of the 19 original journal cases fail, and all 4
@@ -97,4 +115,6 @@ Alternatives considered:
   permanently. The payload stays queued and the cursor stays blocked; no data is
   lost.
 
-Lody upgrade: [#1672](https://github.com/LodyAI/Lody/pull/1672). Related: [native workspace Repo](../../proposed/architecture/2026-10-16-native-workspace-repo.md).
+Lody upgrades: [#1672](https://github.com/LodyAI/Lody/pull/1672) (0.23.1), 0.23.2 in the follow-up bump. Related: [native workspace Repo](../../proposed/architecture/2026-10-16-native-workspace-repo.md).
+
+Current boundary (2026-10-19): native consumers and their dependent application patches were withdrawn; Repo 0.23.2 remains selected. The former Promise transport supplies stream creation again. See the [rollback decision](../simplification/2026-10-19-repo-upgrade-without-consumer-migration.md).

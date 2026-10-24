@@ -14,9 +14,12 @@ import {
   type GitHubReviewComment,
   type GitHubReviewThread,
   type FileDiff,
+  type CodeCollabAllChangesScope,
   type SessionId,
   type SessionMeta,
 } from '@lody/shared';
+import { Toggle } from '@lody/ui/toggle';
+import { ToggleGroup } from '@lody/ui/toggle-group';
 import { useAtomValue } from 'jotai';
 import { usePostHog } from '@posthog/react';
 import { toast } from '@/lib/toast';
@@ -29,7 +32,7 @@ import {
   classifyGithubThreadError,
 } from './diff-pr-analytics';
 import { DiffViewer } from '@/ui/diff-viewer/diff-viewer';
-import { ScrollArea } from '@/ui/scroll-area';
+import { ScrollArea } from '@lody/ui/scroll-area';
 import { Skeleton } from '@lody/ui/skeleton';
 import { withClassName } from '@/lib/stylex';
 import { observeDiffPerfLongTasks } from '@/lib/diff-perf';
@@ -45,6 +48,7 @@ import {
 import { useDiffFocusScroll } from './use-diff-focus-scroll';
 import { useSessionAllChangesDiffData } from './use-session-all-changes-diff-data';
 import { useSessionConversationDiffData } from './use-session-conversation-diff-data';
+import { useDiffViewport } from './use-diff-viewport';
 import { useGitHubReviewComments } from '@/hooks/use-github-review-comments';
 import {
   getPullRequestNumber,
@@ -122,8 +126,32 @@ const styles = stylex.create({
     lineHeight: '20px',
   },
   root: { display: 'flex', height: '100%', minHeight: 0, flexDirection: 'column' },
+  baseHeader: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: space[2],
+    borderBottomWidth: '1px',
+    borderBottomStyle: 'solid',
+    borderBottomColor: 'color-mix(in oklab, hsl(var(--border)) 60%, transparent)',
+    paddingBlock: space[2],
+    paddingInline: space[3],
+  },
+  baseHeaderLabel: {
+    color: 'hsl(var(--muted-foreground))',
+    fontSize: '12px',
+    lineHeight: '16px',
+  },
+  baseHeaderValue: {
+    color: 'hsl(var(--foreground))',
+    fontSize: '12px',
+    fontVariantNumeric: 'tabular-nums',
+    lineHeight: '16px',
+  },
   fileBlock: { width: '100%' },
+  deferredBody: { height: '160px' },
   panelContent: {
+    overflowAnchor: 'none',
     display: 'flex',
     width: '100%',
     flexDirection: 'column',
@@ -138,8 +166,6 @@ const styles = stylex.create({
     flex: '1 1 0%',
     overflow: 'auto',
     paddingInline: space[3],
-    scrollbarWidth: 'thin',
-    scrollbarColor: 'hsl(var(--scrollbar-thumb) / 0.5) transparent',
   },
 });
 
@@ -147,14 +173,16 @@ function FileDiffSkeleton({
   filePath,
   showBody,
   onOpenFile,
+  expanded,
 }: {
   filePath: string;
   showBody: boolean;
   onOpenFile?: (path: string) => void;
+  expanded: boolean;
 }) {
   return (
     <div {...stylex.props(styles.diffCard)}>
-      <div {...stylex.props(styles.diffCardHeader, !showBody && styles.diffCardHeaderOnly)}>
+      <div {...stylex.props(styles.diffCardHeader, !expanded && styles.diffCardHeaderOnly)}>
         <FileIcon filePath={filePath} className={stylex.props(styles.fileIcon).className} />
         <div {...stylex.props(styles.filePathRow)}>
           <span {...stylex.props(styles.filePath)} title={filePath}>
@@ -163,15 +191,18 @@ function FileDiffSkeleton({
           <DiffFileHeaderActions path={filePath} onOpenFile={onOpenFile} />
         </div>
       </div>
-      {showBody ? (
-        <div {...stylex.props(styles.skeletonBody)}>
-          <Skeleton width="100%" height={12} />
-          <Skeleton width="91%" height={12} />
-          <Skeleton width="80%" height={12} />
-          <Skeleton width="100%" height={12} />
-          <Skeleton width="75%" height={12} />
-        </div>
-      ) : null}
+      {expanded &&
+        (showBody ? (
+          <div {...stylex.props(styles.skeletonBody)}>
+            <Skeleton width="100%" height={12} />
+            <Skeleton width="91%" height={12} />
+            <Skeleton width="80%" height={12} />
+            <Skeleton width="100%" height={12} />
+            <Skeleton width="75%" height={12} />
+          </div>
+        ) : (
+          <div {...stylex.props(styles.deferredBody)} />
+        ))}
     </div>
   );
 }
@@ -181,7 +212,7 @@ function FileDiffSkeleton({
  * and WebKit composites each pulsing element into its own layer, so one body
  * per file turned a diff of a few thousand files into a WebContent process
  * kill on iOS before any diff arrived. The first few open cards fill the
- * screen; the rest wait as headers.
+ * screen; the rest use static placeholders.
  */
 export const MAX_DIFF_SKELETON_BODIES = 3;
 
@@ -278,6 +309,7 @@ export function shouldOpenDiffFileByDefault(input: {
 }
 
 export type SessionConversationDiffPanelProps = {
+  active?: boolean;
   sessionId: SessionId;
   turnId?: string;
   filePaths: string[];
@@ -287,6 +319,11 @@ export type SessionConversationDiffPanelProps = {
   focusComment?: DiffCommentFocusTarget | null;
   focusRequestSeq?: number;
   mode?: 'conversation' | 'base';
+  /** All Changes comparison scope; the panel falls back to `branch` when omitted. */
+  allChangesScope?: CodeCollabAllChangesScope;
+  /** Whether the target daemon advertises the scope protocol capability. */
+  allChangesScopeSupported?: boolean;
+  onAllChangesScopeChange?: (scope: CodeCollabAllChangesScope) => void;
   refreshToken?: number;
   session?: SessionMeta | null;
   workspaceSession?: SessionMeta | null;
@@ -299,6 +336,7 @@ export type SessionConversationDiffPanelProps = {
 };
 
 type DiffFileBlockProps = {
+  renderContent: boolean;
   filePath: string;
   data: FileDiffData | undefined;
   defaultOpen: boolean;
@@ -328,6 +366,7 @@ export function createConversationDiffViewerParseCacheKey(input: {
 }
 
 const DiffFileBlock = memo(function DiffFileBlock({
+  renderContent,
   filePath,
   data,
   defaultOpen,
@@ -353,7 +392,12 @@ const DiffFileBlock = memo(function DiffFileBlock({
 
   if (!data) {
     return (
-      <FileDiffSkeleton filePath={filePath} showBody={showSkeletonBody} onOpenFile={onOpenFile} />
+      <FileDiffSkeleton
+        filePath={filePath}
+        onOpenFile={onOpenFile}
+        expanded={defaultOpen}
+        showBody={showSkeletonBody}
+      />
     );
   }
 
@@ -364,6 +408,8 @@ const DiffFileBlock = memo(function DiffFileBlock({
   if (data.status === 'ready-parsed') {
     return (
       <DiffViewer
+        preferParseWorker
+        renderContent={renderContent}
         key={`${mode}:${defaultOpen ? 'open' : 'closed'}`}
         path={filePath}
         oldText=""
@@ -392,6 +438,8 @@ const DiffFileBlock = memo(function DiffFileBlock({
   if (data.status === 'ready-text-source') {
     return (
       <DiffViewer
+        preferParseWorker
+        renderContent={renderContent}
         key={`${mode}:${defaultOpen ? 'open' : 'closed'}`}
         path={filePath}
         oldText=""
@@ -453,6 +501,8 @@ const DiffFileBlock = memo(function DiffFileBlock({
 
   return (
     <DiffViewer
+      preferParseWorker
+      renderContent={renderContent}
       key={`${mode}:${defaultOpen ? 'open' : 'closed'}`}
       path={filePath}
       oldText={data.oldSnapshot.kind === 'text' ? data.oldSnapshot.text : ''}
@@ -479,6 +529,7 @@ const DiffFileBlock = memo(function DiffFileBlock({
 DiffFileBlock.displayName = 'DiffFileBlock';
 
 function SessionConversationDiffPanelImpl({
+  active = true,
   sessionId,
   turnId,
   filePaths,
@@ -488,6 +539,9 @@ function SessionConversationDiffPanelImpl({
   focusComment,
   focusRequestSeq,
   mode = 'conversation',
+  allChangesScope,
+  allChangesScopeSupported = false,
+  onAllChangesScopeChange,
   refreshToken: _refreshToken,
   session,
   workspaceSession,
@@ -547,6 +601,14 @@ function SessionConversationDiffPanelImpl({
     () => getMatchingPath(normalizedInputPaths, focusFilePath),
     [focusFilePath, normalizedInputPaths]
   );
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const { loadPaths, registerPath, anchorTarget } = useDiffViewport({
+    active,
+    paths: normalizedInputPaths,
+    priorityPath: focusedLoadPath,
+    scrollContainerRef: viewportRef,
+  });
+  const visiblePaths = useMemo(() => new Set(loadPaths), [loadPaths]);
   // "All Changes" (base) mode loads every file's diff with one batched RPC; conversation/turn
   // mode keeps the per-file loader. Both hooks are called (rules of hooks) but only the active
   // one fetches — the other is gated inert via `enabled`.
@@ -559,23 +621,32 @@ function SessionConversationDiffPanelImpl({
     fileDiffsPending,
     mode,
     priorityFilePath: focusedLoadPath,
-    loadFilePaths: normalizedInputPaths,
+    loadFilePaths: loadPaths,
     loadPaused: isUserScrolling,
     fileProvider,
     fileProviderPending,
-    enabled: !isBaseMode,
+    enabled: active && !isBaseMode,
   });
   const allChangesDiffData = useSessionAllChangesDiffData({
     sessionId,
     filePaths: normalizedInputPaths,
+    loadFilePaths: loadPaths,
     focusPath: focusedLoadPath,
     fileProvider,
     fileProviderPending,
-    enabled: isBaseMode,
+    enabled: active && isBaseMode,
+    scope: allChangesScope ?? 'branch',
   });
   const { cacheKey, normalizedPaths, resolvedByPath, isDiffUnavailable } = isBaseMode
     ? allChangesDiffData
     : conversationDiffData;
+  const allChangesBase = isBaseMode ? allChangesDiffData.base : null;
+  const allChangesUnavailableScopeReason = isBaseMode
+    ? allChangesDiffData.unavailableScopeReason
+    : null;
+  const allChangesUnavailableMessage = isBaseMode ? allChangesDiffData.unavailableMessage : null;
+  const allChangesBatchReady = isBaseMode ? allChangesDiffData.batchReady : false;
+  const effectiveScope = allChangesScope ?? 'branch';
   const {
     sourceSessionId: prSessionId,
     repoFullName,
@@ -590,7 +661,7 @@ function SessionConversationDiffPanelImpl({
     workspaceId: currentWorkspaceId,
     repoFullName: getPullRequestRepoFullName(latestPr) ?? repoFullName,
     prNumber: latestPrNumber,
-    enabled: normalizedPaths.length > 0 && Boolean(latestPrNumber),
+    enabled: active && normalizedPaths.length > 0 && Boolean(latestPrNumber),
   });
   const {
     threads: githubReviewCommentThreads,
@@ -645,12 +716,33 @@ function SessionConversationDiffPanelImpl({
   const focusCommentForScroll = focusComment?.source === 'github' ? focusComment : null;
 
   const { scrollContainerRef, registerPathBlock } = useDiffFocusScroll({
+    onScrollTarget: anchorTarget,
     focusFilePath,
     focusComment: focusCommentForScroll,
     focusRequestSeq,
-    isFocusTargetResolved: isFocusFileResolved && isFocusCommentResolved,
+    isFocusTargetResolved: active && isFocusFileResolved && isFocusCommentResolved,
     contextKey: cacheKey,
   });
+  const pathRefs = useMemo(
+    () =>
+      new Map(
+        normalizedPaths.map((path) => [
+          path,
+          (node: HTMLDivElement | null) => {
+            registerPathBlock(path, node);
+            registerPath(path, node);
+          },
+        ])
+      ),
+    [normalizedPaths, registerPath, registerPathBlock]
+  );
+  const setConversationScroll = useCallback(
+    (node: HTMLDivElement | null) => {
+      viewportRef.current = node;
+      scrollContainerRef.current = node;
+    },
+    [scrollContainerRef]
+  );
 
   const baseViewportScrollCleanupRef = useRef<(() => void) | null>(null);
   useEffect(
@@ -661,17 +753,18 @@ function SessionConversationDiffPanelImpl({
     []
   );
 
-  const setScrollAreaRoot = useCallback(
-    (node: HTMLDivElement | null) => {
+  const setScrollAreaViewport = useCallback(
+    (viewport: HTMLDivElement | null) => {
       baseViewportScrollCleanupRef.current?.();
       baseViewportScrollCleanupRef.current = null;
       if (mode !== 'base') return;
-      if (!node) {
+      if (!viewport) {
         scrollContainerRef.current = null;
+        viewportRef.current = null;
         return;
       }
-      const viewport = node.querySelector('[data-radix-scroll-area-viewport]');
       scrollContainerRef.current = viewport instanceof HTMLDivElement ? viewport : null;
+      viewportRef.current = scrollContainerRef.current;
       if (viewport instanceof HTMLDivElement) {
         viewport.addEventListener('scroll', handleDiffScroll, { passive: true });
         baseViewportScrollCleanupRef.current = () => {
@@ -791,6 +884,80 @@ function SessionConversationDiffPanelImpl({
     [t]
   );
 
+  const allChangesBaseValue =
+    allChangesBase === null
+      ? '…'
+      : allChangesBase === 'diff-store'
+        ? t('sessions.fileDiff.baseSessionChanges', 'Session changes')
+        : /^[0-9a-f]{12,}$/i.test(allChangesBase)
+          ? allChangesBase.slice(0, 7)
+          : allChangesBase;
+  const allChangesBasePrefix =
+    effectiveScope === 'uncommitted'
+      ? 'HEAD'
+      : session?.baseBranch?.trim() || t('sessions.fileDiff.baseBranchFallback', 'Branch base');
+  const allChangesBaseLabel =
+    allChangesBase === 'diff-store'
+      ? allChangesBaseValue
+      : `${allChangesBasePrefix} · ${allChangesBaseValue}`;
+
+  const baseHeader = isBaseMode ? (
+    <div {...stylex.props(styles.baseHeader)}>
+      {allChangesScopeSupported && onAllChangesScopeChange ? (
+        <ToggleGroup<CodeCollabAllChangesScope>
+          size="mini"
+          shape="pill"
+          aria-label={t('sessions.fileDiff.scopeLabel', 'Comparison scope')}
+          value={[effectiveScope]}
+          onValueChange={(value) => {
+            const next = value[0];
+            if (next) onAllChangesScopeChange(next);
+          }}
+        >
+          <Toggle value="branch">{t('sessions.fileDiff.scopeBranch', 'Branch')}</Toggle>
+          <Toggle value="uncommitted">
+            {t('sessions.fileDiff.scopeUncommitted', 'Uncommitted')}
+          </Toggle>
+        </ToggleGroup>
+      ) : null}
+      <span {...stylex.props(styles.baseHeaderLabel)}>
+        {t('sessions.fileDiff.baseLabel', 'Compared with')}
+      </span>
+      <span {...stylex.props(styles.baseHeaderValue)}>{allChangesBaseLabel}</span>
+    </div>
+  ) : null;
+
+  const baseEmptyText =
+    !isBaseMode || effectiveScope !== 'uncommitted'
+      ? null
+      : allChangesUnavailableScopeReason !== null || allChangesUnavailableMessage !== null
+        ? allChangesUnavailableScopeReason === 'not_a_git_worktree'
+          ? t(
+              'sessions.fileDiff.scopeUnavailableNotGit',
+              'Uncommitted comparison requires a Git worktree.'
+            )
+          : allChangesUnavailableScopeReason === 'no_commits'
+            ? t(
+                'sessions.fileDiff.scopeUnavailableNoCommits',
+                'This worktree has no commits yet, so there is no HEAD to compare against.'
+              )
+            : (allChangesUnavailableMessage ??
+              t('sessions.fileDiff.unavailable', 'Diff unavailable'))
+        : normalizedPaths.length === 0
+          ? allChangesBatchReady
+            ? t('sessions.fileDiff.noUncommittedChanges', 'No uncommitted changes.')
+            : t('sessions.fileDiff.loadingChanges', 'Loading changes…')
+          : null;
+
+  if (baseEmptyText !== null) {
+    return (
+      <div {...withClassName(stylex.props(styles.root), className)}>
+        {baseHeader}
+        <div {...stylex.props(styles.emptyMessage)}>{baseEmptyText}</div>
+      </div>
+    );
+  }
+
   if (normalizedPaths.length === 0) {
     return (
       <div {...withClassName(stylex.props(styles.emptyMessage), className)}>
@@ -810,16 +977,20 @@ function SessionConversationDiffPanelImpl({
   const skeletonBodyPaths = selectDiffSkeletonBodyPaths({
     paths: normalizedPaths,
     isLoaded: (path) => resolvedByPath[path] !== undefined,
-    opensByDefault: (path) => shouldOpenDiffFileByDefault({ mode, filePath: path, focusFilePath }),
+    opensByDefault: (path) =>
+      visiblePaths.has(path) &&
+      shouldOpenDiffFileByDefault({ mode, filePath: path, focusFilePath }),
   });
 
   const renderFileBlock = (filePath: string) => (
     <div
       key={filePath}
-      ref={(node) => registerPathBlock(filePath, node)}
+      ref={pathRefs.get(filePath)}
+      data-diff-path={filePath}
       {...stylex.props(styles.fileBlock)}
     >
       <DiffFileBlock
+        renderContent={visiblePaths.has(filePath)}
         filePath={filePath}
         data={resolvedByPath[filePath]}
         defaultOpen={shouldOpenDiffFileByDefault({ mode, filePath, focusFilePath })}
@@ -839,8 +1010,24 @@ function SessionConversationDiffPanelImpl({
     </div>
   );
 
+  const focusPathOutsideUncommittedScope =
+    isBaseMode &&
+    effectiveScope === 'uncommitted' &&
+    allChangesBatchReady &&
+    focusFilePath !== null &&
+    focusFilePath !== undefined &&
+    !normalizedPaths.some((path) => arePathsEquivalent(path, focusFilePath));
+
   const panelContent = (
     <div {...stylex.props(styles.panelContent)}>
+      {focusPathOutsideUncommittedScope ? (
+        <div {...stylex.props(styles.emptyMessage)}>
+          {t(
+            'sessions.fileDiff.focusNoUncommittedChanges',
+            'This file has no uncommitted changes.'
+          )}
+        </div>
+      ) : null}
       {githubReviewComments.error && (
         <GitHubReviewErrorNotice
           message={githubReviewComments.error.message}
@@ -854,18 +1041,21 @@ function SessionConversationDiffPanelImpl({
   return (
     <div {...withClassName(stylex.props(styles.root), className)}>
       {mode === 'base' ? (
-        <div {...stylex.props(styles.baseScrollFrame)}>
-          <ScrollArea
-            ref={setScrollAreaRoot}
-            className={stylex.props(styles.baseScrollArea).className}
-            type="auto"
-          >
-            <div {...stylex.props(styles.baseScrollContent)}>{panelContent}</div>
-          </ScrollArea>
-        </div>
+        <>
+          {baseHeader}
+          <div {...stylex.props(styles.baseScrollFrame)}>
+            <ScrollArea
+              viewportRef={setScrollAreaViewport}
+              className={stylex.props(styles.baseScrollArea).className}
+              visibility="always"
+            >
+              <div {...stylex.props(styles.baseScrollContent)}>{panelContent}</div>
+            </ScrollArea>
+          </div>
+        </>
       ) : (
         <div
-          ref={scrollContainerRef}
+          ref={setConversationScroll}
           {...withClassName(stylex.props(styles.conversationScroll), 'scrollbar-pro')}
           onScroll={handleDiffScroll}
         >
@@ -917,12 +1107,16 @@ export const areSessionConversationDiffPanelPropsEqual = (
   prev: SessionConversationDiffPanelProps,
   next: SessionConversationDiffPanelProps
 ): boolean =>
+  prev.active === next.active &&
   prev.sessionId === next.sessionId &&
   prev.turnId === next.turnId &&
   prev.focusFilePath === next.focusFilePath &&
   areDiffCommentFocusTargetsEqual(prev.focusComment, next.focusComment) &&
   prev.focusRequestSeq === next.focusRequestSeq &&
   prev.mode === next.mode &&
+  prev.allChangesScope === next.allChangesScope &&
+  prev.allChangesScopeSupported === next.allChangesScopeSupported &&
+  prev.onAllChangesScopeChange === next.onAllChangesScopeChange &&
   prev.refreshToken === next.refreshToken &&
   prev.session === next.session &&
   prev.workspaceSession === next.workspaceSession &&
