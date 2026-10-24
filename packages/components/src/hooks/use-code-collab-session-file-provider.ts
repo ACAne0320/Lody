@@ -512,13 +512,13 @@ export function useCodeCollabSessionFileProvider(
           machineId,
           {
             sessionId,
+            ...(scope === undefined ? {} : { scope }),
             ...(focus === undefined
               ? {}
               : {
                   focusPath: focus.path,
                   ...('rootId' in focus ? { rootId: focus.rootId } : {}),
                 }),
-            ...(scope === undefined ? {} : { scope }),
           },
           { ownerSessionId }
         );
