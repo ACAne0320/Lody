@@ -2407,9 +2407,13 @@ describe('Production Roost history semantics', () => {
     }
   });
 
-  it.each([false, true])(
-    'updates two independent renderer replicas through encrypted RPC without control hints (lostNativeReply=%s)',
-    async (lostNativeReply) => {
+  it.each([
+    { lostNativeReply: false, lostReadReplies: 0 },
+    { lostNativeReply: true, lostReadReplies: 0 },
+    { lostNativeReply: true, lostReadReplies: 2 },
+  ])(
+    'updates two independent renderer replicas through encrypted RPC without control hints (lostNativeReply=$lostNativeReply, lostReadReplies=$lostReadReplies)',
+    async ({ lostNativeReply, lostReadReplies }) => {
       // The renderer package owns its browser test dependency; the CLI runtime
       // stays free of IndexedDB dependencies.
       const rendererRequire = createRequire(
@@ -2533,6 +2537,7 @@ describe('Production Roost history semantics', () => {
         const chunks = Array.from({ length: 31 }, (_, index) => `跨端-${index}🙂;`);
         const finalText = chunks.join('');
         const visible = peerDocs.map(() => Promise.withResolvers<void>());
+        const remainingReadFailures = peerDocs.map(() => 0);
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         type Timer = Parameters<typeof clearTimeout>[0];
         const recoveryTimers = new Map<Timer, () => void>();
@@ -2542,7 +2547,9 @@ describe('Production Roost history semantics', () => {
         const clearTimer = globalThis.clearTimeout;
         vi.spyOn(globalThis, 'setTimeout').mockImplementation((...args) => {
           const scheduled =
-            args[1] === 0 || args[1] === 500
+            // The two lost reads below need both the first and second retry.
+            // Do not drive longer timers that also serve as RPC deadlines.
+            args[1] === 0 || args[1] === 500 || args[1] === 1_000
               ? recoveryTimers
               : args[1] === 15_000
                 ? watchTimeouts
@@ -2591,6 +2598,11 @@ describe('Production Roost history semantics', () => {
                 expect(query.withPatches).toBe(index === 0 ? true : undefined);
               const result = await client.requestSessionHistoryRead({ sessionId: id, query });
               if (!result) throw new Error('Missing history read response');
+              const remaining = remainingReadFailures[index] ?? 0;
+              if (query.kind === 'watchChanges' && remaining > 0) {
+                remainingReadFailures[index] = remaining - 1;
+                throw new Error('Synthetic history read reply loss');
+              }
               if (query.kind === 'watchChanges' || query.kind === 'readChanges') {
                 const changes = SessionHistoryChangesSchema.parse(result.result);
                 if (changes.state === 'ready' && changes.patches) {
@@ -2657,6 +2669,7 @@ describe('Production Roost history semantics', () => {
         }
         await host.flushACPUpdatesNow(sessionId);
         expect(host.store.get(sessionId).acpUpdateBuffer).toEqual([]);
+        remainingReadFailures.fill(lostReadReplies);
         if (lostNativeReply) {
           // A committed write whose reply is lost can miss the owner wakeup.
           // Release the already parked watches through their timeout callback:
@@ -2665,6 +2678,7 @@ describe('Production Roost history semantics', () => {
           [...watchTimeouts.values()].forEach((expire) => expire());
         }
         await driveRecoveryUntil(Promise.all(visible.map((result) => result.promise)));
+        expect(remainingReadFailures).toEqual([0, 0]);
         const expected = {
           id: assistantId,
           items: [
