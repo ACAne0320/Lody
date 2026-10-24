@@ -1,9 +1,85 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mkdtemp, writeFile, rm, open, rename } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { mkdtemp, writeFile, rm, open, rename, realpath } from 'node:fs/promises'
+import { tmpdir, homedir } from 'node:os'
+import { join, relative } from 'node:path'
 import { LocalFileResources } from './local-file-resource.ts'
+import {
+  LocalFilePreviewRequestSchema,
+  previewLocalFile,
+  readFileMachineId
+} from './local-file-preview.ts'
+
+void test('desktop preview reads disk identity and files with no daemon dependency', async (t) => {
+  const file = await fixture(t, 'notes.md', 'offline content')
+  const credentials = `${file.absolutePath}.credentials.json`
+  await writeFile(credentials, JSON.stringify({ machine: { machineId: 'this-desktop' } }))
+  const machineId = await readFileMachineId(credentials)
+  const resources = new LocalFileResources()
+  const request = LocalFilePreviewRequestSchema.parse({ machineId, path: file.absolutePath })
+  const opened = await previewLocalFile(resources, 1, request, machineId)
+  assert.equal(opened.status, 'ok')
+  assert.equal(opened.content.text, 'offline content')
+  assert.equal(opened.external, true)
+  const homePath = '~/' + relative(homedir(), file.absolutePath)
+  assert.equal(
+    (await previewLocalFile(resources, 1, { ...request, path: homePath }, machineId)).content.text,
+    'offline content'
+  )
+  assert.equal(
+    await previewLocalFile(resources, 1, { ...request, machineId: 'remote' }, machineId),
+    null
+  )
+  assert.equal(await previewLocalFile(resources, 1, request, null), null)
+  assert.equal(await readFileMachineId(`${credentials}.missing`), null)
+})
+
+void test('desktop relative paths require their supplied root and report filesystem failures', async (t) => {
+  const file = await fixture(t, 'notes.md', 'original workspace')
+  const resources = new LocalFileResources()
+  const request = { machineId: 'local', path: 'notes.md' }
+  assert.equal(
+    (await previewLocalFile(resources, 1, request, 'local')).code,
+    'workspace_root_unavailable'
+  )
+  const workspaceRoot = join(file.absolutePath, '..')
+  const opened = await previewLocalFile(resources, 1, { ...request, workspaceRoot }, 'local')
+  assert.equal(opened.content.text, 'original workspace')
+  assert.equal(opened.path, 'notes.md')
+  assert.equal(opened.external, false)
+  assert.equal(
+    (await previewLocalFile(resources, 1, { ...request, path: workspaceRoot }, 'local')).code,
+    'not_a_file'
+  )
+  assert.equal(
+    (
+      await previewLocalFile(
+        resources,
+        1,
+        { ...request, path: `${file.absolutePath}.missing` },
+        'local'
+      )
+    ).code,
+    'file_not_found'
+  )
+  assert.equal(
+    (await previewLocalFile(resources, 1, { ...request, path: 'bad\0path' }, 'local')).code,
+    'invalid_path'
+  )
+  assert.equal(
+    (await previewLocalFile(resources, 1, { ...request, workspaceRoot: 'relative' }, 'local')).code,
+    'invalid_path'
+  )
+  assert.equal(
+    await previewLocalFile(
+      resources,
+      1,
+      { ...request, machineId: 'remote', workspaceRoot: 'C:\\remote' },
+      'local'
+    ),
+    null
+  )
+})
 
 async function fixture(t, name, content) {
   const dir = await mkdtemp(join(tmpdir(), 'lody-resource-'))
@@ -172,3 +248,21 @@ for (const extension of ['bmp', 'ico']) {
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes)
   })
 }
+
+void test('link resolution returns identity without allocating content resources', async (t) => {
+  const file = await fixture(t, 'link.md', 'synthetic content')
+  const request = { machineId: 'local', path: file.absolutePath, resolveMarkdownLink: true }
+  const resources = {
+    preview() {
+      throw new Error('Resolution must not read content')
+    }
+  }
+  assert.equal(
+    await previewLocalFile(resources, 1, { ...request, machineId: 'remote' }, 'local'),
+    null
+  )
+  const result = await previewLocalFile(resources, 1, request, 'local')
+  assert.equal(result.status, 'resolved-link')
+  assert.equal(result.candidates.length, 1)
+  assert.equal(result.candidates[0].absolutePath, await realpath(file.absolutePath))
+})
