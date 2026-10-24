@@ -1,3 +1,4 @@
+import type { ReferralPolicy } from '@lody/cloud-api';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ArrowRight, Building2, CreditCard } from 'lucide-react';
 import { Spinner } from '@lody/ui/spinner';
@@ -10,6 +11,7 @@ import { Field as UiField } from '@lody/ui/field';
 import { PricingPageLink } from '../shared/pricing-page-link';
 import { SubscribeConsentNotice } from '../shared/subscribe-consent-notice';
 import { formatUsd } from '../settings/billing-setting-pure';
+import { ReferralOfferNotice } from '../settings/referral-settings-pure';
 
 export interface CreateWorkspacePricing {
   monthlyAmountCents: number;
@@ -34,6 +36,8 @@ export interface CreateWorkspacePageProps {
   billingInterval?: 'month' | 'year';
   /** Per-seat Plus pricing; `undefined`/`null` = not loaded, prices hidden. */
   pricing?: CreateWorkspacePricing | null;
+  /** The server confirmed this checkout would get the referral discount. */
+  referralOffer?: { onRemove: () => void; policy?: ReferralPolicy } | null;
   onWorkspaceNameChange: (value: string) => void;
   onWorkspaceSlugChange: (value: string) => void;
   onResetWorkspaceSlug: () => void;
@@ -58,6 +62,7 @@ export function CreateWorkspacePage({
   paidRequired = false,
   billingInterval = 'year',
   pricing = null,
+  referralOffer = null,
   onWorkspaceNameChange,
   onWorkspaceSlugChange,
   onResetWorkspaceSlug,
@@ -223,6 +228,21 @@ export function CreateWorkspacePage({
                       </button>
                     ))}
                   </div>
+                  {referralOffer &&
+                  pricing &&
+                  !(billingInterval === 'year' && pricing.yearlyOfferKey) ? (
+                    <ReferralOfferNotice
+                      interval={billingInterval}
+                      regularCents={
+                        billingInterval === 'year'
+                          ? pricing.yearlyAmountCents
+                          : pricing.monthlyAmountCents
+                      }
+                      disabled={creating}
+                      onRemove={referralOffer.onRemove}
+                      policy={referralOffer.policy}
+                    />
+                  ) : null}
                   <p className="text-xs text-muted-foreground">
                     {t(
                       'organization.plusBillingHelp',

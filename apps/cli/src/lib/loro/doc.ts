@@ -44,7 +44,6 @@ import {
   SessionPullRequestMeta,
   SessionPlanEntry,
   type SessionExternalHistoryCursorDocState,
-  type SessionRoostHistoryCursorDocState,
   ACP_CAPABILITY_CACHE_VERSION,
   MessageQueueItem,
   SessionTitleSource,
@@ -423,6 +422,7 @@ export class LoroDocumentManager {
       cloudBilling?: CloudBillingPort | null;
       sessionHistoryFactory?: SessionBackendFactory;
       ownerHistoryRouter?: SessionBackendFactory;
+      onStorageWriteFailure?: (error: Error) => void;
     } = {}
   ): Promise<LoroDocumentManager> {
     // Configure the CLI's global HTTP dispatcher once (proxy/H2/diagnostics). This
@@ -436,7 +436,7 @@ export class LoroDocumentManager {
       logger,
       'startup.loro_sqlite_store',
       { workspaceId },
-      async () => await createCliSqliteRepoStore(workspaceId)
+      async () => await createCliSqliteRepoStore(workspaceId, options.onStorageWriteFailure)
     );
     const createRepoTimeoutMs = readTimeoutEnv('LODY_LORO_CREATE_REPO_TIMEOUT_MS', 30_000);
     const joinMetaTimeoutMs = readTimeoutEnv('LODY_LORO_JOIN_META_TIMEOUT_MS', 30_000);
@@ -2259,15 +2259,6 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
     return this.mirror.subscribe(listener);
   }
 
-  subscribeRoostHistoryCursor(listener: () => void): () => void {
-    if (!this.handle) throw new Error('SessionDocument not initialized');
-    return this.handle.doc.subscribe((batch) => {
-      if (batch.events.some((event) => String(event.path[0]) === 'roostHistoryCursor')) {
-        listener();
-      }
-    });
-  }
-
   async init(options: { skipAutoRead?: boolean; historyBackend?: SessionHistoryBackendKind } = {}) {
     this.destroyed = false;
     try {
@@ -2565,7 +2556,6 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
       notification: state.notification,
       preview: state.preview as SessionDocMeta['preview'],
       externalHistoryCursor: state.externalHistoryCursor as SessionDocMeta['externalHistoryCursor'],
-      roostHistoryCursor: state.roostHistoryCursor as SessionDocMeta['roostHistoryCursor'],
       acpRuntimeConfig: state.acpRuntimeConfig as SessionDocMeta['acpRuntimeConfig'],
     };
   }
@@ -3189,18 +3179,6 @@ export class SessionDocument implements LoroDocument<Omit<SessionDocMeta, 'histo
       ...prev,
       externalHistoryCursor: cursor,
     }));
-  }
-
-  async getRoostHistoryCursor(): Promise<SessionRoostHistoryCursorDocState | undefined> {
-    if (!this.mirror) return undefined;
-    return this.mirror.getState().roostHistoryCursor as
-      | SessionRoostHistoryCursorDocState
-      | undefined;
-  }
-
-  async setRoostHistoryCursor(cursor: SessionRoostHistoryCursorDocState): Promise<void> {
-    if (!this.mirror) throw new Error('Mirror not initialized');
-    this.mirror.setState((prev) => ({ ...prev, roostHistoryCursor: cursor }));
   }
 
   /**

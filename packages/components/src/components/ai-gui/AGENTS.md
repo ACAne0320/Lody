@@ -35,23 +35,23 @@ Ownership: [README.md](README.md).
   streaming turns stay expanded.
 - The final answer is the contiguous text run before trailing never-collapsed
   items. Walk backward over adjacent text blocks to the first non-text boundary.
-- Plan approval cuts an `AssistantTurnRenderSegment` in a live turn. Match ACP
-  kind `switch_mode`, never a title (`plan-surface.ts`). Keep `workBlockKeys`,
-  `hasVisibleFinalContent`, last-item visibility and `expandedWorkedGroups` per
-  segment; expansion keys include it. Only the last segment shows duration;
-  earlier ones say "Finished working".
+- Plan approval cuts a live turn by ACP kind `switch_mode`, never title.
+  `plan-surface.ts` prefers nonempty `rawInput.plan` over replaceable tool content.
+  Keep `workBlockKeys`, `hasVisibleFinalContent`, last-item visibility and expansion
+  keys per segment. Only the last segment shows duration; earlier segments say
+  "Finished working".
 - `shouldUseWorkedGroup` requires a finished turn, foldable work, and visible
   final content outside `workBlockKeys`. A cancelled/interrupted or tool-only
   turn with no answer stays expanded; `message.finished` cannot prove
   completion alone. A reused entry reopening upstream
   must clear `finished` and `endedAt` (see
   `apps/cli/src/session/AGENTS.md`).
-- Thought and tool rows share one compact transparent timeline, 13px, no glyphs:
-  the verb says the kind of step. Execute calls are not cards. Disclosure labels
-  lead; the chevron trails (desktop: hover-only, body type, no fill). Only builtin DeepSeek Harness retains thought rows in expandable
-  activity groups; pure thoughts default open unless explicitly collapsed. Other providers
-  keep thoughts hidden.
-  Assistant footers show config, not author identity.
+- Thought/tool timelines are compact, transparent, 13px and glyph-free; verbs label
+  steps. Execute calls are not cards. Disclosure labels lead, chevrons trail
+  (desktop: hover-only, body type, no fill). Only builtin DSH shows thoughts:
+  separate groups default thoughts open and tools closed; explicit toggles win.
+  DSH prose uses answer typography and skips outer work folding. Other providers
+  hide thoughts. Footers show config, not author identity.
 - An expanded tool step is ONE `ToolDetailSheet` (`tool-call-detail.tsx`): composer
   fill + card shadow, no header restating the row, sections in content order. Only
   the command is highlighted, via the Shiki worker; output stays ANSI text. Drop

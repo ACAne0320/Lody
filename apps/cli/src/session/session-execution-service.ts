@@ -5005,6 +5005,7 @@ export class SessionExecutionService {
       scope: { workspaceId: scope.workspaceId, recipientId: scope.userId },
       sessionId: runtime.sessionId,
       turnId: invocation.sourceTurnId,
+      assistantTurnId: runtime.turnId,
       audience: origins.length
         ? { kind: 'user' }
         : (invocation.notificationAudience ?? { kind: 'unknown' }),
@@ -5395,7 +5396,8 @@ export class SessionExecutionService {
     if (!userTurnId) {
       return false;
     }
-    const history = await this.getSessionHistory(sessionDoc);
+    const backend = await this.getSessionBackend(sessionDoc, sessionDoc.sessionId);
+    const history = await backend.readDispatchHistory([userTurnId]);
     return history.some(
       (entry) => entry.id === userTurnId && entry.role === 'user' && entry.status === 'canceled'
     );
@@ -7163,7 +7165,10 @@ export class SessionExecutionService {
   private async pendingInboxInputIds(sessionId: SessionId): Promise<string[]> {
     const doc = await this.deps.workspaceDocument.getOrCreateSessionDoc(sessionId);
     const backend = await createSessionBackend(doc);
-    const [history, queued] = await Promise.all([backend.readHistory(), backend.getMessageQueue()]);
+    const [history, queued] = await Promise.all([
+      backend.readDispatchHistory([]),
+      backend.getMessageQueue(),
+    ]);
     return [
       ...history
         .filter(

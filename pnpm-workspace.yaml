@@ -28,10 +28,10 @@ catalog:
   '@devframes/plugin-terminals--assets': 1.0.0
   '@loro-dev/flock-wasm': ^0.4.4
   '@loro-dev/loro-cli': 0.6.0
-  '@loro-dev/roost': 0.2.0
+  '@loro-dev/roost': 0.3.0
   '@loro-dev/sqlite-riverrun': 0.2.0
   '@loro-dev/streams-client': 0.12.1
-  '@loro-dev/streams-crdt': 0.19.1
+  '@loro-dev/streams-crdt': 0.19.2
   '@tanstack/react-router': ^1.127.9
   '@tanstack/react-router-devtools': ^1.127.9
   '@tanstack/router-plugin': ^1.127.9
@@ -53,12 +53,12 @@ catalog:
   '@effect/platform-node-shared': 4.0.2
   jotai: ^2.16.0
   loro-adaptors: ^0.6.1
-  loro-crdt: 1.16.3
+  loro-crdt: 1.17.0
   loro-mirror: 2.3.2
   loro-mirror-jotai: 2.3.2
   loro-mirror-react: 2.3.2
   loro-protocol: ^0.3.0
-  loro-repo: 0.23.3
+  loro-repo: 0.25.0
   loro-websocket: ^0.6.2
   lucide-react: ^0.523.0
   react: 19.2.0
@@ -93,15 +93,15 @@ minimumReleaseAgeExclude:
   - '@effect/vitest@4.0.2'
   - '@effect/platform-node-shared@4.0.2'
   # Keep the split release's complete optional platform graph available on every host.
-  - '@loro-dev/roost-node@0.2.0'
-  - '@loro-dev/roost-node-darwin-arm64@0.2.0'
-  - '@loro-dev/roost-node-darwin-x64@0.2.0'
-  - '@loro-dev/roost-node-linux-arm64-gnu@0.2.0'
-  - '@loro-dev/roost-node-linux-x64-gnu@0.2.0'
-  - '@loro-dev/roost-node-win32-arm64-msvc@0.2.0'
-  - '@loro-dev/roost-node-win32-x64-msvc@0.2.0'
+  - '@loro-dev/roost-node@0.3.0'
+  - '@loro-dev/roost-node-darwin-arm64@0.3.0'
+  - '@loro-dev/roost-node-darwin-x64@0.3.0'
+  - '@loro-dev/roost-node-linux-arm64-gnu@0.3.0'
+  - '@loro-dev/roost-node-linux-x64-gnu@0.3.0'
+  - '@loro-dev/roost-node-win32-arm64-msvc@0.3.0'
+  - '@loro-dev/roost-node-win32-x64-msvc@0.3.0'
   # Use the pinned npm release instead of requiring a sibling Roost checkout.
-  - '@loro-dev/roost@0.2.0'
+  - '@loro-dev/roost@0.3.0'
   # pnpm 10.20 uses the first rule per package; keep exact Codex versions together.
   - '@openai/codex@0.154.0 || 0.156.0 || 0.156.0-darwin-arm64 || 0.156.0-darwin-x64 || 0.156.0-linux-arm64 || 0.156.0-linux-x64 || 0.156.0-win32-arm64 || 0.156.0-win32-x64 || 0.159.2 || 0.159.2-darwin-arm64 || 0.159.2-darwin-x64 || 0.159.2-linux-arm64 || 0.159.2-linux-x64 || 0.159.2-win32-arm64 || 0.159.2-win32-x64'
   # Exact transitive dependencies already selected for werift.
@@ -160,18 +160,21 @@ minimumReleaseAgeExclude:
   - vitest@5.0.2
   - '@vitest/mocker@5.0.2'
   - '@vitest/spy@5.0.2'
-  # Explicit Loro fix for concurrent-import replay stalls, reviewed in this change.
-  - loro-crdt@1.16.3
+  # Concurrent-import replay fixes plus the reviewed pending-export API in loro#1220.
+  - 'loro-crdt@1.16.3 || 1.17.0'
   # Safe error provenance and context, reviewed with loro-repo#144.
   # Native lifecycle/upload contracts reviewed in loro-streams#425; exact releases approved.
   # 0.19.1/0.12.1 stop the live-read spin after a failed flush (loro-dev/loro-streams#429).
-  - '@loro-dev/streams-crdt@0.16.2 || 0.19.0 || 0.19.1'
+  # 0.19.2 keeps live progress and bounded persistence retry after disk write failures (#435).
+  - '@loro-dev/streams-crdt@0.16.2 || 0.19.0 || 0.19.1 || 0.19.2'
   - '@loro-dev/streams-client@0.9.0 || 0.10.0 || 0.12.0 || 0.12.1'
   # Reviewed Repo native capabilities and fixes (loro-dev/loro-repo#150-#153);
   # 0.23.1 stops Flock persistence queue amplification (loro-dev/loro-repo#154);
   # 0.23.2 serializes compaction and keeps its retries bounded (loro-dev/loro-repo#156);
   # 0.23.3 retries SQLITE_BUSY without blocking the event loop (loro-dev/loro-repo#159).
-  - 'loro-repo@0.22.0 || 0.23.0 || 0.23.1 || 0.23.2 || 0.23.3'
+  # 0.24.0 preserves received pending updates across saves and restarts (loro-dev/loro-repo#165).
+  # 0.25.0 includes reviewed stale-session, IndexedDB reopen and write-observer fixes (#162-#164).
+  - 'loro-repo@0.22.0 || 0.23.0 || 0.23.1 || 0.23.2 || 0.23.3 || 0.24.0 || 0.25.0'
   # Reviewed upgrade; 0.4.4 was published today once the release pipeline was fixed.
   - '@loro-dev/flock-wasm@0.4.4'
   # Adds the `remend` option the streaming Markdown renderer passes (lobehub/streamdown#5).

@@ -7,6 +7,7 @@ import { projectGroupDirectory } from '@/session/worktree/project-worktrees';
 import { archiveProjectGroup } from '@/session/worktree/project-worktree-archive';
 import {
   resolveNotificationPresentation,
+  notificationReplyPreview,
   type NotificationPresentation,
 } from '@lody/shared/notifications';
 import type { SessionActivePresencePhase } from './loro/session-active-presence';
@@ -87,8 +88,6 @@ import {
   getMachineRoomId,
   getSessionIdFromRoomId,
   getSessionRoomId,
-  SessionHistoryChangeSchema,
-  type SessionHistoryChange,
   type IssuePRMention,
   type SessionImageGroupContent,
   type SessionInputBlock,
@@ -2988,7 +2987,8 @@ export class MessageHandler {
           const { scope, source, outcome } = attention;
           const presentation = await this.buildNotificationPresentation(
             source.sessionId,
-            source.originTurnIds ?? [source.turnId]
+            source.originTurnIds ?? [source.turnId],
+            fact.assistantTurnId
           );
           // Independent channels: a local projection failure cannot block mobile,
           // and cloud latency/failure cannot prevent desktop publication.
@@ -7143,7 +7143,8 @@ export class MessageHandler {
         // The read and its revision must straddle no unpublished history write.
         // These are local durability barriers, never remote synchronization.
         await backend.flushLocalWrites();
-        const before = await sessionDoc.getRoostHistoryCursor();
+        if (!history.getPublication) throw new Error('Native history publication is unavailable');
+        const before = await history.getPublication();
         let result: unknown;
         let pageTurns: SessionHistoryReadResponse['pageTurns'];
         switch (query.kind) {
@@ -7260,8 +7261,12 @@ export class MessageHandler {
             break;
         }
         await backend.flushLocalWrites();
-        const after = await sessionDoc.getRoostHistoryCursor();
-        if (before?.historyRevision !== after?.historyRevision) continue;
+        const after = await history.getPublication();
+        if (
+          before.checkpoint !== after.checkpoint ||
+          before.historyRevision !== after.historyRevision
+        )
+          continue;
         const protectedRead =
           query.kind === 'readChanges' ||
           ((query.kind === 'readLatestPage' || query.kind === 'readOlderPage') &&
@@ -7277,19 +7282,6 @@ export class MessageHandler {
           if (current !== expected)
             throw Object.assign(new Error('History checkpoint was superseded'), { code: 'stale' });
         }
-        if (after?.historyRevision === undefined || after.historyCount === undefined) {
-          throw new Error('Roost history has no durable revision');
-        }
-        let historyChange: SessionHistoryReadResponse['historyChange'];
-        if (after.historyChangeJson) {
-          try {
-            historyChange = SessionHistoryChangeSchema.nullable().parse(
-              JSON.parse(after.historyChangeJson)
-            );
-          } catch {
-            historyChange = { kind: 'structure', from: 0, to: after.historyCount };
-          }
-        }
         return {
           type: 'session/history-read_response',
           sessionId,
@@ -7297,7 +7289,7 @@ export class MessageHandler {
           result,
           historyRevision: after.historyRevision,
           historyCount: after.historyCount,
-          historyChange,
+          historyChange: after.historyChange,
           ...(pageTurns ? { pageTurns } : {}),
         };
       }
@@ -7431,36 +7423,19 @@ export class MessageHandler {
           break;
         }
       }
-      const historyCursor = await sessionDoc.getRoostHistoryCursor();
-      let historyChange: SessionHistoryChange | null = null;
-      if (historyCursor?.historyChangeJson) {
-        try {
-          historyChange = SessionHistoryChangeSchema.nullable().parse(
-            JSON.parse(historyCursor.historyChangeJson)
-          );
-        } catch {
-          historyChange = {
-            kind: 'structure',
-            from: 0,
-            to: historyCursor.historyCount ?? 0,
-          };
-        }
-      }
+      await backend.flushLocalWrites();
+      if (!backend.history.getPublication)
+        throw new Error('Native history publication is unavailable');
+      const historyCursor = await backend.history.getPublication();
       return {
         type: 'session/history-write_response',
         sessionId,
         operation,
         success: true,
         ...(result === undefined ? {} : { result }),
-        ...(historyCursor?.historyRevision === undefined
-          ? {}
-          : {
-              historyRevision: historyCursor.historyRevision,
-              ...(historyCursor.historyCount === undefined
-                ? {}
-                : { historyCount: historyCursor.historyCount }),
-              ...(historyChange === undefined ? {} : { historyChange }),
-            }),
+        historyRevision: historyCursor.historyRevision,
+        historyCount: historyCursor.historyCount,
+        historyChange: historyCursor.historyChange,
       };
     } catch (error) {
       const detail =
@@ -10214,9 +10189,10 @@ export class MessageHandler {
 
   private async buildNotificationPresentation(
     sessionId: SessionId,
-    originTurnIds: readonly string[]
+    originTurnIds: readonly string[],
+    assistantTurnId?: string
   ): Promise<NotificationPresentation | undefined> {
-    // Presentation is optional. Read only exact originating inputs, never the transcript.
+    // Read exact originating inputs and the completed assistant entry, never all history.
     // Mixed/large batches fall back to the conversation name.
     try {
       const sessionDoc = await this.workspaceDocument.getOrCreateSessionDoc(sessionId);
@@ -10245,7 +10221,18 @@ export class MessageHandler {
           /* The repository name remains a useful fallback. */
         }
       }
-      return resolveNotificationPresentation(meta, inputs, projectName);
+      const presentation = resolveNotificationPresentation(meta, inputs, projectName);
+      if (assistantTurnId) {
+        try {
+          const reply = await backend.history.readTurn(assistantTurnId);
+          if (reply.state === 'ready') {
+            presentation.replyPreview = notificationReplyPreview(reply.turn);
+          }
+        } catch {
+          // An unavailable reply must not discard the existing display context.
+        }
+      }
+      return presentation;
     } catch {
       return undefined;
     }

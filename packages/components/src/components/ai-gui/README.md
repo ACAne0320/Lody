@@ -3,9 +3,14 @@
 Conversation rendering for a Session: the message stream, assistant turn folding,
 the outline rail, and the markdown/terminal/file content surfaces.
 
-Builtin DeepSeek Harness keeps thought prose in expandable activity groups, including
-a default-open Thought disclosure for groups without tools; explicit collapse is retained. Provider visibility is part of the
-virtual-row cache identity; other providers retain their existing filtering.
+Builtin DeepSeek Harness separates thought disclosures from tool groups. Thoughts
+start open, tools closed, and explicit toggles remain respected. DSH thought prose
+uses the same Markdown typography and reading color as ordinary answers; tool
+labels and details retain their compact process styling. DSH skips the outer
+finished-work fold so intermediate prose stays visible in order after completion;
+duration moves to the existing footer. Both layout and virtual-row caches include
+provider visibility. Other providers retain their grouping and filtering. This is
+presentation only: stored thought/text types and provider delivery remain unchanged.
 
 Binding rules live in [AGENTS.md](AGENTS.md); this file is the directory index and
 the reasoning behind those rules.
@@ -74,6 +79,13 @@ the reasoning behind those rules.
   shared `session-link-export`, preserving code examples and stored history.
   Only a known source workspace supplies a missing ID; anonymous readers do not
   borrow the viewer's workspace.
+- `plan-surface.ts` resolves plan approval text from nonempty `rawInput.plan` first,
+  then the first nonempty content text block. Claude result updates can replace
+  content with a rejection message while retaining the original plan input.
+  This also restores historical rejected cards without rewriting session data.
+  Content-only adapters retain their fallback; a separate `proposed_plan` row
+  still suppresses the card's duplicate. See the
+  [rejected-plan fix](../../../../../.agents/notes/implemented/bug-fix/2026-10-22-claude-rejected-plan-display.md).
 - `message-content-guards.ts` gates which shared `MessageContent` variants render.
 - `assistant-turn-timing.ts` builds the turn popover's timing rows (Started,
   Ended, Duration, and Last update for a running turn) and the live status
