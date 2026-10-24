@@ -1,20 +1,11 @@
 import path from 'node:path';
 import { Effect } from 'effect';
-import { isSafeProjectPath, parseGitHubRepo } from '@lody/shared';
+import { isSafeProjectPath, projectRepositoryUrlIdentity } from '@lody/shared';
 import { WorktreeGit, WorktreeGitExecutionFailed } from './git-execution';
 import {
   getAllocatedSessionBranchName,
   resolveAvailableBranchName,
 } from './branch-name-allocation';
-
-/** GitHub identity is transport independent; local URLs are resolved by the owning machine. */
-export function projectRepositoryUrlIdentity(url: string): string {
-  if (/^(?:https?:\/\/github\.com\/|ssh:\/\/(?:git@)?github\.com\/|git@github\.com:)/i.test(url)) {
-    const parsed = parseGitHubRepo(url);
-    return `github:${parsed.owner}/${parsed.repo}`.toLowerCase();
-  }
-  return url.replace(/\/$/, '');
-}
 
 /** Validates a configured Member against the parent's actual gitlink before any checkout. */
 export const inspectProjectSubmodule = Effect.fn('inspectProjectSubmodule')(function* (options: {
@@ -62,7 +53,11 @@ export const inspectProjectSubmodule = Effect.fn('inspectProjectSubmodule')(func
   ) {
     return yield* fail('Project submodule repository no longer matches the frozen Member');
   }
-  return { commit: match[1] as string, path: path.join(options.parentPath, options.submodulePath) };
+  return {
+    commit: match[1] as string,
+    path: path.join(options.parentPath, options.submodulePath),
+    configKey: entry[1],
+  };
 });
 
 /** Caller owns the Project mutation lease and must retain partial materialization on failure. */
@@ -77,9 +72,38 @@ export const checkoutProjectSubmodule = Effect.fn('checkoutProjectSubmodule')(fu
   env?: NodeJS.ProcessEnv;
 }) {
   const git = yield* WorktreeGit;
+  if (options.restore && !path.isAbsolute(options.restore.repositoryPath))
+    return yield* Effect.fail(
+      new WorktreeGitExecutionFailed({
+        message: 'Submodule restore requires a machine-resolved repository path',
+        cause: undefined,
+      })
+    );
   const inspected = yield* inspectProjectSubmodule(options);
   yield* git.run({
-    args: ['submodule', 'update', '--init', '--recursive', '--', options.submodulePath],
+    // Restore unpublished gitlinks from the durable local store before contacting the remote.
+    // Nested selected members are restored separately before recursive initialization.
+    args: options.restore
+      ? [
+          '-c',
+          'protocol.file.allow=always',
+          '-c',
+          `${inspected.configKey}.url=${options.restore.repositoryPath}`,
+          'submodule',
+          'update',
+          '--init',
+          '--',
+          options.submodulePath,
+        ]
+      : [
+          'submodule',
+          'update',
+          '--init',
+          // Borrow objects only for this member, then sever the GC dependency.
+          ...(options.local ? ['--reference', options.repositoryPath, '--dissociate'] : []),
+          '--',
+          options.submodulePath,
+        ],
     cwd: options.parentPath,
     env: options.env,
   });
@@ -88,6 +112,7 @@ export const checkoutProjectSubmodule = Effect.fn('checkoutProjectSubmodule')(fu
     '\n'
   );
   if (options.restore) {
+    yield* run(['remote', 'set-url', 'origin', options.expectedRepositoryUrl]);
     yield* run(['check-ref-format', '--branch', options.restore.branch]);
     if (!path.isAbsolute(options.restore.repositoryPath))
       return yield* Effect.fail(
