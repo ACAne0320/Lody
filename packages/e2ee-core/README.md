@@ -43,6 +43,7 @@ other runtimes need their own storage and platform adapters. Backend ports and
 | `@lody/e2ee-core/host` | what a backend must enforce, staging wire schemas (no Node APIs) | public |
 | `@lody/e2ee-core/adapters/node-sqlite` | SQLite implementation of every local store, reference mailbox backend | public |
 | `@lody/e2ee-core/adapters/loro-streams` | `LedgerLog` / `LedgerFeedSource` over a Loro / Durable Streams control stream | public |
+| `@lody/e2ee-core/cloudflare` | Imported once in a Cloudflare Worker so strict Ed25519 runs in WebAssembly (workerd forbids runtime compilation); other runtimes need nothing | public |
 | `@lody/e2ee-core/internal` | internals for this repository's tests and the Lab | **unstable** |
 
 ## A composition in one screen
@@ -181,3 +182,6 @@ Tests use fixed synthetic vectors, real SQLite, real Ed25519/HPKE and child
 processes; the `test/generate-*.py` scripts regenerate vectors (optional).
 
 [Non-gating benchmarks](bench/README.md) emit environment-qualified JSON.
+
+Streams adapters and the Lab use the workspace catalog version. Node hosts can share
+[KEK custody](docs/surface.md#lodye2ee-coreadaptersnode-custody) while supplying their own OS wrapper.

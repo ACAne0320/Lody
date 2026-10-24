@@ -6,6 +6,7 @@ import {
   getSessionRoomId,
   getCodeCollabFileIndexFlockDocId,
   codeCollabFileIndexToSharedState,
+  type CodeCollabAllChangesScope,
   type CodeCollabFileSourceState,
   type CodeCollabRole,
   type CodeCollabV2AllChangesState,
@@ -497,13 +498,13 @@ export function useCodeCollabSessionFileProvider(
               code: 'permission_denied',
               message: 'Code Collab save requires a signed-in user.',
             },
-      openCurrentDiff: async (path) =>
+      openCurrentDiff: async (path, scope: CodeCollabAllChangesScope | undefined) =>
         await runtime.requestCodeCollabOpenCurrentDiff(
           machineId,
-          { sessionId, ...at(path) },
+          { sessionId, ...at(path), ...(scope === undefined ? {} : { scope }) },
           { ownerSessionId }
         ),
-      openAllChangesDiff: async (focusPath) => {
+      openAllChangesDiff: async (focusPath, scope: CodeCollabAllChangesScope | undefined) => {
         // All Changes is one root's comparison; focusing a member file asks
         // that member's root for it.
         const focus = focusPath === undefined ? undefined : at(focusPath);
@@ -511,6 +512,7 @@ export function useCodeCollabSessionFileProvider(
           machineId,
           {
             sessionId,
+            ...(scope === undefined ? {} : { scope }),
             ...(focus === undefined
               ? {}
               : {

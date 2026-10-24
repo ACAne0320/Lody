@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Effect as NativeEffect } from 'effect';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,7 +11,7 @@ import {
   type LodyOperationItemResult,
   type SessionId,
 } from '@lody/shared';
-import type { LodyOperationStore } from '@/orchestration/operation-store';
+import { LodyOperationStoreError, type LodyOperationStore } from '@/orchestration/operation-store';
 import type { SessionToolHandlers } from './session-tool-router';
 
 const mocks = vi.hoisted(() => ({
@@ -49,7 +48,8 @@ vi.mock('@/lib/command-runtime', async (importOriginal) => {
         await fn({
           repo: { getDocMeta: mocks.getDocMeta },
           getOnlineMachineIds: vi.fn(async () => new Set(['machine-id'])),
-          getOrCreateSessionDoc: vi.fn(async () => ({})),
+          syncDocOrThrow: async () => undefined,
+          getOrCreateSessionDoc: vi.fn(async () => ({ getMetaState: async () => ({}) })),
         })
     ),
   };
@@ -92,7 +92,7 @@ vi.mock('@/session/session-backend', async (importOriginal) => {
     createSessionBackend: vi.fn(async (doc, meta) =>
       doc?.sessionData
         ? actual.createSessionBackend(doc, meta)
-        : { history: { readTurn: mocks.readTurn } }
+        : { history: { readTurn: mocks.readTurn }, readHistory: async () => [] }
     ),
   };
 });
@@ -122,9 +122,8 @@ import {
   MachineFlockReadUnavailableError,
   resolveEffectiveSessionCreateDispatchConfig,
 } from '@/commands/session';
-import { RepoTransportError } from 'loro-repo';
-import { WorkspaceRepoLegacy as LoroRepo } from '@lody/shared/workspace-data/repo-legacy';
-import { workspaceStreamsTransport } from '@lody/shared/workspace-data/streams';
+import { LoroRepo, RepoTransportError } from 'loro-repo';
+import { StreamsTransportAdapter } from 'loro-repo/transport/streams';
 import { LoroDocumentManager } from '@/lib/loro/doc';
 import { getLogger } from '@/utils/logger';
 import type { AgentConfigMeta, WorkspaceId } from '@lody/shared';
@@ -452,7 +451,7 @@ describe('turn-scoped reverse chat rejection', () => {
             userTurnId: 'recovered-input',
             delegatedRequester,
           },
-          { inheritSessionDefaults: false },
+          { inheritSessionDefaults: false, mcpServerIds: [] },
           {
             targetMachine: { id: 'machine-id', ownerUserId: recovered.requesterUserId },
             agentConfig: {
@@ -599,6 +598,84 @@ describe('turn-scoped reverse chat rejection', () => {
       ]);
     }
   );
+
+  it.each([false, true])(
+    'freezes exact pending input provenance before Operation acceptance (delegated=%s)',
+    async (delegated) => {
+      setInput('pending-provenance', delegated ? 'sender-session' : undefined);
+      mocks.activeInvocation.mockReturnValue({
+        ...mocks.activeInvocation(),
+        notificationOriginTurnIds: [],
+        notificationProvenancePending: true,
+      });
+      await startSessionChatOperation({
+        operationId: 'provenance-operation',
+        sessionId: targetSession.id,
+        prompt: 'Work',
+      });
+      expect(
+        store.get(requesterSession.id as SessionId, 'provenance-operation').frozenContinuationConfig
+          .notificationOriginTurnIds
+      ).toEqual(delegated ? [] : ['pending-provenance']);
+    }
+  );
+
+  it('rejects unsynchronized provenance before acceptance and accepts the same id after sync', async () => {
+    const active = {
+      type: 'session/active-invocation-context',
+      sessionId: requesterSession.id,
+      active: true,
+      requesterUserId: requesterSession.userId,
+      sourceTurnId: 'late-input',
+      inputConfig: {},
+      notificationOriginTurnIds: [],
+      notificationProvenancePending: true,
+    };
+    mocks.activeInvocation.mockReturnValue(active);
+    const args = { operationId: 'late-provenance', sessionId: targetSession.id, prompt: 'Work' };
+    const result = await callAndMapMcpError(() => startSessionChatOperation(args));
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      error: { code: 'INVOKING_INPUT_NOT_READY', retryable: true },
+    });
+    expect(storedOperations()).toEqual([]);
+    expect(delivered).toEqual([]);
+    setInput('late-input');
+    mocks.activeInvocation.mockReturnValue(active);
+    await startSessionChatOperation(args);
+    expect(
+      store.get(requesterSession.id as SessionId, args.operationId).frozenContinuationConfig
+        .notificationOriginTurnIds
+    ).toEqual(['late-input']);
+    expect(delivered).toHaveLength(1);
+  });
+
+  it('reports a materialized create as accepted when its durable mark hits a busy store', async () => {
+    setInput('create-input');
+    mocks.validateSessionCreateOptions.mockResolvedValue({ mcpServerIds: [] });
+    const created: string[] = [];
+    mocks.createSessionResult.mockImplementation(
+      async (_auth, _workspace, _manager, _prompt, options) => {
+        created.push(options.sessionId);
+        return { sessionId: options.sessionId, userTurnId: options.userTurnId };
+      }
+    );
+    mocks.markItemInputDurable.mockImplementation(() => {
+      throw new LodyOperationStoreError('STORE_BUSY', 'busy', true);
+    });
+    const args = { operationId: 'busy-mark-create', prompt: 'Review the change' };
+
+    const result = await startSessionCreateOperation(args);
+
+    expect(result).toMatchObject({
+      id: 'busy-mark-create',
+      state: 'active',
+      items: [{ status: 'active', inputDurable: false, target: { sessionId: created[0] } }],
+    });
+    // The level-checked Coordinator, not the caller, finishes the durable mark.
+    expect(store.get(requesterSession.id as SessionId, args.operationId).state).toBe('active');
+    await startSessionCreateOperation({ ...args, operationId: 'busy-mark-create-fresh-id' });
+    expect(created).toHaveLength(1);
+  });
 
   it('does not fall back to earlier history when the exact active input is unavailable', async () => {
     mocks.activeInvocation.mockReturnValue({
@@ -850,19 +927,17 @@ describe('session create prevalidation failures', () => {
       cliType: 'builtin',
       agentType: 'codex',
     };
-    const adapter = workspaceStreamsTransport(
-      {
-        bucketId: 'test-bucket',
-        baseUrl: 'https://streams.invalid',
-        persistence: 'volatile',
-        reconnectConfig: { maxAttempts: 0 },
-        flockDocStreamId: (id) => id,
-      },
-      () => NativeEffect.succeed('private-token-sentinel')
-    );
+    const adapter = new StreamsTransportAdapter({
+      bucketId: 'test-bucket',
+      baseUrl: 'https://streams.invalid',
+      auth: async () => 'private-token-sentinel',
+      persistence: { mode: 'ephemeral' },
+      flockDocStreamId: (id) => id,
+    });
     let manager: LoroDocumentManager | undefined;
     try {
       await repo.addTransport('streams', adapter);
+      const sync = vi.spyOn(repo, 'sync');
       manager = new LoroDocumentManager({
         repo,
         workspaceId,
@@ -872,32 +947,29 @@ describe('session create prevalidation failures', () => {
         logger: getLogger('catalog-http-503-test'),
       });
       const activeManager = manager;
-      let refusal: unknown;
-      mocks.validateSessionCreateOptions.mockImplementation(async () => {
-        try {
-          return await resolveEffectiveSessionCreateDispatchConfig({
-            manager: activeManager,
-            workspaceId,
-            agentConfig,
-            dispatchConfig: { modelId: 'missing-model' },
-          });
-        } catch (error) {
-          refusal = error;
-          throw error;
-        }
-      });
+      mocks.validateSessionCreateOptions.mockImplementation(() =>
+        resolveEffectiveSessionCreateDispatchConfig({
+          manager: activeManager,
+          workspaceId,
+          agentConfig,
+          dispatchConfig: { modelId: 'missing-model', mcpServerIds: [] },
+        })
+      );
       const result = await callAndMapMcpError(() =>
         startSessionCreateManyOperation({
           operationId: 'real-server-error-create',
           items: [{ label: 'server-error', prompt: 'start', agentConfigId: agentConfig.id }],
         })
       );
-      const response = JSON.parse(result.content[0].text);
-      expect(refusal).toBeInstanceOf(MachineFlockReadUnavailableError);
-      expect((refusal as MachineFlockReadUnavailableError).toLodyError()).toMatchObject({
-        code: 'SYNC_UNAVAILABLE',
+      const transportError = await sync.mock.results[0]?.value.catch((error: unknown) => error);
+      expect(transportError).toBeInstanceOf(RepoTransportError);
+      expect(transportError).toMatchObject({
+        code: 'internal',
+        streamsCode: 'server_error',
         retryable: true,
+        streamsContext: { source: 'http', status: 503 },
       });
+      const response = JSON.parse(result.content[0].text);
       expect(response).toMatchObject({
         ok: false,
         error: { code: 'SYNC_UNAVAILABLE', retryable: true },
