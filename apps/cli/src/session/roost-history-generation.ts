@@ -10,10 +10,17 @@ import {
   type RestoreActiveBranchInput,
   type HistoryInputIdentity,
 } from '@loro-dev/roost/lody-history';
-import type { RoostNativeClient, RoostNodeStream, Write, IndexPut } from '@loro-dev/roost-node';
+import type {
+  RoostNativeClient,
+  RoostNodeStream,
+  Write,
+  IndexPut,
+  IndexEntry,
+} from '@loro-dev/roost-node';
 import type { SessionHistoryInput } from '@lody/shared';
 import { encodeRoostContent } from './roost-history-port';
 import { AGENT_RECEIPTS_TABLE, agentReceiptKey, decodeAgentReceipt } from './roost-content-patches';
+import { roostCommitMetadata } from './roost-history-changes';
 
 const nextKey = { table: 'lody_history_generation_v1', key: new TextEncoder().encode('next') };
 const epochKey = { table: 'lody_history_epoch_v1', key: new TextEncoder().encode('current') };
@@ -24,6 +31,7 @@ type WriteEvidence = {
   raw: RoostNodeStream;
   updates: Map<string, number>;
   indexes: Map<string, number>;
+  metadataThrough: bigint | undefined;
 };
 const updateKey = (id: Uint8Array, seq: bigint) => `${Buffer.from(id).toString('hex')}:${seq}`;
 const indexKey = (table: string, key: Uint8Array) => `${table}:${Buffer.from(key).toString('hex')}`;
@@ -66,8 +74,24 @@ export class RoostHistoryGeneration {
     return this.history.stream as RoostNodeStream;
   }
 
-  commitPatches(writes: Write[], receipts: IndexPut[], cursor: bigint | undefined) {
-    return this.host.writeBatch(writes, { indexPuts: receipts, expectedEventCursor: cursor });
+  commitPatches(
+    writes: Write[],
+    receipts: IndexPut[],
+    cursor: bigint | undefined,
+    changedIds: readonly string[],
+    derivedIndexPuts: IndexPut[] = [],
+    expectedIndexes: IndexEntry[] = []
+  ) {
+    return this.history.commitContentBatch(writes, {
+      indexPuts: receipts,
+      expectedEventCursor: cursor,
+      expectedIndexes: [
+        ...receipts.map(({ table, key }) => ({ table, key, value: null })),
+        ...expectedIndexes,
+      ],
+      commitMetadata: roostCommitMetadata(this.observationScope, changedIds),
+      derivedIndexPuts,
+    });
   }
 
   private async assertReceiptFormat(raw: RoostNodeStream): Promise<void> {
@@ -77,15 +101,29 @@ export class RoostHistoryGeneration {
     const previous = await raw.scanIndex('lody_agent_operation_receipts_v1', new Uint8Array(), 1n);
     if (previous.length)
       throw new Error('Unsupported Roost agent receipt format; create a new test session');
+    for (const table of ['lody_renderer_history_changes_v1', 'lody_renderer_history_changes_v2']) {
+      if ((await raw.scanIndex(table, new Uint8Array(), 1n)).length)
+        throw new Error('Unsupported Roost renderer receipt format; create a new test session');
+    }
     this.checkedReceiptFormats.add(raw);
   }
 
   /** A derived cache may advance only across writes whose receipts we own. */
   trackWrites(after: bigint) {
-    const evidence: WriteEvidence = { raw: this.raw, updates: new Map(), indexes: new Map() };
+    const evidence: WriteEvidence = {
+      raw: this.raw,
+      updates: new Map(),
+      indexes: new Map(),
+      metadataThrough: after,
+    };
     this.writeEvidence = evidence;
     return {
+      metadataCovered: (through: bigint) =>
+        evidence.raw === this.raw && evidence.metadataThrough === through,
       verify: async (through: bigint): Promise<boolean> => {
+        // Native certifies the whole interval only when no pending remote work
+        // added events. Contiguous certified commits need no second event scan.
+        if (evidence.raw === this.raw && evidence.metadataThrough === through) return true;
         if (evidence.raw !== this.raw || through < after || through - after > 256n) return false;
         const events = await evidence.raw.eventsAfter(after, 256n);
         const updates = new Map(evidence.updates);
@@ -117,11 +155,21 @@ export class RoostHistoryGeneration {
 
   private recordWrite(
     raw: RoostNodeStream,
-    result: Awaited<ReturnType<RoostNodeStream['writeBatch']>>,
+    result: {
+      updates: Awaited<ReturnType<RoostNodeStream['writeBatch']>>['updates'];
+      before?: bigint;
+      through?: bigint;
+      metadataAttached?: boolean;
+    },
     options: Parameters<RoostNodeStream['writeBatch']>[1]
   ) {
     const evidence = this.writeEvidence;
     if (!evidence || evidence.raw !== raw) return;
+    if (result.metadataAttached && result.before === evidence.metadataThrough) {
+      evidence.metadataThrough = result.through;
+    } else if (result.before !== result.through || result.updates.length) {
+      evidence.metadataThrough = undefined;
+    }
     for (const update of result.updates)
       addEvidence(evidence.updates, updateKey(update.turnId, update.seq));
     for (const put of options?.indexPuts ?? []) {
@@ -205,6 +253,7 @@ export class RoostHistoryGeneration {
             const committed = await raw.compareAndWriteIndex(...args);
             const evidence = generation.writeEvidence;
             if (committed && evidence?.raw === raw) {
+              if (args[2]?.eventKeys?.length) evidence.metadataThrough = undefined;
               for (const key of args[2]?.eventKeys ?? [])
                 addEvidence(evidence.indexes, indexKey(key.table, key.key));
             }

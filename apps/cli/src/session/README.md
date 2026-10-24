@@ -43,6 +43,8 @@ A notification failure cannot replay Agent execution.
   atomically activates them, fencing writes through superseded handles.
 - `roost-history-changes.ts` — durable semantic receipts over verified native event intervals;
   owner-scoped checkpoints recover missed logical edits without rereading unchanged bodies.
+- `roost-history-change-codec.ts` — lossless v2 storage for those receipts, retaining complete
+  identities, cursor intervals and structural/reset evidence.
 - `roost-history-diagnostics.ts` — correlates local Worker causes and runtime details
   with the safe error reference returned by history RPC.
 - `session-history-owner.ts` — native Effect readiness barrier for history RPC; waits
@@ -400,6 +402,28 @@ Web/iOS clients need no Node addon. The owning machine must be available for RPC
 reads; browser-local IndexedDB replicas and offline sync are separate work.
 Runtime packaging and verification: [native runtime note](../../../../.agents/notes/proposed/architecture/2026-10-09-roost-native-runtime.md).
 
+The owner retains decoded bodies for its installed physical message snapshots.
+Content refresh converts changed rows and reuses unchanged snapshots; identity
+index construction needs no body conversion. Patch planning may reuse decoded
+content only for the exact installed physical row. Native authoritative reads,
+generation/cursor checks and checkpoint publication still govern updates and
+recovery. Private semantic mutation plans share untouched values and carry text
+append intent into Native. Owned path copies still pass through the same logical
+projection; public reads return detached values. Incremental text analysis retains
+bounded suffix context, and complex tags keep the established full parser.
+Confirmed SDK directory transitions advance local tail membership without reloading
+unchanged rows. Foreign work and uncertain results retain authoritative recovery.
+See the [incremental projection investigation](../../../../.agents/notes/proposed/architecture/2026-10-22-roost-owner-incremental-projection.md).
+
+Dispatch reads pending identities, requested turns and completion evidence from
+body-free indexes, then hydrates only the selected input. The complete marker
+must match the authoritative Native event cursor and history count; selection
+and body hydration share that observation. Loro captures its shallow directory
+and selected body synchronously. Missing or invalid Native indexes are repaired
+once from bounded coherent pages; valid persisted indexes do not scan old bodies
+on reopen. Explicit replay/export retain full history reads. See the
+[dispatch projection note](../../../../.agents/notes/proposed/architecture/2026-10-22-roost-dispatch-scalar-projection.md).
+
 Latest-turn queries share `readLatestTurn` from session-data. It scans the latest
 40-row page first and reads older pages only when no readable match is present.
 The `accept_input_and_dispatch` activation guard uses this path too: a newly
@@ -415,11 +439,33 @@ keeps native SQLite durability distinct from the in-memory Loro reference.
 `sessionHistoryIncremental` v1 is negotiated separately from existing history paging.
 Checkpoint-bearing pages opt in with `withCheckpoint`; legacy page replies remain unchanged.
 `readChanges` verifies the previous checkpoint and returns complete changed identities plus
-any affected structural suffix, or an explicit reset. The native owner's local index records
-semantic change receipts after verifying the corresponding raw event interval. Receipts
+any affected structural suffix, or an explicit reset. The native owner attaches semantic
+metadata to the final event of a content transaction. Complex SDK operations annotate
+their final event only after verifying the whole interval, or record a reset. Receipts
 contain no history body, signing material or executable command, and emit no outgoing event.
 A crash or foreign mutation that leaves an uncovered interval requires reset. A checkpoint
 cannot claim acceptance or execution, and must not be copied between unrelated owner views.
+
+Renderer v3 payloads retain full nonces, compact UUID lists, exact JSON for other IDs and
+optional structural positions. Native stores the full scope once per stream and owns
+the interval cursors. Reads scan bounded event pages and require complete interval coverage;
+an unannotated event is never skipped as evidence. Agent v2 identities/digests keep their
+direct index and compare absence inside the content transaction, including receipt-only
+operations with no event advance. Checkpoint tokens and RPC replies are unchanged.
+The owner requires `commit-metadata-v1` and `derived-indexes-v1` and refuses old renderer
+v1/v2 index formats without migration or deletion. Use matching coordinated Native/SDK
+packages; this additive API does not change the v9 container. The Loro control document
+remains a separate publication transaction.
+
+For eligible published-body edits, the SDK plans its own binding/publication progress
+under settled cursor, identity/member and waiting-dependency comparisons. Native installs
+these conditional indexes, application receipts and a staged known goal projection in the
+content transaction only after proving the entire nonempty event interval is local and
+ends at the planned cursor. Only a confirmed `derivedIndexesApplied` result for the same
+host/cursor/value can suppress the later goal index write. Ordinary metadata is not that
+proof. Pending remote events, unknown goals, seals, other commands and lost replies retain
+full catch-up and recovery. No private SDK index formats are copied into Lody.
+See the [atomic metadata decision](../../../../.agents/notes/implemented/architecture/2026-10-21-roost-atomic-commit-metadata.md).
 
 Normal repairs request affected bodies with the change interval in one reply, bounded at
 500 changed/suffix bodies. Larger repairs use checkpoint-protected ranges. The renderer
@@ -576,8 +622,8 @@ hydration. Reverse pages carry their own total count and absolute positions. Cur
 rejection after a branch rewrite is recoverable by refreshing the loaded window;
 it never authorizes switching back to Loro or reading a superseded published suffix.
 
-ACP batch appliers can mutate item arrays. The Roost adapter applies them to a
-detached working copy, preserving the before-image used to decide what to persist.
+ACP batch appliers can mutate item arrays. The Roost adapter plans them on private
+copy-on-write drafts, preserving the before-image used to decide what to persist.
 Content changes refresh only affected primary bodies. Sealed-turn corrections
 use `lody-message-state` version 1 records: field, Unicode-text and array operations
 relative to the exact immutable primary Turn ID. The owner reconstructs logical
@@ -641,6 +687,9 @@ owner RPC, its own (or not-yet-known owners) use the installed local owner, and 
 routing leaves its execution documents' auto-read policy unchanged. Open-ended directory reads clip to the owner count and use at most
 500 rows per RPC, restarting when the durable revision moves. Fork and Edit & Resend
 retain their owner sagas; process-local snapshot/rollback handles do not cross RPC.
+The [Roost validation workflow](../../../../.agents/docs/roost-validation.md) owns
+repeatable dependency preparation, suite selection, fixed performance workloads
+and failure diagnosis across Lody and Roost.
 The production SQLite regressions live in
 [`roost-session-backend-contract.test.ts`](../../tests/roost-session-backend-contract.test.ts).
 The synthetic [history benchmark](../../benchmarks/roost-history.mts) exercises
@@ -671,6 +720,25 @@ WorktreeGit and Clock under the caller's existing repo lease. `runWorktreeLegacy
 executes this and observation programs through the same FileLocks runtime; a failed
 metadata scratch release retains its path and bounded retry capability. Bare
 clone/fetch, full mutations and long-lived GC still require their own native owners.
+
+The semantic reducer and history-action planner record authored paths while
+sharing untouched private values. Persistence compiles only the affected validated
+top-level fields; actual text rewrites still use compact scalar-indexed splices.
+The owner stages all supported content operations on private SDK/application
+snapshots, including an existing state overlay. It may install them only when the
+atomic commit certifies the complete event interval and the window is unchanged;
+state reuse also requires the derived-index group to have applied. A simultaneous
+seal reads its authoritative header/hash. Unknown operations, uncertain replies and
+external changes retain authoritative refresh. Checkpoint publication still verifies ownership. Sealed window rows may reuse
+private decoded content only within the same SDK handle, with the complete
+physical identity, sequence, seal hash and parents unchanged. SDK-owned branch
+selection and current state/permission overlays still run. New windows share
+one decode between projection and installation. Sealing an installed primary
+refreshes that row's authoritative sequence/hash; publication still reloads the
+branch if its event interval includes foreign or unaccounted work.
+Resumed state composes verified text appends and rebuilds only affected fields'
+baseline-relative deltas for other changes. Projection uses private path copies
+instead of deep-copying the primary; public reads remain detached.
 
 ## Conversation-tree stop
 

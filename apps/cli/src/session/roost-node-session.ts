@@ -1,12 +1,15 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { z } from 'zod';
 import { readRoostHistoryPatches } from './roost-history-patches';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { Effect, Semaphore } from 'effect';
 import {
-  applyMessageContentsBatch,
-  applyNotificationOnHistory,
+  planAgentHistoryMutation,
+  type AgentHistoryTextAppend,
+  type AgentHistoryMutationPath,
+  inheritHistoryStreamText,
   type SessionPlanEntry,
   type SessionHistoryInput,
   captureStoredHistory,
@@ -20,7 +23,7 @@ import {
   isSessionHistoryStatusAwaitingStart,
 } from '@lody/shared';
 import {
-  applyHistoryAction as applyDomainHistoryAction,
+  planHistoryAction as planDomainHistoryAction,
   historyActionTarget,
   applyMarkTurnSeen,
   applyOpenAssistantTurn,
@@ -64,7 +67,12 @@ import {
   type HistoryBatchCommand,
 } from '@loro-dev/roost/lody-history';
 import { Identity, decodeJson } from '@loro-dev/roost';
-import { RoostNativeClient, type Write, type IndexPut } from '@loro-dev/roost-node';
+import {
+  RoostNativeClient,
+  type Write,
+  type IndexPut,
+  type RoostNodeStream,
+} from '@loro-dev/roost-node';
 import type { SessionDocument } from '@/lib/loro/doc';
 import type { SessionAgentWrites } from '@/lib/loro/session-agent-writes';
 import { latestSessionModel } from '@/lib/loro/session-model-summary';
@@ -73,20 +81,40 @@ import {
   createRoostSessionBackendFactory,
   type RoostSessionBackendServices,
 } from './roost-session-backend';
-import {
-  adaptRoostProjectedMessage,
-  adaptRoostProjectedMessages,
-  encodeRoostContent,
-} from './roost-history-port';
+import { adaptRoostProjectedMessage, encodeRoostContent } from './roost-history-port';
 import { registerSessionBackendFactory } from './session-backend';
 import { RoostHistoryGeneration } from './roost-history-generation';
+import {
+  RoostDispatchIndex,
+  RoostDispatchIndexCorrupt,
+  type RoostDispatchRow,
+  type RoostDispatchUpdate,
+} from './roost-dispatch-index';
+import {
+  dispatchEntry,
+  type SessionDispatchEntry,
+  type SessionDispatchSelection,
+  type SessionDispatchSelector,
+} from './session-dispatch-history';
 import { createRoostHistoryChanges } from './roost-history-changes';
-import { roostContentPatches, agentReceiptPut } from './roost-content-patches';
-import { createRoostMessageState, projectRoostMessageState } from './roost-message-state';
+import {
+  roostContentPatches,
+  agentReceiptPut,
+  stageRoostContent,
+  coalesceAgentTextAppends,
+  type TextAppendHints,
+} from './roost-content-patches';
+import {
+  createRoostMessageState,
+  planRoostMessageState,
+  projectRoostMessageState,
+} from './roost-message-state';
 import { reportRoostHistoryFailure } from './roost-history-diagnostics';
 import { loadRoostOwnerSeedLegacy } from './roost-writer-identity';
 import {
   projectLatestGoal,
+  projectChangedGoal,
+  goalProjectionPut,
   readGoalProjection,
   writeGoalProjection,
   type RoostGoalProjection,
@@ -153,6 +181,11 @@ const acquireOwnerUnlocked = async (options: RoostNativeOptions): Promise<OwnerL
   });
   try {
     await client.ready;
+    if (
+      !client.capabilities.includes('commit-metadata-v1') ||
+      !client.capabilities.includes('derived-indexes-v1')
+    )
+      throw new Error('Roost Native atomic checkpoint support is required; update the CLI package');
   } catch (error) {
     reportRoostHistoryFailure(error, { stage: 'initialize' });
     await client.close().catch(() => undefined);
@@ -243,6 +276,8 @@ const createNodeServicesForLease = async (
     lease.owner,
     sessionDoc.sessionId
   );
+  if (typeof historyGeneration.history.advanceActiveBranchDirectory !== 'function')
+    throw new Error('Roost SDK lacks incremental directory support; install a matching SDK build');
   await historyGeneration.resolve();
   let historyHost = historyGeneration.host;
   let roostHistory = historyGeneration.history;
@@ -280,7 +315,28 @@ const createNodeServicesForLease = async (
   let goalProjection: RoostGoalProjection | undefined;
   let goalCoveredStart = 0;
   let needsRefresh = false;
+  const dispatchIndexes = new WeakMap<RoostNodeStream, RoostDispatchIndex>();
+  const dispatchIndex = () => {
+    let index = dispatchIndexes.get(historyHost);
+    if (!index) {
+      index = new RoostDispatchIndex(historyHost);
+      dispatchIndexes.set(historyHost, index);
+    }
+    return index;
+  };
+  const pendingDispatchUpdates = new Map<string, RoostDispatchUpdate>();
+  let dispatchMembershipKnown = true;
+  const rememberDispatch = (update: RoostDispatchUpdate) => {
+    const previous = pendingDispatchUpdates.get(update.after.id);
+    pendingDispatchUpdates.set(update.after.id, {
+      ...update,
+      before: previous ? previous.before : update.before,
+      position: update.position ?? previous?.position,
+      segments: update.segments ?? previous?.segments,
+    });
+  };
   const stateCache = new Map<string, Promise<HistoryProjectedMessage | undefined>>();
+  const decodedContents = new WeakMap<HistoryProjectedMessage, unknown>();
   const permissionCache = new Map<string, Promise<Record<string, unknown> | undefined>>();
 
   const historyChanges = createRoostHistoryChanges(
@@ -321,9 +377,10 @@ const createNodeServicesForLease = async (
     return promise;
   };
   const projectMessages = async (
-    messages: readonly HistoryProjectedMessage[]
+    messages: readonly HistoryProjectedMessage[],
+    decoded: readonly RoostHistorySegment[] = decodeMessages(messages),
+    detach = true
   ): Promise<SessionEntry[]> => {
-    const decoded = adaptRoostProjectedMessages(messages);
     const projected = projectRoostSegments(decoded) as SessionEntry[];
     const primaryContent = new Map(
       decoded
@@ -345,7 +402,7 @@ const createNodeServicesForLease = async (
           ? (projectRoostMessageState(
               primaryContent.get(entry.id),
               bytesHex(primary.turnId),
-              toApplicationJson(state.content)
+              decodedContent(state)
             ) as SessionEntry)
           : entry;
       if (turn.id !== entry.id) throw new Error('Roost state record identity mismatch');
@@ -375,7 +432,7 @@ const createNodeServicesForLease = async (
         }
       }
       turn = { ...turn, items };
-      return clone(turn);
+      return detach ? clone(turn) : turn;
     };
     for (let start = 0; start < projected.length; start += 8) {
       result.push(
@@ -497,11 +554,54 @@ const createNodeServicesForLease = async (
     projectedByIdentity.clear();
     for (let index = 0; index < messages.length; index += 1) {
       const message = messages[index]!;
-      const segment = adaptRoostProjectedMessage(message);
-      const key = identityKey(segment);
-      projectedByIdentity.set(key, message);
+      projectedByIdentity.set(identityKey(message), message);
     }
   };
+
+  const decodedContent = (message: HistoryProjectedMessage): unknown => {
+    const cached = decodedContents.get(message);
+    if (cached !== undefined) return cached;
+    const key = identityKey(message);
+    // Only the exact installed physical snapshot shares its validated decoded body.
+    // SDK state records and uncached rows still cross the lossless JSON boundary.
+    if (projectedByIdentity.get(key) === message) {
+      const row = rows.find(
+        (candidate) =>
+          candidate.businessId === message.businessId && candidate.segmentId === message.segmentId
+      );
+      if (row) return row.content;
+    }
+    const content = toApplicationJson(message.content);
+    decodedContents.set(message, content);
+    return content;
+  };
+
+  const decodeMessages = (
+    messages: readonly HistoryProjectedMessage[]
+  ): readonly RoostHistorySegment[] =>
+    messages.map((message) => {
+      const known =
+        windowHistory === roostHistory ? projectedByIdentity.get(identityKey(message)) : undefined;
+      if (
+        message.sealed &&
+        known?.sealed &&
+        message.sealedHash &&
+        known.sealedHash &&
+        message.nextSeq === known.nextSeq &&
+        bytesHex(message.turnId) === bytesHex(known.turnId) &&
+        bytesHex(message.sealedHash) === bytesHex(known.sealedHash) &&
+        message.parents.length === known.parents.length &&
+        message.parents.every(
+          (parent, i) =>
+            bytesHex(parent.id) === bytesHex(known.parents[i]!.id) &&
+            bytesHex(parent.hash) === bytesHex(known.parents[i]!.hash)
+        )
+      ) {
+        const row = rows.find((candidate) => identityKey(candidate) === identityKey(message));
+        if (row) return row;
+      }
+      return adaptRoostProjectedMessage(message);
+    });
 
   const changeBetween = (
     previous: readonly RoostHistorySegment[],
@@ -551,11 +651,14 @@ const createNodeServicesForLease = async (
     }
   };
 
-  const projectBranchPage = async (branch: ActiveBranchPageRead): Promise<SessionEntry[]> => {
+  const projectBranchPage = async (
+    branch: ActiveBranchPageRead,
+    decoded = decodeMessages(branch.messages)
+  ): Promise<SessionEntry[]> => {
     if (!branch.complete) {
       throw new Error(`Roost active branch for ${viewId} is incomplete`);
     }
-    const projected = await projectMessages(branch.messages);
+    const projected = await projectMessages(branch.messages, decoded);
     const primaryIds = branch.messages
       .filter((message) => message.segmentId === 'primary')
       .map((message) => message.businessId);
@@ -595,6 +698,7 @@ const createNodeServicesForLease = async (
   const installBranchWindow = (
     branch: ActiveBranchPageRead,
     projected: SessionEntry[],
+    decoded: readonly RoostHistorySegment[],
     notify = false
   ): void => {
     const previous = rows;
@@ -603,7 +707,7 @@ const createNodeServicesForLease = async (
     windowHistory = roostHistory;
     loadedStartPosition = branch.startPosition;
     totalHistoryCount = branch.totalCount;
-    rows = adaptRoostProjectedMessages(branch.messages).map((row) => ({ ...row }));
+    rows = decoded.map((row) => ({ ...row }));
     rebuildSegmentIndexes(branch.messages);
     rebuildLogicalProjection(projected);
     readGeneration += 1;
@@ -631,6 +735,7 @@ const createNodeServicesForLease = async (
   };
 
   const performBranchReload = async (): Promise<RoostHistoryChange | undefined> => {
+    if (operationCursor !== undefined) dispatchMembershipKnown = false;
     const preservedGoal = operationCursor === undefined ? undefined : goalProjection;
     if (await historyGeneration.resolve()) {
       branchCursors.clear();
@@ -652,8 +757,8 @@ const createNodeServicesForLease = async (
       limit: branchPageSize,
     });
     if (disposed) throw new Error('Roost session backend is disposed');
-    const projected = await projectBranchPage(nextBranch);
-    const nextRows = adaptRoostProjectedMessages(nextBranch.messages);
+    const nextRows = decodeMessages(nextBranch.messages);
+    const projected = await projectBranchPage(nextBranch, nextRows);
     let change =
       previous.length === 0 && nextRows.length === 0
         ? undefined
@@ -666,7 +771,7 @@ const createNodeServicesForLease = async (
       }
       if (changed.size) change = { kind: 'changed', businessIds: [...changed] };
     }
-    installBranchWindow(nextBranch, projected);
+    installBranchWindow(nextBranch, projected, nextRows);
     knownCursor = cursor;
     goalCoveredStart = totalHistoryCount;
     goalProjection =
@@ -710,19 +815,43 @@ const createNodeServicesForLease = async (
   ): Promise<void> => {
     const generation = readGeneration;
     const branch = currentBranch();
+    if (mutation) {
+      const advance = roostHistory.advanceActiveBranchDirectory(branch, mutation, branchPageSize);
+      if (advance) {
+        const { message, retainedFrom, through: _through, ...directoryAdvance } = advance;
+        const segment = adaptRoostProjectedMessage(message);
+        const projected = await projectMessages([message], [segment]);
+        if (projected.length === 1 && generation === readGeneration && currentBranch() === branch) {
+          const dropped = advance.startPosition - loadedStartPosition;
+          installBranchWindow(
+            { ...directoryAdvance, messages: [...branch.messages.slice(retainedFrom), message] },
+            [...entries.slice(dropped), ...projected],
+            [...rows.slice(retainedFrom), segment]
+          );
+          rememberDispatch({
+            after: dispatchEntry(projected[0]!),
+            position: advance.totalCount - 1,
+            segments: [{ turnId: bytesHex(message.turnId), segmentId: message.segmentId }],
+          });
+          recordChange({ kind: 'structure', from: advance.totalCount - 1, to: advance.totalCount });
+          pendingModelSummary = true;
+          return;
+        }
+      }
+    }
     const known = branch.messages.find((row) =>
       Buffer.from(row.turnId).equals(Buffer.from(turnId))
     );
     const position = known ? positionById.get(known.businessId) : undefined;
-    // This identity already belongs to the active window. Editing its unsealed
-    // primary cannot change membership; hydrate just that physical message.
+    // This primary already belongs to the window. Its edit/seal does not add a
+    // member. Publication still reloads if the event interval includes other work.
     if (!mutation && known?.segmentId === 'primary' && !known.sealed && position !== undefined) {
       const [fresh] = await roostHistory.readProjectedMessagesById([turnId]);
       if (disposed) throw new Error('Roost session backend is disposed');
       if (!fresh || identityKey(fresh) !== identityKey(known)) {
         throw new Error(`Roost changed message ${known.businessId} is unavailable`);
       }
-      if (generation === readGeneration && activeBranch === branch && !fresh.sealed) {
+      if (generation === readGeneration && activeBranch === branch) {
         const segment = adaptRoostProjectedMessage(fresh);
         const [entry] = await projectMessages([fresh]);
         if (!entry) throw new Error(`Roost changed message ${known.businessId} has no projection`);
@@ -750,7 +879,7 @@ const createNodeServicesForLease = async (
       [...projectedByIdentity.values()].find((row) =>
         Buffer.from(row.turnId).equals(Buffer.from(turnId))
       )?.businessId;
-    // Re-read the bounded latest window after membership/seal changes. This keeps a
+    // Re-read the bounded latest window after membership or uncertain changes. This keeps a
     // sealed successor for an older business id from being appended to the
     // current renderer window as if it were a new logical turn, and keeps the
     // owner window bounded when new turns are appended.
@@ -843,6 +972,7 @@ const createNodeServicesForLease = async (
         const stale =
           generation !== readGeneration ||
           (error instanceof Error && 'code' in error && error.code === 'stale');
+        if (stale) dispatchIndex().forget();
         if (disposed || !stale || attempt >= 2) throw error;
       }
     }
@@ -996,6 +1126,39 @@ const createNodeServicesForLease = async (
         const position = positionById.get(turnId);
         const turn = position === undefined ? pageEntries.get(turnId)?.turn : entries[position];
         if (turn) return readyTurn(turn);
+        const cursor = await roostHistory.observedEventCursor();
+        const index = dispatchIndex();
+        const checkpoint = await index.checkpoint(cursor, totalHistoryCount);
+        if (checkpoint) {
+          const row = await index.row(turnId, checkpoint);
+          let projected: SessionEntry | undefined;
+          if (row) {
+            const ids = row.segments.map((segment) =>
+              Uint8Array.from(Buffer.from(segment.turnId, 'hex'))
+            );
+            const messages = await roostHistory.readProjectedMessagesById(ids);
+            const byId = new Map(messages.map((message) => [bytesHex(message.turnId), message]));
+            const ordered = row.segments.map((segment) => byId.get(segment.turnId));
+            if (
+              ordered.some(
+                (message, offset) =>
+                  !message ||
+                  message.businessId !== turnId ||
+                  message.segmentId !== row.segments[offset]?.segmentId
+              )
+            )
+              throw new Error('Roost indexed dispatch turn is incomplete');
+            [projected] = await projectMessages(ordered as HistoryProjectedMessage[]);
+            if (!projected || projected.id !== turnId)
+              throw new Error('Roost indexed dispatch turn is unavailable');
+          }
+          await index.validate(checkpoint);
+          if (cursor !== (await roostHistory.observedEventCursor())) {
+            needsRefresh = true;
+            throw staleRead();
+          }
+          return projected ? readyTurn(projected) : { state: 'missing' };
+        }
         if (
           !(await roostHistory.lookup({
             kind: 'message',
@@ -1066,22 +1229,145 @@ const createNodeServicesForLease = async (
     },
   };
 
+  const rebuildDispatchIndex = async (index: RoostDispatchIndex, cursor: bigint) => {
+    const count = totalHistoryCount;
+    const source = roostHistory;
+    const host = historyHost;
+    const retainedState = new Set(stateCache.keys());
+    const retainedPermissions = new Set(permissionCache.keys());
+    const pages = async function* (): AsyncGenerator<readonly RoostDispatchRow[]> {
+      let page = await source.readActiveBranchPage(viewId, { latest: true, limit: branchPageSize });
+      const revision = page.state.revision;
+      let end = count;
+      const seen = new Set<string>();
+      for (;;) {
+        if (closing || disposed) throw new Error('Roost session backend is disposed');
+        if (!page.complete || page.totalCount !== count || page.state.revision !== revision)
+          throw staleRead();
+        const projected = await projectBranchPage(page);
+        if (page.startPosition + projected.length !== end) throw staleRead();
+        const selected = projected.map((entry, offset): RoostDispatchRow => {
+          if (seen.has(entry.id)) throw staleRead();
+          seen.add(entry.id);
+          return {
+            position: page.startPosition + offset,
+            entry: dispatchEntry(entry),
+            segments: page.messages
+              .filter((message) => message.businessId === entry.id)
+              .map((message) => ({
+                turnId: bytesHex(message.turnId),
+                segmentId: message.segmentId,
+              })),
+          };
+        });
+        yield selected;
+        // Repair reads may visit every old page, but do not retain their bodies.
+        for (const key of stateCache.keys()) if (!retainedState.has(key)) stateCache.delete(key);
+        for (const key of permissionCache.keys())
+          if (!retainedPermissions.has(key)) permissionCache.delete(key);
+        end = page.startPosition;
+        if (end === 0) break;
+        if (!page.cursor) throw staleRead();
+        page = await source.readActiveBranchPage(viewId, {
+          before: page.cursor,
+          limit: branchPageSize,
+        });
+      }
+    };
+    await index.rebuild(cursor, count, pages(), async () => {
+      if (
+        source !== roostHistory ||
+        host !== historyHost ||
+        cursor !== (await source.observedEventCursor())
+      ) {
+        needsRefresh = true;
+        throw staleRead();
+      }
+    });
+  };
+
+  const readDispatch = (
+    includeTurnIds: readonly string[],
+    select?: SessionDispatchSelector
+  ): Promise<SessionDispatchSelection> => {
+    if (closing || disposed) return Promise.reject(new Error('Roost session backend is disposed'));
+    const requested = [...includeTurnIds];
+    // A repair owns the same queue as commands. No writer can advance half of
+    // the projection locally while its complete checkpoint is being installed.
+    const next = writeSerial.then(() =>
+      readStable(async () => {
+        const cursor = await roostHistory.observedEventCursor();
+        if (knownCursor !== cursor) await reloadBranch({ publish: true });
+        const index = dispatchIndex();
+        let checkpoint = await index.checkpoint(cursor, totalHistoryCount);
+        if (!checkpoint) {
+          await rebuildDispatchIndex(index, cursor);
+          checkpoint = await index.checkpoint(cursor, totalHistoryCount);
+        }
+        if (!checkpoint) throw staleRead();
+        let result: SessionDispatchEntry[];
+        try {
+          result = await index.read(checkpoint, requested);
+        } catch (error) {
+          if (
+            !(error instanceof z.ZodError) &&
+            !(error instanceof SyntaxError) &&
+            !(error instanceof RoostDispatchIndexCorrupt)
+          ) {
+            index.forget();
+            throw error;
+          }
+          await rebuildDispatchIndex(index, cursor);
+          const repaired = await index.checkpoint(cursor, totalHistoryCount);
+          if (!repaired) throw staleRead();
+          result = await index.read(repaired, requested);
+        }
+        const turnId = select?.(result);
+        const turn = turnId === undefined ? undefined : await history.readTurn(turnId);
+        if (cursor !== (await roostHistory.observedEventCursor())) {
+          needsRefresh = true;
+          throw staleRead();
+        }
+        return { history: result, turnId, turn };
+      })
+    );
+    writeSerial = next.then(
+      () => {},
+      () => {}
+    );
+    return next;
+  };
+
+  if (totalHistoryCount === 0) {
+    const cursor = await roostHistory.observedEventCursor();
+    if (!(await dispatchIndex().checkpoint(cursor, 0)))
+      await rebuildDispatchIndex(dispatchIndex(), cursor);
+  }
+
   const { createRoostSessionData } = await import('@lody/shared/session-data');
   syncModelSummary = async () => {
-    const read = latestModelTurnId
-      ? await history.readTurn(latestModelTurnId)
-      : { state: 'missing' as const };
+    const position = latestModelTurnId ? positionById.get(latestModelTurnId) : undefined;
+    const cached = position === undefined ? undefined : entries[position];
+    const read = cached
+      ? { state: 'ready' as const, turn: cached }
+      : latestModelTurnId
+        ? await history.readTurn(latestModelTurnId)
+        : { state: 'missing' as const };
     const turn = read.state === 'ready' ? [read.turn] : [];
-    await sessionDoc.setLastModel(latestSessionModel(turn));
+    await sessionDoc.setLastModel(clone(latestSessionModel(turn)));
   };
   await syncModelSummary();
 
   const pendingSeen = new Map<string, Promise<void>>();
 
+  let committedGoal:
+    | { host: RoostNodeStream; cursor: bigint; latest: RoostGoalProjection }
+    | undefined;
   const publishCursor = async (
     operationId: string,
     commandStartCursor: bigint,
-    verifyGoalCursor?: (cursor: bigint) => Promise<boolean>
+    verifyGoalCursor?: (cursor: bigint) => Promise<boolean>,
+    metadataCovered?: (cursor: bigint) => boolean
   ): Promise<void> => {
     const cursor = await roostHistory.observedEventCursor();
     const owned = verifyGoalCursor && (await verifyGoalCursor(cursor).catch(() => false));
@@ -1092,26 +1378,58 @@ const createNodeServicesForLease = async (
       goalProjection = undefined;
       await reloadBranch({ publish: true });
     }
+    const dispatch = dispatchIndex();
+    const dispatchBase = dispatch.current();
+    if (
+      owned &&
+      dispatchMembershipKnown &&
+      dispatchBase &&
+      BigInt(dispatchBase.header.cursor) >= commandStartCursor &&
+      BigInt(dispatchBase.header.cursor) < cursor &&
+      (pendingStructuralFrom === undefined || pendingStructuralFrom >= dispatchBase.header.count)
+    ) {
+      try {
+        const plan = await dispatch.plan(dispatchBase, cursor, totalHistoryCount, [
+          ...pendingDispatchUpdates.values(),
+        ]);
+        const added = plan.changed.filter((row) => row.position >= dispatchBase.header.count);
+        if (totalHistoryCount !== dispatchBase.header.count + added.length) throw staleRead();
+        await dispatch.commit(plan);
+      } catch (error) {
+        // History remains authoritative. An old cursor cannot authorize this
+        // cache; the next dispatch read performs a fenced bounded-page rebuild.
+        dispatch.forget();
+        console.error(`Roost dispatch projection needs repair for ${viewId}`, error);
+      }
+    }
     if (goalProjection !== undefined) {
-      if (owned) {
+      if (
+        owned &&
+        !(
+          committedGoal?.host === historyHost &&
+          committedGoal.cursor === cursor &&
+          equal(committedGoal.latest, goalProjection)
+        )
+      ) {
         await writeGoalProjection(historyHost, cursor, goalProjection).catch(() => {
           goalProjection = undefined;
           needsRefresh = true;
         });
-      } else {
+      } else if (!owned) {
         goalProjection = undefined;
       }
     }
     const change = pendingChange;
-    await historyChanges.record(
-      commandStartCursor,
-      cursor,
-      pendingStructuralFrom === undefined
-        ? undefined
-        : { kind: 'structure', from: pendingStructuralFrom, to: totalHistoryCount },
-      Boolean(owned),
-      [...pendingChangedIds]
-    );
+    if (!owned || !metadataCovered?.(cursor))
+      await historyChanges.record(
+        commandStartCursor,
+        cursor,
+        pendingStructuralFrom === undefined
+          ? undefined
+          : { kind: 'structure', from: pendingStructuralFrom, to: totalHistoryCount },
+        Boolean(owned),
+        [...pendingChangedIds]
+      );
     const previous = await sessionDoc.getRoostHistoryCursor();
     const historyRevision = (previous?.historyRevision ?? 0) + 1;
     if (!Number.isSafeInteger(historyRevision)) {
@@ -1154,6 +1472,8 @@ const createNodeServicesForLease = async (
       for (let attempt = 0; ; attempt += 1) {
         let evidence: ReturnType<RoostHistoryGeneration['trackWrites']> | undefined;
         try {
+          committedGoal = undefined;
+          pendingDispatchUpdates.clear();
           await historyGeneration.resolve();
           if (needsRefresh || reloadPromise || windowHistory !== historyGeneration.history) {
             await reloadBranch({ publish: true });
@@ -1165,6 +1485,8 @@ const createNodeServicesForLease = async (
             cursor = await roostHistory.observedEventCursor();
           }
           operationCursor = cursor;
+          dispatchMembershipKnown = true;
+          await dispatchIndex().checkpoint(cursor, totalHistoryCount);
           evidence = historyGeneration.trackWrites(cursor);
           goalProjection =
             totalHistoryCount === 0
@@ -1174,9 +1496,10 @@ const createNodeServicesForLease = async (
                 );
           const changed = await operation();
           if (changed !== false || pendingChange || pendingModelSummary)
-            await publishCursor(operationId, cursor, evidence.verify);
+            await publishCursor(operationId, cursor, evidence.verify, evidence.metadataCovered);
           return;
         } catch (error) {
+          dispatchIndex().forget();
           operationCursor = undefined;
           needsRefresh = true;
           const stale = error instanceof Error && 'code' in error && error.code === 'stale';
@@ -1195,8 +1518,10 @@ const createNodeServicesForLease = async (
           await reloadBranch({ publish: true });
           needsRefresh = false;
         } finally {
+          committedGoal = undefined;
           evidence?.stop();
           operationCursor = undefined;
+          pendingDispatchUpdates.clear();
         }
       }
     });
@@ -1271,25 +1596,9 @@ const createNodeServicesForLease = async (
   };
 
   const rememberGoal = (entry: SessionHistoryInput, position: number | undefined): void => {
-    const latest = projectLatestGoal([entry], position ?? 0);
-    if (position === undefined) {
-      if (latest || goalProjection?.turnId === entry.id) {
-        goalProjection = undefined;
-        goalCoveredStart = totalHistoryCount;
-      }
-      return;
-    }
-    if (latest) {
-      if (
-        goalProjection === null ||
-        (goalProjection !== undefined && position >= goalProjection.position) ||
-        position === totalHistoryCount - 1
-      )
-        goalProjection = latest;
-    } else if (goalProjection?.turnId === entry.id) {
-      goalProjection = undefined;
-      goalCoveredStart = totalHistoryCount;
-    }
+    const next = projectChangedGoal(goalProjection, entry, position, totalHistoryCount);
+    goalProjection = next.latest;
+    if (next.invalidated) goalCoveredStart = totalHistoryCount;
   };
 
   const planTurnWrite = async (
@@ -1340,12 +1649,26 @@ const createNodeServicesForLease = async (
 
   // A content/state transaction does not change branch membership. Refresh only
   // affected primary bodies; older hydrated bodies are invalidated on demand.
-  const refreshTurnProjections = async (changed: readonly string[]): Promise<void> => {
+  const refreshTurnProjections = async (
+    changed: readonly string[],
+    staged?: ReadonlyMap<
+      string,
+      {
+        message: HistoryProjectedMessage;
+        row: RoostHistorySegment;
+        entry?: SessionEntry;
+        state?: HistoryProjectedMessage;
+      }
+    >
+  ): Promise<void> => {
     if (!changed.length) return;
     const ids = new Set(changed);
     for (const key of stateCache.keys()) {
       if (ids.has(key.slice(0, key.indexOf('\u0000')))) stateCache.delete(key);
     }
+    for (const value of staged?.values() ?? [])
+      if (value.state)
+        stateCache.set(identityKey(stateIdentity(value.message)), Promise.resolve(value.state));
     for (const id of ids) {
       const cached = pageEntries.get(id);
       if (cached) pageIdsByPosition.delete(cached.position);
@@ -1353,23 +1676,41 @@ const createNodeServicesForLease = async (
     }
     fullEntriesCache = undefined;
     const branch = currentBranch();
+    const retainedRows = new Map(branch.messages.map((message, index) => [message, rows[index]]));
     const primaryIds = branch.messages
       .filter((row) => row.segmentId === 'primary' && ids.has(row.businessId))
       .map((row) => row.turnId);
-    const fresh = await roostHistory.readProjectedMessagesById(primaryIds);
+    const fresh = staged
+      ? primaryIds.map((id) => staged.get(bytesHex(id))!.message)
+      : await roostHistory.readProjectedMessagesById(primaryIds);
     if (fresh.length !== primaryIds.length || fresh.some((row) => !row || !ids.has(row.businessId)))
       throw new Error('Roost changed history is incomplete');
     const byPhysicalId = new Map(fresh.map((row) => [bytesHex(row.turnId), row]));
     const messages = branch.messages.map((row) => byPhysicalId.get(bytesHex(row.turnId)) ?? row);
-    const projected = await projectMessages(messages.filter((row) => ids.has(row.businessId)));
+    const changedMessages = messages.filter((row) => ids.has(row.businessId));
+    const decoded = changedMessages.map(
+      (message) => staged?.get(bytesHex(message.turnId))?.row ?? adaptRoostProjectedMessage(message)
+    );
+    // Keep the existing logical projection (including canonical field order and
+    // overlays), without detaching these already private path copies again.
+    const projected = await projectMessages(changedMessages, decoded, !staged);
     for (const entry of projected) {
       const position = positionById.get(entry.id);
       if (position === undefined) throw new Error('Roost changed history has no position');
-      entries[position] = clone(entry);
+      const physical = changedMessages.find((message) => message.businessId === entry.id);
+      const source = physical ? staged?.get(bytesHex(physical.turnId))?.entry : undefined;
+      for (const [index, item] of (entry.items ?? []).entries())
+        inheritHistoryStreamText(source?.items?.[index], item);
+      entries[position] = staged ? entry : clone(entry);
       directory[position] = createRoostDirectoryRow(loadedStartPosition + position, entry);
     }
     activeBranch = { ...branch, messages };
-    rows = [...adaptRoostProjectedMessages(messages)];
+    rows = messages.map(
+      (message) =>
+        retainedRows.get(message) ??
+        staged?.get(bytesHex(message.turnId))?.row ??
+        adaptRoostProjectedMessage(message)
+    );
     rebuildSegmentIndexes(messages);
     readGeneration += 1;
     updateLatestSummaryTargets();
@@ -1380,7 +1721,9 @@ const createNodeServicesForLease = async (
     before: readonly SessionHistoryInput[],
     next: readonly SessionHistoryInput[],
     operationId: string,
-    extra: readonly HistoryBatchCommand[] = []
+    extra: readonly HistoryBatchCommand[] = [],
+    textAppends?: readonly AgentHistoryTextAppend[],
+    changes?: readonly AgentHistoryMutationPath[]
   ): Promise<boolean> => {
     const oldById = new Map(before.map((entry) => [entry.id, entry]));
     // Preflight every authored change before creating a receipt or editing a turn.
@@ -1402,6 +1745,15 @@ const createNodeServicesForLease = async (
     const patchWrites: Write[] = [];
     const patchReceipts: IndexPut[] = [];
     const patchIds: string[] = [];
+    const patchTargets = new Map<
+      string,
+      {
+        primary: HistoryProjectedMessage;
+        target: HistoryProjectedMessage;
+        state: boolean;
+        appends?: TextAppendHints;
+      }
+    >();
     let canPatch = true;
     for (const command of extra) {
       const content = command.type === 'accept' ? toApplicationJson(command.content) : undefined;
@@ -1439,14 +1791,33 @@ const createNodeServicesForLease = async (
           canPatch = false;
           break;
         }
-        const content = state
-          ? createRoostMessageState(
-              toApplicationJson(primary.content),
+        const fieldChanges = changes?.filter((change) => change.turnId === entry.id);
+        const appends = textAppends ? coalesceAgentTextAppends(textAppends, entry.id) : undefined;
+        const statePlan = state
+          ? planRoostMessageState(
+              decodedContent(primary),
               bytesHex(primary.turnId),
-              entry
+              decodedContent(state),
+              old,
+              entry,
+              appends,
+              fieldChanges
             )
-          : entry;
-        const ops = roostContentPatches(toApplicationJson(target.content), content);
+          : undefined;
+        const content = statePlan?.content ?? entry;
+        const hints = state ? statePlan?.appends : appends;
+        const ops = roostContentPatches(
+          decodedContent(target),
+          content,
+          hints,
+          !state ? fieldChanges : undefined
+        );
+        patchTargets.set(bytesHex(target.turnId), {
+          primary,
+          target,
+          state: !!state,
+          appends: hints,
+        });
         if (ops.length) {
           patchWrites.push({
             kind: 'edit',
@@ -1466,8 +1837,197 @@ const createNodeServicesForLease = async (
       }
     if (canPatch && patchWrites.length <= 64) {
       if (!patchWrites.length && !patchReceipts.length) return false;
-      await historyGeneration.commitPatches(patchWrites, patchReceipts, operationCursor);
-      await refreshTurnProjections(patchIds);
+      const branch = currentBranch();
+      const generation = readGeneration;
+      const staged = new Map<
+        string,
+        {
+          message: HistoryProjectedMessage;
+          row: RoostHistorySegment;
+          entry?: SessionEntry;
+          state?: HistoryProjectedMessage;
+        }
+      >();
+      const seals: { key: string; turnId: Uint8Array; nextSeq: bigint }[] = [];
+      let stagedWrites = 0;
+      for (const write of patchWrites) {
+        if (write.kind === 'seal') {
+          const found = [...staged].find(
+            ([, value]) =>
+              bytesHex((value.state ?? value.message).turnId) === bytesHex(write.turnId)
+          );
+          if (!found) break;
+          const [key, value] = found,
+            target = value.state ?? value.message;
+          if (target.nextSeq !== write.expectedNextSeq) break;
+          const sealed = {
+            ...target,
+            nextSeq: target.nextSeq + 1n,
+            sealed: true,
+            sealedHash: null,
+          };
+          const content = decodedContents.get(target);
+          if (content !== undefined) decodedContents.set(sealed, content);
+          staged.set(
+            key,
+            value.state
+              ? { ...value, state: sealed }
+              : {
+                  ...value,
+                  message: sealed,
+                  row: { ...value.row, nextSeq: sealed.nextSeq, sealed: true },
+                }
+          );
+          seals.push({ key, turnId: write.turnId, nextSeq: sealed.nextSeq });
+          stagedWrites++;
+          continue;
+        }
+        if (write.kind !== 'edit') break;
+        const plan = patchTargets.get(bytesHex(write.turnId));
+        if (!plan) break;
+        const index = branch.messages.findIndex(
+          (message) => bytesHex(message.turnId) === bytesHex(plan.primary.turnId)
+        );
+        const message = branch.messages[index],
+          row = rows[index];
+        if (
+          !message ||
+          !row ||
+          plan.target.sealed ||
+          plan.target.nextSeq !== write.expectedNextSeq ||
+          (!plan.state &&
+            (message.segmentId !== 'primary' ||
+              branch.messages.some(
+                (other) => other.businessId === message.businessId && other !== message
+              )))
+        )
+          break;
+        const content = stageRoostContent(plan.target.content, write.ops, plan.appends, 'sdk');
+        const decoded = plan.state
+          ? row.content
+          : stageRoostContent(row.content, write.ops, plan.appends);
+        if (content === undefined || decoded === undefined) break;
+        const target = {
+          ...plan.target,
+          content,
+          nextSeq: plan.target.nextSeq + BigInt(write.ops.length),
+        };
+        const decodedTarget = plan.state
+          ? stageRoostContent(decodedContent(plan.target), write.ops, plan.appends)
+          : decoded;
+        if (decodedTarget === undefined) break;
+        decodedContents.set(target, decodedTarget);
+        staged.set(bytesHex(message.turnId), {
+          message: plan.state ? message : target,
+          row: plan.state ? row : { ...row, content: decoded, nextSeq: target.nextSeq },
+          entry: prepared.find((entry) => entry.id === message.businessId) as
+            | SessionEntry
+            | undefined,
+          ...(plan.state ? { state: target } : {}),
+        });
+        stagedWrites++;
+      }
+      let nextGoal = goalProjection;
+      for (const entry of prepared)
+        nextGoal = projectChangedGoal(
+          nextGoal,
+          entry,
+          positions.get(entry.id),
+          totalHistoryCount
+        ).latest;
+      const stagedGoal = clone(nextGoal);
+      const commitHost = historyGeneration.host;
+      const through =
+        operationCursor === undefined
+          ? undefined
+          : operationCursor +
+            patchWrites.reduce(
+              (count, write) => count + (write.kind === 'edit' ? BigInt(write.ops.length) : 1n),
+              0n
+            );
+      const dispatch = dispatchIndex();
+      const dispatchBase =
+        operationCursor === undefined
+          ? undefined
+          : await dispatch.checkpoint(operationCursor, totalHistoryCount);
+      const dispatchUpdates = prepared.map((entry) => ({
+        before: oldById.get(entry.id),
+        after: dispatchEntry(entry),
+        position: positions.get(entry.id),
+      }));
+      const dispatchPlan =
+        dispatchBase && through !== undefined
+          ? await dispatch.plan(dispatchBase, through, totalHistoryCount, dispatchUpdates)
+          : undefined;
+      const dispatchPuts = dispatchPlan ? dispatch.derivedPuts(dispatchPlan) : undefined;
+      const commit = await historyGeneration.commitPatches(
+        patchWrites,
+        patchReceipts,
+        operationCursor,
+        patchIds,
+        [
+          ...(stagedGoal !== undefined && through !== undefined
+            ? [goalProjectionPut(through, stagedGoal)]
+            : []),
+          ...(dispatchPuts ?? []),
+        ],
+        dispatchPlan && dispatchPuts ? [dispatch.expected(dispatchPlan)] : []
+      );
+      if (
+        dispatchPlan &&
+        dispatchPuts &&
+        commit.derivedIndexesApplied &&
+        commit.before === operationCursor &&
+        commit.through === through
+      )
+        dispatch.accept(dispatchPlan);
+      if (
+        stagedGoal !== undefined &&
+        commit.derivedIndexesApplied &&
+        commit.before === operationCursor &&
+        commit.through === through &&
+        through !== undefined
+      )
+        committedGoal = { host: commitHost, cursor: through, latest: stagedGoal };
+      let stagedReady =
+        commit.metadataAttached &&
+        commit.before === operationCursor &&
+        currentBranch() === branch &&
+        readGeneration === generation &&
+        stagedWrites === patchWrites.length &&
+        (![...staged.values()].some((value) => value.state) || commit.derivedIndexesApplied);
+      if (stagedReady)
+        for (const seal of seals) {
+          const header = await historyHost.readTurnHeader(seal.turnId);
+          if (
+            header.kind !== 'found' ||
+            !header.turn.sealed ||
+            header.turn.nextSeq !== seal.nextSeq
+          ) {
+            stagedReady = false;
+            break;
+          }
+          const value = staged.get(seal.key);
+          if (!value) {
+            stagedReady = false;
+            break;
+          }
+          const sealed = {
+            ...(value.state ?? value.message),
+            sealedHash: header.turn.sealed.slice(),
+          };
+          staged.set(
+            seal.key,
+            value.state ? { ...value, state: sealed } : { ...value, message: sealed }
+          );
+        }
+      await refreshTurnProjections(
+        patchIds,
+        stagedReady && currentBranch() === branch && readGeneration === generation
+          ? staged
+          : undefined
+      );
+      for (const update of dispatchUpdates) rememberDispatch(update);
       for (const entry of prepared) rememberGoal(entry, positions.get(entry.id));
       if (patchIds.length) recordChange({ kind: 'changed', businessIds: patchIds });
       if (patchIds.length) pendingModelSummary = true;
@@ -1500,6 +2060,12 @@ const createNodeServicesForLease = async (
         { recovery: 'local' }
       );
       await refreshTurnProjections(changed);
+      for (const entry of prepared)
+        rememberDispatch({
+          before: oldById.get(entry.id),
+          after: dispatchEntry(entry),
+          position: positions.get(entry.id),
+        });
       for (const entry of prepared) rememberGoal(entry, positions.get(entry.id));
     }
     if (changed.length) recordChange({ kind: 'changed', businessIds: changed });
@@ -1635,22 +2201,36 @@ const createNodeServicesForLease = async (
     return true;
   };
 
+  // Borrow only while withWrites owns the serialized operation. Public reads detach.
+  const readPrivateTurn = async (turnId: string) => {
+    const position = positionById.get(turnId);
+    const cached = position === undefined ? pageEntries.get(turnId)?.turn : entries[position];
+    return cached ? { state: 'ready' as const, turn: cached } : history.readTurn(turnId);
+  };
+
   const commands: SessionHistoryCommands = {
     async applyHistoryAction(action) {
       let matched = false;
       await withWrites(`action:${operationDigest(action)}`, async () => {
         const target = historyActionTarget(action);
-        const selected = target ? await history.readTurn(target) : undefined;
+        const selected = target ? await readPrivateTurn(target) : undefined;
         const before = target
           ? selected?.state === 'ready'
             ? [selected.turn as SessionHistoryInput]
             : []
           : await readAll();
-        const result = applyDomainHistoryAction(clone(before) as never, action);
+        const result = planDomainHistoryAction(before as never, action);
         matched = result.matched;
         const turns = result.turns as unknown as SessionHistoryInput[];
         return target
-          ? commitTurnChanges(before, turns, `action:${operationDigest(action)}`)
+          ? commitTurnChanges(
+              before,
+              turns,
+              `action:${operationDigest(action)}`,
+              [],
+              undefined,
+              result.changes
+            )
           : replaceActiveHistory(turns, `action:${operationDigest(action)}`);
       });
       return { matched };
@@ -1663,7 +2243,7 @@ const createNodeServicesForLease = async (
     async replaceTurn(turnId, turn) {
       if (turn.id !== turnId) throw new Error(`Cannot change Roost turn id ${turnId}`);
       await withWrites(`replace:${turnId}`, async () => {
-        const read = await history.readTurn(turnId);
+        const read = await readPrivateTurn(turnId);
         const before = read.state === 'ready' ? (read.turn as SessionHistoryInput) : undefined;
         if (!before) throw new Error(`Roost turn ${turnId} not found`);
         await updateTurn(before, turn as SessionHistoryInput, `replace:${turnId}`);
@@ -1684,7 +2264,7 @@ const createNodeServicesForLease = async (
               )
           )?.id;
         }
-        const read = targetId ? await history.readTurn(targetId) : { state: 'missing' as const };
+        const read = targetId ? await readPrivateTurn(targetId) : { state: 'missing' as const };
         if (read.state !== 'ready' || read.turn.role !== 'assistant') return false;
         const request = read.turn.items?.find(
           (item) =>
@@ -1940,7 +2520,7 @@ const createNodeServicesForLease = async (
   const agentWrites: SessionAgentWrites = {
     async setTurnField(turnId, key, change) {
       await withWrites(`field:${turnId}:${String(key)}`, async () => {
-        const read = await history.readTurn(turnId);
+        const read = await readPrivateTurn(turnId);
         const before = read.state === 'ready' ? (read.turn as SessionHistoryInput) : undefined;
         if (!before) throw new Error(`Roost turn ${turnId} not found`);
         const next = { ...before } as Record<string, unknown>;
@@ -1951,7 +2531,7 @@ const createNodeServicesForLease = async (
     },
     markTurnSeen(turnId) {
       const promise = withWrites(`seen:${turnId}`, async () => {
-        const read = await history.readTurn(turnId);
+        const read = await readPrivateTurn(turnId);
         const before = read.state === 'ready' ? (read.turn as SessionHistoryInput) : undefined;
         if (!before || markTurnSeenBlocked(before as never)) return;
         const next = { ...before } as Record<string, unknown>;
@@ -1970,7 +2550,7 @@ const createNodeServicesForLease = async (
     },
     async openAssistantTurn(input) {
       await withWrites(`open:${input.turnId}`, async () => {
-        const read = await history.readTurn(input.turnId);
+        const read = await readPrivateTurn(input.turnId);
         const before = read.state === 'ready' ? (read.turn as SessionHistoryInput) : undefined;
         if (!before) {
           await updateTurn(
@@ -2041,41 +2621,45 @@ const createNodeServicesForLease = async (
             anyChanged = true;
           }
           if (!pending.length) continue;
-          const selected = input.targetAssistantEntryId
-            ? await history.readTurn(input.targetAssistantEntryId)
+          const position = input.targetAssistantEntryId
+            ? positionById.get(input.targetAssistantEntryId)
             : undefined;
+          const cached =
+            position !== undefined
+              ? entries[position]
+              : input.targetAssistantEntryId
+                ? pageEntries.get(input.targetAssistantEntryId)?.turn
+                : undefined;
+          const selected = cached
+            ? { state: 'ready' as const, turn: cached }
+            : input.targetAssistantEntryId
+              ? await readPrivateTurn(input.targetAssistantEntryId)
+              : undefined;
           const before = input.targetAssistantEntryId
             ? selected?.state === 'ready' && selected.turn.role === 'assistant'
               ? [selected.turn as SessionHistoryInput]
               : []
             : await readAll();
-          let next = clone(before);
-          // Preserve transport order instead of deduplicating identical payloads.
-          for (const event of pending) {
-            if (event.kind === 'notification') {
-              next = applyNotificationOnHistory(next, [event.value], input.model, {
-                ...(input.createId ? { createId: input.createId } : {}),
-                ...(input.now ? { now: input.now } : {}),
-                ...(input.targetAssistantEntryId
-                  ? { targetAssistantEntryId: input.targetAssistantEntryId }
-                  : {}),
-              });
-            } else {
-              next = applyMessageContentsBatch(next, [event.value], {
-                ...(input.createId ? { createId: input.createId } : {}),
-                ...(input.now ? { now: input.now } : {}),
-                ...(input.targetAssistantEntryId
-                  ? { targetAssistantEntryId: input.targetAssistantEntryId }
-                  : {}),
-                ...(input.model ? { model: input.model } : {}),
-              });
-            }
-          }
+          const planned = planAgentHistoryMutation(before, pending, input.model, {
+            ...(input.createId ? { createId: input.createId } : {}),
+            ...(input.now ? { now: input.now } : {}),
+            ...(input.targetAssistantEntryId
+              ? { targetAssistantEntryId: input.targetAssistantEntryId }
+              : {}),
+          });
+          const next = planned.history;
           if (
             next.length === before.length &&
             next.every((entry, index) => entry.id === before[index]?.id)
           ) {
-            await commitTurnChanges(before, next, operationId, receipts);
+            await commitTurnChanges(
+              before,
+              next,
+              operationId,
+              receipts,
+              planned.textAppends,
+              planned.changes
+            );
           } else {
             const all = await readAll();
             const changed = new Map(next.map((entry) => [entry.id, entry]));
@@ -2124,7 +2708,7 @@ const createNodeServicesForLease = async (
       const prior = await historyGeneration.lookupInputAcceptance(identity);
       let created = false;
       if (dispatch && prior) {
-        const current = await history.readTurn(entry.id);
+        const current = await readPrivateTurn(entry.id);
         if (
           current.state === 'missing' ||
           (current.state === 'ready' && !isSessionHistoryStatusAwaitingStart(current.turn.status))
@@ -2155,7 +2739,7 @@ const createNodeServicesForLease = async (
         if (entry.finished === true) await finishIfNeeded(accepted.turnId);
       }
       if (dispatch) {
-        const current = await history.readTurn(entry.id);
+        const current = await readPrivateTurn(entry.id);
         if (current.state !== 'ready' && current.state !== 'missing')
           throw new Error('Accepted Roost input history is not readable');
         if (current.state === 'ready' && isSessionHistoryStatusAwaitingStart(current.turn.status)) {
@@ -2217,6 +2801,8 @@ const createNodeServicesForLease = async (
 
   return {
     sessionData,
+    readDispatchHistory: async (ids) => (await readDispatch(ids)).history,
+    readDispatchSelection: readDispatch,
     agentWrites,
     setPlan: async (planEntries: readonly SessionPlanEntry[]) => {
       if (!latestAssistantId) return;
