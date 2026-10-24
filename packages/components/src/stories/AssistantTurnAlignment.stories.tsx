@@ -1505,22 +1505,22 @@ const dshItems: ChatStreamItem[] = [
 /** DSH prose stays visible after completion; command details start closed. */
 export const DeepSeekIndependentProse: Story = {
   play: async ({ canvasElement }) => {
-    await waitFor(() => {
+    await waitFor(async () => {
       const paragraphs = Array.from(canvasElement.querySelectorAll('p'));
       const thought = paragraphs.find(
         (node) => node.textContent === '先检查输入边界，再执行测试。'
       );
       const answer = paragraphs.find((node) => node.textContent === '检查完成。');
-      expect(thought).toBeDefined();
-      expect(answer).toBeDefined();
+      await expect(thought).toBeDefined();
+      await expect(answer).toBeDefined();
       const thoughtStyle = getComputedStyle(thought!);
       const answerStyle = getComputedStyle(answer!);
       for (const property of ['font-family', 'font-size', 'font-weight', 'line-height', 'color']) {
-        expect(thoughtStyle.getPropertyValue(property)).toBe(
+        await expect(thoughtStyle.getPropertyValue(property)).toBe(
           answerStyle.getPropertyValue(property)
         );
       }
-      expect(canvasElement.textContent).not.toContain('Synthetic command output');
+      await expect(canvasElement.textContent).not.toContain('Synthetic command output');
     });
   },
   args: { sessionId, items: dshItems, renderMessageRow },
