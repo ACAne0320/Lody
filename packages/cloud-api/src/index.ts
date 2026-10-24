@@ -1,4 +1,22 @@
+import type { NotificationPresentation } from '@lody/shared/notifications';
+import type { TerminalOutcome } from '@lody/shared/notifications';
 import { anyApi, type FunctionReference } from 'convex/server';
+import type {
+  WorkspaceAdmissionDescriptor,
+  E2eeWorkspaceCreateRequest,
+  E2eeWorkspaceCreateResult,
+  E2eeWorkspaceHistoryRequest,
+  E2eeWorkspaceHistoryPage,
+} from './e2ee-workspaces';
+export type {
+  WorkspaceAdmissionDescriptor,
+  WorkspaceModeDescriptor,
+  E2eeWorkspaceCreateRequest,
+  E2eeWorkspaceCreateResult,
+  E2eeLedgerCheckpoint,
+  E2eeWorkspaceHistoryRequest,
+  E2eeWorkspaceHistoryPage,
+} from './e2ee-workspaces';
 import type {
   RecoveryVaultPutRequest,
   RecoveryVaultReadRequest,
@@ -287,6 +305,7 @@ type BillingOverview = {
   seatCount: number;
   subscriptionQuantity: number | null;
   canManageBilling: boolean;
+  referralRewardsSupported?: boolean;
   pricing: Pricing;
 };
 
@@ -363,6 +382,12 @@ type SeatInvitePreview =
     };
 
 export type CloudApi = {
+  /** Optional developer-only E2EE control plane; does not authorize content access. */
+  e2eeWorkspaces: {
+    create: Action<E2eeWorkspaceCreateRequest, E2eeWorkspaceCreateResult>;
+    describe: Query<{ workspaceId: string }, WorkspaceAdmissionDescriptor>;
+    history: Action<E2eeWorkspaceHistoryRequest, E2eeWorkspaceHistoryPage>;
+  };
   /** Optional E2EE ciphertext staging. No ordinary/local product constructs it. */
   e2eeRecoveryVault: {
     putImmutable: Mutation<RecoveryVaultPutRequest, { ok: true }>;
@@ -499,17 +524,42 @@ export type CloudApi = {
       } | null
     >;
   };
+  referrals: {
+    createLink: Mutation<{ workspaceId: string }, { code: string; url: string }>;
+    getOverview: Query<{ workspaceId: string; policyRefreshKey?: number }, ReferralOverview | null>;
+    listLedger: Query<
+      { workspaceId: string; paginationOpts: { numItems: number; cursor: string | null } },
+      { page: ReferralLedgerEntry[]; isDone: boolean; continueCursor: string }
+    >;
+    /** Without `workspaceId`, previews a workspace the caller is about to create. */
+    getCheckoutOffer: Query<
+      { workspaceId?: string; code?: string; policyRefreshKey?: number },
+      ReferralCheckoutOffer
+    >;
+    /** Remember the referral link the signed-in person followed, across devices. */
+    attachLead: Mutation<
+      { code: string; clickedAt?: number },
+      { status: 'attached' | 'kept' | 'self' | 'invalid' }
+    >;
+    /** The person declined the referral discount. */
+    dismissLead: Mutation<Record<string, never>, null>;
+  };
   billing: {
     createBillingPortalSession: Action<
       { workspaceId: string; returnUrl?: string; returnTarget?: 'web' | 'desktop' },
       { url: string }
     >;
     createCheckoutSession: Action<
-      CheckoutUrls & { workspaceId: string; interval: BillingInterval },
+      CheckoutUrls & { workspaceId: string; interval: BillingInterval; referralCode?: string },
       { url: string; checkoutKind?: 'subscription' | 'gift_setup' }
     >;
     createPaidWorkspaceCheckout: Action<
-      CheckoutUrls & { name: string; slug: string; interval: BillingInterval },
+      CheckoutUrls & {
+        name: string;
+        slug: string;
+        interval: BillingInterval;
+        referralCode?: string;
+      },
       { workspaceId: string; workspaceSlug: string; url: string | null; existing: boolean }
     >;
     getBillingOverview: Query<{ workspaceId: string }, BillingOverview | null>;
@@ -605,6 +655,16 @@ export type CloudApi = {
     setSubscriptionInterval: Action<
       { workspaceId: string; interval: BillingInterval },
       { billingInterval: BillingInterval; effectiveAt: number | null }
+    >;
+  };
+  githubPersonalAuthorization: {
+    begin: Action<
+      { workspaceId: string; challenge: string; callbackURL: string },
+      { state: string; url: string }
+    >;
+    complete: Action<
+      { workspaceId: string; state: string; code: string; verifier: string },
+      { success: true }
     >;
   };
   github: {
@@ -905,6 +965,8 @@ export type CloudApi = {
         workspaceId: string;
         sessionId: string;
         occurrenceId: string;
+        outcome?: TerminalOutcome;
+        presentation?: NotificationPresentation;
         cliToken: string;
         workspaceSlug: string;
       },
@@ -916,11 +978,13 @@ export type CloudApi = {
         toolTitle?: string;
         toolKind?: string;
         requestKind?: 'permission' | 'ask_user_question';
+        presentation?: NotificationPresentation;
         userId: string;
         workspaceId: string;
         sessionId: string;
         cliToken: string;
         workspaceSlug: string;
+        deliveryVersion?: 1;
         requestId: string;
         toolCallId: string;
       },
@@ -993,3 +1057,45 @@ export type CloudApi = {
  * generated client would construct; `CloudApi` owns the public protocol types.
  */
 export const api = anyApi as unknown as CloudApi;
+
+/** Server-selected display terms. Checkout remains authoritative. */
+export interface ReferralPolicy {
+  campaignId: string;
+  discountPercent: number;
+  rewardPercent: number;
+  startsAt?: number;
+  endsAt?: number;
+  nextChangeAt?: number;
+}
+
+export interface ReferralOverview {
+  policy?: ReferralPolicy;
+  eligible: boolean;
+  code: string | null;
+  url: string | null;
+  issued: number;
+  spent: number;
+  available: number;
+  frozen: number;
+  adjustment: number;
+  newcomerDiscount: boolean;
+}
+/**
+ * Whether a first checkout now would get the newcomer discount. `sendCode`: pass the
+ * stored referral code to checkout. `bound`: the workspace already holds a referral.
+ */
+export interface ReferralCheckoutOffer {
+  policy?: ReferralPolicy;
+  /** A previously opened Checkout retains its own terms until its deadline. */
+  retained?: { policy: ReferralPolicy; expiresAt: number };
+  discount: boolean;
+  sendCode: boolean;
+  bound: boolean;
+}
+export interface ReferralLedgerEntry {
+  id: string;
+  kind: 'reward' | 'adjustment' | 'freeze' | 'use' | 'release';
+  amount: number;
+  frozen: number;
+  createdAt: number;
+}

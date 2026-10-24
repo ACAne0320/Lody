@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import crypto from 'crypto';
 import { RequestError } from '@agentclientprotocol/sdk';
-import { WorkspaceRepoLegacy } from '@lody/shared/workspace-data/repo-legacy';
+import { LoroRepo } from 'loro-repo';
 import { getSessionRoomId, type ACPSessionId, type MachineId } from '@lody/shared';
 
 import type {
@@ -79,8 +79,7 @@ const jsonResponse = (body: unknown, status = 200): Response =>
 // (native libuv async), NOT via the timers vitest fakes. Awaiting them while fake
 // timers are installed leaves the resolution to real wall time, which on a loaded CI
 // runner can be starved past the 30s test timeout. So run repo setup/teardown on real
-// timers and only fake the batch timeout/Date afterward. Keep setImmediate and
-// microtasks real so native Effect fibers continue while assertions await writes.
+// timers and only keep the fake clock for the batch-window assertions.
 const destroyRepoOnRealTimers = async (repo: LoroRepo) => {
   if (vi.isFakeTimers()) {
     vi.useRealTimers();
@@ -97,7 +96,7 @@ const createHandlerHarness = async (
   if (fakeTimersActive) {
     vi.useRealTimers();
   }
-  const repo = await WorkspaceRepoLegacy.create({});
+  const repo = await LoroRepo.create({});
   const docs = new Map<SessionId, SessionDocument>();
   for (const sessionId of sessionIds) {
     const doc = new SessionDocument(repo, sessionId);
@@ -105,7 +104,7 @@ const createHandlerHarness = async (
     docs.set(sessionId, doc);
   }
   if (fakeTimersActive) {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.useFakeTimers();
   }
 
   const workspaceDocument = {
@@ -431,7 +430,7 @@ describe('MessageHandler ACP batching', () => {
   });
 
   beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.useFakeTimers();
     process.env.LODY_SERVER_URL = 'https://server.example.test';
     loadEnv();
   });
@@ -785,6 +784,46 @@ describe('MessageHandler ACP batching', () => {
       await destroyRepoOnRealTimers(repo);
     }
   });
+
+  it.each([
+    { reportsSessionActivity: true, restartsClock: true },
+    { reportsSessionActivity: false, restartsClock: false },
+  ])(
+    'post-turn output restarts the GC idle clock only for activity-reporting agents (%o)',
+    async ({ reportsSessionActivity, restartsClock }) => {
+      const sessionId = 'late-output-activity' as SessionId;
+      const { repo, handler, sessionManagerMock } = await createHandlerHarness([sessionId]);
+      sessionManagerMock.getSession.mockImplementation(
+        () => ({ agentClient: { reportsSessionActivity: () => reportsSessionActivity } }) as never
+      );
+      const host = handler as unknown as {
+        beginConversationTurn(sessionId: SessionId): string;
+        enqueueACPUpdate(sessionId: SessionId, update: AcpSessionNotification): void;
+        finalizeACPState(sessionId: SessionId, turnId?: string): Promise<void>;
+      };
+      const text = (value: string): AcpSessionNotification => ({
+        sessionId,
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } },
+      });
+
+      try {
+        const turnId = host.beginConversationTurn(sessionId);
+        const beforeOutput = handler.getLastActivity(sessionId);
+        await vi.advanceTimersByTimeAsync(1_000);
+        // The open turn already keeps the session from GC.
+        host.enqueueACPUpdate(sessionId, text('during the turn'));
+        expect(handler.getLastActivity(sessionId)).toBe(beforeOutput);
+        await host.finalizeACPState(sessionId, turnId);
+
+        // Claude was woken later by a finished background shell.
+        await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+        host.enqueueACPUpdate(sessionId, text('after the background task'));
+        expect(handler.getLastActivity(sessionId)).toBe(restartsClock ? Date.now() : beforeOutput);
+      } finally {
+        await destroyRepoOnRealTimers(repo);
+      }
+    }
+  );
 
   it('records each turn its own token usage deltas, including late reports', async () => {
     vi.useRealTimers();
@@ -1574,7 +1613,7 @@ describe('MessageHandler ACP batching', () => {
         .spyOn(host, 'persistCodeCollabTurnDiffs')
         .mockRejectedValueOnce(new Error('transient persistence failure'))
         .mockResolvedValueOnce(true);
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      vi.useFakeTimers();
 
       host.enqueueACPUpdate(sessionId, {
         sessionId,

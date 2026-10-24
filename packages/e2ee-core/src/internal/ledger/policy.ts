@@ -34,6 +34,12 @@ export interface HistoricalContentAuthor {
   readonly actor: Bytes.UserId;
   readonly memberInstance: Bytes.MembershipId;
 }
+/** A device ever admitted, kept after revocation or its member's removal. */
+export interface DeviceRecord {
+  readonly signingPublicKey: Bytes.SigningPublicKey;
+  readonly encryptionPublicKey: Bytes.EncryptionPublicKey;
+  readonly membershipId: Bytes.MembershipId;
+}
 /** Signed ledger fact; packet validity/preimage is checked by the key workflow. */
 export interface EpochHistoryPacket {
   readonly epoch: number;
@@ -44,17 +50,22 @@ export interface EpochHistoryPacket {
 export interface InternalState {
   /** Only original tag7/8 bytes actually replayed; endorsed snapshots do not invent them. */
   epochPublications?: HashMap.HashMap<number, Uint8Array>;
-  contentAuthors: HashMap.HashMap<string, HistoricalContentAuthor>;
   historyPackets: HashMap.HashMap<number, EpochHistoryPacket>;
   genesis: Bytes.GenesisHash;
   owner: Bytes.MembershipId;
   members: HashMap.HashMap<string, Member>;
   devices: HashMap.HashMap<string, Device>;
   epoch: LedgerState['epoch'];
-  usedSigningKeys: HashSet.HashSet<string>;
+  /** Every membership ever admitted and its user, kept after removal. `members` is only the current ones. */
+  membershipUsers: HashMap.HashMap<string, Bytes.UserId>;
+  /** Every device ever admitted, by signing key, kept after revocation. `devices` is only the current ones. */
+  deviceHistory: HashMap.HashMap<string, DeviceRecord>;
+  /** Derived index of `deviceHistory` encryption keys; never encoded. */
   usedEncKeys: HashSet.HashSet<string>;
-  usedMembershipIds: HashSet.HashSet<string>;
+  /** Derived index of current members' user IDs, for re-admission checks; never encoded. */
+  memberUsers: HashSet.HashSet<string>;
   closedJoins: HashSet.HashSet<string>;
+  /** Derived index of `historyPackets` commitments; never encoded. */
   usedCommitments: HashSet.HashSet<string>;
   /** Only verified consecutive hashes; no invented pre-snapshot entries. */
   hashes: Chunk.Chunk<Bytes.RecordHash>;
@@ -62,22 +73,14 @@ export interface InternalState {
   verification: 'full-history' | 'endorsed-snapshot';
 }
 const id = (value: { toBytes(): Uint8Array }) => keyId(value.toBytes());
+/** Capability codes this verifier implements. Adding one also adds its state and snapshot field. */
+const SUPPORTED_CAPABILITIES: ReadonlySet<number> = new Set();
 export function genesisState(
   body: Extract<RecordBody, { type: 'genesis' }>,
   genesis: Bytes.GenesisHash,
   hash: Bytes.RecordHash
 ): InternalState {
   return {
-    contentAuthors: HashMap.fromIterable([
-      [
-        id(body.signer),
-        Object.freeze({
-          device: body.signer,
-          actor: body.userId,
-          memberInstance: body.membershipId,
-        }),
-      ],
-    ]),
     historyPackets: HashMap.fromIterable([
       [0, Object.freeze({ epoch: 0, commitment: body.epochCommitment, packet: new Uint8Array() })],
     ]),
@@ -101,9 +104,19 @@ export function genesisState(
       keyCommitment: body.epochCommitment,
       rotationRequired: false,
     }),
-    usedSigningKeys: HashSet.fromIterable([id(body.signer)]),
+    membershipUsers: HashMap.fromIterable([[id(body.membershipId), body.userId]]),
+    deviceHistory: HashMap.fromIterable([
+      [
+        id(body.signer),
+        Object.freeze({
+          signingPublicKey: body.signer,
+          encryptionPublicKey: body.encryptionPublicKey,
+          membershipId: body.membershipId,
+        }),
+      ],
+    ]),
     usedEncKeys: HashSet.fromIterable([id(body.encryptionPublicKey)]),
-    usedMembershipIds: HashSet.fromIterable([id(body.membershipId)]),
+    memberUsers: HashSet.fromIterable([id(body.userId)]),
     closedJoins: HashSet.empty(),
     usedCommitments: HashSet.fromIterable([id(body.epochCommitment)]),
     hashes: Chunk.of(hash),
@@ -157,30 +170,30 @@ export function applyOperation(
           enc = id(op.request.encryptionPublicKey);
         const join = `${sign}:${id(op.request.requestId)}`;
         if (
-          HashSet.has(s.usedMembershipIds, membership) ||
-          [...HashMap.values(s.members)].some((m) => id(m.userId) === user) ||
+          HashMap.has(s.membershipUsers, membership) ||
+          HashSet.has(s.memberUsers, user) ||
           HashSet.has(s.closedJoins, join) ||
-          HashSet.has(s.usedSigningKeys, sign) ||
+          HashMap.has(s.deviceHistory, sign) ||
           HashSet.has(s.usedEncKeys, enc)
         )
           return yield* fail('replay');
-        s.usedMembershipIds = HashSet.add(s.usedMembershipIds, membership);
+        s.membershipUsers = HashMap.set(s.membershipUsers, membership, op.request.userId);
+        s.memberUsers = HashSet.add(s.memberUsers, user);
         s.closedJoins = HashSet.add(s.closedJoins, join);
-        s.usedSigningKeys = HashSet.add(s.usedSigningKeys, sign);
+        s.deviceHistory = HashMap.set(
+          s.deviceHistory,
+          sign,
+          Object.freeze({
+            signingPublicKey: op.request.signingPublicKey,
+            encryptionPublicKey: op.request.encryptionPublicKey,
+            membershipId: op.membershipId,
+          })
+        );
         s.usedEncKeys = HashSet.add(s.usedEncKeys, enc);
         s.members = HashMap.set(
           s.members,
           membership,
           Object.freeze({ userId: op.request.userId, role: 'member' })
-        );
-        s.contentAuthors = HashMap.set(
-          s.contentAuthors,
-          sign,
-          Object.freeze({
-            device: op.request.signingPublicKey,
-            actor: op.request.userId,
-            memberInstance: op.membershipId,
-          })
         );
         s.devices = HashMap.set(
           s.devices,
@@ -214,19 +227,18 @@ export function applyOperation(
           return yield* fail('unauthorized');
         const sign = id(op.signingPublicKey),
           enc = id(op.encryptionPublicKey);
-        if (HashSet.has(s.usedSigningKeys, sign) || HashSet.has(s.usedEncKeys, enc))
+        if (HashMap.has(s.deviceHistory, sign) || HashSet.has(s.usedEncKeys, enc))
           return yield* fail('replay');
-        s.usedSigningKeys = HashSet.add(s.usedSigningKeys, sign);
-        s.usedEncKeys = HashSet.add(s.usedEncKeys, enc);
-        s.contentAuthors = HashMap.set(
-          s.contentAuthors,
+        s.deviceHistory = HashMap.set(
+          s.deviceHistory,
           sign,
           Object.freeze({
-            device: op.signingPublicKey,
-            actor: member.userId,
-            memberInstance: actor.membershipId,
+            signingPublicKey: op.signingPublicKey,
+            encryptionPublicKey: op.encryptionPublicKey,
+            membershipId: actor.membershipId,
           })
         );
+        s.usedEncKeys = HashSet.add(s.usedEncKeys, enc);
         s.devices = HashMap.set(
           s.devices,
           sign,
@@ -270,6 +282,14 @@ export function applyOperation(
         s.owner = op.successorMembershipId;
         break;
       }
+      case 'declareCapabilities': {
+        if (!manage) return yield* fail('unauthorized');
+        // Ledger v1 supports no capability yet. A genuine declaration is a valid
+        // future record, so stop at it as an upgrade, never as corruption.
+        if (op.capabilities.some((code) => !SUPPORTED_CAPABILITIES.has(code)))
+          return yield* fail('upgrade-required');
+        break;
+      }
       case 'publishEpoch':
       case 'removeMemberAndPublishEpoch': {
         if (op.type === 'removeMemberAndPublishEpoch') {
@@ -283,9 +303,11 @@ export function applyOperation(
         if (op.epoch !== s.epoch.number + 1) return yield* fail('invalid-operation');
         if (HashSet.has(s.usedCommitments, id(op.commitment))) return yield* fail('replay');
         if (op.type === 'removeMemberAndPublishEpoch') {
+          const removed = stateGet(s.members, id(op.membershipId))!;
+          s.memberUsers = HashSet.remove(s.memberUsers, id(removed.userId));
           s.members = HashMap.remove(s.members, id(op.membershipId));
-          // Retain author identity, used keys and membership IDs. Only current
-          // membership/devices disappear in this same epoch transition.
+          // The history tables keep this membership and its devices, so authorship
+          // and replay facts survive; only the current views drop them.
           for (const [key, device] of s.devices)
             if (device.membershipId.equals(op.membershipId))
               s.devices = HashMap.remove(s.devices, key);

@@ -2225,6 +2225,7 @@ export type LoroStreamsRpcPendingRegistration = {
 
 export type LoroStreamsRpcPendingRequest = LoroStreamsRpcPendingRegistration & {
   appendFinishedAtMs?: number;
+  responseRecoveryAtMs?: number;
   resolve: (value: LoroMachineRpcResult | null) => void;
   timeoutId: ReturnType<typeof setTimeout>;
   /**
@@ -2237,6 +2238,9 @@ export type LoroStreamsRpcPendingRequest = LoroStreamsRpcPendingRegistration & {
   progressFrames: number;
 };
 
+/** Renew a stalled response read before an interactive input's RPC expires. */
+export const HISTORY_INPUT_RESPONSE_RECOVERY_MS = 2_000;
+
 export class LoroStreamsRpcResponseDispatcher {
   readonly responseStreamId: string;
   private readonly responseState: LoroJsonStreamState = { nextOffset: '-1' };
@@ -2248,6 +2252,8 @@ export class LoroStreamsRpcResponseDispatcher {
   private lastReportedTransport: LoroStreamsLiveTransport | undefined;
   private startedPromise: Promise<void> | null = null;
   private stopped = false;
+  private responseRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
+  private responseRecoveryAtMs: number | undefined;
 
   constructor(
     private readonly options: {
@@ -2327,8 +2333,7 @@ export class LoroStreamsRpcResponseDispatcher {
     registration: LoroStreamsRpcPendingRegistration
   ): ReturnType<typeof setTimeout> {
     return setTimeout(() => {
-      const pending = this.pending.get(requestId);
-      this.pending.delete(requestId);
+      const pending = this.takePending(requestId);
       const now = Date.now();
       this.options.trace?.('machine rpc transport response timeout', {
         workspaceId: this.options.workspaceId,
@@ -2340,7 +2345,7 @@ export class LoroStreamsRpcResponseDispatcher {
         // The two numbers that separate "never started" from "went quiet
         // halfway": how long the machine had been silent, and whether it had
         // said anything at all before that.
-        silentMs: pending === undefined ? undefined : now - pending.timeoutArmedAtMs,
+        silentMs: pending === null ? undefined : now - pending.timeoutArmedAtMs,
         progressFrames: pending?.progressFrames,
         responseAfterAppendMs:
           pending?.appendFinishedAtMs === undefined ? undefined : now - pending.appendFinishedAtMs,
@@ -2395,7 +2400,68 @@ export class LoroStreamsRpcResponseDispatcher {
     const pending = this.pending.get(requestId);
     if (pending) {
       pending.appendFinishedAtMs = appendFinishedAtMs;
+      if (
+        this.liveModePolicy &&
+        !this.liveModePolicy.getDiagnostics().pinned &&
+        pending.method === 'session/history-write' &&
+        (pending.historyContext?.operation === 'accept_input_and_dispatch' ||
+          pending.historyContext?.operation === 'accept_input')
+      ) {
+        pending.responseRecoveryAtMs = appendFinishedAtMs + HISTORY_INPUT_RESPONSE_RECOVERY_MS;
+        this.scheduleResponseRecovery();
+      }
     }
+  }
+
+  private scheduleResponseRecovery(): void {
+    let nextAtMs: number | undefined;
+    for (const pending of this.pending.values()) {
+      const due = pending.responseRecoveryAtMs;
+      if (due !== undefined) nextAtMs = Math.min(nextAtMs ?? due, due);
+    }
+    if (this.responseRecoveryAtMs === nextAtMs) return;
+    if (this.responseRecoveryTimer !== undefined) clearTimeout(this.responseRecoveryTimer);
+    this.responseRecoveryTimer = undefined;
+    this.responseRecoveryAtMs = nextAtMs;
+    if (this.stopped || nextAtMs === undefined) return;
+    this.responseRecoveryTimer = setTimeout(
+      () => {
+        this.responseRecoveryTimer = undefined;
+        this.responseRecoveryAtMs = undefined;
+        if (this.stopped) return;
+        // One renewal covers all currently appended inputs. They retain their
+        // original deadlines and identities; never restart the read per input.
+        for (const [requestId, pending] of this.pending) {
+          if (pending.responseRecoveryAtMs === undefined) continue;
+          pending.responseRecoveryAtMs = undefined;
+          try {
+            this.options.trace?.('machine rpc transport pending input recovery', {
+              workspaceId: this.options.workspaceId,
+              machineId: pending.machineId,
+              method: pending.method,
+              rpcRequestId: requestId,
+              responseAfterAppendMs:
+                pending.appendFinishedAtMs === undefined
+                  ? undefined
+                  : Date.now() - pending.appendFinishedAtMs,
+              responseStreamId: this.responseStreamId,
+            });
+          } catch {
+            /* A diagnostic sink cannot prevent response recovery. */
+          }
+        }
+        try {
+          this.liveModePolicy?.recoverPendingWrite();
+          this.reportLiveModeChange();
+        } catch {
+          /* Policy notifications are diagnostic, not an input failure. */
+        }
+        // Renew an already long-polling read too: its connection may be stuck.
+        // The same dispatcher still owns offsets and pending calls.
+        this.currentReadController?.abort();
+      },
+      Math.max(0, nextAtMs - Date.now())
+    );
   }
 
   takePending(requestId: string): LoroStreamsRpcPendingRequest | null {
@@ -2405,6 +2471,7 @@ export class LoroStreamsRpcResponseDispatcher {
     }
     clearTimeout(pending.timeoutId);
     this.pending.delete(requestId);
+    if (pending.responseRecoveryAtMs !== undefined) this.scheduleResponseRecovery();
     return pending;
   }
 
@@ -2417,6 +2484,7 @@ export class LoroStreamsRpcResponseDispatcher {
       pending.resolve(null);
       this.pending.delete(requestId);
     }
+    this.scheduleResponseRecovery();
   }
 
   stop(): void {
@@ -2424,6 +2492,9 @@ export class LoroStreamsRpcResponseDispatcher {
       return;
     }
     this.stopped = true;
+    if (this.responseRecoveryTimer !== undefined) clearTimeout(this.responseRecoveryTimer);
+    this.responseRecoveryTimer = undefined;
+    this.responseRecoveryAtMs = undefined;
     this.stopController.abort();
     for (const [requestId, pending] of this.pending.entries()) {
       clearTimeout(pending.timeoutId);
@@ -2491,6 +2562,7 @@ export class LoroStreamsRpcResponseDispatcher {
         if (this.stopped) {
           return;
         }
+        if (readController.signal.aborted) continue;
 
         if (error instanceof LoroStreamsGatewayError) {
           if (error.status === 404) {
@@ -3250,6 +3322,7 @@ export class LoroStreamsMachineRpcClient {
         v: FILE_PREVIEW_PROTOCOL_VERSION,
         sessionId: options.sessionId,
         path: options.path,
+        ...(options.resolveMarkdownLink ? { resolveMarkdownLink: true } : {}),
         ...(options.knownDigest === undefined ? {} : { knownDigest: options.knownDigest }),
         ...(options.maxBytes === undefined ? {} : { maxBytes: options.maxBytes }),
       },
@@ -3299,6 +3372,7 @@ export class LoroStreamsMachineRpcClient {
       params: {
         sessionId: options.sessionId,
         path: options.path,
+        ...(options.scope === undefined ? {} : { scope: options.scope }),
       },
     })) as CodeCollabV2OpenCurrentDiffResponse | CodeCollabV2Error | null;
   }
@@ -3313,6 +3387,7 @@ export class LoroStreamsMachineRpcClient {
       params: {
         sessionId: options.sessionId,
         ...(options.focusPath === undefined ? {} : { focusPath: options.focusPath }),
+        ...(options.scope === undefined ? {} : { scope: options.scope }),
       },
     })) as CodeCollabV2OpenAllChangesDiffResponse | CodeCollabV2Error | null;
   }

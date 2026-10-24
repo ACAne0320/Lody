@@ -184,7 +184,7 @@ import { SubagentRunMessageList } from './subagent-run-history';
 import { styles as subagentHistoryStyles } from './subagent-run-history.stylex';
 import { SessionReadonlyContext } from './session-readonly-context';
 import { normalizeSessionLinksForExport } from '@lody/shared/session-link-export';
-import { UserMessageEditor } from './user-message-editor';
+import { UserMessageEditor, type UserMessageEditorProps } from './user-message-editor';
 import type { MentionProjectSource } from '@/components/mentions/mention-project-file-source';
 import type { SkillMentionAgent } from '@/components/mentions/mention-skill-source';
 import type { Mention as MentionRange } from '@/ui/mention/index';
@@ -280,6 +280,10 @@ import { SessionPlanBar } from '@/components/sessions/session-plan-bar';
 import { ContainerQueryProvider } from './container-query-provider';
 import { ScheduleProposalNotice } from '@/components/schedules/schedule-proposal-notice';
 import { isOperationSurfaceItem, shouldRenderSystemRowItem } from './message-content-guards';
+import {
+  getOperationCompletionItems,
+  hasVisibleOperationContent,
+} from './operation-completion-visibility';
 import { getChatFailedDiagnosticCopy } from './chat-failed-diagnostic-copy';
 import {
   buildChatFailedErrorReport,
@@ -529,6 +533,7 @@ export type UserMessageEditSubmission = {
  * editor degrades to a plain textarea.
  */
 export type UserMessageEditMentionContext = {
+  sessionSource?: UserMessageEditorProps['sessionSource'];
   mentionSource?: MentionProjectSource;
   availableCommands?: AcpCommandSummary[];
   skillAgent?: SkillMentionAgent;
@@ -769,7 +774,11 @@ const AgentActivityStatus = ({
           shimmer && 'agent-shimmer'
         )}
       >
-        {message ? <LiveActivityLabel label={label} message={message} /> : label}
+        {message && tone !== 'warning' ? (
+          <LiveActivityLabel label={label} message={message} />
+        ) : (
+          label
+        )}
       </span>
     </div>
   );
@@ -1103,21 +1112,32 @@ type AssistantTurnLayout = ReturnType<typeof buildAssistantTurnRenderLayout> & {
 const EMPTY_SUBAGENT_TASKS: ReturnType<typeof collectSubagentTasks> = [];
 
 // Assistant-turn layout (block grouping + subagent-task collection) is derived
-// purely from the message's id/items/finished state, and `buildChatStreamItems`
+// from the message and provider display policy. `buildChatStreamItems`
 // hands back a stable parsed-message object for unchanged turns and a fresh one
 // whenever the turn changes. Keying the cache by that reference lets only the
 // streaming turn recompute; without it, each streamed token re-runs these
 // O(items) passes for every turn in the whole conversation.
-const assistantTurnLayoutCache = new WeakMap<SessionHistoryParsed, AssistantTurnLayout>();
+const assistantTurnLayoutCache = new WeakMap<
+  SessionHistoryParsed,
+  { showThoughts: boolean; layout: AssistantTurnLayout }
+>();
 
-const getAssistantTurnLayout = (message: SessionHistoryParsed): AssistantTurnLayout => {
+const getAssistantTurnLayout = (
+  message: SessionHistoryParsed,
+  showThoughts: boolean
+): AssistantTurnLayout => {
   const cached = assistantTurnLayoutCache.get(message);
-  if (cached) return cached;
+  if (cached?.showThoughts === showThoughts) return cached.layout;
   const layout: AssistantTurnLayout = {
-    ...buildAssistantTurnRenderLayout(message.id, message.items, message.finished === true),
+    ...buildAssistantTurnRenderLayout(
+      message.id,
+      message.items,
+      message.finished === true,
+      showThoughts
+    ),
     subagentTasks: collectSubagentTasks(message.items),
   };
-  assistantTurnLayoutCache.set(message, layout);
+  assistantTurnLayoutCache.set(message, { showThoughts, layout });
   return layout;
 };
 
@@ -1185,6 +1205,12 @@ export const buildChatVirtualRows = ({
     // Rows speak in absolute turn indexes so outline anchors and scroll
     // targets are independent of which turns happen to be hydrated.
     const messageIndex = item.turnIndex;
+    if (
+      item.message.role === 'system' &&
+      item.message.items.length > 0 &&
+      !item.message.items.some(hasVisibleOperationContent)
+    )
+      continue;
     if (item.message.role !== 'assistant') {
       const groupedItems = [item];
       if (groupCreatedSessions && getCreatedSessionCards(item.message)) {
@@ -1257,7 +1283,10 @@ export const buildChatVirtualRows = ({
       continue;
     }
 
-    const { blocks, segments, entries, subagentTasks } = getAssistantTurnLayout(message);
+    const { blocks, segments, entries, subagentTasks } = getAssistantTurnLayout(
+      message,
+      showThoughts
+    );
     const cachedState = selectionLayout?.expandState ?? getExpandState(message.id);
     const cachedExpansion = cachedState.expandedGroups;
     // Collapse into a "Worked for …" summary ONLY when the turn both finished and
@@ -1393,6 +1422,9 @@ export const buildChatVirtualRows = ({
         }
       }
       const shouldUseWorkedGroup =
+        // DSH keeps prose and tool summaries in chronological order after completion;
+        // each thought/tool group owns its disclosure instead of an outer work fold.
+        !showThoughts &&
         isTurnFinished &&
         (segment.workBlockKeys.size > 0 || segmentSubagentTasks.length > 0) &&
         hasVisibleFinalContent;
@@ -2835,7 +2867,9 @@ const SystemMessageRowView = ({
     return <CreatedSessionList cards={creationCards} onNavigateSession={onNavigateSession} />;
   }
   const systemItems = message.items.flatMap((item, itemIndex) =>
-    shouldRenderSystemRowItem(item) ? [{ item, itemIndex }] : []
+    shouldRenderSystemRowItem(item) && hasVisibleOperationContent(item)
+      ? [{ item, itemIndex }]
+      : []
   );
 
   if (systemItems.length === 0) {
@@ -2910,6 +2944,7 @@ const OperationCompletionBatchView = ({
   onNavigateSession?: (target: SessionNavigationTarget) => void;
 }) => {
   const { t } = useTranslation();
+  if (!hasVisibleOperationContent(batch)) return null;
   return (
     <div className="flex flex-col gap-1.5">
       <div>
@@ -2926,7 +2961,7 @@ const OperationCompletionBatchView = ({
           }
         )}
       </div>
-      {(batch.members ?? []).map((member) => (
+      {(batch.members ?? []).filter(hasVisibleOperationContent).map((member) => (
         <OperationCompletionView
           key={member.deliveryId}
           completion={member}
@@ -2945,21 +2980,14 @@ const OperationCompletionView = ({
   onNavigateSession?: (target: SessionNavigationTarget) => void;
 }) => {
   const { t } = useTranslation();
-  const resultItems =
-    completion.completion.type === 'result'
-      ? completion.completion.value.items
-      : completion.completion.type === 'cancelled'
-        ? (completion.completion.partial?.items ?? [])
-        : [];
+  if (!hasVisibleOperationContent(completion)) return null;
   const failedCompletion = completion.completion.type === 'error';
   const cancelledCompletion = completion.completion.type === 'cancelled';
   const StatusIcon = failedCompletion ? AlertCircle : cancelledCompletion ? Circle : CheckCircle2;
   const createsSessions =
     completion.operationKind === 'session_create' ||
     completion.operationKind === 'session_create_many';
-  // A create Operation that published progress already shows each target as a
-  // live card above; repeating them here would duplicate every Session.
-  const targetCards = createsSessions && completion.progressMessageId ? [] : resultItems;
+  const targetCards = getOperationCompletionItems(completion);
   const cards = targetCards.flatMap((item) =>
     item.target
       ? [
@@ -2995,10 +3023,9 @@ const OperationCompletionView = ({
       : []
   );
   // The status card carries only what the cards cannot: a whole-Operation
-  // failure or cancellation, targetless failures, or
-  // the plain outcome when there is no Session to show.
+  // failure or cancellation, or targetless problems.
   const showStatusCard =
-    cards.length === 0 || failedCompletion || cancelledCompletion || untargetedProblems.length > 0;
+    failedCompletion || cancelledCompletion || untargetedProblems.length > 0;
 
   return (
     <div className="flex flex-col gap-2" data-operation-completion={completion.operationKind}>
@@ -3320,13 +3347,7 @@ const SystemNoticeView = ({
       return null;
   }
 
-  const meta = notice.meta as
-    | {
-        truncated?: boolean;
-        terminalOmitted?: boolean;
-        thinkingOmitted?: boolean;
-      }
-    | undefined;
+  const meta = notice.meta as { truncated?: boolean } | undefined;
 
   // Build the main message
   let mainMessage = t(
@@ -3342,65 +3363,16 @@ const SystemNoticeView = ({
     )}`;
   }
 
-  // Build tooltip content
-  const tooltipContent = t(
-    'sessions.systemNotices.resumeFromExternalChatHistory.tooltip',
-    'Native ACP resume is not yet supported (WIP). Context is restored from chat history.'
-  );
-
   return (
     <div className="relative flex items-center gap-3 py-4">
       {/* Left divider line */}
       <div className="flex-1 h-px bg-border" />
 
-      {/* Center content */}
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 border border-border/60">
-        <Tooltip.Provider>
-          <Tooltip.Root>
-            <Tooltip.Trigger
-              delay={500}
-              render={<Info className="h-4 w-4 text-muted-foreground cursor-help" />}
-            />
-            <Tooltip.Content side="top" className="max-w-xs text-center">
-              <p>{tooltipContent}</p>
-              {meta?.terminalOmitted && (
-                <p
-                  className={cn(
-                    stylex.props(activityTypography.footnote).className,
-                    'mt-1 opacity-80'
-                  )}
-                >
-                  {t(
-                    'sessions.systemNotices.resumeFromExternalChatHistory.terminalOmitted',
-                    'Terminal output was omitted to fit context.'
-                  )}
-                </p>
-              )}
-              {meta?.thinkingOmitted && (
-                <p
-                  className={cn(
-                    stylex.props(activityTypography.footnote).className,
-                    'mt-1 opacity-80'
-                  )}
-                >
-                  {t(
-                    'sessions.systemNotices.resumeFromExternalChatHistory.thinkingOmitted',
-                    'Agent thinking was omitted to fit context.'
-                  )}
-                </p>
-              )}
-            </Tooltip.Content>
-          </Tooltip.Root>
-        </Tooltip.Provider>
-        <span
-          className={cn(
-            stylex.props(activityTypography.footnote).className,
-            'text-muted-foreground'
-          )}
-        >
-          {mainMessage}
-        </span>
-      </div>
+      <span
+        className={cn(stylex.props(activityTypography.footnote).className, 'text-muted-foreground')}
+      >
+        {mainMessage}
+      </span>
 
       {/* Right divider line */}
       <div className="flex-1 h-px bg-border" />
@@ -4098,6 +4070,7 @@ const UserMessageRowView = ({
                       isSaving={isSavingEdit}
                       conversationFontSize={conversationFontSize}
                       mentionSource={editMentionContext?.mentionSource}
+                      sessionSource={editMentionContext?.sessionSource}
                       availableCommands={editMentionContext?.availableCommands}
                       skillAgent={editMentionContext?.skillAgent}
                       currentSessionId={sessionId}
@@ -5265,7 +5238,9 @@ const AssistantThoughtVirtualRow = memo(function AssistantThoughtVirtualRow({
   fontSize: ConversationFontSize;
 }) {
   const { t } = useTranslation();
-  /* The thought is prose on the rail, with no glyph: it is the agent's own
+  /* Only builtin DSH exposes these thought rows. Reuse answer typography,
+     preserving thought search identity and the separate disclosure label.
+     The thought is prose on the rail, with no glyph: it is the agent's own
      words, and an icon beside every paragraph of it read as a list of
      objects. The group header already says "Thought". */
   return (
@@ -5275,11 +5250,9 @@ const AssistantThoughtVirtualRow = memo(function AssistantThoughtVirtualRow({
           ? t('sessions.toolActivity.thinking', 'Thinking…')
           : t('sessions.toolActivity.thought', 'Thought')}
       </span>
-      <MarkdownRenderer
+      <MarkdownBlock
         text={text}
         size={fontSize}
-        compact
-        className={ACTIVITY_STEP_BODY_CLASS}
         isStreaming={isStreaming}
         searchBlockId={getThoughtSearchBlockId(messageId, itemIndex)}
       />

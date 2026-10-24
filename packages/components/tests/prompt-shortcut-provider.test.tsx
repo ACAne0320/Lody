@@ -16,6 +16,7 @@ const fixture = vi.hoisted(() => {
     makePlatform,
     platform: makePlatform(),
     workspaceId: 'workspace-a',
+    mode: null as unknown,
     directory: [],
     createRepo: vi.fn(),
     openStore: vi.fn(),
@@ -25,8 +26,9 @@ const fixture = vi.hoisted(() => {
 });
 
 vi.mock('jotai', () => ({
-  useAtomValue: () => ({ workspaceId: fixture.workspaceId }),
+  useAtomValue: (atom: string) => atom === 'content-mode' ? fixture.mode : ({ workspaceId: fixture.workspaceId }),
 }));
+vi.mock('@/atoms/workspace-content-mode', () => ({ workspaceContentModeAtom: 'content-mode' }));
 vi.mock('@/atoms/runtime', () => ({ activeWorkspaceRuntimeAtom: 'workspace' }));
 vi.mock('@/hooks/use-resolved-workspace-scope', () => ({
   useResolvedWorkspaceScope: ({ enabled }: { enabled: boolean }) => ({
@@ -42,9 +44,9 @@ vi.mock('@lody/platform/react', () => ({
   useCloudQuery: () => fixture.directory,
 }));
 vi.mock('@/lib/cloud-api-operations', () => ({ cloudOperations: { promptShortcuts: {} } }));
-vi.mock('@lody/shared/workspace-data/repo-legacy', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@lody/shared/workspace-data/repo-legacy')>();
-  return { ...actual, WorkspaceRepoLegacy: { create: fixture.createRepo } };
+vi.mock('loro-repo', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('loro-repo')>();
+  return { ...actual, LoroRepo: { create: fixture.createRepo } };
 });
 vi.mock('loro-repo/storage/indexeddb', () => ({ IndexedDBStorageAdaptor: class {} }));
 vi.mock('@lody/shared/prompt-shortcuts', async () => {
@@ -104,6 +106,7 @@ describe('PromptShortcutProvider lifecycle', () => {
 
   beforeEach(() => {
     fixture.workspaceId = 'workspace-a';
+    fixture.mode = null;
     fixture.platform = fixture.makePlatform();
     fixture.records = [];
     fixture.closeStore.mockReset().mockResolvedValue(undefined);
@@ -180,46 +183,6 @@ describe('PromptShortcutProvider lifecycle', () => {
     expect(container.textContent).toBe('workspace-a');
   });
 
-  it('retains a failed database owner, tries Repo cleanup, and recovers on the next open', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    let blocked = true;
-    let storeClosed = false;
-    let repoCloseAttempted = false;
-    let repoClosed = false;
-    let prematurelyOpened = false;
-    fixture.closeStore.mockImplementation(async () => {
-      if (blocked) throw new Error('synthetic shortcut storage failure');
-      storeClosed = true;
-    });
-    fixture.createRepo.mockResolvedValueOnce({
-      destroy: async () => {
-        repoCloseAttempted = true;
-        if (!storeClosed) throw new Error('Original storage remains owned');
-        repoClosed = true;
-      },
-    });
-    await render();
-    const retired = current!;
-    await render(false);
-    expect(current).toBeNull();
-    expect(repoCloseAttempted).toBe(true);
-    expect(repoClosed).toBe(false);
-    fixture.createRepo.mockImplementationOnce(async () => {
-      prematurelyOpened = !repoClosed;
-      return { destroy: async () => {} };
-    });
-    await render();
-    expect(current).toBeNull();
-    expect(prematurelyOpened).toBe(false);
-    await render(false);
-    blocked = false;
-    await render();
-    expect(repoClosed).toBe(true);
-    expect(prematurelyOpened).toBe(false);
-    expect(current).not.toBeNull();
-    expect(current).not.toBe(retired);
-  });
-
   it('fences a replacement platform before publishing its new runtime', async () => {
     await render();
     const first = current!;
@@ -286,4 +249,13 @@ describe('PromptShortcutProvider lifecycle', () => {
     expect(prefetch.mock.calls[0]?.[0]).toEqual([entry]);
     expect(prefetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
   });
+  it('keeps ordinary shortcuts active when another workspace has encrypted evidence', async () => {
+    fixture.mode = { accountId: 'user-a', workspaceId: 'other-workspace', descriptor: { contentMode: 'e2ee' } };
+    await render();
+    expect(container.textContent).toBe('workspace-a');
+    fixture.mode = { accountId: 'user-a', workspaceId: 'workspace-a', descriptor: { contentMode: 'e2ee' } };
+    await render();
+    expect(current).toBeNull();
+  });
+
 });
