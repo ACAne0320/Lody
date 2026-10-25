@@ -7,7 +7,7 @@ Translation: current
 
 ## 摘要
 
-桌面界面变化后，Desktop Daily 的 #507 持续失败：多处 Page Object 仍按已废弃的角色查找控件，或把共享状态标记误当成单一状态的证据。旅程现改为使用当前可访问控件、区分 Turn ACP Session 与标题生成 Session，并在终端 relay 短暂断线时继续等待，同时仍要求实际观察到清理完成。10 月 25 日运行在每个平台均通过 24 个旅程中的 22 个；剩余的 Role 机器选择与归档确认修正保留了配置冻结和 Session 生命周期断言。Issue 关闭前仍需一次新的三平台完整 Daily 运行。
+桌面界面变化后，Desktop Daily 的 #507 持续失败：多处 Page Object 仍按已废弃的角色查找控件，或把共享状态标记误当成单一状态的证据。旅程现改为使用当前可访问控件、区分 Turn ACP Session 与标题生成 Session，并在终端 relay 短暂断线时继续等待，同时仍要求实际观察到清理完成。10 月 25 日运行在每个平台均通过 24 个旅程中的 22 个；Role 机器选择与归档确认修正保留了配置冻结和 Session 生命周期断言。本地完整回归还发现合成 ACP 在历史重放后选择响应错误，修正未改变产品行为。Issue 关闭前仍需一次新的三平台完整 Daily 运行。
 
 ## 证据与决定
 
@@ -38,6 +38,12 @@ Windows 的分叉与 Session 管理旅程在源提示后超时。[artifact 的�
 Role Page Object 现从名为“机器”的 tablist 中选择唯一机器标签页，检查选中状态后再选择准确的合成 Agent 配置。全新隔离桌面只有一台本机，意外出现其他标签页会明确失败。原有的 Role 标识、版本、精确机器/配置组合、编辑和删除后的指令冻结及清理断言全部保留。当前编辑器遵循[多机器 Role 契约](../../../../specs/agent-role-machine-targets.zh.md)。
 
 关系生命周期旅程现在在可见 alertdialog 中明确点击“全部归档”，等待关闭后再观察归档状态。这遵循[子对话归档确认决策](../feature/2026-10-22-archive-sub-conversation-confirmation.zh.md)：递归归档必须由用户选择。旅程仍要求四个 Session 全部归档、opened worktree 和进程释放、永久删除根会话时只删除根及其 child Tab，并且独立 opened Session 保留 dangling 溯源。通过 API 绕过确认框或削弱这些断言，都会漏掉用户实际经历的契约。
+
+## 恢复后的上下文复制 fixture
+
+当前 main 基线的本地完整运行还暴露了 `LODY-CONTEXT-001` 的独立失败：Stop 后自定义 ACP Session 重建，输入为旧对话上下文加 `=== Current Request ===`。保留的 wire 中，第一条富文本提示位于历史部分，新的完成请求位于末尾。模拟器按第一个命中的标记选响应，误选历史里的富文本提示；界面因此正确显示了错误的合成响应，无法出现期望的完成尾段。
+
+模拟器现仅在存在重放封装时按当前请求后缀分类，普通提示仍按原逻辑分类。真实的 Stop、重建、历史重放路径，以及现有的剪贴板前缀、未完成/完成响应和 Session 隔离断言全部保留。直接 ACP wire 检查证明普通富文本响应和恢复后的完成响应均正确。[修复 PR](https://github.com/LodyAI/Lody/pull/1868)包含此 fixture 修正，不改变 CLI 重放契约。
 
 ## 验证与限制
 

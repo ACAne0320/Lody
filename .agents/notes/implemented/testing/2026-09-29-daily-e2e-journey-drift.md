@@ -7,7 +7,7 @@ English | [中文](2026-09-29-daily-e2e-journey-drift.zh.md)
 
 ## Abstract
 
-Desktop Daily Issue #507 kept failing after the desktop UI changed, because several page objects selected retired roles or treated shared status indicators as proof of one state. The journeys now follow the current accessible controls, distinguish Turn ACP sessions from title generation, and tolerate transient terminal relay disconnects while still requiring a successful cleanup observation. The October 25 run passed 22 of 24 journeys on every platform; the remaining Role machine selector and archive confirmation corrections preserve the configuration-freezing and Session lifecycle assertions. A new full three-platform Daily run remains required to close the issue.
+Desktop Daily Issue #507 kept failing after the desktop UI changed, because several page objects selected retired roles or treated shared status indicators as proof of one state. The journeys now follow the current accessible controls, distinguish Turn ACP sessions from title generation, and tolerate transient terminal relay disconnects while still requiring a successful cleanup observation. The October 25 run passed 22 of 24 journeys on every platform; the Role machine selector and archive confirmation corrections preserve the configuration-freezing and Session lifecycle assertions. Local full regression also exposed a synthetic ACP response-selection error after history replay, corrected without changing product behavior. A new full three-platform Daily run remains required to close the issue.
 
 ## Evidence and decision
 
@@ -38,6 +38,12 @@ The [October 25 full Daily](https://github.com/LodyAI/Lody/actions/runs/40172314
 The Role Page Object now selects the sole machine tab inside the named Machine tablist and checks its selected state before choosing the exact synthetic Agent config. The fresh isolated desktop owns one local machine; an unexpected additional tab fails explicitly. Accepted Role identity, revision, machine/config pair, instruction freezing across edit/removal, and cleanup assertions remain in place. The [multi-machine Role contract](../../../../specs/agent-role-machine-targets.md) explains the current editor.
 
 The relation lifecycle journey explicitly chooses **Archive all** in the visible alert dialog, then waits for it to close before observing archive state. This follows the [sub-conversation confirmation decision](../feature/2026-10-22-archive-sub-conversation-confirmation.md): recursive archive requires a user choice. The journey still requires all four Sessions to be archived, opened worktrees/processes to be released, permanent root deletion to remove only the root and contained Tab, and independent opened Sessions to retain dangling provenance. Bypassing the dialog through an API or weakening those expectations would miss the user-visible contract.
+
+## Resumed context-copy fixture
+
+The local full run on the current main base exposed a separate failure in `LODY-CONTEXT-001`: after Stop, the custom ACP session is recreated with previous conversation context followed by `=== Current Request ===`. Its recorded wire contains the first rich prompt in history and the new completion request at the end. The simulator's first-marker match chose the historical rich prompt, so the UI correctly displayed the wrong synthetic response and could never show the expected completion tail.
+
+The simulator now classifies only the current-request suffix when that replay envelope exists, while ordinary prompts retain their original classification. This keeps the real Stop/recreate/history replay path and the existing clipboard prefix, incomplete/completed response, and Session-isolation assertions. A direct ACP wire check proves both the ordinary rich response and the resumed completion response. The [repair PR](https://github.com/LodyAI/Lody/pull/1868) includes this additional fixture correction; it does not change the CLI replay contract.
 
 ## Verification and limits
 
