@@ -184,4 +184,71 @@ describe('multi-repository sessions', () => {
     });
     expect(getSessionGitHubState(session).latestPr).toBeNull();
   });
+
+  it("describes the selected member's repository and PR", () => {
+    const session = createSession({
+      project: { kind: 'github', repoFullName: 'acme/api', branch: 'main' },
+      repoFullName: 'acme/api',
+      projectRun: run,
+      pullRequests: [
+        { url: 'https://github.com/acme/api/pull/7', status: 'open' },
+        { url: 'https://github.com/acme/web/pull/9', status: 'draft' },
+      ],
+      pullRequestState: { 'https://github.com/acme/web/pull/9': { s: 'f', t: 1 } },
+    });
+
+    const state = getSessionGitHubState(session, undefined, 'acme/web');
+
+    expect(state.repoFullName).toBe('acme/web');
+    expect(state.latestPr?.url).toBe('https://github.com/acme/web/pull/9');
+    expect(state.latestPrState?.s).toBe('f');
+    expect(state.canShowGitHubActions).toBe(true);
+    expect(state.hasExistingPr).toBe(true);
+  });
+
+  it('does not borrow another member’s PR for a member with no GitHub remote', () => {
+    const session = createSession({
+      project: { kind: 'github', repoFullName: 'acme/api', branch: 'main' },
+      repoFullName: 'acme/api',
+      projectRun: run,
+      pullRequests: [{ url: 'https://github.com/acme/api/pull/7', status: 'open' }],
+    });
+
+    const state = getSessionGitHubState(session, undefined, null);
+
+    expect(state.repoFullName).toBe('');
+    expect(state.latestPr).toBeNull();
+    expect(state.canShowGitHubActions).toBe(false);
+    expect(state.hasExistingPr).toBe(false);
+  });
+
+  it('finds committed changes in member rows when a mixed group has no diffStats', () => {
+    const mixedRun = {
+      ...run,
+      members: {
+        api: { ...run.members.api, diff: { add: 4, del: 1 } },
+        docs: {
+          o: 1,
+          access: 'additional',
+          src: { kind: 'local', machineId: 'm1', localProjectId: 'docs' },
+          placement: { kind: 'root', dir: 'docs' },
+          path: 'docs',
+          base: 'HEAD',
+        },
+      },
+    } as unknown as NonNullable<SessionMeta['projectRun']>;
+    const session = createSession({
+      project: { kind: 'github', repoFullName: 'acme/api', branch: 'main' },
+      repoFullName: 'acme/api',
+      projectRun: mixedRun,
+      pullRequests: [],
+    });
+
+    const state = getSessionGitHubState(session);
+
+    // A non-Git Member has no diff, so the daemon cannot publish diffStats;
+    // the per-Member fallback still has to enable Create PR after a commit.
+    expect(state.workspaceDirty).toBe(false);
+    expect(state.hasChanges).toBe(true);
+  });
 });
