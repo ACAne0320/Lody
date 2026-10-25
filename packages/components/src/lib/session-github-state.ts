@@ -48,6 +48,22 @@ export const getLatestPullRequest = (
   return prList.toSorted((a, b) => comparePullRequestRecency(a, b))[0] ?? null;
 };
 
+/**
+ * The current PR of one repository. A multi-repository Session records PRs of
+ * several repositories in one list; its context stage describes the first
+ * member, so it must show that repository's PR, never another one's.
+ */
+export const getLatestPullRequestForRepository = (
+  session: Pick<SessionMeta, 'pullRequests'> | null | undefined,
+  repoFullName: string
+): SessionPullRequestMeta | null => {
+  const target = repoFullName.toLowerCase();
+  const matching = (session?.pullRequests ?? []).filter(
+    (pr) => parseGitHubPullRequestUrl(pr.url)?.repoFullName.toLowerCase() === target
+  );
+  return getLatestPullRequest({ pullRequests: matching });
+};
+
 const comparePullRequestRecency = (
   left: SessionPullRequestMeta,
   right: SessionPullRequestMeta
@@ -81,14 +97,30 @@ export const resolveWorkspaceOwnerSession = (
   workspaceSession?: SessionMeta | null
 ): SessionMeta | null => workspaceSession ?? session ?? null;
 
+/**
+ * The GitHub context of a conversation.
+ *
+ * `activeRepository` lets a multi-repository conversation describe the
+ * repository the user selected instead of the legacy first-Member projection:
+ * pass a repository name to describe it, `null` to describe a Member with no
+ * GitHub remote (no PR or GitHub action), and omit it for the legacy default.
+ */
 export const getSessionGitHubState = (
   session: SessionMeta | null | undefined,
-  workspaceSession?: SessionMeta | null
+  workspaceSession?: SessionMeta | null,
+  activeRepository?: string | null
 ): SessionGitHubState => {
   const sourceSession = resolveWorkspaceOwnerSession(session, workspaceSession);
-  const repoFullName =
+  const legacyRepoFullName =
     (resolveProjectGitHubRepo(sourceSession?.project) ?? sourceSession?.repoFullName)?.trim() ?? '';
-  const latestPr = getLatestPullRequest(sourceSession);
+  const repoFullName =
+    activeRepository === undefined ? legacyRepoFullName : (activeRepository?.trim() ?? '');
+  const latestPr =
+    sourceSession?.projectRun || activeRepository !== undefined
+      ? repoFullName
+        ? getLatestPullRequestForRepository(sourceSession, repoFullName)
+        : null
+      : getLatestPullRequest(sourceSession);
   const latestPrState = latestPr?.url
     ? (sourceSession?.pullRequestState?.[latestPr.url] ?? null)
     : null;
@@ -97,6 +129,14 @@ export const getSessionGitHubState = (
   const workspaceUnpushed = sourceSession?.workspaceUnpushed ?? false;
   const allChange = sourceSession?.diffStats?.allChange;
   const hasCommittedDiff = allChange ? allChange.add + allChange.del > 0 : false;
+  // `diffStats` is published only when every Member reports a diff, and a
+  // non-Git Member never does. Fall back to the Member rows so committed work
+  // still enables Create PR in a mixed Project group.
+  const memberHasCommittedDiff = sourceSession?.projectRun
+    ? Object.values(sourceSession.projectRun.members).some(
+        (member) => member.diff && member.diff.add + member.diff.del > 0
+      )
+    : false;
 
   return {
     sourceSessionId: sourceSession?.id,
@@ -107,6 +147,6 @@ export const getSessionGitHubState = (
     hasExistingPr: !!repoFullName && !!latestPr,
     workspaceDirty,
     workspaceUnpushed,
-    hasChanges: workspaceDirty || hasCommittedDiff,
+    hasChanges: workspaceDirty || hasCommittedDiff || memberHasCommittedDiff,
   };
 };
