@@ -195,23 +195,15 @@ export function SessionProjectMembersChip({
                 onSelect={
                   onSelectMember
                     ? () => {
-                        onSelectMember(row.id);
-                        close();
-                      }
+                      onSelectMember(row.id);
+                      close();
+                    }
                     : undefined
                 }
                 onOpenPullRequest={onOpenPullRequest}
               />
             ))}
           </div>
-          {onSelectMember ? (
-            <div {...stylex.props(styles.hint)}>
-              {t(
-                'sessions.projectMembers.selectHint',
-                'Select a repository to show its branch and pull request below.'
-              )}
-            </div>
-          ) : null}
         </div>
       )}
     />
