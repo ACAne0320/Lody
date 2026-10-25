@@ -100,7 +100,8 @@ function fixture() {
 async function withRepo(
   run: (cwd: string, git: (args: string[]) => Promise<string>) => Promise<void>
 ) {
-  const cwd = await mkdtemp(join(tmpdir(), 'lody-branch-'));
+  // Frozen repository identities use real paths, including macOS /var aliases.
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'lody-branch-')));
   const git = async (args: string[]) => (await exec('git', args, { cwd })).stdout;
   try {
     await git(['init', '-b', 'feature/local']);
@@ -585,7 +586,7 @@ describe('WorkspaceGitService', () => {
   );
 
   it('prepares independent roots and nested members with local Git transport', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'lody-group-startup-'));
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'lody-group-startup-')));
     const repositories = ['web', 'api', 'core', 'docs', 'tools', 'extra', 'leaf'];
     const git = async (repo: string, args: string[]) =>
       (await exec('git', ['-C', join(directory, repo), ...args])).stdout.trim();
