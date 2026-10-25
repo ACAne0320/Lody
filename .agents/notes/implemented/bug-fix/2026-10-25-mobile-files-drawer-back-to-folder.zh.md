@@ -3,6 +3,7 @@
 Status: implemented
 Date: 2026-10-25
 Translation: current
+PR: https://github.com/LodyAI/Lody/pull/1881
 [English](2026-10-25-mobile-files-drawer-back-to-folder.md)
 
 ## 摘要
