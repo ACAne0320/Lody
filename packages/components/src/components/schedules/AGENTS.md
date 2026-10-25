@@ -56,7 +56,7 @@
   run the guard, mark and focus the first empty field. There is no project
   mark: beside the project chip it reads as "a project is required".
 - Time and date are typed only: the native picker button is hidden
-  (`[&::-webkit-calendar-picker-indicator]:hidden`), which in Chromium also
+  (`::-webkit-calendar-picker-indicator { display: none }`), which in Chromium also
   removes the popup. The prompt has no resize handle: it grows with its text
   from 4 to 6 lines (`[field-sizing:content]` + `lh` bounds), then scrolls.
   Field marks float (`absolute`) so they never narrow the text.

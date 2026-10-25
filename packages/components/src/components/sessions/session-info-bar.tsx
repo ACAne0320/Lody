@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import * as stylex from '@stylexjs/stylex';
 import { space } from '@lody/ui/tokens/scales.stylex';
+import { clsx } from 'clsx';
 import { LockKeyhole, MonitorPlay, Smartphone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -13,7 +14,6 @@ import type {
 import { sanitizeGoalObjective } from '@lody/shared';
 import { INFO_BAR_ELEVATION_CLASS } from '@/components/chat/composer-surface';
 import { ConversationColumn } from '@/components/shared/conversation-column';
-import { cn } from '@/lib/utils';
 import { INFO_BAR_TEXT_CLASS } from './info-bar-type';
 import { ActionChip } from './info-chip';
 import {
@@ -34,6 +34,14 @@ import {
   type SessionSyncIndicatorVariant,
 } from './session-syncing-indicator';
 import { SessionMachineInfo } from './session-machine-info';
+import { themeColors } from '../../style/theme-colors.stylex';
+import {
+  themeDuration,
+  themeEasing,
+  themeFontWeight,
+  themeRadius,
+  themeSpace,
+} from '../../style/theme-scale.stylex';
 
 export type InfoBarItemKey = 'status' | 'goal' | 'schedule' | 'scheduleSource' | 'context';
 
@@ -131,9 +139,6 @@ export type SessionInfoBarProps = {
  * The message queue intentionally stays OUT of the bar — pending sends need
  * persistent visibility and direct manipulation next to the composer.
  */
-/* The queue sheet is inset past the rounded corners of the surface it sits on
-   (the bar pill or the composer), so its square bottom meets a straight edge. */
-const QUEUE_SHEET_INSET_CLASS = 'mx-3';
 
 const styles = stylex.create({
   machineOnly: {
@@ -149,6 +154,99 @@ const styles = stylex.create({
       default: 'inline',
       '@container (max-width: 420px)': 'none',
     },
+  },
+  /** The queue sheet is inset past the rounded corners of the surface it sits
+   *  on (the bar pill or the composer), so its square bottom meets a straight
+   *  edge. */
+  queueSheet: { marginInline: themeSpace[3] },
+  bar: {
+    width: '100%',
+    flexShrink: 0,
+    backgroundColor: themeColors.background,
+    paddingBottom: themeSpace[2],
+  },
+  /** The native session drawer's transparent edge-back strip is z-30 and spans
+   *  the body's left 48px. Elevating this band keeps the leading chip
+   *  tappable; message body above still owns edge-back swipes. */
+  barEdgeGuard: { position: 'relative', zIndex: 40 },
+  barSpacer: {
+    height: themeSpace[1],
+    width: '100%',
+    flexShrink: 0,
+  },
+  surface: {
+    containerType: 'inline-size',
+    display: 'flex',
+    height: themeSpace[8],
+    width: '100%',
+    minWidth: 0,
+    userSelect: 'none',
+    alignItems: 'center',
+    gap: themeSpace[1.5],
+    borderWidth: '0.5px',
+    borderStyle: 'solid',
+    borderColor: 'hsl(var(--foreground) / 0.1)',
+    borderRadius: themeRadius.lg,
+    backgroundColor: 'hsl(var(--composer))',
+    paddingInline: themeSpace[2],
+  },
+  /** The machine button carries its own 8px padding (chips carry 4px): trim
+   *  the leading inset so the first glyph sits where a chip's would. */
+  surfaceWithMachine: { paddingLeft: themeSpace[1] },
+  /** Keep the queue sheet's top seam free of upward shadow bleed. */
+  surfaceWithQueue: { clipPath: 'inset(0 -6px -6px -6px)' },
+  privateAccessButton: {
+    display: 'inline-flex',
+    height: themeSpace[6],
+    maxWidth: '11rem',
+    flexShrink: 0,
+    alignItems: 'center',
+    gap: themeSpace[1],
+    borderRadius: themeRadius.md,
+    paddingInline: themeSpace[1],
+    color: 'oklch(55.5% 0.163 48.998)',
+    backgroundColor: {
+      default: 'transparent',
+      '@media (hover: hover)': { ':hover': 'hsl(var(--muted-foreground) / 0.1)' },
+    },
+    transitionProperty:
+      'color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to',
+    transitionDuration: themeDuration[150],
+    transitionTimingFunction: themeEasing['in-out'],
+  },
+  privateAccessGlyph: {
+    width: themeSpace[3.5],
+    height: themeSpace[3.5],
+    flexShrink: 0,
+  },
+  privateAccessLabel: {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontWeight: themeFontWeight.medium,
+  },
+  divider: {
+    height: themeSpace[3.5],
+    width: '1px',
+    flexShrink: 0,
+    backgroundColor: 'hsl(var(--muted-foreground) / 0.25)',
+  },
+  stage: {
+    display: 'flex',
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: '0%',
+    alignItems: 'center',
+  },
+  ambientSync: {
+    marginLeft: 'auto',
+    display: 'inline-flex',
+    flexShrink: 0,
+    alignItems: 'center',
+  },
+  ambientSyncLabel: {
+    display: { default: 'none', '@container (min-width: 560px)': 'inline' },
   },
 });
 
@@ -273,13 +371,13 @@ export function SessionInfoBar({
   );
   if (!hasSurfaceContent && !hasMachine) {
     return queue ? (
-      <div className="w-full shrink-0 bg-background">
+      <div {...stylex.props(styles.bar)}>
         <ConversationColumn>
-          <div className={QUEUE_SHEET_INSET_CLASS}>{queue}</div>
+          <div {...stylex.props(styles.queueSheet)}>{queue}</div>
         </ConversationColumn>
       </div>
     ) : (
-      <div aria-hidden="true" className="h-1 w-full shrink-0" />
+      <div aria-hidden="true" {...stylex.props(styles.barSpacer)} />
     );
   }
 
@@ -350,37 +448,36 @@ export function SessionInfoBar({
   const clusterNonEmpty =
     hasMachine || clusterKeys.length > 0 || !!relations || !!onOpenBrowser || !!onOpenIosSimulator;
 
+  const surfaceStyleProps = stylex.props(
+    styles.surface,
+    hasMachine && styles.surfaceWithMachine,
+    Boolean(queue) && styles.surfaceWithQueue
+  );
   const surfaceProps = hasSurfaceContent
     ? {
-        className: cn(
-          '@container flex h-8 w-full min-w-0 select-none items-center gap-1.5 rounded-lg border-[0.5px] border-foreground/[0.10] bg-[hsl(var(--composer))] px-2 dark:border-input-border/45 dark:bg-input/70',
+        ...surfaceStyleProps,
+        className: clsx(
+          surfaceStyleProps.className,
+          // The dark variants of the border and the fill are the only Tailwind
+          // left on this surface: StyleX cannot select a `.dark` ancestor.
+          'dark:border-input-border/45 dark:bg-input/70',
           INFO_BAR_TEXT_CLASS,
-          // The machine button carries its own 8px padding (chips carry 4px):
-          // trim the leading inset so the first glyph sits where a chip's would.
-          hasMachine && 'pl-1',
-          INFO_BAR_ELEVATION_CLASS,
-          // Keep the queue sheet's top seam free of upward shadow bleed.
-          queue && '[clip-path:inset(0_-6px_-6px_-6px)]'
+          INFO_BAR_ELEVATION_CLASS
         ),
       }
     : stylex.props(styles.machineOnly);
 
+  const barProps = stylex.props(styles.bar, protectFromEdgeBackZone && styles.barEdgeGuard);
+  const privateAccessButtonProps = stylex.props(styles.privateAccessButton);
+  const privateAccessLabelProps = stylex.props(styles.privateAccessLabel);
+
   return (
     // Light: same fill and lift as the session composer. Dark: recessed input.
-    <div
-      className={cn(
-        'w-full shrink-0 bg-background pb-2',
-        /* Gutter is on ConversationColumn (same as stream + composer).
-           The native session drawer's transparent edge-back strip is z-30 and
-           spans the body's left 48px. Elevating this band keeps the leading
-           chip tappable; message body above still owns edge-back swipes. */
-        protectFromEdgeBackZone && 'relative z-40'
-      )}
-    >
+    <div {...barProps}>
       {/* Same centered width as the composer content, so the bar and the
           input box share edges. */}
       <ConversationColumn>
-        {queue ? <div className={QUEUE_SHEET_INSET_CLASS}>{queue}</div> : null}
+        {queue ? <div {...stylex.props(styles.queueSheet)}>{queue}</div> : null}
         <div data-info-bar-surface="" {...surfaceProps}>
           {hasMachine && machine ? (
             <SessionMachineInfo
@@ -392,15 +489,22 @@ export function SessionInfoBar({
           {privateAccessStatus ? (
             <button
               type="button"
-              className="inline-flex h-6 max-w-[11rem] shrink-0 items-center gap-1 rounded-md px-1 text-amber-700 transition-colors hover:bg-muted-foreground/10 dark:text-amber-300"
+              {...privateAccessButtonProps}
+              className={clsx(
+                privateAccessButtonProps.className,
+                // The dark variant of a hard-coded colour stays in Tailwind:
+                // StyleX cannot select a `.dark` ancestor.
+                'dark:text-amber-300'
+              )}
               title={privateAccessStatus.description}
               aria-label={privateAccessStatus.description}
               onClick={privateAccessStatus.onAction}
             >
-              <LockKeyhole className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <LockKeyhole {...stylex.props(styles.privateAccessGlyph)} aria-hidden="true" />
               <span
-                className={cn(
-                  'truncate font-medium',
+                {...privateAccessLabelProps}
+                className={clsx(
+                  privateAccessLabelProps.className,
                   compactMachineInfo && stylex.props(styles.compactPrivateLabel).className
                 )}
               >
@@ -414,7 +518,7 @@ export function SessionInfoBar({
             onOpenBrowser ||
             onOpenIosSimulator ||
             stagedKey) ? (
-            <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-muted-foreground/25" />
+            <span aria-hidden="true" {...stylex.props(styles.divider)} />
           ) : null}
           {clusterKeys.map((key) => renderItem(key, 'cluster'))}
           {/* Relations and Browser are plain actions with no stage form. */}
@@ -439,12 +543,12 @@ export function SessionInfoBar({
               icon has no highlight bg), so it must stay clearly visible —
               plain bg-border melts into the pill in light theme. */}
           {stagedKey && clusterNonEmpty ? (
-            <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-muted-foreground/25" />
+            <span aria-hidden="true" {...stylex.props(styles.divider)} />
           ) : null}
           {/* key remounts the stage per item so any open popover state resets
               on hand-off. */}
           {stagedKey ? (
-            <div key={stagedKey} className="flex min-w-0 flex-1 items-center">
+            <div key={stagedKey} {...stylex.props(styles.stage)}>
               {renderItem(stagedKey, 'stage')}
             </div>
           ) : null}
@@ -455,10 +559,10 @@ export function SessionInfoBar({
               ml-auto keeps the spinner pinned right; with a stage present
               its flex-1 has already eaten the space (no-op). */}
           {ambientSync ? (
-            <span className="ml-auto inline-flex shrink-0 items-center">
+            <span {...stylex.props(styles.ambientSync)}>
               <SessionSyncingIndicator
                 variant={ambientSync}
-                labelClassName="hidden @[560px]:inline"
+                labelClassName={stylex.props(styles.ambientSyncLabel).className}
               />
             </span>
           ) : null}

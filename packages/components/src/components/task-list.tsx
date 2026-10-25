@@ -1,6 +1,241 @@
 import { cn } from '@/lib/utils';
+import { clsx } from 'clsx';
 import * as stylex from '@stylexjs/stylex';
 import { sidebarSurface } from './sidebar-surface';
+import { themeColors } from '../style/theme-colors.stylex';
+import {
+  themeDuration,
+  themeEasing,
+  themeFontSize,
+  themeLineHeight,
+  themeRadius,
+  themeSpace,
+} from '../style/theme-scale.stylex';
+/**
+ * The parts of a task row that were Tailwind. The row's own box, ink and
+ * fills come from sidebarSurface; these are the pieces around it.
+ */
+const taskStyles = stylex.create({
+  /** A group: the label row and the conversations under it. */
+  groupStack: { display: 'flex', flexDirection: 'column', gap: themeSpace[0.5] },
+  groupSpacingCollapsed: { marginBottom: { default: themeSpace[1], ':last-child': 0 } },
+  groupSpacing: { marginBottom: { default: themeSpace[2.5], ':last-child': 0 } },
+  groupRow: { display: 'flex', alignItems: 'center', height: themeSpace[7] },
+  groupHeader: {
+    position: 'relative',
+    display: 'flex',
+    height: themeSpace[7],
+    width: '100%',
+    userSelect: 'none',
+    alignItems: 'center',
+    gap: themeSpace[1],
+    textAlign: 'left',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: 'transparent',
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: '0%',
+    transitionProperty:
+      'color, background-color, border-color, text-decoration-color, fill, stroke',
+    transitionDuration: '150ms',
+    transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+  },
+  /** The group's own mark, left-anchored on the toggle's centre line. */
+  groupMark: {
+    position: 'absolute',
+    left: 0,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: themeSpace[4],
+    height: themeSpace[4],
+    transitionProperty: 'opacity',
+    transitionDuration: themeDuration[100],
+    transitionTimingFunction: themeEasing['in-out'],
+  },
+  groupChevron: {
+    position: 'absolute',
+    left: 0,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: themeSpace[4],
+    height: themeSpace[4],
+    transitionProperty: 'opacity, translate, scale, rotate',
+    transitionDuration: themeDuration[150],
+    transitionTimingFunction: themeEasing.out,
+  },
+  groupChevronTrailing: {
+    width: themeSpace[3.5],
+    height: themeSpace[3.5],
+    flexShrink: 0,
+    color: 'currentcolor',
+    transitionProperty: 'opacity, translate, scale, rotate',
+    transitionDuration: themeDuration[150],
+    transitionTimingFunction: themeEasing.out,
+  },
+  groupChevronCollapsed: { rotate: '-90deg' },
+  groupChevronOpen: { rotate: '0deg' },
+  groupName: {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    textAlign: 'left',
+  },
+  groupToggle: {
+    position: 'relative',
+    display: 'flex',
+    height: themeSpace[5],
+    width: themeSpace[5],
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /** The group's new-task button, revealed on hover. */
+  groupNewButton: {
+    marginLeft: 'auto',
+    display: 'inline-flex',
+    height: themeSpace[6],
+    width: themeSpace[6],
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: themeRadius.sm,
+    transitionProperty: 'opacity, background-color, color',
+    transitionDuration: themeDuration[100],
+    transitionTimingFunction: themeEasing['in-out'],
+    opacity: 0,
+    pointerEvents: 'none',
+    backgroundColor: { default: 'transparent', ':hover': themeColors.sidebarHover },
+    color: {
+      default: 'hsl(var(--sidebar-foreground-muted) / 0.8)',
+      ':hover': themeColors.sidebarHoverForeground,
+    },
+    // The Tailwind `focus-visible:ring-2 focus-visible:ring-sidebar-ring/40`
+    // this button used to carry declared a full box-shadow in the utilities
+    // layer, which erased the app's global inset focus ring, and the app
+    // forces Tailwind's own ring transparent — so the button showed NO focus
+    // indicator of its own. Keep that: no resting shadow, and no focus
+    // shadow.
+    boxShadow: { default: null, ':focus-visible': 'none' },
+  },
+  /** The drag handle's own box. */
+  dragHandle: {
+    display: 'inline-flex',
+    height: themeSpace[6],
+    width: themeSpace[6],
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: themeRadius.sm,
+    transitionProperty: 'opacity, background-color, color',
+    transitionDuration: themeDuration[100],
+    transitionTimingFunction: themeEasing['in-out'],
+    opacity: 0,
+    pointerEvents: 'none',
+    backgroundColor: { default: 'transparent', ':hover': themeColors.sidebarHover },
+    color: {
+      default: 'hsl(var(--sidebar-foreground-muted) / 0.8)',
+      ':hover': themeColors.sidebarHoverForeground,
+    },
+    cursor: { default: 'grab', ':active': 'grabbing' },
+    // The Tailwind `focus-visible:ring-2 focus-visible:ring-sidebar-ring/40`
+    // this handle used to carry declared a full box-shadow in the utilities
+    // layer, which erased the app's global inset focus ring, and the app
+    // forces Tailwind's own ring transparent — so the handle showed NO focus
+    // indicator of its own. Keep that: no resting shadow, and no focus
+    // shadow.
+    boxShadow: { default: null, ':focus-visible': 'none' },
+  },
+  /** The row's body: the title and, under it, the meta line. */
+  rowContent: { display: 'flex', minWidth: 0, alignItems: 'center', gap: themeSpace[1.5] },
+  titleRow: { display: 'flex', alignItems: 'center', gap: themeSpace[1] },
+  /** A title the row owns: one clipped line, regular weight. */
+  titleText: {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontWeight: 400,
+  },
+  /** The stretched link that covers the row. */
+  anchor: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 10,
+    borderRadius: themeRadius.md,
+    boxShadow: { default: null, ':focus-visible': 'none' },
+  },
+  /** A child that must escape the stretched link to keep its own pointer events. */
+  raised: { position: 'relative', zIndex: 20 },
+  /** The row that shows the rest of a group. */
+  showMore: {
+    display: 'flex',
+    userSelect: 'none',
+    alignItems: 'center',
+    gap: themeSpace[2],
+    borderRadius: themeRadius.md,
+    paddingInline: themeSpace[2],
+    paddingBlock: themeSpace[2],
+    textAlign: 'left',
+    fontSize: themeFontSize.xs,
+    lineHeight: themeLineHeight.xs,
+    transitionProperty:
+      'color, background-color, border-color, text-decoration-color, fill, stroke',
+    transitionDuration: '150ms',
+    transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    backgroundColor: { default: 'transparent', ':hover': themeColors.sidebarHover },
+    color: {
+      default: 'hsl(var(--sidebar-foreground-muted) / 0.8)',
+      ':hover': themeColors.sidebarHoverForeground,
+    },
+    // The Tailwind `focus-visible:ring-2 focus-visible:ring-sidebar-ring/40`
+    // this row used to carry declared a full box-shadow in the utilities
+    // layer, which erased the app's global inset focus ring, and the app
+    // forces Tailwind's own ring transparent — so the row showed NO focus
+    // indicator of its own. Keep that: no resting shadow, and no focus
+    // shadow.
+    boxShadow: { default: null, ':focus-visible': 'none' },
+  },
+  toggleBox: {
+    display: 'flex',
+    height: themeSpace[4],
+    width: themeSpace[4],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smallGlyph: { width: themeSpace[3.5], height: themeSpace[3.5] },
+  archiveIcon: { width: themeSpace[4], height: themeSpace[4] },
+  archiveAction: {
+    backgroundColor: themeColors.sidebarHover,
+    color: themeColors.sidebarHoverForeground,
+  },
+  listStack: { display: 'flex', flexDirection: 'column' },
+  /** A list's header row: the action sits at the list's end. */
+  listHeader: {
+    display: 'flex',
+    height: themeSpace[7],
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  /** The chevron is hidden until the row is hovered. */
+  chevronHidden: { opacity: 0 },
+  chevronShown: { opacity: 1 },
+  /** The group mark rests a step quieter than the label. */
+  markDimmed: { opacity: 0.8 },
+  /** A row's own hairline edge: a transparent border that a focus ring can
+      replace without moving anything. */
+  rowBorder: {
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: 'transparent',
+  },
+});
+
 import {
   closestCenter,
   DndContext,
@@ -501,22 +736,21 @@ const TaskGroupSection = memo(function TaskGroupSection({
 
   return (
     <div
-      className={cn(
-        'flex flex-col gap-0.5',
-        group.collapsed ? 'mb-1 last:mb-0' : 'mb-2.5 last:mb-0'
+      className={clsx(
+        stylex.props(taskStyles.groupStack).className,
+        stylex.props(group.collapsed ? taskStyles.groupSpacingCollapsed : taskStyles.groupSpacing)
+          .className
       )}
     >
-      <div className="group flex h-7 items-center">
+      <div className={clsx('group', stylex.props(taskStyles.groupRow).className)}>
         <div
           role={canNavigate || canToggle ? 'button' : undefined}
           tabIndex={canNavigate || canToggle ? 0 : -1}
           data-id={`group:${group.key}`}
           data-scope-item="row"
           data-sidebar-group-key={group.key}
-          className={cn(
-            'relative flex h-7 w-full select-none items-center gap-1 text-left',
-            'border border-transparent',
-            'min-w-0 flex-1 transition-colors',
+          className={clsx(
+            stylex.props(taskStyles.groupHeader).className,
             headerTypographyClass,
             stylex.props(
               sidebarSurface.row,
@@ -567,39 +801,47 @@ const TaskGroupSection = memo(function TaskGroupSection({
             >
               <GitHubOwnerIcon
                 repoFullName={group.repoFullName}
-                className={cn(
+                className={clsx(
                   // Left-anchored (not centered in the 20px button) so its left edge
                   // lines up with the session rows' leading status slot below.
-                  'absolute left-0 top-1/2 -translate-y-1/2 h-3.5 w-3.5 transition-opacity duration-100',
+                  stylex.props(taskStyles.groupMark).className,
                   // Mobile: chevron is always shown so the owner avatar must hide
                   // permanently to avoid the two icons overlapping.
-                  canToggle && isMobile
-                    ? 'opacity-0'
-                    : cn('opacity-80', canToggle && 'group-hover:opacity-0')
+                  stylex.props(
+                    canToggle && isMobile ? taskStyles.chevronHidden : taskStyles.markDimmed
+                  ).className,
+                  canToggle && 'group-hover:opacity-0'
                 )}
               />
               {canToggle && (
                 <ChevronDown
-                  className={cn(
-                    'absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4',
-                    'transition-[opacity,translate,scale,rotate] duration-150 ease-out',
-                    isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-                    group.collapsed ? '-rotate-90' : 'rotate-0'
+                  className={clsx(
+                    stylex.props(
+                      taskStyles.groupChevron,
+                      group.collapsed
+                        ? taskStyles.groupChevronCollapsed
+                        : taskStyles.groupChevronOpen
+                    ).className,
+                    stylex.props(isMobile ? taskStyles.chevronShown : taskStyles.chevronHidden)
+                      .className,
+                    'group-hover:opacity-100'
                   )}
                 />
               )}
             </button>
           ) : null}
-          <span className="min-w-0 truncate text-left">{group.label}</span>
+          <span {...stylex.props(taskStyles.groupName)}>{group.label}</span>
           {!showGroupHeaderIcon && canToggle ? (
             <ChevronDown
-              className={cn(
-                'h-3.5 w-3.5 shrink-0 text-current',
-                'transition-[opacity,translate,scale,rotate] duration-150 ease-out',
-                group.collapsed || isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-                // Chats is a top-level sidebar section, so its collapsed chevron
-                // stays visible without hover.
-                group.collapsed ? '-rotate-90' : 'rotate-0'
+              className={clsx(
+                stylex.props(
+                  taskStyles.groupChevronTrailing,
+                  group.collapsed ? taskStyles.groupChevronCollapsed : taskStyles.groupChevronOpen
+                ).className,
+                stylex.props(
+                  group.collapsed || isMobile ? taskStyles.chevronShown : taskStyles.chevronHidden
+                ).className,
+                'group-hover:opacity-100'
               )}
               aria-hidden="true"
             />
@@ -612,12 +854,9 @@ const TaskGroupSection = memo(function TaskGroupSection({
         {canCreateNew && (
           <button
             type="button"
-            className={cn(
-              'ml-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm',
-              'text-sidebar-foreground-muted/80 transition-[opacity,background-color,color] duration-100',
-              'opacity-0 pointer-events-none',
-              'group-hover:opacity-100 group-hover:pointer-events-auto',
-              'hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring/40'
+            className={clsx(
+              stylex.props(taskStyles.groupNewButton).className,
+              'group-hover:opacity-100 group-hover:pointer-events-auto'
             )}
             aria-label="New task"
             onClick={() => onNew?.(group.repoFullName ?? undefined)}
@@ -718,7 +957,7 @@ const TaskGroupSection = memo(function TaskGroupSection({
                   <SidebarSessionTitleText
                     sessionId={task.taskId}
                     selected={showSelectedState}
-                    className={cn('truncate font-normal', extraClassName)}
+                    className={clsx(stylex.props(taskStyles.titleText).className, extraClassName)}
                   >
                     {task.title}
                   </SidebarSessionTitleText>
@@ -774,7 +1013,7 @@ const TaskGroupSection = memo(function TaskGroupSection({
                         ? sidebarSurface.selected
                         : isSelectable && !isMobile && sidebarSurface.hover
                     ).className,
-                    'border border-transparent',
+                    stylex.props(taskStyles.rowBorder).className,
                     // Keyboard-only focus ring. Plain :focus-within also matches
                     // after a mouse click (the overlay <a> keeps focus), which
                     // left a permanent inset ring on the selected row that read
@@ -810,24 +1049,24 @@ const TaskGroupSection = memo(function TaskGroupSection({
                     <a
                       href={taskHref}
                       aria-label={task.title}
-                      className="absolute inset-0 z-10 rounded-md focus:outline-hidden focus-visible:shadow-none"
+                      {...stylex.props(taskStyles.anchor)}
                       onClick={handleAnchorClick}
                     />
                   ) : null}
-                  <div className="flex min-w-0 items-center gap-1.5">
+                  <div {...stylex.props(taskStyles.rowContent)}>
                     <SessionRowLeadingSlot
                       showMenuButton={hasMenuActions}
                       menuLabel={moreActionsLabel}
                     />
                     <div
-                      className={cn(
-                        'flex items-center gap-1',
+                      className={clsx(
+                        stylex.props(taskStyles.titleRow).className,
                         SIDEBAR_ROW_TEXT_CLASS,
                         stylex.props(
                           sidebarSurface.title,
                           showSelectedState && sidebarSurface.titleSelected
                         ).className,
-                        useAnchor && isEditingTitle && 'relative z-20'
+                        useAnchor && isEditingTitle && stylex.props(taskStyles.raised).className
                       )}
                       // Double-click to rename is scoped to the title only, so it can't
                       // be triggered by double-clicking the Archive confirm button.
@@ -1090,16 +1329,11 @@ const TaskGroupSection = memo(function TaskGroupSection({
               data-id={`show-more:${group.key}`}
               data-scope-item="row"
               data-sidebar-show-more={group.key}
-              className={cn(
-                'flex select-none items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-sidebar-foreground-muted/80',
-                'transition-colors',
-                'hover:bg-sidebar-hover hover:text-sidebar-hover-foreground',
-                'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring/40'
-              )}
+              className={stylex.props(taskStyles.showMore).className}
               aria-label={toggleListLabel}
               onClick={() => onToggleFullList?.(group.key)}
             >
-              <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true" />
+              <span {...stylex.props(taskStyles.toggleBox)} aria-hidden="true" />
               <span>{toggleListLabel}</span>
             </button>
           )}
@@ -1145,13 +1379,9 @@ function SortableRepoGroupSection({
     <button
       type="button"
       ref={setActivatorNodeRef}
-      className={cn(
-        'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm',
-        'text-sidebar-foreground-muted/80 transition-[opacity,background-color,color] duration-100',
-        'opacity-0 pointer-events-none',
-        'group-hover:opacity-100 group-hover:pointer-events-auto',
-        'hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring/40',
-        'cursor-grab active:cursor-grabbing'
+      className={clsx(
+        stylex.props(taskStyles.dragHandle).className,
+        'group-hover:opacity-100 group-hover:pointer-events-auto'
       )}
       aria-label="Reorder repo"
       {...attributes}
@@ -1276,10 +1506,8 @@ export const TaskList = memo(function TaskList({
 
   if (isLoading && tasks.length === 0) {
     return (
-      <div className="flex flex-col">
-        {headerAction ? (
-          <div className="flex h-7 shrink-0 items-center justify-end">{headerAction}</div>
-        ) : null}
+      <div {...stylex.props(taskStyles.listStack)}>
+        {headerAction ? <div {...stylex.props(taskStyles.listHeader)}>{headerAction}</div> : null}
         <SidebarListSkeleton className={className} />
       </div>
     );
@@ -1319,7 +1547,7 @@ export const TaskList = memo(function TaskList({
     <Tooltip.Provider>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={repoIds} strategy={verticalListSortingStrategy}>
-          <div className={cn('flex flex-col', className)}>
+          <div className={clsx(stylex.props(taskStyles.listStack).className, className)}>
             {groups.map((group, groupIndex) => {
               const whetherShowFullList = resolvedShowFullListByGroup[group.key] ?? false;
               const groupHeaderAction = groupIndex === 0 ? headerAction : undefined;

@@ -1,0 +1,242 @@
+# The alpha steps the product surfaces use
+
+Most of these have no semantic home. `hsl(var(--muted) / 0.6)` is a number
+someone typed, not a token the theme owns, and the migration keeps it that way:
+a token per step (`muted60`, `border60`) would freeze a value the theme may
+want to move, and most of the numbers have no meaning behind them.
+
+This list is the input to the question "which of these deserve a name?" — asked
+once, with the list in front of it, rather than one arbitrary step at a time.
+
+Regenerate it with `node scripts/alpha-catalogue.mjs`. This lexical snapshot
+recognizes direct HSL alpha expressions and Tailwind modifiers; it does not
+resolve compound color mixes or imported StyleX values. It is not a complete
+coverage count or a conversion recipe. Use the [compiler-based migration
+contract](README.md#alpha) when replacing a utility.
+
+## Theme colours
+
+| token                        | alpha | files |
+| ---------------------------- | ----- | ----- |
+| `--background`               | 0.4   | 5     |
+| `--background`               | 0.55  | 5     |
+| `--background`               | 0.6   | 6     |
+| `--background`               | 0.7   | 2     |
+| `--background`               | 0.8   | 3     |
+| `--background`               | 0.85  | 2     |
+| `--background`               | 0.9   | 3     |
+| `--background`               | 0.95  | 7     |
+| `--border`                   | 0.3   | 4     |
+| `--border`                   | 0.4   | 26    |
+| `--border`                   | 0.5   | 14    |
+| `--border`                   | 0.6   | 76    |
+| `--border`                   | 0.7   | 29    |
+| `--border`                   | 0.8   | 3     |
+| `--border`                   | 1     | 3     |
+| `--card`                     | 0.4   | 5     |
+| `--card`                     | 0.5   | 2     |
+| `--card`                     | 0.6   | 1     |
+| `--card`                     | 0.7   | 2     |
+| `--card`                     | 0.9   | 1     |
+| `--card`                     | 0.95  | 1     |
+| `--card`                     | 1     | 3     |
+| `--chart-1`                  | 0.14  | 1     |
+| `--code-added`               | 0.15  | 1     |
+| `--code-foreground`          | 0.55  | 1     |
+| `--code-removed`             | 0.15  | 1     |
+| `--current`                  | 0.6   | 1     |
+| `--destructive`              | 0.04  | 2     |
+| `--destructive`              | 0.05  | 2     |
+| `--destructive`              | 0.08  | 1     |
+| `--destructive`              | 0.1   | 5     |
+| `--destructive`              | 0.12  | 1     |
+| `--destructive`              | 0.2   | 1     |
+| `--destructive`              | 0.25  | 1     |
+| `--destructive`              | 0.3   | 6     |
+| `--destructive`              | 0.35  | 1     |
+| `--destructive`              | 0.4   | 2     |
+| `--destructive`              | 0.45  | 1     |
+| `--destructive`              | 0.5   | 1     |
+| `--destructive`              | 0.6   | 1     |
+| `--destructive`              | 0.7   | 1     |
+| `--destructive`              | 0.8   | 3     |
+| `--destructive`              | 0.9   | 2     |
+| `--destructive`              | 1     | 1     |
+| `--foreground`               | 0.03  | 1     |
+| `--foreground`               | 0.045 | 1     |
+| `--foreground`               | 0.05  | 5     |
+| `--foreground`               | 0.06  | 4     |
+| `--foreground`               | 0.07  | 2     |
+| `--foreground`               | 0.08  | 1     |
+| `--foreground`               | 0.1   | 7     |
+| `--foreground`               | 0.12  | 1     |
+| `--foreground`               | 0.15  | 2     |
+| `--foreground`               | 0.16  | 1     |
+| `--foreground`               | 0.25  | 1     |
+| `--foreground`               | 0.28  | 1     |
+| `--foreground`               | 0.55  | 1     |
+| `--foreground`               | 0.7   | 6     |
+| `--foreground`               | 0.75  | 2     |
+| `--foreground`               | 0.8   | 12    |
+| `--foreground`               | 0.85  | 6     |
+| `--foreground`               | 0.9   | 12    |
+| `--foreground`               | 1     | 2     |
+| `--github-addition`          | 0.1   | 1     |
+| `--github-closed`            | 0.14  | 1     |
+| `--github-deletion`          | 0.1   | 1     |
+| `--github-merged`            | 0.16  | 1     |
+| `--github-open`              | 0.14  | 1     |
+| `--hover`                    | 0.4   | 1     |
+| `--hover`                    | 0.45  | 1     |
+| `--hover`                    | 0.5   | 1     |
+| `--hover`                    | 0.6   | 3     |
+| `--hover`                    | 0.9   | 1     |
+| `--input`                    | 0.4   | 3     |
+| `--input`                    | 0.6   | 2     |
+| `--input`                    | 0.7   | 2     |
+| `--input`                    | 0.9   | 12    |
+| `--input-border`             | 0.45  | 2     |
+| `--input-border`             | 0.6   | 1     |
+| `--input-border`             | 0.7   | 11    |
+| `--input-placeholder`        | 0.85  | 1     |
+| `--l-white`                  | 0.25  | 1     |
+| `--muted`                    | 0.1   | 5     |
+| `--muted`                    | 0.15  | 1     |
+| `--muted`                    | 0.2   | 15    |
+| `--muted`                    | 0.25  | 3     |
+| `--muted`                    | 0.3   | 16    |
+| `--muted`                    | 0.35  | 2     |
+| `--muted`                    | 0.4   | 22    |
+| `--muted`                    | 0.5   | 9     |
+| `--muted`                    | 0.55  | 1     |
+| `--muted`                    | 0.6   | 25    |
+| `--muted`                    | 0.7   | 8     |
+| `--muted`                    | 0.8   | 5     |
+| `--muted`                    | 0.9   | 2     |
+| `--muted`                    | 1     | 1     |
+| `--muted-foreground`         | 0.04  | 1     |
+| `--muted-foreground`         | 0.05  | 3     |
+| `--muted-foreground`         | 0.07  | 1     |
+| `--muted-foreground`         | 0.08  | 1     |
+| `--muted-foreground`         | 0.1   | 9     |
+| `--muted-foreground`         | 0.11  | 1     |
+| `--muted-foreground`         | 0.13  | 1     |
+| `--muted-foreground`         | 0.14  | 1     |
+| `--muted-foreground`         | 0.15  | 2     |
+| `--muted-foreground`         | 0.16  | 1     |
+| `--muted-foreground`         | 0.2   | 3     |
+| `--muted-foreground`         | 0.25  | 2     |
+| `--muted-foreground`         | 0.3   | 3     |
+| `--muted-foreground`         | 0.32  | 1     |
+| `--muted-foreground`         | 0.35  | 2     |
+| `--muted-foreground`         | 0.4   | 6     |
+| `--muted-foreground`         | 0.45  | 1     |
+| `--muted-foreground`         | 0.5   | 5     |
+| `--muted-foreground`         | 0.55  | 3     |
+| `--muted-foreground`         | 0.6   | 16    |
+| `--muted-foreground`         | 0.7   | 16    |
+| `--muted-foreground`         | 0.75  | 3     |
+| `--muted-foreground`         | 0.8   | 11    |
+| `--muted-foreground`         | 1     | 4     |
+| `--popover-foreground`       | 0.65  | 1     |
+| `--popover-foreground`       | 0.7   | 1     |
+| `--popover-foreground`       | 0.75  | 1     |
+| `--popover-foreground`       | 0.8   | 1     |
+| `--primary`                  | 0.04  | 1     |
+| `--primary`                  | 0.06  | 1     |
+| `--primary`                  | 0.08  | 2     |
+| `--primary`                  | 0.1   | 16    |
+| `--primary`                  | 0.12  | 1     |
+| `--primary`                  | 0.15  | 6     |
+| `--primary`                  | 0.2   | 3     |
+| `--primary`                  | 0.25  | 2     |
+| `--primary`                  | 0.3   | 6     |
+| `--primary`                  | 0.35  | 1     |
+| `--primary`                  | 0.4   | 8     |
+| `--primary`                  | 0.5   | 2     |
+| `--primary`                  | 0.6   | 3     |
+| `--primary`                  | 0.7   | 1     |
+| `--primary`                  | 0.9   | 1     |
+| `--ring`                     | 0.2   | 1     |
+| `--ring`                     | 0.3   | 2     |
+| `--ring`                     | 0.4   | 3     |
+| `--ring`                     | 0.5   | 3     |
+| `--ring`                     | 0.6   | 4     |
+| `--scrollbar-thumb`          | 0.35  | 1     |
+| `--scrollbar-thumb`          | 0.5   | 2     |
+| `--scrollbar-thumb-active`   | 0.75  | 1     |
+| `--scrollbar-thumb-hover`    | 0.5   | 1     |
+| `--scrollbar-thumb-hover`    | 0.65  | 1     |
+| `--secondary`                | 0.5   | 1     |
+| `--secondary`                | 0.55  | 1     |
+| `--secondary`                | 0.6   | 1     |
+| `--sidebar`                  | 0.8   | 1     |
+| `--sidebar-border`           | 0.6   | 4     |
+| `--sidebar-border`           | 0.7   | 3     |
+| `--sidebar-border`           | 0.8   | 4     |
+| `--sidebar-foreground`       | 0.15  | 1     |
+| `--sidebar-foreground`       | 0.2   | 1     |
+| `--sidebar-foreground`       | 0.7   | 1     |
+| `--sidebar-foreground`       | 0.75  | 1     |
+| `--sidebar-foreground-muted` | 0.3   | 1     |
+| `--sidebar-foreground-muted` | 0.45  | 1     |
+| `--sidebar-foreground-muted` | 0.6   | 1     |
+| `--sidebar-foreground-muted` | 0.7   | 2     |
+| `--sidebar-foreground-muted` | 0.8   | 7     |
+| `--sidebar-ring`             | 0.3   | 4     |
+| `--sidebar-ring`             | 0.4   | 6     |
+| `--sidebar-ring`             | 0.5   | 2     |
+| `--sidebar-ring`             | 0.7   | 2     |
+| `--status-danger`            | 0.7   | 1     |
+| `--status-info`              | 0.1   | 1     |
+| `--status-info`              | 0.3   | 1     |
+| `--status-info`              | 0.4   | 1     |
+| `--status-success`           | 0.08  | 1     |
+| `--status-success`           | 0.1   | 2     |
+| `--status-success`           | 0.12  | 1     |
+| `--status-success`           | 0.2   | 1     |
+| `--status-success`           | 0.25  | 1     |
+| `--status-success`           | 0.3   | 1     |
+| `--status-success`           | 0.4   | 1     |
+| `--status-success`           | 0.9   | 1     |
+| `--status-warning`           | 0.1   | 3     |
+| `--status-warning`           | 0.25  | 1     |
+| `--status-warning`           | 0.3   | 2     |
+| `--status-warning`           | 0.4   | 2     |
+| `--status-warning`           | 1     | 2     |
+
+## Tailwind palette
+
+| colour                | alpha | files |
+| --------------------- | ----- | ----- |
+| `palette:amber-200`   | 0.6   | 1     |
+| `palette:amber-200`   | 0.75  | 1     |
+| `palette:amber-300`   | 0.55  | 1     |
+| `palette:amber-400`   | 0.25  | 1     |
+| `palette:amber-400`   | 0.8   | 1     |
+| `palette:amber-50`    | 0.4   | 1     |
+| `palette:amber-500`   | 0.1   | 4     |
+| `palette:amber-500`   | 0.25  | 1     |
+| `palette:amber-500`   | 0.3   | 1     |
+| `palette:amber-500`   | 0.4   | 1     |
+| `palette:black`       | 0.1   | 1     |
+| `palette:black`       | 0.2   | 2     |
+| `palette:black`       | 0.3   | 2     |
+| `palette:black`       | 0.4   | 1     |
+| `palette:black`       | 0.5   | 1     |
+| `palette:emerald-500` | 0.1   | 1     |
+| `palette:green-500`   | 0.2   | 1     |
+| `palette:red-500`     | 0.2   | 1     |
+| `palette:slate-200`   | 0.6   | 2     |
+| `palette:slate-200`   | 0.8   | 1     |
+| `palette:white`       | 0.05  | 1     |
+| `palette:white`       | 0.1   | 4     |
+| `palette:white`       | 0.12  | 3     |
+| `palette:white`       | 0.14  | 3     |
+| `palette:white`       | 0.15  | 2     |
+| `palette:white`       | 0.25  | 1     |
+| `palette:white`       | 0.3   | 1     |
+| `palette:white`       | 0.7   | 1     |
+| `palette:white`       | 0.85  | 1     |
+
+215 distinct alpha steps (186 theme, 29 palette)

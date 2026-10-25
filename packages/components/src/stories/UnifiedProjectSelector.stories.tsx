@@ -183,6 +183,14 @@ type Story = StoryObj<typeof meta>;
 
 export const SelectedPrivate: Story = {};
 
+export const PropertyRow: Story = {
+  args: { triggerVariant: 'property-row', contentSide: 'bottom' },
+};
+
+export const NoProject: Story = {
+  args: { value: { kind: 'none' } },
+};
+
 export const SelectedTeamWithoutStatus: Story = {
   args: {
     value: { kind: 'local', machineId, localProjectId: 'loro' as LocalProjectId },

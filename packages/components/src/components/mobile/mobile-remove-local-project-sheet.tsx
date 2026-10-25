@@ -3,11 +3,15 @@ import type { LocalProjectWorktreeCleanupPreflightResult } from '@lody/shared';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { Spinner } from '@lody/ui/spinner';
+import * as stylex from '@stylexjs/stylex';
 
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerTitle } from '@/ui/drawer';
 import { Button } from '@lody/ui/button';
 import { Checkbox } from '@lody/ui/checkbox';
-import { cn } from '@/lib/utils';
+import { withClassName } from '@/lib/stylex';
+import { themeColors } from '../../style/theme-colors.stylex';
+import { themeFontWeight, themeRadius, themeSpace } from '../../style/theme-scale.stylex';
+import { sheetSurface } from './sheet-surface';
 
 export type MobileRemoveLocalProjectSheetProps = {
   open: boolean;
@@ -30,6 +34,103 @@ export type MobileRemoveLocalProjectSheetProps = {
      the remove button while it's in flight; it closes the sheet on success. */
   onConfirm: (options: { cleanupWorktrees: boolean }) => Promise<boolean>;
 };
+
+const styles = stylex.create({
+  /** The sheet's description, under the header. */
+  description: {
+    paddingInline: themeSpace[4],
+    paddingBottom: themeSpace[2],
+    fontSize: '0.78rem',
+    lineHeight: 1.625,
+    color: themeColors.mutedForeground,
+  },
+  /** The device name inside the description. */
+  descriptionDevice: {
+    fontWeight: themeFontWeight.semibold,
+    color: themeColors.foreground,
+  },
+
+  /** The sheet's body. */
+  body: {
+    paddingInline: themeSpace[4],
+    paddingBottom: themeSpace[3],
+    fontSize: '0.78rem',
+    lineHeight: 1.625,
+    color: themeColors.mutedForeground,
+  },
+  /** A block of the body, set apart from the next one. */
+  bodyBlock: {
+    marginTop: '0px',
+    marginBottom: { default: '0px', ':not(:last-child)': '0.75rem' },
+  },
+  /** A paragraph inside a block. */
+  bodyLine: {
+    marginTop: '0px',
+    marginBottom: { default: '0px', ':not(:last-child)': '0.25rem' },
+  },
+  /** The paragraph that leads the archive note. */
+  archiveNote: { color: 'color-mix(in oklab, hsl(var(--foreground) / 1) 85%, transparent)' },
+
+  /** The note that the original folder is never touched. */
+  safeNote: {
+    paddingInline: themeSpace[3],
+    paddingTop: themeSpace[2.5],
+    paddingBottom: themeSpace[2.5],
+    borderRadius: themeRadius.lg,
+    backgroundColor: 'color-mix(in oklab, hsl(var(--muted) / 1) 60%, transparent)',
+  },
+  safeNoteLead: {
+    fontWeight: themeFontWeight.medium,
+    color: 'color-mix(in oklab, hsl(var(--foreground) / 1) 90%, transparent)',
+  },
+  safeNotePath: {
+    marginTop: themeSpace[1],
+    wordBreak: 'break-all',
+    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+    fontSize: '0.7rem',
+  },
+
+  /** The cleanup option. */
+  cleanupOption: {
+    paddingInline: themeSpace[3],
+    paddingTop: themeSpace[2.5],
+    paddingBottom: themeSpace[2.5],
+    borderRadius: themeRadius.lg,
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: 'color-mix(in oklab, hsl(var(--border) / 1) 70%, transparent)',
+  },
+  cleanupLabel: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: themeSpace[3],
+  },
+  cleanupTitle: {
+    display: 'block',
+    fontWeight: themeFontWeight.medium,
+    color: themeColors.foreground,
+  },
+  cleanupHelper: {
+    display: 'block',
+    marginTop: themeSpace[1],
+  },
+  /** The preflight results, under the option. */
+  cleanupResult: {
+    marginTop: themeSpace[2],
+    borderTopWidth: '1px',
+    borderTopStyle: 'solid',
+    paddingTop: themeSpace[2],
+  },
+  /** One line of the preflight results. */
+  cleanupResultLine: {
+    marginTop: '0px',
+    marginBottom: { default: '0px', ':not(:last-child)': '0.25rem' },
+  },
+  cleanupError: { color: themeColors.destructive },
+  /** Keep the existing Tailwind dark-theme scope for the dirty-worktree warning. */
+  cleanupDirty: { color: 'var(--color-amber-700, oklch(55.5% 0.163 48.998))' },
+  cleanupFailed: { color: themeColors.mutedForeground },
+});
 
 /**
  * Mobile-native bottom-sheet confirm for removing a local project, mirroring
@@ -117,15 +218,10 @@ export function MobileRemoveLocalProjectSheet({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} repositionInputs={false}>
-      <DrawerContent
-        className={cn(
-          'mobile-remove-local-project-sheet',
-          'h-auto! max-h-[92dvh]! rounded-t-2xl border-border/60'
-        )}
-      >
-        <div className="flex max-h-full min-h-0 flex-col">
-          <header className="relative flex items-center px-12 pb-2 pt-2">
-            <DrawerTitle className="w-full text-center text-[0.95rem] font-semibold tracking-tight text-foreground">
+      <DrawerContent className="mobile-remove-local-project-sheet h-auto! max-h-[92dvh]! rounded-t-2xl border-border/60">
+        <div {...stylex.props(sheetSurface.columnAuto)}>
+          <header {...stylex.props(sheetSurface.header, sheetSurface.headerWide)}>
+            <DrawerTitle {...stylex.props(sheetSurface.title, sheetSurface.titleFull)}>
               {t('sidebar.localProjects.remove.title', 'Remove “{{name}}” from Lody?', {
                 name: projectName,
               })}
@@ -135,20 +231,23 @@ export function MobileRemoveLocalProjectSheet({
                 type="button"
                 aria-label={t('common.close', 'Close')}
                 disabled={isRemoving}
-                className={cn(
-                  'absolute right-3 top-1.5 inline-flex h-9 w-9 items-center justify-center rounded-full',
-                  'text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
-                  'disabled:opacity-50 disabled:pointer-events-none'
+                {...stylex.props(
+                  sheetSurface.iconButton,
+                  sheetSurface.iconButtonRight,
+                  sheetSurface.iconButtonDisabled
                 )}
               >
-                <X className="h-5 w-5" aria-hidden="true" strokeWidth={1.8} />
+                <X {...stylex.props(sheetSurface.glyph20)} aria-hidden="true" strokeWidth={1.8} />
               </button>
             </DrawerClose>
           </header>
 
-          <DrawerDescription className="px-4 pb-2 text-[0.78rem] leading-relaxed text-muted-foreground">
+          {/* The drawer's own description carries a body size; the
+              description's own size stays a Tailwind class so it keeps
+              winning over it. */}
+          <DrawerDescription {...withClassName(stylex.props(styles.description), 'text-[0.78rem]')}>
             {descBefore}
-            <span className="font-semibold text-foreground">{device}</span>
+            <span {...stylex.props(styles.descriptionDevice)}>{device}</span>
             {descAfter}
             {!deviceOnline ? (
               <>
@@ -161,9 +260,9 @@ export function MobileRemoveLocalProjectSheet({
             ) : null}
           </DrawerDescription>
 
-          <div className="space-y-3 px-4 pb-3 text-[0.78rem] leading-relaxed text-muted-foreground">
-            <div className="space-y-1">
-              <p className="text-foreground/85">
+          <div {...stylex.props(styles.body)}>
+            <div {...stylex.props(styles.bodyBlock)}>
+              <p {...stylex.props(styles.bodyLine, styles.archiveNote)}>
                 {conversationCount > 0
                   ? t('sidebar.localProjects.remove.archiveDescription', {
                       count: conversationCount,
@@ -174,26 +273,24 @@ export function MobileRemoveLocalProjectSheet({
                     )}
               </p>
               {runningSessionCount > 0 ? (
-                <p>
+                <p {...stylex.props(styles.bodyLine)}>
                   {t('sidebar.localProjects.remove.runningSessionsSummary', {
                     count: runningSessionCount,
                   })}
                 </p>
               ) : null}
             </div>
-            <div className="rounded-lg bg-muted/60 px-3 py-2.5">
-              <p className="font-medium text-foreground/90">
+            <div {...stylex.props(styles.bodyBlock, styles.safeNote)}>
+              <p {...stylex.props(styles.safeNoteLead)}>
                 {t(
                   'sidebar.localProjects.remove.originalDirectorySafe',
                   'Lody never deletes the original project folder or its files.'
                 )}
               </p>
-              {pathLabel ? (
-                <p className="mt-1 break-all font-mono text-[0.7rem]">{pathLabel}</p>
-              ) : null}
+              {pathLabel ? <p {...stylex.props(styles.safeNotePath)}>{pathLabel}</p> : null}
             </div>
-            <div className="rounded-lg border border-border/70 px-3 py-2.5">
-              <label className="flex items-start gap-3">
+            <div {...stylex.props(styles.bodyBlock, styles.cleanupOption)}>
+              <label {...stylex.props(styles.cleanupLabel)}>
                 <Checkbox
                   className="mt-0.5"
                   checked={cleanupWorktrees}
@@ -201,13 +298,13 @@ export function MobileRemoveLocalProjectSheet({
                   onCheckedChange={(checked) => void handleCleanupChange(checked)}
                 />
                 <span>
-                  <span className="block font-medium text-foreground">
+                  <span {...stylex.props(styles.cleanupTitle)}>
                     {t(
                       'sidebar.localProjects.remove.cleanupWorktrees',
                       'Also delete session worktrees created by Lody'
                     )}
                   </span>
-                  <span className="mt-1 block">
+                  <span {...stylex.props(styles.cleanupHelper)}>
                     {canCleanupWorktrees
                       ? t(
                           'sidebar.localProjects.remove.cleanupWorktreesHelper',
@@ -221,23 +318,30 @@ export function MobileRemoveLocalProjectSheet({
                 </span>
               </label>
               {cleanupWorktrees ? (
-                <div className="mt-2 border-t pt-2">
+                <div {...stylex.props(styles.cleanupResult)}>
                   {isPreflighting
                     ? t(
                         'sidebar.localProjects.remove.checkingWorktrees',
                         'Checking each worktree for changes…'
                       )
                     : null}
-                  {preflightError ? <p className="text-destructive">{preflightError}</p> : null}
+                  {preflightError ? (
+                    <p {...stylex.props(styles.cleanupError)}>{preflightError}</p>
+                  ) : null}
                   {preflight ? (
-                    <div className="space-y-1">
-                      <p>
+                    <div>
+                      <p {...stylex.props(styles.cleanupResultLine)}>
                         {t('sidebar.localProjects.remove.cleanWorktreesSummary', {
                           count: preflight.clean.length,
                         })}
                       </p>
                       {preflight.dirty.length > 0 ? (
-                        <p className="text-amber-700 dark:text-amber-300">
+                        <p
+                          {...withClassName(
+                            stylex.props(styles.cleanupResultLine, styles.cleanupDirty),
+                            'dark:text-amber-300'
+                          )}
+                        >
                           {t('sidebar.localProjects.remove.dirtyWorktreesSummary', {
                             count: preflight.dirty.length,
                           })}
@@ -245,7 +349,7 @@ export function MobileRemoveLocalProjectSheet({
                         </p>
                       ) : null}
                       {preflight.failed.length > 0 ? (
-                        <p className="text-muted-foreground">
+                        <p {...stylex.props(styles.cleanupResultLine, styles.cleanupFailed)}>
                           {t('sidebar.localProjects.remove.inspectFailedSummary', {
                             count: preflight.failed.length,
                           })}
@@ -258,12 +362,7 @@ export function MobileRemoveLocalProjectSheet({
             </div>
           </div>
 
-          <div
-            className={cn(
-              'flex shrink-0 items-center gap-2 border-t border-border/40 px-4 pt-3',
-              'pb-[calc(12px+max(0px,var(--safe-area-bottom,0px)))]'
-            )}
-          >
+          <div {...stylex.props(sheetSurface.footer, sheetSurface.footerPadSafe)}>
             <Button
               type="button"
               variant="secondary"

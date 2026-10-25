@@ -1,7 +1,63 @@
 import * as React from 'react';
 import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area';
+import * as stylex from '@stylexjs/stylex';
 
 import { cn } from '@/lib/utils';
+import { withClassName } from '@/lib/stylex';
+import { themeSpace } from '../style/theme-scale.stylex';
+
+const styles = stylex.create({
+  root: { position: 'relative', overflow: 'hidden' },
+  viewport: { height: '100%', width: '100%', borderRadius: 'inherit' },
+  track: {
+    display: 'flex',
+    touchAction: 'none',
+    userSelect: 'none',
+    position: 'absolute',
+    transitionProperty:
+      'color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to',
+    transitionDuration: 'var(--tw-duration, var(--default-transition-duration, 150ms))',
+    transitionTimingFunction:
+      'var(--tw-ease, var(--default-transition-timing-function, cubic-bezier(0.4, 0, 0.2, 1)))',
+    padding: '1px',
+  },
+  vertical: {
+    top: 0,
+    right: 0,
+    height: '100%',
+    width: themeSpace[2.5],
+    borderLeftWidth: '1px',
+    borderLeftStyle: 'var(--tw-border-style, solid)',
+    borderLeftColor: 'transparent',
+  },
+  horizontal: {
+    bottom: 0,
+    left: 0,
+    height: themeSpace[1.5],
+    width: '100%',
+    flexDirection: 'column',
+    borderTopWidth: '1px',
+    borderTopStyle: 'var(--tw-border-style, solid)',
+    borderTopColor: 'transparent',
+  },
+  thumb: {
+    position: 'relative',
+    flex: '1 1 0%',
+    borderRadius: 'calc(infinity * 1px)',
+    backgroundColor: {
+      default: 'hsl(var(--scrollbar-thumb) / 0.5)',
+      '@media (hover: hover)': {
+        ':hover:not(:active)': 'hsl(var(--scrollbar-thumb-hover) / 0.65)',
+      },
+      ':active': 'hsl(var(--scrollbar-thumb-active) / 0.75)',
+    },
+    transitionProperty:
+      'color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to',
+    transitionDuration: 'var(--tw-duration, var(--default-transition-duration, 150ms))',
+    transitionTimingFunction:
+      'var(--tw-ease, var(--default-transition-timing-function, cubic-bezier(0.4, 0, 0.2, 1)))',
+  },
+});
 
 const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,
@@ -48,7 +104,7 @@ const ScrollArea = React.forwardRef<
   ) => (
     <ScrollAreaPrimitive.Root
       ref={ref}
-      className={cn('relative overflow-hidden', className)}
+      {...withClassName(stylex.props(styles.root), className)}
       {...props}
     >
       {/* https://github.com/radix-ui/primitives/issues/926 */}
@@ -56,7 +112,7 @@ const ScrollArea = React.forwardRef<
         ref={viewportRef}
         asChild={viewportAsChild}
         className={cn(
-          'h-full w-full rounded-[inherit]',
+          stylex.props(styles.viewport).className,
           !scrollableX && '[&>div]:block!',
           viewportClassName
         )}
@@ -92,20 +148,14 @@ const ScrollBar = React.forwardRef<
     className={cn(
       // Absolute so the track overlays the edge instead of growing the layout
       // (important for compact tab strips where a 10px in-flow bar is too tall).
-      'flex touch-none select-none transition-colors',
-      orientation === 'vertical' &&
-        'absolute top-0 right-0 h-full w-2.5 border-l border-l-transparent p-px',
-      orientation === 'horizontal' &&
-        'absolute bottom-0 left-0 h-1.5 w-full flex-col border-t border-t-transparent p-px',
+      stylex.props(styles.track, orientation === 'vertical' ? styles.vertical : styles.horizontal)
+        .className,
       className
     )}
     {...props}
   >
     <ScrollAreaPrimitive.ScrollAreaThumb
-      className={cn(
-        'relative flex-1 rounded-full bg-[hsl(var(--scrollbar-thumb)/0.5)] transition-colors hover:bg-[hsl(var(--scrollbar-thumb-hover)/0.65)] active:bg-[hsl(var(--scrollbar-thumb-active)/0.75)]',
-        thumbClassName
-      )}
+      className={cn(stylex.props(styles.thumb).className, thumbClassName)}
     />
   </ScrollAreaPrimitive.ScrollAreaScrollbar>
 ));

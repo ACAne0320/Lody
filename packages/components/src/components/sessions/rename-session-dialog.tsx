@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import * as stylex from '@stylexjs/stylex';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/lib/toast';
 import type { SessionId } from '@lody/shared';
@@ -8,6 +9,14 @@ import { Textarea } from '@lody/ui/textarea';
 import { useSessionActions } from '@/hooks/use-session-actions';
 import { isImeComposingKeyboardEvent } from '@/lib/ime';
 import { observeResizeOnAnimationFrame } from '@/lib/resize-observer';
+import { themeSpace } from '../../style/theme-scale.stylex';
+
+const styles = stylex.create({
+  body: {
+    paddingInline: { default: themeSpace[4], '@media (min-width: 640px)': themeSpace[5] },
+    paddingBlock: themeSpace[4],
+  },
+});
 
 const MAX_VISIBLE_TITLE_LINES = 4;
 
@@ -132,7 +141,7 @@ export function RenameSessionDialogView({
           </Dialog.Description>
         </Dialog.Header>
 
-        <div className="px-4 py-4 sm:px-5">
+        <div {...stylex.props(styles.body)}>
           <Textarea
             ref={setTitleField}
             autoFocus

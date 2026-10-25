@@ -30,6 +30,14 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 import * as stylex from '@stylexjs/stylex';
+import { themeColors } from '../style/theme-colors.stylex';
+import {
+  themeFontSize,
+  themeFontWeight,
+  themeLineHeight,
+  themeRadius,
+  themeSpace,
+} from '../style/theme-scale.stylex';
 import { SIDEBAR_ROW_LINE_CLASS, sidebarSurface } from './sidebar-surface';
 import { formatCompactRelativeTime } from '@/lib/format-relative-time';
 import { Tooltip } from '@lody/ui/tooltip';
@@ -191,7 +199,7 @@ export type SidebarUpdatedContextMenuLabels = {
  * state), so the control stays reachable in every list state.
  */
 function HeaderActionRow({ action }: { action: ReactNode }) {
-  return <div className="flex h-7 shrink-0 items-center justify-end pr-2">{action}</div>;
+  return <div {...stylex.props(updatedStyles.headerAction)}>{action}</div>;
 }
 
 function parseGitHubPrNumber(url: string): number | null {
@@ -533,7 +541,7 @@ export const SidebarUpdatedSessionList = memo(function SidebarUpdatedSessionList
 
   if (isLoading && items.length === 0) {
     return (
-      <div className="flex flex-col">
+      <div {...stylex.props(updatedStyles.listStack)}>
         {headerAction ? <HeaderActionRow action={headerAction} /> : null}
         <SidebarListSkeleton
           className={className}
@@ -546,16 +554,11 @@ export const SidebarUpdatedSessionList = memo(function SidebarUpdatedSessionList
 
   if (!items.length) {
     return (
-      <div className="flex flex-col">
+      <div {...stylex.props(updatedStyles.listStack)}>
         {headerAction ? <HeaderActionRow action={headerAction} /> : null}
-        <div
-          className={cn(
-            'mt-2 flex flex-col items-start gap-1 rounded-md border border-dashed border-sidebar-border/70 px-3 py-4',
-            className
-          )}
-        >
-          <div className="text-sm font-medium text-sidebar-foreground">{merged.emptyTitle}</div>
-          <div className="text-xs text-sidebar-foreground-muted">{merged.emptyDescription}</div>
+        <div className={cn(stylex.props(updatedStyles.emptyCard).className, className)}>
+          <div {...stylex.props(updatedStyles.emptyTitle)}>{merged.emptyTitle}</div>
+          <div {...stylex.props(updatedStyles.emptyDescription)}>{merged.emptyDescription}</div>
         </div>
       </div>
     );
@@ -563,7 +566,7 @@ export const SidebarUpdatedSessionList = memo(function SidebarUpdatedSessionList
 
   return (
     <Tooltip.Provider>
-      <div className={cn('flex flex-col', className)}>
+      <div className={cn(stylex.props(updatedStyles.listStack).className, className)}>
         {buckets.map((bucket, bucketIndex) => {
           const bucketHeaderAction = bucketIndex === 0 ? headerAction : null;
           const collapsed = Boolean(collapsedBuckets?.[bucket.key]);
@@ -592,8 +595,9 @@ export const SidebarUpdatedSessionList = memo(function SidebarUpdatedSessionList
             <div
               key={bucket.key}
               className={cn(
-                'group flex flex-col gap-0.5',
-                collapsed ? 'mb-1 last:mb-0' : 'mb-4 last:mb-0'
+                'group',
+                stylex.props(updatedStyles.bucket, collapsed && updatedStyles.collapsedBucket)
+                  .className
               )}
             >
               {/* Same shared section header as Workspace mode, so section labels
@@ -659,19 +663,11 @@ export const SidebarUpdatedSessionList = memo(function SidebarUpdatedSessionList
                     <button
                       type="button"
                       data-sidebar-updated-show-more={bucket.key}
-                      className={cn(
-                        'flex select-none items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-sidebar-foreground-muted/80',
-                        'transition-colors',
-                        'hover:bg-sidebar-hover hover:text-sidebar-hover-foreground',
-                        'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring/40'
-                      )}
+                      {...stylex.props(updatedStyles.showMore)}
                       aria-label={toggleFullListLabel}
                       onClick={() => onToggleFullBucket?.(bucket.key)}
                     >
-                      <span
-                        className="flex h-4 w-4 items-center justify-center"
-                        aria-hidden="true"
-                      />
+                      <span {...stylex.props(updatedStyles.showMoreIcon)} aria-hidden="true" />
                       <span>{toggleFullListLabel}</span>
                     </button>
                   ) : null}
@@ -693,7 +689,7 @@ export const SidebarUpdatedSessionList = memo(function SidebarUpdatedSessionList
 SidebarUpdatedSessionList.displayName = 'SidebarUpdatedSessionList';
 
 function UpdatedGitHubOwnerMark({ repoFullName }: { repoFullName: string | null }) {
-  return <GitHubOwnerIcon repoFullName={repoFullName} className="h-4 w-4 opacity-60" />;
+  return <GitHubOwnerIcon repoFullName={repoFullName} {...stylex.props(updatedStyles.ownerIcon)} />;
 }
 
 function UpdatedItemProjectLine({ item }: { item: SidebarUpdatedItem }) {
@@ -704,28 +700,29 @@ function UpdatedItemProjectLine({ item }: { item: SidebarUpdatedItem }) {
   const mark = isGithub ? (
     <UpdatedGitHubOwnerMark repoFullName={repoFullName} />
   ) : item.kind === 'local' ? (
-    <Folder className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+    <Folder {...stylex.props(updatedStyles.glyph12)} strokeWidth={1.75} aria-hidden="true" />
   ) : (
-    <MessageCircle className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+    <MessageCircle {...stylex.props(updatedStyles.glyph12)} strokeWidth={1.75} aria-hidden="true" />
   );
   return (
     <div
       data-sidebar-updated-project={item.kind}
       className={cn(
-        'flex min-w-0 items-center gap-1',
-        SIDEBAR_CAPTION_TEXT_CLASS,
-        stylex.props(sidebarSurface.meta).className
+        stylex.props(updatedStyles.projectLine, sidebarSurface.meta).className,
+        SIDEBAR_CAPTION_TEXT_CLASS
       )}
     >
       <span
         className={cn(
-          'flex shrink-0 items-center justify-center',
-          isGithub ? 'h-4 w-4 overflow-hidden rounded-[3px]' : 'h-3 w-3 opacity-80'
+          stylex.props(
+            updatedStyles.projectMark,
+            isGithub ? updatedStyles.githubMark : updatedStyles.smallMark
+          ).className
         )}
       >
         {mark}
       </span>
-      <span className="min-w-0 truncate">{label}</span>
+      <span {...stylex.props(updatedStyles.projectLabel)}>{label}</span>
     </div>
   );
 }
@@ -931,25 +928,25 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
         // only. The bucket wrapper above also uses an (unnamed) `group` for its
         // header chevron — without naming, hovering any row would match the bucket's
         // group-hover and reveal every row's archive button at once.
-        'group/row relative flex w-full items-start text-left',
+        'group/row',
         // Hover marks the row with its fill only; the title keeps its color.
         // Unselected titles sit below the reading column's brightness.
         stylex.props(
+          updatedStyles.row,
+          onSelect ? updatedStyles.clickable : updatedStyles.staticRow,
           sidebarSurface.row,
           showMetaLine ? sidebarSurface.tall : sidebarSurface.snug,
           showSelectedState
             ? sidebarSurface.selected
             : onSelect && !isMobile && sidebarSurface.hover
         ).className,
-        'border border-transparent',
-        // StyleX has no attribute selector: an open row menu keeps the hover fill here.
+        // Preserve the menu-open hook until the row shares an owned marker with its menu.
         !showSelectedState && onSelect && !isMobile && 'data-[menu-open]:bg-sidebar-hover',
         // Keyboard-only focus ring — see SessionList: plain :focus-within also
         // matches after mouse clicks via the overlay <a> and left a permanent
         // inset ring on the selected row.
         useAnchor &&
-          'has-[a:focus-visible]:outline-hidden has-[a:focus-visible]:ring-1 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-sidebar-ring/40',
-        onSelect ? 'cursor-pointer' : 'cursor-default'
+          'has-[a:focus-visible]:outline-hidden has-[a:focus-visible]:ring-1 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-sidebar-ring/40'
       )}
       onClick={
         useAnchor
@@ -975,7 +972,7 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
         <a
           href={href}
           aria-label={rowAriaLabel}
-          className="absolute inset-0 z-10 rounded-md focus:outline-hidden focus-visible:shadow-none"
+          {...stylex.props(updatedStyles.anchor)}
           // The overlay anchor covers the row, so it is what a drag starts on;
           // left draggable it would drag its link instead.
           draggable={false}
@@ -985,12 +982,11 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
 
       <div
         className={cn(
-          'flex w-full min-w-0 items-start',
-          SIDEBAR_ROW_TEXT_CLASS,
-          isMobile ? 'gap-1.5' : 'gap-2'
+          stylex.props(updatedStyles.rowBody, isMobile && updatedStyles.mobileRowBody).className,
+          SIDEBAR_ROW_TEXT_CLASS
         )}
       >
-        <div className={cn('flex shrink-0 items-center', SIDEBAR_ROW_LINE_CLASS)}>
+        <div className={cn(stylex.props(updatedStyles.lineSlot).className, SIDEBAR_ROW_LINE_CLASS)}>
           <SessionRowLeadingSlot
             showMenuButton={hasMenuActions}
             menuLabel={contextMenuLabels.moreActions}
@@ -1001,22 +997,28 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
           />
         </div>
         {item.owner ? (
-          <span className={cn('flex shrink-0 items-center', SIDEBAR_ROW_LINE_CLASS)}>
+          <span
+            className={cn(stylex.props(updatedStyles.lineSlot).className, SIDEBAR_ROW_LINE_CLASS)}
+          >
             <SessionRowAuthorAvatar author={item.owner} />
           </span>
         ) : null}
         {showPinnedIcon && item.isPinned ? (
-          <span className={cn('flex shrink-0 items-center', SIDEBAR_ROW_LINE_CLASS)}>
-            <Pin
-              aria-hidden="true"
-              className="relative -top-px h-3 w-3 shrink-0 text-sidebar-foreground-muted/80"
-            />
+          <span
+            className={cn(stylex.props(updatedStyles.lineSlot).className, SIDEBAR_ROW_LINE_CLASS)}
+          >
+            <Pin aria-hidden="true" {...stylex.props(updatedStyles.pin)} />
           </span>
         ) : null}
-        <div className={cn('min-w-0 flex-1', showMetaLine && 'flex flex-col gap-1')}>
+        <div
+          className={
+            stylex.props(updatedStyles.titleColumn, showMetaLine && updatedStyles.titleWithMeta)
+              .className
+          }
+        >
           <div
             className={cn(
-              'flex min-w-0 items-center truncate',
+              stylex.props(updatedStyles.titleLine).className,
               SIDEBAR_ROW_LINE_CLASS,
               SIDEBAR_ROW_TEXT_CLASS
             )}
@@ -1033,14 +1035,14 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
             {titleNode}
           </div>
           {showMetaLine ? (
-            <div data-sidebar-session-meta="" className="flex min-w-0 items-center gap-1.5">
+            <div data-sidebar-session-meta="" {...stylex.props(updatedStyles.metaLine)}>
               {showProjectLine ? <UpdatedItemProjectLine item={item} /> : null}
               {showBranchLine ? <SidebarBranchSegment branchName={branchName} /> : null}
             </div>
           ) : null}
         </div>
         {/* Keep PR at the right edge. Line totals stay in the hover card. */}
-        <div className={cn('flex shrink-0 items-center', SIDEBAR_ROW_LINE_CLASS)}>
+        <div className={cn(stylex.props(updatedStyles.lineSlot).className, SIDEBAR_ROW_LINE_CLASS)}>
           <SidebarRowEndSlot
             sessionId={item.id}
             isWaitingPermission={item.isWaitingPermission}
@@ -1054,10 +1056,12 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
               (item.kind === 'local' && item.isWorktree) ? (
                 <span
                   className={cn(
-                    'flex select-none items-center gap-1.5 tabular-nums',
-                    SIDEBAR_CAPTION_TEXT_CLASS,
-                    stylex.props(sidebarSurface.faint).className,
-                    useAnchor && 'z-20'
+                    stylex.props(
+                      updatedStyles.restMetrics,
+                      sidebarSurface.faint,
+                      useAnchor && updatedStyles.anchoredMetrics
+                    ).className,
+                    SIDEBAR_CAPTION_TEXT_CLASS
                   )}
                 >
                   {isMobile ? <span>{relativeTime}</span> : null}
@@ -1103,9 +1107,9 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
             key: 'archive',
             label: archiveActionLabel,
             ariaLabel: archiveTooltipLabel,
-            icon: <Archive className="h-4 w-4" />,
+            icon: <Archive {...stylex.props(updatedStyles.glyph16)} />,
             hideLabel: item.kind === 'chat',
-            className: 'bg-sidebar-hover text-sidebar-hover-foreground',
+            className: stylex.props(updatedStyles.archiveAction).className,
             onClick: () => onArchive?.(item.id),
           },
         ]}
@@ -1291,3 +1295,149 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
 });
 
 UpdatedItemRow.displayName = 'UpdatedItemRow';
+
+const updatedStyles = stylex.create({
+  listStack: { display: 'flex', flexDirection: 'column' },
+  headerAction: {
+    display: 'flex',
+    height: themeSpace[7],
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingRight: themeSpace[2],
+  },
+  emptyCard: {
+    marginTop: themeSpace[2],
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: themeSpace[1],
+    borderRadius: themeRadius.md,
+    borderWidth: '1px',
+    borderStyle: 'dashed',
+    borderColor: 'hsl(var(--sidebar-border) / 0.7)',
+    paddingInline: themeSpace[3],
+    paddingBlock: themeSpace[4],
+  },
+  emptyTitle: {
+    fontSize: themeFontSize.sm,
+    lineHeight: themeLineHeight.sm,
+    fontWeight: themeFontWeight.medium,
+    color: themeColors.sidebarForeground,
+  },
+  emptyDescription: {
+    fontSize: themeFontSize.xs,
+    lineHeight: themeLineHeight.xs,
+    color: themeColors.sidebarForegroundMuted,
+  },
+  bucket: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: themeSpace[0.5],
+    marginBottom: { default: themeSpace[4], ':last-child': 0 },
+  },
+  collapsedBucket: { marginBottom: { default: themeSpace[1], ':last-child': 0 } },
+  showMore: {
+    display: 'flex',
+    userSelect: 'none',
+    alignItems: 'center',
+    gap: themeSpace[2],
+    borderRadius: themeRadius.md,
+    padding: themeSpace[2],
+    textAlign: 'left',
+    fontSize: themeFontSize.xs,
+    lineHeight: themeLineHeight.xs,
+    color: {
+      default: 'hsl(var(--sidebar-foreground-muted) / 0.8)',
+      '@media (hover: hover)': { ':hover': themeColors.sidebarHoverForeground },
+    },
+    backgroundColor: {
+      default: null,
+      '@media (hover: hover)': { ':hover': themeColors.sidebarHover },
+    },
+    transitionProperty:
+      'color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to',
+    transitionDuration: '150ms',
+    transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    boxShadow: { default: null, ':focus-visible': 'none' },
+  },
+  showMoreIcon: {
+    display: 'flex',
+    width: themeSpace[4],
+    height: themeSpace[4],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ownerIcon: { width: themeSpace[4], height: themeSpace[4], opacity: 0.6 },
+  glyph12: { width: themeSpace[3], height: themeSpace[3] },
+  glyph16: { width: themeSpace[4], height: themeSpace[4] },
+  projectLine: { display: 'flex', minWidth: 0, alignItems: 'center', gap: themeSpace[1] },
+  projectMark: { display: 'flex', flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  githubMark: {
+    width: themeSpace[4],
+    height: themeSpace[4],
+    overflow: 'hidden',
+    borderRadius: '3px',
+  },
+  smallMark: { width: themeSpace[3], height: themeSpace[3], opacity: 0.8 },
+  projectLabel: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  row: {
+    position: 'relative',
+    display: 'flex',
+    width: '100%',
+    alignItems: 'flex-start',
+    textAlign: 'left',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: 'transparent',
+  },
+  clickable: { cursor: 'pointer' },
+  staticRow: { cursor: 'default' },
+  anchor: {
+    position: 'absolute',
+    inset: 0,
+    zIndex: 10,
+    borderRadius: themeRadius.md,
+    boxShadow: { default: null, ':focus-visible': 'none' },
+  },
+  rowBody: {
+    display: 'flex',
+    width: '100%',
+    minWidth: 0,
+    alignItems: 'flex-start',
+    gap: themeSpace[2],
+  },
+  mobileRowBody: { gap: themeSpace[1.5] },
+  lineSlot: { display: 'flex', flexShrink: 0, alignItems: 'center' },
+  pin: {
+    position: 'relative',
+    top: '-1px',
+    width: themeSpace[3],
+    height: themeSpace[3],
+    flexShrink: 0,
+    color: 'hsl(var(--sidebar-foreground-muted) / 0.8)',
+  },
+  titleColumn: { minWidth: 0, flex: '1 1 0%' },
+  titleWithMeta: { display: 'flex', flexDirection: 'column', gap: themeSpace[1] },
+  titleLine: {
+    display: 'flex',
+    minWidth: 0,
+    alignItems: 'center',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  metaLine: { display: 'flex', minWidth: 0, alignItems: 'center', gap: themeSpace[1.5] },
+  restMetrics: {
+    display: 'flex',
+    userSelect: 'none',
+    alignItems: 'center',
+    gap: themeSpace[1.5],
+    fontVariantNumeric: 'tabular-nums',
+  },
+  anchoredMetrics: { zIndex: 20 },
+  archiveAction: {
+    backgroundColor: themeColors.sidebarHover,
+    color: themeColors.sidebarHoverForeground,
+  },
+});

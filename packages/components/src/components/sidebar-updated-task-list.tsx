@@ -22,6 +22,102 @@ import { Spinner } from '@lody/ui/spinner';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
+import { clsx } from 'clsx';
+import * as stylex from '@stylexjs/stylex';
+import { themeColors } from '../style/theme-colors.stylex';
+import {
+  themeFontSize,
+  themeFontWeight,
+  themeLineHeight,
+  themeRadius,
+  themeSpace,
+} from '../style/theme-scale.stylex';
+/**
+ * The parts of the Updated list that were Tailwind. The rows' own box, ink and
+ * fills come from `sidebarSurface`; these are the pieces around it.
+ */
+const updatedStyles = stylex.create({
+  /** A list's own column. */
+  listStack: { display: 'flex', flexDirection: 'column' },
+  /** The right-aligned row that hosts the list's header action. */
+  headerActionRow: {
+    display: 'flex',
+    height: themeSpace[7],
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  /** The empty state's own card. */
+  emptyCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: themeSpace[1],
+    marginTop: themeSpace[2],
+    borderRadius: themeRadius.md,
+    borderWidth: '1px',
+    borderStyle: 'dashed',
+    borderColor: 'hsl(var(--sidebar-border) / 0.7)',
+    paddingInline: themeSpace[3],
+    paddingBlock: themeSpace[4],
+  },
+  emptyTitle: {
+    fontSize: themeFontSize.sm,
+    lineHeight: themeLineHeight.sm,
+    fontWeight: themeFontWeight.medium,
+    color: themeColors.sidebarForeground,
+  },
+  emptyDescription: {
+    fontSize: themeFontSize.xs,
+    lineHeight: themeLineHeight.xs,
+    color: themeColors.sidebarForegroundMuted,
+  },
+  /** The rows under a bucket. */
+  rowStack: { display: 'flex', flexDirection: 'column', gap: '1px' },
+  /** The row that shows the rest of a bucket. */
+  showMoreBox: {
+    display: 'flex',
+    height: themeSpace[4],
+    width: themeSpace[4],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /** The stretched link that covers the row. */
+  anchor: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 10,
+    borderRadius: themeRadius.md,
+    boxShadow: { default: null, ':focus-visible': 'none' },
+  },
+  /** A row's own body. */
+  rowBody: {
+    display: 'flex',
+    width: '100%',
+    minWidth: 0,
+    alignItems: 'center',
+    gap: themeSpace[1.5],
+    fontSize: themeFontSize.sm,
+    lineHeight: themeLineHeight.sm,
+  },
+  /** The pin that marks a pinned row. */
+  pin: {
+    position: 'relative',
+    top: '-1px',
+    width: themeSpace[3],
+    height: themeSpace[3],
+    flexShrink: 0,
+    color: 'hsl(var(--sidebar-foreground-muted) / 0.8)',
+  },
+  glyph16: { width: themeSpace[4], height: themeSpace[4] },
+  archiveAction: {
+    backgroundColor: themeColors.sidebarHover,
+    color: themeColors.sidebarHoverForeground,
+  },
+});
 import { formatCompactRelativeTime } from '@/lib/format-relative-time';
 import { Tooltip } from '@lody/ui/tooltip';
 import { ContextMenu } from '@lody/ui/context-menu';
@@ -131,7 +227,7 @@ export type SidebarUpdatedContextMenuLabels = {
  * state), so the control stays reachable in every list state.
  */
 function HeaderActionRow({ action }: { action: ReactNode }) {
-  return <div className="flex h-7 shrink-0 items-center justify-end">{action}</div>;
+  return <div {...stylex.props(updatedStyles.headerActionRow)}>{action}</div>;
 }
 
 function parseGitHubPrNumber(url: string): number | null {
@@ -371,7 +467,7 @@ export const SidebarUpdatedTaskList = memo(function SidebarUpdatedTaskList({
 
   if (isLoading && items.length === 0) {
     return (
-      <div className="flex flex-col">
+      <div {...stylex.props(updatedStyles.listStack)}>
         {headerAction ? <HeaderActionRow action={headerAction} /> : null}
         <SidebarListSkeleton
           className={className}
@@ -384,16 +480,11 @@ export const SidebarUpdatedTaskList = memo(function SidebarUpdatedTaskList({
 
   if (!items.length) {
     return (
-      <div className="flex flex-col">
+      <div {...stylex.props(updatedStyles.listStack)}>
         {headerAction ? <HeaderActionRow action={headerAction} /> : null}
-        <div
-          className={cn(
-            'mt-2 flex flex-col items-start gap-1 rounded-md border border-dashed border-sidebar-border/70 px-3 py-4',
-            className
-          )}
-        >
-          <div className="text-sm font-medium text-sidebar-foreground">{merged.emptyTitle}</div>
-          <div className="text-xs text-sidebar-foreground-muted">{merged.emptyDescription}</div>
+        <div className={clsx(stylex.props(updatedStyles.emptyCard).className, className)}>
+          <div {...stylex.props(updatedStyles.emptyTitle)}>{merged.emptyTitle}</div>
+          <div {...stylex.props(updatedStyles.emptyDescription)}>{merged.emptyDescription}</div>
         </div>
       </div>
     );
@@ -404,7 +495,7 @@ export const SidebarUpdatedTaskList = memo(function SidebarUpdatedTaskList({
 
   return (
     <Tooltip.Provider>
-      <div className={cn('flex flex-col', className)}>
+      <div className={clsx(stylex.props(updatedStyles.listStack).className, className)}>
         {buckets.map((bucket, bucketIndex) => {
           const bucketHeaderAction = bucketIndex === 0 ? headerAction : null;
           const collapsed = Boolean(collapsedBuckets?.[bucket.key]);
@@ -438,7 +529,7 @@ export const SidebarUpdatedTaskList = memo(function SidebarUpdatedTaskList({
                 onToggleCollapsed={canToggleBucket ? handleToggle : undefined}
               />
               {!collapsed ? (
-                <div className="flex flex-col gap-px">
+                <div {...stylex.props(updatedStyles.rowStack)}>
                   {visibleItems.map((item) => (
                     <UpdatedItemRow
                       key={item.id}
@@ -474,16 +565,12 @@ export const SidebarUpdatedTaskList = memo(function SidebarUpdatedTaskList({
                       className={cn(
                         'flex select-none items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-sidebar-foreground-muted/80',
                         'transition-colors',
-                        'hover:bg-sidebar-hover hover:text-sidebar-hover-foreground',
-                        'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring/40'
+                        'hover:bg-sidebar-hover hover:text-sidebar-hover-foreground'
                       )}
                       aria-label={toggleFullListLabel}
                       onClick={() => onToggleFullBucket?.(bucket.key)}
                     >
-                      <span
-                        className="flex h-4 w-4 items-center justify-center"
-                        aria-hidden="true"
-                      />
+                      <span {...stylex.props(updatedStyles.showMoreBox)} aria-hidden="true" />
                       <span>{toggleFullListLabel}</span>
                     </button>
                   ) : null}
@@ -738,12 +825,12 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
         <a
           href={href}
           aria-label={item.title}
-          className="absolute inset-0 z-10 rounded-md focus:outline-hidden focus-visible:shadow-none"
+          {...stylex.props(updatedStyles.anchor)}
           onClick={handleAnchorClick}
         />
       ) : null}
 
-      <div className="flex w-full min-w-0 items-center gap-1.5 text-sm">
+      <div {...stylex.props(updatedStyles.rowBody)}>
         <SessionRowLeadingSlot
           showMenuButton={hasMenuActions}
           menuLabel={contextMenuLabels.moreActions}
@@ -751,10 +838,7 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
           revealClassName="group-hover/row:opacity-100 group-hover/row:pointer-events-auto group-data-[menu-open]/row:opacity-100 group-data-[menu-open]/row:pointer-events-auto"
         />
         {showPinnedIcon && item.isPinned ? (
-          <Pin
-            aria-hidden="true"
-            className="relative -top-px h-3 w-3 shrink-0 text-sidebar-foreground-muted/80"
-          />
+          <Pin aria-hidden="true" {...stylex.props(updatedStyles.pin)} />
         ) : null}
         <div
           className={cn(
@@ -828,9 +912,9 @@ const UpdatedItemRow = memo(function UpdatedItemRow({
             key: 'archive',
             label: archiveActionLabel,
             ariaLabel: archiveTooltipLabel,
-            icon: <Archive className="h-4 w-4" />,
+            icon: <Archive className={stylex.props(updatedStyles.glyph16).className} />,
             hideLabel: item.kind === 'chat',
-            className: 'bg-sidebar-hover text-sidebar-hover-foreground',
+            className: stylex.props(updatedStyles.archiveAction).className,
             onClick: () => onArchive?.(item.id),
           },
         ]}

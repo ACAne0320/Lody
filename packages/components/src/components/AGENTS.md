@@ -3,6 +3,10 @@
 Parent `AGENTS.md` files also apply. `CLAUDE.md` is a symlink; edit `AGENTS.md` only.
 Child directories (`sessions/`, `mobile/`, …) own their own rules.
 
+## Styling
+
+- StyleX, not Tailwind; tokens in `../../style/`, rules in its `MIGRATION.md`.
+
 ## Sidebar and session rows
 
 - Sidebar rows represent Sessions, never Tasks.
